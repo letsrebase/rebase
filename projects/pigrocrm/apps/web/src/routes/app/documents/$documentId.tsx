@@ -8,12 +8,12 @@ import { OfferStatePicker } from '@/features/documents/OfferStatePicker'
 import { VersionHistory } from '@/features/documents/VersionHistory'
 import { DOCUMENT_TYPE_LABELS, downloadDocument, useDocument } from '@/features/documents/queries'
 import { toProblem } from '@/lib/api'
-import { useAzienda } from '@/lib/azienda'
+import { useLegalEntity } from '@/lib/legalEntity'
 
 function DocumentDetail() {
   const { documentId } = useParams({ from: '/app/documents/$documentId' })
   const document = useDocument(documentId)
-  const azienda = useAzienda()
+  const azienda = useLegalEntity()
 
   if (document.isError) {
     // A real 404 keeps its own honest wording, the same way CustomerDetail's own

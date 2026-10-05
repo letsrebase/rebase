@@ -29,9 +29,9 @@ from pigrocrm.core.documents.schemas import DocumentCreate
 from pigrocrm.core.documents.service import ENTITY as DOCUMENT_ENTITY
 from pigrocrm.core.documents.service import DocumentService
 from pigrocrm.core.drive.reader import ALREADY_AUTHORIZED, DriveReader, drive_reader_for
-from pigrocrm.core.emitter.assets import AziendaAssets
-from pigrocrm.core.emitter.models import Azienda
-from pigrocrm.core.emitter.service import AziendaService
+from pigrocrm.core.emitter.assets import LegalEntityAssets
+from pigrocrm.core.emitter.models import LegalEntity
+from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import Conflict, ImmutableField, NotFound, ValidationFailed
 from pigrocrm.core.fields.schemas import EntityType
 from pigrocrm.core.fields.service import FieldDefinitionService
@@ -172,7 +172,7 @@ class InvoiceService:
         self.fields = FieldDefinitionService(session)
         self.activities = ActivityService(session)
         self.fiscal = FiscalProfileService(session)
-        self.emitter = AziendaService(session)
+        self.emitter = LegalEntityService(session)
         self.documents = DocumentService(session, storage, self.settings)
         # REB-367 (design §7 item 5): the same session as everything else here, so a
         # customer `confirm_import` creates for a brand-new counterparty lands in the
@@ -230,10 +230,10 @@ class InvoiceService:
         if deal_id is not None:
             deal = self.session.get(Deal, deal_id)
             assert deal is not None  # `_check_owner` has already answered NotFound
-            return AziendaService(self.session).inherited(deal.azienda_id, ENTITY)
-        return AziendaService(self.session).inherited(customer.azienda_id, ENTITY)
+            return LegalEntityService(self.session).inherited(deal.azienda_id, ENTITY)
+        return LegalEntityService(self.session).inherited(customer.azienda_id, ENTITY)
 
-    def _writing_azienda(self, azienda_id: UUID | None) -> Azienda:
+    def _writing_azienda(self, azienda_id: UUID | None) -> LegalEntity:
         """The azienda a register write goes on: the one named, the default when none,
         and never an inactive one (REB-619). A read may still answer for a deactivated
         azienda, since its history stays readable; a number consumed or a gap declared
@@ -1151,7 +1151,7 @@ class InvoiceService:
             rows.extend(review_content(self.session, content, aziende, document_id))
         return rows
 
-    def _importing_aziende(self) -> list[Azienda]:
+    def _importing_aziende(self) -> list[LegalEntity]:
         """The aziende a FatturaPA file can have been issued by (REB-619, spec §1.5):
         the active Italian ones. A space with none has nothing to classify against,
         and the refusal names the screen to go to, as the one-azienda path did."""
@@ -2599,7 +2599,7 @@ class InvoiceService:
             riferimento=riferimento,
             settings=self.settings,
             # The issuing azienda's logo (REB-627, spec §1.8), live like the document's.
-            media=AziendaAssets(self.session, self.storage).media_for(invoice.azienda_id),
+            media=LegalEntityAssets(self.session, self.storage).media_for(invoice.azienda_id),
         )
         # `fattura`/`proforma`, the names `DocumentTipo` actually declares -- the PDF is
         # *the* document of its kind, and `fattura_xml` is the one that needs qualifying

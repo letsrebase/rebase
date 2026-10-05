@@ -35,10 +35,12 @@ def _default_azienda(db_session: Session) -> None:
     """Since REB-615 a fiscal profile belongs to an azienda, and every read and write
     here that names none resolves to the default one, so the space needs it first,
     exactly as a real space has it from provisioning."""
-    from pigrocrm.core.emitter.schemas import AziendaUpsert
-    from pigrocrm.core.emitter.service import AziendaService
+    from pigrocrm.core.emitter.schemas import LegalEntityUpsert
+    from pigrocrm.core.emitter.service import LegalEntityService
 
-    AziendaService(db_session).upsert_default(AziendaUpsert(ragione_sociale="Studio Rossi"), ADMIN)
+    LegalEntityService(db_session).upsert_default(
+        LegalEntityUpsert(ragione_sociale="Studio Rossi"), ADMIN
+    )
 
 
 def _payload(**overrides: object) -> FiscalProfileUpsert:
@@ -178,9 +180,9 @@ def test_upsert_turns_a_true_insert_race_into_a_clean_conflict(
 def test_one_profile_per_azienda_is_the_database_guarantee(db_session: Session) -> None:
     from sqlalchemy.exc import IntegrityError
 
-    from pigrocrm.core.emitter.repository import AziendaRepository
+    from pigrocrm.core.emitter.repository import LegalEntityRepository
 
-    azienda = AziendaRepository(db_session).default()
+    azienda = LegalEntityRepository(db_session).default()
     assert azienda is not None
     db_session.add(FiscalProfile(codice_regime="RF19", azienda_id=azienda.id))
     db_session.flush()

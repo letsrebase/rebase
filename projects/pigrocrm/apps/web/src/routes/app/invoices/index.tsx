@@ -15,7 +15,7 @@ import {
 import { buildInvoiceColumns } from '@/features/invoices/columns'
 import { LoadMoreInvoices } from '@/features/invoices/LoadMoreInvoices'
 import { NewProformaButton } from '@/features/invoices/NewProformaDialog'
-import { useAziendeToName } from '@/lib/azienda'
+import { useLegalEntitiesToName } from '@/lib/legalEntity'
 import { booleanSearchParam } from '@/lib/searchParams'
 import {
   INVOICE_STATE_LABELS,
@@ -102,7 +102,7 @@ export function InvoicesList({ scadute }: { scadute?: boolean }) {
   // page draws the same columns without it -- see `InvoicesTab`.
   // And the azienda's name beside the number, only under «Tutte le aziende» from the
   // second azienda on (REB-625): with one selected the sidebar already says whose.
-  const columns = buildInvoiceColumns({ cliente: true, aziende: useAziendeToName() })
+  const columns = buildInvoiceColumns({ cliente: true, aziende: useLegalEntitiesToName() })
 
   return (
     <>

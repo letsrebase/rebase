@@ -4,11 +4,11 @@ import { Button } from '@rebase/ui/button'
 import { toProblem, type ProblemDetail } from '@/lib/api'
 import {
   imageTooLarge,
-  useAziendaImage,
-  useRemoveAziendaImage,
-  useUploadAziendaImage,
-  type AziendaImageSlot,
-  type AziendaRecord,
+  useLegalEntityImage,
+  useRemoveLegalEntityImage,
+  useUploadLegalEntityImage,
+  type LegalEntityImageSlot,
+  type LegalEntityRecord,
 } from './queries'
 
 /**
@@ -19,7 +19,7 @@ import {
  * The server decides what a file is from its bytes; the `accept` here is a hint for the
  * picker, the same one the API enforces.
  */
-export function AziendaImages({ azienda }: { azienda: AziendaRecord }) {
+export function LegalEntityImages({ azienda }: { azienda: LegalEntityRecord }) {
   return (
     <div className="grid gap-6 sm:grid-cols-2">
       <ImageBlock
@@ -53,17 +53,17 @@ function ImageBlock({
   accept,
   present,
 }: {
-  azienda: AziendaRecord
-  slot: AziendaImageSlot
+  azienda: LegalEntityRecord
+  slot: LegalEntityImageSlot
   title: string
   copy: string
   empty: string
   accept: string
   present: boolean
 }) {
-  const image = useAziendaImage(azienda.id, slot, present)
-  const upload = useUploadAziendaImage(azienda.id, slot)
-  const remove = useRemoveAziendaImage(azienda.id, slot)
+  const image = useLegalEntityImage(azienda.id, slot, present)
+  const upload = useUploadLegalEntityImage(azienda.id, slot)
+  const remove = useRemoveLegalEntityImage(azienda.id, slot)
   const input = useRef<HTMLInputElement>(null)
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
   const busy = upload.isPending || remove.isPending

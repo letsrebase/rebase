@@ -5,7 +5,7 @@ import type { ReactElement, ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DealDetail } from './$dealId'
 import { api } from '@/lib/api'
-import { AziendaContext, type AziendaRecord, type AziendaValue } from '@/lib/azienda'
+import { LegalEntityContext, type LegalEntityRecord, type LegalEntityValue } from '@/lib/legalEntity'
 
 vi.mock('@tanstack/react-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@tanstack/react-router')>()
@@ -194,9 +194,9 @@ describe('DealDetail', () => {
 })
 
 describe('the azienda in the header (REB-626)', () => {
-  const HUMANCRAFT = { id: 'a1', nome: 'humancraft', attiva: true } as AziendaRecord
-  const REBASE = { id: 'a2', nome: 'rebase', attiva: true } as AziendaRecord
-  const TWO: AziendaValue = {
+  const HUMANCRAFT = { id: 'a1', nome: 'humancraft', attiva: true } as LegalEntityRecord
+  const REBASE = { id: 'a2', nome: 'rebase', attiva: true } as LegalEntityRecord
+  const TWO: LegalEntityValue = {
     aziende: [HUMANCRAFT, REBASE],
     selected: null,
     select: vi.fn(),
@@ -221,9 +221,9 @@ describe('the azienda in the header (REB-626)', () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(
       <QueryClientProvider client={client}>
-        <AziendaContext value={TWO}>
+        <LegalEntityContext value={TWO}>
           <DealDetail />
-        </AziendaContext>
+        </LegalEntityContext>
       </QueryClientProvider>,
     )
     expect(await screen.findByText(/^ACME Srl · 4\.500,00\s€ · rebase$/)).toBeInTheDocument()

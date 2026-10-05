@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useAziendaScope } from '@/lib/azienda'
+import { useLegalEntityScope } from '@/lib/legalEntity'
 import { api, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
 import { queryKeys } from '@/lib/query'
@@ -25,7 +25,7 @@ export function useCosts(params: CostsListParams = {}) {
   // The sidebar's azienda (REB-625) on the general costs, not on a deal's: under
   // azienda A the page shows A's own expenses, and the shared ones (no azienda) only
   // under «Tutte le aziende», which is what the server means by the filter.
-  const scoped = useAziendaScope(params)
+  const scoped = useLegalEntityScope(params)
   return useQuery({
     queryKey: queryKeys.costs(scoped),
     queryFn: () => unwrap(api.GET('/api/costs', { params: { query: { ...scoped, limit: 200 } } })),

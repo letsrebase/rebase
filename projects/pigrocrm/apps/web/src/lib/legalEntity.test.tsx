@@ -5,14 +5,14 @@ import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { useCustomers } from '@/features/customers/queries'
 import { useTimeEntries } from '@/features/time/queries'
 import {
-  AziendaContext,
-  AziendaProvider,
-  aziendaKey,
-  useAzienda,
-  useAziendaScope,
-  useAziendeToName,
-  type AziendaRecord,
-} from './azienda'
+  LegalEntityContext,
+  LegalEntityProvider,
+  legalEntityKey,
+  useLegalEntity,
+  useLegalEntityScope,
+  useLegalEntitiesToName,
+  type LegalEntityRecord,
+} from './legalEntity'
 
 const mockAuth = vi.hoisted(() => ({
   userId: 'u1' as string,
@@ -38,16 +38,16 @@ import { api } from '@/lib/api'
 
 const GET = api.GET as unknown as Mock
 
-const HUMANCRAFT = { id: 'a1', nome: 'humancraft', predefinita: true, attiva: true } as AziendaRecord
-const REBASE = { id: 'a2', nome: 'rebase', predefinita: false, attiva: true } as AziendaRecord
-const CLOSED = { id: 'a3', nome: 'chiusa', predefinita: false, attiva: false } as AziendaRecord
+const HUMANCRAFT = { id: 'a1', nome: 'humancraft', predefinita: true, attiva: true } as LegalEntityRecord
+const REBASE = { id: 'a2', nome: 'rebase', predefinita: false, attiva: true } as LegalEntityRecord
+const CLOSED = { id: 'a3', nome: 'chiusa', predefinita: false, attiva: false } as LegalEntityRecord
 
 function ok(data: unknown) {
   return Promise.resolve({ data, response: { status: 200 } })
 }
 
 /** `GET /api/aziende` answers `aziende`; every other read answers an empty page. */
-function serve(aziende: AziendaRecord[]) {
+function serve(aziende: LegalEntityRecord[]) {
   GET.mockImplementation((path: string) =>
     path === '/api/aziende' ? ok(aziende) : ok({ items: [], next_cursor: null }),
   )
@@ -57,7 +57,7 @@ function wrapper({ children }: { children: ReactNode }) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return (
     <QueryClientProvider client={client}>
-      <AziendaProvider>{children}</AziendaProvider>
+      <LegalEntityProvider>{children}</LegalEntityProvider>
     </QueryClientProvider>
   )
 }
@@ -70,10 +70,10 @@ beforeEach(() => {
   serve([HUMANCRAFT])
 })
 
-describe('AziendaProvider', () => {
+describe('LegalEntityProvider', () => {
   it('is a one-azienda space until the second azienda: nothing selected, nothing several', async () => {
-    localStorage.setItem(aziendaKey('u1'), 'a1')
-    const { result } = renderHook(() => useAzienda(), { wrapper })
+    localStorage.setItem(legalEntityKey('u1'), 'a1')
+    const { result } = renderHook(() => useLegalEntity(), { wrapper })
     await waitFor(() => expect(result.current.aziende).toHaveLength(1))
     expect(result.current.several).toBe(false)
     expect(result.current.selected).toBeNull()
@@ -81,7 +81,7 @@ describe('AziendaProvider', () => {
 
   it('offers the active aziende from the second on and keeps the choice per space and user', async () => {
     serve([HUMANCRAFT, REBASE, CLOSED])
-    const { result } = renderHook(() => useAzienda(), { wrapper })
+    const { result } = renderHook(() => useLegalEntity(), { wrapper })
     await waitFor(() => expect(result.current.several).toBe(true))
     expect(result.current.aziende.map((a) => a.nome)).toEqual(['humancraft', 'rebase'])
     expect(result.current.selected).toBeNull()
@@ -98,19 +98,19 @@ describe('AziendaProvider', () => {
 
   it('reads the stored choice back, and drops one that names no active azienda any more', async () => {
     serve([HUMANCRAFT, REBASE, CLOSED])
-    localStorage.setItem(aziendaKey('u1'), 'a2')
-    const { result } = renderHook(() => useAzienda(), { wrapper })
+    localStorage.setItem(legalEntityKey('u1'), 'a2')
+    const { result } = renderHook(() => useLegalEntity(), { wrapper })
     await waitFor(() => expect(result.current.selected).toBe('a2'))
 
-    localStorage.setItem(aziendaKey('u1'), 'a3')
-    const stale = renderHook(() => useAzienda(), { wrapper })
+    localStorage.setItem(legalEntityKey('u1'), 'a3')
+    const stale = renderHook(() => useLegalEntity(), { wrapper })
     await waitFor(() => expect(stale.result.current.several).toBe(true))
     expect(stale.result.current.selected).toBeNull()
   })
 
   it('asks for no list without a session', () => {
     mockAuth.userId = ''
-    renderHook(() => useAzienda(), { wrapper })
+    renderHook(() => useLegalEntity(), { wrapper })
     expect(GET).not.toHaveBeenCalledWith('/api/aziende')
   })
 
@@ -119,22 +119,22 @@ describe('AziendaProvider', () => {
   it('pins the selection for a scoped person with one azienda, whatever was stored', async () => {
     mockAuth.aziende = ['a2']
     serve([REBASE]) // what the server answers a person scoped to «rebase»
-    localStorage.setItem(aziendaKey('u1'), 'a1')
-    const { result } = renderHook(() => useAzienda(), { wrapper })
+    localStorage.setItem(legalEntityKey('u1'), 'a1')
+    const { result } = renderHook(() => useLegalEntity(), { wrapper })
     await waitFor(() => expect(result.current.aziende).toHaveLength(1))
     expect(result.current.scoped).toBe(true)
     expect(result.current.pinned).toBe(true)
     expect(result.current.several).toBe(false)
     expect(result.current.selected).toBe('a2')
     // The pinned selection reaches a list's request like a chosen one would.
-    const scope = renderHook(() => useAziendaScope({ limit: 50 }), { wrapper })
+    const scope = renderHook(() => useLegalEntityScope({ limit: 50 }), { wrapper })
     await waitFor(() => expect(scope.result.current).toEqual({ limit: 50, azienda_id: 'a2' }))
   })
 
   it('offers a scoped person with several aziende theirs, with nothing pinned', async () => {
     mockAuth.aziende = ['a1', 'a2']
     serve([HUMANCRAFT, REBASE])
-    const { result } = renderHook(() => useAzienda(), { wrapper })
+    const { result } = renderHook(() => useLegalEntity(), { wrapper })
     await waitFor(() => expect(result.current.several).toBe(true))
     expect(result.current.scoped).toBe(true)
     expect(result.current.pinned).toBe(false)
@@ -144,7 +144,7 @@ describe('AziendaProvider', () => {
   })
 
   it('is not pinned for an unscoped person with one azienda: nothing is sent, as before', async () => {
-    const { result } = renderHook(() => useAzienda(), { wrapper })
+    const { result } = renderHook(() => useLegalEntity(), { wrapper })
     await waitFor(() => expect(result.current.aziende).toHaveLength(1))
     expect(result.current.scoped).toBe(false)
     expect(result.current.pinned).toBe(false)
@@ -152,7 +152,7 @@ describe('AziendaProvider', () => {
   })
 })
 
-describe('useAziendaScope', () => {
+describe('useLegalEntityScope', () => {
   function withSelection(selected: string | null, several = true) {
     const value = {
       aziende: [HUMANCRAFT, REBASE],
@@ -167,7 +167,7 @@ describe('useAziendaScope', () => {
       const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
       return (
         <QueryClientProvider client={client}>
-          <AziendaContext value={value}>{children}</AziendaContext>
+          <LegalEntityContext value={value}>{children}</LegalEntityContext>
         </QueryClientProvider>
       )
     }
@@ -176,9 +176,9 @@ describe('useAziendaScope', () => {
   it('adds the selection to a list with no owner and leaves an owned list alone', () => {
     const { result } = renderHook(
       () => ({
-        plain: useAziendaScope({ search: 'acme' }),
-        ofCustomer: useAziendaScope({ customer_id: 'c1' }),
-        ofDeal: useAziendaScope({ deal_id: 'd1' }),
+        plain: useLegalEntityScope({ search: 'acme' }),
+        ofCustomer: useLegalEntityScope({ customer_id: 'c1' }),
+        ofDeal: useLegalEntityScope({ deal_id: 'd1' }),
       }),
       { wrapper: withSelection('a2') },
     )
@@ -188,11 +188,11 @@ describe('useAziendaScope', () => {
   })
 
   it('adds nothing under «Tutte le aziende» and without a provider', () => {
-    const under = renderHook(() => useAziendaScope({ search: 'acme' }), {
+    const under = renderHook(() => useLegalEntityScope({ search: 'acme' }), {
       wrapper: withSelection(null),
     })
     expect(under.result.current).toEqual({ search: 'acme' })
-    const bare = renderHook(() => useAziendaScope({ search: 'acme' }))
+    const bare = renderHook(() => useLegalEntityScope({ search: 'acme' }))
     expect(bare.result.current).toEqual({ search: 'acme' })
   })
 
@@ -214,12 +214,12 @@ describe('useAziendaScope', () => {
   })
 
   it('names the aziende on the rows only under «tutte» from the second azienda on', () => {
-    expect(renderHook(() => useAziendeToName(), { wrapper: withSelection(null) }).result.current)
+    expect(renderHook(() => useLegalEntitiesToName(), { wrapper: withSelection(null) }).result.current)
       .toHaveLength(2)
-    expect(renderHook(() => useAziendeToName(), { wrapper: withSelection('a2') }).result.current)
+    expect(renderHook(() => useLegalEntitiesToName(), { wrapper: withSelection('a2') }).result.current)
       .toBeUndefined()
     expect(
-      renderHook(() => useAziendeToName(), { wrapper: withSelection(null, false) }).result.current,
+      renderHook(() => useLegalEntitiesToName(), { wrapper: withSelection(null, false) }).result.current,
     ).toBeUndefined()
   })
 })

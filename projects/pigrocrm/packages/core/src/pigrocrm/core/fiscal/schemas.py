@@ -132,7 +132,7 @@ class FiscalSnapshot(BaseModel):
 class FiscalProfileUpsert(BaseModel):
     """One shape for create and update: there is only ever one row, so "create" and
     "update" are the same operation with the same required fields -- the same decision
-    `AziendaUpsert` already made.
+    the azienda's own upsert already made.
 
     `codice_regime` carries `max_length` because the column is `String(4)` and the
     service's own `.fullmatch` check is *not* a length check on its own for a value

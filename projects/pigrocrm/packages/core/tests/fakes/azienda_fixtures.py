@@ -27,7 +27,7 @@ from uuid import UUID
 from sqlalchemy import Engine, delete, select
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.emitter.models import Azienda
+from pigrocrm.core.emitter.models import LegalEntity
 
 NOME = "Spazio di prova"
 
@@ -41,11 +41,13 @@ def ensure_committed_default(engine: Engine, *, nome: str = NOME) -> None:
     savepoint sees it come back with the rollback."""
     with engine.begin() as connection:
         existing = connection.execute(
-            select(Azienda.id).where(Azienda.predefinita.is_(True))
+            select(LegalEntity.id).where(LegalEntity.predefinita.is_(True))
         ).scalar_one_or_none()
         if existing is None:
             connection.execute(
-                Azienda.__table__.insert().values(nome=nome, ragione_sociale=nome, predefinita=True)
+                LegalEntity.__table__.insert().values(
+                    nome=nome, ragione_sociale=nome, predefinita=True
+                )
             )
 
 
@@ -55,11 +57,11 @@ def committed_default_azienda(
     """Insert the default azienda unless one exists; the id to remove at teardown."""
     if predefinita:
         existing = session.execute(
-            select(Azienda.id).where(Azienda.predefinita.is_(True))
+            select(LegalEntity.id).where(LegalEntity.predefinita.is_(True))
         ).scalar_one_or_none()
         if existing is not None:
             return None
-    row = Azienda(nome=nome, ragione_sociale=nome, predefinita=predefinita)
+    row = LegalEntity(nome=nome, ragione_sociale=nome, predefinita=predefinita)
     session.add(row)
     session.flush()
     return row.id
@@ -68,7 +70,7 @@ def committed_default_azienda(
 def remove_azienda(session: Session, azienda_id: UUID | None) -> None:
     """Undo `committed_default_azienda`: nothing when it inserted nothing."""
     if azienda_id is not None:
-        session.execute(delete(Azienda).where(Azienda.id == azienda_id))
+        session.execute(delete(LegalEntity).where(LegalEntity.id == azienda_id))
 
 
 __all__ = ["NOME", "committed_default_azienda", "ensure_committed_default", "remove_azienda"]

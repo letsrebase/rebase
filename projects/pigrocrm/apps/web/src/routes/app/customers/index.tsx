@@ -13,7 +13,7 @@ import { buildCustomerColumns } from '@/features/customers/columns'
 import { useCreateCustomer, useCustomers } from '@/features/customers/queries'
 import { useGmailHealth } from '@/features/gmail/queries'
 import { SuggestedCustomers } from '@/features/gmail/SuggestedCustomers'
-import { useAziendeToName } from '@/lib/azienda'
+import { useLegalEntitiesToName } from '@/lib/legalEntity'
 import { toProblem, type ProblemDetail } from '@/lib/api'
 import { useCanWrite } from '@/lib/auth'
 import { useEntitySchema } from '@/lib/schema'
@@ -42,7 +42,7 @@ export function CustomersPage({ initialSearch }: { initialSearch: string }) {
   // `useMemo` whose dependency array would just repeat the same query result.
   // «Azienda» only under «Tutte le aziende» from the second azienda on (REB-625).
   const columns = buildCustomerColumns(schema.data?.custom_fields ?? [], {
-    aziende: useAziendeToName(),
+    aziende: useLegalEntitiesToName(),
   })
 
   return (

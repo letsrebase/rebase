@@ -24,9 +24,9 @@ from pigrocrm.core.config import Settings
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.schemas import DocumentCreate
 from pigrocrm.core.documents.service import DocumentService
-from pigrocrm.core.emitter.repository import AziendaRepository
-from pigrocrm.core.emitter.schemas import AziendaUpsert
-from pigrocrm.core.emitter.service import AziendaService
+from pigrocrm.core.emitter.repository import LegalEntityRepository
+from pigrocrm.core.emitter.schemas import LegalEntityUpsert
+from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.fiscal.repository import FiscalProfileRepository
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
@@ -62,8 +62,8 @@ def _payload(result: Any) -> Any:
 def _seed_fiscal_and_emitter_profiles(session: Session) -> None:
     # The azienda first, always (REB-615: a bare default is already seeded and this
     # fills in its identity), then its fiscal profile when it has none.
-    AziendaService(session).upsert_default(
-        AziendaUpsert(
+    LegalEntityService(session).upsert_default(
+        LegalEntityUpsert(
             ragione_sociale="Chiara Bianchi",
             partita_iva=FORNITORE_PIVA,
             codice_fiscale=FORNITORE_CF,
@@ -75,7 +75,7 @@ def _seed_fiscal_and_emitter_profiles(session: Session) -> None:
         ),
         ADMIN,
     )
-    azienda = AziendaRepository(session).default()
+    azienda = LegalEntityRepository(session).default()
     assert azienda is not None
     if FiscalProfileRepository(session).get(azienda.id) is None:
         FiscalProfileService(session).upsert(FiscalProfileUpsert(codice_regime="RF19"), ADMIN)

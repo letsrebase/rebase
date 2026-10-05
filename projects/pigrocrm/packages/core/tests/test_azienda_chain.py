@@ -26,9 +26,9 @@ from pigrocrm.core.deals.schemas import DealCreate, DealListQuery
 from pigrocrm.core.deals.service import DealService
 from pigrocrm.core.documents.schemas import DocumentCreate, DocumentListQuery
 from pigrocrm.core.documents.service import DocumentService
-from pigrocrm.core.emitter.models import Azienda
-from pigrocrm.core.emitter.repository import AziendaRepository
-from pigrocrm.core.emitter.service import AziendaService
+from pigrocrm.core.emitter.models import LegalEntity
+from pigrocrm.core.emitter.repository import LegalEntityRepository
+from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import NotFound, ValidationFailed
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
@@ -49,13 +49,13 @@ from pigrocrm.core.timetracking.service import TimeEntryService
 ADMIN = Actor(id=None, type="system", role="admin")
 
 
-def _default(session: Session) -> Azienda:
-    azienda = AziendaRepository(session).default()
+def _default(session: Session) -> LegalEntity:
+    azienda = LegalEntityRepository(session).default()
     assert azienda is not None
     return azienda
 
 
-def _azienda(session: Session, nome: str, nazione: str = "IT", **overrides: object) -> Azienda:
+def _azienda(session: Session, nome: str, nazione: str = "IT", **overrides: object) -> LegalEntity:
     values: dict[str, object] = {
         "nome": nome,
         "ragione_sociale": f"{nome.title()} S.r.l.",
@@ -66,7 +66,7 @@ def _azienda(session: Session, nome: str, nazione: str = "IT", **overrides: obje
         "provincia": "TO",
     }
     values.update(overrides)
-    row = Azienda(**values)
+    row = LegalEntity(**values)
     session.add(row)
     session.flush()
     return row
@@ -103,7 +103,7 @@ def _contract(session: Session, customer_id: UUID) -> UUID:
 def test_the_nation_proposes_the_one_azienda_that_shares_it(db_session: Session) -> None:
     default = _default(db_session)
     british = _azienda(db_session, "rebase ltd", "GB", provincia=None)
-    service = AziendaService(db_session)
+    service = LegalEntityService(db_session)
     assert service.propose("GB").id == british.id
     assert service.propose("gb").id == british.id
     assert service.propose("IT").id == default.id
@@ -114,7 +114,7 @@ def test_a_foreign_customer_gets_the_one_foreign_azienda_when_its_nation_has_non
     db_session: Session,
 ) -> None:
     french = _azienda(db_session, "rebase sarl", "FR", provincia=None)
-    assert AziendaService(db_session).propose("DE").id == french.id
+    assert LegalEntityService(db_session).propose("DE").id == french.id
 
 
 def test_the_nation_never_decides_between_two_aziende_that_share_it(db_session: Session) -> None:
@@ -122,7 +122,7 @@ def test_the_nation_never_decides_between_two_aziende_that_share_it(db_session: 
     foreign ones and a customer of a third country: the default again."""
     default = _default(db_session)
     _azienda(db_session, "rebase")
-    service = AziendaService(db_session)
+    service = LegalEntityService(db_session)
     assert service.propose("IT").id == default.id
     _azienda(db_session, "rebase ltd", "GB", provincia=None)
     _azienda(db_session, "rebase sarl", "FR", provincia=None)
@@ -132,7 +132,7 @@ def test_the_nation_never_decides_between_two_aziende_that_share_it(db_session: 
 
 def test_an_inactive_azienda_is_never_proposed(db_session: Session) -> None:
     _azienda(db_session, "rebase ltd", "GB", provincia=None, attiva=False)
-    assert AziendaService(db_session).propose("GB").id == _default(db_session).id
+    assert LegalEntityService(db_session).propose("GB").id == _default(db_session).id
 
 
 # --- the customer -----------------------------------------------------------------
@@ -399,7 +399,7 @@ def test_a_space_with_one_azienda_sees_nothing_change(
         ADMIN,
     )
     assert customer.azienda_id == deal.azienda_id == default.id
-    assert AziendaService(db_session).propose("DE").id == default.id
+    assert LegalEntityService(db_session).propose("DE").id == default.id
 
 
 # --- a deactivated azienda --------------------------------------------------------

@@ -70,6 +70,8 @@ function centesimi(testo: string): number {
   return Number(intero) * 100 + Number(decimali.padEnd(2, '0').slice(0, 2))
 }
 
+test.use({ timezoneId: 'Europe/Rome' })
+
 test.describe('time tracking', () => {
   test('a week of hours, a timesheet and a closed month', async ({ page }) => {
     // Two subprocess renders (pandoc, then Typst) and a dozen navigations: the
@@ -88,18 +90,34 @@ test.describe('time tracking', () => {
     // would come back 401.
     const { dealId } = await seedDealWithRate(page.request, { nome, tariffa: '80.000000' })
 
-    // Both days this test writes into have to fall in the *same* calendar month: the
-    // month it later closes is one month, and a Monday that is the last day of one
-    // would put Tuesday in the next. Only the Monday of a week can be a month's last
-    // day, and the Monday seven days earlier never is, so stepping the grid back one
-    // week is always enough. `weekDays` anchors on "today", so the step has to be made
-    // through the screen's own «Settimana precedente» control every time this test
-    // returns to it.
-    let lunedi = lunediDi(new Date())
+    // Both days this test writes into have to be real, writable days, and in the *same*
+    // calendar month. Writable: the API refuses a day after today (`422 data futura`),
+    // so on a Monday this week's Tuesday is tomorrow and the write the test makes into
+    // it never reaches the period lock it is there to prove. Same month: the month it
+    // later closes is one month, and a Monday that is the last day of one would put
+    // Tuesday in the next. Stepping back a week until neither holds is at most two steps
+    // (a Monday that is the 7th steps onto the previous month's last day, and one more
+    // clears it). `weekDays` anchors on "today", so the steps have to be made through the
+    // screen's own «Settimana precedente» control every time this test returns to it.
+    // «Today» is the API's today, Europe/Rome's, not the runner's: between midnight in
+    // Rome and midnight on a runner to its west, the runner's Tuesday is still Rome's
+    // Monday and the API would answer `422 data futura`. The browser is pinned to the
+    // same zone (`test.use` below), so the grid's own «today» agrees with this one.
+    const [romeYear = 0, romeMonth = 1, romeDay = 1] = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Europe/Rome',
+    })
+      .format(new Date())
+      .split('-')
+      .map(Number)
+    const today = new Date(romeYear, romeMonth - 1, romeDay)
+    let lunedi = lunediDi(today)
     let settimaneIndietro = 0
-    if (piuGiorni(lunedi, 1).getMonth() !== lunedi.getMonth()) {
+    while (
+      piuGiorni(lunedi, 1) > today ||
+      piuGiorni(lunedi, 1).getMonth() !== lunedi.getMonth()
+    ) {
       lunedi = piuGiorni(lunedi, -7)
-      settimaneIndietro = 1
+      settimaneIndietro += 1
     }
     const martedi = piuGiorni(lunedi, 1)
     const anno = lunedi.getFullYear()

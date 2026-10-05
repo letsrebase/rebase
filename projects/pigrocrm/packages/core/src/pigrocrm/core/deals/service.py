@@ -21,7 +21,7 @@ from pigrocrm.core.deals.schemas import (
     DealRead,
     DealUpdate,
 )
-from pigrocrm.core.emitter.service import AziendaService
+from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.fields.schemas import EntityType
 from pigrocrm.core.fields.service import FieldDefinitionService
@@ -225,7 +225,9 @@ class DealService:
         self._check_owner(payload.get("owner_id"))
         # The customer's azienda at this moment, kept from now on (REB-623, spec §1.7);
         # refused when that azienda is deactivated, since nothing new is born on one.
-        payload["azienda_id"] = AziendaService(self.session).inherited(customer.azienda_id, ENTITY)
+        payload["azienda_id"] = LegalEntityService(self.session).inherited(
+            customer.azienda_id, ENTITY
+        )
 
         # `PipelineService.get` raises NotFound for a stage id that does not resolve
         # to a live row; `default_stage()` raises ValidationFailed if no `open` stage

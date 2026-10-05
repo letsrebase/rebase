@@ -28,7 +28,7 @@ from pigrocrm.core.config import Settings
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.db.role import ensure_application_role
-from pigrocrm.core.emitter.models import Azienda
+from pigrocrm.core.emitter.models import LegalEntity
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.storage import LocalFileStorage
 from pigrocrm_mcp.server import build_server
@@ -82,8 +82,10 @@ def _customer_and_invoice(session: Session, azienda: UUID, tag: str) -> tuple[UU
 def world(mcp_engine: Engine) -> Iterator[World]:
     factory = session_factory(mcp_engine)
     with factory() as session:
-        studio = session.execute(select(Azienda).where(Azienda.predefinita.is_(True))).scalar_one()
-        ltd = Azienda(nome=f"{_PREFIX} ltd", ragione_sociale=f"{_PREFIX} Ltd", nazione="GB")
+        studio = session.execute(
+            select(LegalEntity).where(LegalEntity.predefinita.is_(True))
+        ).scalar_one()
+        ltd = LegalEntity(nome=f"{_PREFIX} ltd", ragione_sociale=f"{_PREFIX} Ltd", nazione="GB")
         session.add(ltd)
         session.flush()
         studio_customer, studio_invoice = _customer_and_invoice(session, studio.id, "studio")
@@ -109,7 +111,7 @@ def world(mcp_engine: Engine) -> Iterator[World]:
             session.execute(
                 delete(Customer).where(Customer.id.in_([studio_customer, ltd_customer]))
             )
-            session.execute(delete(Azienda).where(Azienda.id == ltd.id))
+            session.execute(delete(LegalEntity).where(LegalEntity.id == ltd.id))
             session.commit()
 
 

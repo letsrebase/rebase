@@ -259,15 +259,19 @@ class FreelancerService:
         row.links = list(data.links)
         row.compilata_da = "persona"
         try:
+            # The card and its referral are one commit (REB-566): `apply` never writes a
+            # card a retry would then skip, leaving it without the referral it came with.
+            # The flush gives the row its id, and is where a racing duplicate address fails.
+            self.session.flush()
+            ReferralService(self.session).link_signup(
+                "freelancer", row.id, data.rif, new_user_id=user.id
+            )
             self.session.commit()
         except IntegrityError:
             # Two first applications racing on one address: the index decides, and the
             # loser discovers on retry that the winner's row now answers to `_find`.
             self.session.rollback()
             return self.apply(data, cv, cv_filename, cv_mime)
-        ReferralService(self.session).link_signup(
-            "freelancer", row.id, data.rif, new_user_id=user.id
-        )
         return freelancer_read(row, user), True
 
     def draft_from_signup(

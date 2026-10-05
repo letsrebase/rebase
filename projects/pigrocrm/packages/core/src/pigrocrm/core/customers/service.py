@@ -20,7 +20,7 @@ from pigrocrm.core.customers.schemas import (
     CustomerUpdate,
 )
 from pigrocrm.core.db import encode_cursor
-from pigrocrm.core.emitter.service import AziendaService
+from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import Conflict, DomainError, NotFound, ValidationFailed
 from pigrocrm.core.fields.schemas import EntityType
 from pigrocrm.core.fields.service import FieldDefinitionService
@@ -108,7 +108,7 @@ class CustomerService:
         self.repo = CustomerRepository(session)
         self.fields = FieldDefinitionService(session)
         self.activities = ActivityService(session)
-        self.aziende = AziendaService(session)
+        self.aziende = LegalEntityService(session)
 
     def _validated_custom(self, values: dict[str, Any]) -> dict[str, Any]:
         """Used by `create` only: `values` is the *complete* desired set of custom

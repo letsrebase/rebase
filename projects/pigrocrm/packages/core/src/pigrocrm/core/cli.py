@@ -22,8 +22,8 @@ from pigrocrm.core.db import create_engine_from_settings, session_factory
 from pigrocrm.core.db.scope import bind_scope
 from pigrocrm.core.digest.run import DigestOutcome, DigestRun
 from pigrocrm.core.digest.service import previous_week, week_containing
-from pigrocrm.core.emitter.models import Azienda
-from pigrocrm.core.emitter.repository import AziendaRepository
+from pigrocrm.core.emitter.models import LegalEntity
+from pigrocrm.core.emitter.repository import LegalEntityRepository
 from pigrocrm.core.errors import Conflict, DomainError, ValidationFailed
 from pigrocrm.core.gmail.errors import GoogleCallFailed
 from pigrocrm.core.gmail.models import GoogleAccount
@@ -94,12 +94,12 @@ def _bootstrap_root_azienda(session: Session, nome: str) -> bool:
     `predefinita` turns the second into an `IntegrityError`, rolled back here with its
     savepoint, and the first admin's row stands. No timeline entry, the same as the
     test seed: the row is the installation's, not a person's edit."""
-    repo = AziendaRepository(session)
+    repo = LegalEntityRepository(session)
     if repo.count():
         return False
     try:
         with session.begin_nested():
-            repo.add(Azienda(ragione_sociale=nome, predefinita=True, attiva=True))
+            repo.add(LegalEntity(ragione_sociale=nome, predefinita=True, attiva=True))
     except IntegrityError:
         session.rollback()
         return False

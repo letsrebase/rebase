@@ -5,11 +5,11 @@ import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { fieldErrorFrom, toProblem, type ProblemDetail } from '@/lib/api'
-import { useCreateAzienda, type AziendaRecord } from './queries'
+import { useCreateLegalEntity, type LegalEntityRecord } from './queries'
 
 /**
  * The fields a second azienda is opened with (REB-632, spec 2026-10-03 §3, §5): the
- * identity an invoice header prints, in the order `AziendaPanel` reads it, with the
+ * identity an invoice header prints, in the order `LegalEntityPanel` reads it, with the
  * short name first because it is what tells the two apart in the sidebar. The rest of
  * the row (telephone, website, signature, the caption printed in the footer) is edited
  * on the panel the page lands on right after, like the rest of the fiscal profile.
@@ -165,14 +165,14 @@ function bodyFrom(values: Values): Record<string, unknown> {
  * that could not issue. On success the page lands on the new azienda's own panels,
  * where everything this form leaves at its default can be completed.
  */
-export function NuovaAziendaForm({
+export function NewLegalEntityForm({
   onCreated,
   onCancel,
 }: {
-  onCreated: (created: AziendaRecord) => void
+  onCreated: (created: LegalEntityRecord) => void
   onCancel: () => void
 }) {
-  const create = useCreateAzienda()
+  const create = useCreateLegalEntity()
   const [values, setValues] = useState<Values>(emptyValues)
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
 

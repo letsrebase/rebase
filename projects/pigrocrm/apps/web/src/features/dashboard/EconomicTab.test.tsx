@@ -425,9 +425,9 @@ describe('EconomicTab', () => {
 
 // -- the sidebar's azienda (REB-632, spec 2026-10-03 §1.9, §5) ---------------------------
 
-import { AziendaContext, type AziendaRecord, type AziendaValue } from '@/lib/azienda'
+import { LegalEntityContext, type LegalEntityRecord, type LegalEntityValue } from '@/lib/legalEntity'
 
-function aziendaRecord(id: string, nome: string): AziendaRecord {
+function aziendaRecord(id: string, nome: string): LegalEntityRecord {
   return {
     id,
     nome,
@@ -458,7 +458,7 @@ function aziendaRecord(id: string, nome: string): AziendaRecord {
 const HUMANCRAFT = aziendaRecord('a-1', 'humancraft')
 const REBASE_LTD = aziendaRecord('a-2', 'rebase ltd')
 
-function twoAziende(selected: string | null): AziendaValue {
+function twoAziende(selected: string | null): LegalEntityValue {
   return {
     aziende: [HUMANCRAFT, REBASE_LTD],
     selected,
@@ -473,13 +473,13 @@ const CONCENTRAZIONE_PER_AZIENDA = [
   { ...CONCENTRAZIONE[1], azienda_id: 'a-2', quota: 1 },
 ]
 
-function renderWithAziende(value: AziendaValue) {
+function renderWithAziende(value: LegalEntityValue) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      <AziendaContext value={value}>
+      <LegalEntityContext value={value}>
         <EconomicTab periodo={PERIODO} base="competenza" onBaseChange={vi.fn()} />
-      </AziendaContext>
+      </LegalEntityContext>
     </QueryClientProvider>,
   )
 }

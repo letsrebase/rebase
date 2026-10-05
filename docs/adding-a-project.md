@@ -271,6 +271,20 @@ image jobs in `ci.yml` and `preflight.json` pass a throwaway value for it.
 Two environments on one host must share nothing but the host, which for PigroCRM means
 separate databases, separate secrets, and no production Google credentials in preview.
 
+**A secret the host needs but nobody can add by hand is a GitHub Environment secret the
+deploy writes for you.** The `.env` is hand-written at provisioning, which is fine for a
+host whose provisioner has SSH to it; it is a wall when a variable becomes required
+later and the people who merge do not (`PIGROCRM_APP_PASSWORD`, REB-634, failed every
+preview from the day it landed). List such a variable in the caller's `env-secrets`
+input (`deploy-<name>.yml`) and set an Environment secret of the same name on each
+`<name>-preview` and `<name>-production`: `_deploy-compose.yml` upserts it into
+`${DEPLOY_PATH}/.env` on every deploy, one line, the rest of the hand-written file
+untouched, and fails loudly if a listed name is unset (REB-650). This is for secrets
+only; a non-secret host value (a port, a data directory, the public URL) stays in the
+hand-written `.env`, since a workflow input is not masked in a log the way a secret is.
+A deploy workflow change is proven on the trunk, never on a branch: `workflow_run` only
+ever runs the default branch's version.
+
 ### Taking something over from another project
 
 When a project starts serving what another one served, the order is not a preference.

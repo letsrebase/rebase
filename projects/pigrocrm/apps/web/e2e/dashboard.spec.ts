@@ -266,7 +266,7 @@ test.describe('il ciclo completo — metà umana', () => {
     }).toPass()
   })
 
-  test('le due schede sono raggiungibili e il periodo è nell’URL', async ({ page }) => {
+  test('the three tabs are reachable and the period is in the URL', async ({ page }) => {
     await loginAsAdmin(page)
     await ensureSpaceHasWork(page)
     const { da, a } = currentMonth()
@@ -289,8 +289,9 @@ test.describe('il ciclo completo — metà umana', () => {
     expect(condiviso).toContain(`&a=${a}`)
     await page.goto(condiviso.replace('/app?', '/app/?'))
     await expect(page.getByRole('group', { name: 'Ricavi incassati' })).toBeVisible()
-    // Two tabs since 2026-09-08: the operational one is gone from the page.
-    await expect(page.getByRole('tab')).toHaveCount(2)
+    // Three tabs since the Scadenziario joined them (REB-329); the operational one left
+    // the page on 2026-09-08.
+    await expect(page.getByRole('tab')).toHaveCount(3)
 
     await page.goto('/app/?tab=commerciale')
     await expect(page.getByText('Pipeline per stato')).toBeVisible()

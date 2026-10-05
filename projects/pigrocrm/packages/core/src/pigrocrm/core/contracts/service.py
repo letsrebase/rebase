@@ -32,7 +32,7 @@ from pigrocrm.core.contracts.schemas import (
 )
 from pigrocrm.core.customers.repository import CustomerRepository
 from pigrocrm.core.db import encode_cursor, today_local
-from pigrocrm.core.emitter.service import AziendaService
+from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.fields.schemas import EntityType
 from pigrocrm.core.fields.service import FieldDefinitionService
@@ -97,7 +97,9 @@ class ContractService:
         # The customer's azienda at this moment, kept from now on (REB-623, spec §1.7).
         # The customer's azienda at this moment, kept from now on (REB-623, spec §1.7);
         # refused when deactivated.
-        payload["azienda_id"] = AziendaService(self.session).inherited(customer.azienda_id, ENTITY)
+        payload["azienda_id"] = LegalEntityService(self.session).inherited(
+            customer.azienda_id, ENTITY
+        )
 
         contract = self.repo.add(Contract(**payload))
         self.activities.record(ENTITY, contract.id, "created", actor, {"titolo": contract.titolo})
@@ -216,7 +218,7 @@ class RateCardService:
             # ck_rate_cards_no_overlap is the real authority here (Done-when: "refused
             # by the database, not by a service-level check") -- this only turns the
             # raw exclusion violation into this project's own clean error, the same
-            # way AziendaService.upsert/FiscalProfileService.upsert already do
+            # way LegalEntityService.upsert/FiscalProfileService.upsert already do
             # for their own singleton race.
             self.session.rollback()
             raise Conflict(

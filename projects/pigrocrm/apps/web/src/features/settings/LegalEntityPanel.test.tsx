@@ -2,8 +2,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { AziendaPanel } from './AziendaPanel'
-import type { AziendaRecord } from './queries'
+import { LegalEntityPanel } from './LegalEntityPanel'
+import type { LegalEntityRecord } from './queries'
 import { api } from '@/lib/api'
 
 vi.mock('@/lib/api', async (importOriginal) => {
@@ -20,7 +20,7 @@ function failed(error: unknown, status: number) {
   return { error, response: new Response(null, { status }) } as never
 }
 
-const AZIENDA: AziendaRecord = {
+const AZIENDA: LegalEntityRecord = {
   id: 'a-1',
   nome: 'Studio Rossi',
   predefinita: true,
@@ -46,15 +46,15 @@ const AZIENDA: AziendaRecord = {
   updated_at: '2026-08-20T09:00:00Z',
 }
 
-function renderPanel(azienda: AziendaRecord = AZIENDA) {
+function renderPanel(azienda: LegalEntityRecord = AZIENDA) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  const tree = (record: AziendaRecord) => (
+  const tree = (record: LegalEntityRecord) => (
     <QueryClientProvider client={client}>
-      <AziendaPanel azienda={record} />
+      <LegalEntityPanel azienda={record} />
     </QueryClientProvider>
   )
   const result = render(tree(azienda))
-  return { ...result, rerenderWith: (record: AziendaRecord) => result.rerender(tree(record)) }
+  return { ...result, rerenderWith: (record: LegalEntityRecord) => result.rerender(tree(record)) }
 }
 
 function saveCall() {
@@ -69,7 +69,7 @@ beforeEach(() => {
   vi.mocked(api.PUT).mockReset()
 })
 
-describe('AziendaPanel', () => {
+describe('LegalEntityPanel', () => {
   it('seeds the form from the azienda it is given, short name included', () => {
     renderPanel()
     expect(screen.getByLabelText(/Ragione sociale/)).toHaveValue('Studio Rossi')

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useAziendaScope } from '@/lib/azienda'
+import { useLegalEntityScope } from '@/lib/legalEntity'
 import { api, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
 import { queryKeys } from '@/lib/query'
@@ -47,7 +47,7 @@ export function useTimeEntries(
 ) {
   // The sidebar's azienda (REB-625), through the deal each entry hangs on; a deal's own
   // tab passes `deal_id` and is left alone.
-  const scoped = useAziendaScope(params)
+  const scoped = useLegalEntityScope(params)
   return useQuery({
     queryKey: queryKeys.timeEntries(scoped),
     enabled: options.enabled ?? true,

@@ -34,17 +34,17 @@ def _install_fiscal_and_emitter_profiles(session: Session) -> None:
     duplicated here rather than imported, since `conftest` is an ambiguous module
     name across this repository's three test roots (that file's own
     `extract_pdf_text` docstring explains why)."""
-    from pigrocrm.core.emitter.repository import AziendaRepository
-    from pigrocrm.core.emitter.schemas import AziendaUpsert
-    from pigrocrm.core.emitter.service import AziendaService
+    from pigrocrm.core.emitter.repository import LegalEntityRepository
+    from pigrocrm.core.emitter.schemas import LegalEntityUpsert
+    from pigrocrm.core.emitter.service import LegalEntityService
     from pigrocrm.core.fiscal.repository import FiscalProfileRepository
     from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
     from pigrocrm.core.fiscal.service import FiscalProfileService
 
     # The azienda first, always (REB-615: a bare default is already seeded and this
     # fills in its identity), then its fiscal profile when it has none.
-    AziendaService(session).upsert_default(
-        AziendaUpsert(
+    LegalEntityService(session).upsert_default(
+        LegalEntityUpsert(
             ragione_sociale="Studio Rossi",
             partita_iva="01234567890",
             codice_fiscale="HMCRFT00A01H501K",
@@ -57,7 +57,7 @@ def _install_fiscal_and_emitter_profiles(session: Session) -> None:
         ),
         ADMIN,
     )
-    azienda = AziendaRepository(session).default()
+    azienda = LegalEntityRepository(session).default()
     assert azienda is not None
     if FiscalProfileRepository(session).get(azienda.id) is None:
         FiscalProfileService(session).upsert(FiscalProfileUpsert(codice_regime="RF19"), ADMIN)

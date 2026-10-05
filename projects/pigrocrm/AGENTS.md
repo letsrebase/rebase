@@ -185,11 +185,14 @@ has no default either, and `PIGROCRM_ADMIN_DATABASE_URL` for the bootstrap super
 which keeps the owner's work: `alembic upgrade head`, `ensure-space-defaults`, `CREATE
 DATABASE`. Nothing is created by hand: the boot (`ensure-space-defaults`) creates the role
 if it is missing, sets the password it finds in the URL and applies the grants to the
-root and to every space, and provisioning does the same for a new space. The one
-by-hand step is the `.env`: each environment's gains `PIGROCRM_APP_PASSWORD=<openssl
-rand -hex 24>` before the first deploy that carries this, or `compose up` refuses to
-start and says which line is missing. A developer's checkout keeps one URL and the
-policies bypassed; `.env.example` says how to see the scope locally.
+root and to every space, and provisioning does the same for a new space. On a deployed
+host `PIGROCRM_APP_PASSWORD` is a **GitHub Environment secret** the deploy writes into
+`${DEPLOY_PATH}/.env`: `deploy-pigrocrm.yml` lists it in `env-secrets` and
+`_deploy-compose.yml` templates it in, so it is set the same way the host is told which
+server and path to use, not by a hand edit on a host nobody who runs the board can SSH
+to (REB-650). A developer's checkout keeps one URL and the policies bypassed, and sets
+`PIGROCRM_APP_PASSWORD` in its own local `.env` by hand like every other local secret;
+`.env.example` says how to see the scope locally.
 
 Ports, loopback only, from the table in `docs/adding-a-project.md` §7: production web
 8080, Postgres 55432; preview web 8081, Postgres 55434.

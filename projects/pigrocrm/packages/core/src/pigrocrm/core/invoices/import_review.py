@@ -26,7 +26,7 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.contracts.models import Contract
 from pigrocrm.core.contracts.repository import ContractRepository, RateCardRepository
 from pigrocrm.core.customers.repository import CustomerRepository
-from pigrocrm.core.emitter.models import Azienda
+from pigrocrm.core.emitter.models import LegalEntity
 from pigrocrm.core.invoices.fatturapa import normalise_fiscal_id
 from pigrocrm.core.invoices.fatturapa_import import fattura_pa_fpr12_adapter
 from pigrocrm.core.invoices.import_adapter import InvoiceFormatAdapter
@@ -167,7 +167,7 @@ def existing_for(session: Session, invoice: ParsedInvoice, azienda_id: UUID) -> 
 
 def register_lookup(
     session: Session, invoice: ParsedInvoice
-) -> Callable[[Azienda], Invoice | None]:
+) -> Callable[[LegalEntity], Invoice | None]:
     """`existing_for` with the session and the invoice bound, in the shape
     `classify_parsed_invoice` takes: the azienda is the one argument left, since it
     is the one fact the classifier learns."""
@@ -239,7 +239,7 @@ def _propose_day_mappings(
 def review_content(
     session: Session,
     content: bytes,
-    aziende: Sequence[Azienda],
+    aziende: Sequence[LegalEntity],
     document_id: UUID,
 ) -> list[ReviewedInvoiceRead]:
     """The whole review step for one document's already-read bytes: `detect`,

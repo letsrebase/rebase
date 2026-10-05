@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import type { ReactElement } from 'react'
 import { toast } from '@rebase/ui/sonner'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { AziendaContext, type AziendaRecord, type AziendaValue } from '@/lib/azienda'
+import { LegalEntityContext, type LegalEntityRecord, type LegalEntityValue } from '@/lib/legalEntity'
 import { api } from '@/lib/api'
 import { NewProformaButton } from './NewProformaDialog'
 
@@ -85,13 +85,13 @@ afterEach(() => {
 
 /** The aziende the dialog runs under: none means the context's default, a one-azienda
  *  space; a test about «Emessa da» sets two before opening. */
-let aziende: AziendaValue | undefined
+let aziende: LegalEntityValue | undefined
 
 function renderWithClient(ui: ReactElement) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      {aziende ? <AziendaContext value={aziende}>{ui}</AziendaContext> : ui}
+      {aziende ? <LegalEntityContext value={aziende}>{ui}</LegalEntityContext> : ui}
     </QueryClientProvider>,
   )
 }
@@ -489,8 +489,8 @@ describe('NewProformaButton, opened from a record that already answers the quest
 })
 
 describe('«Emessa da» (REB-626)', () => {
-  const HUMANCRAFT = { id: 'a1', nome: 'humancraft', attiva: true } as AziendaRecord
-  const REBASE = { id: 'a2', nome: 'rebase', attiva: true } as AziendaRecord
+  const HUMANCRAFT = { id: 'a1', nome: 'humancraft', attiva: true } as LegalEntityRecord
+  const REBASE = { id: 'a2', nome: 'rebase', attiva: true } as LegalEntityRecord
 
   function twoAziende() {
     aziende = {

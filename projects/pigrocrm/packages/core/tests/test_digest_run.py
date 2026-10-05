@@ -890,20 +890,22 @@ def test_a_scoped_titolare_does_not_empty_the_week_for_everyone_else(
     own is built inside her scope (Greptile on PR #513)."""
     from sqlalchemy import text
 
-    from pigrocrm.core.auth.models import UserAzienda
+    from pigrocrm.core.auth.models import UserLegalEntity
     from pigrocrm.core.db.scope import SCOPE_SETTING
     from pigrocrm.core.digest.service import DigestService
-    from pigrocrm.core.emitter.models import Azienda
+    from pigrocrm.core.emitter.models import LegalEntity
 
     factory = session_factory(corpus.engine)
     with factory() as session:
-        empty = Azienda(nome=f"{_PREFIX} vuota", ragione_sociale=f"{_PREFIX} Vuota", nazione="GB")
+        empty = LegalEntity(
+            nome=f"{_PREFIX} vuota", ragione_sociale=f"{_PREFIX} Vuota", nazione="GB"
+        )
         session.add(empty)
         session.flush()
         ada = session.get(User, corpus.destinatari[0])
         assert ada is not None
         ada.ambito_limitato = True
-        session.add(UserAzienda(user_id=ada.id, azienda_id=empty.id))
+        session.add(UserLegalEntity(user_id=ada.id, azienda_id=empty.id))
         session.commit()
         empty_id = empty.id
 
@@ -932,7 +934,7 @@ def test_a_scoped_titolare_does_not_empty_the_week_for_everyone_else(
         assert [mail.to for mail in sender.sent] == [corpus.titolare, corpus.collega]
     finally:
         with factory() as session:
-            session.execute(delete(Azienda).where(Azienda.id == empty_id))
+            session.execute(delete(LegalEntity).where(LegalEntity.id == empty_id))
             session.commit()
 
 
@@ -944,7 +946,7 @@ def test_a_scoped_recipient_gets_a_report_built_inside_their_scope(
     session is handed back inside the titolare's scope."""
     from sqlalchemy import text
 
-    from pigrocrm.core.auth.models import UserAzienda
+    from pigrocrm.core.auth.models import UserLegalEntity
     from pigrocrm.core.db.scope import SCOPE_SETTING
     from pigrocrm.core.digest.service import DigestService
 
@@ -955,7 +957,7 @@ def test_a_scoped_recipient_gets_a_report_built_inside_their_scope(
         bruno = session.get(User, corpus.destinatari[1])
         assert bruno is not None
         bruno.ambito_limitato = True
-        session.add(UserAzienda(user_id=bruno.id, azienda_id=azienda_id))
+        session.add(UserLegalEntity(user_id=bruno.id, azienda_id=azienda_id))
         session.commit()
 
     bound: list[str] = []

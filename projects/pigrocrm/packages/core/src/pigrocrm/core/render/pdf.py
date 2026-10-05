@@ -207,7 +207,7 @@ def render_pdf(
 
     `media` is what the job's `media/` directory holds beyond the signature placeholder:
     the azienda's logo under `MEDIA_LOGO_PNG` or `MEDIA_LOGO_SVG` and its signature under
-    `MEDIA_FIRMA`, as `AziendaAssets.media_for` builds it. The names are a fixed set
+    `MEDIA_FIRMA`, as `LegalEntityAssets.media_for` builds it. The names are a fixed set
     (`_MEDIA_NAMES`): a caller cannot write an arbitrary file into the compile root.
 
     The whole render happens inside one throwaway directory that is removed on every

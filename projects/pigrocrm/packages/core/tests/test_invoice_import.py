@@ -72,9 +72,9 @@ def test_a_register_gap_is_unique_per_year_and_number(db_session: Session) -> No
 
 def _default_azienda_id(session: Session) -> UUID:
     """The register every row below sits on (REB-619): the session's seeded default."""
-    from pigrocrm.core.emitter.repository import AziendaRepository
+    from pigrocrm.core.emitter.repository import LegalEntityRepository
 
-    azienda = AziendaRepository(session).default()
+    azienda = LegalEntityRepository(session).default()
     assert azienda is not None
     return azienda.id
 
@@ -143,9 +143,9 @@ def _svc(session: Session, tmp_path, *, settings=None, drive_reader_factory=None
     reason `_fiscal_customer_id` above is copied and not imported: `conftest` is an
     ambiguous top-level module name across this repository's three test roots.
     """
-    from pigrocrm.core.emitter.repository import AziendaRepository
-    from pigrocrm.core.emitter.schemas import AziendaUpsert
-    from pigrocrm.core.emitter.service import AziendaService
+    from pigrocrm.core.emitter.repository import LegalEntityRepository
+    from pigrocrm.core.emitter.schemas import LegalEntityUpsert
+    from pigrocrm.core.emitter.service import LegalEntityService
     from pigrocrm.core.fiscal.repository import FiscalProfileRepository
     from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
     from pigrocrm.core.fiscal.service import FiscalProfileService
@@ -154,8 +154,8 @@ def _svc(session: Session, tmp_path, *, settings=None, drive_reader_factory=None
 
     # The azienda first, always (REB-615: a bare default is already seeded and this
     # fills in its identity), then its fiscal profile when it has none.
-    AziendaService(session).upsert_default(
-        AziendaUpsert(
+    LegalEntityService(session).upsert_default(
+        LegalEntityUpsert(
             ragione_sociale="Studio Rossi",
             partita_iva="01234567890",
             codice_fiscale="HMCRFT00A01H501K",
@@ -168,7 +168,7 @@ def _svc(session: Session, tmp_path, *, settings=None, drive_reader_factory=None
         ),
         ADMIN,
     )
-    azienda = AziendaRepository(session).default()
+    azienda = LegalEntityRepository(session).default()
     assert azienda is not None
     if FiscalProfileRepository(session).get(azienda.id) is None:
         FiscalProfileService(session).upsert(FiscalProfileUpsert(codice_regime="RF19"), ADMIN)

@@ -36,7 +36,7 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.clock import oggi_in_italia
 from pigrocrm.core.config import Settings
 from pigrocrm.core.customers.models import Customer
-from pigrocrm.core.emitter.service import AziendaService
+from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import Conflict, NotFound
 from pigrocrm.core.fiscal.repository import FiscalProfileRepository
 from pigrocrm.core.gmail.drafts import EmailDraftService
@@ -428,7 +428,7 @@ class SollecitiService:
         """`{"emittente": {...}}`, the same scope every other template in this project
         renders against.
 
-        Through `AziendaService.as_template_values` rather than by reading three
+        Through `LegalEntityService.as_template_values` rather than by reading three
         columns here: slice 2 built that method for exactly this, and a second assembly of
         the issuer's identity is how the phone number in a letter starts disagreeing with
         the one on the invoice.
@@ -439,7 +439,7 @@ class SollecitiService:
         non trovato» is a puzzle.
         """
         try:
-            return AziendaService(self.session).as_template_values(actor, azienda_id)
+            return LegalEntityService(self.session).as_template_values(actor, azienda_id)
         except NotFound as missing:
             raise Conflict(
                 ENTITY,

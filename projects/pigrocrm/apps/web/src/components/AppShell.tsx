@@ -52,7 +52,7 @@ import { toast } from '@rebase/ui/sonner'
 import { api, toProblem, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
 import { useAuth, useIsAdmin } from '@/lib/auth'
-import { useAzienda } from '@/lib/azienda'
+import { useLegalEntity } from '@/lib/legalEntity'
 import { canSeeSettingsTab } from '@/lib/permissions'
 import { writeRegisterHandoffEmail } from '@/lib/registerHandoff'
 import { roleLabel } from '@/lib/roles'
@@ -250,7 +250,7 @@ export function AppShell({
   const isAdmin = useIsAdmin()
   // The azienda selector (REB-625): drawn from the second azienda on, between the search
   // and the navigation, so the lists below it read as «of this azienda».
-  const azienda = useAzienda()
+  const azienda = useLegalEntity()
   const { location } = useRouterState()
   // Below `lg` a 272px sidebar leaves ~118px of page on a 390px phone, so there the
   // sidebar is the rail by default and its expanded form is an overlay over the content.

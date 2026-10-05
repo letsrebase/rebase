@@ -1,4 +1,4 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { AziendePanel } from '@/features/settings/AziendePanel'
+import { LegalEntitiesPanel } from '@/features/settings/LegalEntitiesPanel'
 
-export const Route = createFileRoute('/app/settings/aziende')({ component: AziendePanel })
+export const Route = createFileRoute('/app/settings/aziende')({ component: LegalEntitiesPanel })

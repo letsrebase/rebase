@@ -5,14 +5,14 @@ import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { fieldErrorFrom, toProblem, type ProblemDetail } from '@/lib/api'
-import { AziendaImages } from './AziendaImages'
-import { useSaveAzienda, type AziendaRecord } from './queries'
+import { LegalEntityImages } from './LegalEntityImages'
+import { useSaveLegalEntity, type LegalEntityRecord } from './queries'
 
 /**
  * Every field the upsert accepts, in the order a person reads an invoice header:
  * who you are, where you are, how to reach you, how you are taxed. `logo_key` and
  * `firma_key` are not fields: they are the server's storage keys, written by the two
- * uploads `AziendaImages` offers under this form (REB-629) and read-only on the row.
+ * uploads `LegalEntityImages` offers under this form (REB-629) and read-only on the row.
  */
 interface EmitterField {
   name:
@@ -70,7 +70,7 @@ function emptyValues(): Record<FieldName, string> {
  *  null -- but a stored empty string stays an empty string, and clearing a field
  *  sends `''` back rather than omitting the key. Omitting it would leave the old
  *  value in place while looking, on screen, as though it had been cleared. */
-function valuesFrom(profile: AziendaRecord): Record<FieldName, string> {
+function valuesFrom(profile: LegalEntityRecord): Record<FieldName, string> {
   const values = emptyValues()
   for (const field of FIELDS) {
     const stored = profile[field.name]
@@ -85,7 +85,7 @@ function valuesFrom(profile: AziendaRecord): Record<FieldName, string> {
  * so there is no «not configured yet» state any more: a fresh space shows the name it
  * signed up with and empty fiscal fields, which is the state to fill in.
  */
-export function AziendaPanel({ azienda }: { azienda: AziendaRecord }) {
+export function LegalEntityPanel({ azienda }: { azienda: LegalEntityRecord }) {
   return (
     <div className="space-y-4">
       <div>
@@ -102,19 +102,19 @@ export function AziendaPanel({ azienda }: { azienda: AziendaRecord }) {
           somebody else's save would remount the form and throw away what the person
           here is typing. The form itself follows a newer row while it is untouched,
           below, so a stale value is never what a Salva writes back by default. */}
-      <AziendaForm key={`form-${azienda.id}`} profile={azienda} />
+      <LegalEntityForm key={`form-${azienda.id}`} profile={azienda} />
       {/* Keyed like the form: a refusal shown under azienda A's block must not
           outlive the switch to B. A distinct prefix on each, since the two are
           siblings: two siblings sharing one key is undefined to React, and in
           practice (REB-632, seen on the switch after «Nuova azienda») the previous
           azienda's form stayed mounted under the new one. */}
-      <AziendaImages key={`images-${azienda.id}`} azienda={azienda} />
+      <LegalEntityImages key={`images-${azienda.id}`} azienda={azienda} />
     </div>
   )
 }
 
-function AziendaForm({ profile }: { profile: AziendaRecord }) {
-  const save = useSaveAzienda(profile.id)
+function LegalEntityForm({ profile }: { profile: LegalEntityRecord }) {
+  const save = useSaveLegalEntity(profile.id)
   const [values, setValues] = useState<Record<FieldName, string>>(() => valuesFrom(profile))
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
   // The row the form was last seeded from, and whether the person has typed since.

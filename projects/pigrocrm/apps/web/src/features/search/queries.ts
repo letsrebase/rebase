@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
-import { useAzienda } from '@/lib/azienda'
+import { useLegalEntity } from '@/lib/legalEntity'
 import { api, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
 import { queryKeys } from '@/lib/query'
@@ -55,7 +55,7 @@ export function useGlobalSearch(term: string) {
   const debounced = useDebounced(term.trim(), SEARCH_DEBOUNCE_MS)
   // The sidebar's azienda narrows the palette too (REB-625): under azienda A, «brief»
   // finds A's documents and A's customers' people, and nothing of B's.
-  const { selected } = useAzienda()
+  const { selected } = useLegalEntity()
   const query = useQuery({
     queryKey: queryKeys.search(debounced, selected),
     queryFn: () =>

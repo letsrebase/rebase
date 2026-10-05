@@ -2169,7 +2169,7 @@ export interface paths {
          * Propose Azienda
          * @description The azienda a new customer of `nazione` would be billed by when nobody picks one
          *     (REB-624, spec 2026-10-03 §1.6). The form and an agent both ask here, so the rule
-         *     lives in `AziendaService.propose` once; `POST /api/customers` applies the same one
+         *     lives in the service once; `POST /api/customers` applies the same one
          *     when `azienda_id` is left out.
          */
         get: operations["propose_azienda_api_aziende_proposta_get"];
@@ -3721,232 +3721,6 @@ export interface components {
             regole: components["schemas"]["AutomationRuleDescription"][];
             /** Esecuzioni */
             esecuzioni: components["schemas"]["AutomationRun"][];
-        };
-        /**
-         * AziendaCreate
-         * @description A second azienda, born with its fiscal profile (spec 2026-10-03 §1.2, §3, §9
-         *     milestone 5): the upsert's fields, a required short name, and the profile body
-         *     `PUT /api/aziende/{id}/fiscal-profile` takes. One request, one transaction, so no
-         *     azienda ever exists that `issue` would refuse with `NotFound("fiscal_profile")`.
-         *
-         *     `nome` is required here where `AziendaUpsert` derives it: the first azienda of a
-         *     space was never named, but the second is created to be told apart from the first,
-         *     in the sidebar and on every list, and a derived name is a ragione sociale cut to
-         *     eighty characters.
-         */
-        AziendaCreate: {
-            /** Nome */
-            nome: string;
-            /** Ragione Sociale */
-            ragione_sociale: string;
-            /** Partita Iva */
-            partita_iva?: string | null;
-            /** Codice Fiscale */
-            codice_fiscale?: string | null;
-            /** Indirizzo */
-            indirizzo?: string | null;
-            /** Cap */
-            cap?: string | null;
-            /** Comune */
-            comune?: string | null;
-            /** Provincia */
-            provincia?: string | null;
-            /**
-             * Nazione
-             * @default IT
-             */
-            nazione: string;
-            /** Pec */
-            pec?: string | null;
-            /** Codice Sdi */
-            codice_sdi?: string | null;
-            /** Telefono */
-            telefono?: string | null;
-            /** Email */
-            email?: string | null;
-            /** Sito Web */
-            sito_web?: string | null;
-            /** Firma Email */
-            firma_email?: string | null;
-            /** Regime Fiscale */
-            regime_fiscale?: string | null;
-            fiscal_profile: components["schemas"]["FiscalProfileUpsert"];
-        };
-        /**
-         * AziendaDeactivated
-         * @description What `DELETE /api/aziende/{id}` answers (spec §3): the row, switched off, and
-         *     how many live customers still point at it. Nothing new is born under such a
-         *     customer until it is moved («sposta prima il cliente su un'azienda attiva»), so the
-         *     count is the work the person has left to do, said once, in the same answer.
-         */
-        AziendaDeactivated: {
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /** Nome */
-            nome: string;
-            /** Predefinita */
-            predefinita: boolean;
-            /** Attiva */
-            attiva: boolean;
-            /** Ragione Sociale */
-            ragione_sociale: string;
-            /** Partita Iva */
-            partita_iva: string | null;
-            /** Codice Fiscale */
-            codice_fiscale: string | null;
-            /** Indirizzo */
-            indirizzo: string | null;
-            /** Cap */
-            cap: string | null;
-            /** Comune */
-            comune: string | null;
-            /** Provincia */
-            provincia: string | null;
-            /** Nazione */
-            nazione: string;
-            /** Pec */
-            pec: string | null;
-            /** Codice Sdi */
-            codice_sdi: string | null;
-            /** Telefono */
-            telefono: string | null;
-            /** Email */
-            email: string | null;
-            /** Sito Web */
-            sito_web: string | null;
-            /** Logo Key */
-            logo_key: string | null;
-            /** Firma Key */
-            firma_key: string | null;
-            /** Firma Email */
-            firma_email: string | null;
-            /** Regime Fiscale */
-            regime_fiscale: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /**
-             * Updated At
-             * Format: date-time
-             */
-            updated_at: string;
-            /** Clienti Collegati */
-            clienti_collegati: number;
-        };
-        /** AziendaRead */
-        AziendaRead: {
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /** Nome */
-            nome: string;
-            /** Predefinita */
-            predefinita: boolean;
-            /** Attiva */
-            attiva: boolean;
-            /** Ragione Sociale */
-            ragione_sociale: string;
-            /** Partita Iva */
-            partita_iva: string | null;
-            /** Codice Fiscale */
-            codice_fiscale: string | null;
-            /** Indirizzo */
-            indirizzo: string | null;
-            /** Cap */
-            cap: string | null;
-            /** Comune */
-            comune: string | null;
-            /** Provincia */
-            provincia: string | null;
-            /** Nazione */
-            nazione: string;
-            /** Pec */
-            pec: string | null;
-            /** Codice Sdi */
-            codice_sdi: string | null;
-            /** Telefono */
-            telefono: string | null;
-            /** Email */
-            email: string | null;
-            /** Sito Web */
-            sito_web: string | null;
-            /** Logo Key */
-            logo_key: string | null;
-            /** Firma Key */
-            firma_key: string | null;
-            /** Firma Email */
-            firma_email: string | null;
-            /** Regime Fiscale */
-            regime_fiscale: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /**
-             * Updated At
-             * Format: date-time
-             */
-            updated_at: string;
-        };
-        /**
-         * AziendaUpsert
-         * @description One shape for the first save and for every update: the fields are the same and
-         *     all of them are required or defaulted, so a write is always a whole row.
-         *
-         *     `nome` is optional on purpose: a space with one azienda never typed one, and the
-         *     service derives it from `ragione_sociale` (cut to the column width) when it is
-         *     missing, which is also what the migration did for the row every space already had.
-         *
-         *     `partita_iva` and `codice_sdi` carry no `max_length`, exactly as `CustomerCreate`
-         *     does: the service's `_check_fiscal` already requires an exact 11-digit / 7-character
-         *     match, which is stricter, and adding a Pydantic bound would make a 12-digit input
-         *     raise pydantic's own `ValidationError` instead of this project's `ValidationFailed`
-         *     -- a regression, not a fix.
-         */
-        AziendaUpsert: {
-            /** Nome */
-            nome?: string | null;
-            /** Ragione Sociale */
-            ragione_sociale: string;
-            /** Partita Iva */
-            partita_iva?: string | null;
-            /** Codice Fiscale */
-            codice_fiscale?: string | null;
-            /** Indirizzo */
-            indirizzo?: string | null;
-            /** Cap */
-            cap?: string | null;
-            /** Comune */
-            comune?: string | null;
-            /** Provincia */
-            provincia?: string | null;
-            /**
-             * Nazione
-             * @default IT
-             */
-            nazione: string;
-            /** Pec */
-            pec?: string | null;
-            /** Codice Sdi */
-            codice_sdi?: string | null;
-            /** Telefono */
-            telefono?: string | null;
-            /** Email */
-            email?: string | null;
-            /** Sito Web */
-            sito_web?: string | null;
-            /** Firma Email */
-            firma_email?: string | null;
-            /** Regime Fiscale */
-            regime_fiscale?: string | null;
         };
         /**
          * BindTimeRequest
@@ -6240,7 +6014,7 @@ export interface components {
          * FiscalProfileUpsert
          * @description One shape for create and update: there is only ever one row, so "create" and
          *     "update" are the same operation with the same required fields -- the same decision
-         *     `AziendaUpsert` already made.
+         *     the azienda's own upsert already made.
          *
          *     `codice_regime` carries `max_length` because the column is `String(4)` and the
          *     service's own `.fullmatch` check is *not* a length check on its own for a value
@@ -7153,6 +6927,232 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
+        /**
+         * LegalEntityCreate
+         * @description A second azienda, born with its fiscal profile (spec 2026-10-03 §1.2, §3, §9
+         *     milestone 5): the upsert's fields, a required short name, and the profile body
+         *     `PUT /api/aziende/{id}/fiscal-profile` takes. One request, one transaction, so no
+         *     azienda ever exists that `issue` would refuse with `NotFound("fiscal_profile")`.
+         *
+         *     `nome` is required here where the whole-row upsert derives it: the first azienda of a
+         *     space was never named, but the second is created to be told apart from the first,
+         *     in the sidebar and on every list, and a derived name is a ragione sociale cut to
+         *     eighty characters.
+         */
+        LegalEntityCreate: {
+            /** Nome */
+            nome: string;
+            /** Ragione Sociale */
+            ragione_sociale: string;
+            /** Partita Iva */
+            partita_iva?: string | null;
+            /** Codice Fiscale */
+            codice_fiscale?: string | null;
+            /** Indirizzo */
+            indirizzo?: string | null;
+            /** Cap */
+            cap?: string | null;
+            /** Comune */
+            comune?: string | null;
+            /** Provincia */
+            provincia?: string | null;
+            /**
+             * Nazione
+             * @default IT
+             */
+            nazione: string;
+            /** Pec */
+            pec?: string | null;
+            /** Codice Sdi */
+            codice_sdi?: string | null;
+            /** Telefono */
+            telefono?: string | null;
+            /** Email */
+            email?: string | null;
+            /** Sito Web */
+            sito_web?: string | null;
+            /** Firma Email */
+            firma_email?: string | null;
+            /** Regime Fiscale */
+            regime_fiscale?: string | null;
+            fiscal_profile: components["schemas"]["FiscalProfileUpsert"];
+        };
+        /**
+         * LegalEntityDeactivated
+         * @description What `DELETE /api/aziende/{id}` answers (spec §3): the row, switched off, and
+         *     how many live customers still point at it. Nothing new is born under such a
+         *     customer until it is moved («sposta prima il cliente su un'azienda attiva»), so the
+         *     count is the work the person has left to do, said once, in the same answer.
+         */
+        LegalEntityDeactivated: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Nome */
+            nome: string;
+            /** Predefinita */
+            predefinita: boolean;
+            /** Attiva */
+            attiva: boolean;
+            /** Ragione Sociale */
+            ragione_sociale: string;
+            /** Partita Iva */
+            partita_iva: string | null;
+            /** Codice Fiscale */
+            codice_fiscale: string | null;
+            /** Indirizzo */
+            indirizzo: string | null;
+            /** Cap */
+            cap: string | null;
+            /** Comune */
+            comune: string | null;
+            /** Provincia */
+            provincia: string | null;
+            /** Nazione */
+            nazione: string;
+            /** Pec */
+            pec: string | null;
+            /** Codice Sdi */
+            codice_sdi: string | null;
+            /** Telefono */
+            telefono: string | null;
+            /** Email */
+            email: string | null;
+            /** Sito Web */
+            sito_web: string | null;
+            /** Logo Key */
+            logo_key: string | null;
+            /** Firma Key */
+            firma_key: string | null;
+            /** Firma Email */
+            firma_email: string | null;
+            /** Regime Fiscale */
+            regime_fiscale: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Clienti Collegati */
+            clienti_collegati: number;
+        };
+        /** LegalEntityRead */
+        LegalEntityRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Nome */
+            nome: string;
+            /** Predefinita */
+            predefinita: boolean;
+            /** Attiva */
+            attiva: boolean;
+            /** Ragione Sociale */
+            ragione_sociale: string;
+            /** Partita Iva */
+            partita_iva: string | null;
+            /** Codice Fiscale */
+            codice_fiscale: string | null;
+            /** Indirizzo */
+            indirizzo: string | null;
+            /** Cap */
+            cap: string | null;
+            /** Comune */
+            comune: string | null;
+            /** Provincia */
+            provincia: string | null;
+            /** Nazione */
+            nazione: string;
+            /** Pec */
+            pec: string | null;
+            /** Codice Sdi */
+            codice_sdi: string | null;
+            /** Telefono */
+            telefono: string | null;
+            /** Email */
+            email: string | null;
+            /** Sito Web */
+            sito_web: string | null;
+            /** Logo Key */
+            logo_key: string | null;
+            /** Firma Key */
+            firma_key: string | null;
+            /** Firma Email */
+            firma_email: string | null;
+            /** Regime Fiscale */
+            regime_fiscale: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * LegalEntityUpsert
+         * @description One shape for the first save and for every update: the fields are the same and
+         *     all of them are required or defaulted, so a write is always a whole row.
+         *
+         *     `nome` is optional on purpose: a space with one azienda never typed one, and the
+         *     service derives it from `ragione_sociale` (cut to the column width) when it is
+         *     missing, which is also what the migration did for the row every space already had.
+         *
+         *     `partita_iva` and `codice_sdi` carry no `max_length`, exactly as `CustomerCreate`
+         *     does: the service's `_check_fiscal` already requires an exact 11-digit / 7-character
+         *     match, which is stricter, and adding a Pydantic bound would make a 12-digit input
+         *     raise pydantic's own `ValidationError` instead of this project's `ValidationFailed`
+         *     -- a regression, not a fix.
+         */
+        LegalEntityUpsert: {
+            /** Nome */
+            nome?: string | null;
+            /** Ragione Sociale */
+            ragione_sociale: string;
+            /** Partita Iva */
+            partita_iva?: string | null;
+            /** Codice Fiscale */
+            codice_fiscale?: string | null;
+            /** Indirizzo */
+            indirizzo?: string | null;
+            /** Cap */
+            cap?: string | null;
+            /** Comune */
+            comune?: string | null;
+            /** Provincia */
+            provincia?: string | null;
+            /**
+             * Nazione
+             * @default IT
+             */
+            nazione: string;
+            /** Pec */
+            pec?: string | null;
+            /** Codice Sdi */
+            codice_sdi?: string | null;
+            /** Telefono */
+            telefono?: string | null;
+            /** Email */
+            email?: string | null;
+            /** Sito Web */
+            sito_web?: string | null;
+            /** Firma Email */
+            firma_email?: string | null;
+            /** Regime Fiscale */
+            regime_fiscale?: string | null;
+        };
         /** LinkRequest */
         LinkRequest: {
             /** Email */
@@ -7350,7 +7350,7 @@ export interface components {
          *     `partita_iva`/`codice_fiscale` are two first-class, independently optional
          *     fields rather than mastro's single `taxId` (which changes shape depending on
          *     which identifier the source document happened to carry): PigroCRM already
-         *     treats both as first-class columns on `Customer`/`Azienda`, so there is
+         *     treats both as first-class columns on a customer and on an azienda, so there is
          *     no "whichever one" concept to port here. `partita_iva` carries `IdPaese` +
          *     `IdCodice` concatenated (e.g. `"IT01234567890"`) exactly as mastro's
          *     `fiscalIdString` does, since a later direction-detection step needs the
@@ -26736,7 +26736,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AziendaRead"][];
+                    "application/json": components["schemas"]["LegalEntityRead"][];
                 };
             };
             /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
@@ -26847,7 +26847,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["AziendaCreate"];
+                "application/json": components["schemas"]["LegalEntityCreate"];
             };
         };
         responses: {
@@ -26857,7 +26857,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AziendaRead"];
+                    "application/json": components["schemas"]["LegalEntityRead"];
                 };
             };
             /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
@@ -26977,7 +26977,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AziendaRead"];
+                    "application/json": components["schemas"]["LegalEntityRead"];
                 };
             };
             /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
@@ -27096,7 +27096,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AziendaRead"];
+                    "application/json": components["schemas"]["LegalEntityRead"];
                 };
             };
             /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
@@ -27209,7 +27209,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["AziendaUpsert"];
+                "application/json": components["schemas"]["LegalEntityUpsert"];
             };
         };
         responses: {
@@ -27219,7 +27219,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AziendaRead"];
+                    "application/json": components["schemas"]["LegalEntityRead"];
                 };
             };
             /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
@@ -27338,7 +27338,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AziendaDeactivated"];
+                    "application/json": components["schemas"]["LegalEntityDeactivated"];
                 };
             };
             /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
@@ -27457,7 +27457,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AziendaRead"];
+                    "application/json": components["schemas"]["LegalEntityRead"];
                 };
             };
             /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
@@ -27942,7 +27942,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AziendaRead"];
+                    "application/json": components["schemas"]["LegalEntityRead"];
                 };
             };
             /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
@@ -28061,7 +28061,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AziendaRead"];
+                    "application/json": components["schemas"]["LegalEntityRead"];
                 };
             };
             /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
@@ -28303,7 +28303,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AziendaRead"];
+                    "application/json": components["schemas"]["LegalEntityRead"];
                 };
             };
             /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
@@ -28422,7 +28422,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AziendaRead"];
+                    "application/json": components["schemas"]["LegalEntityRead"];
                 };
             };
             /** @description Permesso negato: l'actor non ha il ruolo richiesto. */

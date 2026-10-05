@@ -38,7 +38,7 @@ from pigrocrm.core.contracts.dates import irrevocability_window_end, renewal_dea
 from pigrocrm.core.contracts.repository import ContractRepository
 from pigrocrm.core.db import today_local
 from pigrocrm.core.deals.repository import DealRepository
-from pigrocrm.core.emitter.service import AziendaService
+from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.fiscal.ceiling import (
     CeilingStatus,
@@ -479,7 +479,7 @@ class AnalyticsService:
         so a one-azienda space reads what it always read; with several it is required,
         and `require_single` says so naming the field.
         """
-        azienda = AziendaService(self.session).require_single(azienda_id, entity=ENTITY)
+        azienda = LegalEntityService(self.session).require_single(azienda_id, entity=ENTITY)
         profile = FiscalProfileService(self.session).get(actor, azienda.id)
         pack = resolve_pack(profile.pack_id, profile.pack_version)
         return CeilingHeadroom(
@@ -509,7 +509,7 @@ class AnalyticsService:
         `deal_id`, so nothing has to be saved to ask the question. The azienda
         resolves as in `ceiling_headroom` (REB-630).
         """
-        azienda = AziendaService(self.session).require_single(azienda_id, entity=ENTITY)
+        azienda = LegalEntityService(self.session).require_single(azienda_id, entity=ENTITY)
         profile = FiscalProfileService(self.session).get(actor, azienda.id)
         pack = resolve_pack(profile.pack_id, profile.pack_version)
         aggiunta = _synthetic_addition(query)
@@ -712,7 +712,7 @@ class AnalyticsService:
         netto = netto_proiettato = None
         if actor.role == "admin":
             try:
-                titolare = AziendaService(self.session).single(azienda_id)
+                titolare = LegalEntityService(self.session).single(azienda_id)
                 if titolare is not None:
                     # The money the taxes are computed on is the azienda's own, never
                     # the page's: in «tutte» with one active azienda `cassa` still adds
@@ -796,7 +796,7 @@ class AnalyticsService:
         add, so there is no space-wide figure to answer with.
         """
         actor.require_admin("get_fiscal_estimate")
-        azienda = AziendaService(self.session).require_single(azienda_id, entity=ENTITY)
+        azienda = LegalEntityService(self.session).require_single(azienda_id, entity=ENTITY)
         # Raises `NotFound("fiscal_profile", <azienda id>)` when nothing is configured,
         # which tells the user which screen to go to -- better than an estimate of zero
         # computed from three nulls, which reads as "you owe nothing".

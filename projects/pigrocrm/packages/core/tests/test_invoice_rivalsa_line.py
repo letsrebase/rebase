@@ -21,8 +21,8 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.customers.models import Customer
-from pigrocrm.core.emitter.schemas import AziendaUpsert
-from pigrocrm.core.emitter.service import AziendaService
+from pigrocrm.core.emitter.schemas import LegalEntityUpsert
+from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.fiscal.ceiling import rivalsa_line_for_contract
 from pigrocrm.core.fiscal.pack import IT_FLAT_RATE_PACK, RIVALSA_INPS_CHARGE_ID
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
@@ -42,8 +42,8 @@ def storage(tmp_path) -> LocalFileStorage:  # type: ignore[no-untyped-def]
 @pytest.fixture
 def service(db_session: Session, storage: LocalFileStorage) -> InvoiceService:
     FiscalProfileService(db_session).upsert(FiscalProfileUpsert(codice_regime="RF19"), ADMIN)
-    AziendaService(db_session).upsert_default(
-        AziendaUpsert(
+    LegalEntityService(db_session).upsert_default(
+        LegalEntityUpsert(
             ragione_sociale="Studio Rossi",
             partita_iva="01234567890",
             codice_fiscale="HMCRFT00A01H501K",

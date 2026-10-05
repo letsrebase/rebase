@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useAzienda } from '@/lib/azienda'
+import { useLegalEntity } from '@/lib/legalEntity'
 import { api, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
 import { queryKeys } from '@/lib/query'
@@ -20,7 +20,7 @@ type AttivitaUpdateBody = components['schemas']['AttivitaUpdate']
 export function useCalendarMonth(mese: string) {
   // The sidebar's azienda (REB-625): the hours through their deal and the invoices
   // falling due by their own column; the commitments have no azienda and stay.
-  const { selected } = useAzienda()
+  const { selected } = useLegalEntity()
   return useQuery({
     queryKey: queryKeys.calendarMonth(mese, selected),
     queryFn: () =>

@@ -610,9 +610,9 @@ def test_nothing_refused_leaves_the_row_untouched(db_session: Session) -> None:
 
 
 def _azienda(session: Session, nome: str) -> UUID:
-    from pigrocrm.core.emitter.models import Azienda
+    from pigrocrm.core.emitter.models import LegalEntity
 
-    row = Azienda(nome=nome, ragione_sociale=nome.title(), nazione="GB")
+    row = LegalEntity(nome=nome, ragione_sociale=nome.title(), nazione="GB")
     session.add(row)
     session.flush()
     return row.id
@@ -755,11 +755,11 @@ def test_two_requests_scoping_the_last_two_unscoped_admins_at_once_leave_one(
     finally:
         with factory() as session:
             from pigrocrm.core.activities.models import Activity
-            from pigrocrm.core.emitter.models import Azienda
+            from pigrocrm.core.emitter.models import LegalEntity
 
             session.execute(delete(Activity).where(Activity.entity_id.in_([first, second])))
             session.execute(delete(User).where(User.id.in_([first, second])))
-            session.execute(delete(Azienda).where(Azienda.id == ltd))
+            session.execute(delete(LegalEntity).where(LegalEntity.id == ltd))
             session.commit()
 
 

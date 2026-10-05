@@ -1,7 +1,7 @@
 import type { ColumnDef } from '@tanstack/react-table'
 import { DateCell, MoneyCell } from '@/components/cells'
 import type { DataTableFeatures } from '@/components/DataTable'
-import type { AziendaRecord } from '@/lib/azienda'
+import type { LegalEntityRecord } from '@/lib/legalEntity'
 import { StatusPill } from '@/components/StatusPill'
 import { InvoiceStateBadge } from './InvoiceStateBadge'
 import { formatDate, formatInvoiceNumber, formatMoney, formatPeriod } from './format'
@@ -26,12 +26,12 @@ export interface InvoiceColumnOptions {
   cliente?: boolean
   /**
    * The aziende to name beside the number (REB-625, spec 2026-10-03 §5 «Lists»). Given
-   * only under «Tutte le aziende» from the second azienda on (`useAziendeToName`): with one
+   * only under «Tutte le aziende» from the second azienda on (`useLegalEntitiesToName`): with one
    * azienda, or with one selected, every row is that azienda's and the name would repeat
    * the sidebar on each line. The accessor stays the bare number, so sorting and the
    * export see one value; the name is drawn by the cell, muted, after a middle dot.
    */
-  aziende?: AziendaRecord[]
+  aziende?: LegalEntityRecord[]
 }
 
 /**

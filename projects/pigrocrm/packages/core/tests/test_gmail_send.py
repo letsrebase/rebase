@@ -38,7 +38,7 @@ from pigrocrm.core.auth.models import User
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.documents.models import Document, DocumentVersion
-from pigrocrm.core.emitter.repository import AziendaRepository
+from pigrocrm.core.emitter.repository import LegalEntityRepository
 from pigrocrm.core.errors import Conflict, PermissionDenied, ValidationFailed
 from pigrocrm.core.gmail.drafts import EmailDraftService
 from pigrocrm.core.gmail.errors import CredentialRevoked, ScopeMissing
@@ -211,7 +211,7 @@ def test_the_from_header_is_the_issuer_s_name_and_a_comma_in_it_adds_no_recipien
     from email.policy import default as default_policy
     from email.utils import getaddresses
 
-    azienda = AziendaRepository(db_session).default()
+    azienda = LegalEntityRepository(db_session).default()
     assert azienda is not None
     azienda.ragione_sociale = "Bianchi, Rossi e Associati"
     azienda.partita_iva = "12345678901"

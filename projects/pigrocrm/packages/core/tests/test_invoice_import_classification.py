@@ -21,7 +21,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.customers.models import Customer
-from pigrocrm.core.emitter.models import Azienda
+from pigrocrm.core.emitter.models import LegalEntity
 from pigrocrm.core.errors import ValidationFailed
 from pigrocrm.core.invoices.fatturapa_import import parse
 from pigrocrm.core.invoices.import_classification import classify_parsed_invoice
@@ -47,7 +47,7 @@ def _digest(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
 
 
-def _emitter(**overrides: object) -> Azienda:
+def _emitter(**overrides: object) -> LegalEntity:
     base: dict[str, object] = {
         "ragione_sociale": "Studio Rossi",
         "partita_iva": "01234567890",
@@ -55,7 +55,7 @@ def _emitter(**overrides: object) -> Azienda:
         "nazione": "IT",
     }
     base.update(overrides)
-    return Azienda(**base)
+    return LegalEntity(**base)
 
 
 def _party(**overrides: object) -> ParsedInvoiceParty:
