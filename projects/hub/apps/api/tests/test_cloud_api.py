@@ -648,9 +648,15 @@ def test_assumi_team_files_under_the_company_the_proposal_was_made_for(
     assert len(cloud.scalars(select(TeamRequest)).all()) == 1
     assert len(sender.sent) == 1
 
-    # And once the grant is open again, it is filed for Acme.
+    # Opening Acme again is a new grant: the proposal made under the closed one stays
+    # refused, and a proposal made under the new one is filed for Acme.
     cloud_service.grant(acme, admin_id)
-    filed = client.post("/api/hub/me/cloud/requests", json={"proposal_id": under_acme})
+    stale = client.post("/api/hub/me/cloud/requests", json={"proposal_id": under_acme})
+    assert stale.status_code == 422
+    assert [item["msg"] for item in stale.json()["detail"]] == [CLOUD_CLOSED_FOR_PROPOSAL]
+    _llm(client, RecordingCall([proposal_response()]))
+    fresh = _cloud_propose(client).json()["id"]
+    filed = client.post("/api/hub/me/cloud/requests", json={"proposal_id": fresh})
     assert filed.status_code == 201, filed.text
     again = cloud.get(TeamRequest, UUID(filed.json()["id"]))
     assert again is not None and (again.company_id, again.azienda) == (acme, "Acme S.r.l.")

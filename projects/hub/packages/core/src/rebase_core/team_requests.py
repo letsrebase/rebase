@@ -327,7 +327,8 @@ class TeamRequestService:
         cloud proposal of the caller's own younger than a day, with the caller's address
         and their phone, `None` when they have none. It is filed for the company the
         proposal was made under (REB-578), by that company's name, and refused with
-        `CLOUD_CLOSED_FOR_PROPOSAL` when the caller holds no live grant for it. A
+        `CLOUD_CLOSED_FOR_PROPOSAL` when the caller holds no live grant for it, or only
+        one opened after the proposal was made (the grant it was made under was closed). A
         proposal from before the company was kept falls back to the caller's newest
         grant, and is refused with `OTHER_CONTEXT` when it is older than it."""
         proposal = self._requestable(proposal_id, origine="cloud", user_id=caller.user_id)
@@ -338,9 +339,12 @@ class TeamRequestService:
         else:
             company_id = proposal.company_id
             grant = TalentCloudService(self.session).live_for(caller.user_id, company_id)
-            company = self.session.get(Company, company_id) if grant is not None else None
-            if company is None:
+            # A grant opened after the proposal is another grant of the same company: the
+            # one the proposal was made under was closed, and reopening access does not
+            # bring its proposals back.
+            if grant is None or grant.granted_at > proposal.created_at:
                 raise ValidationFailed(ENTITY, "proposal_id", CLOUD_CLOSED_FOR_PROPOSAL)
+            company = self.session.get_one(Company, company_id)
             azienda = company.nome_azienda
         return self._file_proposal(
             proposal,
