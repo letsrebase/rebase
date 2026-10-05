@@ -210,10 +210,14 @@ class DigestRun:
         # `cast` and not a runtime check, exactly as `cli.py`'s `_cron_actor` does it:
         # `Actor` validates `role` against its own literal on construction, so a column
         # holding something else raises there rather than travelling on unnoticed.
-        attore = actor_for(titolare, "system")
-        # Bound before the first read of a policied table (REB-634): the cron opens this
-        # session as the application role, and an unbound probe of `customers` would
-        # answer «vuoto» for every space, for ever.
+        # The cron's own actor sees the whole space, whatever the titolare's scope is:
+        # the question `_spazio_vuoto` asks is the space's, and each recipient's mail is
+        # built inside that recipient's scope below. Bound before the first read of a
+        # policied table (REB-634): the cron opens this session as the application
+        # role, and an unbound probe of `customers` would answer «vuoto» for every
+        # space, for ever; bound to a scoped titolare's aziende it would answer «vuoto»
+        # for everyone else's (Greptile on PR #513).
+        attore = actor_for(titolare, "system").model_copy(update={"aziende": None})
         bind_scope(self.session, attore)
 
         if self._spazio_vuoto():

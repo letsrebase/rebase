@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -44,6 +44,12 @@ LAST_ACTIVE_ADMIN = "lo spazio deve avere almeno un amministratore attivo"
 SELF_ACCOUNT_CHANGE = (
     "non puoi cambiare ruolo o stato del tuo stesso account: chiedilo a un altro amministratore"
 )
+
+
+# The key of the advisory lock the admin guards take (`pg_advisory_xact_lock`): one per
+# database, held until the transaction ends, so two writes that would each remove the
+# other's last admin run one after the other and the second counts what the first left.
+ADMIN_GUARD_LOCK = 0x5049_4752_4F41_444D  # "PIGROADM"
 
 
 class LastUnscopedAdmin(DomainError):
@@ -206,6 +212,16 @@ class UserService:
         # A system actor (the CLI) has no id to compare against, so its writes see
         # only the count rule; `pigrocrm createadmin` stays the operator's way back.
         privileged = sorted({"ruolo", "attivo"} & changes.keys())
+        narrowing = scope_named and aziende is not None
+        if privileged or narrowing:
+            # The two counts below are check-then-write: two requests demoting, or
+            # scoping, the last two admins at once would each see the other as the
+            # one who stays and both go through. One transaction-level advisory lock
+            # per database serialises them, so the second counts after the first has
+            # committed and is the one refused (Greptile on PR #513).
+            self.session.execute(
+                text("SELECT pg_advisory_xact_lock(:key)"), {"key": ADMIN_GUARD_LOCK}
+            )
         if privileged:
             # The state the row WOULD hold, predicted rather than written: raising
             # after `setattr` would leave the pending change on the session's
@@ -230,7 +246,6 @@ class UserService:
         # the two refusals above so their answers do not change: refused when THIS row
         # is such an admin and the patch would demote, deactivate or scope them with
         # nobody else left in that position.
-        narrowing = scope_named and aziende is not None
         if (
             (privileged or narrowing)
             and user.ruolo == "admin"

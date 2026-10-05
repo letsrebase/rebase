@@ -882,6 +882,60 @@ def test_a_send_that_blows_up_names_the_type_and_writes_nothing(corpus: Corpus) 
 # --- one report per distinct scope (REB-633, spec 2026-10-03 §4) ----------------------
 
 
+def test_a_scoped_titolare_does_not_empty_the_week_for_everyone_else(
+    corpus: Corpus, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The space's emptiness is asked as the space, not as the titolare: Ada scoped to an
+    azienda with no records still has Bruno's unscoped report built and sent, and her
+    own is built inside her scope (Greptile on PR #513)."""
+    from sqlalchemy import text
+
+    from pigrocrm.core.auth.models import UserAzienda
+    from pigrocrm.core.db.scope import SCOPE_SETTING
+    from pigrocrm.core.digest.service import DigestService
+    from pigrocrm.core.emitter.models import Azienda
+
+    factory = session_factory(corpus.engine)
+    with factory() as session:
+        empty = Azienda(nome=f"{_PREFIX} vuota", ragione_sociale=f"{_PREFIX} Vuota", nazione="GB")
+        session.add(empty)
+        session.flush()
+        ada = session.get(User, corpus.destinatari[0])
+        assert ada is not None
+        ada.ambito_limitato = True
+        session.add(UserAzienda(user_id=ada.id, azienda_id=empty.id))
+        session.commit()
+        empty_id = empty.id
+
+    bound: list[str] = []
+    original = DigestService.build
+
+    def _recording(self: DigestService, actor: Any, settimana: tuple[date, date]) -> WeeklyDigest:
+        digest = original(self, actor, settimana)
+        bound.append(
+            self.session.execute(
+                text(f"SELECT current_setting('{SCOPE_SETTING}', true)")
+            ).scalar_one()
+        )
+        return digest
+
+    monkeypatch.setattr(DigestService, "build", _recording)
+    sender = RecordingSender()
+    try:
+        esito = _esegui(
+            corpus.engine, settimana=corpus.settimana, titolare=corpus.titolare, sender=sender
+        )
+        assert esito == DigestOutcome(
+            slug=SLUG, esito="inviato", settimana=corpus.iso, destinatari=2
+        )
+        assert bound == [str(empty_id), "*"]
+        assert [mail.to for mail in sender.sent] == [corpus.titolare, corpus.collega]
+    finally:
+        with factory() as session:
+            session.execute(delete(Azienda).where(Azienda.id == empty_id))
+            session.commit()
+
+
 def test_a_scoped_recipient_gets_a_report_built_inside_their_scope(
     corpus: Corpus, monkeypatch: pytest.MonkeyPatch
 ) -> None:

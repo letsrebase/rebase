@@ -2,11 +2,11 @@ import statistics
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from pydantic import ValidationError
-from sqlalchemy import select, text
+from sqlalchemy import Engine, delete, func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -677,6 +677,61 @@ def test_the_space_keeps_one_active_admin_who_sees_everything(db_session: Sessio
     # Widening the second back makes room again.
     service.update(second, UserUpdate(aziende=None), ADMIN)
     assert service.update(only, UserUpdate(aziende=[ltd]), ADMIN).aziende == [ltd]
+
+
+def test_two_requests_scoping_the_last_two_unscoped_admins_at_once_leave_one(
+    db_engine: Engine,
+) -> None:
+    """Check-then-write, serialised: both requests count the other as the one who
+    stays, so without the advisory lock both go through and nobody is left who can
+    manage the space. Committed rows, two sessions, a barrier before the two calls."""
+    from threading import Barrier, Thread
+
+    from pigrocrm.core.auth.service import LastUnscopedAdmin
+    from pigrocrm.core.db import session_factory
+
+    prefix = f"race-{uuid4().hex[:8]}"
+    factory = session_factory(db_engine)
+    with factory() as session:
+        ltd = _azienda(session, f"{prefix} ltd")
+        first = _member(session, f"{prefix}-a@x.it", "admin")
+        second = _member(session, f"{prefix}-b@x.it", "admin")
+        session.commit()
+    outcomes: dict[UUID, str] = {}
+    ready = Barrier(2)
+
+    def scope(user_id: UUID) -> None:
+        with factory() as session:
+            ready.wait()
+            try:
+                UserService(session).update(user_id, UserUpdate(aziende=[ltd]), ADMIN)
+                outcomes[user_id] = "scoped"
+            except LastUnscopedAdmin:
+                outcomes[user_id] = "refused"
+
+    try:
+        threads = [Thread(target=scope, args=(uid,)) for uid in (first, second)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=30)
+        assert sorted(outcomes.values()) == ["refused", "scoped"], outcomes
+        with factory() as session:
+            left = session.execute(
+                select(func.count(User.id)).where(
+                    User.id.in_([first, second]), User.ambito_limitato.is_(False)
+                )
+            ).scalar_one()
+            assert left == 1
+    finally:
+        with factory() as session:
+            from pigrocrm.core.activities.models import Activity
+            from pigrocrm.core.emitter.models import Azienda
+
+            session.execute(delete(Activity).where(Activity.entity_id.in_([first, second])))
+            session.execute(delete(User).where(User.id.in_([first, second])))
+            session.execute(delete(Azienda).where(Azienda.id == ltd))
+            session.commit()
 
 
 def test_a_scoped_admin_cannot_manage_the_team(db_session: Session) -> None:
