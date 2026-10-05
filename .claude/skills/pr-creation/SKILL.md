@@ -250,26 +250,26 @@ gh pr create --body-file pr-body.md \
    `ci` job is the only status that matters; the others may skip by path filter. A red
    run gets a line on the card (`**CI red:** run ..., <job>, <cause>`) when you see it,
    and the sha of the fix on the same comment when you push it.
-3. **Two reviewers read every push, and CodeRabbit then reads Greptile.** Both start
-   by themselves when the PR opens or turns ready. On a later push CodeRabbit starts
-   again by itself and Greptile does not: `autoReview` in `.greptile/config.json` is
-   `["open"]`, the dashboard's «On PR opened», so every push after the first to a PR
-   that is open for review is followed at once by `gh pr comment <n> --body
-   '@greptileai'` (#529: no run on `0efee8e70` or `3a397226d` until the comment, then
-   one within fifteen seconds of it). CodeRabbit's settings are `.coderabbit.yaml`,
-   Greptile's `.greptile/config.json`, which holds every value app.greptile.com stores
-   that Greptile's reference documents a field for, as read there on 2026-10-05. The
-   rest stays in the dashboard: the check's threshold, the comments outside the diff,
-   image badges, the comment header, the «Fix with your Agent» defaults, TREX, who may
-   create rules, the Linear integration. Each sha goes through the same round:
-   Greptile's review (a), CodeRabbit's own review (b), then CodeRabbit against
-   Greptile (c), then every finding fixed or answered (d). Run (a) and (b) as
-   background jobs next to the CI watch; (c) waits for both. Each block below starts
-   from `git rev-parse HEAD`, because a background job is a fresh shell. On a
+3. **Two reviewers read every push, Greptile from the second one only when asked, and
+   CodeRabbit then reads Greptile.** Both start by themselves when the PR opens or turns
+   ready. On a later push CodeRabbit starts again by itself and Greptile does not:
+   `autoReview` in `.greptile/config.json` is `["open"]`, the dashboard's «On PR
+   opened», so every push after the first to a PR that is open for review is followed at
+   once by `gh pr comment <n> --body '@greptileai'` (#529: no run on `0efee8e70` or
+   `3a397226d` until the comment, then one within fifteen seconds of it). CodeRabbit's
+   settings are `.coderabbit.yaml`, Greptile's `.greptile/config.json`, which holds
+   every value app.greptile.com stores that Greptile's reference documents a field for,
+   as read there on 2026-10-05. The rest stays in the dashboard: the check's threshold,
+   the comments outside the diff, image badges, the comment header, the «Fix with your
+   Agent» defaults, TREX, who may create rules, the Linear integration. Each sha goes
+   through the same round: Greptile's review (a), CodeRabbit's own review (b), then
+   CodeRabbit against Greptile (c), then every finding fixed or answered (d). Run (a)
+   and (b) as background jobs next to the CI watch; (c) waits for both. Each block below
+   starts from `git rev-parse HEAD`, because a background job is a fresh shell. On a
    milestone's draft PR the loop runs after `gh pr ready`, on the sha that will merge:
    neither reviewer reads a draft by itself (`drafts: false` in `.coderabbit.yaml`,
-   `triggerOnDrafts: false` in `.greptile/config.json`), and an `@greptileai` on a
-   draft would review a sha that does not merge.
+   `triggerOnDrafts: false` in `.greptile/config.json`), and an `@greptileai` on a draft
+   would review a sha that does not merge.
 
    A Dependabot PR gets neither review by itself. `.coderabbit.yaml` skips the bot,
    because Dependabot opens its PRs a dozen at a time (#369 to #380) and CodeRabbit
