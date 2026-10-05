@@ -35,6 +35,7 @@ from rebase_core.models import (
     User,
 )
 from rebase_core.schemas import CompanyCreate
+from rebase_core.team_requests import CLOUD_CLOSED_FOR_PROPOSAL
 
 PDF = b"%PDF-1.7\n1 0 obj<<>>endobj\n%%EOF\n"
 REFERENTE = "wile@acme.it"
@@ -599,3 +600,57 @@ def test_assumi_team_refuses_a_proposal_made_under_an_older_grant(
     assert row is not None
     assert (row.proposal_id, row.company_id, row.azienda) == (under_beta, beta, "Beta S.r.l.")
     assert len(sender.sent) == 1
+
+
+def test_assumi_team_files_under_the_company_the_proposal_was_made_for(
+    client: TestClient, cloud: Session, sender: RecordingSender
+) -> None:
+    """REB-578: the proposal keeps the company of the grant it was made under. Beta is
+    the referente's newest grant when they propose; Acme's grant is then closed and
+    opened again, so it is the newest, and «Assumi team» still files the Beta proposal
+    for Beta. A proposal made under Acme is refused once Acme's grant is revoked, even
+    though Beta's is live, and nothing is filed or mailed for it."""
+    _talent(cloud, "Lovelace")
+    _, acme = _open(cloud)
+    _, beta = _open(cloud, "Beta S.r.l.", ago=timedelta(minutes=10))
+    admin_id = cloud.scalar(select(User.id).where(User.role == "admin"))
+    assert admin_id is not None
+    cloud_service = TalentCloudService(cloud, Settings(_env_file=None))  # type: ignore[call-arg]
+    _login(client, sender)
+
+    _llm(client, RecordingCall([proposal_response()]))
+    under_beta = _cloud_propose(client).json()["id"]
+    stored = cloud.get(TeamProposal, UUID(under_beta))
+    assert stored is not None and stored.company_id == beta
+
+    cloud_service.revoke(acme, admin_id)
+    cloud_service.grant(acme, admin_id)
+    _llm(client, RecordingCall([proposal_response()]))
+    under_acme = _cloud_propose(client).json()["id"]
+    stored = cloud.get(TeamProposal, UUID(under_acme))
+    assert stored is not None and stored.company_id == acme
+
+    # Acme's grant is the newest now and newer than the Beta proposal: the proposal is
+    # still Beta's, so that is who it is filed for.
+    created = client.post("/api/hub/me/cloud/requests", json={"proposal_id": under_beta})
+    assert created.status_code == 201, created.text
+    row = cloud.get(TeamRequest, UUID(created.json()["id"]))
+    assert row is not None
+    assert (row.company_id, row.azienda) == (beta, "Beta S.r.l.")
+    assert len(sender.sent) == 1
+
+    # Acme's grant is closed while Beta's stays live: the Acme proposal is refused.
+    cloud_service.revoke(acme, admin_id)
+    assert client.get("/api/hub/me/cloud/talents").status_code == 200
+    refused = client.post("/api/hub/me/cloud/requests", json={"proposal_id": under_acme})
+    assert refused.status_code == 422
+    assert [item["msg"] for item in refused.json()["detail"]] == [CLOUD_CLOSED_FOR_PROPOSAL]
+    assert len(cloud.scalars(select(TeamRequest)).all()) == 1
+    assert len(sender.sent) == 1
+
+    # And once the grant is open again, it is filed for Acme.
+    cloud_service.grant(acme, admin_id)
+    filed = client.post("/api/hub/me/cloud/requests", json={"proposal_id": under_acme})
+    assert filed.status_code == 201, filed.text
+    again = cloud.get(TeamRequest, UUID(filed.json()["id"]))
+    assert again is not None and (again.company_id, again.azienda) == (acme, "Acme S.r.l.")

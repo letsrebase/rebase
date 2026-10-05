@@ -61,7 +61,7 @@ from sqlalchemy.orm import Session
 from rebase_core.analytics import TEAM_REQUEST_SENT, TEAM_TALENT_ANSWER, Tracker
 from rebase_core.audit import AdminActionService, field_changes, utcnow
 from rebase_core.bands import band_for
-from rebase_core.cloud import cloud_card
+from rebase_core.cloud import CloudCaller, TalentCloudService, cloud_card
 from rebase_core.config import Settings
 from rebase_core.errors import InvalidState, NotFound, ValidationFailed
 from rebase_core.mail import EmailSender, Mail, team_availability_mail, team_request_mail
@@ -69,6 +69,7 @@ from rebase_core.models import (
     TALENT_ANSWERS,
     TEAM_REQUEST_ORIGINS,
     TEAM_REQUEST_STATES,
+    Company,
     Freelancer,
     FreelancerCard,
     TeamProposal,
@@ -98,6 +99,12 @@ ALREADY_REQUESTED = "Questa proposta è già stata richiesta."
 PROPOSAL_REFUSED = "Questa proposta non esiste o è scaduta: chiedi di nuovo il team."
 NOBODY_TO_HIRE = "Questa proposta non ha nessuno da assumere."
 OTHER_CONTEXT = "La proposta è di un altro contesto: rigenerala."
+# The proposal was made under a company whose talent cloud the caller no longer has open:
+# revoked, the request deleted, or never theirs.
+CLOUD_CLOSED_FOR_PROPOSAL = (
+    "Il talent cloud con cui hai fatto questa proposta non è più aperto per te: "
+    "rigenerala dall'accesso che hai adesso."
+)
 NO_SUMMARY = "Questa richiesta è per un talento solo: non ha un riassunto da modificare."
 NAMES_THE_COMPANY = "Il riassunto nomina l'azienda: correggilo prima di scrivere ai talenti."
 ALREADY_CONTACTED = "I talenti sono già stati contattati: rimanda a chi non ha risposto."
@@ -314,27 +321,35 @@ class TeamRequestService:
         self,
         proposal_id: UUID,
         *,
-        azienda: str,
-        email: str,
-        telefono: str | None,
-        user_id: UUID,
-        company_id: UUID,
-        granted_at: datetime,
+        caller: CloudCaller,
     ) -> tuple[TeamRequestRead, Mail]:
         """«Assumi team» in the talent cloud (spec § 4.2): `create` with no form, on a
-        cloud proposal of `user_id`'s own younger than a day, filed for the grant's
-        company with the caller's address and their phone, `None` when they have none.
-        `granted_at` is that grant's: a proposal older than it was made for another
-        company, and is refused with `OTHER_CONTEXT`."""
-        return self._create_for_proposal(
-            proposal_id,
+        cloud proposal of the caller's own younger than a day, with the caller's address
+        and their phone, `None` when they have none. It is filed for the company the
+        proposal was made under (REB-578), by that company's name, and refused with
+        `CLOUD_CLOSED_FOR_PROPOSAL` when the caller holds no live grant for it. A
+        proposal from before the company was kept falls back to the caller's newest
+        grant, and is refused with `OTHER_CONTEXT` when it is older than it."""
+        proposal = self._requestable(proposal_id, origine="cloud", user_id=caller.user_id)
+        if proposal.company_id is None:
+            if caller.granted_at > proposal.created_at:
+                raise ValidationFailed(ENTITY, "proposal_id", OTHER_CONTEXT)
+            company_id, azienda = caller.company_id, caller.azienda
+        else:
+            company_id = proposal.company_id
+            grant = TalentCloudService(self.session).live_for(caller.user_id, company_id)
+            company = self.session.get(Company, company_id) if grant is not None else None
+            if company is None:
+                raise ValidationFailed(ENTITY, "proposal_id", CLOUD_CLOSED_FOR_PROPOSAL)
+            azienda = company.nome_azienda
+        return self._file_proposal(
+            proposal,
             origine="cloud",
             azienda=azienda,
-            email=email,
-            telefono=telefono,
-            user_id=user_id,
+            email=caller.email,
+            telefono=caller.telefono,
+            user_id=caller.user_id,
             company_id=company_id,
-            granted_at=granted_at,
         )
 
     def create_for_talent(
@@ -383,13 +398,32 @@ class TeamRequestService:
         telefono: str | None,
         user_id: UUID | None,
         company_id: UUID | None,
-        granted_at: datetime | None = None,
     ) -> tuple[TeamRequestRead, Mail]:
         if origine not in TEAM_REQUEST_ORIGINS:
             raise ValueError(f"unknown origin {origine!r}")
-        proposal = self._requestable(
-            proposal_id, origine=origine, user_id=user_id, granted_at=granted_at
+        proposal = self._requestable(proposal_id, origine=origine, user_id=user_id)
+        return self._file_proposal(
+            proposal,
+            origine=origine,
+            azienda=azienda,
+            email=email,
+            telefono=telefono,
+            user_id=user_id,
+            company_id=company_id,
         )
+
+    def _file_proposal(
+        self,
+        proposal: TeamProposal,
+        *,
+        origine: str,
+        azienda: str,
+        email: str,
+        telefono: str | None,
+        user_id: UUID | None,
+        company_id: UUID | None,
+    ) -> tuple[TeamRequestRead, Mail]:
+        proposal_id = proposal.id
         members = self._members(proposal)
         row = TeamRequest(
             proposal_id=proposal.id,
@@ -753,12 +787,11 @@ class TeamRequestService:
         *,
         origine: str,
         user_id: UUID | None,
-        granted_at: datetime | None = None,
     ) -> TeamProposal:
         """The proposal a request may be for: of the caller's origin, on the cloud the
-        caller's own, and younger than a day; and on the cloud no older than the grant
-        the request is filed under (`granted_at`), which is checked last, so its own
-        sentence is only ever said of the caller's own proposal."""
+        caller's own, and younger than a day. The cloud's company check comes after, in
+        `create_in_cloud`, so its own sentences are only ever said of the caller's own
+        proposal."""
         proposal = self.session.get(TeamProposal, proposal_id)
         if (
             proposal is None
@@ -768,8 +801,6 @@ class TeamRequestService:
             or proposal.created_at <= self.now() - REQUEST_MAX_AGE
         ):
             raise ValidationFailed(ENTITY, "proposal_id", PROPOSAL_REFUSED)
-        if granted_at is not None and granted_at > proposal.created_at:
-            raise ValidationFailed(ENTITY, "proposal_id", OTHER_CONTEXT)
         return proposal
 
     def _members(self, proposal: TeamProposal) -> list[tuple[UUID, str]]:

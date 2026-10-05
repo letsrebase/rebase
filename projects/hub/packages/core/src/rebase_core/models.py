@@ -1067,6 +1067,11 @@ class TeamProposal(Base, PrimaryKeyMixin):
     user_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
     persone: Mapped[int | None] = mapped_column(Integer, default=None)
     errore: Mapped[str | None] = mapped_column(String(30), default=None)
+    # The company of the grant a cloud proposal was made under (0029, REB-578): «Assumi
+    # team» files under it or refuses. `NULL` on the public and admin proposals, which
+    # belong to no company, and on the cloud ones written before 0029, which fall back
+    # to the newest-grant date check.
+    company_id: Mapped[UUID | None] = mapped_column(ForeignKey("companies.id"), default=None)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
