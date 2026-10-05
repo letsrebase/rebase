@@ -355,15 +355,17 @@ def test_a_member_drafted_from_their_own_signup_code_refers_nobody(clean: Sessio
     assert clean.scalar(select(Referral)) is None
 
 
-def test_a_second_signup_fills_an_empty_rif_but_never_replaces_one(clean: Session) -> None:
+def test_a_repeat_signup_never_adds_or_replaces_a_rif(clean: Session) -> None:
     service = ReferralService(clean)
     first, second = service.code_for(_member(clean)), service.code_for(_member(clean, "b@c.it"))
-    signup_id = _signup_with(clean)
+    bare = _signup_with(clean)
+    kept = _signup_with(clean, email="kept@studio.it", rif=first)
 
-    _signup_with(clean, rif=first)
     _signup_with(clean, rif=second)
+    _signup_with(clean, email="kept@studio.it", rif=second)
 
-    assert clean.get(Signup, signup_id).rif == first  # type: ignore[union-attr]
+    assert clean.get(Signup, bare).rif is None  # type: ignore[union-attr]
+    assert clean.get(Signup, kept).rif == first  # type: ignore[union-attr]
 
 
 def test_a_companys_first_request_with_rif_links_the_referral_but_not_the_next_one(

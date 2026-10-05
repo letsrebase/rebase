@@ -83,7 +83,9 @@ class Signup(Base, PrimaryKeyMixin):
     # The referral code the visitor arrived with (`?rif=`, REB-554), kept as typed and
     # unresolved: a signup is not a user, so nothing is credited here. It is read once,
     # when an admin drafts a card from this signup (`FreelancerService.draft_from_signup`),
-    # which is where a pending referral is made. Written once, like the attribution.
+    # which is where a pending referral is made. Written only when the row is created: a
+    # repeat signup for the address never fills or replaces it, because nobody has proved
+    # they own that address (REB-646).
     rif: Mapped[str | None] = mapped_column(String(REFERRAL_CODE_LENGTH), default=None)
 
     __table_args__ = (

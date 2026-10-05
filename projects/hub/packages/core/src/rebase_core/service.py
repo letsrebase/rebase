@@ -99,7 +99,7 @@ class SignupService:
         already there.
         """
         changed = False
-        for field in ("nome", "cognome", "linkedin_url", "rif"):
+        for field in ("nome", "cognome", "linkedin_url"):
             value = getattr(data, field)
             if value is not None and not (getattr(row, field) or "").strip():
                 setattr(row, field, value)
