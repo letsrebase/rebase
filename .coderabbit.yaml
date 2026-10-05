@@ -30,10 +30,11 @@ reviews:
   auto_review:
     enabled: true
     drafts: false
-    # Ten included reviews an hour, and Dependabot opens its PRs a dozen at a time
-    # (REB-434, #369 to #380). The PR loop asks for the review with
-    # `@coderabbitai review` when one is picked up to merge (.claude/skills/pr-creation,
-    # step 3), one PR at a time.
+    # A Dependabot PR gets no review here (docs/design/DECISIONS.md, 2026-10-05): a
+    # bump changes pins and locks, and the ten included reviews an hour go to the
+    # PRs that carry code, since Dependabot opens its PRs a dozen at a time (REB-434,
+    # #369 to #380). Nobody asks with `@coderabbitai review` either: on a bot PR with
+    # no seat of its own the request answers «Review skipped» (#514, REB-639).
     ignore_usernames:
       - dependabot[bot]
 

@@ -8,11 +8,14 @@
 # ordinary drift of versions nobody has a reason to hold back.
 #
 # What a Dependabot PR is here, and what it is not (docs/design/DECISIONS.md,
-# 2026-09-24): the one kind of pull request with no Linear card behind it, merged on the
-# same gate as any other (green `ci`, Greptile's and CodeRabbit's last reviews clean;
-# both skip Dependabot by themselves and are asked with `@greptileai` and
-# `@coderabbitai review`). A PR that needs code changes to go green is not fixed on the
-# bot's branch: it is closed, and the upgrade gets a card and a branch of its own.
+# 2026-09-24 and 2026-10-05): the one kind of pull request with no Linear card behind
+# it, merged on green `ci` and a merge commit alone. Neither Greptile nor CodeRabbit
+# reads it (`excludeAuthors` in .greptile/config.json, `ignore_usernames` in
+# .coderabbit.yaml) and neither is asked to with `@greptileai` or `@coderabbitai
+# review`: a bump changes pins and locks, and an image it touches is proven by
+# preflight or by the trunk run, not by a review. A PR that needs code changes to go
+# green is not fixed on the bot's branch: it is closed, and the upgrade gets a card and
+# a branch of its own.
 #
 # Every entry shares three choices:
 #   - Monday at 06:00 in Rome, so the week's PRs are there when the week starts.
