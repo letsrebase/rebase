@@ -19,7 +19,7 @@ export default defineConfig({
     {
       name: 'chromium',
       // The composed stack's own specs run through playwright.compose.config.ts, never
-      // against `pnpm dev`. The pattern is imported rather than written here: the two
+      // against the preview server. The pattern is imported rather than written here: the two
       // configs spelling it separately is exactly how seven of these came to run in the
       // wrong one for a day (see e2e/compose-only.ts).
       testIgnore: COMPOSE_ONLY,
@@ -27,7 +27,12 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'pnpm dev',
+    // The production build, not `pnpm dev`: e2e.sh runs `vite build` first (REB-659).
+    // The dev server serves hundreds of module requests per page, and on a loaded box
+    // Chromium aborts some of them (net::ERR_NETWORK_CHANGED) and fails a spec with no
+    // defect in the app. `--strictPort` so a taken :5173 stops the run instead of
+    // silently moving the server away from `baseURL`.
+    command: 'pnpm exec vite preview --port 5173 --strictPort',
     url: 'http://localhost:5173/app/',
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,

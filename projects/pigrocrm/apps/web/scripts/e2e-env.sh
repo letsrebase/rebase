@@ -65,38 +65,58 @@ export PIGROCRM_E2E_PG_PORT="55434"
 export PIGROCRM_E2E_API_PORT="8000"
 export PIGROCRM_E2E_API_PIDFILE="/tmp/pigrocrm-e2e-api.pid"
 export PIGROCRM_E2E_API_LOG="/tmp/pigrocrm-e2e-api.log"
-# The frontend dev server Playwright's own `webServer` block (playwright.config.ts)
-# starts. Matches that config's hardcoded `baseURL`/`url`, which is itself pinned
-# to Vite's own default (vite.config.ts's `server.port`) -- there is no single env
-# var to read this back from on either side, so it is repeated as a literal in
-# both places rather than invented here.
+# The frontend server Playwright's own `webServer` block (playwright.config.ts)
+# starts: `vite preview` over the production build e2e.sh makes first (REB-659), not
+# the dev server, which serves hundreds of module requests per page and loses some of
+# them on a loaded box. Matches that config's hardcoded `baseURL`/`url`; there is no
+# single env var to read this back from on either side, so it is repeated as a
+# literal in both places rather than invented here.
 export PIGROCRM_E2E_WEB_PORT="5173"
 
-# Fix round 1: kills whatever is listening on the given TCP port, tolerating
-# "nothing there". Shared by e2e-setup.sh (clearing out a stale leftover
-# *before* starting, so `reuseExistingServer: !CI` can never silently reuse a
-# previous, improperly-torn-down run's server) and e2e-teardown.sh (see that
-# script's own comment on why this exists at all: confirmed live that a real
-# SIGINT to this whole process group -- e2e.sh's `trap ... EXIT` DOES fire and
-# DOES correctly tear down the API and the Postgres container -- leaves the
-# Vite dev server running and still answering HTTP 200, because Playwright
-# launches it fully detached, `ppid=1` from the moment it starts, in its own
-# process group that a broadcast signal to the foreground group never reaches).
-# `lsof -t`, not a pidfile: unlike the API (this suite's own process, whose pid
-# it already controls), the frontend server's pid is Playwright's own internal
-# state, never handed back to the shell that launched `pnpm exec playwright
-# test` -- the port is the only handle this script has on it. Loops the PIDs
-# through a variable rather than piping straight into `xargs kill`, since
-# BSD/macOS `xargs` has no `-r`/`--no-run-if-empty` (a GNU-only flag) and would
-# otherwise invoke `kill` with no arguments at all when the port is already free.
+# Frees a TCP port: SIGTERM whatever listens on it, then SIGKILL if it is still
+# there a second later, tolerating "nothing there". Shared by e2e-setup.sh
+# (clearing a stale leftover *before* starting, so `reuseExistingServer: !CI` can
+# never silently reuse a previous, improperly-torn-down run's server, and a stale
+# API cannot answer the readiness probe in place of the new one) and
+# e2e-teardown.sh (Playwright launches its web server fully detached, in its own
+# process group, so a Ctrl-C to this script's group never reaches it; the port is
+# the only handle left on it).
+#
+# Listeners come from `ss -ltnp`, because `lsof` is not installed on the devbox
+# (REB-659) and a helper that silently found nothing left a stray server in place.
+# If the port is still taken after the SIGKILL -- or `ss` is missing, or the owner
+# is a process this user cannot see or signal -- it says so, naming the port, and
+# returns non-zero rather than letting the next step run against someone else's
+# server.
+listener_pids() {
+  command -v ss >/dev/null 2>&1 || {
+    echo "pigrocrm e2e: 'ss' is not installed, cannot tell what holds :$1" >&2
+    return 2
+  }
+  # `-H` drops the header; each row ends `users:(("node",pid=123,fd=19),...)`.
+  # `grep` exits 1 on an empty listing; that is "nothing there", not a failure.
+  { ss -H -ltnp "sport = :$1" 2>/dev/null | grep -o 'pid=[0-9]*' || true; } | cut -d= -f2 | sort -u
+}
+
+port_in_use() {
+  [ -n "$(ss -H -ltn "sport = :$1" 2>/dev/null)" ]
+}
+
 kill_port() {
   local port="$1"
   local pids
-  pids="$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)"
-  [ -z "$pids" ] && return 0
-  echo "$pids" | xargs kill -TERM 2>/dev/null || true
-  sleep 1
-  pids="$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)"
-  [ -z "$pids" ] && return 0
-  echo "$pids" | xargs kill -9 2>/dev/null || true
+  pids="$(listener_pids "$port")" || return 1
+  if [ -z "$pids" ]; then
+    port_in_use "$port" || return 0
+  else
+    echo "pigrocrm e2e: :$port is held by pid(s) $(echo "$pids" | tr '\n' ' '), stopping" >&2
+    echo "$pids" | xargs kill -TERM 2>/dev/null || true
+    sleep 1
+    pids="$(listener_pids "$port")" || return 1
+    if [ -n "$pids" ]; then echo "$pids" | xargs kill -9 2>/dev/null || true; fi
+    sleep 1
+    port_in_use "$port" || return 0
+  fi
+  echo "pigrocrm e2e: :$port is still in use and could not be cleared (held by a process this user cannot see or signal?). Free it and run again." >&2
+  return 1
 }

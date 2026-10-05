@@ -4,15 +4,15 @@
 # process (by pidfile -- whichever process is currently recorded there, since
 # e2e/resilience.spec.ts deliberately kills and relaunches it mid-suite and
 # rewrites the pidfile when it does), the disposable Postgres container, and
-# the frontend dev server. Safe to run even if setup only got partway, or was
+# the frontend preview server. Safe to run even if setup only got partway, or was
 # already torn down -- every step tolerates "already gone".
 #
-# Fix round 1: the frontend dev server step is not redundant with Playwright's
+# Fix round 1: the frontend server step is not redundant with Playwright's
 # own end-of-run cleanup, even though that cleanup usually runs fine on its
 # own. Confirmed live: sending a real SIGINT to this whole process group (the
 # way a terminal's Ctrl-C actually behaves) correctly tore down the API and
 # the Postgres container below -- e2e.sh's own `trap ... EXIT` does fire, and
-# does run this script -- but left the Vite dev server (`pnpm dev`) still
+# does run this script -- but left the Vite server still
 # listening and still answering HTTP 200 afterwards. Playwright launches that
 # process fully detached (`ppid=1` from the instant it starts) in its own
 # process group specifically so *it* can manage that process's lifecycle on
@@ -46,7 +46,7 @@ rm -f "$PIGROCRM_E2E_API_LOG"
 echo "== pigrocrm e2e: removing the Postgres container =="
 docker rm -f "$PIGROCRM_E2E_CONTAINER" >/dev/null 2>&1 || true
 
-echo "== pigrocrm e2e: stopping the frontend dev server =="
+echo "== pigrocrm e2e: stopping the frontend preview server =="
 kill_port "$PIGROCRM_E2E_WEB_PORT"
 
 echo "== pigrocrm e2e: torn down =="

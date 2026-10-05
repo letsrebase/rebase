@@ -2,25 +2,33 @@ import { tanstackRouter } from '@tanstack/router-plugin/vite'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import path from 'node:path'
-import { defineConfig, type Plugin } from 'vite'
+import { defineConfig, type Connect, type Plugin } from 'vite'
 import { configDefaults } from 'vitest/config'
 
 import { redirectToBase } from './src/lib/devBaseRedirect'
 
-// Dev server only: the bare base (`/app`, `/app?tab=…`) gets `index.html` through a
-// redirect to `/app/`, as nginx already does in production, instead of Vite's
-// "did you mean /app/app?" hint page. See `src/lib/devBaseRedirect.ts`.
+// Dev and preview servers only: the bare base (`/app`, `/app?tab=…`) gets `index.html`
+// through a redirect to `/app/`, as nginx already does in production, instead of Vite's
+// "did you mean /app/app?" hint page (dev) or a 404 (preview, which the e2e suite is
+// served by since REB-659). See `src/lib/devBaseRedirect.ts`.
 const devBaseRedirect: Plugin = {
   name: 'pigrocrm:dev-base-redirect',
   configureServer(server) {
-    server.middlewares.use((req, res, next) => {
-      const target = req.url ? redirectToBase(req.url, server.config.base) : null
-      if (target === null) return next()
-      res.statusCode = 302
-      res.setHeader('Location', target)
-      res.end()
-    })
+    server.middlewares.use(baseRedirect(server.config.base))
   },
+  configurePreviewServer(server) {
+    server.middlewares.use(baseRedirect(server.config.base))
+  },
+}
+
+function baseRedirect(base: string): Connect.NextHandleFunction {
+  return (req, res, next) => {
+    const target = req.url ? redirectToBase(req.url, base) : null
+    if (target === null) return next()
+    res.statusCode = 302
+    res.setHeader('Location', target)
+    res.end()
+  }
 }
 
 export default defineConfig({
