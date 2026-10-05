@@ -217,7 +217,12 @@ export function FiscalPanel({ aziendaId }: { aziendaId: string }) {
 
       {!profile.isLoading && !unreadable && profile.data === null ? (
         <p className="text-muted-foreground text-sm">
-          Profilo non ancora configurato: senza di esso non è possibile emettere fatture.
+          {profile.isError
+            ? // A `null` from an earlier read beside a read that failed: what was true
+              // then is not known to be true now, and the sentence says so instead of
+              // presenting the absence as a fact (REB-622).
+              'All’ultima lettura il profilo non era configurato; non è stato possibile verificarne lo stato attuale. La bozza resta nei campi.'
+            : 'Profilo non ancora configurato: senza di esso non è possibile emettere fatture.'}
         </p>
       ) : null}
 

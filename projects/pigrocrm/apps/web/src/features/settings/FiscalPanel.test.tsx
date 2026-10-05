@@ -585,6 +585,25 @@ describe('FiscalPanel', () => {
     expect(second.body).toMatchObject({ giorni_scadenza: '60', updated_at: '2026-08-21T09:00:00Z' })
   })
 
+  it('says a first-save draft could not be checked when the reload fails, and keeps it', async () => {
+    vi.mocked(api.GET)
+      .mockImplementationOnce(() => failed({ detail: 'not found' }, 404))
+      .mockImplementation(() => failed({ detail: 'database non raggiungibile' }, 503))
+    vi.mocked(api.PUT).mockImplementation(() => failed({ ...STALE, updated_at: '2026-08-21T09:00:00Z' }, 409))
+    renderPanel()
+    expect(await screen.findByText(/Profilo non ancora configurato/)).toBeInTheDocument()
+    await userEvent.clear(screen.getByLabelText('Giorni di scadenza'))
+    await userEvent.type(screen.getByLabelText('Giorni di scadenza'), '60')
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Ricarica' }))
+    // The absence seen earlier is no longer stated as a fact, the draft stays.
+    await waitFor(() => expect(screen.getByText('database non raggiungibile')).toBeInTheDocument())
+    expect(screen.getByText(/All’ultima lettura il profilo non era configurato/)).toBeInTheDocument()
+    expect(screen.queryByText(/Profilo non ancora configurato:/)).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Giorni di scadenza')).toHaveValue('60')
+    expect(screen.getByText(/Qualcun altro ha salvato nel frattempo/)).toBeInTheDocument()
+  })
+
   it('keeps the draft and the refusal through a reload that fails', async () => {
     vi.mocked(api.GET)
       .mockImplementationOnce(() => ok(PROFILE))
