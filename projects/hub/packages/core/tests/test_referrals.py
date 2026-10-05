@@ -630,8 +630,11 @@ def test_a_price_waits_for_the_confirmation_in_flight_then_is_refused(clean: Ses
         assert started.wait(timeout=5), "the second session never connected"
         # Wait until the database itself reports the worker parked on a lock inside the
         # locking SELECT. Without `FOR UPDATE` that read never waits: the worker's first
-        # wait would be the UPDATE at commit, whose query text is not a SELECT.
+        # wait would be the UPDATE at commit, whose query text is not a SELECT. A
+        # transaction caches `pg_stat_activity` after its first read, and `clean` stays
+        # in one until the commit below, so each poll drops that cache first.
         for _ in range(100):
+            clean.execute(text("SELECT pg_stat_clear_snapshot()"))
             blocked = clean.execute(
                 text(
                     "SELECT 1 FROM pg_stat_activity WHERE pid = :pid "
