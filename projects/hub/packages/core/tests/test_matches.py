@@ -151,6 +151,7 @@ def _body(company_id: UUID, *, giorni_previsti: int | None = None) -> MatchCreat
             ruolo="Backend developer",
             attivita="Le API del prodotto.",
             data_inizio=date(2026, 10, 1),
+            modalita="a giornata",
             compenso=Decimal("450"),
             giorni_pagamento=30,
             fine_mese=True,
@@ -553,6 +554,7 @@ def test_create_stores_the_letters_dates_and_fee(clean: Session) -> None:
             attivita="Le API del prodotto.",
             data_inizio=date(2026, 10, 1),
             data_fine=date(2027, 3, 31),
+            modalita="a giornata",
             compenso=Decimal("450"),
             giorni_pagamento=30,
             fine_mese=True,
@@ -1170,6 +1172,7 @@ def test_the_match_list_search_matches_the_freelancer_and_the_company(clean: Ses
                 ruolo="Designer",
                 attivita="Il design del prodotto.",
                 data_inizio=date(2026, 10, 1),
+                modalita="a giornata",
                 compenso=Decimal("500"),
                 giorni_pagamento=30,
                 fine_mese=True,
@@ -1470,7 +1473,7 @@ def test_check_says_what_saving_would_do_and_which_document_leaves_first(clean: 
     service = _service(clean)
     riepilogo = [
         "Ada Lovelace lavorerà per ACME S.r.l. come Backend developer, dal 1° ottobre 2026.",
-        "Compenso: 450,00 €, IVA esclusa, pagato a 30 giorni fine mese.",
+        "Compenso: 450,00 € a giornata, IVA esclusa, pagato a 30 giorni fine mese.",
     ]
     assert service.check(freelancer_id, _body(company_id)) == MatchCheck(
         riepilogo=riepilogo,
