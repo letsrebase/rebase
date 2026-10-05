@@ -3,6 +3,7 @@ at the referred entity's first signed letter. The full sign-to-reward path reuse
 `test_signing.py`'s own fixtures (`FakeRenderer`, `FakeDocumenso`, `_active_framework`,
 `_sent`): nothing here runs pandoc or reaches a real Documenso."""
 
+import threading
 from collections.abc import Callable, Iterator
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -586,6 +587,51 @@ def test_a_stale_writer_cannot_confirm_a_reward_twice(clean: Session) -> None:
     stored = clean.get(ReferralReward, reward_id)
     assert stored is not None
     assert stored.confirmed_by == admin_id
+
+
+def test_a_price_waits_for_the_confirmation_in_flight_then_is_refused(clean: Session) -> None:
+    """REB-566, Greptile on fb9dd39a2: the two stale-writer tests above finish the first
+    write before the second starts, so they would pass without the row lock too. This is
+    the overlap: `clean` has moved the reward to `confermato`, locked and uncommitted,
+    and a second session's `set_price` starts meanwhile. It must block on the locking
+    read and, once `clean` commits, see `confermato` and refuse. Without `FOR UPDATE` the
+    plain read returns the committed `da_confermare`, the check passes, and only the
+    final UPDATE waits, then writes the price over the confirmed figure: no error."""
+    admin_id = _admin(clean)
+    reward_id = _signed_reward(clean, admin_id)
+    row = clean.get(ReferralReward, reward_id, with_for_update=True)
+    assert row is not None
+    confirmed_amount = row.reward_amount
+    row.stato = "confermato"
+    row.confirmed_by = admin_id
+    clean.flush()
+
+    other = session_factory(clean.get_bind())()  # type: ignore[arg-type]
+    outcome: list[BaseException] = []
+
+    def price_from_another_session() -> None:
+        try:
+            ReferralService(other).set_price(reward_id, Decimal("1.00"), Decimal("0.10"))
+        except ValidationFailed as exc:
+            outcome.append(exc)
+        finally:
+            other.rollback()
+
+    worker = threading.Thread(target=price_from_another_session)
+    worker.start()
+    worker.join(timeout=0.5)
+    assert worker.is_alive(), "set_price did not wait for the confirmation holding the row"
+
+    clean.commit()
+    worker.join(timeout=5)
+    other.close()
+
+    assert not worker.is_alive()
+    assert len(outcome) == 1 and "prima della conferma" in str(outcome[0])
+    clean.expire_all()
+    stored = clean.get(ReferralReward, reward_id)
+    assert stored is not None
+    assert stored.reward_amount == confirmed_amount
 
 
 def test_list_rewards_shows_a_referral_before_any_letter_is_signed(clean: Session) -> None:
