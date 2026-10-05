@@ -154,7 +154,7 @@ class SearchRepository:
         term: str,
         limit: int,
         scope: Scope = (),
-    ) -> Select[Any]:
+    ) -> Select[Any, Decimal, str]:
         """`punteggio DESC, updated_at DESC, id DESC`, limited.
 
         The third key exists because the order must be **total**: without it two runs over

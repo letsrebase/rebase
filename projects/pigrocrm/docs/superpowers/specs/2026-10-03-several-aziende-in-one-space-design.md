@@ -913,3 +913,10 @@ Added as the milestones land, dated, never rewriting the sections above.
   routes, the JSON fields (`azienda_id`, `aziende`), the MCP tools and their parameters,
   the UI copy, the SQL functions, the tables and columns. The decision of §10 on
   `emitter_profile` stands.
+- **2026-10-05, the «tutte» fast path (REB-656).** Migration `0049` rewrites the eighteen
+  policies whose `USING` reaches an azienda through a parent as `scope_tutte() OR (<the
+  predicate as 0048 wrote it>)` and recreates the eight through-the-parent functions with
+  the `current_setting` test spelled out first: on REB-633's corpus the dashboard's recent
+  50 as «tutte» went from 15.8 ms to 0.066 ms against 0.039 ms with no policy, and the
+  people list from 0.43 ms to 0.058 ms, the scoped reads unchanged; the test template
+  applies 0049's `statements()` after 0048's.

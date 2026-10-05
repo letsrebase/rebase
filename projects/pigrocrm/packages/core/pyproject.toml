@@ -3,7 +3,7 @@ name = "pigrocrm-core"
 version = "0.1.0"
 requires-python = ">=3.13,<3.14"
 dependencies = [
-  "sqlalchemy==2.0.54",
+  "sqlalchemy==2.1.3",
   "alembic==1.20.0",
   "psycopg[binary]==3.3.6",
   "pydantic==2.13.5",
@@ -15,7 +15,7 @@ dependencies = [
   # architecture test resolves this entry to the module root `jwt` through
   # DIST_TO_MODULE_OVERRIDES and strips the extra exactly as it already does for
   # `psycopg[binary]`, so no test change is needed.
-  "pyjwt[crypto]==2.14.0",
+  "pyjwt[crypto]==2.15.0",
   # Declared in its own right, and not left to ride in as `pyjwt[crypto]`'s transitive
   # edge: `gmail/crypto.py` imports `cryptography` directly for the AES-256-GCM that
   # seals `google_accounts.refresh_token_ciphertext`, and a transitive edge is not a
@@ -49,7 +49,7 @@ dependencies = [
   # `test_architecture.py` builds core's import allowlist from this list.
   "pypdf==6.19.0",
   # The same pin as hub's `rebase-core`: the weekly digest's own PostHog event (REB-221).
-  "posthog==7.53.0",
+  "posthog==7.60.1",
 ]
 
 [project.scripts]

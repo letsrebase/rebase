@@ -177,7 +177,10 @@ def test_the_admin_reads_and_saves_the_two_rates(
 
     defaults = client.get("/api/hub/referral-settings")
     assert defaults.status_code == 200
-    assert (defaults.json()["rate_freelancer"], defaults.json()["rate_company"]) == ("0.10", "0.30")
+    assert (defaults.json()["rate_freelancer"], defaults.json()["rate_company"]) == (
+        "0.1000",
+        "0.3000",
+    )
 
     saved = client.put(
         "/api/hub/referral-settings", json={"rate_freelancer": "0.12", "rate_company": "0.35"}

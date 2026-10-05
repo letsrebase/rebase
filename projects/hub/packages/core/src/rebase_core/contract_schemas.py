@@ -12,6 +12,7 @@ document (spec § 1h), and `test_contract_schemas.py` holds every model to that.
 import re
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import (
@@ -47,6 +48,14 @@ _IDENTIFIER_INPUT_MAX_LENGTH = 40
 LETTERA_TEXT_MAX_LENGTH = PROGETTO_MAX_LENGTH
 PREAVVISO_MAX_DAYS = 365
 
+# «Come si paga»: the two ways a letter prices its fee, and the only values `modalita` may
+# take. A closed set, not free text, because the referral reward's base (`reward_base`)
+# is decided on it by equality.
+PayMode = Literal["a giornata", "a corpo"]
+DAY_RATE: PayMode = "a giornata"
+LUMP_SUM: PayMode = "a corpo"
+PAY_MODES: tuple[PayMode, ...] = (DAY_RATE, LUMP_SUM)
+
 # The letter's text fields an admin writes on «Condizioni», in the Markdown's order.
 LETTERA_TEXT_FIELDS = (
     "ruolo",
@@ -59,7 +68,6 @@ LETTERA_TEXT_FIELDS = (
     "coordinamento",
     "referente_cliente",
     "referente_rebase",
-    "modalita",
     "unita",
     "lavoro_extra",
     "spese",
@@ -198,7 +206,7 @@ class LetteraDraft(BaseModel):
     coordinamento: SafeStr | None = Field(default=None, max_length=LETTERA_TEXT_MAX_LENGTH)
     referente_cliente: SafeStr | None = Field(default=None, max_length=LETTERA_TEXT_MAX_LENGTH)
     referente_rebase: SafeStr | None = Field(default=None, max_length=LETTERA_TEXT_MAX_LENGTH)
-    modalita: SafeStr | None = Field(default=None, max_length=LETTERA_TEXT_MAX_LENGTH)
+    modalita: PayMode | None = None
     compenso: Decimal | None = Field(
         default=None, max_digits=7, decimal_places=2, ge=TARIFFA_MIN, le=TARIFFA_MAX
     )
@@ -220,6 +228,17 @@ class LetteraDraft(BaseModel):
     altre_condizioni: SafeStr | None = Field(default=None, max_length=LETTERA_TEXT_MAX_LENGTH)
     rapporti_precedenti: SafeStr | None = Field(default=None, max_length=LETTERA_TEXT_MAX_LENGTH)
 
+    @field_validator("modalita", mode="before")
+    @classmethod
+    def _pay_mode(cls, value: Any) -> Any:
+        """Exactly one of `PAY_MODES`, spelled as stored: no other text, case or spacing
+        is read as one. `None` stays blank on a draft; `LetteraFields` requires it."""
+        if value is not None and value not in PAY_MODES:
+            raise PydanticCustomError(
+                "pay_mode", "la modalità di pagamento è «a giornata» oppure «a corpo»"
+            )
+        return value
+
     @field_validator(*LETTERA_TEXT_FIELDS, mode="after")
     @classmethod
     def _text(cls, value: str | None) -> str | None:
@@ -235,6 +254,7 @@ class LetteraFields(LetteraDraft):
     ruolo: SafeStr = Field(min_length=1, max_length=POSIZIONE_MAX_LENGTH)
     attivita: SafeStr = Field(min_length=1, max_length=LETTERA_TEXT_MAX_LENGTH)
     data_inizio: date
+    modalita: PayMode
     compenso: Decimal = Field(max_digits=7, decimal_places=2, ge=TARIFFA_MIN, le=TARIFFA_MAX)
     giorni_pagamento: int = Field(ge=1, le=DAYS_LIMIT)
     fine_mese: bool

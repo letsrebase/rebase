@@ -135,7 +135,7 @@ def _card_stmt(
     con_accessi: bool | None,
     creato_da: datetime | None,
     creato_a: datetime | None,
-) -> Select[Any]:
+) -> Select[Freelancer, User]:
     """Every freelancer card, `stato` left for the caller to filter separately -- this
     statement backs both the listing and `_counts`' per-state `GROUP BY`, and the
     counts must see every state at once."""
@@ -177,7 +177,7 @@ def _lead_stmt(
     con_accessi: bool | None,
     creato_da: datetime | None,
     creato_a: datetime | None,
-) -> Select[Any]:
+) -> Select[Signup]:
     """Every bare sign-up (no card), the same anti-join `_card_emails` describes."""
     card_emails = _card_emails()
     stmt = (
@@ -296,7 +296,7 @@ class TalentiService:
             ).all()
             for row in rows:
                 card, user = row[0], row[1]
-                sort_value = row[2] if term else card.created_at
+                sort_value = row.score if term else card.created_at
                 candidates.append(
                     (sort_value, card.id, _card_read(card, user, row.ha_scheda_anonima))
                 )
@@ -324,7 +324,7 @@ class TalentiService:
             ).all()
             for lead_row in lead_rows:
                 signup = lead_row[0]
-                sort_value = lead_row[1] if term else signup.created_at
+                sort_value = lead_row.score if term else signup.created_at
                 candidates.append((sort_value, signup.id, _signup_read(signup)))
 
         candidates.sort(key=lambda c: (c[0], c[1]), reverse=True)

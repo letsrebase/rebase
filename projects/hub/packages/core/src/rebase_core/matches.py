@@ -37,6 +37,7 @@ from sqlalchemy.orm import Session, aliased
 from rebase_core.amounts import NotAnAmount, italian_amount
 from rebase_core.audit import AdminActionService, utcnow
 from rebase_core.contract_schemas import (
+    DAY_RATE,
     ClienteDraft,
     ContractPdf,
     FreelancerContracts,
@@ -101,7 +102,6 @@ PEC_MISSING = "non indicata"
 # line -- `PEC_MISSING`'s own convention for a fact that is usually absent, not a
 # signature waiting to happen.
 SEGNALATO_NONE = "nessuno"
-DAY_RATE = "a giornata"
 LIST_LIMIT_DEFAULT = 100
 LIST_LIMIT_MAX = 500
 # Pydantic's own error types, whose messages are English; any other type is one the hub

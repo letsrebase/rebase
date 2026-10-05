@@ -870,7 +870,7 @@ class TeamRequestService:
             stmt = stmt.with_for_update(of=TeamRequestTalent).execution_options(
                 populate_existing=True
             )
-        rows = self.session.execute(stmt).tuples().all()
+        rows = self.session.execute(stmt).all()
         return sorted(
             rows,
             key=lambda found: (

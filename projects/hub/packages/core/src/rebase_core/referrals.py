@@ -21,7 +21,6 @@ question the P-REB-44 spike raised is answered, grounded in `Match.giorni_previs
 (REB-497), an admin's own estimate of the engagement's billable days.
 """
 
-import re
 import secrets
 from collections.abc import Iterable, Mapping, Sequence
 from decimal import Decimal
@@ -29,11 +28,13 @@ from typing import Any, NamedTuple
 from uuid import UUID
 
 from sqlalchemy import Row, Select, and_, literal, or_, select, union_all
+from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, aliased
 
 from rebase_core.audit import utcnow
+from rebase_core.contract_schemas import DAY_RATE
 from rebase_core.errors import NotFound, ValidationFailed
 from rebase_core.match_words import LETTERA
 from rebase_core.models import (
@@ -57,6 +58,11 @@ from rebase_core.referral_schemas import (
 )
 
 ENTITY = "referral"
+# One row of `_ledger_query`: the referral, its reward and the referrer's card are outer
+# joins, so the second and the last column are `None` for a referral with no reward yet
+# or a referrer with no card. SQLAlchemy types the select without the `None` (a join does
+# not narrow a column's type); the rows are read under this alias, which carries it.
+_LedgerRow = Row[Referral, ReferralReward | None, str, str, str, UUID | None]
 # No 0/O/1/I: a code is read aloud or typed from a screenshot as often as it is clicked.
 _CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 _CENT = Decimal("0.01")
@@ -70,44 +76,12 @@ def _generate_code() -> str:
     return "".join(secrets.choice(_CODE_ALPHABET) for _ in range(REFERRAL_CODE_LENGTH))
 
 
-# `modalita` is free text end to end (`LetteraFields.modalita` is a bounded `SafeStr`, the
-# admin form only offers «a giornata» and «a corpo» but the API takes any string, and the
-# letter is also edited by hand), so the day-rate branch is a reading of the text, not an
-# equality. How the mode OPENS decides: an optional noun that names the fee («tariffa»,
-# «pagamento»), an optional connective (`a`, `per`, `al`, `su base`), then the day word.
-# «a giornata (8 ore)», «tariffa giornaliera», «tariffa: giornaliera» and «compenso su
-# base giornaliera» are day rates; «forfait 20 giornate», «mezza giornata» or «a ore
-# (giornata da 8 ore)» merely mention a day. A mode that also says `a corpo`, the other
-# mode the admin form offers, is a lump sum whatever else it says: «pagamento giornaliero
-# (compenso a corpo)» is paid daily, but its fee is not a daily one. Unless it denies it:
-# «a giornata (non a corpo)» is still a day rate.
-_DAY_RATE_START = re.compile(
-    r"(?:(?:tariffa|pagamento|compenso|corrispettivo|prezzo|costo|importo)[\s:-]+)?"
-    r"(?:(?:a|per|al|su base|in base a)\s+)?"
-    r"(?:giornat\w*|giornalier\w*|giorn[oi]\b)"
-)
-_LUMP_SUM = re.compile(r"(?<!\bnon )(?<!\bno )(?<!\bsenza )\ba corpo\b")
-
-
-def is_day_rate(modalita: str) -> bool:
-    """Whether a letter's `modalita` prices the fee per day, whatever its spelling: case
-    and surrounding or repeated whitespace are ignored, and the mode must open with
-    `giornata`, `giornaliera`, `giorno` or `giorni`, optionally after `a `, `per `, `al `,
-    `su base ` or `in base a ` and optionally after a noun naming the fee (`tariffa`,
-    `pagamento`, `compenso`, `corrispettivo`, `prezzo`, `costo`, `importo`, with a colon
-    or dash allowed after it), with anything after it (a note such as «(8 ore)»)
-    ignored. A mode that only mentions a day further on (`forfait 20 giornate`, `mezza
-    giornata`), or that says `a corpo` without `non`, `no` or `senza` before it, is not one."""
-    mode = " ".join(modalita.casefold().split())
-    return _DAY_RATE_START.match(mode) is not None and _LUMP_SUM.search(mode) is None
-
-
 def reward_base(
     budget_giornaliero: Decimal, compenso: Decimal, modalita: str, giorni_previsti: int | None
 ) -> Decimal | None:
     """Rebase's own margin on a letter, the base a referral reward is a rate of.
 
-    A day-rate letter (`is_day_rate(modalita)`, both `budget_giornaliero` and
+    A day-rate letter (`modalita == DAY_RATE`, both `budget_giornaliero` and
     `compenso` already daily) has a well-defined margin per day,
     `budget_giornaliero - compenso`, projected over `giorni_previsti` when an admin
     estimated one, else one day's margin -- the conservative floor a reward never
@@ -118,7 +92,7 @@ def reward_base(
     same figure `ReferralReward.base_amount` leaves null for exactly that case. Never
     negative: a fee above the client's budget is rebase's own loss on that letter, not
     a negative reward for whoever made the referral."""
-    if is_day_rate(modalita):
+    if modalita == DAY_RATE:
         margin_per_day = budget_giornaliero - compenso
         days = giorni_previsti if giorni_previsti is not None else 1
         return max(Decimal("0"), margin_per_day * days)
@@ -136,10 +110,12 @@ GIA_MATURATO = "gia_maturato"
 
 
 def letter_unit(data: Mapping[str, Any]) -> str:
-    """How a letter prices its fee, `a giornata` or `a corpo`, as it printed it: the
-    `modalita` the reward's base is decided on. The one reading of that field, shared by
-    the reward at signing, its projection, and the lists that show the letter's fee."""
-    return str(data.get("modalita") or data.get("unita") or "")
+    """How a letter prices its fee, `a giornata` or `a corpo` (`PAY_MODES`): its stored
+    `modalita`, which the reward's base is decided on by equality. The one reading of
+    that field, shared by the reward at signing, its projection, and the lists that show
+    the letter's fee. A letter without one (none is written without it) reads as `""`,
+    which `reward_base` prices as a lump sum."""
+    return str(data.get("modalita") or "")
 
 
 def match_reward_base(match: Match, modalita: str) -> Decimal | None:
@@ -340,6 +316,7 @@ class ReferralService:
         row = ReferralSettings()
         self.session.add(row)
         self.session.flush()
+        self.session.refresh(row)
         return row
 
     def save_settings(
@@ -474,7 +451,7 @@ class ReferralService:
                         Match.stato.in_(EARNING_MATCH_STATES),
                         column.in_(ids),
                     )
-                    .distinct(column)
+                    .ext(distinct_on(column))
                     .order_by(column, Match.created_at.desc(), Match.id.desc())
                     .subquery()
                 )
@@ -518,7 +495,7 @@ class ReferralService:
             for match, company, user, freelancer_deleted_at, letter in rows
         }
 
-    def _ledger_items(self, rows: Sequence[Row[Any]]) -> list[ReferralLedgerItem]:
+    def _ledger_items(self, rows: Sequence[_LedgerRow]) -> list[ReferralLedgerItem]:
         """The page's rows as ledger items, every lookup batched over the whole page:
         the referred names (two queries at most), the match each reward's letter belongs
         to, the newest live match of each referral without a reward, those matches'
@@ -615,7 +592,7 @@ class ReferralService:
             )
         return items
 
-    def _ledger_query(self) -> Select[Any]:
+    def _ledger_query(self) -> Select[Referral, ReferralReward | None, str, str, str, UUID | None]:
         """Starts from `Referral`, outer-joined to its reward, so a referral with no
         reward yet (the referred party has not signed a first letter) still has a row
         on the ledger (P-REB-44) instead of being invisible until one exists. The

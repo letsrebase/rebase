@@ -50,6 +50,7 @@ LETTERA = {
     "ruolo": "Backend developer",
     "attivita": "Le API del prodotto.",
     "data_inizio": "2026-10-01",
+    "modalita": "a corpo",
     "compenso": "450",
     "giorni_pagamento": 30,
     "fine_mese": True,
@@ -416,6 +417,38 @@ def test_an_end_date_before_the_start_names_data_fine(
     assert detail["msg"] == "la fine prevista viene prima dell'inizio"
 
 
+@pytest.mark.parametrize("mode", ["a giornata (non è a corpo)", "A giornata", "giornaliera", ""])
+def test_a_payment_mode_outside_the_two_choices_is_refused(
+    client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer, mode: str
+) -> None:
+    freelancer_id, company_id = _ready(client, sender)
+    refused = client.post(
+        f"/api/hub/freelancers/{freelancer_id}/matches",
+        json={
+            "company_id": company_id,
+            "cliente": CLIENTE,
+            "lettera": {**LETTERA, "modalita": mode},
+        },
+    )
+    assert refused.status_code == 422
+    detail = refused.json()["detail"][0]
+    assert detail["loc"][-1] == "modalita"
+    assert detail["msg"] == "la modalità di pagamento è «a giornata» oppure «a corpo»"
+
+
+def test_a_letter_without_a_payment_mode_is_refused(
+    client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
+) -> None:
+    freelancer_id, company_id = _ready(client, sender)
+    letter = {key: value for key, value in LETTERA.items() if key != "modalita"}
+    refused = client.post(
+        f"/api/hub/freelancers/{freelancer_id}/matches",
+        json={"company_id": company_id, "cliente": CLIENTE, "lettera": letter},
+    )
+    assert refused.status_code == 422
+    assert refused.json()["detail"][0]["loc"][-1] == "modalita"
+
+
 def test_a_payment_term_past_thirty_days_from_month_end_names_giorni_pagamento(
     client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
 ) -> None:
@@ -663,7 +696,7 @@ def test_the_check_says_what_saving_would_do_and_writes_nothing(
     assert checked.json() == {
         "riepilogo": [
             "Ada Lovelace lavorerà per ACME S.r.l. come Backend developer, dal 1° ottobre 2026.",
-            "Compenso: 450,00 €, IVA esclusa, pagato a 30 giorni fine mese.",
+            "Compenso: 450,00 € a corpo, IVA esclusa, pagato a 30 giorni fine mese.",
         ],
         "cosa_succede": (
             "Prima parte il contratto quadro; la lettera di incarico parte da sola dopo la sua "

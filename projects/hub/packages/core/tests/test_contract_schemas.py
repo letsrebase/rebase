@@ -28,6 +28,7 @@ REQUIRED = {
     "ruolo": "Backend developer",
     "attivita": "Le API del prodotto.",
     "data_inizio": date(2026, 10, 1),
+    "modalita": "a giornata",
     "compenso": Decimal("450"),
     "giorni_pagamento": 30,
     "fine_mese": True,
@@ -93,6 +94,27 @@ def test_a_letter_turns_into_the_markdowns_own_keys_and_printable_values() -> No
 def test_a_letter_the_law_or_the_page_would_not_allow_is_refused(change: dict[str, object]) -> None:
     with pytest.raises(ValidationError):
         LetteraFields(**{**REQUIRED, **change})  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("mode", ["a giornata", "a corpo"])
+def test_the_two_payment_modes_are_kept_as_written(mode: str) -> None:
+    assert LetteraFields(**{**REQUIRED, "modalita": mode}).modalita == mode  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "mode",
+    ["A giornata", " a corpo", "a giornata (non è a corpo)", "pagamento giornaliero", "", 5],
+)
+def test_a_payment_mode_that_is_not_one_of_the_two_is_refused(mode: object) -> None:
+    with pytest.raises(ValidationError) as refused:
+        LetteraFields(**{**REQUIRED, "modalita": mode})  # type: ignore[arg-type]
+    assert "«a giornata» oppure «a corpo»" in str(refused.value)
+
+
+def test_a_letter_needs_a_payment_mode_but_a_draft_may_leave_it_blank() -> None:
+    with pytest.raises(ValidationError):
+        LetteraFields(**{key: value for key, value in REQUIRED.items() if key != "modalita"})  # type: ignore[arg-type]
+    assert LetteraDraft().modalita is None
 
 
 CLIENTE = {
