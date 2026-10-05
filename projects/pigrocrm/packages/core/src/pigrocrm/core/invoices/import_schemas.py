@@ -58,7 +58,7 @@ class ParsedInvoiceParty(BaseModel):
     `partita_iva`/`codice_fiscale` are two first-class, independently optional
     fields rather than mastro's single `taxId` (which changes shape depending on
     which identifier the source document happened to carry): PigroCRM already
-    treats both as first-class columns on `Customer`/`LegalEntity`, so there is
+    treats both as first-class columns on a customer and on an azienda, so there is
     no "whichever one" concept to port here. `partita_iva` carries `IdPaese` +
     `IdCodice` concatenated (e.g. `"IT01234567890"`) exactly as mastro's
     `fiscalIdString` does, since a later direction-detection step needs the
