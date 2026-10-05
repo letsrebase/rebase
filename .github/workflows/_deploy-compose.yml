@@ -16,7 +16,8 @@
 #     authenticates the host to the runner. It is the host's `known_hosts` line, as
 #     `ssh-keyscan -H -t ed25519 "$DEPLOY_HOST"` prints it, captured once by a person
 #     who then checked the fingerprint on the host itself, and every ssh and rsync
-#     below runs with `StrictHostKeyChecking=yes` against it. Until REB-653 this file
+#     below runs with `StrictHostKeyChecking=yes` against it and nothing else, the
+#     global known_hosts file disabled. Until REB-653 this file
 #     ran `ssh-keyscan` on every deploy and trusted whatever key answered, which is
 #     trust on first use on a connection that also carries a secret into the host
 #     `.env` (REB-650): anyone who could redirect the runner's connection got the
@@ -178,9 +179,12 @@ jobs:
       - name: Configure SSH
         # The host's key is pinned, never discovered: `known_hosts` is written from the
         # environment's own `DEPLOY_KNOWN_HOSTS`, and nothing else is ever appended to
-        # it, so every ssh and rsync below, each with `StrictHostKeyChecking=yes` and
-        # this file as its only `UserKnownHostsFile`, refuses a host whose key is not
-        # the pinned one. Two checks before the first connection, each a clearer
+        # it, so every ssh and rsync below, each with `StrictHostKeyChecking=yes`, this
+        # file as its `UserKnownHostsFile` and `GlobalKnownHostsFile=/dev/null` (ssh
+        # otherwise reads `/etc/ssh/ssh_known_hosts` into the same set, so a key the
+        # runner image happened to carry for this host would be trusted beside the
+        # pin), refuses a host whose key is not the pinned one. Two checks before the
+        # first connection, each a clearer
         # failure than ssh's own `Host key verification failed`: `ssh-keygen -lf`
         # checks the value holds at least one key and prints each key's size,
         # fingerprint and type (the line a person compares with the host's own
@@ -227,10 +231,10 @@ jobs:
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
         run: |
-          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts \
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o GlobalKnownHostsFile=/dev/null \
             "${DEPLOY_USER}@${DEPLOY_HOST}" "mkdir -p \"${DEPLOY_PATH}\""
           rsync -az --delete \
-            -e 'ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts' \
+            -e 'ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o GlobalKnownHostsFile=/dev/null' \
             --exclude '.git' --exclude '.github' \
             --exclude '.env' --exclude '.reference-*' \
             --exclude 'node_modules' --exclude 'dist' --exclude '.venv' \
@@ -312,7 +316,7 @@ jobs:
               exit 1
             fi
             printf '%s' "$value" | base64 | tr -d '\n' \
-              | ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts \
+              | ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o GlobalKnownHostsFile=/dev/null \
                   "${DEPLOY_USER}@${DEPLOY_HOST}" \
                   "NAME='${name}' ENVFILE='${DEPLOY_PATH}/.env' bash -c '${remote}'"
           done <<< "$WANT"
@@ -325,7 +329,7 @@ jobs:
           COMPOSE_DIR: ${{ inputs.compose-dir }}
           COMPOSE_PROJECT: ${{ inputs.compose-project }}
         run: |
-          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts \
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o GlobalKnownHostsFile=/dev/null \
             "${DEPLOY_USER}@${DEPLOY_HOST}" \
             "DEPLOY_PATH='${DEPLOY_PATH}' COMPOSE_DIR='${COMPOSE_DIR}' COMPOSE_PROJECT='${COMPOSE_PROJECT}' bash -s" <<'SSH'
             set -euo pipefail
@@ -370,7 +374,7 @@ jobs:
           EXTRA_HEALTH_URL: ${{ inputs.extra-health-url }}
           COMPOSE_PROJECT: ${{ inputs.compose-project }}
         run: |
-          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts \
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o GlobalKnownHostsFile=/dev/null \
             "${DEPLOY_USER}@${DEPLOY_HOST}" \
             "HEALTH_URL='${HEALTH_URL}' EXTRA_HEALTH_URL='${EXTRA_HEALTH_URL}' COMPOSE_PROJECT='${COMPOSE_PROJECT}' bash -s" <<'SSH'
             set -uo pipefail
@@ -469,6 +473,6 @@ jobs:
             actor=${{ github.actor }}
             environment=${{ inputs.environment }}
         run: |
-          printf '%s' "$RECORD" | ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts \
+          printf '%s' "$RECORD" | ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o GlobalKnownHostsFile=/dev/null \
             "${DEPLOY_USER}@${DEPLOY_HOST}" \
             "cat > '${DEPLOY_PATH}.deployed' && date -u '+deployed_at=%Y-%m-%dT%H:%M:%SZ' >> '${DEPLOY_PATH}.deployed' && cat '${DEPLOY_PATH}.deployed'"

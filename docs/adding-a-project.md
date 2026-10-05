@@ -254,7 +254,8 @@ ran `ssh-keyscan` on every run and trusted whatever key answered, which is trust
 first use on a connection that carries the repository, the compose commands and, since
 REB-650, a secret written into the host `.env`. Now `_deploy-compose.yml` writes this
 value to `~/.ssh/known_hosts`, runs every `ssh` and `rsync` with
-`StrictHostKeyChecking=yes` against it, and a host whose key does not match fails the
+`StrictHostKeyChecking=yes` against it and nothing else (the global `known_hosts`
+file is disabled), and a host whose key does not match fails the
 deploy before anything is sent. Capturing it is a person's job, once per environment:
 
 1. **Scan the exact value `DEPLOY_HOST` holds**, name or address, from any machine:
@@ -264,13 +265,15 @@ deploy before anything is sent. Capturing it is a person's job, once per environ
    `preview.pigro.letsrebase.com` (measured 2026-10-05), and the deploy's «Configure
    SSH» step checks the value names its `DEPLOY_HOST` and says so when it does not.
    The `#` line `ssh-keyscan` prints is the server banner and is not part of the value.
-2. **Confirm the fingerprint on the host itself**, through a channel that is not the
-   one you are about to trust: the console, or an ssh session whose own `known_hosts`
-   was verified before. `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` on the host
-   and `ssh-keyscan -t ed25519 <DEPLOY_HOST> | ssh-keygen -lf -` from outside must
-   print the same `SHA256:...`. A scan nobody checked is the trust on first use this
-   secret replaces, moved one step earlier; what the scan sees from one box is a
-   candidate, never the truth.
+2. **Confirm the fingerprint of that very line on the host itself**, through a
+   channel that is not the one you are about to trust: the console, or an ssh session
+   whose own `known_hosts` was verified before. `printf '%s\n' "$line" | ssh-keygen
+   -lf -` on the capture and `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` on
+   the host must print the same `SHA256:...`. Fingerprint the capture you will store,
+   never a second scan: a first scan that was answered by an impostor and a second
+   that reached the host would pass the comparison and pin the impostor. A scan
+   nobody checked is the trust on first use this secret replaces, moved one step
+   earlier; what the scan sees from one box is a candidate, never the truth.
 3. `gh secret set DEPLOY_KNOWN_HOSTS --env <name>-preview --body "$line"`, and the same
    on `<name>-production`. One host serving several environments gets the same key on
    each of them, each scanned against that environment's own `DEPLOY_HOST`.
