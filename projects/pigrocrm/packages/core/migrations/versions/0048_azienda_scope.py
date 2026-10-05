@@ -79,7 +79,18 @@ POLICIES: dict[str, tuple[str, str | None]] = {
     # mail never fails on the scope. A scoped sender cannot reach an out-of-scope
     # contact anyway, since `people` hides it from the recipient resolution.
     "gmail_message_links": ("entita_visibile(entity_type, entity_id, scope_tutte())", _T),
-    "email_drafts": ("entita_visibile(entity_type, entity_id, scope_tutte())", None),
+    # A draft follows its entity, and a payment reminder's draft follows the invoice
+    # as well: the body copies the invoice's number, dates, total and IBAN, and a
+    # customer moved to another azienda keeps its invoices where they were (spec
+    # §1.7), so the draft must stay with them (CodeRabbit's adversarial pass on PR
+    # #513). «Tutte» reads everything, as for every other through-the-record rule.
+    "email_drafts": (
+        "entita_visibile(entity_type, entity_id, scope_tutte()) AND ("
+        "payment_reminder_id IS NULL OR scope_tutte() OR EXISTS ("
+        "SELECT 1 FROM payment_reminders r WHERE r.id = email_drafts.payment_reminder_id "
+        "AND invoice_visibile(r.invoice_id)))",
+        None,
+    ),
     # Own mailbox, or a visible link, or no link at all and «tutte». The first branch
     # is what lets the sync and the send write a message before its links exist: the
     # flush is an `INSERT ... RETURNING`, and Postgres applies the `SELECT` policy to
@@ -98,10 +109,15 @@ POLICIES: dict[str, tuple[str, str | None]] = {
     # and name their azienda in the payload, which is what the policy reads for them
     # (CodeRabbit's adversarial pass on PR #513: a gap's number and reason are the
     # azienda's, not the space's).
+    # A row whose payload names an invoice (a reminder prepared on a customer, hours
+    # bound to an invoice on a deal) follows that invoice too, for the same reason as
+    # the draft above: the record it hangs on may have moved, the invoice has not.
     "activities": (
-        "CASE WHEN entity_type = 'invoice_register' "
+        "(CASE WHEN entity_type = 'invoice_register' "
         "THEN azienda_visibile(NULLIF(payload->>'azienda_id', '')::uuid) "
-        "ELSE entita_visibile(entity_type, entity_id, true) END",
+        "ELSE entita_visibile(entity_type, entity_id, true) END) AND ("
+        "payload->>'invoice_id' IS NULL OR scope_tutte() "
+        "OR invoice_visibile(NULLIF(payload->>'invoice_id', '')::uuid))",
         None,
     ),
 }

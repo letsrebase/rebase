@@ -447,6 +447,77 @@ def test_the_register_s_timeline_rows_follow_their_azienda(world: World) -> None
         assert session.execute(query).scalars().all() == []
 
 
+def test_a_reminder_s_draft_and_timeline_row_follow_the_invoice_not_the_moved_customer(
+    world: World,
+) -> None:
+    """A payment reminder is prepared on the customer (the draft and the timeline row
+    hang there) but copies the invoice's number, total and IBAN. A customer moved to
+    the other azienda keeps its invoices where they were (spec §1.7): the draft and
+    the row stay with the invoice, so the new azienda's members read neither, the old
+    one's cannot open the customer anyway, and «tutte» reads both (CodeRabbit's second
+    adversarial pass on PR #513)."""
+    from pigrocrm.core.gmail.models import EmailDraft, PaymentReminder
+
+    factory = session_factory(world.engine)
+    with factory() as session:
+        studio_customer = session.execute(
+            select(Customer.id).where(Customer.azienda_id == world.studio)
+        ).scalar_one()
+        estero_invoice = session.execute(
+            select(Invoice.id).where(Invoice.azienda_id == world.estero)
+        ).scalar_one()
+        # The invoice's reminder, filed on a customer that now belongs to «studio».
+        reminder = PaymentReminder(invoice_id=estero_invoice, sequence=1)
+        session.add(reminder)
+        session.flush()
+        draft = EmailDraft(
+            entity_type="customer",
+            entity_id=studio_customer,
+            message_id_header=f"<{_PREFIX}@example.test>",
+            subject=f"{_PREFIX} sollecito",
+            body_markdown="Fattura 2026/1, totale 100,00 EUR, IBAN IT00",
+            payment_reminder_id=reminder.id,
+        )
+        session.add(draft)
+        session.add(
+            Activity(
+                entity_type="customer",
+                entity_id=studio_customer,
+                kind=f"{_PREFIX}.sollecito",
+                actor_id=None,
+                actor_type="system",
+                payload={"invoice_id": str(estero_invoice), "numero": "2026/1"},
+                occurred_at=datetime.now(UTC),
+            )
+        )
+        session.commit()
+        draft_id, reminder_id = draft.id, reminder.id
+
+    drafts = text(f"SELECT count(*) FROM email_drafts WHERE subject = '{_PREFIX} sollecito'")
+    rows = text(f"SELECT count(*) FROM activities WHERE kind = '{_PREFIX}.sollecito'")
+    try:
+        with _scoped(world, world.studio) as session:
+            assert session.execute(drafts).scalar_one() == 0
+            assert session.execute(rows).scalar_one() == 0
+        with _scoped(world, world.estero) as session:
+            assert session.execute(drafts).scalar_one() == 0
+            assert session.execute(rows).scalar_one() == 0
+        with _scoped(world, world.studio, world.estero) as session:
+            assert session.execute(drafts).scalar_one() == 1
+            assert session.execute(rows).scalar_one() == 1
+        session = session_factory(world.app)()
+        bind_scope(session, Actor(id=world.user_id, type="user", role="collaboratore"))
+        with session:
+            assert session.execute(drafts).scalar_one() == 1
+            assert session.execute(rows).scalar_one() == 1
+    finally:
+        with factory() as session:
+            session.execute(delete(Activity).where(Activity.kind == f"{_PREFIX}.sollecito"))
+            session.execute(delete(EmailDraft).where(EmailDraft.id == draft_id))
+            session.execute(delete(PaymentReminder).where(PaymentReminder.id == reminder_id))
+            session.commit()
+
+
 def test_an_insert_across_the_line_is_refused_by_the_policy(world: World) -> None:
     with _scoped(world, world.estero) as session:
         studio_customer = session.execute(text("SELECT count(*) FROM customers")).scalar_one()
