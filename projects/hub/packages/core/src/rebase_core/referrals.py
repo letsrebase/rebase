@@ -79,13 +79,14 @@ def _generate_code() -> str:
 # base giornaliera» are day rates; «forfait 20 giornate», «mezza giornata» or «a ore
 # (giornata da 8 ore)» merely mention a day. A mode that also says `a corpo`, the other
 # mode the admin form offers, is a lump sum whatever else it says: «pagamento giornaliero
-# (compenso a corpo)» is paid daily, but its fee is not a daily one.
+# (compenso a corpo)» is paid daily, but its fee is not a daily one. Unless it denies it:
+# «a giornata (non a corpo)» is still a day rate.
 _DAY_RATE_START = re.compile(
     r"(?:(?:tariffa|pagamento|compenso|corrispettivo|prezzo|costo|importo)[\s:-]+)?"
     r"(?:(?:a|per|al|su base|in base a)\s+)?"
     r"(?:giornat\w*|giornalier\w*|giorn[oi]\b)"
 )
-_LUMP_SUM = re.compile(r"\ba corpo\b")
+_LUMP_SUM = re.compile(r"(?<!\bnon )(?<!\bno )(?<!\bsenza )\ba corpo\b")
 
 
 def is_day_rate(modalita: str) -> bool:
@@ -96,7 +97,7 @@ def is_day_rate(modalita: str) -> bool:
     `pagamento`, `compenso`, `corrispettivo`, `prezzo`, `costo`, `importo`, with a colon
     or dash allowed after it), with anything after it (a note such as «(8 ore)»)
     ignored. A mode that only mentions a day further on (`forfait 20 giornate`, `mezza
-    giornata`), or that says `a corpo` anywhere, is not one."""
+    giornata`), or that says `a corpo` without `non`, `no` or `senza` before it, is not one."""
     mode = " ".join(modalita.casefold().split())
     return _DAY_RATE_START.match(mode) is not None and _LUMP_SUM.search(mode) is None
 

@@ -275,6 +275,8 @@ def test_reward_base_formula(modalita: str, giorni: int | None, expected: Decima
         "tariffa-giornaliera",
         "compenso su base giornaliera",
         "in base a giornata",
+        "a giornata (non a corpo)",
+        "a giornata, senza a corpo",
     ],
 )
 def test_reward_base_treats_every_day_rate_spelling_as_a_day_rate(modalita: str) -> None:
