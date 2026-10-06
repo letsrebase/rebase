@@ -84,7 +84,7 @@ so: «stiamo mettendo insieme», «ti scriviamo noi».
 | chi fa software in proprio, lavora in proprio | freelance as the subject of a headline | Says what they do and that they do it on their own account |
 | freelance, partita IVA, forfettario | libero professionista, professionista autonomo | As the legal and fiscal category only: «developer freelance», «in forfettario». Never as who the reader is |
 
-Two exceptions Ivan decided on 2026-09-09: the `<title>` of both pages and their `og:title` keep «freelance» («rebase — la community dei freelance», «rebase — freelance, ma non da soli»), for continuity with what search engines and people already know; and «Freelance» is one of the words the h1 types, after the roles, so a visitor who only knows that word still finds themselves in it.
+Two exceptions Ivan decided on 2026-09-09: the `<title>` and the `og:title` of the landing keep «freelance» («rebase — freelance, ma non da soli», and in the `<title>` «Con PigroCRM gratis» after it), for continuity with what search engines and people already know; and «Freelance» is one of the words the h1 types, after the roles, so a visitor who only knows that word still finds themselves in it.
 | aziende vere, un progetto vero | clienti, opportunità, lead | The company is the other party of a project, not a sales object |
 | tariffa a giornata, quanto costa una tua giornata | rate, tariffa oraria | Seniors quote days |
 | persone che ci sono passate | community, network, mentor | The value is the experience, not the group |
