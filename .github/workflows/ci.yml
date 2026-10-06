@@ -119,6 +119,7 @@ jobs:
       website_deploy: ${{ steps.tag.outputs.website_deploy || steps.filter.outputs.website_deploy }}
       hub_deploy: ${{ steps.tag.outputs.hub_deploy || steps.filter.outputs.hub_deploy }}
       tooling: ${{ steps.tag.outputs.tooling || steps.filter.outputs.tooling }}
+      vaultwarden: ${{ steps.tag.outputs.vaultwarden || steps.filter.outputs.vaultwarden }}
     steps:
       - uses: actions/checkout@v7
         if: github.event_name != 'pull_request'
@@ -149,6 +150,7 @@ jobs:
               website-v*)  project=website ;;
               hub-v*)      project=hub ;;
               pigrocrm-v*) project=pigrocrm ;;
+              vaultwarden-v*) project=vaultwarden ;;
               *)           project='' ;;
             esac
             if [ -n "$project" ]; then
@@ -189,9 +191,10 @@ jobs:
             website)  on='website website_image website_deploy shared_analytics' ;;
             hub)      on='hub_py hub_web hub_image hub_deploy shared_ui shared_analytics' ;;
             pigrocrm) on='pigrocrm_py pigrocrm_web pigrocrm_image pigrocrm_deploy shared_ui shared_analytics' ;;
+            vaultwarden) on='vaultwarden' ;;
             *) echo "::error::no job list for project '${PROJECT}'"; exit 1 ;;
           esac
-          for key in pigrocrm_py pigrocrm_web pigrocrm_image website website_image hub_py hub_web shared_analytics shared_ui hub_image pigrocrm_deploy website_deploy hub_deploy tooling; do
+          for key in pigrocrm_py pigrocrm_web pigrocrm_image website website_image hub_py hub_web shared_analytics shared_ui hub_image pigrocrm_deploy website_deploy hub_deploy tooling vaultwarden; do
             case " $on " in *" $key "*) value=true ;; *) value=false ;; esac
             echo "${key}=${value}" >> "$GITHUB_OUTPUT"
           done
@@ -361,6 +364,16 @@ jobs:
               - 'tooling/client-repo-starter/*.mjs'
               - 'tooling/snyk-weekly/**'
               - '.github/workflows/ci.yml'
+            # Vaultwarden ships no image of its own and has no preview, so there is no
+            # `_image` or `_deploy` filter and `changed-paths.json` carries no key for
+            # it: its deploy runs on a tag alone (`deploy-vaultwarden.yml`). What a
+            # change can break is its compose file, its vhost, its scripts and the
+            # drill that runs them.
+            vaultwarden:
+              - 'projects/vaultwarden/**'
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/deploy-vaultwarden.yml'
+              - '.github/workflows/_deploy-compose.yml'
 
       # The deploy workflows used to answer "did this push touch my project?" for
       # themselves, each with its own copy of the paths above, and each by waiting on
@@ -816,13 +829,50 @@ jobs:
           node-version: 22
       - run: node --test tooling/client-repo-starter/*.test.mjs tooling/snyk-weekly/*.test.mjs
 
+  # REB-648: Vaultwarden's config and its backup and restore drill. Needs Docker, node and
+  # shellcheck, all on the hosted runner. The drill starts the real compose file on
+  # throwaway servers, so it also covers the pinned image still existing and answering.
+  vaultwarden:
+    name: vaultwarden · config and drill
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.outputs.all == 'true' || needs.changes.outputs.vaultwarden == 'true') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Scripts
+        run: shellcheck projects/vaultwarden/scripts/*.sh projects/vaultwarden/tests/*.sh
+      - name: Compose resolves, and publishes on the loopback only
+        working-directory: projects/vaultwarden
+        env:
+          VAULTWARDEN_DATA_DIR: ./config-only-never-mounted
+          VAULTWARDEN_SMTP_PASSWORD: x
+          VAULTWARDEN_ORG_CREATORS: owner@example.test
+          VAULTWARDEN_BACKUP_CERT_B64: x
+          VAULTWARDEN_BACKUP_R2_ACCOUNT_ID: x
+          VAULTWARDEN_BACKUP_ACCESS_KEY_ID: x
+          VAULTWARDEN_BACKUP_SECRET_ACCESS_KEY: x
+        run: |
+          docker compose -p vaultwarden config --services | sort | tr '\n' ' ' | grep -qx 'backup vaultwarden '
+          docker compose -p vaultwarden config | grep -q 'host_ip: 127.0.0.1'
+          if docker compose -p vaultwarden config | grep -q 'host_ip: 0.0.0.0'; then exit 1; fi
+      - name: The host vhost is valid nginx
+        run: |
+          docker run --rm -v "$PWD/projects/vaultwarden/deploy/vault.letsrebase.conf:/etc/nginx/conf.d/vault.conf:ro" \
+            nginx:1.31-alpine nginx -t
+      - name: Backup and restore drill
+        run: projects/vaultwarden/tests/backup-restore.sh
+
   ci:
     name: ci
     # `always()`, or a skipped dependency makes this job skip too and the check never
     # arrives. This is the only status check the repository should ever be asked to
     # require: every job name above can change forever without touching a ruleset.
     if: always()
-    needs: [changes, pigrocrm-py, pigrocrm-py-lint, pigrocrm-web, pigrocrm-web-lint, pigrocrm-api-types, website, website-e2e, hub-py, hub-web, hub-web-lint, shared-analytics, shared-ui, pigrocrm-images, website-image, hub-images, tooling-starter]
+    needs: [changes, pigrocrm-py, pigrocrm-py-lint, pigrocrm-web, pigrocrm-web-lint, pigrocrm-api-types, website, website-e2e, hub-py, hub-web, hub-web-lint, shared-analytics, shared-ui, pigrocrm-images, website-image, hub-images, tooling-starter, vaultwarden]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

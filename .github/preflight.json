@@ -331,6 +331,15 @@
       "why": "Nothing in CI or preflight otherwise reads docker-compose.documenso.yml (REB-393): the preview's deploy and CI's hub-images build never set COMPOSE_FILE, so a variable renamed or removed in either file only breaks a real deploy. This asks compose to resolve both shapes with throwaway values -- preview's, the plain file alone, and production's, both files together -- and checks the exact service list each one starts, so a Documenso service left out of the second shape or leaked into the first fails here instead of on the server."
     },
     {
+      "id": "vaultwarden-drill",
+      "run": "shellcheck projects/vaultwarden/scripts/*.sh projects/vaultwarden/tests/*.sh && projects/vaultwarden/tests/backup-restore.sh",
+      "when": [
+        "projects/vaultwarden/**"
+      ],
+      "serial": true,
+      "why": "REB-648. Vaultwarden has no code and no unit tests: what can break is the compose file, the backup and restore scripts and the pinned image, and the only check that reads all three is running them. This starts the real compose file on a throwaway data directory, proves it publishes on the loopback only, refuses a signup without an invitation and has the admin page off (and opens it with a hash, as the README writes it), then backs up into an S3 gateway, checks the object is an encrypted envelope and restores it on a scratch server. ci.yml runs the same script as the `vaultwarden` job. Serial: it starts containers and pulls an image."
+    },
+    {
       "id": "nix-packages",
       "run": "nix build --no-link .#packages.x86_64-linux.pigrocrm-api .#packages.x86_64-linux.pigrocrm-web .#packages.x86_64-linux.hub-api .#packages.x86_64-linux.hub-web .#packages.x86_64-linux.website",
       "when": [

@@ -1,0 +1,108 @@
+# Vaultwarden, the password manager of the rebase members (REB-644, REB-648), on the
+# production host beside the products, in a compose project of its own (`vaultwarden`).
+# One environment only: a password manager has no preview, and the release is the tag
+# `vaultwarden-v<semver>` through `.github/workflows/deploy-vaultwarden.yml`, never a
+# `docker compose up` by hand.
+#
+# The image is pinned by tag and digest, like Documenso's. 1.37.4 (2026-10-05) is the
+# first release that carries the fixes for the advisories of that week (organisation
+# member revocation, organisation invitations, attachments); nothing before 1.37.0 may
+# run here (docs/design/DECISIONS.md, 2026-10-05). Bumping it is a PR that changes the
+# tag and the digest together, read against the release notes, and a tag after it.
+#
+# Everything the instance does is set here, not in the admin page: a setting saved from
+# the admin page is written to `config.json` in the data directory and silently
+# overrides this file from then on, so the page stays closed (README, "The admin page").
+services:
+  vaultwarden:
+    image: &vaultwarden-image vaultwarden/server:1.37.4@sha256:efb3cde962015fcc036b2ea625242248611943b27212ebf4392841fb30fad055
+    restart: unless-stopped
+    environment:
+      DOMAIN: https://${VAULTWARDEN_DOMAIN:-vault.letsrebase.com}
+      # Nobody registers on their own. A member is invited by an organisation owner (or,
+      # for the very first account, by the admin page, which README walks through).
+      # Written here and not read from `.env`, so a stray variable on the host cannot
+      # open the front door.
+      SIGNUPS_ALLOWED: 'false'
+      INVITATIONS_ALLOWED: 'true'
+      # Collections assigned to named members are the permission model; groups are a
+      # beta feature of this server and stay off (DECISIONS.md, 2026-10-05).
+      ORG_GROUPS_ENABLED: 'false'
+      # Only these addresses may create an organisation. Without it every invited member
+      # could open organisations of their own and invite anyone through our sender. The
+      # owner's address (comma separated if there are two), required so a `.env` that
+      # forgets it refuses to start rather than leaving organisation creation open.
+      ORG_CREATION_USERS: ${VAULTWARDEN_ORG_CREATORS:?set it in .env, the owner's address, comma separated}
+      # Empty means the admin page is off ("The admin panel is disabled"). A value is an
+      # Argon2id PHC hash from `vaultwarden hash`, never the token itself, and it is
+      # there only for the minutes a person needs the page (README, "The admin page").
+      ADMIN_TOKEN: ${VAULTWARDEN_ADMIN_TOKEN:-}
+      # The vhost (deploy/vault.letsrebase.conf) sets X-Real-IP to the socket peer. This
+      # is the server's default, written down because the rate limits and the log read it.
+      IP_HEADER: X-Real-IP
+      # Invitations and account recovery both mail. Resend's SMTP endpoint, the same
+      # provider the hub mails its magic links through (that one over Resend's HTTP API;
+      # this server only speaks SMTP): username `resend`, the password is a Resend API
+      # key made for this service alone. 587 with STARTTLS, not 465: the host's provider
+      # blocks outbound 465 on new accounts, and 587 is on Resend's documented list.
+      SMTP_HOST: smtp.resend.com
+      SMTP_PORT: '587'
+      SMTP_SECURITY: starttls
+      SMTP_USERNAME: resend
+      SMTP_PASSWORD: ${VAULTWARDEN_SMTP_PASSWORD:?set it in .env, a Resend API key made for Vaultwarden only}
+      SMTP_FROM: ${VAULTWARDEN_MAIL_FROM:-vault@letsrebase.com}
+      SMTP_FROM_NAME: Rebase
+    # On the host, outside Docker and outside the repository, like the hub's own data. No
+    # default, for the reason `projects/hub/docker-compose.yml` gives for REBASE_DATA_DIR:
+    # a `.env` that forgets it must refuse to start, not come up on an empty directory.
+    volumes:
+      - ${VAULTWARDEN_DATA_DIR:?set it in .env, to its own directory outside the repository}:/data
+    ports:
+      # Loopback only, and the address is not a variable: a `.env` can change the port
+      # and cannot publish this wider. The host's nginx serves it as
+      # vault.letsrebase.com (deploy/vault.letsrebase.conf). The table of ports is
+      # docs/adding-a-project.md §7.
+      - '127.0.0.1:${VAULTWARDEN_PORT:-8091}:80'
+    # The image's own HEALTHCHECK (/healthcheck.sh) applies as it is.
+
+  backup:
+    # The off-host backup (README, "Backup"): once a day, and once at start, it takes a
+    # consistent snapshot of the database with the server's own `backup` command,
+    # bundles it with attachments/, sends/, config.json and rsa_key*, encrypts the bundle
+    # to a public certificate whose private key is not on this host, and puts the result
+    # in a private R2 bucket. Scheduled here, as a loop, rather than by a host cron, for
+    # the reason the hub's `sweep` gives: the schedule is released by the deploy and
+    # there is nothing to install on the host by hand. A loop and not a one-shot, because
+    # `_deploy-compose.yml` fails a deploy on any container that is not `running`.
+    #
+    # The same image as the server, on purpose: it carries `/vaultwarden backup`, tar,
+    # openssl and a curl that signs S3 requests, so the host needs nothing but Docker
+    # and the data directory is opened by the very binary that wrote it. Mounted
+    # read-write because the snapshot is written beside the database, then removed.
+    image: *vaultwarden-image
+    restart: unless-stopped
+    init: true
+    entrypoint: ['/usr/bin/bash', '/scripts/backup-loop.sh']
+    depends_on:
+      vaultwarden:
+        condition: service_started
+    environment:
+      VAULTWARDEN_BACKUP_CERT_B64: ${VAULTWARDEN_BACKUP_CERT_B64:?set it in .env, the backup certificate as one line of base64}
+      VAULTWARDEN_BACKUP_S3_ENDPOINT: https://${VAULTWARDEN_BACKUP_R2_ACCOUNT_ID:?set it in .env, the Cloudflare account id}.r2.cloudflarestorage.com
+      VAULTWARDEN_BACKUP_BUCKET: ${VAULTWARDEN_BACKUP_BUCKET:-rebase-vaultwarden-backup}
+      VAULTWARDEN_BACKUP_ACCESS_KEY_ID: ${VAULTWARDEN_BACKUP_ACCESS_KEY_ID:?an Environment secret, written by the deploy}
+      VAULTWARDEN_BACKUP_SECRET_ACCESS_KEY: ${VAULTWARDEN_BACKUP_SECRET_ACCESS_KEY:?an Environment secret, written by the deploy}
+      VAULTWARDEN_BACKUP_AT: ${VAULTWARDEN_BACKUP_AT:-03:30}
+    volumes:
+      - ${VAULTWARDEN_DATA_DIR:?set it in .env, to its own directory outside the repository}:/data
+      - ./scripts:/scripts:ro
+    # The image's HEALTHCHECK curls the server's port, which this container does not
+    # serve. This one says whether the last backup finished less than 26 hours ago, so
+    # `docker compose ps` shows `unhealthy` for a backup that is failing quietly. It does
+    # not fail a deploy: only a container that is not `running` does.
+    healthcheck:
+      test: ['CMD-SHELL', 'test -n "$$(find /tmp/last-backup-ok -mmin -1560 2>/dev/null)"']
+      interval: 10m
+      timeout: 10s
+      retries: 1
+      start_period: 15m

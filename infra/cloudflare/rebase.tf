@@ -148,3 +148,17 @@ resource "cloudflare_dns_record" "rebase_firma_a" {
   proxied  = false
   comment  = "Documenso, the contracts' signing site (REB-393)"
 }
+
+# Vaultwarden, the members' password manager (REB-648): the same Hetzner origin, whose
+# nginx proxies it to the `vaultwarden` compose project on 127.0.0.1:8091. Moving it to
+# another host is this record plus the Environment's DEPLOY_HOST.
+resource "cloudflare_dns_record" "rebase_vault_a" {
+  provider = cloudflare.rebase
+  zone_id  = local.rebase_zone_id
+  name     = "vault.letsrebase.com"
+  type     = "A"
+  content  = "204.168.255.175"
+  ttl      = 1
+  proxied  = false
+  comment  = "Vaultwarden, the members' password manager (REB-648)"
+}

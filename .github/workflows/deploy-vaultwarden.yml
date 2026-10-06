@@ -1,0 +1,56 @@
+# Deploy, for Vaultwarden only. Same shape as `deploy-hub.yml` and, like it, deliberately
+# its own file: two projects in this monorepo must never be able to deploy each other.
+# The mechanism is `_deploy-compose.yml`; this file is the one rule that says when and
+# the values that say where.
+#
+# Production only, on a version tag:
+#
+#     git tag vaultwarden-v0.1.0 && git push origin vaultwarden-v0.1.0
+#
+# There is no preview: a password manager's second copy would be a second place for a
+# member's secrets, or an empty one nobody opens. A change is proven by the CI run of
+# the tag itself (the config checks and the backup and restore drill of
+# `projects/vaultwarden/tests`, `ci.yml`), which `_deploy-compose.yml` waits for and
+# refuses to deploy without. The tag deploys the commit it points at.
+# The deploy stays off until its arming variable exists: `vars.VAULTWARDEN_DEPLOY_ENABLED`.
+#
+# Which host this is, is the Environment's `DEPLOY_HOST` and nothing else in this
+# repository: the production host that runs the site, the hub, the CRM and Documenso
+# (docs/design/DECISIONS.md, 2026-10-06). Moving Vaultwarden is that secret, the DNS
+# record of `vault.letsrebase.com` (infra/cloudflare/rebase.tf) and a restore from the
+# backup (projects/vaultwarden/docs/restore.md).
+name: Deploy vaultwarden
+
+on:
+  push:
+    tags: ['vaultwarden-v*']
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  production:
+    if: vars.VAULTWARDEN_DEPLOY_ENABLED == 'true'
+    concurrency:
+      group: deploy-vaultwarden-production
+      cancel-in-progress: false
+    uses: ./.github/workflows/_deploy-compose.yml
+    with:
+      environment: vaultwarden-production
+      compose-dir: projects/vaultwarden
+      compose-project: vaultwarden
+      # `/alive` answers through a database connection, so a green deploy means the
+      # SQLite file opened, not only that the process started.
+      health-url: http://127.0.0.1:8091/alive
+      url: https://vault.letsrebase.com
+      # The three values the compose file requires and nobody should type onto the host:
+      # the Resend key the server mails with, and the R2 access key pair the backup
+      # service uploads with (REB-650: written into the host `.env` by the deploy). The
+      # non-secret host values (data directory, port, domain, account id, backup
+      # certificate) stay in the hand-written `.env`, projects/vaultwarden/.env.example.
+      env-secrets: |
+        VAULTWARDEN_SMTP_PASSWORD
+        VAULTWARDEN_BACKUP_ACCESS_KEY_ID
+        VAULTWARDEN_BACKUP_SECRET_ACCESS_KEY
+    secrets: inherit

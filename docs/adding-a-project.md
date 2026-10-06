@@ -358,6 +358,7 @@ rows.
 | website | web 8082 | web 8083 |
 | hub (`rebase`, `rebase-preview`) | api 8084, web 8085, mcp 8088, Postgres 55435 | api 8086, web 8087, mcp 8089, Postgres 55436 |
 | Documenso (in `rebase`, from `docker-compose.documenso.yml`) | documenso 8090 (its Postgres publishes none) | none: the preview signs on production's instance |
+| Vaultwarden (`vaultwarden`, `projects/vaultwarden`) | vaultwarden 8091 (SQLite, no Postgres) | none: a password manager has no preview |
 
 Since 2026-09-10 preview has public names too: `preview.letsrebase.com` mirrors the
 website plus hub map, `preview.pigro.letsrebase.com` mirrors the CRM's. So a new
