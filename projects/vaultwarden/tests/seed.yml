@@ -1,0 +1,7 @@
+# The drill's first phase only: open signups so drill.mjs can make an account and an item
+# on a throwaway server. The real file hard-codes SIGNUPS_ALLOWED=false, and the drill's
+# second phase runs without this file to prove it.
+services:
+  vaultwarden:
+    environment:
+      SIGNUPS_ALLOWED: 'true'

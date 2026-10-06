@@ -1,0 +1,15 @@
+# The drill's stand-in for R2: an S3 gateway that verifies Signature V4, on the compose
+# network, with the backup service pointed at it. Throwaway keys, throwaway storage.
+services:
+  s3:
+    image: ghcr.io/versity/versitygw:v1.8.0
+    command: ['--access', 'drillkey', '--secret', 'drillsecret', 'posix', '--nometa', '/data']
+    tmpfs:
+      - /data
+  backup:
+    depends_on:
+      s3:
+        condition: service_started
+    environment:
+      VAULTWARDEN_BACKUP_S3_ENDPOINT: http://s3:7070
+      VAULTWARDEN_BACKUP_REGION: us-east-1

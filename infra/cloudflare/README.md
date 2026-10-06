@@ -16,10 +16,17 @@ here:
 ```sh
 export TF_VAR_rebase_api_token=cfut_...      # letsrebase.com, Lorenzo's account
 export TF_VAR_orbiters_api_token=cfat_...    # joinorbiters.com, Ivan's account
+export TF_VAR_rebase_account_id=...          # letsrebase.com's account id, for r2.tf (not a secret)
 cd infra/cloudflare
 terraform init
 terraform plan        # nothing to do is the expected answer
 ```
+
+`r2.tf` is not DNS: the private bucket of Vaultwarden's backup (REB-648) and its ninety-day
+expiry. It needs the `letsrebase.com` token to carry *Account → Workers R2 Storage → Edit*
+as well as *Zone → DNS → Edit*, and the account id above. The S3 access key the backup
+uploads with is made in the dashboard (R2, Manage API tokens, Object Read and Write, that
+one bucket) and is a GitHub Environment secret, never a Terraform output.
 
 A change is a change to a `.tf` file, a `plan` read twice, an `apply`, and the commit
 that ships the file. Never the panel first: a record changed by hand is drift, and the

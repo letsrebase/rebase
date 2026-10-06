@@ -153,6 +153,7 @@ updates:
     directories:
       - /projects/pigrocrm
       - /projects/hub
+      - /projects/vaultwarden
     schedule:
       interval: weekly
       day: monday

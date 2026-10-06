@@ -25,9 +25,14 @@ terraform {
 }
 
 variable "rebase_api_token" {
-  description = "Cloudflare API token for the letsrebase.com zone (Zone:DNS:Edit)."
+  description = "Cloudflare API token for the letsrebase.com account: Zone:DNS:Edit on the zone, and Workers R2 Storage:Edit on the account for r2.tf."
   type        = string
   sensitive   = true
+}
+
+variable "rebase_account_id" {
+  description = "Cloudflare account id of the letsrebase.com account (R2, r2.tf). Not a secret."
+  type        = string
 }
 
 variable "orbiters_api_token" {
