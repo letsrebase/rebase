@@ -79,10 +79,17 @@ test('a login survives the session read its page load started and that answers a
   const fetched = new Promise<void>((resolve) => {
     refreshFetched = resolve
   })
+  // `identity/spaces` answers 401 to a visitor too (`routes/app/login.tsx`), and on
+  // its own it could be the request that provokes the refresh held below, with `me`'s
+  // 401 landing after the release on a slow box and healing through a refresh of its
+  // own. A 200 with no space is the same screen, and it leaves `me` as the mount's one
+  // 401: the held refresh is the one its retry waits on, by construction.
+  await page.route('**/api/identity/spaces', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
+  )
   let held = 0
   await page.route('**/api/auth/refresh', async (route) => {
-    // Only the first refresh of this page, the one the mount's 401s provoke (`me`, and
-    // `identity/spaces` with it: both join the one refresh `lib/api.ts` dedupes).
+    // Only the first refresh of this page, the one the mount's `me` provokes.
     if (held === 0) {
       held++
       const response = await route.fetch()
