@@ -30,14 +30,12 @@ tests/                      the drill: config, backup and restore, on throwaway 
 
 ## Provisioning, once (a person with the keys does this; nothing here is automated away)
 
-1. **DNS and the bucket**: `terraform apply` in `infra/cloudflare` (README there) creates
-   `vault.letsrebase.com` and the R2 bucket with its ninety-day expiry. Then commit an
-   import block for the record and for the bucket (the id formats are in the provider's
-   documentation for `cloudflare_dns_record` and `cloudflare_r2_bucket`; a `plan` that
-   shows neither as a change is the proof), as that README asks, so a checkout without
-   this machine's state rebuilds it instead of planning to create them again. The expiry
-   rule, `cloudflare_r2_bucket_lifecycle`, cannot be imported in provider 5.25.0: such a
-   checkout plans to create it, which sets the same rule on the bucket again.
+1. **DNS and the bucket**: done on 2026-10-06 (`terraform apply` in `infra/cloudflare`, README
+   there): `vault.letsrebase.com` and the R2 bucket with its ninety-day expiry exist, and
+   `rebase-imports.tf` and `r2-imports.tf` carry their import blocks, so a checkout without
+   that state rebuilds it (a `plan` shows both as imported and nothing as changed). The
+   expiry rule, `cloudflare_r2_bucket_lifecycle`, cannot be imported in provider 5.25.0:
+   such a checkout plans to create it, which sets the same rule on the bucket again.
 2. **The backup key pair**, on a machine that is not the host:
 
    ```

@@ -79,3 +79,9 @@ import {
   id       = "904a60b42314c819a66340ae8c1a0e88/02a38513577f4ed7f867fb6f9b605108"
   provider = cloudflare.rebase
 }
+
+import {
+  to       = cloudflare_dns_record.rebase_vault_a
+  id       = "904a60b42314c819a66340ae8c1a0e88/a798637506d00c575901c67b7a15925f"
+  provider = cloudflare.rebase
+}
