@@ -156,11 +156,14 @@ any stack in any environment (`docs/design/DECISIONS.md`, 2026-09-09); a deploy 
 not armed gets armed. The mechanism is shared (`_deploy-compose.yml`); the trigger is
 per project (`deploy-<project>.yml`), so two projects can never deploy each other by
 accident.
-Per-environment configuration is a **GitHub Environment**, holding the same four
-secrets everywhere: `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PATH`, `DEPLOY_SSH_KEY`.
-The caller must pass `secrets: inherit`, or a reusable workflow reads all four as
-empty strings. Both environments stay off until their arming variable exists. The
-runbook is `docs/adding-a-project.md` §7.
+Per-environment configuration is a **GitHub Environment**, holding the same five
+secrets everywhere: `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PATH`, `DEPLOY_SSH_KEY` and
+`DEPLOY_KNOWN_HOSTS`, the host's own public key, pinned: the deploy verifies the host
+against it with `StrictHostKeyChecking=yes` and never runs `ssh-keyscan` (REB-653). The
+caller must pass `secrets: inherit`, or a reusable workflow reads all five as empty
+strings. Both environments stay off until their arming variable exists. The runbook,
+and how the pinned key is captured and confirmed on the host, is
+`docs/adding-a-project.md` §7.
 
 **The preview triggers on `workflow_run`, and that is a cost decision with two
 consequences worth knowing.** It used to trigger on the push and then poll the API

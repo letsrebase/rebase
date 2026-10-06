@@ -236,16 +236,52 @@ Three rules that are easy to get wrong and expensive to debug:
 ### Where the per-environment configuration lives
 
 In **GitHub Environments**, named `<name>-preview` and `<name>-production`, each
-holding the same four secrets: `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PATH`,
-`DEPLOY_SSH_KEY`. Always those four names. Ten projects with two environments each are
-forty secrets and four names, instead of forty names to remember. Environments also
-give the Deployments tab a real per-environment history, and they are where a required
-reviewer on production goes the day the account is on a paid plan.
+holding the same five secrets: `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PATH`,
+`DEPLOY_SSH_KEY` and `DEPLOY_KNOWN_HOSTS`. Always those five names. Ten projects with
+two environments each are fifty secrets and five names, instead of fifty names to
+remember. Environments also give the Deployments tab a real per-environment history,
+and they are where a required reviewer on production goes the day the account is on a
+paid plan.
 
 ```
 gh api -X PUT repos/letsrebase/rebase/environments/<name>-preview
 gh secret set DEPLOY_HOST --env <name>-preview --body '...'
 ```
+
+**`DEPLOY_KNOWN_HOSTS` is the host's public key, pinned.** `DEPLOY_SSH_KEY` proves the
+runner to the host; this one proves the host to the runner. Until REB-653 the deploy
+ran `ssh-keyscan` on every run and trusted whatever key answered, which is trust on
+first use on a connection that carries the repository, the compose commands and, since
+REB-650, a secret written into the host `.env`. Now `_deploy-compose.yml` writes this
+value to `~/.ssh/known_hosts`, runs every `ssh` and `rsync` with
+`StrictHostKeyChecking=yes` against it and nothing else (the global `known_hosts`
+file is disabled), and a host whose key does not match fails the
+deploy before anything is sent. Capturing it is a person's job, once per environment:
+
+1. **Scan the exact value `DEPLOY_HOST` holds**, name or address, from any machine:
+   `line=$(ssh-keyscan -H -t ed25519 <DEPLOY_HOST> | grep -v '^#')`. A hashed
+   `known_hosts` line matches only the string it was scanned with: a line scanned on
+   `pigro.letsrebase.com` does not match the same machine by its address or as
+   `preview.pigro.letsrebase.com` (measured 2026-10-05), and the deploy's «Configure
+   SSH» step checks the value names its `DEPLOY_HOST` and says so when it does not.
+   The `#` line `ssh-keyscan` prints is the server banner and is not part of the value.
+2. **Confirm the fingerprint of that very line on the host itself**, through a
+   channel that is not the one you are about to trust: the console, or an ssh session
+   whose own `known_hosts` was verified before. `printf '%s\n' "$line" | ssh-keygen
+   -lf -` on the capture and `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` on
+   the host must print the same `SHA256:...`. Fingerprint the capture you will store,
+   never a second scan: a first scan that was answered by an impostor and a second
+   that reached the host would pass the comparison and pin the impostor. A scan
+   nobody checked is the trust on first use this secret replaces, moved one step
+   earlier; what the scan sees from one box is a candidate, never the truth.
+3. `gh secret set DEPLOY_KNOWN_HOSTS --env <name>-preview --body "$line"`, and the same
+   on `<name>-production`. One host serving several environments gets the same key on
+   each of them, each scanned against that environment's own `DEPLOY_HOST`.
+4. **Rotate it only when the host's key changes** (a reinstall, a deliberate rotation):
+   the deploy then fails on `REMOTE HOST IDENTIFICATION HAS CHANGED`, and the fix is a
+   new value captured the same way, never `StrictHostKeyChecking` loosened or a
+   `ssh-keyscan` put back. The «Configure SSH» step prints the fingerprint of the
+   pinned key on every run, so the run log is what a reader compares with the host.
 
 The deploy stays off until its arming variable exists:
 `vars.<NAME>_PREVIEW_ENABLED` and `vars.<NAME>_DEPLOY_ENABLED`, both `'true'` to run.
