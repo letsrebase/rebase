@@ -8,7 +8,14 @@ import { Label } from '@rebase/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@rebase/ui/table'
 import { admin, type ReferralLedgerItem, type ReferralSettings, type RewardStato } from '@/lib/api'
 import { matchHeadingId } from '@/lib/contracts'
-import { REFERRAL_STATE_LABELS, formatDate, formatEuro, formatRate } from '@/lib/format'
+import {
+  REFERRAL_STATE_LABELS,
+  REFERRAL_VERIFIED_VIA_LABELS,
+  formatDate,
+  formatDateTime,
+  formatEuro,
+  formatRate,
+} from '@/lib/format'
 import { Empty, Header, StateFilter } from './lists'
 
 const LEDGER_KEY = ['referrals'] as const
@@ -197,7 +204,8 @@ function MatchCell({ item }: { item: ReferralLedgerItem }) {
 
 /** What the referral is worth: the reward as computed or priced, else the estimate the
  *  referred side's live match gives (`projected_*`), marked as one. A real figure is
- *  never replaced by the estimate. */
+ *  never replaced by the estimate. A pending referral with no estimate says what it is
+ *  waiting for instead (REB-658): its referred person's proof, never a letter. */
 function RewardCell({ item, onPriced }: { item: ReferralLedgerItem; onPriced: () => void }) {
   if (item.reward_id === null) {
     if (item.projected_amount !== null && item.projected_rate !== null) {
@@ -206,6 +214,15 @@ function RewardCell({ item, onPriced }: { item: ReferralLedgerItem; onPriced: ()
           <p className="font-medium text-muted-foreground tabular-nums">{formatEuro(item.projected_amount)}</p>
           <p className="text-xs text-muted-foreground">{`Stima al ${formatRate(item.projected_rate)}, se il match firma`}</p>
         </>
+      )
+    }
+    if (item.referral_stato === 'da_verificare') {
+      return (
+        <p className="ml-auto max-w-56 text-sm whitespace-normal text-muted-foreground">
+          {item.kind === 'company'
+            ? "Non conta finché l'azienda non fa il primo accesso"
+            : 'Non conta finché non fa accesso o firma una lettera'}
+        </p>
       )
     }
     return (
@@ -231,6 +248,52 @@ function RewardCell({ item, onPriced }: { item: ReferralLedgerItem; onPriced: ()
   )
 }
 
+/** The evidence behind the attribution (REB-657), read-only: the code used, when the
+ *  referred person signed up, where from, whether the two email domains match and whether
+ *  they ever logged in. A matching domain and a person who never logged in are the two
+ *  that call for a second look, so they are said in words rather than left as a blank.
+ *  The last line is whether the referral counts yet (REB-658), and what made it. */
+function EvidenceCell({ item }: { item: ReferralLedgerItem }) {
+  const { evidence } = item
+  return (
+    <div className="mt-2 space-y-0.5 text-xs">
+      <dl className="space-y-0.5">
+        <div className="flex gap-1">
+          <dt className="text-muted-foreground">Codice</dt>
+          <dd className="font-mono">{evidence.code}</dd>
+        </div>
+        <div className="flex gap-1">
+          <dt className="text-muted-foreground">Iscritto</dt>
+          <dd>{formatDateTime(evidence.signed_up_at)}</dd>
+        </div>
+        <div className="flex gap-1">
+          <dt className="text-muted-foreground">Fonte</dt>
+          <dd>{evidence.utm_source ?? '-'}</dd>
+        </div>
+      </dl>
+      <p className={evidence.same_email_domain ? 'font-medium' : 'text-muted-foreground'}>
+        {evidence.same_email_domain === null
+          ? 'Dominio email non disponibile'
+          : evidence.same_email_domain
+            ? 'Stesso dominio email'
+            : 'Dominio email diverso'}
+      </p>
+      <p className={evidence.ever_logged_in === false ? 'font-medium' : 'text-muted-foreground'}>
+        {evidence.ever_logged_in === null
+          ? 'Accessi non disponibili'
+          : evidence.ever_logged_in
+            ? 'Ha già fatto accesso'
+            : 'Non ha mai fatto accesso'}
+      </p>
+      <p className={item.referral_stato === 'da_verificare' ? 'font-medium' : 'text-muted-foreground'}>
+        {item.referral_stato === 'da_verificare' || item.verified_at === null || item.verified_via === null
+          ? 'Non ancora verificato'
+          : `${REFERRAL_VERIFIED_VIA_LABELS[item.verified_via] ?? item.verified_via} · ${formatDate(item.verified_at)}`}
+      </p>
+    </div>
+  )
+}
+
 function ReferralRow({ item }: { item: ReferralLedgerItem }) {
   const client = useQueryClient()
   const move = useMutation({
@@ -240,6 +303,7 @@ function ReferralRow({ item }: { item: ReferralLedgerItem }) {
   const rewardId = item.reward_id
   const next = item.stato ? NEXT_STATE[item.stato] : null
   const estimated = rewardId === null && item.projected_amount !== null
+  const pending = rewardId === null && item.referral_stato === 'da_verificare'
 
   return (
     <TableRow>
@@ -249,6 +313,7 @@ function ReferralRow({ item }: { item: ReferralLedgerItem }) {
           {KIND_LABELS[item.kind] ?? item.kind}
           {item.referred_deleted && (item.kind === 'freelancer' ? ' · eliminato' : ' · eliminata')}
         </p>
+        <EvidenceCell item={item} />
       </TableCell>
       <TableCell className="align-top">
         {item.referrer_freelancer_id !== null ? (
@@ -272,8 +337,8 @@ function ReferralRow({ item }: { item: ReferralLedgerItem }) {
       </TableCell>
       <TableCell className="align-top">
         {/* A hairline pill for an estimate, a filled one for a state a reward is really in. */}
-        <Badge variant={estimated ? 'outline' : 'pill'}>
-          {STATE_LABELS[item.stato ?? (estimated ? 'previsto' : 'in_attesa')] ?? item.stato}
+        <Badge variant={estimated || pending ? 'outline' : 'pill'}>
+          {STATE_LABELS[item.stato ?? (pending ? 'da_verificare' : estimated ? 'previsto' : 'in_attesa')] ?? item.stato}
         </Badge>
       </TableCell>
       <TableCell className="text-right align-top text-muted-foreground">{formatDate(item.created_at)}</TableCell>

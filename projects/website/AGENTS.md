@@ -69,8 +69,10 @@ the CRM or the hub and a redirect into production would make the suite depend on
 
 `pnpm --filter website lint | test | build | test:e2e`, all fast. The e2e suite runs
 Playwright against `vite preview` on the fixed port 4173, which is why its preflight
-check is `serial: true`. A change to the rendered pages is not done until you have run
-it, and a visual claim needs a render, not a description.
+check is `serial: true`. Hosted CI runs it too, but only on the trunk push, a release
+tag and the nightly (`website-e2e` in `ci.yml`), never on a pull request, so the local
+run is the only one before merge. A change to the rendered pages is not done until you
+have run it, and a visual claim needs a render, not a description.
 
 **Two checkouts cannot run that preview at the same time, and it fails loud rather
 than quiet.** `preview.strictPort` is `true` in `vite.config.ts`, so a second `pnpm

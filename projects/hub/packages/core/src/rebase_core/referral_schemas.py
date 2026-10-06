@@ -50,9 +50,11 @@ class MatchReferral(BaseModel):
     rate and the match's own numbers give (`amount` is `None` when there is nothing to
     project: no base, a cancelled match, one whose letter is already out of the
     running); `gia_maturato` when the referral already paid on another match, since a
-    referral pays once -- no figure then. `referrer_nome` is the referrer's whole name,
-    and `referrer_freelancer_id` his own card, when he has one, so a page can link to
-    it."""
+    referral pays once -- no figure then; `da_verificare` when the referral is a
+    company's and its referente has not logged in yet (REB-658): nothing it could sign
+    earns anything until then, so no figure either. `referrer_nome` is the referrer's
+    whole name, and `referrer_freelancer_id` his own card, when he has one, so a page
+    can link to it."""
 
     kind: str
     referrer_nome: str
@@ -61,6 +63,24 @@ class MatchReferral(BaseModel):
     amount: Decimal | None
     stato: str
     reward_id: UUID | None
+
+
+class ReferralEvidence(BaseModel):
+    """What an admin needs to judge one attribution (REB-657), all read from rows that
+    already exist (`rebase_core.referral_evidence`): `code` is the `rif` the signup was
+    made with, `signed_up_at` when the referred card or request was made, `utm_source`
+    where that signup came from when one was recorded, `same_email_domain` whether the
+    referred and referring addresses share the domain of an organisation (a shared
+    public provider such as `gmail.com` never counts), and `ever_logged_in` whether the
+    referred person has ever entered through a magic link. Both flags are `None` when
+    the referred card or request was hard-deleted: nothing can be said, which is not
+    the same as no."""
+
+    code: str
+    signed_up_at: datetime
+    utm_source: str | None
+    same_email_domain: bool | None
+    ever_logged_in: bool | None
 
 
 class ReferralLedgerItem(BaseModel):
@@ -83,7 +103,14 @@ class ReferralLedgerItem(BaseModel):
     referrer's whole name, first and last. `referred_deleted` and
     `match_freelancer_deleted` say the referred card or request, or the match's
     freelancer, was deleted by an admin: its page answers not found, so a page must not
-    link to it."""
+    link to it.
+
+    REB-658: `referral_stato` is whether the referred person is verified
+    (`da_verificare`, `verificato`), `verified_at` and `verified_via` (`accesso`,
+    `lettera`, `storico`) when and by what; they are `None` while it is pending. A
+    pending referral has no reward and nothing to confirm (`reward_id` and `stato` are
+    `None`), and a pending company has no `match_*` and no projection either, since
+    nothing it could sign would earn anything until its referente logs in."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -108,10 +135,14 @@ class ReferralLedgerItem(BaseModel):
     base_amount: Decimal | None
     reward_amount: Decimal | None
     stato: str | None
+    referral_stato: str
+    verified_at: datetime | None
+    verified_via: str | None
     note: str | None
     created_at: datetime
     confirmed_at: datetime | None
     paid_at: datetime | None
+    evidence: ReferralEvidence
 
 
 class ReferralLedgerList(BaseModel):
@@ -170,6 +201,7 @@ __all__ = [
     "MemberReferral",
     "MemberReferralItem",
     "REFERRAL_CODE_LENGTH",
+    "ReferralEvidence",
     "ReferralLedgerItem",
     "ReferralLedgerList",
     "ReferralRewardPrice",

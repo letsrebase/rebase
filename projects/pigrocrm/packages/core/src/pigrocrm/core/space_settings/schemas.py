@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -36,6 +37,18 @@ class SpaceSettingsUpdate(BaseModel):
     solleciti_max_reminders: int | None = Field(default=None, ge=1, le=3)
     gmail_backfill_days: int | None = Field(default=None, ge=1, le=3650)
     concentrazione_soglia_preferita: float | None = Field(default=None, gt=0.0, le=1.0)
+    # The version check of REB-622 (spec 2026-10-03 §11): the `updated_at` read off
+    # `SpaceSettingsRead`, which is `null` on a database nothing was ever written to.
+    # As on the two upsert bodies, a key that was sent is checked whatever its value, a
+    # key left out checks nothing.
+    updated_at: datetime | None = Field(
+        default=None,
+        description=(
+            "L'`updated_at` letto sulle impostazioni da cui parte questa modifica "
+            "(`null` compreso): se nel frattempo qualcun altro ha salvato, la richiesta "
+            "è rifiutata con 409 `stale_row`. Omesso, nessun controllo."
+        ),
+    )
 
 
 class SpaceSettingsRead(BaseModel):
@@ -62,3 +75,9 @@ class SpaceSettingsRead(BaseModel):
     gmail_backfill_days: int
     concentrazione_soglia_preferita: float
     sovrascritte: list[str]
+    # The version a save hands back (REB-622): the `updated_at` of the newest row in
+    # `space_settings`, `None` while there is none. Every write that changes anything
+    # moves it, a cleared override included, because the service stamps a reserved row
+    # (`SpaceSettingsService.VERSION_KEY`) on each; `max` over the table alone would
+    # stand still when an older override is cleared under a newer one.
+    updated_at: datetime | None

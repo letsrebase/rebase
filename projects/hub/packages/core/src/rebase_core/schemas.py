@@ -175,6 +175,10 @@ class SignupCreate(BaseModel):
     # (ORB-203): see `normalise_linkedin`.
     linkedin_url: SafeStr | None = Field(default=None, max_length=LINKEDIN_INPUT_MAX_LENGTH)
     utm: SignupUtm | None = None
+    # `?rif=` from the visitor's link (REB-554), shaped like the wizards' own: a string
+    # that is not a code is no code, never a 422 and never a hint of which codes exist.
+    # Stored on the signup and credited only when an admin drafts a card from it.
+    rif: SafeStr | None = None
     # The two values below are for the conversion event and are **never stored**: no
     # column, no migration, nothing in `SignupListItem`. They travel in this body only
     # because the landing is where both are known, and because `extra="forbid"` above
@@ -192,6 +196,11 @@ class SignupCreate(BaseModel):
     # its shape is theirs to change, and a value we do not recognise is still the value
     # that arrived.
     oppref: SafeStr | None = Field(default=None, max_length=OPPREF_MAX_LENGTH)
+
+    @field_validator("rif", mode="before")
+    @classmethod
+    def _rif(cls, value: object) -> str | None:
+        return _clean_rif(value)
 
     @field_validator("oppref", mode="after")
     @classmethod

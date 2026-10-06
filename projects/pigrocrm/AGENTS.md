@@ -107,7 +107,7 @@ alternative is an application that starts and then scans sequentially in silence
 
 **The e2e ports are hardcoded, not read from the environment.**
 `apps/web/scripts/e2e-env.sh` exports 55433 (its own Postgres), 8000 (the API) and
-5173 (Vite) as literals, and the script clears whatever holds :8000 and :5173 before
+5173 (`vite preview` over the production build `e2e.sh` makes first) as literals, and the script clears whatever holds :8000 and :5173 before
 it starts. On this shared box that is a real collision with other projects, and it is
 why `pigrocrm-e2e` is `serial: true` in `.github/preflight.json`. Editing those three
 values into `${VAR:-default}` form is a genuine improvement and has not been done.

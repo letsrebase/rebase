@@ -16,7 +16,7 @@ cd "$REPO_ROOT"
 # shellcheck source=./e2e-env.sh
 source "$REPO_ROOT/apps/web/scripts/e2e-env.sh"
 
-# Fix round 1: a Vite dev server orphaned by a previous, signal-interrupted run
+# Fix round 1: a Vite server orphaned by a previous, signal-interrupted run
 # (e2e-teardown.sh's own comment has the full mechanism) would otherwise sit on
 # this port forever, and Playwright's `reuseExistingServer: !CI`
 # (playwright.config.ts) would then silently reuse that stale process for
@@ -24,7 +24,7 @@ source "$REPO_ROOT/apps/web/scripts/e2e-env.sh"
 # starts passing (or failing) for reasons nobody can reconstruct". Clearing it
 # here as well as in teardown means this invariant holds even the first time
 # this script ever runs after a crash, not only from the second run onward.
-echo "== pigrocrm e2e: clearing a stale frontend dev server on :$PIGROCRM_E2E_WEB_PORT, if any =="
+echo "== pigrocrm e2e: clearing a stale frontend server on :$PIGROCRM_E2E_WEB_PORT, if any =="
 kill_port "$PIGROCRM_E2E_WEB_PORT"
 
 # Same reasoning one port over, and the reason this script's own "idempotent: safe to

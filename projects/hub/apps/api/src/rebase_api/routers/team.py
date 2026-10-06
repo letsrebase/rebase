@@ -90,6 +90,7 @@ def propose_in_a_slot(
     settings: Settings,
     builder: TeamBuilder,
     slots: threading.BoundedSemaphore,
+    company_id: UUID | None = None,
 ) -> TeamProposalRead:
     """A proposal behind the switch, a slot of the process and the day's room, in that
     order: the public page's and the cloud's (REB-519), which share the one semaphore
@@ -104,7 +105,7 @@ def propose_in_a_slot(
     now = builder.now()
     if not slots.acquire(blocking=False):
         _log.info("team builder: every proposal slot is taken")
-        _refuse(data, TeamBuilderBusy(BUSY_SENTENCE), origine, user_id, builder, now)
+        _refuse(data, TeamBuilderBusy(BUSY_SENTENCE), origine, user_id, company_id, builder, now)
     # One release site for the slot, whatever the count or the call raises: a query that
     # fails here with the slot still held would, four times over, close the builder
     # until the process restarts.
@@ -114,10 +115,12 @@ def propose_in_a_slot(
         except TeamBuilderBusy as busy:
             refused = busy
         else:
-            return builder.propose(data, origine=origine, user_id=user_id, now=now)
+            return builder.propose(
+                data, origine=origine, user_id=user_id, company_id=company_id, now=now
+            )
     finally:
         slots.release()
-    _refuse(data, refused, origine, user_id, builder, now)
+    _refuse(data, refused, origine, user_id, company_id, builder, now)
 
 
 def _refuse(
@@ -125,6 +128,7 @@ def _refuse(
     busy: TeamBuilderBusy,
     origine: str,
     user_id: UUID | None,
+    company_id: UUID | None,
     builder: TeamBuilder,
     now: datetime,
 ) -> NoReturn:
@@ -147,7 +151,9 @@ def _refuse(
         _log.warning("team builder: refused ask not kept, every refusal write is busy")
         raise busy
     try:
-        builder.record_refusal(data, origine=origine, user_id=user_id, error=busy, now=now)
+        builder.record_refusal(
+            data, origine=origine, user_id=user_id, error=busy, company_id=company_id, now=now
+        )
     except Exception:
         _log.exception("team builder: the refused ask was not kept")
     finally:

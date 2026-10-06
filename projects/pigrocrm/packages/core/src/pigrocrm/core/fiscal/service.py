@@ -2,6 +2,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -14,9 +15,17 @@ from pigrocrm.core.fiscal.pack import PACK_NON_IT
 from pigrocrm.core.fiscal.regime import resolve_regime
 from pigrocrm.core.fiscal.repository import FiscalProfileRepository
 from pigrocrm.core.fiscal.schemas import FiscalProfileRead, FiscalProfileUpsert, FiscalSnapshot
+from pigrocrm.core.versioning import require_unchanged
 
 ENTITY = "fiscal_profile"
 ZERO = Decimal("0.00")
+# The first half of the advisory lock every save takes per azienda (REB-622), the second
+# being the azienda id hashed: a profile not saved yet has no row to lock, and two first
+# saves would otherwise both read «no row»; two versioned ones would both pass the
+# comparison and the loser would meet the unique key as a generic `conflict` instead of
+# the `stale_row` the panel knows how to recover from, and a versionless one (the MCP
+# tool) would race a versioned one to the insert. Transaction-scoped.
+VERSION_LOCK = 0xF15C
 
 
 class FiscalProfileService:
@@ -72,13 +81,37 @@ class FiscalProfileService:
         let two concurrent first-time saves poison the session with a raw
         `IntegrityError` instead of surfacing a clean `Conflict`. Same shape, same
         reason, as `LegalEntityService.upsert_default`.
+
+        A body that names the version it was built on (`updated_at`, REB-622) is
+        refused when the row has moved since, before anything is assigned. `null` is
+        the version of a profile not saved yet: sent on a first save it is accepted,
+        sent once a row exists it is a draft built on nothing and is refused, as is a
+        timestamp sent for a profile that does not exist. A body without the key
+        checks nothing.
         """
         actor.require_admin("update_fiscal_profile")
-        payload = data.model_dump()
+        payload = data.model_dump(exclude={"updated_at"})
         self.check(payload)
         azienda = self.aziende.resolve(azienda_id)
 
+        # Before the read and on every save, versioned or not, so two saves on one
+        # azienda run one after the other and the second reads what the first
+        # committed: a versioned one finding a row where it expected none (`null` sent)
+        # is `stale_row`, never the unique key's `conflict`, and a versionless one
+        # finding the row updates it instead of racing it to the insert. Then the row's
+        # own lock for a versioned save, as `LegalEntityService.update` takes it.
+        self.session.execute(
+            select(func.pg_advisory_xact_lock(VERSION_LOCK, func.hashtext(str(azienda.id))))
+        )
         profile = self.repo.get(azienda.id)
+        if "updated_at" in data.model_fields_set:
+            if profile is not None:
+                self.session.refresh(profile, with_for_update=True)
+            require_unchanged(
+                ENTITY,
+                sent=data.updated_at,
+                current=None if profile is None else profile.updated_at,
+            )
         try:
             if profile is None:
                 profile = self.repo.add(FiscalProfile(**payload, azienda_id=azienda.id))

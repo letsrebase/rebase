@@ -31,6 +31,7 @@ from rebase_core.models import (
     UserSession,
 )
 from rebase_core.pagination import SortSpec, decode_cursor, encode_cursor, keyset_predicate
+from rebase_core.referrals import ReferralService
 from rebase_core.schemas import SignupUtm
 from rebase_core.search import matches_any, similarity_score
 
@@ -297,6 +298,9 @@ class UserService:
                 **{column: getattr(token, column) for column in ATTRIBUTION_COLUMNS},
             )
         )
+        # The same proof for the referrals that name this person (REB-658): they just
+        # spent a link mailed to their address, and this is the commit that records it.
+        ReferralService(self.session).verify_on_login(row.id, now)
         self.session.commit()
         return row, raw_session
 

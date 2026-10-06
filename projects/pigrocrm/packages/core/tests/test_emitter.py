@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
@@ -16,6 +17,7 @@ from pigrocrm.core.emitter.schemas import (
 )
 from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
+from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.render.pdf import BLANK_PNG as PNG_PIXEL
 from pigrocrm.core.storage.local import LocalFileStorage
 
@@ -354,7 +356,8 @@ def _create(**overrides: object) -> LegalEntityCreate:
     from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 
     payload: dict[str, object] = {
-        **_upsert().model_dump(),
+        # A create carries no version (REB-622): the upsert's fields without it.
+        **_upsert().model_dump(exclude={"updated_at"}),
         "nome": "rebase ltd",
         "ragione_sociale": "Rebase Ltd",
         "partita_iva": "GB123456789",
@@ -458,3 +461,69 @@ def test_deactivate_answers_how_many_customers_still_point_at_the_row(
     deactivated = service.deactivate(second.id, ADMIN)
     assert deactivated.attiva is False
     assert deactivated.clienti_collegati == 2
+
+
+# ---- the version check (REB-622, spec 2026-10-03 §11) ----------------------------------
+
+
+def test_an_update_built_on_the_current_row_is_accepted_and_moves_the_version(
+    db_session: Session,
+) -> None:
+    from pigrocrm.core.errors import StaleRow
+
+    service = LegalEntityService(db_session)
+    first = service.upsert_default(_upsert(), ADMIN)
+    second = service.update(first.id, _upsert(comune="Torino", updated_at=first.updated_at), ADMIN)
+    assert second.comune == "Torino"
+    assert second.updated_at > first.updated_at
+    # The draft built on `first` is stale now: refused before anything is assigned, and
+    # the refusal names the row's current version so a client can tell a reload brought it.
+    with pytest.raises(StaleRow) as excinfo:
+        service.update(first.id, _upsert(comune="Genova", updated_at=first.updated_at), ADMIN)
+    assert excinfo.value.code == "stale_row"
+    assert excinfo.value.details == {"entity": "emitter_profile", "updated_at": second.updated_at}
+    assert service.get(ADMIN).comune == "Torino"
+
+
+def test_an_update_with_no_version_keeps_the_old_behaviour(db_session: Session) -> None:
+    """The MCP tools read right before they write and an older client sends nothing:
+    a body without `updated_at` is a whole-row replace as before."""
+    service = LegalEntityService(db_session)
+    first = service.upsert_default(_upsert(), ADMIN)
+    service.update(first.id, _upsert(comune="Torino", updated_at=first.updated_at), ADMIN)
+    third = service.update(first.id, _upsert(comune="Genova"), ADMIN)
+    assert third.comune == "Genova"
+
+
+def test_the_version_is_compared_as_an_instant_and_never_written(db_session: Session) -> None:
+    """A naive copy of the row's own timestamp is the same instant and is accepted; the
+    value is never assigned to the row, whose `updated_at` moves on its own."""
+    service = LegalEntityService(db_session)
+    first = service.upsert_default(_upsert(), ADMIN)
+    naive = first.updated_at.astimezone(UTC).replace(tzinfo=None)
+    second = service.update(first.id, _upsert(comune="Torino", updated_at=naive), ADMIN)
+    assert second.updated_at != first.updated_at
+
+
+def test_a_null_version_on_an_azienda_is_a_draft_built_on_nothing(db_session: Session) -> None:
+    """The row always exists here, so `null` is never its version: sent, it is checked
+    like any other value and refused; only an absent key checks nothing."""
+    from pigrocrm.core.errors import StaleRow
+
+    service = LegalEntityService(db_session)
+    first = service.upsert_default(_upsert(), ADMIN)
+    with pytest.raises(StaleRow):
+        service.update(first.id, _upsert(comune="Torino", updated_at=None), ADMIN)
+    assert service.get(ADMIN).comune == "Milano"
+
+
+def test_a_creation_takes_no_version(db_session: Session) -> None:
+    """A row being created was built on nothing: `LegalEntityCreate` refuses the key
+    rather than carrying a field `create` would have to ignore."""
+    with pytest.raises(PydanticValidationError):
+        LegalEntityCreate(
+            nome="x",
+            ragione_sociale="X",
+            fiscal_profile=FiscalProfileUpsert(),
+            updated_at=datetime(2026, 1, 1, tzinfo=UTC),  # type: ignore[call-arg]
+        )

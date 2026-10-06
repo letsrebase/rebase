@@ -14,8 +14,11 @@ import {
   draftFrom,
   switchingFromShared,
   type Draft,
+  type SpaceSettings,
   type SpaceSettingsUpdate,
 } from './spaceChanges'
+import { StaleRowBanner } from './StaleRowBanner'
+import { isStaleRow, type StalePhase } from './staleRow'
 
 function Origin({ name, overridden }: { name: string; overridden: string[] }) {
   return (
@@ -32,30 +35,71 @@ export function SpacePanel() {
     queryFn: () => unwrap(api.GET('/api/settings/space')),
   })
   // The form is the server's payload with the person's edits laid over it: no copy to
-  // keep in sync, nothing to reset but the edits.
+  // keep in sync, nothing to reset but the edits. Which is also what makes a reload
+  // after a stale refusal (REB-622) one refetch: the edits stay, the rest follows.
   const [edits, setEdits] = useState<Partial<Draft>>({})
+  const [stale, setStale] = useState<StalePhase>('none')
+  const [reloading, setReloading] = useState(false)
+  // The payload whose version a save sends (REB-622). It follows the query while
+  // nothing is edited and after «Ricarica», never under an open draft: a background
+  // refetch that brought another admin's save would otherwise hand this form their
+  // version, and the next Salva would land over them with no refusal.
+  const [seeded, setSeeded] = useState<SpaceSettings | null>(null)
+  const [adopt, setAdopt] = useState(false)
 
   const save = useMutation({
     mutationFn: (body: SpaceSettingsUpdate) => unwrap(api.PUT('/api/settings/space', { body })),
     onSuccess: (saved) => {
       queryClient.setQueryData(queryKeys.spaceSettings, saved)
       setEdits({})
+      setStale('none')
       toast.success('Impostazioni salvate')
     },
-    onError: (error) => toast.error(toProblem(error).detail),
+    onError: (error) => {
+      const refusal = toProblem(error)
+      if (isStaleRow(refusal)) setStale('refused')
+      else toast.error(refusal.detail)
+    },
   })
 
-  if (query.isError) return <QueryErrorBanner error={query.error} />
-  if (!query.data) return <p className="text-muted-foreground text-sm">Caricamento…</p>
-
   const settings = query.data
+  // Adjusted during render, the way the other two panels seed their forms: the first
+  // payload, then any newer one while the draft is empty or a reload asked for it.
+  if (settings && settings !== seeded && (seeded === null || Object.keys(edits).length === 0 || adopt)) {
+    setSeeded(settings)
+    setAdopt(false)
+  }
+
+  // A read that never succeeded is the error alone; a refetch that fails after one
+  // (a «Ricarica» that did not answer) shows the error above the form, which keeps the
+  // draft and the refusal, as the fiscal panel does (REB-622).
+  if (query.isError && !settings) return <QueryErrorBanner error={query.error} />
+  if (!settings || !seeded) return <p className="text-muted-foreground text-sm">Caricamento…</p>
+
   const draft: Draft = { ...draftFrom(settings), ...edits }
   const changes = changesBetween(settings, draft)
   const dirty = Object.keys(changes).length > 0
+  const version = seeded.updated_at
 
   function onSubmit(event: FormEvent) {
     event.preventDefault()
-    if (dirty) save.mutate(changes)
+    // The version the draft was built on, `null` on a database with no row yet
+    // (REB-622): a save over somebody else's answers 409 instead of landing.
+    if (dirty) save.mutate({ ...changes, updated_at: version })
+  }
+
+  async function reload() {
+    setReloading(true)
+    try {
+      await queryClient.refetchQueries({ queryKey: queryKeys.spaceSettings }, { throwOnError: true })
+    } catch (error) {
+      toast.error(toProblem(error).detail)
+      return
+    } finally {
+      setReloading(false)
+    }
+    setAdopt(true)
+    setStale('reloaded')
   }
 
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) =>
@@ -63,6 +107,14 @@ export function SpacePanel() {
 
   return (
     <form onSubmit={onSubmit} className="space-y-6">
+      {query.isError ? <QueryErrorBanner error={query.error} /> : null}
+      {stale !== 'none' ? (
+        <StaleRowBanner phase={stale} onReload={() => void reload()} reloading={reloading} />
+      ) : null}
+      {/* Locked while a save is in flight, like the other two panels' fields: the
+          success clears the edits, and an edit made between the PUT and its answer
+          would go with them. */}
+      <fieldset disabled={save.isPending} className="min-w-0 space-y-6">
       <Card>
         <CardHeader>
           <CardTitle>{settings.spazio ? `Spazio ${settings.spazio}` : 'Installazione radice'}</CardTitle>
@@ -243,6 +295,7 @@ export function SpacePanel() {
           ))}
         </CardContent>
       </Card>
+      </fieldset>
 
       <div className="flex items-center gap-3">
         <Button type="submit" disabled={!dirty || save.isPending}>

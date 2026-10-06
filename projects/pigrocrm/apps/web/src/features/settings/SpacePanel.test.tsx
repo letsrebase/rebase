@@ -39,6 +39,7 @@ const SETTINGS: components['schemas']['SpaceSettingsRead'] = {
   gmail_backfill_days: 90,
   concentrazione_soglia_preferita: 0.3,
   sovrascritte: [],
+  updated_at: null,
 }
 
 function renderPanel() {
@@ -148,7 +149,124 @@ describe('the space panel', () => {
     await user.clear(backfill)
     await user.type(backfill, '21')
     await user.click(screen.getByRole('button', { name: 'Salva' }))
-    expect(PUT).toHaveBeenCalledWith('/api/settings/space', { body: { gmail_backfill_days: 21 } })
+    // The version it read travels with the changed keys (REB-622): `null` on a
+    // database with no override row yet, and sent as such.
+    expect(PUT).toHaveBeenCalledWith('/api/settings/space', {
+      body: { gmail_backfill_days: 21, updated_at: null },
+    })
     await waitFor(() => expect(screen.getAllByText('impostato qui').length).toBe(1))
+  })
+
+  it('keeps the version it was seeded from under an open draft, and a failed reload keeps the refusal', async () => {
+    const theirs = { ...SETTINGS, mcp_full_access: true, updated_at: '2026-08-21T09:00:00Z' }
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    GET.mockResolvedValueOnce({ data: SETTINGS }).mockResolvedValueOnce({ data: theirs })
+    PUT.mockResolvedValue({
+      error: { code: 'stale_row', detail: 'qualcun altro ha salvato nel frattempo: ricarica e riprova' },
+      response: new Response(null, { status: 409 }),
+    })
+    const user = userEvent.setup()
+    render(
+      <QueryClientProvider client={client}>
+        <SpacePanel />
+      </QueryClientProvider>,
+    )
+    await waitFor(() => expect(screen.getByText('Spazio studio')).toBeInTheDocument())
+    const backfill = screen.getByLabelText('Giorni di posta al primo collegamento')
+    await user.clear(backfill)
+    await user.type(backfill, '21')
+    // A background refetch brings the other admin's save under the draft: their switch
+    // shows, the version this form sends stays the one it read.
+    await client.invalidateQueries({ queryKey: ['settings', 'space'] })
+    await waitFor(() => expect(screen.getByLabelText(/Accesso completo/)).toBeChecked())
+    await user.click(screen.getByRole('button', { name: 'Salva' }))
+    expect(PUT).toHaveBeenLastCalledWith('/api/settings/space', {
+      body: { gmail_backfill_days: 21, updated_at: null },
+    })
+    expect(await screen.findByRole('alert')).toHaveTextContent('Qualcun altro ha salvato nel frattempo.')
+    // The reload fails: nothing was reloaded, so nothing says it was. The error shows
+    // above the form, which keeps the draft and the refusal with its «Ricarica», so
+    // the person can try again from here.
+    GET.mockResolvedValueOnce({ error: { detail: 'database non raggiungibile' }, response: new Response(null, { status: 503 }) })
+    await user.click(screen.getByRole('button', { name: 'Ricarica' }))
+    await waitFor(() => expect(screen.getByText('database non raggiungibile')).toBeInTheDocument())
+    expect(screen.queryByText(/Riga ricaricata/)).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Giorni di posta al primo collegamento')).toHaveValue(21)
+    expect(screen.getByText(/Qualcun altro ha salvato nel frattempo/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Ricarica' })).toBeEnabled()
+    // And the next reload that answers brings their row under the edits.
+    GET.mockResolvedValue({ data: theirs })
+    await user.click(screen.getByRole('button', { name: 'Ricarica' }))
+    await waitFor(() => expect(screen.getByText(/Riga ricaricata/)).toBeInTheDocument())
+    expect(screen.queryByText('database non raggiungibile')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Giorni di posta al primo collegamento')).toHaveValue(21)
+    expect(screen.getByLabelText(/Accesso completo/)).toBeChecked()
+  })
+
+  it('locks the fields while a save is in flight, so nothing typed then is lost', async () => {
+    let finish!: (value: unknown) => void
+    PUT.mockReturnValue(new Promise((resolve) => (finish = resolve)))
+    const user = userEvent.setup()
+    renderPanel()
+    await waitFor(() => expect(screen.getByText('Spazio studio')).toBeInTheDocument())
+    const backfill = screen.getByLabelText('Giorni di posta al primo collegamento')
+    await user.clear(backfill)
+    await user.type(backfill, '21')
+    await user.click(screen.getByRole('button', { name: 'Salva' }))
+    await waitFor(() => expect(screen.getByLabelText('Giorni di posta al primo collegamento')).toBeDisabled())
+    expect(screen.getByLabelText(/Accesso completo/)).toBeDisabled()
+    finish({ data: { ...SETTINGS, gmail_backfill_days: 21, updated_at: '2026-08-21T09:00:00Z' } })
+    await waitFor(() => expect(screen.getByLabelText('Giorni di posta al primo collegamento')).toBeEnabled())
+  })
+
+  it('on a stale refusal offers Ricarica, which keeps the edits over the reloaded settings', async () => {
+    const theirs = {
+      ...SETTINGS,
+      mcp_full_access: true,
+      sovrascritte: ['mcp_full_access'],
+      updated_at: '2026-08-21T09:00:00Z',
+    }
+    GET.mockResolvedValueOnce({ data: SETTINGS }).mockResolvedValue({ data: theirs })
+    PUT.mockResolvedValueOnce({
+      error: {
+        type: 'https://pigrocrm.dev/errors/stale_row',
+        title: 'Riga cambiata nel frattempo',
+        status: 409,
+        detail: 'qualcun altro ha salvato nel frattempo: ricarica e riprova',
+        code: 'stale_row',
+        entity: 'space_settings',
+        updated_at: '2026-08-21T09:00:00Z',
+      },
+      response: new Response(null, { status: 409 }),
+    }).mockResolvedValue({
+      data: {
+        ...theirs,
+        gmail_backfill_days: 21,
+        sovrascritte: ['gmail_backfill_days', 'mcp_full_access'],
+        updated_at: '2026-08-22T09:00:00Z',
+      },
+    })
+    const user = userEvent.setup()
+    renderPanel()
+    await waitFor(() => expect(screen.getByText('Spazio studio')).toBeInTheDocument())
+    const backfill = screen.getByLabelText('Giorni di posta al primo collegamento')
+    await user.clear(backfill)
+    await user.type(backfill, '21')
+    await user.click(screen.getByRole('button', { name: 'Salva' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Qualcun altro ha salvato nel frattempo.')
+    expect(screen.getByLabelText('Giorni di posta al primo collegamento')).toHaveValue(21)
+
+    await user.click(screen.getByRole('button', { name: 'Ricarica' }))
+    // The other admin's switch shows, the edit stays, and the banner says so.
+    await waitFor(() => expect(screen.getByLabelText(/Accesso completo/)).toBeChecked())
+    expect(screen.getByLabelText('Giorni di posta al primo collegamento')).toHaveValue(21)
+    expect(screen.getByRole('alert')).toHaveTextContent('Riga ricaricata.')
+
+    await user.click(screen.getByRole('button', { name: 'Salva' }))
+    await waitFor(() => expect(PUT).toHaveBeenCalledTimes(2))
+    expect(PUT).toHaveBeenLastCalledWith('/api/settings/space', {
+      body: { gmail_backfill_days: 21, updated_at: '2026-08-21T09:00:00Z' },
+    })
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
   })
 })

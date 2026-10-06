@@ -896,8 +896,10 @@ export interface MatchListItem {
 }
 
 /** `previsto` while the first letter is not signed (a projection), the reward's own
- *  state after, `gia_maturato` when the referral already paid on another match. */
-export type MatchReferralStato = 'previsto' | 'gia_maturato' | RewardStato
+ *  state after, `gia_maturato` when the referral already paid on another match, and
+ *  `da_verificare` for a company whose referente has not logged in yet: nothing it
+ *  could sign earns anything until then (REB-658). */
+export type MatchReferralStato = 'previsto' | 'gia_maturato' | 'da_verificare' | RewardStato
 
 /** One referred side of a match (REB-609). `rate` and `amount` are the projection for
  *  `previsto` (`amount` `null` when there is nothing to project) and the reward's own
@@ -1646,6 +1648,29 @@ export interface MemberReferral {
 
 export type RewardStato = 'da_confermare' | 'confermato' | 'pagato'
 
+/** Whether the referred person has proved they hold the address the referral was posted
+ *  with (REB-658): a referral counts, and has a reward, only once `verificato`. */
+export type ReferralStato = 'da_verificare' | 'verificato'
+
+/** What proved it: a login after the referral was made (`accesso`), a freelancer's own
+ *  signature of a letter (`lettera`), or a referral that already counted when the state
+ *  was introduced (`storico`). */
+export type ReferralVerifiedVia = 'accesso' | 'lettera' | 'storico'
+
+/** The facts around one attribution, read from rows that already exist (REB-657):
+ *  the `rif` code the signup used, when the referred card or request was made, its UTM
+ *  source when one was recorded, whether the two email addresses share an organisation's
+ *  domain (a shared public provider such as gmail.com never counts) and whether the
+ *  referred person ever logged in. */
+export interface ReferralEvidence {
+  code: string
+  signed_up_at: string
+  utm_source: string | null
+  /** `null` for both when the referred card or request was hard-deleted: unknown. */
+  same_email_domain: boolean | null
+  ever_logged_in: boolean | null
+}
+
 /** One row of the admin's referral ledger (`GET /api/hub/referrals`): the referrer,
  *  who was referred, and the reward as it was computed or as an admin priced it.
  *  `reward_id` is `null` until the referred party's first letter is signed -- the
@@ -1679,10 +1704,16 @@ export interface ReferralLedgerItem {
   base_amount: string | null
   reward_amount: string | null
   stato: RewardStato | null
+  /** Pending referrals have no reward, nothing to confirm and, for a company, no
+   *  `match_*` and no projection (REB-658). */
+  referral_stato: ReferralStato
+  verified_at: string | null
+  verified_via: ReferralVerifiedVia | null
   note: string | null
   created_at: string
   confirmed_at: string | null
   paid_at: string | null
+  evidence: ReferralEvidence
 }
 
 export interface ReferralLedgerList {

@@ -106,8 +106,14 @@ export function SignedInLayout() {
             </header>
           )}
           {/* No padding on `main`: each page insets itself, the admin pages with their
-             own `px-6` rows and the member pages with a `p-6` on their root. */}
-          <main className="min-h-0 flex-1 overflow-y-auto bg-card">
+             own `px-6` rows and the member pages with a `p-6` on their root.
+
+             `relative` gives `main` its own containing block (REB-420, the mechanism of
+             REB-418): a `position: absolute` descendant with no explicit `top` (an
+             `sr-only` label, a badge) would otherwise fall back to its static position
+             against the initial containing block, escape this `overflow-y-auto` box and
+             inflate `<html>`'s height, dragging the sidebar into the document's scroll. */}
+          <main className="relative min-h-0 flex-1 overflow-y-auto bg-card">
             <Outlet />
           </main>
         </div>
