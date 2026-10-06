@@ -210,8 +210,13 @@ def _builder(
 
 
 def _rows(session: Session) -> list[TeamProposal]:
+    # `id` breaks the tie on `created_at`: the builder stamps every row with the clock it
+    # is handed, by default the fixed `NOW`, so on `created_at` alone the order is the plan's.
+    # Ids are UUIDv7, so insertion order holds (REB-661).
     session.expire_all()
-    return list(session.scalars(select(TeamProposal).order_by(TeamProposal.created_at)))
+    return list(
+        session.scalars(select(TeamProposal).order_by(TeamProposal.created_at, TeamProposal.id))
+    )
 
 
 @pytest.fixture
