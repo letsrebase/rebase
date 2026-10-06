@@ -75,6 +75,10 @@ test('a login survives the session read its page load started and that answers a
   const landed = new Promise<void>((resolve) => {
     loginLanded = resolve
   })
+  let refreshFetched!: () => void
+  const fetched = new Promise<void>((resolve) => {
+    refreshFetched = resolve
+  })
   let held = 0
   await page.route('**/api/auth/refresh', async (route) => {
     // Only the first refresh of this page, the one the mount's 401s provoke (`me`, and
@@ -82,6 +86,7 @@ test('a login survives the session read its page load started and that answers a
     if (held === 0) {
       held++
       const response = await route.fetch()
+      refreshFetched()
       expect(response.status()).toBe(401)
       await landed
       await route.fulfill({ response })
@@ -90,7 +95,17 @@ test('a login survives the session read its page load started and that answers a
     await route.continue()
   })
 
-  await loginAsAdmin(page)
+  // The form is driven here rather than through `loginAsAdmin`, because a credential
+  // must not be typed before the mount's refresh has been fetched: on a slow box that
+  // request could otherwise go out after the login had set its cookie, come back 200,
+  // and the held answer would prove nothing (CodeRabbit's adversarial pass on #561).
+  await page.goto('/app/login')
+  await fetched
+  await page.getByRole('button', { name: /Accedi con la password/ }).click()
+  await page.getByLabel('Email').fill(EMAIL)
+  await page.getByLabel('Password').fill(PASSWORD)
+  await page.getByRole('button', { name: 'Accedi' }).click()
+  await expect(page).toHaveURL(/\/app\/?(\?|$)/)
   loginLanded()
   // The held 401 reaches the app now, after the login has been published. What is
   // asserted next is that nothing happens, which no locator can wait for: the body is
