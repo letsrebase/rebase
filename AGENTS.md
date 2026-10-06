@@ -323,9 +323,11 @@ the dry run (`gh workflow run snyk-weekly.yml -f dry_run=true`), are in
   § The loop).
 - `In Review` is a status on the team, and nothing sets it by hand since 2026-09-16: a
   card whose PR is open reads `In Progress`, because the automation below puts it there.
-- **A project update is written whenever something changed that the issue list
-  alone does not show**: a milestone slipped, a health change, a decision, a
-  release. An update that only restates the board is noise.
+- **Three moments always get a project update, and skipping one is a defect**: the
+  project moves to `started`; a milestone's draft PR merges or a release tag ships; the
+  last card is `Done`, with the project moved to Completed in the same step. Between
+  those, one is written when something changed that the issue list alone does not show.
+  An update that only restates the board is noise (`docs/tracker.md` § The loop).
 - Linear's GitHub app is **installed** on this org since 2026-09-09 (`linear-code`,
   every repository, granted by the org owner `slavni96`), and a branch or a PR carrying
   the issue id **does** link itself: PR #33 attached to REB-80 within 25 seconds.

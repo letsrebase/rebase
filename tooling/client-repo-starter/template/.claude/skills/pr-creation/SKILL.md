@@ -118,3 +118,8 @@ gh pr create --body-file pr-body.md
    push it.
 3. Merge only once CI is green{{GREPTILE_MERGE_CLAUSE}} and the card carries its
    closing evidence.
+4. **The project update is part of finishing.** After a milestone's PR merges, after a
+   release tag ships, and when this merge lands the last open card of its project, the
+   project gets its update (`AGENTS.md` § Project updates, `linear-ticket` skill). The
+   last-card update says what was verified and on which surface, and the project moves
+   to `Completed` in the same step.
