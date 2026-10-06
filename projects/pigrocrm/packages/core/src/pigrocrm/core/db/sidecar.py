@@ -1,6 +1,6 @@
 """Side databases: found or created on the CRM's own server, then given their schema.
 
-Two things live beside the CRM database without being part of it -- the Orbiters signup
+Two things live beside the CRM database without being part of it -- the rebase signup
 list and the registry of tenant spaces -- and both are shaped the same way: a database
 whose name is derived from the CRM's URL, created idempotently the first time anyone
 asks, with a `MetaData` of its own that `create_all` is the honest size of tool for.

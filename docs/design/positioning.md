@@ -6,7 +6,7 @@ words here are wrong, this file changes first and the surfaces follow.
 
 Decided with Ivan on 2026-09-09 (REB-24). Since 2026-09-14 the name is **rebase**, written
 lowercase everywhere a person reads it, including at the start of a sentence (REB-194);
-«Orbiters» survives only in code identifiers and in history. The wording of what a visitor reads is his;
+The former name survives only in code identifiers and in history. The wording of what a visitor reads is his;
 this page is what the copy is checked against.
 
 ## Who it is for
@@ -38,7 +38,7 @@ Say it plainly, because the old copy did not:
 - Not for juniors looking for a first client, and not for people between jobs
   looking for a bridge. There is nobody here to mentor them, and a company that asks
   us for a person asks for someone who can be left alone with the problem.
-- Not for agencies or studios placing their own people. Orbiters is one person, one
+- Not for agencies or studios placing their own people. rebase is one person, one
   CV, one day rate.
 - Not for companies looking for the cheapest hourly rate. The projects we take are
   the ones where the client wants it done well.
@@ -84,7 +84,7 @@ so: «stiamo mettendo insieme», «ti scriviamo noi».
 | chi fa software in proprio, lavora in proprio | freelance as the subject of a headline | Says what they do and that they do it on their own account |
 | freelance, partita IVA, forfettario | libero professionista, professionista autonomo | As the legal and fiscal category only: «developer freelance», «in forfettario». Never as who the reader is |
 
-Two exceptions Ivan decided on 2026-09-09: the `<title>` of both pages and their `og:title` keep «freelance» («Orbiters — la community dei freelance», «Orbiters — freelance, ma non da soli»), for continuity with what search engines and people already know; and «Freelance» is one of the words the h1 types, after the roles, so a visitor who only knows that word still finds themselves in it.
+Two exceptions Ivan decided on 2026-09-09: the `<title>` and the `og:title` of the landing keep «freelance» («rebase — freelance, ma non da soli», and in the `<title>` «Con PigroCRM gratis» after it), for continuity with what search engines and people already know; and «Freelance» is one of the words the h1 types, after the roles, so a visitor who only knows that word still finds themselves in it.
 | aziende vere, un progetto vero | clienti, opportunità, lead | The company is the other party of a project, not a sales object |
 | tariffa a giornata, quanto costa una tua giornata | rate, tariffa oraria | Seniors quote days |
 | persone che ci sono passate | community, network, mentor | The value is the experience, not the group |
@@ -130,7 +130,7 @@ one if Royal Gold ever grows into a background.
 start-ups of 2023 chose, so it does not say anything specific about who we are. It is
 clean and it renders well at the sizes used. What softens it is the body at weight 300:
 light text reads as «gentle», and senior readers trust text that sits firmly on the
-page. This is a website stylesheet decision (`orbiters.css`, `landing.css`), not a brand
+page. This is a website stylesheet decision (`landing.css`), not a brand
 one.
 
 **What I would change, in order, and none of it in this PR:**

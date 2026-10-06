@@ -85,7 +85,7 @@ def spaces_client(container_settings: Settings) -> Iterator[TestClient]:
 @pytest.fixture
 def registry_client(container_settings: Settings) -> Iterator[TestClient]:
     """The same installation with `PIGROCRM_REGISTRY_TOKEN` set: the one that lets the
-    Orbiters hub read the list of spaces (ORB-142)."""
+    rebase hub read the list of spaces (ORB-142)."""
     with_token = container_settings.model_copy(update={"registry_token": REGISTRY_TOKEN})
     with _serving(with_token) as client:
         yield client
@@ -475,7 +475,7 @@ def test_signing_up_enters_for_a_while_and_the_welcome_link_makes_it_durable(
         },
     )
     assert user.status_code == 422, user.text
-    # The welcome mail: to the owner, with a link that enters and the Orbiters paragraph
+    # The welcome mail: to the owner, with a link that enters and the rebase paragraph
     # for someone who is not a member yet.
     assert len(recording.sent) == 1
     mail = recording.sent[0]

@@ -1,9 +1,9 @@
 # The shared self-hosted Actions runner pool
 
-**Live since 2026-09-24.** `62.83.33.29` (`v2202609426308528003.bestsrv.de`), Netcup,
-rebase-owned account. Alias `ci-runner` on both devbox and the Mac
-(`~/.ssh/config`, `ssh ci-runner`). Runner group `private-clients`
-(`allows_public_repositories: false`, `visibility: selected`), holding
+**Live since 2026-09-24.** `62.83.33.29`, a VPS on a rebase-owned hosting account. It is
+the CI/CD server, the second of rebase's two servers (`docs/architecture.md` § Where it
+runs), separate from the Hetzner origin that serves the products. Runner group
+`private-clients` (`allows_public_repositories: false`, `visibility: selected`), holding
 `letsrebase/point` today; the Default group, the one `letsrebase/rebase` would fall
 back to if a workflow there ever asked for `self-hosted`, has zero runners
 registered, so that path fails closed rather than silently reaching this box.
@@ -16,10 +16,8 @@ were deleted after.
 A private, rebase-managed client repository bills hosted-runner minutes on the org's
 GitHub plan; `letsrebase/point` already hit a payment failure that blocked every job
 instantly (2026-09-24). This is the shared pool that replaces hosted runners for
-every private client repository, on its own rebase-owned Netcup VPS, never on the
-devbox: the devbox already runs agent sessions on the same 8 vCPU / 16GB the pool
-would compete with (measured 2026-09-24, 767MB free out of 15GB at the time this was
-written), and it holds credentials for every client and personal repo: a runner
+every private client repository, on its own rebase-owned VPS, never on a machine that
+also runs agent sessions or holds credentials for other repositories: a runner
 executes whatever a workflow file in the target repository says, and a shared box is
 the wrong place to put that next to everything else here.
 
@@ -58,44 +56,42 @@ three Postgres-backed jobs plus any Docker
 builds is still tight, the swap backstop (zram plus the swapfile) absorbs a spike
 rather than an OOM kill, but sustained heavy concurrent load will show as slower
 jobs before it shows as failures. Watch the queue once more than one private
-repository is on the pool; a Netcup resize (more vCPU/RAM on the same disk) is the
+repository is on the pool; a resize of the VPS (more vCPU/RAM on the same disk) is the
 straightforward path if jobs start waiting rather than just running slower.
 
 ## Access: public SSH, key-only, every team member, no Tailscale
 
-Decided 2026-09-24: unlike prodbox, this box is reachable by plain public SSH, not
-gated behind Tailscale. Two reasons drove it, not one: the pool has to be usable by
-every team member administering it, not only whoever is already enrolled on the
-`fiorelorenzo.fl` tailnet, and GitHub's runner process itself never needs Tailscale
-either way, it only needs outbound internet to poll the API. The tradeoff this takes
-on, and the reason the rest of this section exists, is that public SSH means the
-standard hardening (key-only auth) is no longer the *only* layer prodbox relies on;
-add the rate-limiting a Tailscale gate made unnecessary there.
+Decided 2026-09-24: this box is reachable by plain public SSH, not gated behind
+Tailscale. Two reasons drove it, not one: the pool has to be usable by every team
+member administering it, not only whoever is already enrolled on a private network, and
+GitHub's runner process itself never needs Tailscale either way, it only needs outbound
+internet to poll the API. The tradeoff this takes on, and the reason the rest of this
+section exists, is that public SSH means key-only auth is no longer enough on its own:
+add the rate limiting a Tailscale gate would have made unnecessary.
 
 **Done:**
 
-1. Debian 13 (trixie), matching the rest of the fleet.
+1. Debian 13 (trixie).
 2. Docker Engine 29.8.1 + Buildx + compose plugin v5.5.1.
 3. SSH: `PasswordAuthentication no`, `KbdInteractiveAuthentication no`,
-   `PermitRootLogin prohibit-password` (prodbox's own drop-in,
-   `/etc/ssh/sshd_config.d/99-hardening.conf`, unchanged; verified: a
+   `PermitRootLogin prohibit-password` (the drop-in
+   `/etc/ssh/sshd_config.d/99-hardening.conf`; verified: a
    password-only connection attempt is refused). Non-root admin user `ci`,
-   passwordless sudo, key-only login. `authorized_keys` holds the devbox key and
-   both of the Mac's keys, one entry per key rather than one shared credential.
-   The root account's own password, emailed by Netcup in plaintext, was rotated to
+   passwordless sudo, key-only login. `authorized_keys` holds one entry per
+   administrator key rather than one shared credential.
+   The root account's own password, emailed by the hosting provider in plaintext, was rotated to
    a value generated and kept entirely on the box itself (never printed anywhere)
    the moment key access was confirmed, since password SSH is off regardless and
    the emailed value should be treated as burned.
 4. UFW: default deny incoming, `22/tcp` open publicly, default allow outgoing.
-   `fail2ban` on `sshd` (5 attempts / 10 minutes, 1 hour ban), the layer prodbox
-   does not need and this box does since the port is internet-facing.
+   `fail2ban` on `sshd` (5 attempts / 10 minutes, 1 hour ban), the layer this box
+   needs since the port is internet-facing.
 5. `zram` (`ram/2`, lz4, confirmed active via `zramctl`: `/dev/zram0`, priority
    100) plus a 4G static swapfile (priority -2, fallback once zram fills) and
-   `vm.swappiness=100`: 7.9GB of swap total against 7.8GB of RAM, the same shape
-   as prodbox's layout scaled to this box's smaller memory.
-6. SSH aliases on devbox and on the Mac, the same shape as the existing `prodbox`
-   alias on both (`~/.ssh/config`): `Host ci-runner`, `HostName 62.83.33.29`,
-   `User ci`, `IdentityFile ~/.ssh/id_ed25519`. Verified working from both.
+   `vm.swappiness=100`: 7.9GB of swap total against 7.8GB of RAM.
+6. An SSH alias for each administrator, in their own `~/.ssh/config`:
+   `Host ci-runner`, `HostName 62.83.33.29`, `User ci`,
+   `IdentityFile ~/.ssh/id_ed25519`. Verified working.
 7. Runner group `private-clients`, `visibility: selected`,
    `allows_public_repositories: false` (an extra layer even if `rebase` were ever
    added to it by mistake: GitHub refuses a public repository in a group with this
@@ -105,23 +101,21 @@ add the rate-limiting a Tailscale gate made unnecessary there.
    (`actions.runner.letsrebase.ci-runner-{1,2,3}.service`, user `ci`, one
    `actions-runner*` directory each), labels `self-hosted, linux, x64`. Verified
    picking up and completing real jobs, including three at once.
-9. Ivan's SSH public key (`ivan-sala@macbook runnergitlab-rebase`) added to the
-   `ci` user's `authorized_keys`, alongside the devbox and Mac keys.
+9. Ivan's SSH public key added to the `ci` user's `authorized_keys`, alongside
+   Lorenzo's.
 10. **`TMPDIR` on real disk, not the tmpfs `/tmp`.** Found 2026-09-24 the same day
     the pool went live: `letsrebase/point`'s `api-tests` job failed twice with
     `OSError: [Errno 28] No space left on device` on a `pip install`, while the
     125G root disk sat at 12% used. `/tmp` here is a 3.9G RAM-backed `tmpfs`
     (Debian's default), and a crashed install from an earlier job had left a
-    3.2G unpacked package behind in it, the same class of trap
-    `devbox-process-hygiene` already documents for the devbox itself. Fixed on
+    3.2G unpacked package behind in it. Fixed on
     all three runners: `TMPDIR=/home/ci/.cache/tmp` (created on the root disk,
     owned by `ci`) via a systemd drop-in on each
     `actions.runner.letsrebase.ci-runner-{1,2,3}.service`, plus
     `/etc/cron.daily/ci-runner-disk-hygiene`, which clears anything left in that
     directory after a day and runs `docker system prune -af --filter
     'until=24h'`. That cron also closes the Docker-prune follow-up below: no
-    rollback images live on this box the way they do on prodbox, so a plain
-    prune is safe here without prodbox's surgical per-app carve-out.
+    rollback images live on this box, so a plain prune is safe here.
 
 **Not done, deliberate follow-ups rather than gaps in what exists today:**
 
@@ -152,7 +146,7 @@ a second private repository with a different trust owner joins, not after.
 UFW's default-deny on `22/tcp` does not stop Docker: Docker inserts its own
 `iptables` rules ahead of UFW's chain, so a service container published as
 `5432:5432` (all interfaces) reaches the public internet regardless of what UFW
-says, the same trap `prodbox-deploy` already documents for a hand-run container.
+says.
 `letsrebase/point`'s dynamic-port fix above solves the port-collision problem
 between concurrent jobs; it does not by itself bind to loopback. A future
 workflow's service container should publish `127.0.0.1:<port>:<container-port>`

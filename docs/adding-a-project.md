@@ -156,8 +156,8 @@ workspace the project joined in section 2.
 
 Add the project's expensive checks to `.github/preflight.json`, with `when` globs
 scoped to `projects/<name>/**`. Mark `serial: true` anything that binds a fixed host
-port or a shared database (this box runs several agents at once and a port
-collision reads exactly like a failing test). Then run `preflight --list` and read
+port or a shared database (a machine running several agents at once has port
+collisions that read exactly like a failing test). Then run `preflight --list` and read
 which checks your diff actually selects, rather than assuming the globs are right.
 
 **Anything you took off the PR path has to appear here.** A heavy check in neither
@@ -204,6 +204,12 @@ docs-only commit after a red change to your project gets a trunk run where every
 of your jobs is skipped and `ci` concludes success, and a tag on that commit would
 otherwise ship the red code. The tag's run never skips your project, which is what
 the two `case` lines above buy; a prefix `changes` does not know keeps the full run.
+
+**Where it deploys to.** Every environment of every project deploys to the origin, the
+Hetzner machine described in `docs/architecture.md` § Where it runs: `DEPLOY_HOST` names
+it and `DEPLOY_PATH` is a directory on it. The deploy job itself runs on a GitHub-hosted
+runner (`ubuntu-latest`) and reaches the origin over SSH; the self-hosted runner pool
+(`docs/ci-runner-pool.md`) is rebase's other server and is not on this path.
 
 The mechanism lives in `.github/workflows/_deploy-compose.yml` and is shared. What a
 project writes is a caller, `deploy-<name>.yml`, with one job per environment, each
@@ -328,8 +334,8 @@ When a project starts serving what another one served, the order is not a prefer
 building it.** Landing them the other way round leaves a window where the name points
 at a container that no longer has the pages, and on this repository that window was not
 theoretical: while production was still deployed from `main` by hand, a merge was
-effectively a release whatever the tag policy said. It cost twenty minutes of a
-redirecting joinorbiters.com on 2026-09-09 (REB-16). Since that afternoon nothing is
+effectively a release whatever the tag policy said. It cost twenty minutes of the
+production site answering with redirects on 2026-09-09 (REB-16). Since that afternoon nothing is
 deployed by hand (`docs/design/DECISIONS.md`, 2026-09-09): production moves only on a
 tag, so the order above is what makes the tag safe to push.
 
@@ -342,7 +348,7 @@ The host's nginx vhost belongs to the project, in `projects/<name>/deploy/`, and
 decides only what is not the project's container: everything else proxies to it and the
 container owns its own path map. Every stack publishes on the loopback and never on
 `0.0.0.0`: the host's nginx is what faces the internet, and publishing wider walks past
-the firewall. One host carries every environment of every project, so the ports are
+the firewall. The origin carries every environment of every project, so the ports are
 allocated here and nowhere else; a new project takes the next free ones and adds its
 rows.
 
@@ -430,7 +436,7 @@ Keeping it working:
 - **A new table** PostHog should see needs its own `GRANT SELECT` (the grants are per
   table, a migration does not extend them) and then a schema refresh on the source.
 - **A renamed table or column breaks a sync**, and this is the one that has already
-  happened twice: the `orbiters` → `rebase` database rename on 2026-09-15, and
+  happened twice: the hub's database rename to `rebase` on 2026-09-15, and
   `member_logins` → `logins` on 2026-09-21. `test_warehouse_contract.py` in the hub's
   core now fails on the second kind, on the pull request, instead of leaving it to an
   email nine days later. A rename carries the grant with it, so nothing here refuses PostHog; the

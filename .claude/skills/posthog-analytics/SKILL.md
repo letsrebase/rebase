@@ -90,10 +90,11 @@ personal key (`phx_…`) never enters a file, a card or a chat transcript.
 4. The value itself is written by hand on the server, in `${DEPLOY_PATH}/.env`
    (`/opt/hub/.env`, `/opt/hub-preview/.env`): the deploy never rsyncs a `.env`. The
    container reads it at start, so the next tag deploy or `docker compose up -d` picks
-   it up. Verify inside the container, not on the host:
+   it up. Verify inside the container, not on the host, with `ORIGIN` set to your ssh alias
+   for the origin (`docs/architecture.md` § Where it runs):
 
    ```bash
-   ssh orbiters 'sudo docker exec rebase-api-1 sh -c "printenv REBASE_POSTHOG_KEY | cut -c1-8"; \
+   ssh "$ORIGIN" 'sudo docker exec rebase-api-1 sh -c "printenv REBASE_POSTHOG_KEY | cut -c1-8"; \
      sudo docker exec rebase-api-1 uv run --no-sync python -c \
      "from rebase_core.config import get_settings; from rebase_core.analytics import tracker_from_settings, shutdown; print(tracker_from_settings(get_settings()) is not None); shutdown()"'
    ```
@@ -186,7 +187,7 @@ pull request asks before the email does. Three shapes, three answers:
   because production holds it today, not because it is settled.
 
 **A database or role that moved.** The source stores the database name: the
-`orbiters` → `rebase` rename of 2026-09-15 left the hub source failing with «Something
+hub database's rename to `rebase` on 2026-09-15 left the hub source failing with «Something
 this sync depends on … no longer exists» and its tables switched off. The fix is on the
 source's Configuration tab: change the field, leave password and private key blank (a
 blank secret keeps the stored one; «Source updated» confirms), then re-enable the rows

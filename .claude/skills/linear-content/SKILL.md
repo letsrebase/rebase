@@ -26,7 +26,7 @@ card does, the same shape as a project name. The observed problem is not lost: i
 is the `**Observed.**` line of the body, one screen down. A colon inside a title
 means the second half belongs in the body.
 
-- Good: `Drop the stale orbiters database from the CRM host`
+- Good: `Drop the stale legacy database from the CRM host`
 - Good: `Make the CV optional in the wizard and the member area`
 - Bad: `The dead confermata -> bozza transition is gone from both tables` (the
   end state, not the work; it reads as a riddle to anyone who did not write it)

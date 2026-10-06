@@ -1,4 +1,4 @@
-"""Signing up for a space: the second public write in the API, after Orbiters.
+"""Signing up for a space: the second public write in the API, after the rebase signup.
 
 No `ActorDep`: the person has no account anywhere yet, which is the point. The router
 works on the registry database (`TenantsRegistryDep`), never on a space, and answers
@@ -59,7 +59,7 @@ def list_spaces(
     authorization: Annotated[str | None, Header()] = None,
 ) -> list[TenantRead]:
     """Every space in the registry, newest first, for the one caller that holds
-    `PIGROCRM_REGISTRY_TOKEN`: the Orbiters hub, whose admin area shows which spaces
+    `PIGROCRM_REGISTRY_TOKEN`: the rebase hub, whose admin area shows which spaces
     exist and whose they are (ORB-142). Without the token configured the route does not
     exist (404), so nothing says there is a door; with it, a missing or wrong bearer is a
     401. What comes back is the registry row and nothing about the database behind it."""
@@ -78,7 +78,7 @@ class MemberQuestion(BaseModel):
 
 class MemberAnswer(BaseModel):
     """What the signup learns about an address before the person has an account: whether
-    the Orbiters hub knows them as a community member, their two names if so, and how
+    the rebase hub knows them as a community member, their two names if so, and how
     many spaces the registry already holds in that name. A count, not the slugs: the
     address is not proven yet, and which spaces are whose is the mail's to tell."""
 
@@ -93,7 +93,7 @@ class MemberAnswer(BaseModel):
 def member(
     payload: MemberQuestion, request: Request, registry: TenantsRegistryDep, settings: SettingsDep
 ) -> MemberAnswer:
-    """Whether an address belongs to an Orbiters community member, and how many spaces
+    """Whether an address belongs to a rebase community member, and how many spaces
     it already owns here (ORB-173). No auth, like the signup itself: the person has no
     account yet, so the route is throttled per client instead. The hub is asked with
     `PIGROCRM_REGISTRY_TOKEN` at `PIGROCRM_HUB_URL` and given five seconds; unreachable,

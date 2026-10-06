@@ -34,7 +34,8 @@ from rebase_core.validation import SafeStr
 
 LINKEDIN_HOST = "linkedin.com"
 # What the landing sends in `oppref`, bounded to the same 512 characters it bounds it to
-# (`orbiters.js`'s `OPPREF_MAX_LENGTH`). Not a column width: nothing stores this.
+# (the community page's script, gone with the page in REB-72). Not a column width:
+# nothing stores this.
 OPPREF_MAX_LENGTH = 512
 
 # Characters that must never reach a stored value. C0 (tab, CR, LF included), DEL and

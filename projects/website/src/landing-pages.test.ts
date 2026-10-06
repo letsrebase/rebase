@@ -38,7 +38,7 @@ describe.each(PAGES)('%s', (name) => {
     // a product that exists nowhere in that codebase. It is the easiest mistake
     // to repeat, and it is text Google reads during verification.
     expect(description).not.toMatch(/AI optimization platform/i)
-    // All three pages' og:title already begins "Orbiters" (index.html's own title
+    // All three pages' og:title already begins "rebase" (index.html's own title
     // keeps the "Con PigroCRM gratis" suffix, but its og:title does not repeat it),
     // so this one assertion covers every page in PAGES with no ternary.
     expect(meta(page, 'og:title')).toContain('rebase')
@@ -128,7 +128,7 @@ describe.each(PAGES)('%s', (name) => {
     // covers. ORB-36 reopened that: privacy.html and terms.html are served on
     // letsrebase.com, not on pigro.letsrebase.com, the hub's own signup wizards are
     // what link to them, and their own text already covers rebase's data (the
-    // signup) alongside PigroCRM's. All three pages here sign as Orbiters now; the
+    // signup) alongside PigroCRM's. All three pages here sign as rebase now; the
     // titolare del trattamento the two legal pages name, and the substance of what
     // each policy says, did not move with the brand.
     expect(page).toMatch(
@@ -151,8 +151,8 @@ describe('index.html', () => {
   const section = (id: string) => page.match(new RegExp(`<section[^>]*aria-labelledby="${id}"[\\s\\S]*?<\\/section>`))?.[0] ?? ''
 
   it('opens with the community and its claim, then presents the perks as a set, the CRM the largest', () => {
-    // Since 2026-09-08 PigroCRM is what a member of Orbiters gets: the page says what
-    // Orbiters is first, in its own words, and only then what the perks are. Since
+    // Since 2026-09-08 PigroCRM is what a member of rebase gets: the page says what
+    // rebase is first, in its own words, and only then what the perks are. Since
     // REB-68 the CRM is named as one of a set, not the whole answer: its own kicker
     // is just "PigroCRM", never "il perk", and the set names both members before the
     // CRM's own expanded block follows.
@@ -258,7 +258,7 @@ describe('index.html', () => {
   it('has one section for the four voices, real people, no placeholder left', () => {
     // Until 2026-09-11 the four tiles were placeholders marked `data-placeholder`, to
     // be counted here when the real ones arrived. They did (Ivan, ORB-145): four people
-    // of Orbiters, a role each, one sentence each about the platform.
+    // of rebase, a role each, one sentence each about the platform.
     expect(page).toContain('Hanno lavorato con noi')
     const tiles = page.match(/<figure class="testimonial"[^>]*>/g) ?? []
     expect(tiles).toHaveLength(4)

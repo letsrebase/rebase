@@ -60,7 +60,7 @@ has to be in text beside it.
 the tile at half the cap height and the gap at three quarters of the tile, so a consumer
 sets one width and the pair holds. Neither carries a `width` or a `height`: the same file
 is the 18px chip in the header and a 1584px LinkedIn cover. All four spell their colours
-as literal hex, the way `orbiters-logo.svg` already does, because an SVG opened as a file
+as literal hex, the way `rebase-logo.svg` already does, because an SVG opened as a file
 resolves no custom property; what is new is that `landing-style.test.ts` holds those
 hexes to `palette.css`, the four tiles to `BRAND_TILES`, and the geometry to the
 proportions above. Then the graft (direction A, `docs/design/DECISIONS.md`,

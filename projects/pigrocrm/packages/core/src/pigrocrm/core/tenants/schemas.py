@@ -70,7 +70,7 @@ class TenantSignup(BaseModel):
     # the revocation that protects the real owner. `extra="forbid"` so a client that
     # still sends one hears about it.
     # What the wizard learned from the hub about this address: decides whether the
-    # welcome mail tells the person about Orbiters. Never trusted for anything else.
+    # welcome mail tells the person about rebase. Never trusted for anything else.
     membro: bool = False
 
     model_config = ConfigDict(extra="forbid")

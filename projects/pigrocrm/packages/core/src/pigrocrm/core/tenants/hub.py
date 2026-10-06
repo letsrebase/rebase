@@ -1,4 +1,4 @@
-"""The one question the CRM asks the Orbiters hub: does this address belong to a member?
+"""The one question the CRM asks the rebase hub: does this address belong to a member?
 
 The signup greets a community member by name and skips the questions the hub already
 answered (spec 2026-09-12 §6.3, ORB-173). The hub is reached through its own API,

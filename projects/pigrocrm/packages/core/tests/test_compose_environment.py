@@ -1,7 +1,7 @@
 """Every setting an installation is meant to choose reaches the container.
 
 This file exists because of a hole that was real for a few hours on 2026-09-09. Four
-settings were added for the Orbiters signup conversion (since moved to `projects/hub`),
+settings were added for the rebase signup conversion (since moved to `projects/hub`),
 documented in `.env.example`, tested in core, wired into the API -- and not listed in
 `docker-compose.yml`. Compose forwards only the variables a service names, so in
 production the API would have seen a bare `Settings()` and no conversion would ever have

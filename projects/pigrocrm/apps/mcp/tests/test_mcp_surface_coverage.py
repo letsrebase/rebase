@@ -624,7 +624,7 @@ _COPERTE_O_UMANE: dict[Method, str] = {
     ),
     ("TenantService", "provision"): (
         "e' la persona che crea il *proprio* spazio dal login pubblico (spec 2026-09-08): "
-        "una scelta su di se', come l'iscrizione a Orbiters, non un'operazione che un "
+        "una scelta su di se', come l'iscrizione a rebase, non un'operazione che un "
         "agente compie per conto del titolare. Il registro degli spazi e' un database di "
         "servizio, non il CRM, e l'unico adapter che vi arriva e' `POST /api/tenants`"
     ),
@@ -637,7 +637,7 @@ _COPERTE_O_UMANE: dict[Method, str] = {
         "database dello spazio, prima che esista un actor"
     ),
     ("TenantService", "list"): (
-        "the registry of spaces read by another product, the Orbiters hub, through "
+        "the registry of spaces read by another product, the rebase hub, through "
         "`GET /api/tenants/` with `PIGROCRM_REGISTRY_TOKEN` (ORB-142): the installation's "
         "spaces are not the titolare's CRM data, and an agent acting in one space has no "
         "business listing everybody else's"
