@@ -25,15 +25,10 @@ REQUESTS_PER_MINUTE = 5
 # needs (REB-228) -- five hesitations while naming a business is not a scripted sweep.
 # A generous ceiling on a read-only lookup that sends no mail and provisions nothing.
 DISPONIBILE_REQUESTS_PER_MINUTE = 30
-# `POST /api/auth/login` gets its own budget rather than sharing `REQUESTS_PER_MINUTE`:
-# it is the one route whose cost per failed attempt is not just wasted mail or a
-# wasted provision but a full argon2id verify at the library's own defaults (64 MiB,
-# time cost 3, `auth/passwords.py`), so tying it to the signup routes' bucket would
-# let a script guessing a password also burn the tokens a person mistyping a signup
-# field needs, and vice versa. Ten, not five: a person locked out by a typo gets two
-# tries at recovering their own password before the wait, still nowhere near enough
-# attempts a minute to make guessing worthwhile (REB-270).
-LOGIN_REQUESTS_PER_MINUTE = 10
+# `POST /api/auth/login` gets its own budget rather than sharing `REQUESTS_PER_MINUTE`,
+# and since REB-662 it is `Settings.login_requests_per_minute` (ten by default, the
+# reasons on the field): the route passes it as `per_minute`, so the e2e suite can
+# declare a budget of its own without this module knowing.
 # `GET /api/auth/invite` (REB-290) reads an invitation without spending it, and the
 # acceptance page calls it on mount: a reload, the browser's own retry, or the
 # person clicking the link twice must not lock them out of seeing who invited them.

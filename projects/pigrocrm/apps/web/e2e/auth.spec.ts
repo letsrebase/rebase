@@ -58,6 +58,80 @@ test('a correct login reaches the dashboard and logout returns to login', async 
   await logout(page)
 })
 
+test('a login survives the session read its page load started and that answers after it (REB-662)', async ({ page }) => {
+  // The login page asks `/api/auth/me` as it mounts and gets a 401, on which the client
+  // tries `POST /api/auth/refresh` once (`lib/api.ts`), which also answers 401 on a
+  // visitor with no session. On a loaded box that second answer can land after the
+  // login has already answered 200, and `lib/auth.tsx` used to let the `null` it
+  // resolves to overwrite the session it had just published: the person reached the
+  // Home and was thrown back to the login form a moment later, with both cookies set
+  // and nothing asking `me` again for thirty seconds. Here that refresh's 401 is
+  // fetched when the page sends it,
+  // with no session, and delivered only once the login has landed, which is the worst
+  // case of that race made deterministic; the Home has to stay once it arrives. A slow
+  // `me` alone is not the case: its late 401 is replayed through a refresh that by then
+  // finds the new cookie, and comes back as the person.
+  let loginLanded!: () => void
+  const landed = new Promise<void>((resolve) => {
+    loginLanded = resolve
+  })
+  let refreshFetched!: () => void
+  const fetched = new Promise<void>((resolve) => {
+    refreshFetched = resolve
+  })
+  // `identity/spaces` answers 401 to a visitor too (`routes/app/login.tsx`), and on
+  // its own it could be the request that provokes the refresh held below, with `me`'s
+  // 401 landing after the release on a slow box and healing through a refresh of its
+  // own. A 200 with no space is the same screen, and it leaves `me` as the mount's one
+  // 401: the held refresh is the one its retry waits on, by construction.
+  await page.route('**/api/identity/spaces', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
+  )
+  let held = 0
+  await page.route('**/api/auth/refresh', async (route) => {
+    // Only the first refresh of this page, the one the mount's `me` provokes.
+    if (held === 0) {
+      held++
+      const response = await route.fetch()
+      refreshFetched()
+      expect(response.status()).toBe(401)
+      await landed
+      await route.fulfill({ response })
+      return
+    }
+    await route.continue()
+  })
+
+  // The form is driven here rather than through `loginAsAdmin`, because a credential
+  // must not be typed before the mount's refresh has been fetched: on a slow box that
+  // request could otherwise go out after the login had set its cookie, come back 200,
+  // and the held answer would prove nothing (CodeRabbit's adversarial pass on #561).
+  await page.goto('/app/login')
+  await fetched
+  await page.getByRole('button', { name: /Accedi con la password/ }).click()
+  await page.getByLabel('Email').fill(EMAIL)
+  await page.getByLabel('Password').fill(PASSWORD)
+  await page.getByRole('button', { name: 'Accedi' }).click()
+  await expect(page).toHaveURL(/\/app\/?(\?|$)/)
+  loginLanded()
+  // The held 401 reaches the app now, after the login has been published. What is
+  // asserted next is that nothing happens, which no locator can wait for: the body is
+  // awaited, then a bounded settle covers the app's handling of it (a parse, a cache
+  // write, a render, a router push when there was one), and only then is the screen
+  // read. Before the fix the push came within that second on this box; a slower box
+  // could only make this test pass without the fix, never fail with it.
+  const late = await page.waitForResponse((response) => response.url().endsWith('/api/auth/refresh'))
+  await late.finished()
+  await page.waitForTimeout(1_000)
+
+  await expect(page.getByText('E2E', { exact: true })).toBeVisible()
+  await expect(page).toHaveURL(/\/app\/?(\?|$)/)
+  // The late answer took nothing with it: the session the login set is still the one
+  // the server knows, not only the one the cache shows.
+  const me = await page.request.get('/api/auth/me')
+  expect(me.status()).toBe(200)
+})
+
 test('the shell scrolls inside main only, not the whole document (REB-418)', async ({ page }) => {
   // The get-started page is long enough (four steps, each with a screen and a prompt)
   // to expose a leak that a shorter page hides: before the fix, `main` had no CSS

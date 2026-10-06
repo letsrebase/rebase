@@ -100,6 +100,23 @@ class Settings(BaseSettings):
     # Set PIGROCRM_COOKIE_SECURE=false for that one case. Anyone tempted to flip this
     # in production because "it's just a flag" should re-read this paragraph first.
     cookie_secure: bool = True
+    # How many `POST /api/auth/login` attempts one client address gets per minute: a
+    # token bucket of its own (`pigrocrm_api.ratelimit.spend_one`), never a share of
+    # the signup routes' five, because a failed login is a full argon2id verify at the
+    # library's own defaults (64 MiB, time cost 3, `auth/passwords.py`), the one cost
+    # no other unauthenticated route pays on every failed attempt, so a script guessing
+    # a password must not burn
+    # the tokens a person mistyping a signup field needs, nor the reverse. Ten, not
+    # five: a person locked out by a typo gets two tries at recovering their own
+    # password before the wait, still nowhere near enough attempts a minute to make
+    # guessing worthwhile (REB-270). A setting, since REB-662, because the e2e suite is
+    # one address logging in once per spec, forty-one times in under three minutes at
+    # the preview server's speed, and declares its own budget in
+    # `apps/web/scripts/e2e-env.sh` the way it declares `cookie_secure`. Nothing else
+    # has a reason to move it. `ge=1` because a bucket that starts below one token
+    # answers 429 to every login for good, and a misconfiguration that locks everyone
+    # out should fail at boot, not at the first person's login.
+    login_requests_per_minute: int = Field(default=10, ge=1)
 
     # Whether a personal access token may perform the operations listed in
     # `actor.AGENT_FORBIDDEN_ACTIONS` -- issuing and annulling invoices, rates, cost

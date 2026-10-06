@@ -129,5 +129,9 @@ test('the timeline records what happened', async ({ page }) => {
 
   await page.getByText(name).click()
   await page.getByRole('tab', { name: 'Timeline' }).click()
-  await expect(page.getByText('Creato')).toBeVisible()
+  // `exact`, because `getByText` matches a substring case-insensitively and the «Cliente
+  // creato» toast of the save above is still on screen when the tab opens on a fast
+  // runner: two matches is a strict-mode violation, not a timeline with two rows
+  // (REB-662, seen once the suite ran against the preview server).
+  await expect(page.getByText('Creato', { exact: true })).toBeVisible()
 })

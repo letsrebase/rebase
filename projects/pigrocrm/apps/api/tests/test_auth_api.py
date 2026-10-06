@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 import pigrocrm.core.auth.refresh_service as refresh_service
@@ -12,7 +13,7 @@ from pigrocrm.core.config import Settings, get_settings
 from pigrocrm.core.errors import NotFound
 from pigrocrm_api.deps import ACCESS_COOKIE, REFRESH_COOKIE, get_session
 from pigrocrm_api.main import create_app
-from pigrocrm_api.ratelimit import LOGIN_REQUESTS_PER_MINUTE, REQUESTS_PER_MINUTE
+from pigrocrm_api.ratelimit import REQUESTS_PER_MINUTE
 
 CREDENTIALS = {"email": "admin@pigro.it", "password": "supersegreta1"}
 
@@ -133,9 +134,15 @@ def test_login_is_throttled_per_client_before_the_password_is_checked(
     the 401/429 split alone, is what actually proves that: a limiter placed after the
     verify but before the 401 raise would produce the exact same responses while
     paying for the hash on every one of the eleven attempts. On its own budget, not
-    `REQUESTS_PER_MINUTE`'s five: this loop runs `LOGIN_REQUESTS_PER_MINUTE` (ten)
-    attempts, which would already be a 429 on a shared bucket with the signup
-    routes."""
+    `REQUESTS_PER_MINUTE`'s five: this loop runs `Settings.login_requests_per_minute`
+    (ten) attempts, which would already be a 429 on a shared bucket with the signup
+    routes. The budget is pinned through the settings the app is handed, since a
+    `PIGROCRM_LOGIN_REQUESTS_PER_MINUTE` left exported from the e2e environment would
+    otherwise turn these ten verifies into six hundred."""
+    budget = 10
+    client.app.dependency_overrides[get_settings] = lambda: Settings(  # type: ignore[call-arg]
+        _env_file=None, login_requests_per_minute=budget
+    )
     calls = 0
     real_authenticate = UserService.authenticate
 
@@ -146,13 +153,13 @@ def test_login_is_throttled_per_client_before_the_password_is_checked(
 
     monkeypatch.setattr(UserService, "authenticate", counting_authenticate)
 
-    for _ in range(LOGIN_REQUESTS_PER_MINUTE):
+    for _ in range(budget):
         response = client.post("/api/auth/login", json={**CREDENTIALS, "password": "sbagliata"})
         assert response.status_code == 401, response.text
     refused = client.post("/api/auth/login", json={**CREDENTIALS, "password": "sbagliata"})
     assert refused.status_code == 429, refused.text
     assert refused.headers["Retry-After"] == "60"
-    assert calls == LOGIN_REQUESTS_PER_MINUTE
+    assert calls == budget
     # Another client has its own bucket, still under budget -- 401 like the rest, not
     # the 429 this client's own bucket would now give it.
     other = client.post(
@@ -161,7 +168,36 @@ def test_login_is_throttled_per_client_before_the_password_is_checked(
         headers={"X-Real-IP": "10.0.0.7"},
     )
     assert other.status_code == 401, other.text
-    assert calls == LOGIN_REQUESTS_PER_MINUTE + 1
+    assert calls == budget + 1
+
+
+def test_the_login_budget_is_the_setting(client: TestClient, admin_user) -> None:
+    """`PIGROCRM_LOGIN_REQUESTS_PER_MINUTE` is what the route spends from, not a constant
+    of its own (REB-662): the e2e suite, one address logging in once per spec, declares
+    a budget of its own in its environment, and that only means anything if the route
+    reads it. Two, on a client of its own so the autouse reset is not what this leans
+    on: two refusals of a wrong password, then the 429, then a correct password refused
+    the same way, since the budget is spent before the verify."""
+    client.app.dependency_overrides[get_settings] = lambda: Settings(  # type: ignore[call-arg]
+        _env_file=None, login_requests_per_minute=2
+    )
+    wrong = {**CREDENTIALS, "password": "sbagliata"}
+    headers = {"X-Real-IP": "10.0.0.8"}
+    for _ in range(2):
+        assert client.post("/api/auth/login", json=wrong, headers=headers).status_code == 401
+    refused = client.post("/api/auth/login", json=wrong, headers=headers)
+    assert refused.status_code == 429, refused.text
+    right = client.post("/api/auth/login", json=CREDENTIALS, headers=headers)
+    assert right.status_code == 429, right.text
+
+
+def test_a_login_budget_below_one_is_refused_at_settings_validation() -> None:
+    """A budget of zero would start every client's bucket below one token and answer
+    429 to every login for good: the one value that locks everyone out fails when the
+    settings are built, with the field named, not at the first person's login."""
+    with pytest.raises(ValidationError, match="login_requests_per_minute"):
+        Settings(_env_file=None, login_requests_per_minute=0)  # type: ignore[call-arg]
+    assert Settings(_env_file=None, login_requests_per_minute=1).login_requests_per_minute == 1  # type: ignore[call-arg]
 
 
 def test_login_failures_are_byte_identical_regardless_of_cause(

@@ -39,7 +39,6 @@ from pigrocrm_api.errors import (
 )
 from pigrocrm_api.ratelimit import (
     INVITE_PEEK_REQUESTS_PER_MINUTE,
-    LOGIN_REQUESTS_PER_MINUTE,
     TOO_MANY_REQUESTS_RESPONSE,
     spend_one,
 )
@@ -175,12 +174,12 @@ def login(
     session: SessionDep,
     settings: SettingsDep,
 ) -> UserRead:
-    # On its own budget (`LOGIN_REQUESTS_PER_MINUTE`), before the argon2 verify below,
+    # On its own budget (`settings.login_requests_per_minute`), before the argon2 verify below,
     # not after: unauthenticated and unthrottled otherwise, so a script could run the
     # library's own 64 MiB, time-cost-3 hash at line rate. Running this first is what
     # stops that cost from being paid at all past the budget, not merely what
     # attaches a message to a request already paid for (REB-270).
-    spend_one(request, scope="login", per_minute=LOGIN_REQUESTS_PER_MINUTE)
+    spend_one(request, scope="login", per_minute=settings.login_requests_per_minute)
     # Same message regardless of which of the three the domain layer detected (unknown
     # email, wrong password, deactivated user) -- UserService.authenticate already
     # raises one identical ValidationFailed for all three, on purpose, so there is

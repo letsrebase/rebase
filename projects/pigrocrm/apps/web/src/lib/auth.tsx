@@ -47,15 +47,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     refetchInterval: (query) => (query.state.data ? 30_000 : false),
   })
 
+  /**
+   * Publishes a session the server has just opened, in the one order a `me` already on
+   * the wire cannot undo: cancel the entry's fetch, then write.
+   *
+   * `setQueryData` alone was the whole of this, and it lost a race. The query above
+   * asks `me` the moment this provider mounts, and on the login page that answer is a
+   * 401 the `queryFn` turns into `null`. On a loaded box, or a slow network, that
+   * request is still in flight when the person has submitted and `POST /api/auth/login`
+   * has answered 200 with both cookies set; and a fetch that resolves after a manual
+   * write overwrites it, because query-core's `fetch` ends in `setData(data)` whatever
+   * happened to the entry in the meantime. The late `null` reached `routes/app.tsx`,
+   * whose guard sent the freshly logged-in person back to the login form, and with no
+   * session in the cache nothing asked `me` again for thirty seconds. REB-662 found it
+   * behind two logins that turned out to be the login budget's 429s, and it is real all
+   * the same: hold that answer back until the login has landed and the person is
+   * thrown out every time (`e2e/auth.spec.ts`). `cancelQueries` rejects the in-flight retryer, which
+   * then ignores the answer when it lands: the library's own optimistic-update shape,
+   * and the fetch of a session that has just changed is not an answer worth keeping.
+   */
+  const publishSession = async (user: SessionUser): Promise<void> => {
+    await queryClient.cancelQueries({ queryKey: queryKeys.me })
+    queryClient.setQueryData(queryKeys.me, user)
+  }
+
   const loginMutation = useMutation({
     mutationFn: (body: { email: string; password: string }) =>
       unwrap(api.POST('/api/auth/login', { body })),
-    onSuccess: (user) => queryClient.setQueryData(queryKeys.me, user),
+    onSuccess: publishSession,
   })
 
   const enterMutation = useMutation({
     mutationFn: (body: { t: string }) => unwrap(api.POST('/api/auth/verify', { body })),
-    onSuccess: (user) => queryClient.setQueryData(queryKeys.me, user),
+    onSuccess: publishSession,
   })
 
   // `nome: null` explicit on the no-name path: the server reads the invitation's own
@@ -64,7 +88,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const inviteMutation = useMutation({
     mutationFn: (body: { t: string; nome: string | null }) =>
       unwrap(api.POST('/api/auth/invite', { body })),
-    onSuccess: (user) => queryClient.setQueryData(queryKeys.me, user),
+    onSuccess: publishSession,
   })
 
   const logoutMutation = useMutation({
