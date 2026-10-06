@@ -736,6 +736,7 @@ def test_a_referred_freelancers_framework_agreement_names_the_referrer(
     freelancer_id = _card(clean, rif=code)
     company_id = _request(clean)
     _fiscal(clean, freelancer_id, admin_id)
+    _log_in(clean, "ada@studio.it")
     renderer = FakeRenderer(draft=False)
     MatchService(clean, renderer, SIGNER, today=lambda: TODAY).create(
         freelancer_id, _match_body(company_id), admin_id
@@ -743,6 +744,49 @@ def test_a_referred_freelancers_framework_agreement_names_the_referrer(
 
     quadro = _documents(clean, freelancer_id, "quadro")[-1]
     assert quadro.data["segnalato-da"] == "Mario Rossi"
+
+
+def test_a_pending_freelancer_referral_is_not_printed_on_the_framework_agreement(
+    clean: Session,
+) -> None:
+    """REB-664: a `da_verificare` referral may be squatted, so the agreement prints
+    `nessuno`. The framework agreement is written before the freelancer's first letter
+    signature (which is what verifies them), so it stays `nessuno` unless they logged in."""
+    code = ReferralService(clean).code_for(_member(clean))
+    admin_id = _admin(clean)
+    freelancer_id = _card(clean, rif=code)
+    company_id = _request(clean)
+    _fiscal(clean, freelancer_id, admin_id)
+    renderer = FakeRenderer(draft=False)
+    MatchService(clean, renderer, SIGNER, today=lambda: TODAY).create(
+        freelancer_id, _match_body(company_id), admin_id
+    )
+
+    assert _referral_of(clean, freelancer_id).stato == "da_verificare"
+    quadro = _documents(clean, freelancer_id, "quadro")[-1]
+    assert quadro.data["segnalato-da"] == "nessuno"
+
+
+def test_a_pending_company_referral_is_not_printed_on_the_letter_until_verified(
+    clean: Session,
+) -> None:
+    code = ReferralService(clean).code_for(_member(clean))
+    admin_id = _admin(clean)
+    freelancer_id = _card(clean)
+    company_id = _request(clean, rif=code)
+    _fiscal(clean, freelancer_id, admin_id)
+    _active_framework(clean, freelancer_id, admin_id)
+    renderer = FakeRenderer(draft=False)
+    pending = MatchService(clean, renderer, SIGNER, today=lambda: TODAY).create(
+        freelancer_id, _match_body(company_id), admin_id
+    )
+    assert _letter_of(clean, pending.id).data["azienda-segnalata-da"] == "nessuno"
+
+    _log_in(clean, "wile@acme.it")
+    verified = MatchService(clean, renderer, SIGNER, today=lambda: TODAY).create(
+        freelancer_id, _match_body(company_id), admin_id
+    )
+    assert _letter_of(clean, verified.id).data["azienda-segnalata-da"] == "Mario Rossi"
 
 
 def test_an_unreferred_freelancers_framework_agreement_prints_nessuno_not_a_blank(
@@ -772,6 +816,7 @@ def test_a_referred_companys_letter_names_the_referrer_and_an_unreferred_one_pri
     admin_id = _admin(clean)
     freelancer_id = _card(clean)
     referred_company_id = _request(clean, rif=code, email="wile@acme.it")
+    _log_in(clean, "wile@acme.it")
     unreferred_company_id = _request(clean, email="other@beta.it", nome_azienda="Beta Srl")
     _fiscal(clean, freelancer_id, admin_id)
     _active_framework(clean, freelancer_id, admin_id)

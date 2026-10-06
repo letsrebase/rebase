@@ -232,12 +232,18 @@ class ReferralService:
         """Who referred this freelancer or this company, as a contract prints a name
         (`rebase_core.matches`'s `_quadro_data`/`_lettera_data`): `None` prints as a
         blank line, the same convention every other optional field of these templates
-        already uses."""
+        already uses. Only a `verificato` referral is named (REB-664): a pending one may
+        be squatted (REB-646), and a signed document must not state an attribution nobody
+        has proved, so it reads as no referrer at all."""
         row = self.session.execute(
             select(User.nome, User.cognome)
             .select_from(Referral)
             .join(User, User.id == Referral.referrer_user_id)
-            .where(Referral.kind == kind, Referral.entity_id == entity_id)
+            .where(
+                Referral.kind == kind,
+                Referral.entity_id == entity_id,
+                Referral.stato == VERIFICATO,
+            )
         ).first()
         return None if row is None else f"{row.nome} {row.cognome}".strip()
 
