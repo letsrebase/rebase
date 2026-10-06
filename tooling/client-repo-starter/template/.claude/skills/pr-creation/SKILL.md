@@ -22,7 +22,9 @@ the files are right and this skill has a bug.
 2. **Its neighbours have been read, and the card is `In Progress` with the result on
    it.** Before the first file changes, per `linear-ticket` § The neighbours. One
    card `In Progress` or `In Review` under somebody else on the same files is a PR
-   you do not open: narrow yours around it, or wait, and write which on the card.
+   you do not open: narrow yours around it, or wait, and write which on the card. When
+   this card is the first to start its project, the project moves to `started` and its
+   opening update goes out in the same pass (`AGENTS.md` § Project updates).
 3. **The branch is the issue's own `gitBranchName`**, read from Linear, never typed
    by hand.
 {{WORKTREE_BLOCK}}
@@ -122,4 +124,5 @@ gh pr create --body-file pr-body.md
    release tag ships, and when this merge lands the last open card of its project, the
    project gets its update (`AGENTS.md` § Project updates, `linear-ticket` skill). The
    last-card update says what was verified and on which surface, and the project moves
-   to `Completed` in the same step.
+   to `Completed` in the same step; if it must stay open, the update says what keeps it
+   open.

@@ -207,7 +207,8 @@ and passing the id as `projectId` fails on `project is required when creating a 
 status update` while the id is right there in the payload. Three moments always get one
 (`docs/tracker.md` § The loop, Project updates): the project moves to `started`, a
 milestone's draft PR merges or a release tag ships, and the last card is `Done` (with the
-project moved to Completed in the same step). Between those, post one when something
+project moved to Completed in the same step, or the update saying what keeps it open).
+Between those, post one when something
 changed that the issue list would not show; never one that restates it.
 
 ## Milestones

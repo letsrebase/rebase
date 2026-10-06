@@ -500,7 +500,8 @@ gh pr create --body-file pr-body.md \
    (`docs/tracker.md` § The loop, Project updates): this merge, when it is a milestone's
    draft PR; a release tag, when it ships (step 6); and this merge, when it lands the last
    open card of its project, in which case the closing update says what was verified and
-   on which surface and the project moves to Completed in the same step. Write it with the
+   on which surface and the project moves to Completed in the same step, or the update
+   says what keeps it open. Write it with the
    `linear-ticket` skill § Project updates; for a merge, before you clean up.
 5. **Clean up**: `git worktree remove ../<repo>-<name>`, `git worktree prune`.
 6. **Production is a separate step.** Preview deploys on the green trunk run;
