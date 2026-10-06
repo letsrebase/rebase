@@ -34,7 +34,7 @@ from rebase_core.models import (
     TEAM_REQUEST_STATES,
     TELEFONO_MAX_LENGTH,
 )
-from rebase_core.schemas import PROGETTO_MAX_LENGTH, clean_multiline, clean_text
+from rebase_core.schemas import PROGETTO_MAX_LENGTH, clean_multiline, clean_rif, clean_text
 from rebase_core.validation import SafeStr
 
 __all__ = [
@@ -260,11 +260,20 @@ class TeamRequestCreate(BaseModel):
     azienda: SafeStr = Field(min_length=1, max_length=AZIENDA_MAX_LENGTH)
     email: EmailStr
     telefono: SafeStr = Field(min_length=6, max_length=TELEFONO_MAX_LENGTH)
+    # `?rif=` from the visitor's link (REB-600), cleaned like the signup's (REB-554): a
+    # string that is not a code is no code, never a 422. Stored on the request and credited
+    # only when a company exists for this contact.
+    rif: SafeStr | None = None
 
     @field_validator("azienda", "telefono", mode="after")
     @classmethod
     def _trimmed(cls, value: str) -> str:
         return clean_text(value, what="un valore")
+
+    @field_validator("rif", mode="before")
+    @classmethod
+    def _rif(cls, value: object) -> str | None:
+        return clean_rif(value)
 
 
 class TeamRequestCreated(BaseModel):

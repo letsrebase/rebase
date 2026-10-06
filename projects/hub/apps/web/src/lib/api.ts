@@ -222,6 +222,8 @@ export interface TeamRequestCreate {
   azienda: string
   email: string
   telefono: string
+  /** The visitor's `?rif=` (REB-600), left out when they came without one. */
+  rif?: string
 }
 
 /** What the answer page posts on «Conferma» (D1, spec § 3.2): the mail's token and the

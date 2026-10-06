@@ -26,6 +26,7 @@ import {
   type TeamProposalCreate,
 } from '@/lib/api'
 import { bandLabel } from '@/lib/bands'
+import { resolveReferral } from '@/lib/utm'
 import { REMOTO_LABELS, SENIORITY_LABELS, formatDaysPerWeek, formatExperience } from '@/lib/format'
 
 /** The lengths core's `TeamProposalCreate` takes (`team_schemas.py`), measured as it
@@ -439,6 +440,16 @@ function PublicHire({ proposalId }: { proposalId: string }) {
     if (done) thanks.current?.focus()
   }, [done])
 
+  // The referral link is remembered the moment the page opens (REB-600), so a visitor who
+  // navigates away and comes back without the query string still files it.
+  useEffect(() => {
+    try {
+      resolveReferral(window.location.search)
+    } catch {
+      /* storage refused: the URL still has it at submission */
+    }
+  }, [])
+
   async function submit(event: FormEvent) {
     event.preventDefault()
     const problems = check(value)
@@ -451,11 +462,16 @@ function PublicHire({ proposalId }: { proposalId: string }) {
     }
     setSending(true)
     try {
+      const rif = resolveReferral(window.location.search)
       await team.request({
         proposal_id: proposalId,
         azienda: value.azienda.trim(),
         email: value.email.trim(),
         telefono: value.telefono.trim(),
+        // The referral link the visitor arrived with, remembered by the tab like the
+        // wizards' (REB-600): kept on the request and credited only once a company
+        // exists for this contact.
+        ...(rif ? { rif } : {}),
       })
       setDone(true)
     } catch (error) {

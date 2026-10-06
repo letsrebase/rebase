@@ -1126,6 +1126,11 @@ class TeamRequest(Base, PrimaryKeyMixin, TimestampMixin):
     telefono: Mapped[str | None] = mapped_column(String(TELEFONO_MAX_LENGTH), default=None)
     user_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
     company_id: Mapped[UUID | None] = mapped_column(ForeignKey("companies.id"), default=None)
+    # The referral code the public visitor arrived with (`?rif=`, REB-600), kept as typed
+    # and unresolved: a public request has no account, so nothing is credited here. It is
+    # read once, when a `Company` appears for the same contact (the company wizard, or an
+    # admin opening the cloud), by `ReferralService.link_team_request`.
+    rif: Mapped[str | None] = mapped_column(String(REFERRAL_CODE_LENGTH), default=None)
     stato: Mapped[str] = mapped_column(String(20), nullable=False, default="nuova")
     note: Mapped[str | None] = mapped_column(Text, default=None)
     contacted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)

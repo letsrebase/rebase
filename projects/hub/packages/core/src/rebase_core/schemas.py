@@ -200,7 +200,7 @@ class SignupCreate(BaseModel):
     @field_validator("rif", mode="before")
     @classmethod
     def _rif(cls, value: object) -> str | None:
-        return _clean_rif(value)
+        return clean_rif(value)
 
     @field_validator("oppref", mode="after")
     @classmethod
@@ -341,7 +341,7 @@ def _https_url(value: str) -> str:
 _RIF_SHAPE = re.compile(r"^[A-Za-z0-9]+$")
 
 
-def _clean_rif(value: object) -> str | None:
+def clean_rif(value: object) -> str | None:
     """`rif=` as the wizard's own funnel already treats it (`resolveReferral`,
     `lib/utm.ts`): shaped like a code or it is not one, never a reason to fail the
     whole signup. `ReferralService.resolve_referrer` mutes an unknown code the same
@@ -406,7 +406,7 @@ class FreelancerCreate(FreelancerFields):
     @field_validator("rif", mode="before")
     @classmethod
     def _rif(cls, value: object) -> str | None:
-        return _clean_rif(value)
+        return clean_rif(value)
 
 
 class MemberUpdate(FreelancerFields):
@@ -520,7 +520,7 @@ class CompanyCreate(CompanyFields):
     @field_validator("rif", mode="before")
     @classmethod
     def _rif(cls, value: object) -> str | None:
-        return _clean_rif(value)
+        return clean_rif(value)
 
     @field_validator(
         "nome_azienda", "referente_nome", "referente_cognome", "telefono", mode="after"

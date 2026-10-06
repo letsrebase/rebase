@@ -50,6 +50,7 @@ from rebase_core.models import (
     TalentCloudGrant,
     User,
 )
+from rebase_core.referrals import ReferralService
 from rebase_core.schemas import CvFile, TalentCloudGrantRead
 from rebase_core.search import escape_like
 from rebase_core.team_builder import cloud_visible
@@ -92,6 +93,11 @@ class TalentCloudService:
         row = TalentCloudGrant(user_id=user.id, company_id=company.id, granted_by=admin_id)
         self.session.add(row)
         try:
+            # A public team request of this contact may carry a referral code (REB-600):
+            # the company exists for it now, so the pending referral is made in this same
+            # commit. Inside the `try` because its reads flush the grant, and the index is
+            # what decides a lost race.
+            ReferralService(self.session).link_team_request(company.id, user)
             self.session.commit()
         except IntegrityError as exc:
             self.session.rollback()
