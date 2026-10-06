@@ -486,6 +486,31 @@ def test_the_cloud_never_adds_a_second_referral_to_a_contact_who_has_one(clean: 
     assert kept is not None and kept.referrer_user_id == first
 
 
+def test_the_wizards_own_code_never_blocks_the_requests_valid_fallback(clean: Session) -> None:
+    """Greptile on REB-600: the contact's own code in the wizard is a self-referral, so it
+    is no code and the member the public request named is credited."""
+    stored = _member(clean, "stored@community.it")
+    own = _member(clean, "wile@acme.it")
+    service = ReferralService(clean)
+    _public_request(clean, rif=service.code_for(stored))
+
+    company_id = _request(clean, rif=service.code_for(own))
+
+    row = _company_referral(clean, company_id)
+    assert row is not None and row.referrer_user_id == stored
+
+
+def test_a_returning_contact_with_no_referral_gets_the_requests_code(clean: Session) -> None:
+    referrer_id = _member(clean)
+    _request(clean)  # a first company, no code anywhere
+    _public_request(clean, rif=ReferralService(clean).code_for(referrer_id))
+
+    second = _request(clean, progetto="Un secondo progetto, altrettanto lungo.")
+
+    row = _company_referral(clean, second)
+    assert row is not None and row.referrer_user_id == referrer_id
+
+
 @pytest.mark.parametrize("stored", [None, "ZZZZZZZZZZ"])
 def test_no_rif_or_an_unknown_one_on_the_request_makes_no_referral(
     clean: Session, stored: str | None

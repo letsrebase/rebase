@@ -367,6 +367,14 @@ describe('TeamBuilder, «Assumi team» on the public page', () => {
     expect(sent(fetchSpy, 1).body).toMatchObject({ rif: 'ABCDEFGH23' })
   })
 
+  it('remembers the referral link when the page opens, for a visitor who comes back without it', async () => {
+    window.history.pushState({}, '', '/?rif=ABCDEFGH23')
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    await proposed(fetchSpy)
+    expect(window.sessionStorage.getItem(REFERRAL_STORAGE_KEY)).toBe('ABCDEFGH23')
+    window.history.pushState({}, '', '/')
+  })
+
   it('keeps what was typed when the dialog is closed, with Escape or «Annulla», and opened again', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
     const user = await proposed(fetchSpy)

@@ -440,6 +440,16 @@ function PublicHire({ proposalId }: { proposalId: string }) {
     if (done) thanks.current?.focus()
   }, [done])
 
+  // The referral link is remembered the moment the page opens (REB-600), so a visitor who
+  // navigates away and comes back without the query string still files it.
+  useEffect(() => {
+    try {
+      resolveReferral(window.location.search)
+    } catch {
+      /* storage refused: the URL still has it at submission */
+    }
+  }, [])
+
   async function submit(event: FormEvent) {
     event.preventDefault()
     const problems = check(value)
@@ -451,8 +461,8 @@ function PublicHire({ proposalId }: { proposalId: string }) {
       return
     }
     setSending(true)
-    const rif = resolveReferral(window.location.search)
     try {
+      const rif = resolveReferral(window.location.search)
       await team.request({
         proposal_id: proposalId,
         azienda: value.azienda.trim(),

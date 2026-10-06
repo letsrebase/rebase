@@ -156,13 +156,16 @@ class CompanyService:
             **utm,
         )
         self.session.add(row)
-        if not richiedente_esistente:
-            # One commit for the request and its referral (REB-566): a failure between
-            # the two must not leave a request whose referral nothing will ever write.
-            self.session.flush()
-            # The wizard's own code wins when it names a member; otherwise the one a
-            # public team request of the same contact kept (REB-600).
-            ReferralService(self.session).link_team_request(row.id, user, own_code=data.rif)
+        # One commit for the request and its referral (REB-566): a failure between the
+        # two must not leave a request whose referral nothing will ever write.
+        self.session.flush()
+        # The wizard's own code wins when it names a member, and counts for a first
+        # request only; otherwise the one a public team request of the same contact kept
+        # (REB-600). A returning contact with no referral on any company can still get
+        # the request's, which `link_team_request` skips as soon as one exists.
+        ReferralService(self.session).link_team_request(
+            row.id, user, own_code=None if richiedente_esistente else data.rif
+        )
         self.session.commit()
         return _to_read(row, user), richiedente_esistente
 

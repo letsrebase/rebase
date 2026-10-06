@@ -241,6 +241,10 @@ class ReferralService:
         once any company of this user already carries a referral: a company's attribution
         is made once, by its first request. Pending until the person's first magic-link
         login (REB-658), since the email on a public request was never proved."""
+        # Two admins opening the cloud for two companies of one contact at once would both
+        # find no referral and each write one: the contact's `users` row is the lock that
+        # makes the second check after the first commit.
+        self.session.execute(select(User.id).where(User.id == user.id).with_for_update())
         already = self.session.scalar(
             select(Referral.id)
             .where(
@@ -251,7 +255,8 @@ class ReferralService:
         )
         if already is not None:
             return
-        code = own_code if own_code and self.resolve_referrer(own_code) else None
+        own = self.resolve_referrer(own_code)
+        code = own_code if own is not None and own.id != user.id else None
         if code is None:
             code = self.session.scalar(
                 select(TeamRequest.rif)
