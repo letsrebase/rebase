@@ -1,13 +1,53 @@
 # Snyk (https://snyk.io) policy file.
 #
-# `exclude.code` keeps test code out of Snyk Code, and nothing else: the fixtures in
+# `exclude.code` keeps test code out of Snyk Code: the fixtures in
 # these paths hold throwaway passwords and tokens on purpose, and they buried every
 # other finding (REB-463). A false positive in shipped code is not excluded here: its
 # ignore belongs in Snyk's own UI, since Snyk Code reads no ignore from this file or from
 # an inline comment, and a comment above the flagged line says why it is safe. Developer
 # scripts (`tooling/`, `shared/brand/tools/`, `projects/*/scripts/`) stay scanned: an
 # exclusion would hide their next real finding along with today's false one.
+#
+# `ignore` holds what the weekly container scan (`snyk container test`, passed
+# `--policy-path=.snyk` in `.github/workflows/snyk-weekly.yml`) does not report: a Debian
+# package with no fixed version yet, ignored with its reason (REB-540). An ignore made in
+# Snyk's UI does not reach that scan, which is not a monitored project, so it is written
+# here instead. Each entry expires, so a patch is looked for again: keys are Snyk ids,
+# path `'*'` is every occurrence, and `expires` is `YYYY-MM-DDThh:mm:ss.fffZ`.
 version: v1.25.1
+ignore:
+  SNYK-DEBIAN13-ACL-17677866:
+    - '*':
+        reason: "No fix yet (REB-540). Debian's security tracker lists CVE-2026-54369 (acl) as vulnerable for trixie on 2026-10-06, and a fresh python:3.13-slim-trixie has no newer libacl1 to install. Look again when Debian ships a fix."
+        expires: '2026-11-06T00:00:00.000Z'
+  SNYK-DEBIAN13-ACL-17677882:
+    - '*':
+        reason: "No fix yet (REB-540). Debian's security tracker lists CVE-2026-54370 (acl) as vulnerable for trixie on 2026-10-06, and a fresh python:3.13-slim-trixie has no newer libacl1 to install. Look again when Debian ships a fix."
+        expires: '2026-11-06T00:00:00.000Z'
+  SNYK-DEBIAN13-ATTR-17678182:
+    - '*':
+        reason: "No fix yet (REB-540). Debian's security tracker lists CVE-2026-54371 (attr) as vulnerable for trixie on 2026-10-06, and a fresh python:3.13-slim-trixie has no newer libattr1 to install. Look again when Debian ships a fix."
+        expires: '2026-11-06T00:00:00.000Z'
+  SNYK-DEBIAN13-ZLIB-19520500:
+    - '*':
+        reason: "No fix yet (REB-540). Debian's security tracker lists CVE-2026-85091 (zlib) as vulnerable for trixie on 2026-10-06, and a fresh python:3.13-slim-trixie has no newer zlib1g to install. Look again when Debian ships a fix."
+        expires: '2026-11-06T00:00:00.000Z'
+  SNYK-DEBIAN13-GCC14-20335537:
+    - '*':
+        reason: "No fix yet (REB-540). Debian's security tracker lists CVE-2026-102010 (gcc-14) as vulnerable for trixie on 2026-10-06, and a fresh python:3.13-slim-trixie has no newer gcc-14-base to install. Look again when Debian ships a fix."
+        expires: '2026-11-06T00:00:00.000Z'
+  SNYK-DEBIAN13-GCC14-20386241:
+    - '*':
+        reason: "No fix yet (REB-540). Debian's security tracker lists CVE-2026-95619 (gcc-14) as vulnerable for trixie on 2026-10-06, and a fresh python:3.13-slim-trixie has no newer gcc-14-base to install. Look again when Debian ships a fix."
+        expires: '2026-11-06T00:00:00.000Z'
+  SNYK-DEBIAN13-EXPAT-19964593:
+    - '*':
+        reason: "No fix yet (REB-540). Debian's security tracker lists CVE-2026-93990 (expat) as vulnerable for trixie on 2026-10-06, and a fresh python:3.13-slim-trixie has no newer libexpat1 to install. Look again when Debian ships a fix."
+        expires: '2026-11-06T00:00:00.000Z'
+  SNYK-DEBIAN13-TIFF-19706243:
+    - '*':
+        reason: "No fix yet (REB-540). Debian's security tracker lists CVE-2026-18495 (tiff) as vulnerable for trixie on 2026-10-06, and a fresh python:3.13-slim-trixie has no newer libtiff6 to install. Look again when Debian ships a fix."
+        expires: '2026-11-06T00:00:00.000Z'
 exclude:
   code:
     - "projects/*/apps/*/tests/**"

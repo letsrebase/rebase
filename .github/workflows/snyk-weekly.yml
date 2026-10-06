@@ -53,6 +53,10 @@ jobs:
       # https://downloads.snyk.io/cli/v<version>/snyk-linux.sha256 when bumping.
       SNYK_VERSION: 1.1307.4
       SNYK_SHA256: b0baee4fa4d7d11b7df927a1046cf8137a8a89fafac8101a45c3c0e0777ddc35
+      # The repository's policy file, which the container scans are told to read: they run
+      # from a project directory, not the root, and `snyk container test` reads a `.snyk`
+      # only through `--policy-path` (the other scans find the root one by themselves).
+      REPO_SNYK_POLICY: ${{ github.workspace }}/.snyk
     steps:
       # The job's token is handed to the filing step alone, not left in .git/config for
       # every build and scan below.
@@ -167,7 +171,7 @@ jobs:
         run: |
           docker compose build api web
           for service in api web; do
-            snyk container test "pigrocrm-$service" --file="Dockerfile.$service" --org="$SNYK_ORG" \
+            snyk container test "pigrocrm-$service" --file="Dockerfile.$service" --org="$SNYK_ORG" --policy-path="$REPO_SNYK_POLICY" \
               --json-file-output="$SNYK_JSON/image-pigrocrm-$service.json" || [ $? -eq 1 ]
             test -s "$SNYK_JSON/image-pigrocrm-$service.json"
           done
@@ -181,7 +185,7 @@ jobs:
         run: |
           docker compose -p rebase build api web
           for service in api web; do
-            snyk container test "rebase-$service" --file="Dockerfile.$service" --org="$SNYK_ORG" \
+            snyk container test "rebase-$service" --file="Dockerfile.$service" --org="$SNYK_ORG" --policy-path="$REPO_SNYK_POLICY" \
               --json-file-output="$SNYK_JSON/image-rebase-$service.json" || [ $? -eq 1 ]
             test -s "$SNYK_JSON/image-rebase-$service.json"
           done
@@ -192,7 +196,7 @@ jobs:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         run: |
           docker compose build web
-          snyk container test website-web --file=Dockerfile --org="$SNYK_ORG" \
+          snyk container test website-web --file=Dockerfile --org="$SNYK_ORG" --policy-path="$REPO_SNYK_POLICY" \
             --json-file-output="$SNYK_JSON/image-website-web.json" || [ $? -eq 1 ]
           test -s "$SNYK_JSON/image-website-web.json"
 

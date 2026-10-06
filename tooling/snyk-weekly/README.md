@@ -2,7 +2,9 @@
 
 Every Monday `.github/workflows/snyk-weekly.yml` scans `main` with Snyk and files what
 it finds as one Linear card and one GitHub issue, the way Dependabot files an alert. It
-fixes nothing and ignores nothing: whoever picks the card up does that (REB-525).
+fixes nothing and ignores nothing by itself: whoever picks the card up does that (REB-525),
+and where an ignore is written decides whether the next run still lists the finding
+(see Where an ignore lives).
 
 ## What runs on Monday
 
@@ -21,7 +23,7 @@ winter time:
    run writes no JSON file at all, so the workflow writes an empty SARIF in its place.
 4. **`snyk container test`** on the five images the repository builds, built as
    `ci.yml` builds them: `pigrocrm-api`, `pigrocrm-web`, `rebase-api`, `rebase-web`,
-   `website-web`.
+   `website-web`. Each is passed `--policy-path` with the root `.snyk`.
 
 Every scan's JSON is uploaded as the run's `snyk-json` artifact (kept 30 days). Then
 `snyk-weekly.mjs` turns it into one table and files it. A scan that errors (anything
@@ -31,6 +33,25 @@ its JSON is listed under **Did not scan**, keeps a week from reading clean, and 
 the run red after filing. `snyk monitor` is never run: it would add CLI projects to the
 org next to the ones the GitHub import made. `SNYK_TOKEN` is only in the environment of
 the steps that run Snyk, and the checkout keeps no token for the builds.
+
+## Where an ignore lives
+
+A finding the weekly scan lists is ignored in the place that scan reads, or it comes
+back the next Monday:
+
+- **An image finding** (a Debian package with no fixed version yet): an `ignore` entry in
+  the root `.snyk`, keyed by the Snyk id (`SNYK-DEBIAN13-ACL-17677866`, the last segment of
+  the finding's `security.snyk.io/vuln/` link), path `'*'`, with its `reason` and an
+  `expires` date a month ahead, so a patch is looked for again. `snyk container test`
+  reads a `.snyk` only through `--policy-path`, which the workflow gives the three
+  container steps. An ignore made in Snyk's UI on the imported Dockerfile projects does
+  not reach it: the weekly scan is never `snyk monitor`ed, so it belongs to no project
+  the UI could hold an ignore for (REB-540).
+- **A Snyk Code finding**: Snyk's UI only, with its reason; Code reads no ignore from
+  `.snyk` and the org runs Consistent Ignores.
+
+An entry that has expired lists the finding again on the next run; renew it only after
+checking Debian's security tracker again.
 
 ## What gets filed
 
