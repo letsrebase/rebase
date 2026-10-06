@@ -54,6 +54,15 @@ export PIGROCRM_JWT_SECRET="e2e-secret-not-for-production-but-long-enough"
 # it instead of relying on a browser-specific exception that only one of the
 # two obvious future projects (webkit) actually needs.
 export PIGROCRM_COOKIE_SECURE=false
+# The suite logs in once per spec, forty-one times in under three minutes at the
+# preview server's speed, and the product's budget for one address is ten a minute
+# (`Settings.login_requests_per_minute`, REB-270): past it `POST /api/auth/login`
+# answers 429, the page stays on `/app/login` with a toast nobody reads, and the
+# helper's URL assertion failed with the same sentence as a redirect that did not
+# happen (REB-662: every login a full run lost at that line was a 429, not one a
+# race). The budget is the suite's to declare, like `PIGROCRM_COOKIE_SECURE` above,
+# and `helpers.ts::login` fails on the status itself, so a refusal reads as what it is.
+export PIGROCRM_LOGIN_REQUESTS_PER_MINUTE=600
 
 # Exported, not merely `readonly`: e2e/resilience.spec.ts (running inside the
 # Playwright *test* process, a grandchild of e2e.sh via `pnpm exec playwright

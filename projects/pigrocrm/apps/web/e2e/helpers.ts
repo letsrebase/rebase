@@ -19,7 +19,19 @@ export async function login(page: Page, email: string, password: string): Promis
   await page.getByRole('button', { name: /Accedi con la password/ }).click()
   await page.getByLabel('Email').fill(email)
   await page.getByLabel('Password').fill(password)
-  await page.getByRole('button', { name: 'Accedi' }).click()
+  const [answer] = await Promise.all([
+    page.waitForResponse(
+      (response) => response.request().method() === 'POST' && response.url().endsWith('/api/auth/login'),
+    ),
+    page.getByRole('button', { name: 'Accedi' }).click(),
+  ])
+  // The server's own verdict, with its body in the failure. A refused login used to
+  // read, eight seconds later and one assertion down, as "still on /app/login", the
+  // same sentence as a redirect that did not happen; the toast that said why was never
+  // read. In a full run at the preview server's speed four logins stayed there, all
+  // four a 429 from the budget of ten a minute per address, which `e2e-env.sh` now
+  // raises for the suite (REB-662).
+  expect(answer.status(), await answer.text()).toBe(200)
   // Not `/\/app(\/|$)/`, which this once was: that pattern is also satisfied by
   // **/app/login** itself, so it passed for a login that had visibly failed to go
   // anywhere. That is not hypothetical -- it is exactly what hid the post-login
@@ -35,6 +47,13 @@ export async function login(page: Page, email: string, password: string): Promis
   // this suite while the login it is checking has actually succeeded. `(\?|$)` is what
   // admits the search string without re-admitting `/app/login`: after `/app` the next
   // character has to be `?` or nothing, and in `/app/login` it is `l`.
+  //
+  // What this waits for is the redirect `routes/app/login.tsx` issues once the session
+  // is in the cache, within the project's own `expect` timeout, with no fixed wait. With
+  // the status asserted above, what is left for this line is the redirect itself: the
+  // navigate-before-cache race that route documents, and the page load's own session
+  // read answering 401 after the login had been published, which `lib/auth.tsx`'s
+  // `publishSession` closes (REB-662). A failure here is a login that did not land.
   await expect(page).toHaveURL(/\/app\/?(\?|$)/)
 }
 

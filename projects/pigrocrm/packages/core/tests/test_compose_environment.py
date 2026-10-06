@@ -41,6 +41,9 @@ NOT_FORWARDED: dict[str, str] = {
     # answer rather than an accident. Forwarding them costs nothing but a line each, and
     # the day one of them needs moving, this list is where the decision is recorded.
     "access_token_minutes": "durata del token: il default vale per ogni installazione",
+    # The login budget (REB-662): ten a minute per address holds on every deploy, and the
+    # one environment that moves it is the e2e suite's, from `apps/web/scripts/e2e-env.sh`.
+    "login_requests_per_minute": "the login budget: the default holds on every deploy",
     "magic_link_minutes": "durata del link via mail: come sopra",
     "gmail_backfill_days": "quanto indietro guarda il primo sync: default",
     "gmail_watermark_overlap_hours": "sovrapposizione del watermark: default",
