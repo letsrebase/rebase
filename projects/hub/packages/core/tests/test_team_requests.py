@@ -584,7 +584,11 @@ def test_status_note_and_summary_record_the_admin(clean: Session) -> None:
     service.set_summary(request.id, summary, admin)
     service.set_status(request.id, "nuova", admin)
 
-    actions = clean.scalars(select(AdminAction).order_by(AdminAction.created_at)).all()
+    # `id` after `created_at` keeps the order a statement about insertion (ids are UUIDv7),
+    # never about the plan, as `_contacts` and `test_team_builder._rows` do (REB-661).
+    actions = clean.scalars(
+        select(AdminAction).order_by(AdminAction.created_at, AdminAction.id)
+    ).all()
     assert {action.entity_type for action in actions} == {"team_request"}
     assert {action.entity_id for action in actions} == {request.id}
     assert {action.admin_id for action in actions} == {admin}
@@ -674,10 +678,12 @@ def _row(session: Session, request_id: UUID, freelancer_id: UUID) -> TeamRequest
 
 
 def _contacts(session: Session) -> list[dict[str, Any]]:
+    # `id` after `created_at`: ids are UUIDv7, so a tie on the timestamp still reads in
+    # insertion order rather than the plan's (REB-661).
     actions = session.scalars(
         select(AdminAction)
         .where(AdminAction.kind == "talents_contacted")
-        .order_by(AdminAction.created_at)
+        .order_by(AdminAction.created_at, AdminAction.id)
     ).all()
     return [action.payload for action in actions]
 
