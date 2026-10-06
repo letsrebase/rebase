@@ -482,6 +482,25 @@ def test_public_proposal_is_throttled(client: TestClient, team: Session) -> None
 # ---- the public request --------------------------------------------------------------------
 
 
+@pytest.mark.parametrize(
+    ("sent", "stored"), [("ABCDEFGH23", "ABCDEFGH23"), ("not a code!!", None), (None, None)]
+)
+def test_public_request_keeps_a_well_shaped_rif_and_drops_the_rest(
+    client: TestClient, team: Session, sent: str | None, stored: str | None
+) -> None:
+    """REB-600: `rif` is public input, cleaned like a signup's, and never a 422."""
+    proposal_id = _proposal_row(team, [_talent(team)])
+
+    created = client.post(
+        "/api/hub/team/requests",
+        json={"proposal_id": str(proposal_id), **CONTACTS, **({"rif": sent} if sent else {})},
+    )
+
+    assert created.status_code == 201, created.text
+    row = team.get(TeamRequest, UUID(created.json()["id"]))
+    assert row is not None and row.rif == stored
+
+
 def test_public_request_is_201_then_409(
     client: TestClient, team: Session, sender: RecordingSender
 ) -> None:

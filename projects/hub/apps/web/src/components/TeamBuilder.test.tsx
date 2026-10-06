@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi, type MockInstance } from 'vitest'
 import type { CloudTeamProposal } from '@/lib/api'
+import { REFERRAL_STORAGE_KEY } from '@/lib/utm'
 import { TeamBuilder } from './TeamBuilder'
 
 // Escapes on purpose: the space before «€» is a non-breaking one, the dash an en dash.
@@ -102,7 +103,10 @@ async function proposed(fetchSpy: MockInstance<typeof fetch>, proposal: unknown 
   return user
 }
 
-afterEach(() => vi.restoreAllMocks())
+afterEach(() => {
+  vi.restoreAllMocks()
+  window.sessionStorage.removeItem(REFERRAL_STORAGE_KEY)
+})
 
 describe('TeamBuilder, the box', () => {
   it('fills the box with each of the four examples', async () => {
@@ -347,6 +351,20 @@ describe('TeamBuilder, «Assumi team» on the public page', () => {
     expect(status).toHaveFocus()
     expect(screen.queryByLabelText('Azienda')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Assumi team' })).toBeNull()
+  })
+
+  it('sends the referral link the visitor arrived with, and nothing when there is none', async () => {
+    window.sessionStorage.setItem(REFERRAL_STORAGE_KEY, 'ABCDEFGH23')
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    const user = await proposed(fetchSpy)
+    await user.click(screen.getByRole('button', { name: 'Assumi team' }))
+    await user.type(await screen.findByLabelText('Azienda'), 'ACME Srl')
+    await user.type(screen.getByLabelText('Email'), 'ada@acme.it')
+    await user.type(screen.getByLabelText('Telefono'), '+39 345 1234567')
+    fetchSpy.mockResolvedValueOnce(answer(201, { id: 'a1b2c3d4-0000-4000-8000-000000000001' }))
+    await user.click(screen.getByRole('button', { name: 'Invia la richiesta' }))
+    await screen.findByRole('status')
+    expect(sent(fetchSpy, 1).body).toMatchObject({ rif: 'ABCDEFGH23' })
   })
 
   it('keeps what was typed when the dialog is closed, with Escape or «Annulla», and opened again', async () => {

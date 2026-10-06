@@ -315,6 +315,7 @@ class TeamRequestService:
             telefono=data.telefono,
             user_id=user_id,
             company_id=company_id,
+            rif=data.rif,
         )
 
     def create_in_cloud(
@@ -402,6 +403,7 @@ class TeamRequestService:
         telefono: str | None,
         user_id: UUID | None,
         company_id: UUID | None,
+        rif: str | None = None,
     ) -> tuple[TeamRequestRead, Mail]:
         if origine not in TEAM_REQUEST_ORIGINS:
             raise ValueError(f"unknown origin {origine!r}")
@@ -414,6 +416,7 @@ class TeamRequestService:
             telefono=telefono,
             user_id=user_id,
             company_id=company_id,
+            rif=rif,
         )
 
     def _file_proposal(
@@ -426,6 +429,7 @@ class TeamRequestService:
         telefono: str | None,
         user_id: UUID | None,
         company_id: UUID | None,
+        rif: str | None = None,
     ) -> tuple[TeamRequestRead, Mail]:
         proposal_id = proposal.id
         members = self._members(proposal)
@@ -437,6 +441,7 @@ class TeamRequestService:
             telefono=telefono,
             user_id=user_id,
             company_id=company_id,
+            rif=rif,
             stato="nuova",
         )
         self.session.add(row)

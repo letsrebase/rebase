@@ -37,7 +37,7 @@ from decimal import Decimal
 from typing import Any, NamedTuple
 from uuid import UUID
 
-from sqlalchemy import Row, Select, and_, literal, or_, select, union_all, update
+from sqlalchemy import Row, Select, and_, func, literal, or_, select, union_all, update
 from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
@@ -57,6 +57,7 @@ from rebase_core.models import (
     Referral,
     ReferralReward,
     ReferralSettings,
+    TeamRequest,
     User,
 )
 from rebase_core.pagination import SortSpec, decode_cursor, encode_cursor, keyset_predicate
@@ -227,6 +228,42 @@ class ReferralService:
             )
             .on_conflict_do_nothing(index_elements=[Referral.kind, Referral.entity_id])
         )
+
+    def link_team_request(
+        self, company_id: UUID, user: User, *, own_code: str | None = None
+    ) -> None:
+        """A `Company` row now exists for `user` (the company wizard, or an admin opening
+        the talent cloud), so the code a public team request of the same contact carried
+        (REB-600) can become a referral. The request is found by the referente's
+        lowercased email, newest first, among the public ones that kept a code; the
+        wizard's own `own_code` wins when it names a member, the request's is the
+        fallback. Silent like `link_signup`, staged and never committed, and a no-op
+        once any company of this user already carries a referral: a company's attribution
+        is made once, by its first request. Pending until the person's first magic-link
+        login (REB-658), since the email on a public request was never proved."""
+        already = self.session.scalar(
+            select(Referral.id)
+            .where(
+                Referral.kind == "company",
+                Referral.entity_id.in_(select(Company.id).where(Company.user_id == user.id)),
+            )
+            .limit(1)
+        )
+        if already is not None:
+            return
+        code = own_code if own_code and self.resolve_referrer(own_code) else None
+        if code is None:
+            code = self.session.scalar(
+                select(TeamRequest.rif)
+                .where(
+                    TeamRequest.origine == "pubblico",
+                    TeamRequest.rif.is_not(None),
+                    func.lower(TeamRequest.email) == user.email.strip().lower(),
+                )
+                .order_by(TeamRequest.created_at.desc(), TeamRequest.id.desc())
+                .limit(1)
+            )
+        self.link_signup("company", company_id, code, new_user_id=user.id)
 
     def referrer_name(self, kind: str, entity_id: UUID) -> str | None:
         """Who referred this freelancer or this company, as a contract prints a name

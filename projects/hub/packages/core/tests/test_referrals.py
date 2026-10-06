@@ -26,6 +26,7 @@ from test_signing import (
     _webhook,
 )
 
+from rebase_core.cloud import TalentCloudService
 from rebase_core.companies import CompanyService
 from rebase_core.config import Settings
 from rebase_core.contract_schemas import (
@@ -49,6 +50,7 @@ from rebase_core.models import (
     Referral,
     ReferralReward,
     Signup,
+    TeamRequest,
     User,
 )
 from rebase_core.referral_evidence import domains_match, email_domain
@@ -63,6 +65,8 @@ from rebase_core.schemas import (
 from rebase_core.users import UserService
 
 TABLES = (
+    "talent_cloud_grants",
+    "team_requests",
     "referral_rewards",
     "referrals",
     "referral_settings",
@@ -383,6 +387,129 @@ def test_a_companys_first_request_with_rif_links_the_referral_but_not_the_next_o
     assert first is not None and first.kind == "company"
     # The referente already had a request: the second one is not a fresh referral.
     assert clean.scalar(select(Referral).where(Referral.entity_id == second_company_id)) is None
+
+
+# ---- a public team request's code, credited when a company exists (REB-600) -------
+
+
+def _public_request(
+    session: Session, *, email: str = "wile@acme.it", rif: str | None, azienda: str = "ACME Srl"
+) -> None:
+    session.add(
+        TeamRequest(
+            origine="pubblico", azienda=azienda, email=email, telefono="+39 345 1234567", rif=rif
+        )
+    )
+    session.commit()
+
+
+def _company_referral(session: Session, company_id: UUID) -> Referral | None:
+    return session.scalar(select(Referral).where(Referral.entity_id == company_id))
+
+
+def test_a_company_appearing_through_the_wizard_makes_the_pending_referral(clean: Session) -> None:
+    referrer_id = _member(clean)
+    code = ReferralService(clean).code_for(referrer_id)
+    _public_request(clean, rif=code)
+    assert clean.scalar(select(Referral)) is None  # nothing at filing time
+
+    company_id = _request(clean)  # the wizard, no `rif` of its own
+
+    row = _company_referral(clean, company_id)
+    assert row is not None
+    assert (row.kind, row.referrer_user_id, row.stato, row.verified_at) == (
+        "company",
+        referrer_id,
+        "da_verificare",
+        None,
+    )
+    # REB-658: the contact's first magic-link login is what verifies it.
+    _log_in(clean, "wile@acme.it")
+    clean.expire_all()
+    assert _company_referral(clean, company_id).stato == "verificato"  # type: ignore[union-attr]
+
+
+def test_the_wizards_own_rif_wins_over_the_requests_when_it_names_a_member(
+    clean: Session,
+) -> None:
+    stored = _member(clean, "stored@community.it")
+    own = _member(clean, "own@community.it")
+    service = ReferralService(clean)
+    _public_request(clean, rif=service.code_for(stored))
+
+    company_id = _request(clean, rif=service.code_for(own))
+
+    row = _company_referral(clean, company_id)
+    assert row is not None and row.referrer_user_id == own
+
+
+def test_an_unknown_wizard_rif_falls_back_to_the_requests(clean: Session) -> None:
+    stored = _member(clean)
+    _public_request(clean, rif=ReferralService(clean).code_for(stored))
+
+    company_id = _request(clean, rif="ZZZZZZZZZZ")
+
+    row = _company_referral(clean, company_id)
+    assert row is not None and row.referrer_user_id == stored
+
+
+def test_a_company_opened_to_the_cloud_makes_the_pending_referral(clean: Session) -> None:
+    referrer_id = _member(clean)
+    admin_id = _admin(clean)
+    code = ReferralService(clean).code_for(referrer_id)
+    company_id = _request(clean)  # the company came first, with no code
+    assert clean.scalar(select(Referral)) is None
+    _public_request(clean, rif=code)  # the request is filed afterwards
+    assert clean.scalar(select(Referral)) is None
+
+    settings = Settings(hub_url="http://localhost:5180/hub", _env_file=None)  # type: ignore[call-arg]
+    TalentCloudService(clean, settings).grant(company_id, admin_id)
+
+    row = _company_referral(clean, company_id)
+    assert row is not None and (row.referrer_user_id, row.stato) == (referrer_id, "da_verificare")
+
+
+def test_the_cloud_never_adds_a_second_referral_to_a_contact_who_has_one(clean: Session) -> None:
+    first = _member(clean, "first@community.it")
+    second = _member(clean, "second@community.it")
+    admin_id = _admin(clean)
+    service = ReferralService(clean)
+    company_id = _request(clean, rif=service.code_for(first))
+    other_id = _request(clean, progetto="Un secondo progetto, altrettanto lungo.")
+    _public_request(clean, rif=service.code_for(second))
+
+    settings = Settings(hub_url="http://localhost:5180/hub", _env_file=None)  # type: ignore[call-arg]
+    TalentCloudService(clean, settings).grant(other_id, admin_id)
+
+    assert _company_referral(clean, other_id) is None
+    kept = _company_referral(clean, company_id)
+    assert kept is not None and kept.referrer_user_id == first
+
+
+@pytest.mark.parametrize("stored", [None, "ZZZZZZZZZZ"])
+def test_no_rif_or_an_unknown_one_on_the_request_makes_no_referral(
+    clean: Session, stored: str | None
+) -> None:
+    _member(clean)
+    _public_request(clean, rif=stored)
+
+    assert _company_referral(clean, _request(clean)) is None
+
+
+def test_a_rif_that_is_the_contacts_own_code_makes_no_referral(clean: Session) -> None:
+    own = _member(clean, "wile@acme.it")
+    _public_request(clean, rif=ReferralService(clean).code_for(own))
+
+    assert _company_referral(clean, _request(clean)) is None
+
+
+def test_a_request_of_another_contact_never_credits_this_company(clean: Session) -> None:
+    referrer_id = _member(clean)
+    _public_request(
+        clean, email="other@elsewhere.it", rif=ReferralService(clean).code_for(referrer_id)
+    )
+
+    assert _company_referral(clean, _request(clean)) is None
 
 
 def _fail_after_the_card_is_written(monkeypatch: pytest.MonkeyPatch) -> None:

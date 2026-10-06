@@ -40,6 +40,7 @@ from rebase_core.models import (
     AdminAction,
     Freelancer,
     FreelancerCard,
+    Referral,
     TeamProposal,
     TeamRequest,
     TeamRequestTalent,
@@ -1131,3 +1132,36 @@ def test_the_caps_have_their_defaults_and_reach_the_container() -> None:
     # nothing writes no card (Compose default `off`); the example turns it on.
     assert "REBASE_CARDS_LOOP: ${REBASE_CARDS_LOOP:-off}" in compose
     assert "REBASE_CARDS_LOOP=on" in example
+
+
+# ---- the referral code a public request carries (REB-600) --------------------------
+
+
+def _filed_with(session: Session, rif: str | None) -> TeamRequest:
+    members = [_talent(session, 1)]
+    proposal_id = _proposal(session, members)
+    data = TeamRequestCreate(
+        proposal_id=proposal_id,
+        azienda=AZIENDA,
+        email="wile@acme.it",
+        telefono="+39 345 1234567",
+        rif=rif,  # type: ignore[arg-type]
+    )
+    read, _ = _service(session).create(data, origine="pubblico", user_id=None, company_id=None)
+    return session.get_one(TeamRequest, read.id)
+
+
+def test_a_public_request_keeps_the_rif_and_credits_nobody(clean: Session) -> None:
+    row = _filed_with(clean, "ABCDEFGH23")
+
+    assert row.rif == "ABCDEFGH23"
+    assert clean.scalar(select(Referral)) is None
+
+
+@pytest.mark.parametrize("raw", ["not a code!!", "WAYTOOLONGACODE", "   ", ""])
+def test_a_rif_that_is_not_a_code_is_no_code_and_never_a_422(clean: Session, raw: str) -> None:
+    assert _filed_with(clean, raw).rif is None
+
+
+def test_a_request_without_rif_stores_none(clean: Session) -> None:
+    assert _filed_with(clean, None).rif is None

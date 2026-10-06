@@ -26,6 +26,7 @@ import {
   type TeamProposalCreate,
 } from '@/lib/api'
 import { bandLabel } from '@/lib/bands'
+import { resolveReferral } from '@/lib/utm'
 import { REMOTO_LABELS, SENIORITY_LABELS, formatDaysPerWeek, formatExperience } from '@/lib/format'
 
 /** The lengths core's `TeamProposalCreate` takes (`team_schemas.py`), measured as it
@@ -450,12 +451,17 @@ function PublicHire({ proposalId }: { proposalId: string }) {
       return
     }
     setSending(true)
+    const rif = resolveReferral(window.location.search)
     try {
       await team.request({
         proposal_id: proposalId,
         azienda: value.azienda.trim(),
         email: value.email.trim(),
         telefono: value.telefono.trim(),
+        // The referral link the visitor arrived with, remembered by the tab like the
+        // wizards' (REB-600): kept on the request and credited only once a company
+        // exists for this contact.
+        ...(rif ? { rif } : {}),
       })
       setDone(true)
     } catch (error) {
