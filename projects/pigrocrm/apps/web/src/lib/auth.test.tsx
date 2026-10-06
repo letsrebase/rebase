@@ -26,13 +26,14 @@ const DEMOTED = { ...ADMIN, ruolo: 'collaboratore' }
 
 function Probe() {
   const isAdmin = useIsAdmin()
-  const { logout } = useAuth()
+  const { login, logout } = useAuth()
   return (
     <div>
       {isAdmin ? 'admin' : 'not-admin'}
       {/* `AppShell` fires `void logout()`; here the rejection is caught so a refused
           logout is asserted on rather than reported as an unhandled one. */}
       <button onClick={() => void logout().catch(() => undefined)}>Esci</button>
+      <button onClick={() => void login('a@p.it', 'pw').catch(() => undefined)}>Accedi</button>
     </div>
   )
 }
@@ -100,6 +101,38 @@ describe('AuthProvider — session freshness', () => {
     // `refetchInterval` guard (`query.state.data ? 30_000 : false`) is what
     // keeps a `null` session from being polled at all.
     expect(api.GET).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('AuthProvider — publishing a session', () => {
+  /**
+   * REB-662. The provider asks `me` the moment it mounts, and on the login page that
+   * answer is a 401 the `queryFn` turns into `null`. On a loaded box that request can
+   * still be on the wire when the person has already submitted and `POST /api/auth/login`
+   * has answered 200: a fetch that resolves after a manual `setQueryData` overwrites it,
+   * so the late `null` threw the freshly logged-in person back to the login form, with
+   * nothing asking `me` again for thirty seconds. The session a login opened has to
+   * survive the answer that was already in flight when it opened.
+   */
+  it('keeps the session a login opened when the me request from the page load answers 401 afterwards', async () => {
+    let answerMe: (value: unknown) => void = () => undefined
+    const lateMe = new Promise((resolve) => {
+      answerMe = resolve
+    })
+    vi.mocked(api.GET).mockReturnValueOnce(lateMe as never)
+    vi.mocked(api.POST).mockReturnValue(Promise.resolve(ok(ADMIN)))
+    renderProbe()
+    expect(screen.getByText('not-admin')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Accedi' }))
+    expect(await screen.findByText('admin')).toBeInTheDocument()
+
+    // The page load's own `me`, answered only now, after the login: a visitor with no
+    // session as far as that request knew.
+    answerMe({ error: { detail: 'Autenticazione richiesta' }, response: new Response(null, { status: 401 }) })
+    await vi.advanceTimersByTimeAsync(100)
+
+    expect(screen.getByText('admin')).toBeInTheDocument()
   })
 })
 
