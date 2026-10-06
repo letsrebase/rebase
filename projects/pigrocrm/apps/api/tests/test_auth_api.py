@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 import pigrocrm.core.auth.refresh_service as refresh_service
@@ -188,6 +189,15 @@ def test_the_login_budget_is_the_setting(client: TestClient, admin_user) -> None
     assert refused.status_code == 429, refused.text
     right = client.post("/api/auth/login", json=CREDENTIALS, headers=headers)
     assert right.status_code == 429, right.text
+
+
+def test_a_login_budget_below_one_is_refused_at_settings_validation() -> None:
+    """A budget of zero would start every client's bucket below one token and answer
+    429 to every login for good: the one value that locks everyone out fails when the
+    settings are built, with the field named, not at the first person's login."""
+    with pytest.raises(ValidationError, match="login_requests_per_minute"):
+        Settings(_env_file=None, login_requests_per_minute=0)  # type: ignore[call-arg]
+    assert Settings(_env_file=None, login_requests_per_minute=1).login_requests_per_minute == 1  # type: ignore[call-arg]
 
 
 def test_login_failures_are_byte_identical_regardless_of_cause(

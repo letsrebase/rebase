@@ -113,8 +113,10 @@ class Settings(BaseSettings):
     # one address logging in once per spec, forty-one times in under three minutes at
     # the preview server's speed, and declares its own budget in
     # `apps/web/scripts/e2e-env.sh` the way it declares `cookie_secure`. Nothing else
-    # has a reason to move it.
-    login_requests_per_minute: int = 10
+    # has a reason to move it. `ge=1` because a bucket that starts below one token
+    # answers 429 to every login for good, and a misconfiguration that locks everyone
+    # out should fail at boot, not at the first person's login.
+    login_requests_per_minute: int = Field(default=10, ge=1)
 
     # Whether a personal access token may perform the operations listed in
     # `actor.AGENT_FORBIDDEN_ACTIONS` -- issuing and annulling invoices, rates, cost
