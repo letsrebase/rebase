@@ -53,17 +53,22 @@ A comment at every turn a reader could not infer from the diff alone: a finding 
 changes the plan, a scope that grew or narrowed, something you are waiting on. Not
 one per commit, and never "working on it".
 
-**Project updates.** Post one on the contract's Linear project whenever something
-happened that the issue list alone would not show: a milestone slipped, a health
-change (`onTrack`, `atRisk`, `offTrack`), a decision taken, a release shipped.
-`save_status_update` with `type: "project"`, the project id in a field called
-`project`, and a `health` value (each is easy to get wrong once: omitting `type` or
-`health` fails validation, and `projectId` fails too even though the id is right
-there). Three sentences at most, in
-the `linear-content` skill's shape when your harness reads it: what moved, the health
-and why, the next visible thing. An update that only restates the board is noise, but
-skipping one when the board alone would mislead whoever reads only the update is the
-more common mistake.
+**Project updates.** Three moments always get one on the contract's Linear project,
+and skipping one is a defect. When the project starts, the move to `started`: what it
+delivers and the first card. When a milestone
+merges or a release ships: what landed, the health word and why, the next visible
+thing. When the last card is `Done`: the closing update, with what was verified and on
+which surface, and the project moved to `Completed` in the same step; if it must stay
+open, the update says what keeps it open. Between those it is judgement: write one when
+something changed that the issue list would not show (a slip, a health change, a
+decision). `save_status_update` with `type: "project"`, the project id in a field
+called `project`, and a `health` value of `onTrack`, `atRisk` or `offTrack` (each is
+easy to get wrong once: omitting `type` or `health` fails validation, and `projectId`
+fails too even though the id is right there). Three sentences at most, in the
+`linear-content` skill's shape when your harness reads it: what moved, the health and
+why, the next visible thing. A claim in an update comes from cards, PRs and a command,
+never from a title; a card closed by a merge is not proof a deploy ran, so check the
+tag, the run or the URL.
 
 **A project does not close itself.** Nothing moves it to `Completed` when its last
 issue does. An issue can also archive on its own schedule regardless of the

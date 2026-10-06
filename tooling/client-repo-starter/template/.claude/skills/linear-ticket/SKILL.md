@@ -153,10 +153,13 @@ it", and not a step a reader could infer from the previous comment.
 
 ## Project updates and milestones
 
-`save_status_update` with `type: "project"`, the project id, a `health` (`onTrack`,
-`atRisk`, `offTrack`) and a body per `linear-content`. Post one when the board alone
-would mislead a reader (a milestone slipped, a decision taken, a release shipped),
-never one that only restates the issue list.
+`save_status_update` with `type: "project"`, the project id in a key called `project`
+(not `projectId`), a `health` (`onTrack`, `atRisk`, `offTrack`) and a body per
+`linear-content`. Three moments always get one: the project moves to `started`, a
+milestone merges or a release ships, and the last card is `Done` (with the project
+moved to Completed in the same step, or the update saying what keeps it open). Between
+those, post one when something changed
+that the issue list would not show; never one that only restates it.
 
 `save_milestone` wants `project` on every call, an update included: sending only
 `id` and `description` fails on `project: is required`, which reads like the

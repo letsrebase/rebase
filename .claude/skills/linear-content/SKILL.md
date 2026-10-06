@@ -113,11 +113,16 @@ project's own `AGENTS.md` and `docs/`; the description points at them in one lin
 
 ## Status updates
 
-`save_status_update` with `type: "project"`. **Three sentences, no more**: what
-shipped or slipped, the health word and why, the next visible thing. A reader who
-sees only the update understands where the release stands; nobody reads a second
-copy of the issue list. Post one when the board alone would mislead; skip it when
-it would only restate it.
+`save_status_update` with `type: "project"`, the project id in `project`. **Three
+sentences, no more**: what shipped or slipped, the health word and why, the next visible
+thing. A reader who sees only the update understands where the release stands; nobody
+reads a second copy of the issue list. Three moments always get one: the project moves
+to `started` (what it delivers, the first card), a milestone merges or a release ships
+(what landed, health, what is next), and the last card is `Done` (what was verified and
+on which surface, the project moved to Completed in the same step, or what keeps it
+open). Between those, write one when something changed that the issue list would not
+show, and skip it when it would only restate it. A claim comes from cards, PRs and a
+command, never from a title; a card closed by a merge is not proof a deploy ran.
 
 ## References
 

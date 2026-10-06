@@ -204,9 +204,12 @@ Replies in a thread take `parentId`.
 a `health` (`onTrack`, `atRisk`, `offTrack`) and a body per the `linear-content` skill.
 Both of those are easy to get wrong once: omitting `type` fails on `type: is required`,
 and passing the id as `projectId` fails on `project is required when creating a project
-status update` while the id is right there in the payload. Post one when the board alone
-would mislead a reader: a release shipped, a milestone slipped, a decision taken. Not one
-that restates the issue list.
+status update` while the id is right there in the payload. Three moments always get one
+(`docs/tracker.md` § The loop, Project updates): the project moves to `started`, a
+milestone's draft PR merges or a release tag ships, and the last card is `Done` (with the
+project moved to Completed in the same step, or the update saying what keeps it open).
+Between those, post one when something
+changed that the issue list would not show; never one that restates it.
 
 ## Milestones
 

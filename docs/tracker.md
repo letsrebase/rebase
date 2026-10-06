@@ -218,13 +218,20 @@ right, never on a 200 from an unchanged path. If you cannot verify it, say so on
 card and do not merge yet: a PR that merges closes its issue, so an unverified merge is
 a card closed on nothing.
 
-**Project updates.** Post one whenever something happened that a reader could not infer
-from the issue list: a milestone slipped, a health change (`onTrack`, `atRisk`,
-`offTrack`), a decision taken, a release shipped. `save_status_update` requires
-`type: "project"` along with the project, so a call without it fails validation. An
-update is three sentences at most: what moved, the health and why, the next visible
-thing. An update that only restates the board is noise, but skipping one when the
-board alone would mislead a reader is worse.
+**Project updates.** Three moments always get one, and skipping one is a defect, like an
+issue filed with no project. When the project starts, the move to `started`: what it
+delivers and the first card. When a milestone merges or a release ships, the milestone's
+draft PR merging or a `<project>-v<semver>` tag going out: what landed, the health word
+and why, the next visible thing. When the last card is `Done`: the closing update, with
+what was verified and on which surface, and the project moved to Completed in the same
+step; if it must stay open, the update says what keeps it open. Between those moments it
+is judgement: write one when something changed that the issue list would not show (a
+slip, a health change, a decision). An update is three sentences at most: what moved, the
+health (`onTrack`, `atRisk`, `offTrack`) and why, the next visible thing.
+`save_status_update` requires `type: "project"` along with the project, so a call
+without it fails validation. A claim in an update comes from cards, PRs and a command,
+never from a title, and a card closed by a merge is not proof a deploy ran: check the
+tag, the run or the URL.
 
 ## What an issue carries
 

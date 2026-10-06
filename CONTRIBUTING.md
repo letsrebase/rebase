@@ -43,8 +43,10 @@ agent run, one PR. Every issue carries exactly one `type` label and exactly one 
 label, both from enforced groups, and priority and effort as Linear's own fields, never
 labels. Before the first file changes, read the open cards next to yours (same area,
 same screen or table) and link or narrow around them; while you work, keep your card
-current with a comment at every turn a reader could not infer, and leave a project
-status update whenever something changed that the issue list alone does not show.
+current with a comment at every turn a reader could not infer, and write a project
+status update at the three moments that always get one (the project starts, a
+milestone merges or a release ships, the last card is `Done`) and whenever something
+else changed that the issue list alone does not show.
 Linear's GitHub app links a PR to its card, and since 2026-09-16 the team's automation
 moves the state too: `In Progress` while the PR is open, `Done` when it merges. What
 stays in your hands is the `In Progress` move before the branch exists, every comment,

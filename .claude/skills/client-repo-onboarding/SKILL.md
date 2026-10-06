@@ -138,9 +138,12 @@ procedure for the fold itself, once someone picks the issue up.
 
 The generated repository's own `AGENTS.md` and its copy of the `linear-content` skill
 already carry the mechanics and the tone (three sentences, what moved, the health word
-and why, the next visible thing; English, first person, no selling). Post one, or
-remind the freelancer's agent to, whenever the board alone would mislead a reader of
-this contract: a milestone slips, health changes, a decision is taken, a release ships.
-Not one that only restates the issue list, and not skipped when it would matter: the
-client's own board is read by Lorenzo or Ivan without opening every card, the same
-reason `rebase`'s own board works this way (`docs/tracker.md` § Project updates).
+and why, the next visible thing; English, first person, no selling), and its `AGENTS.md`
+states the three moments that always get an update: the project moves to `started`, a
+milestone merges or a release ships, and the last card is `Done`, with the project moved
+to Completed in the same step or the update saying what keeps it open. Post those, or
+remind the freelancer's agent to, and skip
+none: skipping one is a defect. Between them, write one when something changed that the
+issue list would not show, never one that only restates it. The client's own board is
+read by Lorenzo or Ivan without opening every card, the same reason `rebase`'s own board
+works this way (`docs/tracker.md` § Project updates).

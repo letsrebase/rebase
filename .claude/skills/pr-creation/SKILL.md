@@ -33,7 +33,9 @@ it and a document disagree, the document is right and the skill has a bug.
    your change would settle or break is linked (`relatedTo`, `blocks`, `blockedBy`,
    `duplicateOf`) and named in the body. Nothing found is written as well, as the body's
    **Adjacent** paragraph. The one `save_issue` that moves the card to `In Progress`
-   with `assignee: "me"` carries the links and that paragraph. No scan on the card, no
+   with `assignee: "me"` carries the links and that paragraph. When this card is the first
+   to start its project, the project moves to `started` and its opening update goes out in
+   the same pass (`docs/tracker.md` § The loop, Project updates). No scan on the card, no
    branch.
 3. **The branch is the milestone's, or Linear's.** If the issue's milestone has an open
    draft PR, you work on that branch: it is named for the milestone, carries no issue
@@ -493,6 +495,14 @@ gh pr create --body-file pr-body.md \
    merge without waiting for it, and a card that closes with nothing under it was
    closed by a robot. On a milestone PR nothing moves by itself: set each card it
    listed to `Done` in the same pass, each with its own evidence comment.
+
+   **The project update is part of finishing.** Three events owe the project one
+   (`docs/tracker.md` § The loop, Project updates): this merge, when it is a milestone's
+   draft PR; a release tag, when it ships (step 6); and this merge, when it lands the last
+   open card of its project, in which case the closing update says what was verified and
+   on which surface and the project moves to Completed in the same step, or the update
+   says what keeps it open. Write it with the
+   `linear-ticket` skill § Project updates; for a merge, before you clean up.
 5. **Clean up**: `git worktree remove ../<repo>-<name>`, `git worktree prune`.
 6. **Production is a separate step.** Preview deploys on the green trunk run;
    **production moves only on a tag** (`docs/design/DECISIONS.md`, 2026-09-09) and only
@@ -520,6 +530,10 @@ gh pr create --body-file pr-body.md \
    the `linear-content` shape. The mechanism and the five secrets are
    `docs/adding-a-project.md` § 7; a tag is immutable once pushed (ruleset, 2026-09-10),
    so a wrong one is followed by the next version, never moved.
+
+   The project update for the release follows the `**In production:**` comment, and its
+   claim is the tag, the run or the URL you read, never the card's title. When that
+   release is what kept the project open, the same step moves it to Completed.
 
 ## What never goes in a PR
 
