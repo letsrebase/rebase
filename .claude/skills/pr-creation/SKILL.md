@@ -532,7 +532,8 @@ gh pr create --body-file pr-body.md \
    so a wrong one is followed by the next version, never moved.
 
    The project update for the release follows the `**In production:**` comment, and its
-   claim is the tag, the run or the URL you read, never the card's title.
+   claim is the tag, the run or the URL you read, never the card's title. When that
+   release is what kept the project open, the same step moves it to Completed.
 
 ## What never goes in a PR
 

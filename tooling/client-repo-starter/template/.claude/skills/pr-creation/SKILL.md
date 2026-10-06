@@ -125,4 +125,4 @@ gh pr create --body-file pr-body.md
    project gets its update (`AGENTS.md` § Project updates, `linear-ticket` skill). The
    last-card update says what was verified and on which surface, and the project moves
    to `Completed` in the same step; if it must stay open, the update says what keeps it
-   open.
+   open, and the release that ends that moves it to `Completed` with its own update.
