@@ -14,7 +14,7 @@ Conventions).
 | | |
 |---|---|
 | Workspace | `letsrebase`, the Linear slug since the workspace itself was renamed on 2026-09-15, the same day as the GitHub org |
-| Team | **rebase**, issue prefix `REB-`. The team was `Orbiters` with prefix `ORB-` until 2026-09-15; the rename kept every issue's number, so an `ORB-193` you find in older text or history is `REB-193` today. One team, and that does not change |
+| Team | **rebase**, issue prefix `REB-`. The team carried the platform's former name, with prefix `ORB-`, until 2026-09-15; the rename kept every issue's number, so an `ORB-193` you find in older text or history is `REB-193` today. One team, and that does not change |
 | Initiative | a product, permanent: `Website`, `Hub`, `PigroCRM`, `Monorepo` |
 | Project | a release, or a body of work with an end. It closes when it ships, which is what lets its issues archive. Named with a verb and the work it does (`Give every space its own team`): no initiative prefix, no version number, no state word |
 | Milestone | the work that lands when it closes, named with a verb (`Cut both wizards to three screens`), inside a project's release. Not an issue; costs nothing, shows progress on its own |
@@ -232,7 +232,7 @@ The board is read by two people scanning for "who is doing what, how far", not
 studied. Every field has a budget, and the budget is the rule.
 
 - A **title under 80 characters, starting with a verb**: it names the work the
-  card does, the same shape as a project name (`Drop the stale orbiters database
+  card does, the same shape as a project name (`Drop the stale legacy database
   from the CRM host`, `Make the CV optional in the wizard and the member area`).
   One clause, or two when the second only names what makes the first visible; a
   colon means the second half belongs in the body. The observed problem is not
@@ -333,7 +333,7 @@ Applies to every project, milestone and issue title, and to the labels.
 
 Linear's GitHub app (`linear-code`) is installed on the GitHub org since 2026-09-09,
 on every repository, granted by the org owner (`slavni96`) after Lorenzo was made an
-owner of the org the same day. That org was `joinorbiters` then and is `letsrebase`
+owner of the org the same day. That org carried the platform's former name then and is `letsrebase`
 since 2026-09-15 (REB-204); the installation followed the rename, and so did the links
 Linear had already attached to pull requests. Installing it gives Linear the pull
 request and issue events, and the diffs show up in Linear for anyone whose personal

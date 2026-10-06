@@ -18,7 +18,7 @@ function rule(selector: string, source = css): string {
 }
 
 describe('the landing shares the product system', () => {
-  it('sits on the grid system.css declares, as Orbiters does', () => {
+  it('sits on the grid system.css declares, as the rest of the product does', () => {
     expect(rule('body')).toMatch(/linear-gradient\(to right, var\(--landing-grid\) 1px, transparent 1px\)/)
     expect(rule('body')).toMatch(/linear-gradient\(to bottom, var\(--landing-grid\) 1px, transparent 1px\)/)
     expect(rule('body')).toMatch(/background-size:\s*var\(--landing-cell\) var\(--landing-cell\)/)
@@ -35,8 +35,8 @@ describe('the landing shares the product system', () => {
     // line and tile, because Tailwind cannot import system.css. The app UI revision
     // (2026-09-08, docs/superpowers/specs/2026-09-08-ui-revision-design.md §3) removed
     // the grid from the app body: its white content panel covers the page, and the
-    // grid was the one thing tying the app's shapes to Orbiters'. The landing and
-    // Orbiters are unchanged and keep it, so system.css is now its single declaration
+    // grid was the one thing tying the app's shapes to the site's. The landing
+    // is unchanged and keeps it, so system.css is now its single declaration
     // and there is nothing left in the app to drift from it.
     expect(appTokens).not.toMatch(/--grid-line/)
     expect(appTokens).not.toMatch(/background-image:/)

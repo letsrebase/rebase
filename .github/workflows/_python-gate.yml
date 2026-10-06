@@ -185,7 +185,7 @@ jobs:
           fi
           # `LC_ALL=C`, so the order (and so the slices) is the same on every machine:
           # under en_US `test_cli.py` and `test_cli_digest.py` swap places, and a shard
-          # reproduced on a devbox would not hold the file that failed on the runner.
+          # reproduced on a developer machine would not hold the file that failed on the runner.
           # ROOTS is a space-separated list on purpose, the same one `Test` expands.
           # shellcheck disable=SC2086
           # Both of pytest's default module patterns, since nothing sets `python_files`:

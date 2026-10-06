@@ -93,7 +93,7 @@ personal key (`phx_…`) never enters a file, a card or a chat transcript.
    it up. Verify inside the container, not on the host:
 
    ```bash
-   ssh orbiters 'sudo docker exec rebase-api-1 sh -c "printenv REBASE_POSTHOG_KEY | cut -c1-8"; \
+   ssh <origin> 'sudo docker exec rebase-api-1 sh -c "printenv REBASE_POSTHOG_KEY | cut -c1-8"; \
      sudo docker exec rebase-api-1 uv run --no-sync python -c \
      "from rebase_core.config import get_settings; from rebase_core.analytics import tracker_from_settings, shutdown; print(tracker_from_settings(get_settings()) is not None); shutdown()"'
    ```
@@ -186,7 +186,7 @@ pull request asks before the email does. Three shapes, three answers:
   because production holds it today, not because it is settled.
 
 **A database or role that moved.** The source stores the database name: the
-`orbiters` → `rebase` rename of 2026-09-15 left the hub source failing with «Something
+hub database's rename to `rebase` on 2026-09-15 left the hub source failing with «Something
 this sync depends on … no longer exists» and its tables switched off. The fix is on the
 source's Configuration tab: change the field, leave password and private key blank (a
 blank secret keeps the stored one; «Source updated» confirms), then re-enable the rows

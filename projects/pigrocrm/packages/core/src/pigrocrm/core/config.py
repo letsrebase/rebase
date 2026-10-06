@@ -57,7 +57,7 @@ class Settings(BaseSettings):
     root_slug: str = ""
     # Lets another service read the registry of spaces: `GET /api/tenants/` answers a
     # caller presenting it as a bearer token with every row (slug, owner, date), which is
-    # how the Orbiters hub shows which spaces exist and whose they are (ORB-142). Empty,
+    # how the rebase hub shows which spaces exist and whose they are (ORB-142). Empty,
     # the default, means the route does not exist: a self-hosted installation exposes
     # nothing new. Read from the environment only, never from `space_settings`. A secret
     # the same way `google_client_secret` is, so `repr=False` keeps it out of logs.
@@ -68,7 +68,7 @@ class Settings(BaseSettings):
     # routes do not exist -- the same shape as `registry_token` above. Read from the
     # environment only, never from `space_settings`, and `repr=False` for the same reason.
     engagements_token: str = Field(default="", repr=False)
-    # Where the Orbiters hub answers, for the one question the signup asks it: whether an
+    # Where the rebase hub answers, for the one question the signup asks it: whether an
     # address belongs to a community member (`tenants/hub.py`, ORB-173). The bearer is
     # `registry_token` above, the same value the hub reads as
     # `REBASE_PIGRO_REGISTRY_TOKEN`: since ORB-173 it travels in both directions. Empty

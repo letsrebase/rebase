@@ -333,7 +333,7 @@ test.describe('every page of the site', () => {
         for (const link of await page.locator('a[href^="/"]').all()) {
           const href = await link.getAttribute('href')
           expect(href).toBeTruthy()
-          // `/hub/` is the Orbiters hub (projects/hub), another deployable on the same
+          // `/hub/` is the rebase hub (projects/hub), another deployable on the same
           // origin: the host's nginx sends it there, the preview server here has nothing
           // behind it. The link is verified where it resolves, not here.
           if (href!.startsWith('/hub/')) continue

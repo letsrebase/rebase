@@ -165,6 +165,14 @@ strings. Both environments stay off until their arming variable exists. The runb
 and how the pinned key is captured and confirmed on the host, is
 `docs/adding-a-project.md` §7.
 
+**Where all of that lands: two servers, and only two** (`docs/architecture.md` § Where it
+runs). The Hetzner origin hosts the website, the hub, PigroCRM and Documenso (Vaultwarden
+is to follow) behind one nginx, the first three with production and preview side by side,
+and every `DEPLOY_HOST` is that machine. A separate server runs the self-hosted runner pool for
+CI/CD (`docs/ci-runner-pool.md`); today it serves the private client repositories, while
+this repository's own workflows run on GitHub-hosted runners and reach the origin over
+SSH. "The server" and "the host" in this repository's docs mean the origin.
+
 **The preview triggers on `workflow_run`, and that is a cost decision with two
 consequences worth knowing.** It used to trigger on the push and then poll the API
 until CI finished, on a billed runner: measured on 2026-09-09, 458 of 514 billed

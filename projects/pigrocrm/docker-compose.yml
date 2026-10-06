@@ -50,7 +50,7 @@ x-api-environment: &api-environment
   # The root lends its Google client to every space without one (REB-394).
   PIGROCRM_GOOGLE_SHARED_CLIENT: ${PIGROCRM_GOOGLE_SHARED_CLIENT:-false}
   PIGROCRM_ROOT_SLUG: ${PIGROCRM_ROOT_SLUG:-}
-  # Lets the Orbiters hub read the list of spaces (ORB-142). Empty: no such route.
+  # Lets the rebase hub read the list of spaces (ORB-142). Empty: no such route.
   PIGROCRM_REGISTRY_TOKEN: ${PIGROCRM_REGISTRY_TOKEN:-}
   # The bearer the engagements door checks (milestone A, REB-490). Empty: no such route.
   PIGROCRM_ENGAGEMENTS_TOKEN: ${PIGROCRM_ENGAGEMENTS_TOKEN:-}
@@ -58,7 +58,7 @@ x-api-environment: &api-environment
   # key: no mail, the endpoints answer 503, the password login still works.
   PIGROCRM_RESEND_API_KEY: ${PIGROCRM_RESEND_API_KEY:-}
   PIGROCRM_MAIL_FROM: ${PIGROCRM_MAIL_FROM:-PigroCRM <ciao@letsrebase.com>}
-  # Where the signup asks the Orbiters hub who is a member (ORB-173).
+  # Where the signup asks the rebase hub who is a member (ORB-173).
   PIGROCRM_HUB_URL: ${PIGROCRM_HUB_URL:-https://letsrebase.com}
   # The MCP server, on both transports (the `mcp` service and the on-demand stdio
   # run), reports its tool calls to PostHog when the key is set (ORB-186). Empty:

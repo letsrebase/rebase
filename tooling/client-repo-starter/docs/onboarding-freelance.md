@@ -32,8 +32,8 @@ setup). One pass, before their first card.
 
 ## What is not part of this kit
 
-Anything that only makes sense on rebase's own devbox — the unattended pickup loop,
-Hindsight memory, `chrome-profiles`, the orchestration skills — is infrastructure
+Anything that only makes sense on rebase's own development machines (the unattended pickup loop,
+Hindsight memory, `chrome-profiles`, the orchestration skills) is infrastructure
 for how *we* run agents, not a convention a freelancer's own machine or harness has
 to reproduce. What travels with the repository is exactly what is in
 `template/`: the tracker contract, the commit and PR conventions, nothing about how

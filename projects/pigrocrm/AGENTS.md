@@ -120,7 +120,7 @@ second run alive on the same box reaping this pid before `killApi()` gets to it,
 removing the pidfile in its own teardown, no longer kills the run: `helpers.ts`'s
 `killApi()` treats `ESRCH` and a missing pidfile as "already gone" and waits for the
 port to actually close either way (REB-91, fixing the `kill ESRCH` observed live on
-2026-09-10 with several other agents' containers and dev servers on the same devbox,
+2026-09-10 with several other agents' containers and dev servers on the same development machine,
 filed as ORB-91). What the fix does not remove: a second run that *replaces* the pid
 with its own, live API before this one gets to it, which this process has no way to
 tell from its own API still running. Run `pigrocrm-e2e` one checkout at a time; the

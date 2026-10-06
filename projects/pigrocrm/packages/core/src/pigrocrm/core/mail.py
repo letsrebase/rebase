@@ -295,7 +295,7 @@ def welcome_mail(to: str, entra_url: str, login_url: str, *, membro: bool) -> Ma
         "Il CRM lavora al posto tuo: dalla Home, «Collega l'assistente» e chiedi a Claude di "
         "registrare le ore, preparare un'offerta, riassumere la settimana."
     )
-    orbiters = (
+    community = (
         "PigroCRM è il perk della community rebase, developer e CTO freelance in Italia: "
         "progetti da aziende vere e persone che ci sono già passate. Se vuoi entrarci: "
         f"{HUB_WIZARD_URL}"
@@ -311,7 +311,7 @@ def welcome_mail(to: str, entra_url: str, login_url: str, *, membro: bool) -> Ma
         "Le prime tre cose da fare:\n"
         + "".join(f"- {step}\n" for step in steps)
         + "\n"
-        + (f"{orbiters}\n\n" if not membro else "")
+        + (f"{community}\n\n" if not membro else "")
         + "PigroCRM\n"
     )
     body = "\n".join(

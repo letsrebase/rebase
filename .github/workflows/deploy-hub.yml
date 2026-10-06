@@ -14,9 +14,9 @@
 # `vars.HUB_PREVIEW_ENABLED` and `vars.HUB_DEPLOY_ENABLED`.
 #
 # The production compose project is `rebase`, not `hub`: the stack went up by hand on
-# 2026-09-09 (ORB-17) as `orbiters`, and a different name here starts a second stack
-# beside the running one rather than moving it. So the host moves first and the tag
-# second: stop the old project, move `/srv/orbiters-data` to `/srv/rebase-data`, rename
+# 2026-09-09 (ORB-17) under the platform's former name, and a different name here starts
+# a second stack beside the running one rather than moving it. So the host moves first and
+# the tag second: stop the old project, move its data directory to `/srv/rebase-data`, rename
 # the database and the role with `ALTER`, rewrite the `.env` keys to `REBASE_*`, then
 # deploy. Both environments were migrated that way on 2026-09-15, preview first.
 name: Deploy hub

@@ -17,7 +17,7 @@ carousel or a cover is edited and rendered, never redrawn.
 ## The name and the voice, in short
 
 - The product is **rebase**, lowercase everywhere a person reads it, sentence start
-  included. Never «Rebase», never «REBASE», never «Orbiters» (history and code only).
+  included. Never «Rebase», never «REBASE», never the platform's former name (history and code only).
 - Italian. Short: one idea per sentence, one idea per slide. «Noi» is the people running
   it, who do the same job; «tu» is the reader, singular, never «voi». Concrete over
   aspirational: «aziende vere», «fatturare e farti pagare», «quanto costa una tua

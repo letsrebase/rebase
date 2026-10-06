@@ -37,9 +37,9 @@ Three public flows and the admin area behind them:
   Research never overwrites a card the person filled. Spec:
   `docs/superpowers/specs/2026-09-11-freelancer-card-from-a-signup-design.md`.
 
-`POST /api/orbiters/signups` is the community site's signup endpoint, moved here
-unchanged on 2026-09-09: the website's form and the ChatGPT Ads conversion still post
-to the same path.
+`POST /api/community/signups` is the community signup endpoint, moved here unchanged on
+2026-09-09 (it has had this path since 2026-09-15, REB-212, and the old one still proxies
+to it). The website's form that posted to it was retired with the community page (REB-72).
 
 ## Layout
 
@@ -179,10 +179,10 @@ link.
 `.github/workflows/deploy-hub.yml`: preview on a push to `main` that touched the hub,
 production on a tag `hub-v<semver>` (`hub-v0.1.0` is out already). Both call the
 shared `_deploy-compose.yml`. The production compose project is `rebase`, not `hub`:
-the stack went up by hand on 2026-09-09 (ORB-17) as `orbiters` and carries that name
-until the tag that ships this rename deploys it, since a different name starts a second
-stack beside the running one rather than moving it. The preview's is `rebase-preview`,
-migrated on 2026-09-15. `GET /health` touches the database on purpose, so a
+the stack went up by hand on 2026-09-09 (ORB-17) under the platform's former name and
+was moved to this one on 2026-09-15, since a different name starts a second stack beside
+the running one rather than moving it. The preview's is `rebase-preview`, migrated the
+same day. `GET /health` touches the database on purpose, so a
 green deploy means Postgres is up and migrated, not only that uvicorn answered.
 
 ## Status

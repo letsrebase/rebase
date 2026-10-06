@@ -1,5 +1,5 @@
 """The one bearer check every service-to-service door in this API shares: `GET
-/api/tenants/` (the Orbiters hub reading the list of spaces, ORB-142) and the two
+/api/tenants/` (the rebase hub reading the list of spaces, ORB-142) and the two
 engagements routes (`routers/engagements.py`, spec 2026-09-25 § 2.3/§ 2.4). Lifted out
 of `routers/tenants.py`'s own inline check so a second door does not have to copy it
 byte for byte.

@@ -107,8 +107,8 @@ function generate(pathname: GeneratedPath): { content: string; contentType: stri
  * that followed it would be testing the CRM's uptime.
  */
 export const ELSEWHERE: Readonly<Record<string, string>> = {
-  '/api': 'the Orbiters hub API (projects/hub), proxied here to WEBSITE_API_URL',
-  '/hub': 'the Orbiters hub SPA (projects/hub)',
+  '/api': 'the rebase hub API (projects/hub), proxied here to WEBSITE_API_URL',
+  '/hub': 'the rebase hub SPA (projects/hub)',
   '/app': 'PigroCRM, a 302 to https://pigro.letsrebase.com',
   '/health': "the rebase hub API's probe (projects/hub)",
 }

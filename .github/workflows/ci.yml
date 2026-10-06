@@ -453,7 +453,7 @@ jobs:
       #
       # `-n auto --dist loadfile`: this suite waits on PostgreSQL far more than it
       # computes (measured locally: 10m00 wall for 7m57 of CPU), so workers overlap
-      # almost perfectly. 10m00 -> 4m32 on the devbox, and each worker gets its own
+      # almost perfectly. 10m00 -> 4m32 on a development machine, and each worker gets its own
       # container from the session fixture, so they share no database. `loadfile`
       # keeps a file's tests on one worker, which is what the module-scoped fixtures
       # in this suite assume.

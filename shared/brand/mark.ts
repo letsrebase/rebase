@@ -1,11 +1,11 @@
 /**
  * The four tiles the product signs itself with, in reading order.
  *
- * Every Orbiters surface draws this mark in its own technology and they must not
+ * Every rebase surface draws this mark in its own technology and they must not
  * drift: the application composes it out of Tailwind classes (`BrandMark.tsx`), the
  * website draws it as four box-shadows on one element
- * (`.glyph` in `projects/website/src/system.css`), and Orbiters' favicon is the same
- * field at glyph scale (`orbiters-logo.svg`).
+ * (`.glyph` in `projects/website/src/system.css`), and rebase's favicon is the same
+ * field at glyph scale (`rebase-logo.svg`).
  *
  * Three surfaces drawing the same thing three ways is exactly where a silent fork
  * happens, so the order lives here once and each surface asserts against it. Before

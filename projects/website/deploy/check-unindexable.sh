@@ -23,7 +23,7 @@
 # deploys -- known and accepted for that short window, not a reason to make the
 # assertion advisory: a check that never fails is not proof of anything.
 #
-# Reaches live hosts over HTTPS, so it runs from the devbox or from
+# Reaches live hosts over HTTPS, so it runs from a developer machine or from
 # `.github/preflight.json` -- a GitHub-hosted runner has nothing to prove here --
 # never as a `pull_request` or `push` job. `CHECK_UNINDEXABLE_HOSTS` and
 # `CHECK_UNINDEXABLE_SCHEME` override the real names for exactly one reason:

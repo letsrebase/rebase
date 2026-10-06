@@ -39,7 +39,7 @@ def ensure_tenants_database(settings: Settings) -> Engine:
 
 def tenant_database_name(slug: str) -> str:
     """`pigro_t_<slug>` with hyphens as underscores: an identifier that needs no quoting
-    and cannot collide with `pigrocrm`, `orbiters` or the registry."""
+    and cannot collide with `pigrocrm`, `rebase` or the registry."""
     return TENANT_DATABASE_PREFIX + slug.replace("-", "_")
 
 

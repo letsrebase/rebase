@@ -82,7 +82,7 @@ export PIGROCRM_E2E_WEB_PORT="5173"
 # process group, so a Ctrl-C to this script's group never reaches it; the port is
 # the only handle left on it).
 #
-# Listeners come from `ss -ltnp`, because `lsof` is not installed on the devbox
+# Listeners come from `ss -ltnp`, because `lsof` is not installed on every machine this runs on
 # (REB-659) and a helper that silently found nothing left a stray server in place.
 # If the port is still taken after the SIGKILL -- or `ss` is missing, or the owner
 # is a process this user cannot see or signal -- it says so, naming the port, and

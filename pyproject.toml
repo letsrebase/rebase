@@ -112,7 +112,7 @@ markers = [
   # A plan is not a behaviour: it is what one PostgreSQL, holding one table in one
   # physical state, decided was cheapest. Where the two candidates sit within a few
   # percent of each other the winner changes with the machine and with what the rest
-  # of the suite left in the table, so the same assertion passes on a 96-core devbox
+  # of the suite left in the table, so the same assertion passes on a 96-core development machine
   # and fails on a two-core runner with no line of code in between. Measured
   # 2026-09-08: 56.25..60.26 for the bitmap scan, twice, identical to the cent.
   "planner: asserts a query plan, whose outcome depends on the machine and not only on the code",

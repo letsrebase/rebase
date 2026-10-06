@@ -467,10 +467,10 @@ Written from the 2026-09-29 end-to-end run. The container list and the `setrole`
 were re-checked read-only on 2026-10-05; the login, the match and the signing were not
 repeated, because they write data or send mail.
 
-- **The host is not prodbox.** `preview.letsrebase.com` shares its host with the hub's
-  production (`docs/migrations/2026-09-14-letsrebase.md`), a machine that is not Lorenzo's
-  prodbox. From the devbox that host is the `pigrocrm` ssh alias, which lives in the
-  devbox's own ssh config and is not defined in this repository. Touch only the
+- **The host is the origin.** `preview.letsrebase.com` shares its host with the hub's
+  production (`docs/migrations/2026-09-14-letsrebase.md`): the Hetzner origin, one of
+  rebase's two servers (`docs/architecture.md` § Where it runs). The `pigrocrm` ssh alias
+  used below is a local ssh alias for it and is not defined in this repository. Touch only the
   `rebase-preview-*` containers (`api-1`, `web-1`, `db-1`, `mcp-1`, `sweep-1`,
   `campaigns-1`, `cards-1`), nothing else on that host. The compose flags for the preview
   are in § "The team builder".
@@ -516,8 +516,8 @@ that database conditional in the same way until the copy is confirmed.
 Through CI only, as every project here (`docs/adding-a-project.md` §7): preview on a
 push to `main` that touched the hub, production on a tag `hub-v<semver>`, both by
 `.github/workflows/deploy-hub.yml` calling `_deploy-compose.yml`. The production compose
-project is `rebase`; the preview's is `rebase-preview`. Both were `orbiters` and
-`orbiters-preview` until 2026-09-15, and each moves the day its environment is
+project is `rebase`; the preview's is `rebase-preview`. Both carried the platform's
+former name until 2026-09-15, and each moved the day its environment was
 migrated: the stack stopped, `/srv/<project>-data` moved, the database and role
 renamed with `ALTER`. Pass `-p` to every `docker compose` you ever run against either
 by hand, or compose names a second stack after the directory.
@@ -531,7 +531,7 @@ forgets it fails the stack instead of mounting an empty directory.
 
 Ports, loopback only, from the table in `docs/adding-a-project.md` §7: production api
 8084, web 8085, mcp 8088, Postgres 55435, Documenso 8090; preview 8086, 8087, 8089,
-55436. The public paths are `/hub/` (web) and `/api/hub/` + `/api/orbiters/signups`
+55436. The public paths are `/hub/` (web) and `/api/hub/` + `/api/community/signups`
 (api): `projects/website/deploy/letsrebase.conf` proxies them to production on the host
 vhost, and `projects/website/deploy/preview.letsrebase.conf` proxies the same paths to
 the preview stack at `preview.letsrebase.com` (`location ^~ /api/hub/`,
@@ -577,7 +577,7 @@ signed on Documenso"); this section is the container's own.
 - **Data**: its own Postgres, `documenso-db`, on `REBASE_DOCUMENSO_DATA_DIR`
   (`/srv/rebase-data/documenso-postgres`), with every uploaded and sealed PDF in it:
   nothing backs it up yet, nor the hub's own Postgres (REB-475). About 500 to 630 MiB of
-  memory once warm, 45 to 80 MiB for its Postgres; the server has 3.8 GB and 4 GB of swap
+  memory once warm, 45 to 80 MiB for its Postgres; the origin has 3.8 GB and 4 GB of swap
   since 2026-09-25.
 - **Certificate**: self-signed, made on the host with OpenSSL, in the `.env` as the
   `.p12` on one line of base64 with its passphrase. The seal is valid and PDF readers say

@@ -2,9 +2,9 @@
 
 Written when PigroCRM's repository became the monorepo, so that the next person does
 not have to reverse-engineer the reasoning from the directory names. The repository's
-own name on GitHub changed from `pigrocrm` to `orbiters` on 2026-09-09, for the same
-reason: it holds more than one project now. It moved again on 2026-09-15, to `rebase`
-under the `letsrebase` org, when the rename of the brand reached GitHub (REB-204).
+own name on GitHub changed twice. It left `pigrocrm` on 2026-09-09, for the same
+reason: it holds more than one project now. It became `rebase` under the `letsrebase`
+org on 2026-09-15, when the rename of the brand reached GitHub (REB-204).
 
 ## The shape
 
@@ -82,3 +82,35 @@ that project's paths as arguments, which override both lists.
 it is the one tool that does get a per-project file, and the two nested
 `apps/*/ruff.toml` that enforce PigroCRM's core-must-not-import-an-adapter rule keep
 working untouched.
+
+## Where it runs: two servers
+
+rebase has exactly two servers (Lorenzo, 2026-10-06, `docs/design/DECISIONS.md`). Every
+other page in this repository that says "the host" or "the server" means the first one.
+
+**The origin, on Hetzner.** One machine runs the website, the hub, PigroCRM and
+Documenso. The website, the hub and PigroCRM each have a production stack and a preview
+stack beside it; Documenso has a production instance only, which the hub's preview signs
+on. Vaultwarden is to join them behind the same nginx (REB-644, REB-648, not live yet).
+Every environment is a Docker Compose project in its own `DEPLOY_PATH` directory with its
+own `.env` (Documenso runs inside the hub's production project), and publishes on the
+loopback only (the port table is in `docs/adding-a-project.md` § 7). The machine's
+own nginx is the only thing that faces the internet: it terminates TLS with Let's Encrypt
+certificates that certbot renews, and proxies by name and by path to those containers,
+using the vhosts committed under each project's `deploy/` directory. The `letsrebase.com`
+names (`letsrebase.com`, `pigro`, `preview`, `preview.pigro`, `firma`) are DNS-only
+records pointing at it (`infra/cloudflare/rebase.tf`); the old zone's records point at
+it too, to answer with redirects (`docs/migrations/2026-09-14-letsrebase.md`). A deploy
+reaches it over SSH with its host key pinned, and `DEPLOY_HOST` names it in every GitHub
+Environment, since one host carries every environment of every project
+(`docs/adding-a-project.md` § 7).
+
+**The CI/CD server.** A second machine, separate from the origin, runs the self-hosted
+GitHub Actions runner pool: three runners, `ci-runner-1` to `ci-runner-3`, in the org's
+`private-clients` runner group (`docs/ci-runner-pool.md`). Today that group holds the
+private client repositories, and this repository is not in it: `letsrebase/rebase` is
+public, so every job of its own workflows runs on GitHub-hosted `ubuntu-latest`, and its
+deploy jobs reach the origin over SSH from there.
+
+Everything else the platform touches is a hosted service rather than a server of ours:
+GitHub, Cloudflare (DNS only), Resend (mail) and PostHog (analytics).

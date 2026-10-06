@@ -197,7 +197,7 @@ def draw() -> dict[str, str]:
         # BRAND_TILES order: ink, royal gold, watermelon, ink. On a dark ground the two
         # ink tiles are the ground, which is the mark's own rule (mark.ts), so the paper
         # variant repaints them rather than inventing a fifth colour.
-        # crispEdges on the group, as orbiters-logo.svg carries it on its root: the
+        # crispEdges on the group, as rebase-logo.svg carries it on its root: the
         # tiles share edges with no overlap, so antialiasing paints a blended hairline
         # along the two seams at small sizes. Not on the root here, which would alias
         # the letterforms too.

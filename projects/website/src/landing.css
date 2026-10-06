@@ -4,7 +4,7 @@
    stack are literally the values the app renders, and the grid line, the tile and
    the glyph are written once for this sheet, shared with pitch.css.
 
-   Since Orbiters (2026-09-07) the whole product shares one visual system: a faint
+   Since 2026-09-07 the whole product shares one visual system: a faint
    grid the page sits on, tiles painted on it, opaque boxes with hard edges and a
    stepped shadow the colour of the ink, and no radius, blur or soft shadow anywhere.
 
@@ -374,7 +374,7 @@ li {
   outline-offset: 3px;
 }
 
-/* --- The Orbiters landing (2026-09-09): two doors in the hero, three steps, four
+/* --- The landing (2026-09-09): two doors in the hero, three steps, four
    voices. Same system as above: hard edges, ink lines, offsets for shadows. */
 .actions {
   display: flex;

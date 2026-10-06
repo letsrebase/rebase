@@ -32,6 +32,14 @@ e2e checks in `preflight.json` need the host's own browsers or a `nix-ld` setup.
 Then follow the project you want to work on: for PigroCRM, its
 [README](projects/pigrocrm/README.md) covers running it and deploying it.
 
+## Where it runs
+
+rebase has two servers. The Hetzner origin hosts the website, the hub, PigroCRM and
+Documenso behind one nginx (the first three with a production and a preview stack each);
+a separate server runs the self-hosted GitHub Actions runner pool, the CI/CD side. What runs where, and how a deploy
+reaches the origin, is in [`docs/architecture.md`](docs/architecture.md) and
+[`docs/ci-runner-pool.md`](docs/ci-runner-pool.md).
+
 ## How it is laid out
 
 ```

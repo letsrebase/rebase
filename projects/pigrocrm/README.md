@@ -102,7 +102,7 @@ repository's setup script defaulting to somebody's domain is worse than asking.
 would rewrite the reverse proxy on every commit, and the guard that's meant to protect the
 TLS configuration looks for a file named after the domain (`sites-available/yourdomain.it`).
 If certbot has left the vhost under a different name, the guard doesn't find it and the script
-adds a second vhost with the same `server_name`. On this host that's exactly the case:
+adds a second vhost with the same `server_name`. On the origin that's exactly the case:
 the file is named `pigro.letsrebase.conf`.
 
 ### 4. Enable TLS — before trying to log in
