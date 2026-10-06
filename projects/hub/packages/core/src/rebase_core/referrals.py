@@ -243,8 +243,13 @@ class ReferralService:
         login (REB-658), since the email on a public request was never proved."""
         # Two admins opening the cloud for two companies of one contact at once would both
         # find no referral and each write one: the contact's `users` row is the lock that
-        # makes the second check after the first commit.
-        self.session.execute(select(User.id).where(User.id == user.id).with_for_update())
+        # makes the second check after the first commit. `FOR NO KEY UPDATE`, not `FOR
+        # UPDATE`: the company or grant row staged before this call holds `FOR KEY SHARE`
+        # on the user through its foreign key, which `FOR UPDATE` would wait on while the
+        # other session does the same.
+        self.session.execute(
+            select(User.id).where(User.id == user.id).with_for_update(key_share=True)
+        )
         already = self.session.scalar(
             select(Referral.id)
             .where(

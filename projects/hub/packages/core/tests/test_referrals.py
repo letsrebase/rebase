@@ -511,6 +511,23 @@ def test_a_returning_contact_with_no_referral_gets_the_requests_code(clean: Sess
     assert row is not None and row.referrer_user_id == referrer_id
 
 
+def test_a_returning_contacts_own_code_wins_when_no_company_has_a_referral(
+    clean: Session,
+) -> None:
+    stored = _member(clean, "stored@community.it")
+    own = _member(clean, "own@community.it")
+    service = ReferralService(clean)
+    _request(clean)
+    _public_request(clean, rif=service.code_for(stored))
+
+    second = _request(
+        clean, rif=service.code_for(own), progetto="Un secondo progetto, altrettanto lungo."
+    )
+
+    row = _company_referral(clean, second)
+    assert row is not None and row.referrer_user_id == own
+
+
 @pytest.mark.parametrize("stored", [None, "ZZZZZZZZZZ"])
 def test_no_rif_or_an_unknown_one_on_the_request_makes_no_referral(
     clean: Session, stored: str | None
