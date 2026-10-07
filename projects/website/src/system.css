@@ -215,11 +215,11 @@ body::after {
    `is-typing` is the script's, so a page without the script has no cursor after a word
    that never moves; and under reduced motion the script does not start, which the media
    query below repeats in case it ever did. */
-h1 .role {
+.role[data-roles] {
   position: relative;
 }
 
-h1 .role.is-typing::after {
+.role[data-roles].is-typing::after {
   content: '';
   position: absolute;
   left: 100%;
@@ -237,7 +237,7 @@ h1 .role.is-typing::after {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  h1 .role::after {
+  .role[data-roles]::after {
     display: none;
   }
 }

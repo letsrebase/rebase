@@ -152,7 +152,8 @@ describe('index.html', () => {
 
   it('opens with the community and its claim, then presents the perks as a set, the CRM the largest', () => {
     // Since 2026-09-08 PigroCRM is what a member of rebase gets: the page says what
-    // rebase is first, in its own words, and only then what the perks are. Since
+    // rebase is first, in its own words (beside the team builder since REB-676), and
+    // only then what the perks are. Since
     // REB-68 the CRM is named as one of a set, not the whole answer: its own kicker
     // is just "PigroCRM", never "il perk", and the set names both members before the
     // CRM's own expanded block follows.
@@ -173,20 +174,52 @@ describe('index.html', () => {
     expect(page).toContain('Gratis per chi è in community.')
   })
 
-  it('has three doors in the hero, all into the hub: the two wizards and the team builder', () => {
+  it('opens on the team builder (REB-676): the examples, the box, and a form that works without a script', () => {
+    // Ivan, 2026-10-07: the first thing a visitor sees is the box with the examples and
+    // the chance to build their team. The first box of the hero is the builder, the
+    // page's h1 is its claim, and the form is a plain GET to the hub's page, which
+    // fills its box from `?descrizione=`, so a visitor without JavaScript still gets a
+    // team one page later; team.js turns the same form into a call to the hub's API.
+    const team = page.match(/<div class="box team">([\s\S]*?)<div class="box community">/)?.[1] ?? ''
+    expect(team).toContain(
+      '<h1 class="measure-tight">Descrivi il progetto, <span class="accent">ti proponiamo il team.</span></h1>',
+    )
+    expect(team).toMatch(/<form class="team-form" action="\/hub\/team" method="get" data-team data-result="#team-result">/)
+    // The hub page's own four examples, each a description the API takes as it stands.
+    expect(team.match(/<button type="button" class="chip" data-example="[^"]{40,}">[^<]+<\/button>/g)).toHaveLength(4)
+    expect(team).toContain('>Web app per una fintech</button>')
+    expect(team).toContain('>Un FDE nel team di un cliente</button>')
+    // The box: the hub's placeholder, its own label for a screen reader, and the
+    // lengths the API takes, which is what a browser enforces without the script.
+    expect(team).toMatch(/<label class="sr-only" for="team-descrizione">Descrizione del progetto<\/label>/)
+    expect(team).toMatch(
+      /<textarea id="team-descrizione" name="descrizione" rows="3" required minlength="40" maxlength="4000" placeholder="Descrivi il progetto: cosa va fatto, per quanto tempo, dove, con che tecnologie"><\/textarea>/,
+    )
+    expect(team).toMatch(/<p class="team-error" id="team-error" role="alert"><\/p>/)
+    expect(team).toMatch(/<button class="cta" type="submit">Proponi il team<\/button>/)
+    // Where the result lands: empty and hidden until the script fills it, which then
+    // moves the focus to its heading; no live region, since one hidden until that same
+    // tick is announced by few readers.
+    expect(team).toMatch(/<div class="team-result" id="team-result" hidden><\/div>/)
+    // The script, loaded before the page script that mounts it.
+    expect(page).toMatch(/<script type="module" src="\.\/team\.js"><\/script>\s*<script type="module" src="\.\/typewriter\.js">/)
+  })
+
+  it('keeps the community\'s two doors beside the builder, both into the hub', () => {
     // The hub (projects/hub) is where somebody signs up since 2026-09-09: the freelancer
     // wizard and the company wizard. Same origin, different deployable; the paths are
-    // relative so the page has one origin in every environment.
-    // All three are read inside the hero's own `.actions` paragraph: the services band
-    // further down carries the same wizard and team builder doors, so a page-wide match
-    // would still pass with a hero door missing. Anchor on the hero, not on order.
-    const actions = page.match(/<section class="hero">[\s\S]*?<p class="actions">([\s\S]*?)<\/p>/)?.[1] ?? ''
-    expect(actions).toMatch(/<a class="cta" href="\/hub\/freelance">Entra come talento<\/a>/)
-    expect(actions).toMatch(/<a class="cta secondary" href="\/hub\/aziende">[^<]+<\/a>/)
-    // The third door (REB-608) is the public team builder, drawn like the company's door
-    // and inside the same paragraph, so utm.js decorates all three.
-    expect(actions).toMatch(/<a class="cta secondary" href="\/hub\/team">Prova il team builder<\/a>/)
-    expect(actions.match(/<a class="cta[^"]*" href="\/hub\//g)).toHaveLength(3)
+    // relative so the page has one origin in every environment. Both are read inside
+    // the community box: the services band further down carries the same wizard doors,
+    // so a page-wide match would still pass with a hero door missing.
+    const community = page.match(/<div class="box community">([\s\S]*?)<\/div>/)?.[1] ?? ''
+    expect(community).toContain('ma non da soli.</h2>')
+    expect(community).toMatch(/<a class="cta" href="\/hub\/freelance">Entra come talento<\/a>/)
+    expect(community).toMatch(/<a class="cta secondary" href="\/hub\/aziende">[^<]+<\/a>/)
+    expect(community.match(/<a class="cta[^"]*" href="\/hub\//g)).toHaveLength(2)
+    // The third door of REB-608 is gone from the hero: the builder itself sits where it
+    // pointed, and the services band still carries one (checked further down).
+    expect(community).not.toContain('/hub/team')
+    expect(community).toContain('Entra nella tua area')
     // The old door, the email form on `/`, is not what this page sells any more.
     expect(page).not.toMatch(/<a class="cta" href="\/community">/)
     // Whoever is already in finds the CRM through its own page (ORB-165): the landing
@@ -216,6 +249,7 @@ describe('index.html', () => {
     const kickers = [...page.matchAll(/<p class="kicker[^"]*"[^>]*>([^<]+)<\/p>/g)].map((m) => m[1])
     expect(kickers).toEqual([
       'rebase',
+      'La community',
       'Come funziona',
       'Cosa trovi dentro',
       'La selezione',
@@ -377,14 +411,19 @@ describe('index.html', () => {
   })
 
   it('collects nothing, and measures only after the visitor has agreed to it', () => {
-    // Nothing is typed on this page: the forms live in the hub. What arrived on
-    // 2026-09-09 is the measurement pixel, because this is a page an ad lands on -- so
-    // "measures nothing" stopped being true, and pretending otherwise here would have
-    // meant a test asserting the absence of a string that is in the file. What the page
-    // carries is the consent script, and only that can load the pixel;
-    // `pixel.test.ts` and `consent.test.ts` hold the gate itself.
-    expect(page).not.toMatch(/<form/i)
+    // Nothing about the visitor is typed on this page: the signup forms live in the
+    // hub. The one form here is the team builder's (REB-676), a project description
+    // and no field about a person, a GET to the hub's own page without a script and a
+    // call to the hub's own API with it; no input, no email, nothing stored. What
+    // arrived on 2026-09-09 is the measurement pixel, because this is a page an ad
+    // lands on -- so "measures nothing" stopped being true, and pretending otherwise
+    // here would have meant a test asserting the absence of a string that is in the
+    // file. What the page carries is the consent script, and only that can load the
+    // pixel; `pixel.test.ts` and `consent.test.ts` hold the gate itself.
+    expect(page.match(/<form/gi)).toHaveLength(1)
+    expect(page).toMatch(/<form class="team-form" action="\/hub\/team" method="get"/)
     expect(page).not.toMatch(/<input/i)
+    expect(page).not.toMatch(/type="email"|name="email"|autocomplete="email"/i)
     expect(page).not.toMatch(/gtag|googletagmanager|plausible|fathom|hotjar/i)
     expect(page).not.toContain('oaiq')
     expect(page.match(/<script[^>]+consent\.js/g)).toHaveLength(1)

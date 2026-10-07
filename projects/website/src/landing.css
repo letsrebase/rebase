@@ -197,15 +197,156 @@ footer .quiet-link:hover {
   min-height: calc(100svh - 5.5rem);
 }
 
+/* REB-676: two boxes on the field, the team builder first and three fifths of the
+   width, the community beside it; one column under 64rem, the builder still first, so
+   on a phone it is the first screen and the claim the second. Both boxes start at the
+   top: the builder grows when a proposal lands under its form, and a centred neighbour
+   would jump with it. */
 .hero .wrap {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: clamp(1.5rem, 3vw, 2.5rem);
   flex: 1;
   width: 100%;
+  align-items: start;
 }
 
 .hero .box {
-  flex: 1;
-  align-content: center;
+  align-content: start;
+}
+
+@media (max-width: 64rem) {
+  .hero .wrap {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* The team builder's title is the page's: the h1 size, but the measure is the box's
+   three fifths, so it is clamped a step under the old one-box title. */
+.team h1 {
+  font-size: clamp(2rem, 2.6vw + 1.2rem, 3.75rem);
+}
+
+/* --- The team builder (REB-676): the hub's form, in this sheet's system. Every
+   control is a bordered rectangle in the ink, no radius, the button the one saturated
+   element, as above. The examples are small outlined chips, the box a textarea in the
+   page's own type, the result a block under a rule with the roles as one line each. */
+.team-form {
+  display: grid;
+  gap: 1rem;
+}
+
+.team-examples-label {
+  font-size: 1rem;
+  margin-bottom: -0.5rem;
+}
+
+.team-examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.chip {
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--landing-ink);
+  background-color: #ffffff;
+  border-width: 2px;
+  padding: 0.45rem 0.8rem;
+  cursor: pointer;
+}
+
+.chip:hover {
+  background-color: var(--landing-ink);
+  color: var(--landing-cta-ink);
+}
+
+.team-form textarea {
+  font: inherit;
+  font-size: clamp(1.0625rem, 0.45vw + 1rem, 1.25rem);
+  line-height: 1.5;
+  color: var(--landing-ink);
+  background-color: #ffffff;
+  border-width: 2px;
+  padding: 0.9rem 1rem;
+  width: 100%;
+  min-height: 6.5rem;
+  resize: vertical;
+}
+
+.team-form textarea::placeholder {
+  color: var(--landing-ink-quiet);
+  opacity: 1;
+}
+
+.team-form textarea:focus-visible {
+  outline: 3px solid var(--landing-focus);
+  outline-offset: 3px;
+}
+
+button.cta {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+button.cta:disabled {
+  cursor: wait;
+}
+
+/* The sentence under the form: the API's or ours, in the accent, and no room at all
+   while there is none to say. */
+.team-error {
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--landing-accent);
+}
+
+.team-error:empty {
+  display: none;
+}
+
+.team-result {
+  display: grid;
+  gap: 0.75rem;
+  padding-top: 1.25rem;
+  border-top-width: 2px;
+}
+
+.team-result[hidden] {
+  display: none;
+}
+
+.team-title {
+  font-size: clamp(1.4rem, 1vw + 1.1rem, 1.9rem);
+}
+
+.team-roles {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.team-member {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.75rem;
+  font-size: 1.0625rem;
+}
+
+.team-role,
+.team-band,
+.team-total {
+  color: var(--landing-ink);
+  font-weight: 500;
+}
+
+.team-band {
+  margin-left: auto;
+  white-space: nowrap;
 }
 
 /* --- The field: fixed, behind everything

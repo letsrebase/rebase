@@ -4,7 +4,7 @@ letsrebase.com: the public site. Today that is the rebase landing at `/` and the
 two policy pages (`/privacy`, `/terms`); it is called `website` rather than `landing`
 because it is expected to grow past those.
 
-Six HTML pages, seven scripts, four stylesheets. No React, no Tailwind, no router.
+Six HTML pages, eight scripts, four stylesheets. No React, no Tailwind, no router.
 That absence is the requirement rather than an omission: this is the first page a
 visitor loads, and it does not drag an application bundle behind it. The build takes
 about 300 milliseconds. Anything added here should keep that true.
@@ -25,7 +25,7 @@ pnpm --filter website lint
 
 | Page | Served at | What it is |
 |---|---|---|
-| `src/index.html` | `letsrebase.com/` | The rebase landing: three doors into the hub, how it works, what is inside, the selection with the roles, the three services with a price each, the four voices, the events, the questions, the perks. Since 2026-09-11 (ORB-145); the five content sections were added by REB-605 |
+| `src/index.html` | `letsrebase.com/` | The rebase landing: the team builder on the first screen (REB-676) with the community's claim and its two doors into the hub beside it, how it works, what is inside, the selection with the roles, the three services with a price each, the four voices, the events, the questions, the perks. Since 2026-09-11 (ORB-145); the five content sections were added by REB-605 |
 | `src/pigrocrm.html` | `/pigrocrm` | PigroCRM's own page (ORB-159): one door into rebase beside a drawn Claude conversation, the four things inside, the guide, the closing box. Its own `pigrocrm.css` on top of `landing.css` |
 | `src/privacy.html` | `/privacy` | Privacy notice |
 | `src/terms.html` | `/terms` | Terms |
@@ -38,10 +38,15 @@ held the front door long enough that nothing still pointed people at the old one
 hub owns every signup since 2026-09-09 (REB-17), so the page's own form was not
 carried forward.
 
-The landing's three calls to action point at `/hub/freelance` and `/hub/aziende`, the
-hub's wizards, and at `/hub/team`, the public team builder (REB-608), all served by the
-rebase hub (`projects/hub`) on the same origin. Those paths are the things this project
-does not own, and why the dev server proxies `/api` and leaves `/hub/` alone.
+The landing's two doors point at `/hub/freelance` and `/hub/aziende`, the hub's
+wizards, and the team builder in its hero (REB-676, `src/team.js`) asks the hub's own
+`POST /api/hub/team/proposals` and sends the visitor to `/hub/team?proposta=<id>` for the
+whole team, which the hub reads back by that id (REB-675); without JavaScript the form is
+a GET to `/hub/team` with the description. Every one of those is served by the rebase hub
+(`projects/hub`) on the same origin: they are the things this project does not own, and
+why the dev server proxies `/api` and leaves `/hub/` alone. The hero's third door of
+REB-608 went with the builder itself taking its place; the services band still carries
+one.
 
 ## Measurement
 
