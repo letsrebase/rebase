@@ -180,9 +180,9 @@ describe('index.html', () => {
     // page's h1 is its claim, and the form is a plain GET to the hub's page, which
     // fills its box from `?descrizione=`, so a visitor without JavaScript still gets a
     // team one page later; team.js turns the same form into a call to the hub's API.
-    const team = page.match(/<div class="box team">([\s\S]*?)<div class="box community">/)?.[1] ?? ''
+    const team = page.match(/<div class="box team">([\s\S]*?)<\/section>/)?.[1] ?? ''
     expect(team).toContain(
-      '<h1 class="measure-tight">Descrivi il progetto, <span class="accent">ti proponiamo il team.</span></h1>',
+      '<h1 class="measure-tight">Descrivi il progetto. <span class="accent">Ti proponiamo il team.</span></h1>',
     )
     expect(team).toMatch(/<form class="team-form ph-no-capture" action="\/hub\/team" method="get" data-team data-result="#team-result">/)
     // The hub page's own four examples, each a description the API takes as it stands.
@@ -196,7 +196,11 @@ describe('index.html', () => {
       /<textarea id="team-descrizione" name="descrizione" rows="3" required minlength="40" maxlength="4000" placeholder="Descrivi il progetto: cosa va fatto, per quanto tempo, dove, con che tecnologie"><\/textarea>/,
     )
     expect(team).toMatch(/<p class="team-error" id="team-error" role="alert"><\/p>/)
-    expect(team).toMatch(/<button class="cta" type="submit">Proponi il team<\/button>/)
+    // The button sits inside the composer, under the box, so the two read as one control.
+    expect(team).toMatch(/<div class="composer">[\s\S]*?<textarea[\s\S]*?<div class="composer-bar">[\s\S]*?<button class="cta" type="submit">Proponi il team<\/button>\s*<\/div>\s*<\/div>/)
+    // The two doors that are not the builder's, one quiet line in the hero, into the hub
+    // like every other door so utm.js decorates them.
+    expect(team).toMatch(/<p class="fine hero-doors">[\s\S]*?<a class="quiet-link" href="\/hub\/freelance">Entra come talento<\/a>[\s\S]*?<a class="quiet-link" href="\/hub\/aziende">Scrivici<\/a>/)
     // Where the result lands: empty and hidden until the script fills it, which then
     // moves the focus to its heading; no live region, since one hidden until that same
     // tick is announced by few readers.
@@ -208,12 +212,14 @@ describe('index.html', () => {
     expect(page).toMatch(/<script type="module" src="\.\/team\.js"><\/script>\s*<script type="module" src="\.\/typewriter\.js">/)
   })
 
-  it('keeps the community\'s two doors beside the builder, both into the hub', () => {
+  it('keeps the community\'s claim and its two doors, word for word, as the first band under the builder', () => {
     // The hub (projects/hub) is where somebody signs up since 2026-09-09: the freelancer
     // wizard and the company wizard. Same origin, different deployable; the paths are
     // relative so the page has one origin in every environment. Both are read inside
     // the community box: the services band further down carries the same wizard doors,
-    // so a page-wide match would still pass with a hero door missing.
+    // so a page-wide match would still pass with a door missing. The box is the first
+    // band, right under the hero, and light, so the bands keep alternating.
+    expect(page).toMatch(/<\/section>\s*(?:<!--[\s\S]*?-->\s*)?<section class="band" aria-labelledby="claim">\s*<div class="wrap section">\s*<div class="box community">/)
     const community = page.match(/<div class="box community">([\s\S]*?)<\/div>/)?.[1] ?? ''
     expect(community).toContain('ma non da soli.</h2>')
     expect(community).toMatch(/<a class="cta" href="\/hub\/freelance">Entra come talento<\/a>/)

@@ -197,93 +197,97 @@ footer .quiet-link:hover {
   min-height: calc(100svh - 5.5rem);
 }
 
-/* REB-676: two boxes on the field, the team builder first and three fifths of the
-   width, the community beside it; one column under 64rem, the builder still first, so
-   on a phone it is the first screen and the claim the second. Both boxes start at the
-   top: the builder grows when a proposal lands under its form, and a centred neighbour
-   would jump with it. */
 .hero .wrap {
-  display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-  gap: clamp(1.5rem, 3vw, 2.5rem);
+  display: flex;
   flex: 1;
   width: 100%;
-  align-items: start;
 }
 
 .hero .box {
-  align-content: start;
+  flex: 1;
+  align-content: center;
 }
 
-@media (max-width: 64rem) {
-  .hero .wrap {
-    grid-template-columns: minmax(0, 1fr);
-  }
+/* --- The team builder (REB-676): the first screen is a prompt box. Everything in the
+   hero's one box is centred and narrow, the way a product's composer sits on its
+   page: the claim, one line under it, the composer, the examples as pills, one quiet
+   line with the other doors. Same system as the rest: 2px ink lines, no radius, the
+   button the one saturated element. */
+.hero .box.team {
+  justify-items: center;
+  text-align: center;
+  padding-inline: clamp(1.25rem, 5vw, 5rem);
 }
 
-/* The team builder's title is the page's: the h1 size, but the measure is the box's
-   three fifths, so it is clamped a step under the old one-box title. */
 .team h1 {
-  font-size: clamp(2rem, 2.6vw + 1.2rem, 3.75rem);
+  font-size: clamp(2.1rem, 3vw + 1.2rem, 4.25rem);
+  max-width: 22ch;
 }
 
-/* --- The team builder (REB-676): the hub's form, in this sheet's system. Every
-   control is a bordered rectangle in the ink, no radius, the button the one saturated
-   element, as above. The examples are small outlined chips, the box a textarea in the
-   page's own type, the result a block under a rule with the roles as one line each. */
+.team > .lead {
+  max-width: 48ch;
+}
+
 .team-form {
+  width: 100%;
+  max-width: 54rem;
   display: grid;
   gap: 1rem;
+  justify-items: center;
 }
 
-.team-examples-label {
-  font-size: 1rem;
-  margin-bottom: -0.5rem;
-}
-
-.team-examples {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.chip {
-  font: inherit;
-  font-size: 1rem;
-  font-weight: 500;
-  color: var(--landing-ink);
-  background-color: #ffffff;
+/* The composer: a bordered field with the button inside it, so the box and «Proponi
+   il team» read as one control. The textarea itself has no line; the field takes the
+   focus ring for it. */
+.composer {
+  width: 100%;
+  text-align: left;
   border-width: 2px;
-  padding: 0.45rem 0.8rem;
-  cursor: pointer;
+  background-color: var(--landing-cta-ink);
+  box-shadow: var(--landing-step) var(--landing-step) 0 var(--landing-ink);
 }
 
-.chip:hover {
-  background-color: var(--landing-ink);
-  color: var(--landing-cta-ink);
+.composer:focus-within {
+  outline: 3px solid var(--landing-focus);
+  outline-offset: 3px;
 }
 
-.team-form textarea {
+.composer textarea {
+  display: block;
+  width: 100%;
   font: inherit;
-  font-size: clamp(1.0625rem, 0.45vw + 1rem, 1.25rem);
+  font-size: clamp(1.125rem, 0.4vw + 1rem, 1.3rem);
   line-height: 1.5;
   color: var(--landing-ink);
-  background-color: #ffffff;
-  border-width: 2px;
-  padding: 0.9rem 1rem;
-  width: 100%;
-  min-height: 6.5rem;
-  resize: vertical;
+  background-color: transparent;
+  border: 0;
+  outline: none;
+  padding: 1.1rem 1.25rem 0.5rem;
+  min-height: 7.25rem;
+  resize: none;
 }
 
-.team-form textarea::placeholder {
+.composer textarea::placeholder {
   color: var(--landing-ink-quiet);
   opacity: 1;
 }
 
-.team-form textarea:focus-visible {
-  outline: 3px solid var(--landing-focus);
-  outline-offset: 3px;
+.composer-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.6rem 0.6rem 0.6rem 1.25rem;
+}
+
+.composer-hint {
+  font-size: 0.95rem;
+  color: var(--landing-ink-quiet);
+}
+
+.composer .cta {
+  font-size: 1.1rem;
+  padding: 0.8rem 1.3rem;
 }
 
 button.cta {
@@ -295,8 +299,33 @@ button.cta:disabled {
   cursor: wait;
 }
 
-/* The sentence under the form: the API's or ours, in the accent, and no room at all
-   while there is none to say. */
+/* The examples: pills in one centred row, the label a word among them. */
+.team-examples {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.chip {
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--landing-ink);
+  background-color: var(--landing-cta-ink);
+  border-width: 2px;
+  padding: 0.4rem 0.65rem;
+  cursor: pointer;
+}
+
+.chip:hover:not(:disabled) {
+  background-color: var(--landing-ink);
+  color: var(--landing-cta-ink);
+}
+
+/* The sentence under the composer: the API's or ours, in the accent, and no room at
+   all while there is none to say. */
 .team-error {
   font-size: 1rem;
   font-weight: 500;
@@ -307,11 +336,17 @@ button.cta:disabled {
   display: none;
 }
 
+/* The minimal result: a card under the composer, left-aligned like the composer, the
+   roles one line each with the band at the far end. */
 .team-result {
+  width: 100%;
+  max-width: 54rem;
+  text-align: left;
   display: grid;
   gap: 0.75rem;
-  padding-top: 1.25rem;
-  border-top-width: 2px;
+  border-width: 2px;
+  box-shadow: 6px 6px 0 var(--landing-ink);
+  padding: clamp(1.25rem, 3vw, 2rem);
 }
 
 .team-result[hidden] {
@@ -335,6 +370,8 @@ button.cta:disabled {
   align-items: baseline;
   gap: 0.25rem 0.75rem;
   font-size: 1.0625rem;
+  padding-top: 0.5rem;
+  border-top-width: 2px;
 }
 
 .team-role,
@@ -347,6 +384,25 @@ button.cta:disabled {
 .team-band {
   margin-left: auto;
   white-space: nowrap;
+}
+
+.team-result .actions {
+  margin-top: 0.5rem;
+}
+
+.hero-doors {
+  max-width: 48ch;
+}
+
+@media (max-width: 40rem) {
+  .composer-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .composer .cta {
+    justify-content: center;
+  }
 }
 
 /* --- The field: fixed, behind everything

@@ -74,8 +74,8 @@ function load(): TeamBuilder {
 
 /** The hero's own markup, the form and the result, as index.html writes them. */
 function fixture() {
-  const box = indexHtml.match(/<div class="box team">[\s\S]*?<div class="box community">/)?.[0] ?? ''
-  document.body.innerHTML = box.replace('<div class="box community">', '')
+  const box = indexHtml.match(/<div class="box team">[\s\S]*?<\/section>/)?.[0] ?? ''
+  document.body.innerHTML = box.replace(/<\/div>\s*<\/section>$/, '')
   const form = document.querySelector('form[data-team]') as HTMLFormElement
   const result = document.getElementById('team-result') as HTMLElement
   const textarea = form.querySelector('textarea') as HTMLTextAreaElement
