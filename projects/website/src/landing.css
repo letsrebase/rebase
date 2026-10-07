@@ -441,6 +441,33 @@ button.cta:disabled {
   .team-band {
     margin-left: 0;
   }
+
+  /* On a phone every control in the hero is one full-width row of the same width:
+     the pills and the two doors alike (Ivan: «tutti i box hanno dimensioni diverse»). */
+  .team-examples {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .chip {
+    text-align: center;
+  }
+
+  .hero .box > .actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    width: 100%;
+  }
+
+  .hero .box > .actions .cta,
+  .team-result .actions .cta {
+    justify-content: center;
+  }
+
+  .team-result .actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* --- The field: fixed, behind everything
