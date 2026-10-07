@@ -783,9 +783,19 @@ def test_a_refusal_of_the_caps_is_kept_as_an_attempt(clean: Session) -> None:
         user_id=None,
         error=busy,
     )
-    assert _rows(clean)[-1].previous_id is None
-    # Neither attempt costs the day anything (`team_caps` counts `model`).
-    assert {row.model for row in (linked, unlinked)} == {""}
+    # Exactly four rows, and the fourth is this refusal: had the write been skipped,
+    # `[-1]` alone would read `unlinked`, whose `previous_id` is already `None`
+    # (REB-673). `origine` tells it from the cloud refusal above.
+    rows = _rows(clean)
+    assert len(rows) == 4
+    names_attempt = rows[3]
+    assert (names_attempt.origine, names_attempt.errore, names_attempt.previous_id) == (
+        "pubblico",
+        "team_builder_busy",
+        None,
+    )
+    # No attempt costs the day anything (`team_caps` counts `model`).
+    assert {row.model for row in (linked, unlinked, names_attempt)} == {""}
     # A refusal the table does not take is the caller's bug, not a row.
     with pytest.raises(ValueError):
         builder.record_refusal(
