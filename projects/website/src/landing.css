@@ -215,11 +215,6 @@ footer .quiet-link:hover {
 .hero .box {
   justify-items: center;
   text-align: center;
-  /* Tight around its content rather than the whole measure (Ivan: «molto spazio bianco
-     ai lati»): the field shows at both sides of it, and the composer fills it. The
-     bands below keep the full measure, as the deck's slides do. */
-  flex: 0 1 60rem;
-  margin-inline: auto;
 }
 
 .hero .box > .actions {
@@ -238,7 +233,6 @@ footer .quiet-link:hover {
    radius, the button the one saturated element. */
 .team-form {
   width: 100%;
-  max-width: 50rem;
   display: grid;
   gap: 0.75rem;
 }
@@ -248,8 +242,9 @@ footer .quiet-link:hover {
   font-weight: 500;
 }
 
-/* The composer: a bordered field with the button inside it, so the box and «Proponi
-   il team» read as one control. No shadow, the box behind it has one already. The
+/* The composer fills the box's width, as the form and the result do (Ivan: «rimuovere
+   il bianco allargando il contenuto», not by narrowing the box): a bordered field with
+   the button inside it, so the box and «Proponi il team» read as one control. No shadow, the box behind it has one already. The
    textarea itself has no line; the field takes the focus ring for it. */
 .composer {
   width: 100%;
@@ -350,7 +345,6 @@ button.cta:disabled {
    one line each with the band at the far end, then the door. */
 .team-result {
   width: 100%;
-  max-width: 50rem;
   text-align: left;
   display: grid;
   gap: 0.75rem;
