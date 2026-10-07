@@ -113,7 +113,12 @@
               Leggiamo i profili dei talenti di rebase e in pochi secondi ti proponiamo chi serve,
               con una fascia di prezzo. Senza account, gratis finché è in beta.
             </p>
-            <form class="team-form" action="/hub/team" method="get" data-team data-result="#team-result">
+            <!-- `ph-no-capture` on the form and on the result: what a visitor writes about
+              their project, the team the hub answers and the door's href, which carries
+              the proposal's id, a one-day capability to read that project back, stay out
+              of PostHog's autocapture and out of a session recording once measurement is
+              accepted. The class is the SDK's own switch for both. -->
+            <form class="team-form ph-no-capture" action="/hub/team" method="get" data-team data-result="#team-result">
               <p class="team-examples-label" id="team-examples">Qualche esempio, per cominciare:</p>
               <!-- The hub page's own four examples (TeamBuilder.tsx), each a description the
                 API takes as it stands: forty characters at least. -->
@@ -133,7 +138,7 @@
             <!-- No live region: it is hidden until the script fills it, and a region that
               was display:none when the change began is announced by few readers anyway.
               The script moves the focus to the result's heading instead. -->
-            <div class="team-result" id="team-result" hidden></div>
+            <div class="team-result ph-no-capture" id="team-result" hidden></div>
           </div>
           <div class="box community">
             <p class="kicker">La community</p>

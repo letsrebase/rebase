@@ -154,6 +154,25 @@
     form.noValidate = true
     var label = button.textContent
     var busy = false
+    var chips = form.querySelectorAll('button[data-example]')
+
+    /** The result under the form is the answer to the description above it, or nothing:
+     *  a new ask takes the old team down before it leaves, so a refusal never leaves a
+     *  team on screen that was asked about another project. */
+    function clear() {
+      while (result.firstChild) result.removeChild(result.firstChild)
+      result.hidden = true
+    }
+
+    /** While the hub reads the profiles the box and the examples hold still, so the
+     *  answer lands under the words it was asked about. */
+    function hold(on) {
+      box.disabled = on
+      button.disabled = on
+      chips.forEach(function (chip) {
+        chip.disabled = on
+      })
+    }
 
     /** The sentence under the form, and the box's own state with it: a sentence about
      *  the description marks the box invalid and described by it, as the hub's box
@@ -169,7 +188,7 @@
       }
     }
 
-    form.querySelectorAll('button[data-example]').forEach(function (chip) {
+    chips.forEach(function (chip) {
       chip.addEventListener('click', function () {
         box.value = chip.getAttribute('data-example')
         say('')
@@ -179,7 +198,7 @@
 
     function settle() {
       busy = false
-      button.disabled = false
+      hold(false)
       button.textContent = label
       form.removeAttribute('aria-busy')
     }
@@ -194,8 +213,9 @@
         return
       }
       say('')
+      clear()
       busy = true
-      button.disabled = true
+      hold(true)
       button.textContent = PENDING
       form.setAttribute('aria-busy', 'true')
       var call = fetchImpl || window.fetch.bind(window)

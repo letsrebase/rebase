@@ -153,7 +153,9 @@ describe('the magic-link token scrubber', () => {
 
   it('removes the team page\'s proposta and descrizione too, and keeps the rest (REB-675)', () => {
     initAnalytics({ hostname: 'letsrebase.com' })
-    const beforeSend = init.mock.calls[0]![1]!.before_send as BeforeSendFn
+    const beforeSend = init.mock.calls[0]?.[1]?.before_send as (
+      result: CaptureResult | null,
+    ) => CaptureResult | null
     const url =
       'https://letsrebase.com/hub/team?proposta=5b1f2c3d-4e5f-4a6b-8c7d-00000000abcd&descrizione=Siamo%20ACME%20e%20ci%20serve%20un%20team&da=home'
     const scrubbed = beforeSend({
@@ -162,7 +164,7 @@ describe('the magic-link token scrubber', () => {
       timestamp: new Date(),
       properties: { $current_url: url, $referrer: url },
       $set_once: { $initial_current_url: url },
-    } as unknown as CaptureResult)
+    })
     expect(scrubbed?.properties.$current_url).toBe('https://letsrebase.com/hub/team?da=home')
     expect(scrubbed?.properties.$referrer).toBe('https://letsrebase.com/hub/team?da=home')
     expect(scrubbed?.$set_once?.$initial_current_url).toBe('https://letsrebase.com/hub/team?da=home')

@@ -244,6 +244,42 @@ describe('mount', () => {
     window.history.replaceState({}, '', '/')
   })
 
+  it('takes the old team down when a new description is asked, and holds the box while the hub reads', async () => {
+    const api = load()
+    let resolveCall: (response: Response) => void = () => {}
+    const fetchSpy = vi
+      .fn()
+      .mockImplementationOnce(async () => answer(200, PROPOSAL))
+      .mockImplementationOnce(() => new Promise<Response>((resolve) => (resolveCall = resolve)))
+    const { form, textarea, button, error, result } = fixture()
+    api.mount(form, fetchSpy as unknown as typeof fetch)
+    textarea.value = DESCRIZIONE
+    submit(form)
+    await flush()
+    await flush()
+    expect(result.hidden).toBe(false)
+    expect(result.querySelector('a.cta')).not.toBeNull()
+
+    textarea.value = 'Un progetto del tutto diverso: un sito vetrina in WordPress per un ristorante, due settimane.'
+    submit(form)
+    // The first team is gone before the answer, so nothing on screen says it was asked
+    // about the new text; and nothing can be edited while the hub reads.
+    expect(result.hidden).toBe(true)
+    expect(result.querySelector('a.cta')).toBeNull()
+    expect(textarea.disabled).toBe(true)
+    expect(button.disabled).toBe(true)
+    for (const chip of form.querySelectorAll<HTMLButtonElement>('button[data-example]')) expect(chip.disabled).toBe(true)
+
+    resolveCall(answer(503, { detail: 'Il team builder è spento.' }))
+    await flush()
+    await flush()
+    expect(error.textContent).toBe('Il team builder è spento.')
+    expect(result.hidden).toBe(true)
+    expect(textarea.disabled).toBe(false)
+    expect(button.disabled).toBe(false)
+    for (const chip of form.querySelectorAll<HTMLButtonElement>('button[data-example]')) expect(chip.disabled).toBe(false)
+  })
+
   it('sums the team’s band when everyone has one, and renders again on a second proposal', async () => {
     const api = load()
     const { result } = fixture()

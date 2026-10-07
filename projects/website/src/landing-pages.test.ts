@@ -184,7 +184,7 @@ describe('index.html', () => {
     expect(team).toContain(
       '<h1 class="measure-tight">Descrivi il progetto, <span class="accent">ti proponiamo il team.</span></h1>',
     )
-    expect(team).toMatch(/<form class="team-form" action="\/hub\/team" method="get" data-team data-result="#team-result">/)
+    expect(team).toMatch(/<form class="team-form ph-no-capture" action="\/hub\/team" method="get" data-team data-result="#team-result">/)
     // The hub page's own four examples, each a description the API takes as it stands.
     expect(team.match(/<button type="button" class="chip" data-example="[^"]{40,}">[^<]+<\/button>/g)).toHaveLength(4)
     expect(team).toContain('>Web app per una fintech</button>')
@@ -200,7 +200,10 @@ describe('index.html', () => {
     // Where the result lands: empty and hidden until the script fills it, which then
     // moves the focus to its heading; no live region, since one hidden until that same
     // tick is announced by few readers.
-    expect(team).toMatch(/<div class="team-result" id="team-result" hidden><\/div>/)
+    expect(team).toMatch(/<div class="team-result ph-no-capture" id="team-result" hidden><\/div>/)
+    // Nothing of the project, the team or the proposal's id reaches PostHog: the SDK
+    // skips `ph-no-capture` elements in autocapture and blocks them in a recording.
+    expect(team.match(/class="[^"]*ph-no-capture[^"]*"/g)).toHaveLength(2)
     // The script, loaded before the page script that mounts it.
     expect(page).toMatch(/<script type="module" src="\.\/team\.js"><\/script>\s*<script type="module" src="\.\/typewriter\.js">/)
   })
@@ -421,7 +424,7 @@ describe('index.html', () => {
     // file. What the page carries is the consent script, and only that can load the
     // pixel; `pixel.test.ts` and `consent.test.ts` hold the gate itself.
     expect(page.match(/<form/gi)).toHaveLength(1)
-    expect(page).toMatch(/<form class="team-form" action="\/hub\/team" method="get"/)
+    expect(page).toMatch(/<form class="team-form ph-no-capture" action="\/hub\/team" method="get"/)
     expect(page).not.toMatch(/<input/i)
     expect(page).not.toMatch(/type="email"|name="email"|autocomplete="email"/i)
     expect(page).not.toMatch(/gtag|googletagmanager|plausible|fathom|hotjar/i)
