@@ -290,9 +290,26 @@ reads all of it in «Proposte» (`/admin/team/proposte`, linked from «Richieste
 and the `request_id` of the «Assumi team» filed on it, `null` while there is none,
 which is the count the list exists for; and `list_team_proposals` over MCP (§ 8).
 
+Addendum, 2026-10-07 (REB-675). Ivan asked for the team builder on the landing's first
+screen, with a minimal result «che poi può essere visto in modo completo all'interno
+della pagina di dettaglio». So the page opens on a proposal made elsewhere:
+`GET /api/hub/team/proposals/{id}` (public, no speed bump: one row read by a random id)
+answers the public read of a `pubblico` proposal younger than a day, the window
+«Rigenera» and «Assumi team» already give one, and a 404 with one sentence for an
+attempt row, a cloud's or an admin's proposal, one older than a day or an unknown id, so
+the route never says which proposals exist; the id is the capability, as above. The read
+carries `descrizione` and `persone` (§ 3.3) so «Rigenera» knows what the proposal on
+screen was asked; a proposal the landing let the engine size (`persone` null) opens with
+the selector at the team's own size, so a regeneration keeps the team the visitor saw.
+`/hub/team?proposta=<id>` reads it and shows the page as if the visitor had just clicked
+«Proponi il team», with «Apro la proposta…» while it reads and «Questa proposta non c'è
+più: descrivi di nuovo il progetto e te ne proponiamo un altro» over the empty builder on
+a 404; `/hub/team?descrizione=…` only fills the box, which is what the landing's form
+sends without JavaScript. The landing's own side is `projects/website` (REB-676).
+
 ### 3.3 The proposal
 
-`TeamProposalRead`: `id`, `riassunto`, `luogo`, `team: [{posizione, ruolo, motivazione,
+`TeamProposalRead`: `id`, `descrizione`, `persone` (REB-675), `riassunto`, `luogo`, `team: [{posizione, ruolo, motivazione,
 giorni_settimana, scheda: {ruolo, seniority, anni, competenze, settori, lingue,
 sintesi}, modalita, fascia: {min, max}}]`, `economia: {giorno: {min, max}, mese: {min,
 max}, giorni_mese: 22}`, `previous_id`, `created_at`. `posizione` is the person's

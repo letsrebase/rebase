@@ -15,13 +15,22 @@ import { POSTHOG_HOST, POSTHOG_KEY, analyticsEnabled, isInternalHost } from './p
  *  magic-link token (`?t=`, REB-273) has two braces already keeping it off these: the
  *  hub's and the CRM's own `lib/entra-token.ts` take it out of the browser's URL
  *  before this module even runs. This is the third, unconditional for every surface
- *  that calls `initAnalytics`. `$current_url` and `$referrer` are ordinary event
+ *  that calls `initAnalytics`. Since REB-675 the hub's team page also opens on a
+ *  proposal by its id (`?proposta=`, a one-day capability to read and to file «Assumi
+ *  team» on it) or on a visitor's whole project description (`?descrizione=`, free
+ *  text that names companies), and neither belongs in an analytics row either: both
+ *  are scrubbed here, the URL the visitor sees untouched, since a reload has to find
+ *  the proposal again. `$current_url` and `$referrer` are ordinary event
  *  properties, but `$initial_current_url` (and `$initial_referrer` alongside it) is a
  *  person `$set_once` property, computed once from the very first pageview this
  *  browser ever sent PostHog and carried on every event after -- a sibling of
  *  `properties`, not a member of it, so it sits beside the person's identity once
  *  `identifyUser` runs and outlives any single page. */
 const URL_PROPERTIES_WITH_TOKEN = ['$current_url', '$initial_current_url', '$referrer'] as const
+
+/** The query parameters no analytics row may keep: the magic-link token, the team
+ *  proposal's id and the project description (REB-675). */
+const SCRUBBED_PARAMS = ['t', 'proposta', 'descrizione'] as const
 
 /** The property bags a `CaptureResult` carries values in, besides its own required
  *  fields: `properties` always exists, `$set`/`$set_once` do not on every event. */
@@ -35,8 +44,8 @@ function withoutTrackingToken(url: unknown): unknown {
   } catch {
     return url
   }
-  if (!parsed.searchParams.has('t')) return url
-  parsed.searchParams.delete('t')
+  if (!SCRUBBED_PARAMS.some((param) => parsed.searchParams.has(param))) return url
+  for (const param of SCRUBBED_PARAMS) parsed.searchParams.delete(param)
   return parsed.toString()
 }
 

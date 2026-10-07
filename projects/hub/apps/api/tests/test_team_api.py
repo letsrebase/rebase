@@ -206,6 +206,8 @@ def test_public_proposal_answers_the_team_without_ids(client: TestClient, team: 
     body = response.json()
     assert body["riassunto"] == RIASSUNTO
     assert body["origine"] == "pubblico"
+    # What it was asked with travels on the read (REB-675), for a page opened on it later.
+    assert (body["descrizione"], body["persone"]) == (DESCRIZIONE, None)
     [member] = body["team"]
     assert member["posizione"] == 1
     assert member["freelancer_id"] is None
@@ -477,6 +479,51 @@ def test_public_proposal_is_throttled(client: TestClient, team: Session) -> None
 
     assert refused.status_code == 429
     assert refused.headers["Retry-After"] == "60"
+
+
+def test_public_read_by_id_answers_a_fresh_public_proposal_and_404_for_the_rest(
+    client: TestClient, team: Session
+) -> None:
+    """REB-675: `/hub/team?proposta=<id>` opens on this read, so the window is the one
+    «Rigenera» and «Assumi team» already give a proposal, and every refusal is the same
+    404, so the route never says which proposals exist."""
+    member = _talent(team)
+    fresh = _proposal_row(team, [member])
+    old = _proposal_row(team, [member], created_at=datetime.now(UTC) - timedelta(days=1, minutes=1))
+    cloud = _proposal_row(team, [member], origine="cloud")
+    refused = _proposal_row(team, [], model="")
+    team.execute(
+        update(TeamProposal).where(TeamProposal.id == refused).values(errore="team_builder_busy")
+    )
+    team.commit()
+
+    response = client.get(f"/api/hub/team/proposals/{fresh}")
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["id"] == str(fresh)
+    assert (body["descrizione"], body["persone"], body["riassunto"]) == (
+        DESCRIZIONE,
+        None,
+        RIASSUNTO,
+    )
+    [read] = body["team"]
+    assert read["posizione"] == 1
+    assert (
+        read["freelancer_id"] is None and read["nome"] is None and read["scheda"]["luogo"] is None
+    )
+    assert str(member) not in response.text and "Lovelace" not in response.text
+    for proposal_id in (old, cloud, refused, MISSING):
+        missing = client.get(f"/api/hub/team/proposals/{proposal_id}")
+        assert missing.status_code == 404, (proposal_id, missing.text)
+        assert missing.json() == {"detail": f"team_proposal {proposal_id} non trovato"}
+    assert client.get("/api/hub/team/proposals/not-an-id").status_code == 422
+    # No speed bump on a read: the sixth in a minute still answers.
+    for _ in range(SIGNUPS_PER_MINUTE + 1):
+        assert client.get(f"/api/hub/team/proposals/{fresh}").status_code == 200
+    # The read never touches Claude: a link kept while the builder is off still opens.
+    _settings(client, team_builder_enabled=False)
+    assert client.get(f"/api/hub/team/proposals/{fresh}").status_code == 200
 
 
 # ---- the public request --------------------------------------------------------------------

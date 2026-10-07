@@ -197,6 +197,11 @@ export interface TeamEconomia {
  *  in the visitor's own description about place. */
 export interface TeamProposal {
   id: string
+  /** What the proposal was asked with (REB-675): a page opened on it by its id fills
+   *  the box from these and sends them back on «Rigenera». `persone` is `null` when the
+   *  caller let the API size the team from the description, as the landing does. */
+  descrizione: string
+  persone: number | null
   riassunto: string
   luogo: { locale: boolean; dove: string | null }
   team: TeamMember[]
@@ -241,6 +246,9 @@ export const team = {
    *  the description or a `previous_id` that is not a live public proposal: each with
    *  the API's own sentence. */
   propose: (body: TeamProposalCreate) => request<TeamProposal>('/api/hub/team/proposals', json(body)),
+  /** The public read of a proposal by its id (REB-675, `/hub/team?proposta=`): a 404
+   *  for one older than a day, a cloud's, an attempt or an unknown id alike. */
+  get: (id: string) => request<TeamProposal>(`/api/hub/team/proposals/${encodeURIComponent(id)}`),
   /** 201; 409 when the proposal is already requested, 422 when it is gone. */
   request: (body: TeamRequestCreate) => request<{ id: string }>('/api/hub/team/requests', json(body)),
   /** A talent's «Conferma»: 200 with the outcome, whatever the token; 429 past the

@@ -182,9 +182,13 @@ class TeamProposalRead(BaseModel):
     place in the description, `{"locale": bool, "dove": str | None}`, and stays on the
     public read: it is the visitor's own words. `economia` is `{"giorno": Band | None,
     "mese": Band | None, "giorni_mese": 22}`, the team's bands from its members',
-    `None` when any member has no rate."""
+    `None` when any member has no rate. `descrizione` and `persone` are what the
+    proposal was asked with (REB-675): the public page opened on a proposal by its id
+    fills its box from them and sends them back on «Rigenera»."""
 
     id: UUID
+    descrizione: str
+    persone: int | None
     riassunto: str
     luogo: dict[str, Any]
     team: list[TeamMemberRead]
