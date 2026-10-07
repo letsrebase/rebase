@@ -9,8 +9,9 @@
  * says whether it is worth a click: the summary, each role with its seniority and its
  * day band, the team's day band, and one door into /hub/team?proposta=<id>, where the
  * hub reads the proposal back (REB-675) and the whole page is. No «Rigenera», no
- * «Assumi team», no headcount: the page sends the description alone and the engine
- * sizes the team, and everything past the minimum lives on the hub's page.
+ * «Assumi team»: the page sends the description and the headcount the visitor picked
+ * (one by default, as the hub's page), and everything past the minimum lives on the
+ * hub's page.
  *
  * The words are the hub's: the examples, the placeholder, «Proponi il team», «Sto
  * leggendo i profili…», the band labels (`bands.ts`, byte for byte: a non-breaking
@@ -147,6 +148,7 @@
    *  form had everything it needs. */
   function mount(form, fetchImpl) {
     var box = form.querySelector('textarea[name="descrizione"]')
+    var count = form.querySelector('select[name="persone"]')
     var button = form.querySelector('button[type="submit"]')
     var error = form.querySelector('.team-error')
     var result = document.querySelector(form.getAttribute('data-result') || '')
@@ -168,6 +170,7 @@
      *  answer lands under the words it was asked about. */
     function hold(on) {
       box.disabled = on
+      if (count) count.disabled = on
       button.disabled = on
       chips.forEach(function (chip) {
         chip.disabled = on
@@ -191,6 +194,8 @@
     chips.forEach(function (chip) {
       chip.addEventListener('click', function () {
         box.value = chip.getAttribute('data-example')
+        // The example's own headcount, so the selector agrees with the text.
+        if (count && chip.getAttribute('data-persone')) count.value = chip.getAttribute('data-persone')
         say('')
         box.focus()
       })
@@ -207,6 +212,7 @@
       event.preventDefault()
       if (busy) return
       var text = box.value.trim()
+      var persone = count ? parseInt(count.value, 10) : NaN
       if (text.length < DESCRIZIONE_MIN) {
         say(TOO_SHORT, true)
         box.focus()
@@ -222,7 +228,7 @@
       call(API, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ descrizione: text }),
+        body: JSON.stringify(persone >= 1 ? { descrizione: text, persone: persone } : { descrizione: text }),
       })
         .then(function (response) {
           return response

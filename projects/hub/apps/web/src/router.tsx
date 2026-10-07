@@ -142,10 +142,18 @@ const companiesRedirect = createRoute({
 const team = createRoute({
   getParentRoute: () => publicLayout,
   path: '/team',
-  validateSearch: (search: Record<string, unknown>): { proposta?: string; descrizione?: string } => {
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { proposta?: string; descrizione?: string; persone?: number } => {
     const proposta = strParam(search.proposta)
     const descrizione = strParam(search.descrizione)
-    return { ...(proposta ? { proposta } : {}), ...(descrizione ? { descrizione } : {}) }
+    // The headcount the landing's form sends beside the description: 1 to 10, whole.
+    const persone = Number(strParam(search.persone))
+    return {
+      ...(proposta ? { proposta } : {}),
+      ...(descrizione ? { descrizione } : {}),
+      ...(Number.isInteger(persone) && persone >= 1 && persone <= 10 ? { persone } : {}),
+    }
   },
   component: Team,
 })

@@ -289,6 +289,32 @@ footer .quiet-link:hover {
 .composer-hint {
   font-size: 0.9rem;
   color: var(--landing-ink-quiet);
+  margin-right: auto;
+}
+
+/* «Quante persone», a word and a select, drawn like the pills: a quiet line, the
+   page's own type, no radius. */
+.composer-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  color: var(--landing-ink-quiet);
+}
+
+.composer-count select {
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--landing-ink);
+  background-color: var(--landing-cta-ink);
+  border: 1px solid color-mix(in oklab, var(--landing-ink) 25%, transparent);
+  border-radius: 0;
+  padding: 0.35rem 0.5rem;
+}
+
+.composer-count select:focus-visible {
+  outline: 3px solid var(--landing-focus);
+  outline-offset: 3px;
 }
 
 .composer .cta {
@@ -400,6 +426,10 @@ button.cta:disabled {
 
   .composer .cta {
     justify-content: center;
+  }
+
+  .composer-count {
+    justify-content: space-between;
   }
 
   /* One role per line on a phone: the band goes under the role, not past the edge. */

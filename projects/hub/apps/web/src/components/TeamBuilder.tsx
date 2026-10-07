@@ -91,6 +91,9 @@ export type TeamBuilderProps =
       /** What the box holds at first when there is no proposal: `?descrizione=`, the
        *  landing's form without JavaScript. */
       descrizione?: string
+      /** The headcount the selector starts at when there is no proposal: `?persone=`
+       *  from the same form, 1 to 10. */
+      persone?: number
     }
   | {
       mode: 'cloud'
@@ -127,9 +130,12 @@ export function TeamBuilder(props: TeamBuilderProps) {
   // A proposal the landing let the API size from the description alone comes with
   // `persone` null: the selector then says the size on screen, so «Rigenera» keeps the
   // team the visitor saw rather than shrinking it to one.
+  const askedPersone = props.mode === 'public' ? props.persone : undefined
   const openedPersone = opened
     ? (opened.persone ?? Math.min(PERSONE_MAX, Math.max(PERSONE_DEFAULT, opened.team.length)))
-    : PERSONE_DEFAULT
+    : askedPersone && Number.isInteger(askedPersone) && askedPersone >= PERSONE_DEFAULT && askedPersone <= PERSONE_MAX
+      ? askedPersone
+      : PERSONE_DEFAULT
   const [descrizione, setDescrizione] = useState(
     opened?.descrizione ?? (props.mode === 'public' ? (props.descrizione ?? '') : ''),
   )

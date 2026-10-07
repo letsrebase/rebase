@@ -445,7 +445,8 @@ test.describe('the team builder on the first screen', () => {
     await expect(box).toHaveValue(/fintech/)
     await page.getByRole('button', { name: 'Proponi il team' }).click()
     await expect(page.getByRole('heading', { name: 'La nostra proposta' })).toBeVisible()
-    expect(bodies).toEqual([{ descrizione: expect.stringContaining('fintech') }])
+    // The example's own headcount travels with the description (three for the fintech).
+    expect(bodies).toEqual([{ descrizione: expect.stringContaining('fintech'), persone: 3 }])
     await expect(page.locator('.team-summary')).toHaveText(PROPOSAL.riassunto)
     const members = page.locator('.team-member')
     await expect(members).toHaveCount(2)
@@ -498,6 +499,7 @@ test.describe('the team builder on the first screen', () => {
       const url = new URL(page.url())
       expect(url.pathname).toBe('/hub/team')
       expect(url.searchParams.get('descrizione')).toBe(description)
+      expect(url.searchParams.get('persone')).toBe('1')
     })
   })
 })

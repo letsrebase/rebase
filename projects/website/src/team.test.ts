@@ -150,11 +150,15 @@ describe('mount', () => {
     textarea.setAttribute('aria-invalid', 'true')
     textarea.setAttribute('aria-describedby', 'team-error')
     const chips = [...form.querySelectorAll<HTMLButtonElement>('button[data-example]')]
+    const count = form.querySelector('select[name="persone"]') as HTMLSelectElement
+    expect(count.value).toBe('1')
     expect(chips).toHaveLength(4)
     for (const chip of chips) {
       chip.click()
       expect(textarea.value).toBe(chip.getAttribute('data-example'))
       expect(textarea.value.length).toBeGreaterThanOrEqual(40)
+      // The example's own headcount, the hub page's numbers (3, 2, 2, 1).
+      expect(count.value).toBe(chip.getAttribute('data-persone'))
     }
     expect(error.textContent).toBe('')
     expect(textarea.hasAttribute('aria-invalid')).toBe(false)
@@ -211,7 +215,8 @@ describe('mount', () => {
     const [url, init] = fetchSpy.mock.calls[0] as unknown as [string, RequestInit]
     expect(url).toBe('/api/hub/team/proposals')
     expect(init.method).toBe('POST')
-    expect(JSON.parse(init.body as string)).toEqual({ descrizione: DESCRIZIONE })
+    // The headcount travels with the description, one by default as on the hub's page.
+    expect(JSON.parse(init.body as string)).toEqual({ descrizione: DESCRIZIONE, persone: 1 })
     // A second submit while one runs does nothing.
     submit(form)
     expect(fetchSpy).toHaveBeenCalledTimes(1)
@@ -268,6 +273,7 @@ describe('mount', () => {
     expect(result.querySelector('a.cta')).toBeNull()
     expect(textarea.disabled).toBe(true)
     expect(button.disabled).toBe(true)
+    expect((form.querySelector('select[name="persone"]') as HTMLSelectElement).disabled).toBe(true)
     for (const chip of form.querySelectorAll<HTMLButtonElement>('button[data-example]')) expect(chip.disabled).toBe(true)
 
     resolveCall(answer(503, { detail: 'Il team builder è spento.' }))

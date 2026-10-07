@@ -21,7 +21,7 @@ const OPENING = 'Apro la proposta…'
  *  landing's hero gives under its minimal result, reads the proposal back and hands it
  *  to the builder as if just proposed; `?descrizione=` only fills the box. */
 export function Team() {
-  const search = useSearch({ strict: false }) as { proposta?: string; descrizione?: string }
+  const search = useSearch({ strict: false }) as { proposta?: string; descrizione?: string; persone?: number }
   const proposta = search.proposta
   // The read of `proposta`, keyed by it: a `null` proposal with `gone` is the API's
   // 404, without it a failure the next attempt may not repeat.
@@ -98,6 +98,7 @@ export function Team() {
             mode="public"
             proposal={proposal}
             descrizione={search.descrizione}
+            persone={search.persone}
           />
         </>
       )}

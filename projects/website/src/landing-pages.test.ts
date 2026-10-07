@@ -190,7 +190,7 @@ describe('index.html', () => {
     expect(hero).toMatch(/<form class="team-form ph-no-capture" action="\/hub\/team" method="get" data-team data-result="#team-result">/)
     expect(hero).toContain('<p class="team-claim">Hai un progetto? Descrivilo: <span class="accent">ti proponiamo il team.</span></p>')
     // The hub page's own four examples, each a description the API takes as it stands.
-    expect(hero.match(/<button type="button" class="chip" data-example="[^"]{40,}">[^<]+<\/button>/g)).toHaveLength(4)
+    expect(hero.match(/<button type="button" class="chip" data-example="[^"]{40,}" data-persone="[1-9]">[^<]+<\/button>/g)).toHaveLength(4)
     expect(hero).toContain('>Web app per una fintech</button>')
     expect(hero).toContain('>Un FDE nel team di un cliente</button>')
     // The box: the hub's placeholder, its own label for a screen reader, and the
@@ -200,6 +200,13 @@ describe('index.html', () => {
       /<textarea id="team-descrizione" name="descrizione" rows="3" required minlength="40" maxlength="4000" placeholder="Descrivi il progetto: cosa va fatto, per quanto tempo, dove, con che tecnologie"><\/textarea>/,
     )
     expect(hero).toMatch(/<p class="team-error" id="team-error" role="alert"><\/p>/)
+    // The headcount beside the button, as the hub's page asks it: ten options, one selected.
+    expect(hero).toMatch(/<label class="composer-count">\s*<span>Quante persone<\/span>\s*<select name="persone">/)
+    expect(hero.match(/<option value="(\d+)"/g)).toHaveLength(10)
+    expect(hero).toContain('<option value="1" selected>1 persona</option>')
+    expect(hero).toContain('<option value="10">10 persone</option>')
+    // Each example says how many people its own text implies, like the hub's.
+    expect(hero.match(/data-persone="[1-9]"/g)).toHaveLength(4)
     // The button sits inside the composer, under the box, so the two read as one control.
     expect(hero).toMatch(/<div class="composer">[\s\S]*?<textarea[\s\S]*?<div class="composer-bar">[\s\S]*?<button class="cta" type="submit">Proponi il team<\/button>\s*<\/div>\s*<\/div>/)
     // Where the result lands: empty and hidden until the script fills it, which then

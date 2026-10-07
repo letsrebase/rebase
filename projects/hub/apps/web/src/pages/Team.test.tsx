@@ -61,9 +61,12 @@ function mount(entry = '/team') {
   const team = createRoute({
     getParentRoute: () => root,
     path: '/team',
-    validateSearch: (search: Record<string, unknown>): { proposta?: string; descrizione?: string } => ({
+    validateSearch: (
+      search: Record<string, unknown>,
+    ): { proposta?: string; descrizione?: string; persone?: number } => ({
       ...(typeof search.proposta === 'string' && search.proposta ? { proposta: search.proposta } : {}),
       ...(typeof search.descrizione === 'string' && search.descrizione ? { descrizione: search.descrizione } : {}),
+      ...(typeof search.persone === 'number' ? { persone: search.persone } : {}),
     }),
     component: Team,
   })
@@ -179,9 +182,11 @@ describe('the public team page opened on a proposal (REB-675)', () => {
 
   it('fills the box from ?descrizione=, the landing’s form without JavaScript, and asks nothing', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
-    mount(`/team?descrizione=${encodeURIComponent(DESCRIZIONE)}`)
+    mount(`/team?descrizione=${encodeURIComponent(DESCRIZIONE)}&persone=3`)
 
     expect(await screen.findByLabelText('Descrizione del progetto')).toHaveValue(DESCRIZIONE)
+    // And the headcount the same form sent, so the page asks what the landing would have.
+    expect(screen.getByRole('combobox', { name: 'Quante persone' })).toHaveTextContent('3 persone')
     expect(screen.queryByRole('status')).toBeNull()
     expect(screen.queryByRole('heading', { name: 'La nostra proposta' })).toBeNull()
     expect(fetchSpy).not.toHaveBeenCalled()
