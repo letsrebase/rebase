@@ -185,6 +185,16 @@ def propose_team(
     )
 
 
+@router.get("/proposals/{proposal_id}", response_model=TeamProposalRead)
+def read_proposal(proposal_id: UUID, builder: TeamBuilderDep) -> TeamProposalRead:
+    """The public page opened on a proposal by its id (REB-675, `/hub/team?proposta=`,
+    where the landing's hero sends a visitor for the whole team): the public read, with
+    the description and the headcount it was asked with, of a public proposal younger
+    than a day; 404 for anything else. No speed bump: one row read by a random id,
+    nothing mailed and nothing paid for."""
+    return builder.get_public(proposal_id)
+
+
 @router.post("/requests", response_model=TeamRequestCreated, status_code=status.HTTP_201_CREATED)
 def request_team(
     data: TeamRequestCreate,

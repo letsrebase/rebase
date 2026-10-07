@@ -136,7 +136,27 @@ const companiesRedirect = createRoute({
   },
 })
 // P-REB-43: the public team builder, with the wizards' chrome and no login.
-const team = createRoute({ getParentRoute: () => publicLayout, path: '/team', component: Team })
+// REB-675: `proposta` opens the page on a proposal made elsewhere, the landing's hero
+// above all, and `descrizione` fills the box alone, which is what the landing's form
+// sends without JavaScript. Either left out is left out, never an empty string.
+const team = createRoute({
+  getParentRoute: () => publicLayout,
+  path: '/team',
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { proposta?: string; descrizione?: string; persone?: number } => {
+    const proposta = strParam(search.proposta)
+    const descrizione = strParam(search.descrizione)
+    // The headcount the landing's form sends beside the description: 1 to 10, whole.
+    const persone = Number(strParam(search.persone))
+    return {
+      ...(proposta ? { proposta } : {}),
+      ...(descrizione ? { descrizione } : {}),
+      ...(Number.isInteger(persone) && persone >= 1 && persone <= 10 ? { persone } : {}),
+    }
+  },
+  component: Team,
+})
 // REB-517: where a talent answers the availability mail, public like the page above; the
 // page reads `t` and `r` itself and posts nothing until «Conferma».
 const teamAnswer = createRoute({

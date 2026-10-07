@@ -208,6 +208,270 @@ footer .quiet-link:hover {
   align-content: center;
 }
 
+/* Since REB-676 the landing's hero box (`.home`, this page alone: /pigrocrm shares
+   `.hero .box` and keeps its two left-aligned halves) is centred, the way a product's
+   composer sits on its page (Ivan: «sarebbe meglio centrato»): every row of the grid,
+   the claim, the lead, the composer, the pills and the doors, sits on the box's axis;
+   what has running text of its own, the composer and the result, keeps its text to the
+   left inside. */
+.hero .box.home {
+  justify-items: center;
+  text-align: center;
+}
+
+.hero .box.home > .actions {
+  justify-content: center;
+}
+
+.hero .box.home > .fine {
+  max-width: 60ch;
+}
+
+/* --- The team builder (REB-676), inside the hero's one box, between the lead and
+   the two doors: a prompt box. One line that says what it does, the composer with
+   the button inside it, the four examples as pills under it; the result a plain
+   section under the composer, never a box inside the box, which on a phone is what
+   turned the hero into a stack of frames. Same system as the rest: 2px ink lines, no
+   radius, the button the one saturated element. */
+.team-form {
+  width: 100%;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.team-claim {
+  color: var(--landing-ink);
+  font-weight: 500;
+}
+
+/* The composer fills the box's width, as the form and the result do (Ivan: «rimuovere
+   il bianco allargando il contenuto», not by narrowing the box): a bordered field with
+   the button inside it, so the box and «Proponi il team» read as one control. No shadow, the box behind it has one already. The
+   textarea itself has no line; the field takes the focus ring for it. */
+.composer {
+  width: 100%;
+  text-align: left;
+  border-width: 2px;
+  background-color: var(--landing-cta-ink);
+}
+
+.composer:focus-within {
+  outline: 3px solid var(--landing-focus);
+  outline-offset: 3px;
+}
+
+.composer textarea {
+  display: block;
+  width: 100%;
+  font: inherit;
+  font-size: clamp(1.0625rem, 0.4vw + 0.95rem, 1.25rem);
+  line-height: 1.5;
+  color: var(--landing-ink);
+  background-color: transparent;
+  border: 0;
+  outline: none;
+  padding: 1rem 1.1rem 0.4rem;
+  min-height: 6.5rem;
+  resize: none;
+}
+
+.composer textarea::placeholder {
+  color: var(--landing-ink-quiet);
+  opacity: 1;
+}
+
+.composer-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.5rem 0.5rem 0.5rem 1.1rem;
+}
+
+.composer-hint {
+  font-size: 0.9rem;
+  color: var(--landing-ink-quiet);
+  margin-right: auto;
+}
+
+/* «Quante persone», a word and a select, drawn like the pills: a quiet line, the
+   page's own type, no radius. */
+.composer-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  color: var(--landing-ink-quiet);
+}
+
+.composer-count select {
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--landing-ink);
+  background-color: var(--landing-cta-ink);
+  border: 1px solid color-mix(in oklab, var(--landing-ink) 25%, transparent);
+  border-radius: 0;
+  padding: 0.35rem 0.5rem;
+}
+
+.composer-count select:focus-visible {
+  outline: 3px solid var(--landing-focus);
+  outline-offset: 3px;
+}
+
+.composer .cta {
+  font-size: 1.05rem;
+  padding: 0.7rem 1.2rem;
+}
+
+button.cta {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+button.cta:disabled {
+  cursor: wait;
+}
+
+/* The examples: pills, quiet, a lighter line than the box so they read as hints and
+   not as more boxes; the line is still the ink, at a quarter, the way the cookie
+   notice's buttons draw theirs (system.css). */
+.team-examples {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.4rem;
+}
+
+.chip {
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--landing-ink);
+  background-color: transparent;
+  border: 1px solid color-mix(in oklab, var(--landing-ink) 25%, transparent);
+  padding: 0.35rem 0.65rem;
+  cursor: pointer;
+}
+
+.chip:hover:not(:disabled) {
+  border-color: var(--landing-ink);
+}
+
+/* The sentence under the composer: the API's or ours, in the accent, and no room at
+   all while there is none to say. */
+.team-error {
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--landing-accent);
+}
+
+.team-error:empty {
+  display: none;
+}
+
+/* The minimal result: a plain section under the composer, a rule above it, the roles
+   one line each with the band at the far end, then the door. */
+.team-result {
+  width: 100%;
+  text-align: left;
+  display: grid;
+  gap: 0.75rem;
+  padding-block: 1.25rem;
+  border-top-width: 2px;
+  border-bottom-width: 2px;
+}
+
+.team-result[hidden] {
+  display: none;
+}
+
+.team-title {
+  font-size: clamp(1.35rem, 0.8vw + 1.1rem, 1.75rem);
+}
+
+.team-roles {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.team-member {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.15rem 0.6rem;
+  font-size: 1.0625rem;
+}
+
+.team-role,
+.team-band,
+.team-total {
+  color: var(--landing-ink);
+  font-weight: 500;
+}
+
+.team-band {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.team-result .actions {
+  margin-top: 0.25rem;
+}
+
+@media (max-width: 40rem) {
+  .composer-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .composer .cta {
+    justify-content: center;
+  }
+
+  .composer-count {
+    justify-content: space-between;
+  }
+
+  /* One role per line on a phone: the band goes under the role, not past the edge. */
+  .team-member {
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .team-band {
+    margin-left: 0;
+  }
+
+  /* On a phone every control in the hero is one full-width row of the same width:
+     the pills and the two doors alike (Ivan: «tutti i box hanno dimensioni diverse»). */
+  .team-examples {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .chip {
+    text-align: center;
+  }
+
+  .hero .box.home > .actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    width: 100%;
+  }
+
+  .hero .box.home > .actions .cta,
+  .team-result .actions .cta {
+    justify-content: center;
+  }
+
+  .team-result .actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* --- The field: fixed, behind everything
    on the page, inert: decoration the script fills in, never something the page
    depends on. */
@@ -564,13 +828,6 @@ a.avatar:hover {
   text-transform: uppercase;
   color: var(--landing-accent);
   margin-bottom: 1rem;
-}
-
-/* The wordmark is «rebase», lowercase even where the deck uppercases its kickers
-   (ORB-194, Ivan 2026-09-14). */
-.deck .kicker-brand {
-  text-transform: none;
-  letter-spacing: 0.02em;
 }
 
 .deck .kicker::before {

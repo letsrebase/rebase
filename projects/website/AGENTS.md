@@ -10,7 +10,7 @@ doing.
 
 ## No framework, and that is the requirement
 
-No React, no Tailwind, no router, no CSS framework. Six HTML pages, seven scripts,
+No React, no Tailwind, no router, no CSS framework. Six HTML pages, eight scripts,
 four stylesheets, and a build that takes about 300 milliseconds. This is the first
 thing a visitor loads and it must not drag an application bundle behind it. A dependency
 added here has to justify itself against that, and "the CRM already uses it" is not a

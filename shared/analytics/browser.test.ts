@@ -12,7 +12,7 @@ vi.mock('posthog-js', () => ({
   },
 }))
 
-import posthog, { type CaptureResult } from 'posthog-js'
+import posthog, { type CaptureResult, type CapturedNetworkRequest } from 'posthog-js'
 import {
   __resetAnalyticsForTests,
   analyticsActive,
@@ -149,6 +149,40 @@ describe('the magic-link token scrubber', () => {
     expect(scrubbed?.properties.$current_url).toBe('https://letsrebase.com/hub/entra?x=1')
     expect(scrubbed?.properties.$referrer).toBe('https://letsrebase.com/hub/entra?x=1')
     expect(scrubbed?.properties.x).toBe(1)
+  })
+
+  it('removes the team page\'s proposta and descrizione too, and keeps the rest (REB-675)', () => {
+    initAnalytics({ hostname: 'letsrebase.com' })
+    const beforeSend = init.mock.calls[0]?.[1]?.before_send as (
+      result: CaptureResult | null,
+    ) => CaptureResult | null
+    const url =
+      'https://letsrebase.com/hub/team?proposta=5b1f2c3d-4e5f-4a6b-8c7d-00000000abcd&descrizione=Siamo%20ACME%20e%20ci%20serve%20un%20team&da=home'
+    const scrubbed = beforeSend({
+      event: '$pageview',
+      uuid: 'u',
+      timestamp: new Date(),
+      properties: { $current_url: url, $referrer: url },
+      $set_once: { $initial_current_url: url },
+    })
+    expect(scrubbed?.properties.$current_url).toBe('https://letsrebase.com/hub/team?da=home')
+    expect(scrubbed?.properties.$referrer).toBe('https://letsrebase.com/hub/team?da=home')
+    expect(scrubbed?.$set_once?.$initial_current_url).toBe('https://letsrebase.com/hub/team?da=home')
+  })
+
+  it('scrubs the same parameters from what a recording keeps of a URL (REB-675)', () => {
+    initAnalytics({ hostname: 'letsrebase.com' })
+    const mask = init.mock.calls[0]?.[1]?.session_recording?.maskCapturedNetworkRequestFn as (
+      request: CapturedNetworkRequest,
+    ) => CapturedNetworkRequest
+    expect(mask).toBeTypeOf('function')
+    const request = {
+      name: 'https://letsrebase.com/hub/team?proposta=5b1f2c3d-4e5f-4a6b-8c7d-00000000abcd&t=abc&da=home',
+      method: 'GET',
+    } as CapturedNetworkRequest
+    expect(mask(request)).toMatchObject({ name: 'https://letsrebase.com/hub/team?da=home', method: 'GET' })
+    const clean = { name: 'https://letsrebase.com/hub/me', method: 'GET' } as CapturedNetworkRequest
+    expect(mask(clean)).toBe(clean)
   })
 
   it('removes t from $initial_current_url in $set_once, where posthog-js actually puts it', () => {

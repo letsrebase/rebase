@@ -532,6 +532,25 @@ class TeamBuilder:
             raise NotFound(ENTITY, proposal_id)
         return self._read(row, public=public)
 
+    def get_public(self, proposal_id: UUID, *, now: datetime | None = None) -> TeamProposalRead:
+        """The public page opened on a proposal by its id (REB-675, `/hub/team?proposta=`):
+        the public read of a `pubblico` proposal younger than `PREVIOUS_MAX_AGE`, the
+        window «Rigenera» and «Assumi team» give it, and `NotFound` for anything else,
+        an attempt, a cloud's or an admin's proposal, one older than a day and an unknown
+        id alike, so the answer never says which proposals exist. The id is the
+        capability (spec § 3.2): random bits the visitor was handed, and all this read
+        trusts."""
+        at = now if now is not None else self.now()
+        row = self.session.get(TeamProposal, proposal_id)
+        if (
+            row is None
+            or row.errore is not None
+            or row.origine != "pubblico"
+            or row.created_at <= at - PREVIOUS_MAX_AGE
+        ):
+            raise NotFound(ENTITY, proposal_id)
+        return self._read(row, public=True)
+
     def record_refusal(
         self,
         data: TeamProposalCreate,
@@ -887,6 +906,8 @@ class TeamBuilder:
         day, month = team_bands([member.fascia for member in members])
         return TeamProposalRead(
             id=row.id,
+            descrizione=row.descrizione,
+            persone=row.persone,
             riassunto=(
                 _public_riassunto(
                     row.id, row.riassunto, row.luogo.get("dove"), row.descrizione, cards

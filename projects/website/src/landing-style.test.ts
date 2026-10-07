@@ -111,7 +111,9 @@ describe('the landing shares the product system', () => {
 
   describe('the title\'s cursor (ORB-24)', () => {
     it('is a bar of the ink, blinking in steps, only while the script types', () => {
-      const cursor = rule('h1 .role.is-typing::after', system)
+      // `.role[data-roles]`, the typed word wherever it sits: the title until REB-676,
+      // the community box's h2 beside the team builder since.
+      const cursor = rule('.role[data-roles].is-typing::after', system)
       expect(cursor).toMatch(/content:\s*''/)
       expect(cursor).toMatch(/background-color:\s*currentColor/)
       expect(cursor).toMatch(/animation:\s*blink 1s step-end infinite/)
@@ -122,7 +124,7 @@ describe('the landing shares the product system', () => {
 
     it('is gone under reduced motion, whatever the script did', () => {
       expect(system).toMatch(
-        /@media \(prefers-reduced-motion: reduce\)\s*\{\s*h1 \.role::after\s*\{\s*display:\s*none;/,
+        /@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.role\[data-roles\]::after\s*\{\s*display:\s*none;/,
       )
     })
 

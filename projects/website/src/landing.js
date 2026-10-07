@@ -32,8 +32,12 @@
  * three scripts still sit in index.html's markup for a browser running the source, and
  * Vite rewrites them into this one entry; the imports are what keep the order true when
  * Rollup splits the chunks differently. e2e/site.spec.ts checks it on the built bundle.
+ *
+ * REB-676: `window.__teamBuilder` (team.js) is the fourth, mounted on the landing's
+ * `form[data-team]`; pigrocrm.html has no such form and skips it.
  */
 import './utm.js'
+import './team.js'
 import './typewriter.js'
 import './field.js'
 ;(function () {
@@ -63,8 +67,12 @@ import './field.js'
   function start() {
     if (window.__utm) window.__utm.carryUtm()
     reveal()
-    var role = document.querySelector('h1 .role')
+    // The typed word: in the landing's claim since REB-676 (an h2 beside the team
+    // builder), in the title before that. Found by what it is, not by where it sits.
+    var role = document.querySelector('.role[data-roles]')
     if (role && window.__typewriter) window.__typewriter.mount(role)
+    var team = document.querySelector('form[data-team]')
+    if (team && window.__teamBuilder) window.__teamBuilder.mount(team)
     var field = window.__pigroField
     var canvas = document.getElementById('field')
     if (!field || !canvas || typeof canvas.getContext !== 'function') return

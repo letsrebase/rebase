@@ -1105,6 +1105,48 @@ def test_public_read_hides_ids_and_luogo(clean: Session) -> None:
         builder.get(uuid7(), public=True)
 
 
+def test_the_public_read_by_id_answers_a_fresh_public_proposal_and_nothing_else(
+    clean: Session,
+) -> None:
+    """REB-675: `/hub/team?proposta=<id>` opens on `get_public`, which answers the same
+    read the proposal was first handed, what it was asked with included, inside the
+    window «Rigenera» gives it, and `NotFound` for a cloud proposal, an attempt or a
+    proposal a day old, so the answer never says which proposals exist."""
+    first = _talent(clean, 1)
+    ids = _positions(clean)
+    llm = RecordingCall([proposal_response([_member(ids[first])])] * 2)
+    builder = _builder(clean, llm)
+
+    public = builder.propose(
+        TeamProposalCreate(descrizione=DESCRIZIONE, persone=1), origine="pubblico", user_id=None
+    )
+    cloud = builder.propose(
+        TeamProposalCreate(descrizione=DESCRIZIONE), origine="cloud", user_id=_user(clean, "c@x.it")
+    )
+
+    read = builder.get_public(public.id)
+    assert read == public
+    assert (read.descrizione, read.persone) == (DESCRIZIONE, 1)
+    assert [m.freelancer_id for m in read.team] == [None]
+    assert builder.get_public(public.id, now=NOW + timedelta(hours=23, minutes=59)) == public
+    for proposal_id, now in (
+        (public.id, NOW + timedelta(days=1)),
+        (cloud.id, NOW),
+        (uuid7(), NOW),
+    ):
+        with pytest.raises(NotFound):
+            builder.get_public(proposal_id, now=now)
+    builder.record_refusal(
+        TeamProposalCreate(descrizione=DESCRIZIONE),
+        origine="pubblico",
+        user_id=None,
+        error=TeamBuilderBusy("Troppe richieste in questo momento: riprova tra un minuto."),
+    )
+    attempt = next(row for row in _rows(clean) if row.errore is not None)
+    with pytest.raises(NotFound):
+        builder.get_public(attempt.id)
+
+
 def test_the_cloud_read_names_each_member_and_the_public_read_never(clean: Session) -> None:
     """The cloud shows who each person is (spec § 4.2), so its read carries the name
     and the surname beside the id; the public read carries neither, of a public

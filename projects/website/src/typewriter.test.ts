@@ -23,14 +23,14 @@ type TypewriterWindow = Window & { __typewriter?: Typewriter }
 // script runs and when it never does.
 const ROLES = ['Developer', 'AI engineer', 'CTO', 'Fractional CTO', 'Tech lead', 'Freelance']
 
-// The whole first line, as both pages write it. The screen-reader span names three
+// The whole first line, as the page writes it. The screen-reader span names three
 // roles once, comma included, and is the accessible first line in every state; the
 // visible word and its comma sit in one aria-hidden span, so the sentence a screen
 // reader hears does not depend on whether the script ran, was stopped by reduced
 // motion, or never loaded. The comma is in the hidden span with the word because the
 // sr-only span is absolutely positioned, which the accessible name treats as a block
 // and pads with a space: a comma left outside read as "CTO , ma".
-const H1_LINE =
+const CLAIM_LINE =
   '<span class="sr-only">Developer, AI engineer, CTO,</span><span aria-hidden="true">' +
   `<span class="role" data-roles="${ROLES.join('|')}">Developer</span>,</span><br />ma non da soli.</h1>`
 
@@ -202,12 +202,15 @@ describe('typewriter.js', () => {
   describe.each(Object.keys(pages) as (keyof typeof pages)[])('%s', (name) => {
     const page = pages[name]
 
-    it('carries the title with the roles to type and the line a screen reader hears', () => {
-      // Without the script the title reads "Developer, ma non da soli." on the screen
+    it('carries the claim with the roles to type and the line a screen reader hears', () => {
+      // Without the script the claim reads "Developer, ma non da soli." on the screen
       // and "Developer, AI engineer, CTO, ma non da soli." to a screen reader; with it
-      // the screen changes and the screen reader hears the same sentence.
+      // the screen changes and the screen reader hears the same sentence. One h1 on the
+      // page, and the typed word is the only element with `data-roles`, which is how
+      // landing.js and system.css find it since REB-676.
       expect(page.match(/<h1[^>]*>/g)).toHaveLength(1)
-      expect(page).toContain(H1_LINE)
+      expect(page).toContain(CLAIM_LINE)
+      expect(page.match(/data-roles=/g)).toHaveLength(1)
     })
 
     it('loads the script before field.js, like field.js before the page script', () => {
@@ -222,7 +225,7 @@ describe('typewriter.js', () => {
     it('mounts the typewriter on the title, and survives its absence', () => {
       const js = scripts[name]
       expect(js).toMatch(/window\.__typewriter/)
-      expect(js).toMatch(/querySelector\('h1 \.role'\)/)
+      expect(js).toMatch(/querySelector\('\.role\[data-roles\]'\)/)
     })
   })
 })

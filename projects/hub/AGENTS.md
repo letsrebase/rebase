@@ -303,7 +303,10 @@ Since milestone C of `docs/superpowers/specs/2026-09-25-team-builder-and-talent-
 (REB-508 to REB-516) Claude reads every freelancer's CV once and writes an anonymous
 card of it (`rebase_core.cards`), and `/hub/team` turns a project's description and
 those cards into a team (`rebase_core.team_builder`), which a company files with
-«Assumi team» and an admin works in «Richieste team». Both calls go through one seam,
+«Assumi team» and an admin works in «Richieste team». The landing's hero
+(`projects/website`, REB-676) asks the same `POST /api/hub/team/proposals` and sends the
+visitor to `/hub/team?proposta=<id>` for the whole team, which the page reads back with
+`GET /api/hub/team/proposals/{id}` (REB-675, spec § 3.2 addendum). Both calls go through one seam,
 `rebase_core.llm`, with inference global (the API offers `global` or `us`; EU
 residency would take Vertex AI or Bedrock in an EU region, not decided); the tests
 hand a `RecordingCall` and never reach Anthropic.

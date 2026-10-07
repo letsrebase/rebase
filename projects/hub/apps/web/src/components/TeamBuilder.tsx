@@ -38,6 +38,7 @@ const NOTA_MAX = 500
  *  one by default, since most requests are for one person (REB-591). */
 const PERSONE = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const
 const PERSONE_DEFAULT = 1
+const PERSONE_MAX = 10
 
 function personeLabel(persone: number): string {
   return persone === 1 ? '1 persona' : `${persone} persone`
@@ -81,7 +82,19 @@ const THANKS = 'Grazie: ti scriviamo entro due giorni lavorativi.'
  *  `cloud` (D3): the signed-in company proposes through its own route, sees each
  *  person by name, and «Assumi team» files the request at once, with no form. */
 export type TeamBuilderProps =
-  | { mode: 'public' }
+  | {
+      mode: 'public'
+      /** A proposal to open on (REB-675, `/hub/team?proposta=`, where the landing's
+       *  hero sends a visitor for the whole team): the box holds its description, the
+       *  selector its headcount, and the proposal is on screen as if just proposed. */
+      proposal?: TeamProposal
+      /** What the box holds at first when there is no proposal: `?descrizione=`, the
+       *  landing's form without JavaScript. */
+      descrizione?: string
+      /** The headcount the selector starts at when there is no proposal: `?persone=`
+       *  from the same form, 1 to 10. */
+      persone?: number
+    }
   | {
       mode: 'cloud'
       propose: (body: TeamProposalCreate) => Promise<CloudTeamProposal>
@@ -113,16 +126,30 @@ function nameOf(member: TeamMember | CloudTeamMember): string | null {
  */
 export function TeamBuilder(props: TeamBuilderProps) {
   const ids = useId()
-  const [descrizione, setDescrizione] = useState('')
+  const opened = props.mode === 'public' ? props.proposal : undefined
+  // A proposal the landing let the API size from the description alone comes with
+  // `persone` null: the selector then says the size on screen, so «Rigenera» keeps the
+  // team the visitor saw rather than shrinking it to one.
+  const askedPersone = props.mode === 'public' ? props.persone : undefined
+  const openedPersone = opened
+    ? (opened.persone ?? Math.min(PERSONE_MAX, Math.max(PERSONE_DEFAULT, opened.team.length)))
+    : askedPersone && Number.isInteger(askedPersone) && askedPersone >= PERSONE_DEFAULT && askedPersone <= PERSONE_MAX
+      ? askedPersone
+      : PERSONE_DEFAULT
+  const [descrizione, setDescrizione] = useState(
+    opened?.descrizione ?? (props.mode === 'public' ? (props.descrizione ?? '') : ''),
+  )
   const [descrizioneError, setDescrizioneError] = useState<string | null>(null)
-  const [persone, setPersone] = useState<number>(PERSONE_DEFAULT)
+  const [persone, setPersone] = useState<number>(openedPersone)
   // The description and the number the proposal on screen came from: «Rigenera» asks
   // again about those, with the note, whatever the box and the selector say by then.
   const [result, setResult] = useState<{
     proposal: TeamProposal | CloudTeamProposal
     descrizione: string
     persone: number
-  } | null>(null)
+  } | null>(
+    opened ? { proposal: opened, descrizione: opened.descrizione, persone: openedPersone } : null,
+  )
   const [nota, setNota] = useState('')
   const [running, setRunning] = useState<Run | null>(null)
   const [runError, setRunError] = useState<{ from: Run; message: string } | null>(null)

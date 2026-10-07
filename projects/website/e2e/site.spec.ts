@@ -230,16 +230,21 @@ test.describe('every page of the site', () => {
   const ROLES = ['Developer', 'AI engineer', 'CTO', 'Fractional CTO', 'Tech lead', 'Freelance']
   const TITLED = ['/'] as const
 
-  /** The tops that must not move, and the title's height, with `word` in the role. */
+  // `.role[data-roles]` is the one typed word on the page, wherever it sits: landing.js
+  // and system.css find it that way since REB-676, when the hero grew the team builder.
+  const CLAIM = '.hero h1'
+
+  /** The tops that must not move, and the claim's height, with `word` in the role. */
   function titledLayout(word: string | null) {
-    const role = document.querySelector('h1 .role') as HTMLElement
+    const role = document.querySelector('.role[data-roles]') as HTMLElement
     if (word !== null) role.textContent = word
     const top = (selector: string) => document.querySelector(selector)!.getBoundingClientRect().top
     return {
-      h1: (document.querySelector('h1') as HTMLElement).getBoundingClientRect().height,
-      lead: top('.lead'),
-      // The two doors on the landing.
-      form: top('form, .actions'),
+      h1: (role.closest('h1, h2') as HTMLElement).getBoundingClientRect().height,
+      lead: top('.hero .lead'),
+      // The composer and the two doors on the landing, under the typed word.
+      form: top('.hero form'),
+      doors: top('.hero p.actions'),
       scrollWidth: document.documentElement.scrollWidth,
       innerWidth: window.innerWidth,
     }
@@ -251,8 +256,8 @@ test.describe('every page of the site', () => {
         page,
       }) => {
         await page.goto(path)
-        const role = page.locator('h1 .role')
-        await expect(page.locator('h1')).toContainText('ma non da soli.')
+        const role = page.locator('.role[data-roles]')
+        await expect(page.locator(CLAIM)).toContainText('ma non da soli.')
         await expect(role).toHaveText('Developer')
         expect((await role.getAttribute('data-roles'))!.split('|')).toEqual(ROLES)
         await expect(role).toHaveAttribute('aria-hidden', 'true')
@@ -265,6 +270,7 @@ test.describe('every page of the site', () => {
         const after = await page.evaluate(titledLayout, null)
         expect(after.lead).toBe(before.lead)
         expect(after.form).toBe(before.form)
+        expect(after.doors).toBe(before.doors)
         expect(after.h1).toBe(before.h1)
       })
     }
@@ -297,16 +303,16 @@ test.describe('every page of the site', () => {
           await page.emulateMedia({ reducedMotion: 'reduce' })
           await page.goto(path, { waitUntil: 'networkidle' })
           await page.waitForTimeout(4_000)
-          const role = page.locator('h1 .role')
+          const role = page.locator('.role[data-roles]')
           await expect(role).toHaveText('Developer')
           await expect(role).not.toHaveClass(/is-typing/)
           // The line a screen reader hears is the same with or without the script.
-          await expect(page.locator('h1')).toHaveAccessibleName(
+          await expect(page.locator(CLAIM)).toHaveAccessibleName(
             'Developer, AI engineer, CTO, ma non da soli.',
           )
           expect(
             await page.evaluate(() =>
-              getComputedStyle(document.querySelector('h1 .role')!, '::after').display,
+              getComputedStyle(document.querySelector('.role[data-roles]')!, '::after').display,
             ),
           ).toBe('none')
         })
@@ -384,6 +390,118 @@ test('/ defines each window global before landing.js reads it, in the built bund
   }
   // And what the reads were for happened: the field is mounted on its canvas.
   expect(await page.evaluate(() => (document.getElementById('field') as HTMLCanvasElement).width)).toBeGreaterThan(300)
+})
+
+// REB-676: the team builder on the first screen. The hub's API is not behind the
+// preview, so the one call the page makes is answered here, and what is checked is
+// the page's own side: the example fills the box, the call carries the description
+// alone, the minimal result is the summary, the roles with their bands and the team's,
+// and the door into /hub/team carries the proposal's id, the campaign and da=home like
+// every other hub link. A short description never leaves the page, a refusal is read
+// in the API's own words, and without JavaScript the form hands the description to
+// the hub's page itself.
+test.describe('the team builder on the first screen', () => {
+  const PROPOSAL = {
+    id: '5b1f2c3d-4e5f-4a6b-8c7d-00000000abcd',
+    descrizione: 'x',
+    persone: null,
+    riassunto: 'Una web app per i clienti di una fintech: chi fa il backend e chi il frontend.',
+    luogo: { locale: false, dove: null },
+    team: [
+      {
+        posizione: 1,
+        ruolo: 'Backend developer',
+        motivazione: 'Ha costruito le API di pagamento di due banche.',
+        giorni_settimana: 5,
+        scheda: { ruolo: 'Sviluppatore backend', seniority: 'senior', anni: 9, competenze: [], settori: [], lingue: [], luogo: null, sintesi: '' },
+        modalita: 'remoto',
+        fascia: { min: 400, max: 500 },
+      },
+      {
+        posizione: 2,
+        ruolo: 'Frontend developer',
+        motivazione: 'Porta React.',
+        giorni_settimana: 3,
+        scheda: { ruolo: 'Sviluppatrice frontend', seniority: 'mid', anni: 4, competenze: [], settori: [], lingue: [], luogo: null, sintesi: '' },
+        modalita: 'ibrido',
+        fascia: { min: 400, max: 500 },
+      },
+    ],
+    economia: { giorno: { min: 800, max: 1000 }, mese: { min: 17600, max: 22000 }, giorni_mese: 22 },
+    previous_id: null,
+    origine: 'pubblico',
+    created_at: '2026-10-07T08:00:00Z',
+  }
+
+  test('an example, «Proponi il team», the minimal result, and the door to the whole team', async ({ page }) => {
+    const bodies: unknown[] = []
+    await page.route('**/api/hub/team/proposals', async (route) => {
+      bodies.push(route.request().postDataJSON())
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(PROPOSAL) })
+    })
+    await page.goto('/?utm_source=linkedin&utm_campaign=orbita')
+    await page.getByRole('button', { name: 'Web app per una fintech' }).click()
+    const box = page.getByLabel('Descrizione del progetto')
+    await expect(box).toHaveValue(/fintech/)
+    await page.getByRole('button', { name: 'Proponi il team' }).click()
+    await expect(page.getByRole('heading', { name: 'La nostra proposta' })).toBeVisible()
+    // The example's own headcount travels with the description (three for the fintech).
+    expect(bodies).toEqual([{ descrizione: expect.stringContaining('fintech'), persone: 3 }])
+    await expect(page.locator('.team-summary')).toHaveText(PROPOSAL.riassunto)
+    const members = page.locator('.team-member')
+    await expect(members).toHaveCount(2)
+    await expect(members.first()).toContainText('Backend developer')
+    await expect(members.first()).toContainText('Senior, 9 anni di esperienza')
+    await expect(members.first()).toContainText('400–500\u00a0€ al giorno')
+    await expect(page.locator('.team-total')).toHaveText('Tutto il team: 800–1.000\u00a0€ al giorno')
+    const door = page.getByRole('link', { name: 'Vedi il team completo' })
+    const href = new URL((await door.getAttribute('href'))!, 'http://localhost:4173')
+    expect(href.pathname).toBe('/hub/team')
+    expect(Object.fromEntries(href.searchParams)).toEqual({
+      proposta: PROPOSAL.id,
+      utm_source: 'linkedin',
+      utm_campaign: 'orbita',
+      da: 'home',
+    })
+    // The button is back, for a second description.
+    await expect(page.getByRole('button', { name: 'Proponi il team' })).toBeEnabled()
+  })
+
+  test('a short description never leaves the page, and a refusal is read in the API’s own words', async ({ page }) => {
+    let calls = 0
+    await page.route('**/api/hub/team/proposals', async (route) => {
+      calls += 1
+      await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ detail: 'Il team builder è spento.' }) })
+    })
+    await page.goto('/')
+    const box = page.getByLabel('Descrizione del progetto')
+    await box.fill('Un sito.')
+    await page.getByRole('button', { name: 'Proponi il team' }).click()
+    await expect(page.getByRole('alert')).toHaveText('Raccontaci qualcosa in più: servono almeno 40 caratteri.')
+    expect(calls).toBe(0)
+    await box.fill('Rifacciamo il gestionale degli ordini: un backend in Python con FastAPI, sei mesi, da remoto.')
+    await page.getByRole('button', { name: 'Proponi il team' }).click()
+    await expect(page.getByRole('alert')).toHaveText('Il team builder è spento.')
+    expect(calls).toBe(1)
+    await expect(page.locator('#team-result')).toBeHidden()
+  })
+
+  test.describe('without JavaScript', () => {
+    test.use({ javaScriptEnabled: false })
+
+    test('the form hands the description to the hub’s own page', async ({ page }) => {
+      await page.goto('/')
+      const description = 'Rifacciamo il gestionale degli ordini: un backend in Python con FastAPI, sei mesi, da remoto.'
+      await page.getByLabel('Descrizione del progetto').fill(description)
+      await page.getByRole('button', { name: 'Proponi il team' }).click()
+      // The preview server answers a stand-in for `/hub/`, as it does for every hub path.
+      await page.waitForURL(/\/hub\/team\?descrizione=/)
+      const url = new URL(page.url())
+      expect(url.pathname).toBe('/hub/team')
+      expect(url.searchParams.get('descrizione')).toBe(description)
+      expect(url.searchParams.get('persone')).toBe('1')
+    })
+  })
 })
 
 // The campaign follows the visitor into the hub (ORB-166): every door on the landing

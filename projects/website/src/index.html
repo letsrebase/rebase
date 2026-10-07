@@ -94,20 +94,77 @@
     </header>
 
     <main class="deck">
+      <!-- REB-676 (Ivan, 2026-10-07): the team builder on the first screen, inside the
+        hero the page already had. Everything the hero said stays where it was: the
+        claim with the typed roles, the lead, the two doors into the wizards and the
+        fine print. Between the lead and the doors sits the builder, drawn as a prompt
+        box: one line that says what it does, the composer (the description with
+        «Proponi il team» inside it), the four examples as pills. team.js asks the hub's
+        own POST /api/hub/team/proposals (same origin) and shows the least that says
+        whether it is worth a click, the summary, each role with its seniority and day
+        band, the team's day band, and one door, «Vedi il team completo», into
+        /hub/team?proposta=<id>, where the hub reads the proposal back (REB-675) and the
+        whole page is: the cards, «Rigenera», «Assumi team». Without JavaScript the form
+        is a plain GET to /hub/team, and the hub fills its box from ?descrizione=. The
+        hero's third door of REB-608 went: the builder itself sits where it pointed. -->
       <section class="hero">
         <div class="wrap">
-          <div class="box">
-            <p class="kicker kicker-brand">rebase</p>
+          <!-- `home`: the centring below is this page's; /pigrocrm shares the hero's
+            box and keeps its own left-aligned halves (Greptile on PR #568). -->
+          <div class="box home">
             <h1 class="measure-tight"><span class="sr-only">Developer, AI engineer, CTO,</span><span aria-hidden="true"><span class="role" data-roles="Developer|AI engineer|CTO|Fractional CTO|Tech lead|Freelance">Developer</span>,</span><br />ma non da soli.</h1>
             <p class="lead measure">La community di chi fa software in proprio in Italia.</p>
+            <!-- `ph-no-capture` on the form and on the result: what a visitor writes about
+              their project, the team the hub answers and the door's href, which carries
+              the proposal's id, a one-day capability to read that project back, stay out
+              of PostHog's autocapture and out of a session recording once measurement is
+              accepted. The class is the SDK's own switch for both. -->
+            <form class="team-form ph-no-capture" action="/hub/team" method="get" data-team data-result="#team-result">
+              <p class="team-claim">Hai un progetto? Descrivilo: <span class="accent">ti proponiamo il team.</span></p>
+              <div class="composer">
+                <label class="sr-only" for="team-descrizione">Descrizione del progetto</label>
+                <textarea id="team-descrizione" name="descrizione" rows="3" required minlength="40" maxlength="4000" placeholder="Descrivi il progetto: cosa va fatto, per quanto tempo, dove, con che tecnologie"></textarea>
+                <div class="composer-bar">
+                  <!-- The headcount, as the hub's page asks it (REB-591): one by default,
+                    since most requests are for one person; an example sets the number its
+                    own text implies. -->
+                  <label class="composer-count">
+                    <span>Quante persone</span>
+                    <select name="persone">
+                      <option value="1" selected>1 persona</option>
+                      <option value="2">2 persone</option>
+                      <option value="3">3 persone</option>
+                      <option value="4">4 persone</option>
+                      <option value="5">5 persone</option>
+                      <option value="6">6 persone</option>
+                      <option value="7">7 persone</option>
+                      <option value="8">8 persone</option>
+                      <option value="9">9 persone</option>
+                      <option value="10">10 persone</option>
+                    </select>
+                  </label>
+                  <span class="composer-hint">Senza account. Gratis finché è in beta.</span>
+                  <button class="cta" type="submit">Proponi il team</button>
+                </div>
+              </div>
+              <p class="team-error" id="team-error" role="alert"></p>
+              <!-- The hub page's own four examples (TeamBuilder.tsx), each a description the
+                API takes as it stands: forty characters at least. -->
+              <div class="team-examples" role="group" aria-labelledby="team-examples">
+                <span class="sr-only" id="team-examples">Qualche esempio, per cominciare</span>
+                <button type="button" class="chip" data-example="Siamo una fintech e ci serve una web app per i nostri clienti: dashboard dei conti, pagamenti e collegamento alle API di open banking. React e TypeScript davanti, Python dietro. Sei mesi, da remoto." data-persone="3">Web app per una fintech</button>
+                <button type="button" class="chip" data-example="Dobbiamo portare gli ordini di tre gestionali in un data warehouse su Google Cloud, con una pipeline affidabile e i report per la direzione. Quattro mesi, in sede a Milano tre giorni a settimana." data-persone="2">Pipeline dati in sede a Milano</button>
+                <button type="button" class="chip" data-example="Vogliamo lanciare un’app per prenotare le lezioni in palestra, su iOS e Android: serve chi la sviluppa, in React Native o Flutter, e un designer che ne curi l’esperienza e l’interfaccia. Tre mesi, da remoto." data-persone="2">App mobile con un designer</button>
+                <button type="button" class="chip" data-example="Siamo una software house e cerchiamo un forward deployed engineer da inserire da un nostro cliente: lavora nel loro team, capisce i processi e porta in produzione le integrazioni con i loro sistemi. Python, Postgres e API dei gestionali. Sei mesi, due giorni a settimana in sede dal cliente." data-persone="1">Un FDE nel team di un cliente</button>
+              </div>
+            </form>
+            <!-- The result lands here, a plain section under the composer, no box of its
+              own: hidden until the script fills it, which then moves the focus to its
+              heading. -->
+            <div class="team-result ph-no-capture" id="team-result" hidden></div>
             <p class="actions">
               <a class="cta" href="/hub/freelance">Entra come talento</a>
               <a class="cta secondary" href="/hub/aziende">Cerchi persone?</a>
-              <!-- REB-608: the third door is the team builder, public at /hub/team since
-                P-REB-43. The services band below already carries the same door (REB-605);
-                this one puts it on the first screen. Drawn like the second: it is a
-                company's door too, one step past the wizard. -->
-              <a class="cta secondary" href="/hub/team">Prova il team builder</a>
             </p>
             <p class="fine">
               Due minuti, una domanda alla volta. Ti chiediamo il CV e quanto costa una tua
@@ -116,7 +173,7 @@
             <!-- REB-99: a freelancer who already applied comes back here with no
               mention of their own area anywhere but the hub's own header or the
               wizard's thank-you page. This puts a second, warmer door on the
-              landing itself, next to the three hub doors above. -->
+              landing itself, next to the two hub doors above. -->
             <p class="fine">
               Sei già dentro? <a class="quiet-link" href="/hub/login">Entra nella tua area</a>.
             </p>
@@ -538,6 +595,7 @@
     </main>
 
     <script type="module" src="./utm.js"></script>
+    <script type="module" src="./team.js"></script>
     <script type="module" src="./typewriter.js"></script>
     <script type="module" src="./field.js"></script>
     <script type="module" src="./landing.js"></script>
