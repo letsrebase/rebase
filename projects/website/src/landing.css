@@ -208,20 +208,22 @@ footer .quiet-link:hover {
   align-content: center;
 }
 
-/* Since REB-676 the hero's box is centred, the way a product's composer sits on its
-   page (Ivan: «sarebbe meglio centrato»): every row of the grid, the claim, the lead,
-   the composer, the pills and the doors, sits on the box's axis; what has running text
-   of its own, the composer and the result, keeps its text to the left inside. */
-.hero .box {
+/* Since REB-676 the landing's hero box (`.home`, this page alone: /pigrocrm shares
+   `.hero .box` and keeps its two left-aligned halves) is centred, the way a product's
+   composer sits on its page (Ivan: «sarebbe meglio centrato»): every row of the grid,
+   the claim, the lead, the composer, the pills and the doors, sits on the box's axis;
+   what has running text of its own, the composer and the result, keeps its text to the
+   left inside. */
+.hero .box.home {
   justify-items: center;
   text-align: center;
 }
 
-.hero .box > .actions {
+.hero .box.home > .actions {
   justify-content: center;
 }
 
-.hero .box > .fine {
+.hero .box.home > .fine {
   max-width: 60ch;
 }
 
@@ -453,13 +455,13 @@ button.cta:disabled {
     text-align: center;
   }
 
-  .hero .box > .actions {
+  .hero .box.home > .actions {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     width: 100%;
   }
 
-  .hero .box > .actions .cta,
+  .hero .box.home > .actions .cta,
   .team-result .actions .cta {
     justify-content: center;
   }
