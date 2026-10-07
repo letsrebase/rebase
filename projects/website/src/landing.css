@@ -208,6 +208,23 @@ footer .quiet-link:hover {
   align-content: center;
 }
 
+/* Since REB-676 the hero's box is centred, the way a product's composer sits on its
+   page (Ivan: «sarebbe meglio centrato»): every row of the grid, the claim, the lead,
+   the composer, the pills and the doors, sits on the box's axis; what has running text
+   of its own, the composer and the result, keeps its text to the left inside. */
+.hero .box {
+  justify-items: center;
+  text-align: center;
+}
+
+.hero .box > .actions {
+  justify-content: center;
+}
+
+.hero .box > .fine {
+  max-width: 60ch;
+}
+
 /* --- The team builder (REB-676), inside the hero's one box, between the lead and
    the two doors: a prompt box. One line that says what it does, the composer with
    the button inside it, the four examples as pills under it; the result a plain
@@ -231,6 +248,7 @@ footer .quiet-link:hover {
    textarea itself has no line; the field takes the focus ring for it. */
 .composer {
   width: 100%;
+  text-align: left;
   border-width: 2px;
   background-color: var(--landing-cta-ink);
 }
@@ -293,6 +311,7 @@ button.cta:disabled {
 .team-examples {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: 0.4rem;
 }
 
@@ -327,6 +346,7 @@ button.cta:disabled {
 .team-result {
   width: 100%;
   max-width: 46rem;
+  text-align: left;
   display: grid;
   gap: 0.75rem;
   padding-block: 1.25rem;
