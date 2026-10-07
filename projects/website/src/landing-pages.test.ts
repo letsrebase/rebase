@@ -255,8 +255,8 @@ describe('index.html', () => {
     // and the bands still alternate, so the kicker list is read in sequence. A sixth,
     // «I numeri», four figures under the hero, went the same day (Ivan, 2026-09-29).
     const kickers = [...page.matchAll(/<p class="kicker[^"]*"[^>]*>([^<]+)<\/p>/g)].map((m) => m[1])
+    // No kicker over the claim since REB-676 (Ivan: the brand is in the header already).
     expect(kickers).toEqual([
-      'rebase',
       'Come funziona',
       'Cosa trovi dentro',
       'La selezione',

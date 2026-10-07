@@ -215,6 +215,11 @@ footer .quiet-link:hover {
 .hero .box {
   justify-items: center;
   text-align: center;
+  /* Tight around its content rather than the whole measure (Ivan: «molto spazio bianco
+     ai lati»): the field shows at both sides of it, and the composer fills it. The
+     bands below keep the full measure, as the deck's slides do. */
+  flex: 0 1 60rem;
+  margin-inline: auto;
 }
 
 .hero .box > .actions {
@@ -233,7 +238,7 @@ footer .quiet-link:hover {
    radius, the button the one saturated element. */
 .team-form {
   width: 100%;
-  max-width: 46rem;
+  max-width: 50rem;
   display: grid;
   gap: 0.75rem;
 }
@@ -345,7 +350,7 @@ button.cta:disabled {
    one line each with the band at the far end, then the door. */
 .team-result {
   width: 100%;
-  max-width: 46rem;
+  max-width: 50rem;
   text-align: left;
   display: grid;
   gap: 0.75rem;
@@ -770,13 +775,6 @@ a.avatar:hover {
   text-transform: uppercase;
   color: var(--landing-accent);
   margin-bottom: 1rem;
-}
-
-/* The wordmark is «rebase», lowercase even where the deck uppercases its kickers
-   (ORB-194, Ivan 2026-09-14). */
-.deck .kicker-brand {
-  text-transform: none;
-  letter-spacing: 0.02em;
 }
 
 .deck .kicker::before {
