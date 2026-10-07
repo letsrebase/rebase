@@ -41,6 +41,21 @@ describe('parseSearch keeps an amount as it was typed in the address (REB-531)',
     expect(rest).toMatchObject({ has_cv: true, n: 3, q: 'ciao' })
   })
 
+  it.each([
+    '{"progetto": "una dashboard per i clienti, React davanti e Python dietro"}',
+    '[1, 2, 3] gestionali da portare in un data warehouse, quattro mesi',
+    '"Siamo una fintech e ci serve una web app per i nostri clienti"',
+    '12345678901234567890123456789012345678901234567890',
+    'true',
+  ])('keeps a project description as the words it is, whatever it reads as (REB-675): %s', (text) => {
+    expect(parseSearch(`?descrizione=${encodeURIComponent(text)}`)).toEqual({ descrizione: text })
+    expect(parseSearch(`?descrizione=${encodeURIComponent(text)}&da=home`)).toEqual({ descrizione: text, da: 'home' })
+  })
+
+  it('leaves a repeated descrizione as the default reads it, not its first value', () => {
+    expect(parseSearch('?descrizione=a&descrizione=b')).toEqual(defaultParseSearch('?descrizione=a&descrizione=b'))
+  })
+
   it('reads an address with no amount exactly as the default does', () => {
     expect(parseSearch('')).toEqual(defaultParseSearch(''))
     expect(parseSearch('?q=rossi')).toEqual(defaultParseSearch('?q=rossi'))

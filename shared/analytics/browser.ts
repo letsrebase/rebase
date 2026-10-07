@@ -8,7 +8,7 @@
  * Every wrapper is a no-op until `initAnalytics` has decided the page is measured, so a
  * feature can call `capture` unconditionally and a test never sees a network call.
  */
-import posthog, { type BeforeSendFn } from 'posthog-js'
+import posthog, { type BeforeSendFn, type CapturedNetworkRequest } from 'posthog-js'
 import { POSTHOG_HOST, POSTHOG_KEY, analyticsEnabled, isInternalHost } from './posthog'
 
 /** URL-shaped properties PostHog attaches to an event, wherever it puts them. A
@@ -47,6 +47,16 @@ function withoutTrackingToken(url: unknown): unknown {
   if (!SCRUBBED_PARAMS.some((param) => parsed.searchParams.has(param))) return url
   for (const param of SCRUBBED_PARAMS) parsed.searchParams.delete(param)
   return parsed.toString()
+}
+
+/** The same scrub for what a session recording keeps of a URL (REB-675): rrweb's meta
+ *  event carries `location.href`, and a captured request its own, and neither is an
+ *  event property `before_send` ever sees. The SDK runs this hook on both before they
+ *  are stored, so the proposal id and the description leave the replay as they leave
+ *  the events. */
+function scrubCapturedRequest(request: CapturedNetworkRequest): CapturedNetworkRequest {
+  const name = withoutTrackingToken(request.name)
+  return typeof name === 'string' && name !== request.name ? { ...request, name } : request
 }
 
 const scrubTrackingToken: BeforeSendFn = (result) => {
@@ -100,6 +110,7 @@ export function initAnalytics(options: AnalyticsOptions = {}): boolean {
       ...(options.maskText ? { mask_all_text: true, mask_all_element_attributes: true } : {}),
       session_recording: {
         maskAllInputs: true,
+        maskCapturedNetworkRequestFn: scrubCapturedRequest,
         ...(options.maskText ? { maskTextSelector: '*', maskAllElementAttributes: true } : {}),
       },
       before_send: scrubTrackingToken,
