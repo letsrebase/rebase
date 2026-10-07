@@ -230,9 +230,9 @@ test.describe('every page of the site', () => {
   const ROLES = ['Developer', 'AI engineer', 'CTO', 'Fractional CTO', 'Tech lead', 'Freelance']
   const TITLED = ['/'] as const
 
-  // The claim with the typed word is the community box's h2 since REB-676, beside the
-  // team builder; `.role[data-roles]` is the one typed word on the page, wherever it sits.
-  const CLAIM = '.community h2'
+  // `.role[data-roles]` is the one typed word on the page, wherever it sits: landing.js
+  // and system.css find it that way since REB-676, when the hero grew the team builder.
+  const CLAIM = '.hero h1'
 
   /** The tops that must not move, and the claim's height, with `word` in the role. */
   function titledLayout(word: string | null) {
@@ -241,9 +241,10 @@ test.describe('every page of the site', () => {
     const top = (selector: string) => document.querySelector(selector)!.getBoundingClientRect().top
     return {
       h1: (role.closest('h1, h2') as HTMLElement).getBoundingClientRect().height,
-      lead: top('.community .lead'),
-      // The two doors on the landing.
-      form: top('.community .actions'),
+      lead: top('.hero .lead'),
+      // The composer and the two doors on the landing, under the typed word.
+      form: top('.hero form'),
+      doors: top('.hero p.actions'),
       scrollWidth: document.documentElement.scrollWidth,
       innerWidth: window.innerWidth,
     }
@@ -269,6 +270,7 @@ test.describe('every page of the site', () => {
         const after = await page.evaluate(titledLayout, null)
         expect(after.lead).toBe(before.lead)
         expect(after.form).toBe(before.form)
+        expect(after.doors).toBe(before.doors)
         expect(after.h1).toBe(before.h1)
       })
     }

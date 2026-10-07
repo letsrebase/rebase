@@ -94,30 +94,32 @@
     </header>
 
     <main class="deck">
-      <!-- REB-676 (Ivan, 2026-10-07): the first screen is the team builder, drawn as a
-        prompt box. One box on the field, centred: a short claim, the composer (the
-        description with «Proponi il team» inside it), the four examples as pills under
-        it, and one quiet line with the two doors a visitor who is not a company needs.
-        team.js asks the hub's own POST /api/hub/team/proposals (same origin) and shows
-        the least that says whether it is worth a click, the summary, each role with its
-        seniority and day band, the team's day band, and one door, «Vedi il team
-        completo», into /hub/team?proposta=<id>, where the hub reads the proposal back
-        (REB-675) and the whole page is: the cards, «Rigenera», «Assumi team». Without
-        JavaScript the form is a plain GET to /hub/team, and the hub fills its box from
-        ?descrizione=. The community's claim and its two doors, the hero until this
-        card, are the first band under it, untouched. -->
+      <!-- REB-676 (Ivan, 2026-10-07): the team builder on the first screen, inside the
+        hero the page already had. Everything the hero said stays where it was: the
+        claim with the typed roles, the lead, the two doors into the wizards and the
+        fine print. Between the lead and the doors sits the builder, drawn as a prompt
+        box: one line that says what it does, the composer (the description with
+        «Proponi il team» inside it), the four examples as pills. team.js asks the hub's
+        own POST /api/hub/team/proposals (same origin) and shows the least that says
+        whether it is worth a click, the summary, each role with its seniority and day
+        band, the team's day band, and one door, «Vedi il team completo», into
+        /hub/team?proposta=<id>, where the hub reads the proposal back (REB-675) and the
+        whole page is: the cards, «Rigenera», «Assumi team». Without JavaScript the form
+        is a plain GET to /hub/team, and the hub fills its box from ?descrizione=. The
+        hero's third door of REB-608 went: the builder itself sits where it pointed. -->
       <section class="hero">
         <div class="wrap">
-          <div class="box team">
+          <div class="box">
             <p class="kicker kicker-brand">rebase</p>
-            <h1 class="measure-tight">Descrivi il progetto. <span class="accent">Ti proponiamo il team.</span></h1>
-            <p class="lead measure">Leggiamo i profili dei talenti di rebase e in pochi secondi ti diciamo chi serve, con una fascia di prezzo.</p>
+            <h1 class="measure-tight"><span class="sr-only">Developer, AI engineer, CTO,</span><span aria-hidden="true"><span class="role" data-roles="Developer|AI engineer|CTO|Fractional CTO|Tech lead|Freelance">Developer</span>,</span><br />ma non da soli.</h1>
+            <p class="lead measure">La community di chi fa software in proprio in Italia.</p>
             <!-- `ph-no-capture` on the form and on the result: what a visitor writes about
               their project, the team the hub answers and the door's href, which carries
               the proposal's id, a one-day capability to read that project back, stay out
               of PostHog's autocapture and out of a session recording once measurement is
               accepted. The class is the SDK's own switch for both. -->
             <form class="team-form ph-no-capture" action="/hub/team" method="get" data-team data-result="#team-result">
+              <p class="team-claim">Hai un progetto? Descrivilo: <span class="accent">ti proponiamo il team.</span></p>
               <div class="composer">
                 <label class="sr-only" for="team-descrizione">Descrizione del progetto</label>
                 <textarea id="team-descrizione" name="descrizione" rows="3" required minlength="40" maxlength="4000" placeholder="Descrivi il progetto: cosa va fatto, per quanto tempo, dove, con che tecnologie"></textarea>
@@ -137,27 +139,10 @@
                 <button type="button" class="chip" data-example="Siamo una software house e cerchiamo un forward deployed engineer da inserire da un nostro cliente: lavora nel loro team, capisce i processi e porta in produzione le integrazioni con i loro sistemi. Python, Postgres e API dei gestionali. Sei mesi, due giorni a settimana in sede dal cliente.">Un FDE nel team di un cliente</button>
               </div>
             </form>
+            <!-- The result lands here, a plain section under the composer, no box of its
+              own: hidden until the script fills it, which then moves the focus to its
+              heading. -->
             <div class="team-result ph-no-capture" id="team-result" hidden></div>
-            <!-- The two doors that are not the builder's, one quiet line: a talent who
-              lands here and a company that would rather talk than type. The same doors,
-              as buttons, open the community band right under. -->
-            <p class="fine hero-doors">
-              Fai software in proprio? <a class="quiet-link" href="/hub/freelance">Entra come talento</a>.
-              Preferisci raccontarci il progetto a voce? <a class="quiet-link" href="/hub/aziende">Scrivici</a>.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      <!-- The community's claim and its two doors: the whole hero until REB-676, now the
-        first band under the team builder, word for word. Light, so the bands below keep
-        alternating from the dark «Come funziona». -->
-      <section class="band" aria-labelledby="claim">
-        <div class="wrap section">
-          <div class="box community">
-            <p class="kicker">La community</p>
-            <h2 class="measure-tight claim" id="claim"><span class="sr-only">Developer, AI engineer, CTO,</span><span aria-hidden="true"><span class="role" data-roles="Developer|AI engineer|CTO|Fractional CTO|Tech lead|Freelance">Developer</span>,</span><br />ma non da soli.</h2>
-            <p class="lead measure">La community di chi fa software in proprio in Italia.</p>
             <p class="actions">
               <a class="cta" href="/hub/freelance">Entra come talento</a>
               <a class="cta secondary" href="/hub/aziende">Cerchi persone?</a>
