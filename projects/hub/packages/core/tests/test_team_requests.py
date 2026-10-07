@@ -593,16 +593,19 @@ def test_status_note_and_summary_record_the_admin(clean: Session) -> None:
     assert {action.entity_id for action in actions} == {request.id}
     assert {action.admin_id for action in actions} == {admin}
     assert {action.kind for action in actions} == {"overridden"}
-    assert [action.payload["changed"] for action in actions] == [
-        ["stato"],
-        ["stato"],
-        ["stato"],
-        ["note"],
-        ["note"],
-        ["riassunto"],
+    # `before` and `after` on every row, not `changed` alone: three `["stato"]` and two
+    # `["note"]` entries would pass with the rows of either group swapped (REB-673).
+    assert [
+        (action.payload["changed"], action.payload["before"], action.payload["after"])
+        for action in actions
+    ] == [
+        (["stato"], {"stato": "nuova"}, {"stato": "contattata"}),
+        (["stato"], {"stato": "contattata"}, {"stato": "chiusa"}),
+        (["stato"], {"stato": "chiusa"}, {"stato": "nuova"}),
+        (["note"], {"note": None}, {"note": "Richiamare lunedì."}),
+        (["note"], {"note": "Richiamare lunedì."}, {"note": None}),
+        (["riassunto"], {"riassunto": RIASSUNTO}, {"riassunto": summary}),
     ]
-    assert actions[-1].payload["before"] == {"riassunto": RIASSUNTO}
-    assert actions[-1].payload["after"] == {"riassunto": summary}
 
 
 def test_summary_of_a_request_with_no_proposal_is_refused(clean: Session) -> None:
