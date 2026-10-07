@@ -282,7 +282,7 @@ describe('index.html', () => {
     expect(page).toContain('Il top 1% di chi fa software')
     expect(page.match(/top 1%/g)).toHaveLength(1)
     expect(page.indexOf('top 1%')).toBeGreaterThan(page.indexOf('>La selezione<'))
-    for (const price of ['Da 400 a 1.000 € al giorno', 'Gratis, in beta.', '3.000 € al mese.']) expect(page).toContain(price)
+    for (const price of ['Da 400 a 1.000 € al giorno, tutto incluso.', 'Gratis. Paghi solo chi assumi.', '3.000 € al mese, accesso illimitato.']) expect(page).toContain(price)
     // Seven roles, and the line that keeps the door open for an eighth.
     expect(page.match(/<ul class="roles"[\s\S]*?<\/ul>/)?.[0]?.match(/<li>/g)).toHaveLength(7)
     expect(page).toContain('Candidati lo stesso')
