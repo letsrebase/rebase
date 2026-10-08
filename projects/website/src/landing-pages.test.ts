@@ -241,8 +241,10 @@ describe('index.html', () => {
     // no longer links the registration form directly.
     expect(page).toMatch(/<a class="cta" href="\/pigrocrm">Scopri PigroCRM<\/a>/)
     expect(page).not.toContain('pigro.letsrebase.com/app/registrati')
-    // No invented plan or trial: the one price is "be in the community".
-    expect(page).not.toMatch(/Prova gratis|abbonamento|piano (Pro|Business)/i)
+    // No invented plan or trial: the one price is "be in the community". The services
+    // band is the one place a subscription is real, the talent cloud's (REB-681), so the
+    // guard reads the page without it.
+    expect(page.replace(section('aziende'), '')).not.toMatch(/Prova gratis|abbonamento|piano (Pro|Business)/i)
   })
 
   it('explains itself in three steps and says what is inside', () => {
@@ -276,13 +278,25 @@ describe('index.html', () => {
     ])
     const bands = [...page.matchAll(/<section class="band( dark)?/g)].map((m) => (m[1] ? 'dark' : 'light'))
     for (let index = 1; index < bands.length; index += 1) expect(bands[index], `band ${index}`).not.toBe(bands[index - 1])
-    // The three prices are the company deck's (company.html), and «top 1%» enters
-    // through the selection, nowhere else: the hero is unchanged.
+    // The three cards sell what REB-681 settled (the deck's slide still carries its own
+    // wording, REB-682), and «top 1%» enters through the selection, nowhere else: the
+    // hero is unchanged.
     expect(page).not.toContain('I numeri')
     expect(page).toContain('Il top 1% di chi fa software')
     expect(page.match(/top 1%/g)).toHaveLength(1)
     expect(page.indexOf('top 1%')).toBeGreaterThan(page.indexOf('>La selezione<'))
-    for (const price of ['Da 400 a 1.000 € al giorno, tutto incluso.', 'Gratis. Paghi solo chi assumi.', '3.000 € al mese, accesso illimitato.']) expect(page).toContain(price)
+    const cards = section('aziende').match(/<article[\s\S]*?<\/article>/g) ?? []
+    expect(cards).toHaveLength(3)
+    for (const [name, price] of [
+      ['Team guidato', 'Pensiamo a tutto noi, prezzo su misura.'],
+      ['Team builder', 'Gratis, fai da te. Paghi solo chi assumi.'],
+      ['Talent cloud', 'Abbonamento mensile a partire da 100 € al giorno.'],
+    ]) {
+      const card = cards.find((c) => c.includes(`<h3>${name}</h3>`)) ?? ''
+      expect(card, name).toContain(`<p class="price">${price}</p>`)
+    }
+    expect(section('aziende')).toContain('Ricerca continua: apri una posizione')
+    expect(section('aziende')).not.toContain('<h3>Ricerca</h3>')
     // Seven roles, and the line that keeps the door open for an eighth.
     expect(page.match(/<ul class="roles"[\s\S]*?<\/ul>/)?.[0]?.match(/<li>/g)).toHaveLength(7)
     expect(page).toContain('Candidati lo stesso')
