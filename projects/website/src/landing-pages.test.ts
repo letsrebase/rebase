@@ -285,11 +285,16 @@ describe('index.html', () => {
     expect(page).toContain('Il top 1% di chi fa software')
     expect(page.match(/top 1%/g)).toHaveLength(1)
     expect(page.indexOf('top 1%')).toBeGreaterThan(page.indexOf('>La selezione<'))
+    const cards = section('aziende').match(/<article[\s\S]*?<\/article>/g) ?? []
+    expect(cards).toHaveLength(3)
     for (const [name, price] of [
       ['Team guidato', 'Pensiamo a tutto noi, prezzo su misura.'],
       ['Team builder', 'Gratis, fai da te. Paghi solo chi assumi.'],
       ['Talent cloud', 'Abbonamento mensile a partire da 100 € al giorno.'],
-    ]) expect(section('aziende')).toMatch(new RegExp(`<h3>${name}</h3>(?:(?!<\\/article>)[\\s\\S])*?<p class="price">${price}</p>`))
+    ]) {
+      const card = cards.find((c) => c.includes(`<h3>${name}</h3>`)) ?? ''
+      expect(card, name).toContain(`<p class="price">${price}</p>`)
+    }
     expect(section('aziende')).toContain('Ricerca continua: apri una posizione')
     expect(section('aziende')).not.toContain('<h3>Ricerca</h3>')
     // Seven roles, and the line that keeps the door open for an eighth.
