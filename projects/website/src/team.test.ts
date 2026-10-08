@@ -211,6 +211,12 @@ describe('mount', () => {
     expect(button.disabled).toBe(true)
     expect(button.textContent).toBe('Sto leggendo i profili…')
     expect(form.getAttribute('aria-busy')).toBe('true')
+    // The mark waits beside the words (REB-680): four tiles for system.css to light in
+    // turn, decorative, so the label alone is what the button is called.
+    const loader = button.querySelector('.loader') as HTMLElement
+    expect(loader.getAttribute('aria-hidden')).toBe('true')
+    expect(loader.children).toHaveLength(4)
+    expect(button.firstChild).toBe(loader)
     expect(fetchSpy).toHaveBeenCalledTimes(1)
     const [url, init] = fetchSpy.mock.calls[0] as unknown as [string, RequestInit]
     expect(url).toBe('/api/hub/team/proposals')
@@ -226,6 +232,7 @@ describe('mount', () => {
     await flush()
     expect(button.disabled).toBe(false)
     expect(button.textContent).toBe('Proponi il team')
+    expect(button.querySelector('.loader')).toBeNull()
     expect(form.hasAttribute('aria-busy')).toBe(false)
     expect(error.textContent).toBe('')
     expect(result.hidden).toBe(false)

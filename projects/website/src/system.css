@@ -71,6 +71,61 @@
   margin: 0 0.6rem 0.4rem 0;
 }
 
+/* The glyph while the page waits for something: the same four tiles, each its own
+   element, lighting one at a time in reading order. This is the application's
+   loading state redrawn (shared/ui/loader.tsx, "Replay", Lorenzo 2026-09-25): an
+   800ms trapezoid on every tile, the four offset a quarter cycle apart, so the mark is
+   only ever partly dimmed and reads as itself for the whole loop. The site cannot
+   import that component (no React here, projects/website/AGENTS.md), so the drawing
+   lives beside `.glyph`, and landing-style.test.ts holds the tile order to
+   @rebase/brand/mark, the keyframes to shared/ui/tokens.css and the offsets to
+   loader.tsx, so the two surfaces cannot drift. The offsets are negative: `-600ms`
+   starts a tile as though it had played 600ms already, so its peak lands at 200ms on
+   the shared clock, which is how reading order (0, 200, 400, 600) comes out of the
+   delays 0, -600, -400, -200. Decorative, like `.glyph`: whatever it sits beside says
+   what is being waited for. */
+.loader {
+  display: inline-grid;
+  grid-template-columns: 6px 6px;
+  grid-template-rows: 6px 6px;
+  flex-shrink: 0;
+}
+
+.loader > span {
+  animation: loader-replay 800ms linear infinite;
+}
+
+.loader > :nth-child(1) {
+  background-color: var(--color-prussian-blue);
+  animation-delay: 0ms;
+}
+
+.loader > :nth-child(2) {
+  background-color: var(--color-royal-gold);
+  animation-delay: -600ms;
+}
+
+.loader > :nth-child(3) {
+  background-color: var(--color-watermelon);
+  animation-delay: -400ms;
+}
+
+.loader > :nth-child(4) {
+  background-color: var(--color-prussian-blue);
+  animation-delay: -200ms;
+}
+
+@keyframes loader-replay {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  25%,
+  75% {
+    opacity: 0.3;
+  }
+}
+
 /* The cookie notice, built by consent.js and styled here because both pages carry it
    and neither sheet owns it. Deliberately small and quiet: it asks about one measurement
    cookie, so it sits in a corner rather than across the page, and it never covers the
@@ -239,5 +294,11 @@ body::after {
 @media (prefers-reduced-motion: reduce) {
   .role[data-roles]::after {
     display: none;
+  }
+
+  /* The static, fully lit mark, as `motion-reduce:` leaves the application's Loader:
+     the plain glyph rather than one that never moves and never rests. */
+  .loader > span {
+    animation: none;
   }
 }

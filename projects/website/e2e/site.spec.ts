@@ -435,8 +435,14 @@ test.describe('the team builder on the first screen', () => {
 
   test('an example, «Proponi il team», the minimal result, and the door to the whole team', async ({ page }) => {
     const bodies: unknown[] = []
+    // The answer waits for the test, so the wait itself is on screen to read. The
+    // gate exists before the route does: a release that ran before the request
+    // reached the callback would otherwise resolve nothing and hold the answer forever.
+    let answer: () => void = () => {}
+    const gate = new Promise<void>((resolve) => (answer = resolve))
     await page.route('**/api/hub/team/proposals', async (route) => {
       bodies.push(route.request().postDataJSON())
+      await gate
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(PROPOSAL) })
     })
     await page.goto('/?utm_source=linkedin&utm_campaign=orbita')
@@ -444,7 +450,23 @@ test.describe('the team builder on the first screen', () => {
     const box = page.getByLabel('Descrizione del progetto')
     await expect(box).toHaveValue(/fintech/)
     await page.getByRole('button', { name: 'Proponi il team' }).click()
+    // While the hub reads the profiles the button says so, with the brand mark lit
+    // tile by tile beside the words (REB-680): the four tiles are there, and each one
+    // runs its animation on the four keyframes the built sheet carries, which a unit
+    // test on the text cannot tell (a computed `animation-name` would read the name
+    // whether or not the @keyframes survived the build).
+    const pending = page.getByRole('button', { name: 'Sto leggendo i profili…' })
+    await expect(pending).toBeDisabled()
+    const tiles = pending.locator('.loader > span')
+    await expect(tiles).toHaveCount(4)
+    expect(
+      await tiles.evaluateAll((spans) =>
+        spans.map((span) => span.getAnimations().map((a) => [a.playState, a.effect?.getKeyframes().length])),
+      ),
+    ).toEqual(Array(4).fill([['running', 4]]))
+    answer()
     await expect(page.getByRole('heading', { name: 'La nostra proposta' })).toBeVisible()
+    await expect(page.locator('.loader')).toHaveCount(0)
     // The example's own headcount travels with the description (three for the fintech).
     expect(bodies).toEqual([{ descrizione: expect.stringContaining('fintech'), persone: 3 }])
     await expect(page.locator('.team-summary')).toHaveText(PROPOSAL.riassunto)
