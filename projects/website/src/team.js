@@ -14,10 +14,12 @@
  * hub's page.
  *
  * The words are the hub's: the examples, the placeholder, «Proponi il team», «Sto
- * leggendo i profili…», the band labels (`bands.ts`, byte for byte: a non-breaking
- * space before «€», an en dash between the bounds), the sentence under forty characters,
- * and the API's own sentence whenever it answered one (the builder off, too many
- * requests, Claude not answering), ours only when nothing answered at all.
+ * leggendo i profili…» (with the mark lighting tile by tile beside it, the
+ * application's Loader redrawn in system.css, REB-680), the band labels (`bands.ts`,
+ * byte for byte: a non-breaking space before «€», an en dash between the bounds), the
+ * sentence under forty characters, and the API's own sentence whenever it answered one
+ * (the builder off, too many requests, Claude not answering), ours only when nothing
+ * answered at all.
  *
  * Without the script the form is what the markup says: a GET to /hub/team with the
  * description, which the hub's page puts in its own box. The script turns that into a
@@ -94,6 +96,16 @@
     if (className) element.className = className
     if (text !== undefined) element.textContent = text
     return element
+  }
+
+  /** The four tiles of the mark, animated by `.loader` in system.css: the loading
+   *  state every surface shares (shared/ui/loader.tsx). Decorative, so hidden from
+   *  the accessibility tree; the pending label next to it says what is awaited. */
+  function loader() {
+    var mark = el('span', 'loader')
+    mark.setAttribute('aria-hidden', 'true')
+    for (var i = 0; i < 4; i++) mark.appendChild(el('span'))
+    return mark
   }
 
   /** The minimal result into `result`, then the door, decorated by utm.js like every
@@ -222,7 +234,11 @@
       clear()
       busy = true
       hold(true)
-      button.textContent = PENDING
+      // The mark first, then the words: `settle` puts the label back as text, which
+      // takes the mark with it.
+      button.textContent = ''
+      button.appendChild(loader())
+      button.appendChild(document.createTextNode(PENDING))
       form.setAttribute('aria-busy', 'true')
       var call = fetchImpl || window.fetch.bind(window)
       call(API, {

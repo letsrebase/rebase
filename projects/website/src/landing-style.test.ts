@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
@@ -81,6 +81,51 @@ describe('the landing shares the product system', () => {
     // the brand's, and three surfaces draw it in three technologies. The application
     // asserts the same order on its own side, in BrandMark.test.tsx.
     expect(drawn).toEqual(BRAND_TILES.map((tile) => BRAND_TILE_VARS[tile]))
+  })
+
+  it('waits with the same mark the application animates, tile by tile (REB-680)', () => {
+    // `.loader` is shared/ui's Loader redrawn for a page with no React: four tiles,
+    // the same order as `.glyph`, each lit in turn by the trapezoid shared/ui's
+    // tokens.css declares. Read from those files rather than restated here, so a
+    // change to the application's loading state is a failing test on the site, as
+    // the glyph's own order is held to `shared/brand`. The two files are read as
+    // text because the site cannot import either: tokens.css is a Tailwind @theme,
+    // loader.tsx a React component.
+    const ui = resolve(__dirname, '..', '..', '..', 'shared', 'ui')
+    const tokens = readFileSync(join(ui, 'tokens.css'), 'utf-8')
+    const loader = readFileSync(join(ui, 'loader.tsx'), 'utf-8')
+    expect(css).not.toMatch(/\.loader/)
+    expect(rule('.loader', system)).toMatch(/display:\s*inline-grid/)
+    // The tiles are the glyph's own, 6px, so the loader is the glyph at its scale.
+    expect(rule('.loader', system)).toMatch(/grid-template-columns:\s*6px 6px/)
+    expect(rule('.glyph', system)).toMatch(/width:\s*6px/)
+    // One cycle, as the application declares it: `rebase-loader-replay 800ms linear infinite`.
+    const timing = tokens.match(/--animate-loader-replay:\s*rebase-loader-replay ([^;]+);/)?.[1]
+    expect(timing).toBeTruthy()
+    const escaped = (text: string) => text.replace(/[.[\]*+?^${}()|\\]/g, '\\$&')
+    expect(rule('.loader > span', system)).toMatch(new RegExp(`animation:\\s*loader-replay ${escaped(timing ?? '')}`))
+    const keyframes = (source: string, name: string) =>
+      source.match(new RegExp(`@keyframes ${name} \\{([\\s\\S]*?)\\n\\}`))?.[1]?.replace(/\s+/g, ' ').trim()
+    expect(keyframes(tokens, 'rebase-loader-replay')).toBeTruthy()
+    expect(keyframes(system, 'loader-replay')).toBe(keyframes(tokens, 'rebase-loader-replay'))
+    // Each tile: the brand's colour in reading order, and the offset loader.tsx gives
+    // the same tile, which is what makes them light one at a time rather than together.
+    const offsets = [...loader.matchAll(/animationDelay: '(-?\d+ms)'/g)].map((match) => match[1])
+    expect(offsets).toHaveLength(4)
+    const tiles = [1, 2, 3, 4].map((n) => rule(`.loader > :nth-child(${n})`, system))
+    expect(tiles.map((tile) => tile.match(/background-color:\s*([^;]+);/)?.[1]?.trim())).toEqual(
+      BRAND_TILES.map((tile) => BRAND_TILE_VARS[tile]),
+    )
+    expect(tiles.map((tile) => tile.match(/animation-delay:\s*([^;]+);/)?.[1]?.trim())).toEqual(offsets)
+    // Reduced motion: the static, fully lit mark, as `motion-reduce:` leaves the Loader.
+    // The rule has to sit inside the media block, wherever in it.
+    const reduced = system.match(/@media \(prefers-reduced-motion: reduce\)\s*\{([\s\S]*?)\n\}/)?.[1]
+    expect(reduced).toMatch(/\.loader > span\s*\{[^}]*animation:\s*none;/)
+    // The button the loader waits in steps back to no ground, the second door's own
+    // shape in the ink, so every tile reads.
+    expect(rule('button.cta:disabled')).toMatch(/background-color:\s*transparent/)
+    expect(rule('button.cta:disabled')).toMatch(/color:\s*var\(--landing-ink\)/)
+    expect(rule('button.cta:disabled')).toMatch(/border-color:\s*var\(--landing-ink\)/)
   })
 
   it('reveals the deck\'s blocks only behind the script gate, and never by scroll-driven CSS (ORB-145)', () => {

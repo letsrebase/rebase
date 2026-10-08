@@ -240,6 +240,9 @@ jobs:
               - 'projects/website/**'
               - 'shared/brand/**'
               - 'shared/analytics/**'
+              # The website's style test reads shared/ui's loader record (tokens.css,
+              # loader.tsx) to hold its own CSS redraw of the Loader to it (REB-680).
+              - 'shared/ui/**'
               - 'package.json'
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'

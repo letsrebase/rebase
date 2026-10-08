@@ -109,9 +109,10 @@
         "projects/website/**",
         "shared/brand/**",
         "shared/analytics/**",
+        "shared/ui/**",
         "pnpm-lock.yaml"
       ],
-      "why": "99 assertions on the built and unbuilt text: which tokens each sheet may declare, what each page promises, how the field behaves. No services, about two seconds."
+      "why": "99 assertions on the built and unbuilt text: which tokens each sheet may declare, what each page promises, how the field behaves. No services, about two seconds. shared/ui is here because landing-style.test.ts reads its loader record (tokens.css, loader.tsx) to hold the site's own CSS redraw of the Loader to it (REB-680)."
     },
     {
       "id": "guide-pdf",

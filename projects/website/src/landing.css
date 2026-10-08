@@ -329,8 +329,15 @@ button.cta {
   cursor: pointer;
 }
 
+/* While the hub reads the profiles the button steps back: the second door's own
+   look (`.cta.secondary` below, the shape drawn in the ink) on no ground, so the four
+   tiles of the loader inside it read in their own colours. On the saturated fill the
+   watermelon tile would vanish, and on the hover's ink the two ink tiles would. */
 button.cta:disabled {
   cursor: wait;
+  color: var(--landing-ink);
+  background-color: transparent;
+  border-color: var(--landing-ink);
 }
 
 /* The examples: pills, quiet, a lighter line than the box so they read as hints and
