@@ -450,6 +450,14 @@ gold with the panel's border, the look of the freelancer wizard's guide banner, 
 lines: «Stai chiedendo l'accesso al talent cloud.» and «Compila la richiesta e ti
 ricontattiamo noi per aprirtelo.» The quiet one-line note above went unnoticed.
 
+Addendum, 2026-10-08 (REB-683). The beta box states the cloud as the landing does
+since REB-681, a continuous search per open position for the whole subscription, and
+then what is inside: «Il team builder è in beta e senza limiti. Con il talent cloud apri
+una posizione e la ricerca non si ferma: per tutta la durata dell'abbonamento cerchiamo
+nella community e fuori e ti portiamo i profili che passano la selezione. Dentro, vedi i
+profili per nome e chiedi i talenti direttamente.» The button and the wizard's banner
+are unchanged.
+
 ### 4.4 What the talents are told
 
 Before the first grant in production, every freelancer with a card gets one mail from
