@@ -463,27 +463,33 @@ describe('company.html', () => {
   const slides = page.split('<section class="slide').slice(1)
 
   it('prices each of the three services on the slide right after the day rates', () => {
-    // REB-586: the one slide a company reads the price of every service on, and the
-    // three figures Ivan set on 2026-09-29. A change to any of them is a change to the
-    // 2026-09-29 row of docs/design/DECISIONS.md as well, which is why they are pinned
-    // here rather than read off the page.
+    // REB-586: the one slide a company reads the price of every service on. The three
+    // services and prices are the landing's (REB-681, REB-682), pinned by the 2026-10-08
+    // row of docs/design/DECISIONS.md: a change to any of them is a change to that row,
+    // to the landing's cards and to this slide, which is why they are pinned here rather
+    // than read off the page.
     const rates = slides.findIndex((s) => s.includes('>Le tariffe<'))
     const services = slides.findIndex((s) => s.includes('>I nostri servizi<'))
     expect(rates).toBeGreaterThan(0)
     expect(services).toBe(rates + 1)
+    expect(slides[rates]).toContain('Sono le giornate delle persone, qualunque strada scegli. Con Team guidato selezione, contratto e CTO sono nel prezzo.')
     const slide = slides[services] ?? ''
-    expect(slide).toContain('<h3 style="font-size: 56px; white-space: nowrap;">Ricerca</h3>')
-    expect(slide).toContain('<span data-count="400">400</span>–<span data-count="1000">1.000</span><small>&nbsp;€</small>')
-    expect(slide).toContain("Una tariffa a giornata, chiara dall'inizio.")
+    expect(slide).toContain('<h3 style="font-size: 56px; white-space: nowrap;">Team guidato</h3>')
+    expect(slide).not.toContain('>Ricerca</h3>')
+    expect(slide).not.toContain('data-count="400"')
+    expect(slide).toContain('>Su misura</div>')
+    expect(slide).toContain('Pensiamo a tutto noi. Il prezzo segue il progetto.')
     expect(slide).toContain('<h3 style="font-size: 56px; white-space: nowrap;">Team builder</h3>')
     expect(slide).toContain('>Gratis</div>')
-    expect(slide).toContain('La proposta, ora in beta. Il team ha la sua tariffa.')
+    expect(slide).toContain('Fai da te. Paghi solo chi assumi.')
     expect(slide).toContain('<h3 style="font-size: 56px; white-space: nowrap;">Talent cloud</h3>')
     // The heading said «Private» until REB-586 renamed it after slide 12's kicker; the
     // restriction now lives in the description and this line is what keeps it there.
-    expect(slide).toContain('Per le aziende che ammettiamo:')
-    expect(slide).toContain('<span data-count="3000">3.000</span><small>&nbsp;€</small>')
-    expect(slide).toContain('Al mese: accesso e supporto alla ricerca di freelance.')
+    expect(slide).toContain('Solo per le aziende che ammettiamo.')
+    expect(slide).toContain('Ricerca continua: apri una posizione')
+    expect(slide).toContain('<small>da</small> <span data-count="100">100</span><small>&nbsp;€</small>')
+    expect(slide).toContain('al giorno, in abbonamento mensile, per posizione aperta.')
+    expect(slide).not.toContain('data-count="3000"')
   })
 
   it('names no presenter on its cover, since more than one person shows it', () => {
