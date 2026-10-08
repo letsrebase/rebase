@@ -107,8 +107,10 @@ export function Team() {
         className="space-y-3 border-l-4 border-(--landing-ink) bg-card py-3 pl-4 pr-2"
       >
         <p>
-          Il team builder è in beta e senza limiti. Le aziende che entrano nel talent cloud vedono i
-          profili per nome, sfogliano tutto il cloud e chiedono i talenti direttamente.
+          Il team builder è in beta e senza limiti. Con il talent cloud apri una posizione e la
+          ricerca non si ferma: per tutta la durata dell'abbonamento cerchiamo nella community e
+          fuori e ti portiamo i profili che passano la selezione. Dentro, vedi i profili per nome e
+          chiedi i talenti direttamente.
         </p>
         <Button asChild variant="outline">
           <Link to="/companies" search={{ da: 'team-builder' }}>
