@@ -492,6 +492,17 @@ describe('company.html', () => {
     expect(slide).not.toContain('data-count="3000"')
   })
 
+  it('sells the talent cloud on its own slide the way the services slide does', () => {
+    // REB-684: the slide after the team builder's describes the offer, not only the
+    // tool: the search that runs for the whole subscription, then what is inside.
+    const slide = slides.find((s) => s.includes('>Il talent cloud<')) ?? ''
+    expect(slide).toContain('Una posizione aperta, <span class="accent">una ricerca che non si ferma</span>. Per le aziende che ammettiamo.')
+    for (const point of ['Ricerca continua', 'Profili completi', 'Richiesta diretta', 'Abbonamento mensile']) expect(slide).toContain(`<h3 style="font-size: 46px;">${point}</h3>`)
+    expect(slide.match(/<h3 style="font-size: 46px;">/g)).toHaveLength(4)
+    expect(slide).toContain('Da 100 € al giorno per posizione.')
+    expect(slide).not.toContain('>Su richiesta</h3>')
+  })
+
   it('names no presenter on its cover, since more than one person shows it', () => {
     const cover = slides[0] ?? ''
     expect(cover).toContain('>letsrebase.com</p>')
