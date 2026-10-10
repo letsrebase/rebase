@@ -499,7 +499,8 @@ describe('company.html', () => {
     expect(slide).toContain('Una posizione aperta, <span class="accent">una ricerca che non si ferma</span>. Per le aziende che ammettiamo.')
     for (const point of ['Ricerca continua', 'Profili completi', 'Richiesta diretta', 'Abbonamento mensile']) expect(slide).toContain(`<h3 style="font-size: 46px;">${point}</h3>`)
     expect(slide.match(/<h3 style="font-size: 46px;">/g)).toHaveLength(4)
-    expect(slide).toContain('Da 100 € al giorno per posizione.')
+    expect(slide).toContain("Per tutta la durata dell'abbonamento cerchiamo nella community e fuori, e ti portiamo i profili che passano la selezione.")
+    expect(slide).toContain('Da 100 € al giorno per posizione. Cambi posizione quando vuoi; si chiede da letsrebase.com/hub/team.')
     expect(slide).not.toContain('>Su richiesta</h3>')
   })
 
