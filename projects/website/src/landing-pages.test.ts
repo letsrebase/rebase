@@ -312,6 +312,9 @@ describe('index.html', () => {
     const faq = section('domande')
     expect(faq.match(/<h3>[^<]+\?<\/h3>\s*<p>/g)).toHaveLength(8)
     expect(faq).toContain('cancelliamo quando ce lo chiedi')
+    // The contract answer promises the CTO only where the cards do (REB-685).
+    expect(faq).toContain('Con Team guidato selezione e CTO sono inclusi.')
+    expect(faq).not.toContain('Selezione e il CTO che segue il progetto sono inclusi.')
     // The two company doors under the services are hub links, so utm.js carries the
     // campaign into them like the hero's.
     expect(page).toMatch(/<a class="cta secondary" href="\/hub\/team">Prova il team builder<\/a>/)
