@@ -14,6 +14,10 @@ leaves it false too, kept for the next draft. If Documenso refuses or does not a
 transaction rolls back and nothing is marked sent; if only the mail fails, the document
 is `inviato` and the report says so, for «Reinvia email».
 
+A freelancer may hold framework agreements of both regimes (REB-687): a letter leaves
+only once the framework agreement of its own regime is signed, and a signature releases
+only the waiting letters of its own regime.
+
 Every write locks the freelancer's row first, as `MatchService.create` and
 `FiscalService.save` already do, then the match, then its document, because two admins,
 the webhook and «Aggiorna stato» can reach the same freelancer's documents at once.
@@ -690,8 +694,8 @@ class SigningService:
         envelope, whose outcome (a completion, a rejection or a cancellation) a lost
         webhook delivery never confirmed (REB-431); a signature or a notice whose sealed
         copy is missing or not yet mailed to either recipient; and every active
-        framework agreement that still has a letter `in_attesa` on a match `in_firma` (a
-        release `finish` itself missed, or never ran
+        framework agreement that still has a letter of its own regime (REB-687)
+        `in_attesa` on a match `in_firma` (a release `finish` itself missed, or never ran
         for). `finish` is idempotent either way, so the three sets are simply run
         together. The first costs one GET to Documenso per waiting document per sweep --
         acceptable at the hub's volume."""
@@ -719,6 +723,7 @@ class SigningService:
                     waiting_letter.kind == LETTERA,
                     waiting_letter.stato == "in_attesa",
                     waiting_letter.freelancer_id == ContractDocument.freelancer_id,
+                    waiting_letter.regime == ContractDocument.regime,
                     Match.stato == "in_firma",
                 )
             ),
@@ -810,10 +815,11 @@ class SigningService:
         return True
 
     def _release_letters(self, framework: ContractDocument) -> bool:
-        """The letters that waited for this framework agreement (spec § 1e), each in a
-        transaction of its own and mailed after its commit: a Documenso refusal leaves
-        that letter waiting for the next `finish` and lets the others go. Only matches an
-        admin sent (`in_firma`); a draft's letter leaves when its match is sent.
+        """The letters of this framework agreement's regime that waited for it (spec § 1e,
+        REB-687), each in a transaction of its own and mailed after its commit: a
+        Documenso refusal leaves that letter waiting for the next `finish` and lets the
+        others go. Only matches an admin sent (`in_firma`); a draft's letter leaves when
+        its match is sent.
 
         `send_match` refuses up front without a mail sender (`_sender`), so a release
         must not dispatch a letter to Documenso either when nobody could then be told
@@ -836,6 +842,7 @@ class SigningService:
                 .where(
                     ContractDocument.kind == LETTERA,
                     ContractDocument.freelancer_id == framework.freelancer_id,
+                    ContractDocument.regime == framework.regime,
                     ContractDocument.stato == "in_attesa",
                     Match.stato == "in_firma",
                 )
@@ -893,6 +900,7 @@ class SigningService:
             or match.stato != "in_firma"
             or framework is None
             or not is_active(framework)
+            or framework.regime != letter.regime
         ):
             self.session.rollback()
             return None

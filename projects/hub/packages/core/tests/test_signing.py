@@ -24,6 +24,7 @@ from test_matches import (
     _documents,
     _framework,
     _setup,
+    _setup_occasional,
 )
 
 from rebase_core import signing as signing_module
@@ -32,6 +33,7 @@ from rebase_core.config import Settings
 from rebase_core.contract_schemas import FiscalData, MatchRead, SendReport
 from rebase_core.contracts.fields import ContractFailed, Value
 from rebase_core.contracts.render import ContractRenderer, Renderer
+from rebase_core.contracts.render import text_version as current_text_version
 from rebase_core.db import session_factory
 from rebase_core.documenso import (
     UNREACHABLE,
@@ -47,6 +49,7 @@ from rebase_core.http import urllib_engagements_call
 from rebase_core.mail import EmailSender, Mail, RecordingSender, ResendSender
 from rebase_core.matches import MatchService
 from rebase_core.models import ContractDocument, Freelancer, Match
+from rebase_core.regimes import text_name
 from rebase_core.signing import SigningService, SweepResult, signing_from_settings
 
 # 23:30 UTC on 30 September is already 1 October in Rome.
@@ -148,13 +151,18 @@ def _draft(
 
 
 def _active_framework(
-    session: Session, freelancer_id: UUID, admin_id: UUID, signed_at: datetime = SIGNED_AT
+    session: Session,
+    freelancer_id: UUID,
+    admin_id: UUID,
+    signed_at: datetime = SIGNED_AT,
+    regime: str = "partita_iva",
 ) -> ContractDocument:
     """A framework agreement as a signature leaves one."""
     document = ContractDocument(
         kind="quadro",
+        regime=regime,
         freelancer_id=freelancer_id,
-        text_version=QUADRO_VERSION,
+        text_version=current_text_version(text_name("quadro", regime)),
         testo_bozza=False,
         data={},
         pdf=b"%PDF-quadro",
@@ -2377,3 +2385,188 @@ def test_signing_from_settings_builds_the_service_this_environment_configures(
     bare = signing_from_settings(Settings(_env_file=None))(clean)  # type: ignore[call-arg]
     assert isinstance(bare.renderer, ContractRenderer)
     assert (bare.documenso, bare.sender, bare.allow_draft) == (None, None, False)
+
+
+# ---- two families of documents (REB-687) -------------------------------------------------
+
+OCCASIONAL_QUADRO_VERSION = current_text_version("contratto-quadro-occasionale")
+
+
+def _without_partita_iva(session: Session, freelancer_id: UUID, admin_id: UUID) -> None:
+    FiscalService(session).save(
+        freelancer_id,
+        FiscalData(codice_fiscale="LVLDAA85T50H501Z", domicilio="Via Roma 1, Milano"),
+        admin_id,
+    )
+
+
+def _occasional_draft(
+    session: Session, renderer: Renderer, freelancer_id: UUID, company_id: UUID, admin_id: UUID
+) -> MatchRead:
+    return _matches(session, renderer).create(
+        freelancer_id, _body(company_id, regime="occasionale"), admin_id
+    )
+
+
+def _quadro_of(session: Session, freelancer_id: UUID, regime: str) -> ContractDocument:
+    return [d for d in _documents(session, freelancer_id, "quadro") if d.regime == regime][-1]
+
+
+def _sign(signing: SigningService, fake: FakeDocumenso, document: ContractDocument) -> None:
+    """`document` signed the way a real signature reaches the hub: its envelope signed on
+    the fake Documenso, the completion delivered to the webhook (`apply`), then `finish`
+    run for it."""
+    envelope = _envelope_of(document)
+    fake.sign(envelope, SIGNED_AT)
+    signed = signing.apply(_webhook(fake, envelope, "DOCUMENT_COMPLETED"))
+    assert signed is not None
+    signing.finish(signed)
+
+
+@pytest.mark.parametrize(
+    ("first", "other"), [("occasionale", "partita_iva"), ("partita_iva", "occasionale")]
+)
+def test_a_framework_signature_releases_only_the_letters_of_its_own_regime(
+    clean: Session, first: str, other: str
+) -> None:
+    """A partita IVA holder may hold both families: each framework agreement's signature
+    releases its own regime's waiting letter and leaves the other one waiting."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    signing = _signing(clean, renderer, fake, sender)
+    matches = {
+        "partita_iva": _draft(clean, renderer, freelancer_id, company_id, admin_id),
+        "occasionale": _occasional_draft(clean, renderer, freelancer_id, company_id, admin_id),
+    }
+    for match in matches.values():
+        assert signing.send_match(match.id, admin_id).inviato == "quadro"
+
+    _sign(signing, fake, _quadro_of(clean, freelancer_id, first))
+
+    assert _letter_of(clean, matches[first].id).stato == "inviato"
+    assert _letter_of(clean, matches[other].id).stato == "in_attesa"
+
+
+def test_an_occasional_letter_waits_while_only_the_ordinary_framework_is_active(
+    clean: Session,
+) -> None:
+    admin_id, freelancer_id, company_id = _setup(clean)
+    ordinary = _active_framework(clean, freelancer_id, admin_id)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    signing = _signing(clean, renderer, fake, sender)
+    match = _occasional_draft(clean, renderer, freelancer_id, company_id, admin_id)
+    assert match.lettera.stato == "in_attesa"
+
+    report = signing.send_match(match.id, admin_id)
+
+    assert (report.inviato, report.match.lettera.stato) == ("quadro", "in_attesa")
+    assert _quadro_of(clean, freelancer_id, "occasionale").stato == "inviato"
+    # The ordinary agreement's own copy is stored and mailed already, so only a waiting
+    # letter could still bring it into the sweep.
+    ordinary.signed_pdf = b"%PDF-firmato"
+    ordinary.signed_copy_to_freelancer_at = NOW
+    ordinary.signed_copy_to_rebase_at = NOW
+    clean.commit()
+    # The sweep never takes the ordinary agreement for this letter's own.
+    assert ordinary.id not in signing._to_finish()
+    signing.finish(ordinary.id)
+    assert _letter_of(clean, match.id).stato == "in_attesa"
+
+
+def test_an_occasional_match_turns_active_on_its_letters_signature(clean: Session) -> None:
+    admin_id, freelancer_id, company_id = _setup(clean)
+    _active_framework(clean, freelancer_id, admin_id, regime="occasionale")
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    signing = _signing(clean, renderer, fake, sender)
+    match = _occasional_draft(clean, renderer, freelancer_id, company_id, admin_id)
+    assert match.lettera.stato == "generato"
+    assert signing.send_match(match.id, admin_id).inviato == "lettera"
+
+    _sign(signing, fake, _letter_of(clean, match.id))
+
+    clean.expire_all()
+    assert clean.get(Match, match.id).stato == "attivo"  # type: ignore[union-attr]
+    assert _letter_of(clean, match.id).stato == "firmato"
+
+
+def test_an_occasional_documents_names_are_its_own_on_documenso_and_in_the_mail(
+    clean: Session,
+) -> None:
+    admin_id, freelancer_id, company_id = _setup(clean)
+    _without_partita_iva(clean, freelancer_id, admin_id)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    signing = _signing(clean, renderer, fake, sender)
+    match = _occasional_draft(clean, renderer, freelancer_id, company_id, admin_id)
+    signing.send_match(match.id, admin_id)
+
+    [quadro_envelope] = fake.envelopes.values()
+    assert quadro_envelope.payload["title"] == "Contratto quadro rebase per prestazioni occasionali"
+    assert quadro_envelope.filename == (
+        f"contratto-quadro-occasionale-v{OCCASIONAL_QUADRO_VERSION}.pdf"
+    )
+    assert sender.sent[-1].subject == (
+        "Da firmare: contratto quadro rebase per prestazioni occasionali"
+    )
+
+    _sign(signing, fake, _quadro_of(clean, freelancer_id, "occasionale"))
+
+    letter = _letter_of(clean, match.id)
+    letter_envelope = list(fake.envelopes.values())[-1]
+    assert letter_envelope.payload["title"] == f"Lettera di incarico occasionale n. {letter.numero}"
+    assert letter_envelope.filename == f"lettera-di-incarico-occasionale-{letter.numero}.pdf"
+    assert sender.sent[-1].subject == (
+        f"Da firmare: lettera di incarico occasionale n. {letter.numero}"
+    )
+    document, data = renderer.calls[-1]
+    assert document == "lettera-di-incarico-occasionale"
+    assert data["professionista-cf"] == "LVLDAA85T50H501Z"
+    assert "professionista-piva" not in data
+
+
+def test_an_occasional_match_goes_out_and_comes_back_on_the_occasional_texts(
+    clean: Session,
+) -> None:
+    """A freelancer with no partita IVA, sent an occasional match from start to finish:
+    the framework agreement leaves first, then its signature releases the letter, each
+    typeset from its occasional text and printing the codice fiscale, never a partita
+    IVA."""
+    admin_id, freelancer_id, company_id = _setup_occasional(clean)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    signing = _signing(clean, renderer, fake, sender)
+    match = _occasional_draft(clean, renderer, freelancer_id, company_id, admin_id)
+
+    assert signing.send_match(match.id, admin_id).inviato == "quadro"
+
+    document, data = renderer.calls[-1]
+    assert (document, renderer.signing[-1]) == ("contratto-quadro-occasionale", True)
+    assert data["professionista-cf"] == "LVLDAA85T50H501Z"
+    assert "professionista-piva" not in data
+
+    _sign(signing, fake, _quadro_of(clean, freelancer_id, "occasionale"))
+
+    assert _letter_of(clean, match.id).stato == "inviato"
+    document, data = renderer.calls[-1]
+    assert (document, renderer.signing[-1]) == ("lettera-di-incarico-occasionale", True)
+    assert data["professionista-cf"] == "LVLDAA85T50H501Z"
+    assert "professionista-piva" not in data
+    # Neither ordinary text was typeset at any point, for the draft or for a send.
+    assert {name for name, _ in renderer.calls} == {
+        "contratto-quadro-occasionale",
+        "lettera-di-incarico-occasionale",
+    }
+
+
+def test_an_ordinary_draft_whose_partita_iva_was_removed_does_not_leave(clean: Session) -> None:
+    """The tax data changed after the draft, so the ordinary framework
+    agreement would leave with a blank partita IVA: refused, naming it, and nothing
+    reaches Documenso or the mailbox."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    match = _draft(clean, renderer, freelancer_id, company_id, admin_id)
+    _without_partita_iva(clean, freelancer_id, admin_id)
+
+    with pytest.raises(InvalidState, match="professionista-piva"):
+        _signing(clean, renderer, fake, sender).send_match(match.id, admin_id)
+
+    assert len(fake.envelopes) == 0 and sender.sent == []
+    assert _framework_of(clean, freelancer_id).stato == "generato"
