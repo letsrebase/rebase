@@ -64,14 +64,14 @@ Two markers, both handled by `rebase_core.contracts.fields` (`../tools/build_con
   refuses a file whose `status` is not `draft` while one is left.
 
 ```
-uv run python projects/hub/tools/build_contract_pdf.py                       # both, blank
+uv run python projects/hub/tools/build_contract_pdf.py                       # every text, blank
 uv run python projects/hub/tools/build_contract_pdf.py lettera-di-incarico \
   --data projects/hub/content/contratti/incarico.esempio.json               # one, filled
 ```
 
 The laptop's PDFs land in `contratti/dist/`, which git ignores; the hub stores its own per
 document, in its database (REB-387). Unlike the guide, nothing is committed or locked.
-`texts/rebase.json`, package data beside the two texts, holds rebase's company data
+`texts/rebase.json`, package data beside the texts, holds rebase's company data
 and the defaults every letter starts from (the payment term: 30 days from the end of the
 invoice's month); its `null`s wait for the SRL (roadmap #284). Until then the data of
 whoever signs for rebase goes in `contratti/rebase.local.json`, which git ignores and the
@@ -80,9 +80,18 @@ a JSON number, and the build refuses one given as text, not above zero, or with 
 two decimals. The payment term is written by the build from `giorni-pagamento` and
 `fine-mese`, at most 30 days from the end of the month or 60 from the invoice, so no letter
 can print a term that article 7.1 and law 81/2017 forbid.
-`incarico.esempio.json` is fiction and names every field the letter asks for, which
+`incarico.esempio.json` is fiction and names every field either letter asks for, which
 `packages/core/tests/test_contract_pdf.py` checks. Real data names a real person and a
 real client: keep it outside the repository or in a `*.local.json`, which git ignores.
+
+Since REB-687 the package holds four texts: the two above and their occasional twins for
+a member who works without a partita IVA. `contratto-quadro-occasionale.md` is the
+ordinary framework agreement with the Collaboratore in place of the Professionista, the
+ricevuta in place of the fattura and the new article 5.7 on the 5.000 euro threshold;
+`lettera-di-incarico-occasionale.md` names its collaborator by the codice fiscale, and the
+build counts its payment term from the receipt. Both are `status: final` at version 1.0.
+The points left for the accountant before the first occasional letter leaves are in the
+design record's «Outside the code».
 
 ### Settled on 2026-09-24, and what stays open
 

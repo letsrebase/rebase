@@ -64,8 +64,8 @@ comes from the core's `signing_from_settings`, the one builder the API's `Signin
 the MCP transports and `rebase contracts-sweep` share; the tests hand `FakeRenderer` and
 a `SigningService` over `FakeDocumenso`.
 
-- `preview_match`: step 3's sentences for the hub's proposal with the given fields; writes nothing.
-- `create_match`: the draft match, «Salva senza inviare»; `match_id` makes a retry idempotent.
+- `preview_match`: step 3's sentences for the hub's proposal with the given fields and letter type (`regime`, the proposal's when left out); writes nothing.
+- `create_match`: the draft match, «Salva senza inviare»; `match_id` makes a retry idempotent; `regime` as in `preview_match`.
 - `send_match_for_signature`: «Invia per la firma»; `messaggio` is the page's sentence.
 - `resend_signing_mail`: «Reinvia email», for a document still waiting.
 - `refresh_contract`: «Aggiorna stato», Documenso's word applied as the webhook would.
@@ -73,7 +73,7 @@ a `SigningService` over `FakeDocumenso`.
 - `record_notice`: «Registra disdetta» on an active framework agreement.
 - `cancel_match`: «Annulla» on a match in draft or in signature.
 - `close_match`: «Chiudi match», the engagement ends.
-- `set_freelancer_tax_data`: saves the tax data; answers that they are saved, never the values.
+- `set_freelancer_tax_data`: saves the tax data, the partita IVA optional; answers that they are saved, never the values.
 
 The team builder and the talent cloud are twelve tools more (REB-520, spec § 8 of
 `docs/superpowers/specs/2026-09-25-team-builder-and-talent-cloud-design.md`), each
@@ -131,9 +131,23 @@ palette, the typeface and the echo logo read from `shared/brand/` at the paths t
 mirrors. So
 `Dockerfile.api` carries PigroCRM's pandoc and Typst (`test_api_image.py` holds the two
 images to one pair) and fontTools is a dependency of `rebase_core`. `rebase
-contracts-check` typesets both texts from fiction and says whether a machine can; the
+contracts-check` typesets every text from fiction and says whether a machine can; the
 `hub-image` preflight check and CI's image job run it inside the built image. Who signs
 for rebase comes from `REBASE_SIGNER_JSON` in the host `.env`, never from the repository.
+
+Since REB-687 there are two families of the same two documents, named by (kind, regime)
+in `rebase_core.regimes`: `contratto-quadro.md` and `lettera-di-incarico.md` for a member
+who works with a partita IVA, `contratto-quadro-occasionale.md` and
+`lettera-di-incarico-occasionale.md` for a member paid as a prestazione occasionale.
+Every `contract_documents` row carries its `regime`, and a match's regime is its letter's:
+«Tipo di lettera» on step 1 of «Crea match», proposed from the tax data, whose partita IVA
+may be missing; ticking «Senza partita IVA» there also switches «Tipo di lettera» to
+«Prestazione occasionale». Every lookup of a freelancer's framework agreement takes a
+regime, so a freelancer may hold one of each, a signature releases only the letters of its
+own regime, and «Match e contratti» shows one framework card per regime. An ordinary
+letter needs a saved partita IVA; the occasional texts never print one, and an occasional
+letter's payment term counts from the receipt. Design record:
+`docs/superpowers/specs/2026-10-12-prestazione-occasionale-design.md`.
 
 ## Contracts are signed on Documenso
 
@@ -620,7 +634,7 @@ signed on Documenso"); this section is the container's own.
   `@letsrebase.com` addresses above, beside Documenso's own two internal accounts,
   `serviceaccount@firma.letsrebase.com` and `deleted-account@firma.letsrebase.com`.
 - **Who signs for rebase**: the `rebase-*` fields of `REBASE_SIGNER_JSON`, in the host's
-  `.env`, never in the repository. With both texts `status: final`, production signs
+  `.env`, never in the repository. With every text `status: final`, production signs
   with whoever's data is there, which until the SRL exists (roadmap #284) is a person's,
   not the company's yet. The value is one line of compact JSON. Compose's `.env` parser
   refuses shell-style quoting (`'...'"'"'...'`), which an apostrophe in an address
