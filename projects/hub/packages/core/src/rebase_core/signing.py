@@ -94,7 +94,13 @@ from rebase_core.documenso import (
     outcome_from_envelope,
 )
 from rebase_core.engagements import DA_COLLEGARE, EngagementService
-from rebase_core.errors import DocumensoFailed, InvalidState, NotFound, SigningUnavailable
+from rebase_core.errors import (
+    DocumensoFailed,
+    InvalidState,
+    NotFound,
+    SigningUnavailable,
+    ValidationFailed,
+)
 from rebase_core.framework import (
     active_framework,
     current_quadro_version,
@@ -871,7 +877,14 @@ class SigningService:
                 letter = self._send_waiting(
                     letter_id, match_id, framework_id, freelancer_id, sent_by
                 )
-            except (ContractFailed, DocumensoFailed, InvalidState, NotFound, SigningUnavailable):
+            except (
+                ContractFailed,
+                DocumensoFailed,
+                InvalidState,
+                NotFound,
+                SigningUnavailable,
+                ValidationFailed,
+            ):
                 self.session.rollback()
                 _log.warning(
                     "letter %s keeps waiting: its release failed", letter_id, exc_info=True
@@ -918,6 +931,9 @@ class SigningService:
             return None
         if not self.allow_draft and self._renderer().is_draft(text_name(LETTERA, letter.regime)):
             raise InvalidState(DRAFT_REFUSED[LETTERA])
+        # The same rule `send_match` applies (REB-687): a partita IVA removed while the
+        # letter waited refuses it in those words, not as a blank field.
+        require_regime_fits(self.matches._fiscal(freelancer_id).partita_iva, letter.regime)
         self._dispatch(letter, framework, sent_by)
         self.session.commit()
         return letter

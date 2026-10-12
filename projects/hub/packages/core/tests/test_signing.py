@@ -3,6 +3,7 @@ Every test hands `FakeRenderer`, `FakeDocumenso` and a recording mailbox: nothin
 runs pandoc, reaches Documenso or sends a mail."""
 
 import json
+import logging
 import threading
 from collections.abc import Iterator
 from datetime import UTC, date, datetime
@@ -2581,3 +2582,31 @@ def test_an_ordinary_draft_whose_partita_iva_was_removed_does_not_leave(clean: S
     )
     assert len(fake.envelopes) == 0 and sender.sent == []
     assert _framework_of(clean, freelancer_id).stato == "generato"
+
+
+def test_a_waiting_ordinary_letter_is_not_released_once_its_partita_iva_is_gone(
+    clean: Session, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The ordinary framework agreement left while the tax data had a partita IVA, and it
+    was removed before the signature: the letter waiting on it is refused at its release
+    as `send_match` refuses it (CodeRabbit, PR #579), so it keeps waiting, no envelope
+    and no mail for it leaves (the framework's own signed copy still does), and the log
+    says why in the rule's own words."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    match = _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
+    envelopes, mails = len(fake.envelopes), len(sender.sent)
+    _without_partita_iva(clean, freelancer_id, admin_id)
+    envelope = _envelope_of(_framework_of(clean, freelancer_id))
+    fake.sign(envelope, SIGNED_AT)
+    signing = _signing(clean, renderer, fake, sender)
+    signed = signing.apply(_webhook(fake, envelope, "DOCUMENT_COMPLETED"))
+    assert signed is not None
+
+    with caplog.at_level(logging.WARNING, logger="rebase_core.signing"):
+        signing.finish(signed)
+
+    assert _letter_of(clean, match.id).stato == "in_attesa"
+    assert len(fake.envelopes) == envelopes
+    assert not [m for m in sender.sent[mails:] if "lettera" in m.subject.lower()]
+    assert "Senza partita IVA si fa solo la lettera occasionale" in caplog.text
