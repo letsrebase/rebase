@@ -8,6 +8,7 @@ from rebase_core.regimes import (
     REGIMES,
     as_regime,
     document_label,
+    document_stem,
     text_name,
 )
 
@@ -48,3 +49,17 @@ def test_the_two_regimes_and_nothing_else() -> None:
             text_name("quadro", wrong)
     with pytest.raises(ValueError):
         document_label("fattura", PARTITA_IVA)
+
+
+def test_a_documents_file_name_carries_its_own_texts_name() -> None:
+    """REB-687: the two families never share a file name."""
+    assert document_stem("quadro", "partita_iva", None, "1.0") == "contratto-quadro-v1.0"
+    assert document_stem("quadro", "occasionale", None, "1.0") == (
+        "contratto-quadro-occasionale-v1.0"
+    )
+    assert document_stem("lettera", "partita_iva", "2026-001", "1.1") == (
+        "lettera-di-incarico-2026-001"
+    )
+    assert document_stem("lettera", "occasionale", "2026-002", "1.0") == (
+        "lettera-di-incarico-occasionale-2026-002"
+    )

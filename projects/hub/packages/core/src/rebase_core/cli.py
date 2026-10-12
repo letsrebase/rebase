@@ -140,8 +140,9 @@ _CHECK_DATA: dict[str, Value] = {
 def contracts_check() -> int:
     """`rebase contracts-check`: can this machine typeset a contract?
 
-    Renders both texts from fiction with this machine's pandoc, Typst, palette and
-    typeface, and asks Typst where the signing blanks landed. Writes no file and no row.
+    Renders every text, the ordinary pair and the occasional pair (REB-687), from fiction
+    with this machine's pandoc, Typst, palette and typeface, and asks Typst where the
+    signing blanks landed. Writes no file and no row.
     The `hub-image` preflight check and CI's image job run it inside the built image."""
     try:
         for document in DOCUMENTS:

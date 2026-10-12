@@ -17,6 +17,7 @@ from rebase_core.mail import (
     Mail,
     RecordingSender,
     ResendSender,
+    document_name,
     magic_link_mail,
     sender_from_settings,
     signed_copy_mail,
@@ -387,3 +388,35 @@ def test_the_talent_cloud_mail_names_the_company_and_links_to_the_cloud() -> Non
     assert hostile.html is not None
     for raw in ("<script>", "<b>Wile", "<i>Acme"):
         assert raw not in hostile.html
+
+
+def test_an_occasional_document_is_named_as_its_own_text_in_every_mail() -> None:
+    """REB-687: the signing mail, the cancellation, the signed copy and the Documenso
+    title (`document_name`) name the occasional documents as such."""
+    url = "https://firma.letsrebase.com/sign/abc123"
+    assert document_name("quadro", None, "occasionale") == (
+        "contratto quadro rebase per prestazioni occasionali"
+    )
+    assert document_name("lettera", "2026-001", "occasionale") == (
+        "lettera di incarico occasionale n. 2026-001"
+    )
+    assert document_name("lettera", "2026-001") == "lettera di incarico n. 2026-001"
+    quadro = signing_request_mail("ada@studio.it", "Ada", "quadro", None, url, regime="occasionale")
+    assert quadro.subject == "Da firmare: contratto quadro rebase per prestazioni occasionali"
+    assert "ogni prestazione occasionale che fai tramite noi" in quadro.text
+    lettera = signing_request_mail(
+        "ada@studio.it", "Ada", "lettera", "2026-001", url, regime="occasionale"
+    )
+    assert lettera.subject == "Da firmare: lettera di incarico occasionale n. 2026-001"
+    cancelled = signing_cancelled_mail("ada@studio.it", "Ada", "quadro", None, regime="occasionale")
+    assert cancelled.subject == "Contratto quadro rebase per prestazioni occasionali annullato"
+    signed = signed_copy_mail(
+        "ada@studio.it",
+        kind="lettera",
+        numero="2026-001",
+        attachment=Attachment("lettera.pdf", b"%PDF-1.7 firmato"),
+        nome="Ada",
+        cognome="Lovelace",
+        regime="occasionale",
+    )
+    assert signed.subject == "Firmata: lettera di incarico occasionale n. 2026-001"

@@ -1,4 +1,4 @@
-"""The real render, the way the API runs it: pandoc and Typst over both contracts.
+"""The real render, the way the API runs it: pandoc and Typst over every contract.
 
 Needs both binaries and fontTools. Every machine that runs the hub's suite has them: the
 Nix shell and the `contract-pdf`/`guide-pdf` preflight checks need the same pair, and the
@@ -185,3 +185,22 @@ def test_the_echo_heads_the_first_page_and_no_other() -> None:
         assert len(pages) >= 2, document
         assert pages[0] == [expected], document
         assert all(page == [] for page in pages[1:]), document
+
+
+def test_the_occasional_framework_marks_two_signatures_and_one_date() -> None:
+    names = [blank.name for blank in signature_blanks("contratto-quadro-occasionale", _example())]
+    assert names.count("firma professionista") == 2
+    assert names.count("data firma") == 1
+
+
+def test_an_occasional_letter_marks_one_signature_and_prints_its_term_from_the_receipt() -> None:
+    """REB-687: the real render writes «data ricevuta», and a filled occasional letter
+    leaves blank what the filled ordinary one does, the codice fiscale included in the
+    example."""
+    data = _example()
+    names = [blank.name for blank in signature_blanks("lettera-di-incarico-occasionale", data)]
+    assert names.count("firma professionista") == 1
+    assert names.count("data firma") == 1
+    rendered = render("lettera-di-incarico-occasionale", data)
+    assert set(rendered.blank) == LETTER_BLANKS
+    assert "30giornidataricevutafinemese" in _words(rendered.pdf)

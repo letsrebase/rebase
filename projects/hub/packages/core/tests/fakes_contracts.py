@@ -8,20 +8,31 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 from rebase_core.contracts.fields import FIELD, ContractFailed, Value, checked
-from rebase_core.contracts.render import Rendered, SignatureBlank, text_path, text_version
+from rebase_core.contracts.render import (
+    RECEIPT_TEXTS,
+    Rendered,
+    SignatureBlank,
+    text_path,
+    text_version,
+)
 
+_LETTER_BLANKS = [
+    SignatureBlank("data firma", 2, 165.811, 647.241, 85.039, 6.660),
+    SignatureBlank("firma professionista", 2, 303.638, 707.281, 155.906, 22.660),
+]
+_QUADRO_BLANKS = [
+    SignatureBlank("data firma", 5, 165.811, 520.0, 85.039, 6.660),
+    SignatureBlank("firma professionista", 5, 303.638, 580.0, 155.906, 22.660),
+    SignatureBlank("firma professionista", 6, 303.638, 300.0, 155.906, 22.660),
+]
 # Where the phase 1 probe measured the letter's two blanks (probe § 9), and the same shape
-# for the framework agreement's three: what `signature_blanks` answers without Typst.
+# for the framework agreement's three: what `signature_blanks` answers without Typst. An
+# occasional text has its ordinary twin's blanks (REB-687).
 FAKE_BLANKS: dict[str, list[SignatureBlank]] = {
-    "lettera-di-incarico": [
-        SignatureBlank("data firma", 2, 165.811, 647.241, 85.039, 6.660),
-        SignatureBlank("firma professionista", 2, 303.638, 707.281, 155.906, 22.660),
-    ],
-    "contratto-quadro": [
-        SignatureBlank("data firma", 5, 165.811, 520.0, 85.039, 6.660),
-        SignatureBlank("firma professionista", 5, 303.638, 580.0, 155.906, 22.660),
-        SignatureBlank("firma professionista", 6, 303.638, 300.0, 155.906, 22.660),
-    ],
+    "lettera-di-incarico": _LETTER_BLANKS,
+    "lettera-di-incarico-occasionale": _LETTER_BLANKS,
+    "contratto-quadro": _QUADRO_BLANKS,
+    "contratto-quadro-occasionale": _QUADRO_BLANKS,
 }
 
 
@@ -38,7 +49,7 @@ class FakeRenderer:
     def render(
         self, document: str, data: Mapping[str, Value], *, signing: bool = False
     ) -> Rendered:
-        filled = checked(dict(data))
+        filled = checked(dict(data), receipt=document in RECEIPT_TEXTS)
         self.calls.append((document, dict(data)))
         self.signing.append(signing)
         asked = dict.fromkeys(FIELD.findall(text_path(document).read_text(encoding="utf-8")))
@@ -53,7 +64,7 @@ class FakeRenderer:
     def signature_blanks(
         self, document: str, data: Mapping[str, Value], *, signing: bool = False
     ) -> list[SignatureBlank]:
-        checked(dict(data))
+        checked(dict(data), receipt=document in RECEIPT_TEXTS)
         self.blanks_signing.append(signing)
         return list(FAKE_BLANKS[document])
 

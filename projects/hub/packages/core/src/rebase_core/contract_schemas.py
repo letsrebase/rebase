@@ -37,6 +37,7 @@ from rebase_core.models import (
     SEDE_MAX_LENGTH,
 )
 from rebase_core.referral_schemas import MatchReferral
+from rebase_core.regimes import OCCASIONALE, PARTITA_IVA
 from rebase_core.schemas import PROGETTO_MAX_LENGTH, TARIFFA_MAX, TARIFFA_MIN, clean_multiline
 from rebase_core.validation import SafeStr
 
@@ -105,6 +106,17 @@ LETTER_AUTO_FIELDS = frozenset(
         "firma-professionista",
     }
 )
+
+# The occasional letter (REB-687) asks the same form and names its collaborator by the
+# codice fiscale, never by a partita IVA: the same fields the hub fills, with
+# `professionista-cf` in place of `professionista-piva`.
+LETTER_AUTO_FIELDS_OCCASIONALE = (LETTER_AUTO_FIELDS - {"professionista-piva"}) | {
+    "professionista-cf"
+}
+LETTER_AUTO_FIELDS_BY_REGIME: dict[str, frozenset[str]] = {
+    PARTITA_IVA: LETTER_AUTO_FIELDS,
+    OCCASIONALE: LETTER_AUTO_FIELDS_OCCASIONALE,
+}
 
 
 def _one_line(value: str, what: str) -> str:

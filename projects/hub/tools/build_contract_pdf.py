@@ -5,7 +5,7 @@
 
 Since REB-387 the texts, the Typst template and rebase's defaults are package data of
 `rebase_core.contracts`, which the hub's API renders at request time; this script is the
-thin wrapper that keeps a preview on a laptop. With no argument it builds both documents
+thin wrapper that keeps a preview on a laptop. With no argument it builds every document
 as blank forms; naming one or more (by stem) builds only those. `--data` fills the
 fields from a JSON object, read over the package's `rebase.json` and over
 `content/contratti/rebase.local.json` when that file exists: git ignores it, and it holds

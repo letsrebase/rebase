@@ -56,3 +56,11 @@ def document_label(kind: str, regime: str) -> str:
         return DOCUMENT_LABELS[(kind, regime)]
     except KeyError:
         raise ValueError(f"no contract type for kind {kind!r} and regime {regime!r}") from None
+
+
+def document_stem(kind: str, regime: str, numero: str | None, version: str) -> str:
+    """A document's file name without `.pdf`: its own text's name, then the letter's
+    number or the framework agreement's text version, so the two families never share a
+    name (`contratto-quadro-occasionale-v1.0`, `lettera-di-incarico-occasionale-2026-001`)."""
+    text = text_name(kind, regime)
+    return f"{text}-{numero}" if kind == "lettera" else f"{text}-v{version}"

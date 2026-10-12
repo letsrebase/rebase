@@ -110,6 +110,7 @@ from rebase_core.mail import (
 from rebase_core.matches import DOCUMENT_BY_KIND, ENTITY, LETTERA, QUADRO, MatchService, _full_name
 from rebase_core.models import CANCEL_REASON_MAX_LENGTH, ContractDocument, Freelancer, Match, User
 from rebase_core.referrals import ReferralService
+from rebase_core.regimes import document_stem
 
 _log = logging.getLogger(__name__)
 
@@ -160,10 +161,9 @@ def _cancel_reason(outcome: Outcome) -> str:
 
 
 def _filename(document: ContractDocument, version: str) -> str:
-    """The name Documenso keeps and seals as `<name>_signed.pdf` (probe § 4)."""
-    if document.kind == LETTERA:
-        return f"lettera-di-incarico-{document.numero}.pdf"
-    return f"contratto-quadro-v{version}.pdf"
+    """The name Documenso keeps and seals as `<name>_signed.pdf` (probe § 4): the
+    document's own text, so the two families never share one (REB-687)."""
+    return f"{document_stem(document.kind, document.regime, document.numero, version)}.pdf"
 
 
 def _refuse_blanks(blank: list[str]) -> None:
@@ -347,7 +347,7 @@ class SigningService:
         _refuse_blanks(rendered.blank)
         fields = fields_from_blanks(renderer.signature_blanks(name, data, signing=True))
         user = self._owner(document.freelancer_id)
-        title = document_name(document.kind, document.numero)
+        title = document_name(document.kind, document.numero, document.regime)
         envelope_id = documenso.create(
             title=title[0].upper() + title[1:],
             external_id=str(document.id),
@@ -423,7 +423,12 @@ class SigningService:
             return False
         user = self._owner(document.freelancer_id)
         mail = signing_request_mail(
-            user.email, user.nome, document.kind, document.numero, document.signing_url
+            user.email,
+            user.nome,
+            document.kind,
+            document.numero,
+            document.signing_url,
+            regime=document.regime,
         )
         if not self.sender.send(mail):
             _log.warning("the signing mail of document %s was refused by the provider", document.id)
@@ -783,6 +788,7 @@ class SigningService:
             nome=user.nome,
             cognome=user.cognome,
             for_rebase=not to_freelancer,
+            regime=document.regime,
         )
         if not self.sender.send(mail):
             _log.warning(
@@ -1080,7 +1086,9 @@ class SigningService:
             _log.warning("no mail sender: nobody was told document %s was cancelled", document.id)
             return
         user = self._owner(document.freelancer_id)
-        mail = signing_cancelled_mail(user.email, user.nome, document.kind, document.numero)
+        mail = signing_cancelled_mail(
+            user.email, user.nome, document.kind, document.numero, regime=document.regime
+        )
         if not self.sender.send(mail):
             _log.warning(
                 "the cancellation mail of document %s was refused by the provider", document.id

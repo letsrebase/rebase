@@ -1673,3 +1673,25 @@ def test_the_proposal_refuses_a_field_left_empty_or_invalid_by_name(
     with pytest.raises(ValidationFailed) as refused:
         _service(clean).proposal(freelancer_id, company_id, cliente=cliente, lettera=lettera)
     assert (refused.value.details["field"], refused.value.details["reason"]) == (field, reason)
+
+
+def test_an_occasional_document_downloads_under_its_own_texts_name(clean: Session) -> None:
+    """REB-687: `contratto-quadro-occasionale-v1.0.pdf`, never a second
+    `contratto-quadro-v1.0.pdf`."""
+    admin_id, freelancer_id, _company_id = _setup(clean)
+    quadro = ContractDocument(
+        kind="quadro",
+        regime="occasionale",
+        freelancer_id=freelancer_id,
+        text_version="1.0",
+        testo_bozza=False,
+        data={},
+        pdf=b"%PDF-quadro",
+        stato="generato",
+        created_by=admin_id,
+    )
+    clean.add(quadro)
+    clean.commit()
+    assert _service(clean).document_pdf(quadro.id).filename == (
+        "contratto-quadro-occasionale-v1.0.pdf"
+    )

@@ -90,6 +90,7 @@ from rebase_core.models import (
 )
 from rebase_core.referral_schemas import MatchReferral
 from rebase_core.referrals import ReferralService, letter_unit
+from rebase_core.regimes import document_stem
 from rebase_core.search import matches_any
 
 ENTITY = "match"
@@ -527,11 +528,7 @@ class MatchService:
         content = document.signed_pdf if signed else document.pdf
         if content is None:
             raise NotFound("documento firmato", document_id)
-        base = (
-            f"lettera-di-incarico-{document.numero}"
-            if document.kind == LETTERA
-            else f"contratto-quadro-v{document.text_version}"
-        )
+        base = document_stem(document.kind, document.regime, document.numero, document.text_version)
         return ContractPdf(filename=f"{base}{'-firmato' if signed else ''}.pdf", content=content)
 
     # ---- writes ------------------------------------------------------------------------
