@@ -1994,3 +1994,31 @@ def test_an_occasional_preview_renders_the_occasional_texts(clean: Session) -> N
         "lettera-di-incarico-occasionale",
         "contratto-quadro-occasionale",
     ]
+
+
+@pytest.mark.parametrize(
+    ("framework_regime", "partita_iva", "letter_regime"),
+    [("partita_iva", None, "occasionale"), ("occasionale", "01234567890", "partita_iva")],
+)
+def test_prefill_check_and_letter_preview_read_only_their_own_regimes_framework(
+    clean: Session, framework_regime: Regime, partita_iva: str | None, letter_regime: Regime
+) -> None:
+    """An active framework agreement of the other regime is not this letter's: the
+    prefill, the check and the letter's preview all see none, and say one must leave."""
+    admin_id, freelancer_id, company_id = _admin(clean), _card(clean), _request(clean)
+    _fiscal(clean, freelancer_id, admin_id, partita_iva=partita_iva)
+    _framework(clean, freelancer_id, admin_id, regime=framework_regime)
+    renderer = FakeRenderer()
+    service = _service(clean, renderer)
+
+    prefill = service.prefill(freelancer_id, company_id)
+    assert (prefill.regime, prefill.quadro_attivo, prefill.quadro_necessario) == (
+        letter_regime,
+        None,
+        True,
+    )
+    body = _body(company_id, regime=letter_regime)
+    assert service.check(freelancer_id, body).quadro_necessario is True
+    service.preview(freelancer_id, body, "lettera")
+    [(_text, fields)] = renderer.calls
+    assert fields["data-contratto-quadro"] is None
