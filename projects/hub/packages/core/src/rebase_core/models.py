@@ -22,6 +22,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from rebase_core.db import Base, PrimaryKeyMixin, TimestampMixin
+from rebase_core.regimes import PARTITA_IVA
 
 UTM_MAX_LENGTH = 200
 UTM_COLUMNS = ("utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term", "utm_id")
@@ -372,6 +373,8 @@ MATCH_STATES = ("bozza", "in_firma", "attivo", "concluso", "annullato")
 PIGRO_STATES = ("da_collegare", "collegato", "errore", "rifiutato")
 CONTRACT_KINDS = ("quadro", "lettera")
 CONTRACT_STATES = ("generato", "in_attesa", "inviato", "firmato", "annullato", "disdetto")
+# `contract_documents.regime` (REB-687): `partita_iva` or `occasionale`, the longer one.
+REGIME_MAX_LENGTH = 12
 CODICE_FISCALE_MAX_LENGTH = 16
 PARTITA_IVA_MAX_LENGTH = 11
 DOMICILIO_MAX_LENGTH = 300
@@ -391,7 +394,9 @@ class FreelancerFiscal(Base, PrimaryKeyMixin, TimestampMixin):
     """A freelancer's tax data as the two contracts print them: one row per card
     (`uq_freelancer_fiscal_freelancer_id`). A table of its own rather than columns on
     `freelancers`, which PostHog's warehouse syncs whole (spec § 2); none of the four
-    tables of this section is synced. `updated_by` is the admin who saved them last."""
+    tables of this section is synced. `updated_by` is the admin who saved them last.
+    `partita_iva` is `NULL` for a member who works without one, paid as a prestazione
+    occasionale (REB-687)."""
 
     __tablename__ = "freelancer_fiscal"
 
@@ -399,7 +404,7 @@ class FreelancerFiscal(Base, PrimaryKeyMixin, TimestampMixin):
         ForeignKey("freelancers.id", ondelete="CASCADE"), nullable=False
     )
     codice_fiscale: Mapped[str] = mapped_column(String(CODICE_FISCALE_MAX_LENGTH), nullable=False)
-    partita_iva: Mapped[str] = mapped_column(String(PARTITA_IVA_MAX_LENGTH), nullable=False)
+    partita_iva: Mapped[str | None] = mapped_column(String(PARTITA_IVA_MAX_LENGTH), default=None)
     domicilio: Mapped[str] = mapped_column(String(DOMICILIO_MAX_LENGTH), nullable=False)
     pec: Mapped[str | None] = mapped_column(String(PEC_MAX_LENGTH), default=None)
     updated_by: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
@@ -490,6 +495,15 @@ class ContractDocument(Base, PrimaryKeyMixin, TimestampMixin):
     __tablename__ = "contract_documents"
 
     kind: Mapped[str] = mapped_column(String(10), nullable=False)
+    # Which family of texts the document belongs to (REB-687): `partita_iva`, the
+    # ordinary pair, or `occasionale`, a prestazione occasionale's. With `kind` it names
+    # the text (`rebase_core.regimes.text_name`); a match's regime is its letter's.
+    regime: Mapped[str] = mapped_column(
+        String(REGIME_MAX_LENGTH),
+        nullable=False,
+        default=PARTITA_IVA,
+        server_default=PARTITA_IVA,
+    )
     freelancer_id: Mapped[UUID] = mapped_column(ForeignKey("freelancers.id"), nullable=False)
     match_id: Mapped[UUID | None] = mapped_column(ForeignKey("matches.id"), default=None)
     numero: Mapped[str | None] = mapped_column(String(LETTER_NUMBER_MAX_LENGTH), default=None)
@@ -529,6 +543,9 @@ class ContractDocument(Base, PrimaryKeyMixin, TimestampMixin):
         Index("ix_contract_documents_match_id", "match_id"),
         Index("uq_contract_documents_numero", "numero", unique=True),
         CheckConstraint("kind IN ('quadro', 'lettera')", name="ck_contract_documents_kind"),
+        CheckConstraint(
+            "regime IN ('partita_iva', 'occasionale')", name="ck_contract_documents_regime"
+        ),
         CheckConstraint(
             "stato IN ('generato', 'in_attesa', 'inviato', 'firmato', 'annullato', 'disdetto')",
             name="ck_contract_documents_stato",
