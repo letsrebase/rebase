@@ -315,6 +315,12 @@ describe('index.html', () => {
     // The contract answer promises the CTO only where the cards do (REB-685).
     expect(faq).toContain('Con Team guidato selezione e CTO sono inclusi.')
     expect(faq).not.toContain('Selezione e il CTO che segue il progetto sono inclusi.')
+    // The names come within 48 hours and the CTO with the guided team, on every spot
+    // of the page outside the client quotes (REB-686).
+    expect(faq).toContain('Con Team guidato, due o tre nomi giusti entro 48 ore.')
+    expect(faq).toContain("Con Team guidato c'è un CTO di rebase dentro dal primo giorno")
+    expect(section('aziende')).toContain('entro 48 ore ti portiamo due o tre')
+    expect(page.replace(/<figure class="testimonial"[\s\S]*?<\/figure>/g, '')).not.toMatch(/sette giorni|7 giorni|una settimana/i)
     // The two company doors under the services are hub links, so utm.js carries the
     // campaign into them like the hero's.
     expect(page).toMatch(/<a class="cta secondary" href="\/hub\/team">Prova il team builder<\/a>/)
@@ -493,6 +499,18 @@ describe('company.html', () => {
     expect(slide).toContain('<small>da</small> <span data-count="100">100</span><small>&nbsp;€</small>')
     expect(slide).toContain('al giorno, in abbonamento mensile, per posizione aperta.')
     expect(slide).not.toContain('data-count="3000"')
+  })
+
+  it('promises the names within 48 hours and the CTO with the guided team', () => {
+    // REB-686: the offer slide, the services slide and the flow slide say the same
+    // delay, and the CTO is the guided team's on each of them.
+    expect(page).not.toMatch(/sette giorni|7 giorni|una settimana/i)
+    expect(page).toContain('Il freelance giusto entro 48 ore.')
+    expect(page).toContain('<h3>48 ore</h3>')
+    expect(page).toContain('Con Team guidato un CTO di rebase segue il progetto')
+    expect(page).toContain('Parti da una call: entro 48 ore due o tre nomi giusti')
+    expect(page).toContain('<span class="t">48 ore</span><small>per ricevere due o tre nomi giusti</small>')
+    expect(page).toContain('di rebase con Team guidato, che segue il progetto fino alla fine')
   })
 
   it('sells the talent cloud on its own slide the way the services slide does', () => {
