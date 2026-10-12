@@ -11,7 +11,7 @@ import {
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { LETTERA_TEXT_KEYS } from '@/lib/api'
+import { LETTERA_TEXT_KEYS, type Fiscal, type Regime } from '@/lib/api'
 import { AdminCreaMatch } from './CreaMatch'
 
 function answer(status: number, body: unknown) {
@@ -89,11 +89,13 @@ const ROSSI_CLIENTE = { cliente_ragione_sociale: 'Rossi Studio', cliente_piva: '
 function prefill({
   compenso = '450.00' as string | null,
   cliente = ROSSI_CLIENTE as Record<string, string | null>,
-  fiscale = FISCALE as typeof FISCALE | null,
+  fiscale = FISCALE as Fiscal | null,
+  regime = 'partita_iva' as Regime,
 } = {}) {
   return {
     fiscale,
     cliente,
+    regime,
     lettera: {
       ...Object.fromEntries(LETTERA_TEXT_KEYS.map((key) => [key, null])),
       ruolo: 'Backend developer',
@@ -125,6 +127,7 @@ const CHECK = {
   cosa_succede: 'Prima parte il contratto quadro; la lettera di incarico parte da sola dopo la sua firma.',
   quadro_necessario: true,
   dati_fiscali_mancanti: false,
+  regime: 'partita_iva',
 }
 const CHECK_NO_QUADRO = {
   ...CHECK,
@@ -333,7 +336,7 @@ describe('step 1, «Chi e per chi»', () => {
     mount()
     await pick(/Rossi Studio/)
     await userEvent.click(screen.getByRole('button', { name: 'Modifica i dati fiscali' }))
-    const domicilio = screen.getByLabelText('Domicilio professionale')
+    const domicilio = screen.getByLabelText('Domicilio')
     await userEvent.clear(domicilio)
     await userEvent.type(domicilio, 'Via Po 2, Torino')
     await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
@@ -361,10 +364,10 @@ describe('step 1, «Chi e per chi»', () => {
     expect(screen.queryByRole('button', { name: 'Modifica i dati fiscali' })).toBeNull()
     expect(screen.getByLabelText('Codice fiscale')).toBeRequired()
     expect(screen.getByLabelText('Partita IVA')).toBeRequired()
-    expect(screen.getByLabelText('Domicilio professionale')).toBeRequired()
+    expect(screen.getByLabelText('Domicilio')).toBeRequired()
     await userEvent.type(screen.getByLabelText('Codice fiscale'), 'LVLDAA85T50H501Z')
     await userEvent.type(screen.getByLabelText('Partita IVA'), '01234567890')
-    await userEvent.type(screen.getByLabelText('Domicilio professionale'), 'Via Roma 1, Milano')
+    await userEvent.type(screen.getByLabelText('Domicilio'), 'Via Roma 1, Milano')
     await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
     await screen.findByLabelText('Ruolo')
     expect(bodies(spy, 'PUT', '/api/hub/freelancers/f1/fiscal')).toEqual([
@@ -386,7 +389,7 @@ describe('step 1, «Chi e per chi»', () => {
     expect(screen.getByText('Verdi Snc · P.IVA 11122233344 · Torino')).toBeInTheDocument()
     expect(screen.queryByText(/Rossi Studio · P\.IVA/)).toBeNull()
     await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
-    expect(await screen.findByLabelText('Compenso, IVA esclusa (€)')).toHaveValue('900')
+    expect(await screen.findByLabelText('Compenso (€)')).toHaveValue('900')
   })
 
   it('keeps edited conditions after going back with the same company (REB-402)', async () => {
@@ -407,13 +410,13 @@ describe('step 1, «Chi e per chi»', () => {
     routes()
     mount()
     await toCondizioni()
-    expect(screen.getByLabelText('Compenso, IVA esclusa (€)')).toHaveValue('450')
+    expect(screen.getByLabelText('Compenso (€)')).toHaveValue('450')
     await userEvent.click(screen.getByRole('button', { name: 'Indietro' }))
     await userEvent.click(screen.getByRole('button', { name: 'Cambia richiesta' }))
     await userEvent.click(await screen.findByRole('button', { name: /Verdi Snc/ }))
     expect(await screen.findByText('Verdi Snc · P.IVA 11122233344 · Torino')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
-    expect(await screen.findByLabelText('Compenso, IVA esclusa (€)')).toHaveValue('900')
+    expect(await screen.findByLabelText('Compenso (€)')).toHaveValue('900')
   })
 
   it('reaches a request beyond the first page through «Mostra altre» (Greptile 4092036042)', async () => {
@@ -497,7 +500,7 @@ describe('step 1, «Chi e per chi»', () => {
     mount()
     await pick(/Rossi Studio/)
     await userEvent.click(screen.getByRole('button', { name: 'Modifica i dati fiscali' }))
-    const domicilio = screen.getByLabelText('Domicilio professionale')
+    const domicilio = screen.getByLabelText('Domicilio')
     await userEvent.clear(domicilio)
     await userEvent.type(domicilio, 'Via Po 2, Torino')
     await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
@@ -505,11 +508,11 @@ describe('step 1, «Chi e per chi»', () => {
     await pick(/Verdi Snc/)
     // Opened again for the new request, before the save lands.
     await userEvent.click(screen.getByRole('button', { name: 'Modifica i dati fiscali' }))
-    expect(screen.getByLabelText('Domicilio professionale')).toHaveValue('Via Roma 1, Milano')
+    expect(screen.getByLabelText('Domicilio')).toHaveValue('Via Roma 1, Milano')
     // The server's own spelling of what was saved, so the test sees whose values show.
     late.resolve(answer(200, { ...FISCALE, domicilio: 'Via Po 2, 10121 Torino' }))
 
-    await waitFor(() => expect(screen.getByLabelText('Domicilio professionale')).toHaveValue('Via Po 2, 10121 Torino'))
+    await waitFor(() => expect(screen.getByLabelText('Domicilio')).toHaveValue('Via Po 2, 10121 Torino'))
     expect(screen.getByRole('button', { name: 'Avanti' })).toBeEnabled()
     current('1. Chi e per chi')
     expect(screen.getByText('Verdi Snc · P.IVA 11122233344 · Torino')).toBeInTheDocument()
@@ -530,7 +533,7 @@ describe('step 1, «Chi e per chi»', () => {
     mount()
     await pick(/Rossi Studio/)
     await userEvent.click(screen.getByRole('button', { name: 'Modifica i dati fiscali' }))
-    const domicilio = screen.getByLabelText('Domicilio professionale')
+    const domicilio = screen.getByLabelText('Domicilio')
     await userEvent.clear(domicilio)
     await userEvent.type(domicilio, 'Via Po 2, Torino')
     await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
@@ -540,7 +543,7 @@ describe('step 1, «Chi e per chi»', () => {
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Avanti' })).toBeEnabled())
     current('1. Chi e per chi')
-    expect(screen.getByLabelText('Domicilio professionale')).toHaveValue('Via Po 3, Torino')
+    expect(screen.getByLabelText('Domicilio')).toHaveValue('Via Po 3, Torino')
     await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
     await screen.findByLabelText('Ruolo')
     expect(bodies(spy, 'PUT', '/api/hub/freelancers/f1/fiscal').map((body) => body.domicilio)).toEqual([
@@ -559,7 +562,7 @@ describe('step 1, «Chi e per chi»', () => {
     mount()
     await pick(/Rossi Studio/)
     await userEvent.click(screen.getByRole('button', { name: 'Modifica i dati fiscali' }))
-    const domicilio = screen.getByLabelText('Domicilio professionale')
+    const domicilio = screen.getByLabelText('Domicilio')
     await userEvent.clear(domicilio)
     await userEvent.type(domicilio, 'Via Po 2, Torino')
     await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
@@ -582,7 +585,7 @@ describe('step 1, «Chi e per chi»', () => {
     expect(await screen.findByText('Verdi Snc · P.IVA 11122233344 · Torino')).toBeInTheDocument()
     expect(screen.getByText('Salvati: CF LVLDAA85T50H501Z · P.IVA 01234567899')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Modifica i dati fiscali' }))
-    expect(screen.getByLabelText('Domicilio professionale')).toHaveValue('Via Po 2, 10121 Torino')
+    expect(screen.getByLabelText('Domicilio')).toHaveValue('Via Po 2, 10121 Torino')
     await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
     await screen.findByLabelText('Ruolo')
     expect(bodies(spy, 'PUT', '/api/hub/freelancers/f1/fiscal')).toHaveLength(1)
@@ -601,7 +604,7 @@ describe('step 1, «Chi e per chi»', () => {
     mount()
     await pick(/Rossi Studio/)
     await userEvent.click(screen.getByRole('button', { name: 'Modifica i dati fiscali' }))
-    const domicilio = screen.getByLabelText('Domicilio professionale')
+    const domicilio = screen.getByLabelText('Domicilio')
     await userEvent.clear(domicilio)
     await userEvent.type(domicilio, 'Via Po 2, Torino')
     await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
@@ -631,21 +634,21 @@ describe('step 1, «Chi e per chi»', () => {
     mount()
     await pick(/Rossi Studio/)
     await userEvent.click(screen.getByRole('button', { name: 'Modifica i dati fiscali' }))
-    await userEvent.clear(screen.getByLabelText('Domicilio professionale'))
-    await userEvent.type(screen.getByLabelText('Domicilio professionale'), 'Via Po 2, Torino')
+    await userEvent.clear(screen.getByLabelText('Domicilio'))
+    await userEvent.type(screen.getByLabelText('Domicilio'), 'Via Po 2, Torino')
     await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
     await userEvent.click(screen.getByRole('button', { name: 'Cambia richiesta' }))
     await pick(/Verdi Snc/)
     // For the new request: the domicilio as the save on its way sent it, and a PEC.
     await userEvent.click(screen.getByRole('button', { name: 'Modifica i dati fiscali' }))
-    const domicilio = screen.getByLabelText('Domicilio professionale')
+    const domicilio = screen.getByLabelText('Domicilio')
     await userEvent.clear(domicilio)
     await userEvent.type(domicilio, 'Via Po 2, Torino')
     await userEvent.type(screen.getByLabelText('PEC, se ce l’ha'), 'ada@pec.it')
     save.resolve(answer(200, { ...FISCALE, domicilio: 'Via Po 2, Torino', updated_at: '2026-09-25T10:00:00Z' }))
 
     await waitFor(() => expect(bodies(spy, 'PUT', '/api/hub/freelancers/f1/fiscal')).toHaveLength(1))
-    await waitFor(() => expect(screen.getByLabelText('Domicilio professionale')).toHaveValue('Via Verdi 5, Torino'))
+    await waitFor(() => expect(screen.getByLabelText('Domicilio')).toHaveValue('Via Verdi 5, Torino'))
     expect(screen.getByLabelText('Partita IVA')).toHaveValue('05555555555')
     expect(screen.getByLabelText('PEC, se ce l’ha')).toHaveValue('ada@pec.it')
   })
@@ -661,7 +664,7 @@ describe('step 1, «Chi e per chi»', () => {
     mount()
     await pick(/Rossi Studio/)
     await userEvent.click(screen.getByRole('button', { name: 'Modifica i dati fiscali' }))
-    const domicilio = screen.getByLabelText('Domicilio professionale')
+    const domicilio = screen.getByLabelText('Domicilio')
     await userEvent.clear(domicilio)
     await userEvent.type(domicilio, 'Via Po 2, Torino')
     await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
@@ -683,14 +686,14 @@ describe('step 1, «Chi e per chi»', () => {
     const late = deferred<Response>()
     const spy = await saveHeldThenSwitch(late)
     await userEvent.click(screen.getByRole('button', { name: 'Modifica i dati fiscali' }))
-    const domicilio = screen.getByLabelText('Domicilio professionale')
+    const domicilio = screen.getByLabelText('Domicilio')
     await userEvent.clear(domicilio)
     await userEvent.type(domicilio, 'Via Nuova 3, Bari')
     late.resolve(answer(200, { ...FISCALE, partita_iva: '01234567899', domicilio: 'Via Po 2, 10121 Torino' }))
 
     // The field typed in keeps its text; the one left alone takes the saved value.
     await waitFor(() => expect(screen.getByLabelText('Partita IVA')).toHaveValue('01234567899'))
-    expect(screen.getByLabelText('Domicilio professionale')).toHaveValue('Via Nuova 3, Bari')
+    expect(screen.getByLabelText('Domicilio')).toHaveValue('Via Nuova 3, Bari')
     current('1. Chi e per chi')
     await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
     await screen.findByLabelText('Ruolo')
@@ -718,7 +721,7 @@ describe('step 2, «Condizioni»', () => {
       'Dove',
       'A giornata',
       'A corpo',
-      'Compenso, IVA esclusa (€)',
+      'Compenso (€)',
     ]
     const fields = labels.map((label) => within(form).getByLabelText(label))
     fields.slice(1).forEach((after, index) => {
@@ -733,7 +736,7 @@ describe('step 2, «Condizioni»', () => {
     expect(screen.getByText('al giorno')).toBeInTheDocument()
     expect(screen.getByLabelText(/^Pagamento a/)).toHaveValue(30)
     expect(screen.getByRole('checkbox', { name: 'fine mese' })).toBeChecked()
-    for (const label of ['Ruolo', 'Cosa farà', 'Inizio', 'Compenso, IVA esclusa (€)']) {
+    for (const label of ['Ruolo', 'Cosa farà', 'Inizio', 'Compenso (€)']) {
       expect(screen.getByLabelText(label)).toBeRequired()
     }
     expect(screen.getByLabelText(/^Pagamento a/)).toBeRequired()
@@ -773,7 +776,7 @@ describe('step 2, «Condizioni»', () => {
     await userEvent.click(screen.getByRole('radio', { name: 'A corpo' }))
     expect(screen.getByRole('radio', { name: 'A corpo' })).toBeChecked()
     expect(screen.getByText('in tutto')).toBeInTheDocument()
-    const fee = screen.getByLabelText('Compenso, IVA esclusa (€)')
+    const fee = screen.getByLabelText('Compenso (€)')
     expect(fee).toHaveValue('')
     await userEvent.type(fee, '12000')
     const added = ['Risultati da consegnare', 'Come il cliente accetta i risultati', 'Scadenze di fatturazione'].map(
@@ -804,7 +807,7 @@ describe('step 2, «Condizioni»', () => {
     await userEvent.click(screen.getByRole('radio', { name: 'A giornata' }))
     expect(screen.queryByLabelText('Risultati da consegnare')).toBeNull()
     expect(screen.getByText('al giorno')).toBeInTheDocument()
-    expect(screen.getByLabelText('Compenso, IVA esclusa (€)')).toHaveValue('450')
+    expect(screen.getByLabelText('Compenso (€)')).toHaveValue('450')
     await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
     await screen.findByRole('button', { name: 'Salva senza inviare' })
     const [body] = bodies(spy, 'POST', '/api/hub/freelancers/f1/matches/check')
@@ -815,7 +818,7 @@ describe('step 2, «Condizioni»', () => {
     routes()
     mount()
     await toCondizioni()
-    const fee = screen.getByLabelText('Compenso, IVA esclusa (€)')
+    const fee = screen.getByLabelText('Compenso (€)')
     await userEvent.clear(fee)
     await userEvent.type(fee, '500')
     await userEvent.click(screen.getByRole('radio', { name: 'A corpo' }))
@@ -830,7 +833,7 @@ describe('step 2, «Condizioni»', () => {
     })
     mount()
     await toCondizioni()
-    expect(screen.getByLabelText('Compenso, IVA esclusa (€)')).toHaveValue('480,50')
+    expect(screen.getByLabelText('Compenso (€)')).toHaveValue('480,50')
     await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
     await screen.findByRole('button', { name: 'Salva senza inviare' })
     const [body] = bodies(spy, 'POST', '/api/hub/freelancers/f1/matches/check')
@@ -841,7 +844,7 @@ describe('step 2, «Condizioni»', () => {
     const spy = routes()
     mount()
     await toCondizioni()
-    const fee = screen.getByLabelText('Compenso, IVA esclusa (€)')
+    const fee = screen.getByLabelText('Compenso (€)')
     await userEvent.clear(fee)
     await userEvent.type(fee, '1,500')
     await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
@@ -854,12 +857,12 @@ describe('step 2, «Condizioni»', () => {
     const spy = routes()
     mount()
     await toCondizioni()
-    const fee = screen.getByLabelText('Compenso, IVA esclusa (€)')
+    const fee = screen.getByLabelText('Compenso (€)')
     await userEvent.clear(fee)
     await userEvent.type(fee, '1234,567')
     await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Serve una cifra, in euro.')
-    expect(screen.getByLabelText('Compenso, IVA esclusa (€)')).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByLabelText('Compenso (€)')).toHaveAttribute('aria-invalid', 'true')
     expect(bodies(spy, 'POST', '/api/hub/freelancers/f1/matches/check')).toEqual([])
     expect(spy.mock.calls.some(([url]) => String(url).includes('/matches/preview'))).toBe(false)
     current('2. Condizioni')
@@ -873,13 +876,13 @@ describe('step 2, «Condizioni»', () => {
     })
     mount()
     await toCondizioni()
-    const fee = screen.getByLabelText('Compenso, IVA esclusa (€)')
+    const fee = screen.getByLabelText('Compenso (€)')
     expect(fee).toHaveValue('')
     expect(fee).toBeRequired()
     await userEvent.type(fee, '0')
     await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Input should be greater than or equal to 1')
-    expect(screen.getByLabelText('Compenso, IVA esclusa (€)')).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByLabelText('Compenso (€)')).toHaveAttribute('aria-invalid', 'true')
     expect(screen.queryByRole('button', { name: 'Salva senza inviare' })).toBeNull()
   })
 
@@ -1187,7 +1190,7 @@ describe('«Giorni previsti», the expected days (REB-502)', () => {
     expect(giorni).toHaveAttribute('max', '366')
     expect(giorni).not.toHaveAttribute('step')
     expect(giorni).toHaveAccessibleDescription(HELP)
-    const fee = screen.getByLabelText('Compenso, IVA esclusa (€)')
+    const fee = screen.getByLabelText('Compenso (€)')
     expect(fee.compareDocumentPosition(giorni) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     // In the open, not among the letter's own optional fields.
     const altre = screen.getByText('Altre condizioni (facoltative)').closest('details')!
@@ -1262,5 +1265,99 @@ describe('«Giorni previsti», the expected days (REB-502)', () => {
     expect(await screen.findByText('Verdi Snc · P.IVA 11122233344 · Torino')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
     expect(await screen.findByLabelText('Giorni previsti')).toHaveValue(null)
+  })
+})
+
+describe('«Tipo di lettera» (REB-687)', () => {
+  const SENZA = { ...FISCALE, partita_iva: null }
+  const REFUSAL =
+    'Senza partita IVA si fa solo la lettera occasionale: scegli "Prestazione occasionale" o salva la partita IVA.'
+
+  it('proposes «Prestazione occasionale» for tax data saved without a partita IVA, and the rest follows it', async () => {
+    const spy = routes({
+      'GET /api/hub/freelancers/f1/matches/prefill?company_id=c1': prefill({ fiscale: SENZA, regime: 'occasionale' }),
+      'POST /api/hub/freelancers/f1/matches/check': { ...CHECK, regime: 'occasionale' },
+    })
+    mount()
+    await pick(/Rossi Studio/)
+    expect(screen.getByText('Salvati: CF LVLDAA85T50H501Z · senza partita IVA')).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'Prestazione occasionale' })).toBeChecked()
+    expect(screen.getByRole('radio', { name: 'Incarico con partita IVA' })).not.toBeChecked()
+    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
+    expect(await screen.findByLabelText('Compenso (€)')).toHaveAccessibleDescription(/lordo, senza IVA/)
+    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
+    expect(await screen.findByRole('link', { name: 'Apri la lettera occasionale (PDF)' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Apri il contratto quadro per prestazioni occasionali (PDF)' })).toBeInTheDocument()
+    const [body] = bodies(spy, 'POST', '/api/hub/freelancers/f1/matches/check')
+    expect(body.regime).toBe('occasionale')
+    expect(spy.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(false)
+  })
+
+  it('hints «IVA esclusa» under the fee of the ordinary letter, and sends the type picked', async () => {
+    const spy = routes()
+    mount()
+    await pick(/Rossi Studio/)
+    expect(screen.getByRole('radio', { name: 'Incarico con partita IVA' })).toBeChecked()
+    await userEvent.click(screen.getByRole('radio', { name: 'Prestazione occasionale' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
+    expect(await screen.findByLabelText('Compenso (€)')).toHaveAccessibleDescription(/lordo, senza IVA/)
+    await userEvent.click(screen.getByRole('button', { name: 'Indietro' }))
+    await userEvent.click(await screen.findByRole('radio', { name: 'Incarico con partita IVA' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
+    expect(await screen.findByLabelText('Compenso (€)')).toHaveAccessibleDescription(/IVA esclusa/)
+    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
+    await screen.findByRole('button', { name: 'Salva senza inviare' })
+    const [body] = bodies(spy, 'POST', '/api/hub/freelancers/f1/matches/check')
+    expect(body.regime).toBe('partita_iva')
+  })
+
+  it('saves nothing again when tax data without a partita IVA are opened and left as they were', async () => {
+    const spy = routes({
+      'GET /api/hub/freelancers/f1/matches/prefill?company_id=c1': prefill({ fiscale: SENZA, regime: 'occasionale' }),
+    })
+    mount()
+    await pick(/Rossi Studio/)
+    await userEvent.click(screen.getByRole('button', { name: 'Modifica i dati fiscali' }))
+    expect(screen.getByRole('checkbox', { name: 'Senza partita IVA (prestazione occasionale)' })).toBeChecked()
+    expect(screen.queryByLabelText('Partita IVA')).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
+    await screen.findByLabelText('Ruolo')
+    expect(spy.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(false)
+  })
+
+  it('switches «Tipo di lettera» to «Prestazione occasionale» when «Senza partita IVA» is ticked, and not back when unticked', async () => {
+    routes()
+    mount()
+    await pick(/Rossi Studio/)
+    expect(screen.getByRole('radio', { name: 'Incarico con partita IVA' })).toBeChecked()
+    await userEvent.click(screen.getByRole('button', { name: 'Modifica i dati fiscali' }))
+    const box = screen.getByRole('checkbox', { name: 'Senza partita IVA (prestazione occasionale)' })
+    await userEvent.click(box)
+    expect(screen.getByRole('radio', { name: 'Prestazione occasionale' })).toBeChecked()
+    await userEvent.click(box)
+    expect(screen.getByRole('radio', { name: 'Prestazione occasionale' })).toBeChecked()
+  })
+
+  it('goes back to «Chi e per chi» with the sentence when the check refuses an ordinary letter without a partita IVA', async () => {
+    const spy = routes({
+      'PUT /api/hub/freelancers/f1/fiscal': { ...SENZA, updated_at: '2026-09-24T10:00:00Z' },
+      'POST /api/hub/freelancers/f1/matches/check': answer(422, { detail: [{ loc: ['body', 'regime'], msg: REFUSAL }] }),
+    })
+    mount()
+    await pick(/Rossi Studio/)
+    await userEvent.click(screen.getByRole('button', { name: 'Modifica i dati fiscali' }))
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Senza partita IVA (prestazione occasionale)' }))
+    expect(screen.getByRole('radio', { name: 'Prestazione occasionale' })).toBeChecked()
+    await userEvent.click(screen.getByRole('radio', { name: 'Incarico con partita IVA' }))
+    expect(screen.getByRole('radio', { name: 'Incarico con partita IVA' })).toBeChecked()
+    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Avanti' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(REFUSAL)
+    current('1. Chi e per chi')
+    expect(screen.getByRole('radio', { name: 'Prestazione occasionale' })).toBeInTheDocument()
+    const [saved] = bodies(spy, 'PUT', '/api/hub/freelancers/f1/fiscal')
+    expect(saved.partita_iva).toBeNull()
+    const [checked] = bodies(spy, 'POST', '/api/hub/freelancers/f1/matches/check')
+    expect(checked.regime).toBe('partita_iva')
   })
 })

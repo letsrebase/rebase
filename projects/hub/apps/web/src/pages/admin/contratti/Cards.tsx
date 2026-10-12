@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from '@rebase/ui/dropdown-menu'
 import { admin, type Action, type ContractDocument, type Match } from '@/lib/api'
-import { MATCHES_HEADING_ID, QUADRO_HEADING_ID, matchHeadingId, whatOf } from '@/lib/contracts'
+import { MATCHES_HEADING_ID, matchHeadingId, quadroHeadingId, whatOf } from '@/lib/contracts'
 import {
   ACTION_LABELS,
   ACTION_PENDING_LABELS,
@@ -160,8 +160,10 @@ function Failure({ message }: { message: string | null }) {
   )
 }
 
-/** «Contratto quadro»: where it stands in one sentence and what to do next; the text's
- *  version, read rarely, in a closed «Dettagli». Its own errors show under it. */
+/** A framework agreement's card, one per regime (REB-687), titled by its type: where it
+ *  stands in one sentence and what to do next; the text's version, read rarely, in a
+ *  closed «Dettagli». Its own errors show under it. With none at all, the ordinary card
+ *  says the first match sent brings one. */
 export function FrameworkCard({
   quadro,
   handles,
@@ -173,14 +175,15 @@ export function FrameworkCard({
   busy: boolean
   error: string | null
 }) {
+  const headingId = quadroHeadingId(quadro?.regime ?? 'partita_iva')
   return (
-    <section aria-labelledby={QUADRO_HEADING_ID} className="space-y-2">
+    <section aria-labelledby={headingId} className="space-y-2">
       <Card>
         <CardHeader>
           <CardTitle>
             {/* Focusable by the page alone, to land on when an action took its control away. */}
-            <h2 id={QUADRO_HEADING_ID} tabIndex={-1}>
-              Contratto quadro
+            <h2 id={headingId} tabIndex={-1}>
+              {quadro?.tipo ?? 'Contratto quadro'}
             </h2>
           </CardTitle>
           {quadro && (
@@ -200,7 +203,7 @@ export function FrameworkCard({
                 others={quadro.altre_azioni}
                 handles={handles}
                 busy={busy}
-                moreLabel="Altre azioni del contratto quadro"
+                moreLabel={`Altre azioni ${whatOf(quadro)}`}
               >
                 <DocumentLinks document={quadro} />
               </NextSteps>
@@ -240,6 +243,7 @@ function MatchCard({ match, handles, busy }: { match: Match; handles: ActionHand
         </CardHeader>
         <CardContent className="space-y-3">
           <p>{match.situazione}</p>
+          <p className="text-sm text-muted-foreground">{`${match.lettera.tipo} n. ${match.lettera.numero}`}</p>
           <NextSteps
             next={match.prossima_azione}
             others={match.altre_azioni}

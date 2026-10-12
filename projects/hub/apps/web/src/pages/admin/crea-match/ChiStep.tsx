@@ -4,8 +4,9 @@ import { Button } from '@rebase/ui/button'
 import { cn } from '@rebase/ui/cn'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
-import { admin, type Company, type FiscalData } from '@/lib/api'
+import { admin, type Company, type FiscalData, type Regime } from '@/lib/api'
 import {
+  REGIME_OPTIONS,
   clienteLine,
   fiscalLine,
   requestLine,
@@ -269,9 +270,34 @@ function FiscaleSection({
   )
 }
 
+/** «Tipo di lettera» (REB-687), under the tax data: the letter's type drives which
+ *  framework agreement the check looks for, step 3's sentences and the PDFs. */
+function TipoLettera({ regime, onChange }: { regime: Regime; onChange: (regime: Regime) => void }) {
+  return (
+    <fieldset className="space-y-2">
+      <legend className="text-sm font-medium">Tipo di lettera</legend>
+      <div className="flex flex-wrap gap-x-6 gap-y-2">
+        {REGIME_OPTIONS.map((option) => (
+          <Label key={option.regime} className="font-normal">
+            <input
+              type="radio"
+              name="match-regime"
+              value={option.regime}
+              checked={regime === option.regime}
+              onChange={() => onChange(option.regime)}
+              className="size-4 shrink-0 accent-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            />
+            {option.label}
+          </Label>
+        ))}
+      </div>
+    </fieldset>
+  )
+}
+
 /** Step 1: the request, folded into one line once picked, then the client the letter
  *  names and the freelancer's tax data, both read from the prefill and asked only when
- *  missing or opened. */
+ *  missing or opened, and the letter's type. */
 export function ChiStep({
   nome,
   selected,
@@ -287,6 +313,8 @@ export function ChiStep({
   onFiscal,
   editFiscal,
   onEditFiscal,
+  regime,
+  onRegime,
   onNext,
   pending,
   failure,
@@ -308,6 +336,8 @@ export function ChiStep({
   onFiscal: (draft: FiscalDraft) => void
   editFiscal: boolean
   onEditFiscal: () => void
+  regime: Regime
+  onRegime: (regime: Regime) => void
   onNext: () => void
   pending: boolean
   failure: Failure | null
@@ -368,6 +398,7 @@ export function ChiStep({
             onEdit={onEditFiscal}
             failure={failure}
           />
+          <TipoLettera regime={regime} onChange={onRegime} />
         </div>
       )}
       {!listOpen && selected && !loaded && <p className="text-sm text-muted-foreground">Leggo la richiesta…</p>}

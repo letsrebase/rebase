@@ -775,6 +775,8 @@ export type DocumentStato = 'generato' | 'in_attesa' | 'inviato' | 'firmato' | '
 /** Where an active match's link to its deal on Pigro stands (REB-497): `null` until the
  *  match turns `attivo`. */
 export type PigroStato = 'da_collegare' | 'collegato' | 'errore' | 'rifiutato'
+/** REB-687: a contract document's family, the letter type a match is made with. */
+export type Regime = 'partita_iva' | 'occasionale'
 
 /** What an admin can do next on a document or a match (REB-477), as the core's
  *  `match_words` names it: the page maps each to its button and its API call. */
@@ -787,10 +789,11 @@ export type Action =
   | 'registra_disdetta'
   | 'riprova_pigro'
 
-/** A freelancer's tax data, as the two contracts print them. */
+/** A freelancer's tax data, as the contracts print them. `partita_iva` is `null` for a
+ *  member who works without one, paid as a prestazione occasionale (REB-687). */
 export interface FiscalData {
   codice_fiscale: string
-  partita_iva: string
+  partita_iva: string | null
   domicilio: string
   pec: string | null
 }
@@ -805,6 +808,10 @@ export interface Fiscal extends FiscalData {
 export interface ContractDocument {
   id: string
   kind: 'quadro' | 'lettera'
+  /** Its family, and its type as the pages name it (REB-687): «Contratto quadro per
+   *  prestazioni occasionali», «Lettera di incarico occasionale». */
+  regime: Regime
+  tipo: string
   freelancer_id: string
   match_id: string | null
   numero: string | null
@@ -1071,11 +1078,13 @@ export interface ScheduleRequest {
   esclusi: string[]
 }
 
-/** «Match e contratti»: the framework agreement at the top, every one of them, the
- *  matches newest first, and the tax data the page edits. */
+/** «Match e contratti»: the framework agreements at the top, one per regime (REB-687):
+ *  `quadro` the ordinary one, `quadro_occasionale` the occasional one; every one of them,
+ *  the matches newest first, and the tax data the page edits. */
 export interface FreelancerContracts {
   freelancer_id: string
   quadro: ContractDocument | null
+  quadro_occasionale: ContractDocument | null
   quadri: ContractDocument[]
   matches: Match[]
   fiscale: Fiscal | null
@@ -1160,6 +1169,10 @@ export interface MatchReport {
 export interface MemberContract {
   id: string
   kind: 'quadro' | 'lettera'
+  /** Its family, and its type as the pages name it (REB-687): «Contratto quadro per
+   *  prestazioni occasionali», «Lettera di incarico occasionale». */
+  regime: Regime
+  tipo: string
   numero: string | null
   stato: DocumentStato
   cliente: string | null
@@ -1177,11 +1190,13 @@ export interface MemberContract {
   pigro_url: string | null
 }
 
-/** `quadri_precedenti` (REB-392): the freelancer's other framework agreements that were
- *  signed, newest first, excluding the one in `quadro` -- a notice, or a newer one
- *  replacing it, moves the older one here rather than off the page. */
+/** `quadro` and `quadro_occasionale` (REB-687): the framework agreement of each regime.
+ *  `quadri_precedenti` (REB-392): the freelancer's other framework agreements that were
+ *  signed, newest first, excluding the two on top -- a notice, or a newer one replacing
+ *  it, moves the older one here rather than off the page. */
 export interface MemberContracts {
   quadro: MemberContract | null
+  quadro_occasionale: MemberContract | null
   quadri_precedenti: MemberContract[]
   lettere: MemberContract[]
 }
@@ -1241,6 +1256,8 @@ export type ClienteDraft = { [K in keyof Cliente]: string | null }
 export interface MatchCreate {
   id?: string
   company_id: string
+  /** REB-687: the letter type, `partita_iva` or `occasionale`. */
+  regime: Regime
   cliente: Cliente
   lettera: Lettera
   /** «Giorni previsti» (REB-497): beside the letter, never inside it, since `LetteraFields`
@@ -1255,12 +1272,16 @@ export interface MatchCheck {
   cosa_succede: string
   quadro_necessario: boolean
   dati_fiscali_mancanti: boolean
+  /** REB-687: the letter type, `partita_iva` or `occasionale`. */
+  regime: Regime
 }
 
 export interface MatchPrefill {
   fiscale: Fiscal | null
   cliente: ClienteDraft
   lettera: LetteraDraft
+  /** REB-687: the letter type, `partita_iva` or `occasionale`. */
+  regime: Regime
   quadro_attivo: ContractDocument | null
   quadro_necessario: boolean
   lettera_in_attesa: boolean

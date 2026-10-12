@@ -45,6 +45,8 @@ const PERSON = { id: 'f1', nome: 'Ada', cognome: 'Lovelace', email: 'ada@studio.
 const QUADRO = {
   id: 'd1',
   kind: 'quadro',
+  regime: 'partita_iva',
+  tipo: 'Contratto quadro',
   freelancer_id: 'f1',
   match_id: null,
   numero: null,
@@ -71,6 +73,7 @@ const LETTERA = {
   ...QUADRO,
   id: 'd2',
   kind: 'lettera',
+  tipo: 'Lettera di incarico',
   match_id: 'm1',
   numero: '2026-001',
   stato: 'generato',
@@ -125,7 +128,7 @@ const FISCALE = {
   updated_by: 'a1',
   updated_at: '2026-09-23T10:00:00Z',
 }
-const PAGE = { freelancer_id: 'f1', quadro: QUADRO, quadri: [QUADRO], matches: [MATCH], fiscale: FISCALE }
+const PAGE = { freelancer_id: 'f1', quadro: QUADRO, quadro_occasionale: null, quadri: [QUADRO], matches: [MATCH], fiscale: FISCALE }
 /** A framework agreement out for signature, waiting for the freelancer. */
 const OUT = {
   ...QUADRO,
@@ -213,7 +216,14 @@ describe('«Match e contratti» as cards (REB-477)', () => {
   it('says, when there is none, that the first match sent brings the framework agreement', async () => {
     routeFetch({
       'GET /api/hub/freelancers/f1': PERSON,
-      'GET /api/hub/freelancers/f1/matches': { freelancer_id: 'f1', quadro: null, quadri: [], matches: [], fiscale: null },
+      'GET /api/hub/freelancers/f1/matches': {
+        freelancer_id: 'f1',
+        quadro: null,
+        quadro_occasionale: null,
+        quadri: [],
+        matches: [],
+        fiscale: null,
+      },
     })
     mount('/admin/freelance/f1/contracts')
     const card = await quadroCard()
@@ -803,7 +813,7 @@ describe('«Match e contratti» as cards (REB-477)', () => {
 
     await userEvent.click(summary)
     expect(details).toHaveAttribute('open')
-    const domicilio = within(details).getByLabelText('Domicilio professionale')
+    const domicilio = within(details).getByLabelText('Domicilio')
     expect(domicilio).toHaveValue('Via Roma 1, Milano')
     await userEvent.clear(domicilio)
     await userEvent.type(domicilio, 'Corso Como 1, Milano')
@@ -1009,5 +1019,59 @@ describe('a match’s link to Pigro on its card (REB-502)', () => {
     await userEvent.click(screen.getByRole('menuitem', { name: RETRY }))
     const section = screen.getByRole('region', { name: 'Match' })
     expect(await within(section).findByRole('alert')).toHaveTextContent('Consuntivo non configurato su questo ambiente.')
+  })
+})
+
+describe('one framework agreement per regime (REB-687)', () => {
+  const OCCASIONALE = { ...OUT, id: 'd9', regime: 'occasionale', tipo: 'Contratto quadro per prestazioni occasionali' }
+  const LETTERA_OCCASIONALE = {
+    ...LETTERA,
+    id: 'd8',
+    numero: '2026-002',
+    regime: 'occasionale',
+    tipo: 'Lettera di incarico occasionale',
+  }
+  const MATCH_OCCASIONALE = { ...MATCH, id: 'm2', nome_azienda: 'Verdi Snc', lettera: LETTERA_OCCASIONALE }
+  const BOTH = {
+    ...PAGE,
+    quadro_occasionale: OCCASIONALE,
+    quadri: [OCCASIONALE, QUADRO],
+    matches: [MATCH_OCCASIONALE, MATCH],
+  }
+
+  it('shows a card for each, named by its type, each with its own actions', async () => {
+    const gone = { ...OCCASIONALE, stato: 'annullato', prossima_azione: null, altre_azioni: [] }
+    const spy = routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/freelancers/f1/matches': BOTH,
+      'POST /api/hub/contract-documents/d9/cancel': gone,
+    })
+    mount('/admin/freelance/f1/contracts')
+    const ordinary = await screen.findByRole('region', { name: 'Contratto quadro' })
+    const occasional = screen.getByRole('region', { name: 'Contratto quadro per prestazioni occasionali' })
+    expect(within(ordinary).getByText(QUADRO.situazione)).toBeInTheDocument()
+    expect(
+      within(occasional).getByRole('link', { name: 'PDF del contratto quadro per prestazioni occasionali' }),
+    ).toHaveAttribute('href', '/api/hub/contract-documents/d9/pdf')
+    expect(
+      within(occasional).getByRole('button', { name: 'Reinvia email del contratto quadro per prestazioni occasionali' }),
+    ).toBeInTheDocument()
+    await openMore(occasional, 'Altre azioni del contratto quadro per prestazioni occasionali')
+    await userEvent.click(
+      screen.getByRole('menuitem', { name: 'Annulla il contratto quadro per prestazioni occasionali' }),
+    )
+    await userEvent.click(await screen.findByRole('button', { name: 'Sì, annulla il contratto quadro' }))
+    await waitFor(() =>
+      expect(spy).toHaveBeenCalledWith('/api/hub/contract-documents/d9/cancel', expect.objectContaining({ method: 'POST' })),
+    )
+    expect(spy).not.toHaveBeenCalledWith('/api/hub/contract-documents/d1/cancel', expect.anything())
+  })
+
+  it('names each match’s letter by its type', async () => {
+    routeFetch({ 'GET /api/hub/freelancers/f1': PERSON, 'GET /api/hub/freelancers/f1/matches': BOTH })
+    mount('/admin/freelance/f1/contracts')
+    const occasional = await screen.findByRole('article', { name: 'Verdi Snc · Backend developer' })
+    expect(within(occasional).getByText('Lettera di incarico occasionale n. 2026-002')).toBeInTheDocument()
+    expect(within(await matchCard()).getByText('Lettera di incarico n. 2026-001')).toBeInTheDocument()
   })
 })

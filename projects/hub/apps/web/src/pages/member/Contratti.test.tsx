@@ -11,6 +11,8 @@ function answer(status: number, body: unknown) {
 const QUADRO = {
   id: 'd1',
   kind: 'quadro',
+  regime: 'partita_iva',
+  tipo: 'Contratto quadro',
   numero: null,
   stato: 'inviato',
   cliente: null,
@@ -29,6 +31,7 @@ const LETTERA = {
   ...QUADRO,
   id: 'd2',
   kind: 'lettera',
+  tipo: 'Lettera di incarico',
   numero: '2026-001',
   stato: 'in_attesa',
   cliente: 'ACME S.r.l.',
@@ -183,5 +186,38 @@ describe('«Contratti» in the member area (REB-392)', () => {
     expect(within(other).queryByRole('link', { name: /Pigro/ })).toBeNull()
     expect(within(other).queryByText(/rebase legge le ore/)).toBeNull()
     expect(screen.getAllByRole('link', { name: /Le tue ore su Pigro/ })).toHaveLength(1)
+  })
+
+  it('shows the occasional framework agreement beside the ordinary one, each with its own link (REB-687)', async () => {
+    mount({
+      quadro: {
+        ...QUADRO,
+        stato: 'firmato',
+        signing_url: null,
+        ha_pdf_firmato: true,
+        attivo: true,
+        signed_at: '2026-10-01T09:00:00Z',
+        rinnovo: '2027-10-01',
+        ultimo_giorno_disdetta: '2027-09-01',
+      },
+      quadro_occasionale: {
+        ...QUADRO,
+        id: 'd5',
+        regime: 'occasionale',
+        tipo: 'Contratto quadro per prestazioni occasionali',
+        signing_url: 'https://firma.letsrebase.com/sign/occ',
+      },
+      quadri_precedenti: [],
+      lettere: [{ ...LETTERA, regime: 'occasionale', tipo: 'Lettera di incarico occasionale' }],
+    })
+    expect(await screen.findByText('Contratto quadro per prestazioni occasionali')).toBeInTheDocument()
+    expect(screen.getByText('Contratto quadro')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Firma il contratto quadro per prestazioni occasionali' })).toHaveAttribute(
+      'href',
+      'https://firma.letsrebase.com/sign/occ',
+    )
+    expect(screen.queryByRole('link', { name: 'Firma il contratto quadro' })).toBeNull()
+    expect(screen.getByText('Lettera di incarico occasionale n. 2026-001')).toBeInTheDocument()
+    expect(screen.queryByText('Contratti quadro precedenti')).toBeNull()
   })
 })
