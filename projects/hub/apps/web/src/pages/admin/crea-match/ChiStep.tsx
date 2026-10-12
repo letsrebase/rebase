@@ -271,8 +271,18 @@ function FiscaleSection({
 }
 
 /** «Tipo di lettera» (REB-687), under the tax data: the letter's type drives which
- *  framework agreement the check looks for, step 3's sentences and the PDFs. */
-function TipoLettera({ regime, onChange }: { regime: Regime; onChange: (regime: Regime) => void }) {
+ *  framework agreement the check looks for, step 3's sentences and the PDFs. A refusal
+ *  on `regime` (an ordinary letter without a partita IVA) marks both options. */
+function TipoLettera({
+  regime,
+  onChange,
+  failure,
+}: {
+  regime: Regime
+  onChange: (regime: Regime) => void
+  failure: Failure | null
+}) {
+  const wrong = failure?.fields.includes('regime') || undefined
   return (
     <fieldset className="space-y-2">
       <legend className="text-sm font-medium">Tipo di lettera</legend>
@@ -285,6 +295,7 @@ function TipoLettera({ regime, onChange }: { regime: Regime; onChange: (regime: 
               value={option.regime}
               checked={regime === option.regime}
               onChange={() => onChange(option.regime)}
+              aria-invalid={wrong}
               className="size-4 shrink-0 accent-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
             />
             {option.label}
@@ -398,7 +409,7 @@ export function ChiStep({
             onEdit={onEditFiscal}
             failure={failure}
           />
-          <TipoLettera regime={regime} onChange={onRegime} />
+          <TipoLettera regime={regime} onChange={onRegime} failure={failure} />
         </div>
       )}
       {!listOpen && selected && !loaded && <p className="text-sm text-muted-foreground">Leggo la richiesta…</p>}

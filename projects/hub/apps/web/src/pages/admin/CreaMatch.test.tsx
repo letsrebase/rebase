@@ -1354,7 +1354,9 @@ describe('«Tipo di lettera» (REB-687)', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Avanti' }))
     expect(await screen.findByRole('alert')).toHaveTextContent(REFUSAL)
     current('1. Chi e per chi')
-    expect(screen.getByRole('radio', { name: 'Prestazione occasionale' })).toBeInTheDocument()
+    // The refusal is on `regime`: «Tipo di lettera» is the field to change.
+    expect(screen.getByRole('radio', { name: 'Prestazione occasionale' })).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByRole('radio', { name: 'Incarico con partita IVA' })).toHaveAttribute('aria-invalid', 'true')
     const [saved] = bodies(spy, 'PUT', '/api/hub/freelancers/f1/fiscal')
     expect(saved.partita_iva).toBeNull()
     const [checked] = bodies(spy, 'POST', '/api/hub/freelancers/f1/matches/check')
