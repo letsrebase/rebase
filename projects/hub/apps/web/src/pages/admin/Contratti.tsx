@@ -14,6 +14,7 @@ import {
 import { admin, ApiError, matches, type ContractDocument, type Match, type Regime } from '@/lib/api'
 import {
   MATCHES_HEADING_ID,
+  QUADRO_HEADING_ID,
   cancelDescription,
   closeDescription,
   matchHeadingId,
@@ -34,9 +35,12 @@ type Section = Regime | 'match'
 const sectionHeading = (section: Section) => (section === 'match' ? MATCHES_HEADING_ID : quadroHeadingId(section))
 
 /** Where the focus goes back to after an action: the control that started it while it is
- *  still on the page, else the first of `headings` that is (its card's, then its
- *  section's). Radix, and the browser once a focused control is removed, would leave it
- *  on the body. Answers whether it found a place. */
+ *  still on the page, else the first of `headings` that is (its card's, its section's,
+ *  then the ordinary framework card's, there too when no framework card is left, then
+ *  the matches', always there: an occasional framework agreement that never left is
+ *  hidden once cancelled, and its card goes with it). Radix, and the browser once a
+ *  focused control is removed, would leave it on the body. Answers whether it found a
+ *  place. */
 function focusBack(opener: HTMLElement | null, headings: string[]): boolean {
   const target = opener?.isConnected
     ? opener
@@ -160,7 +164,7 @@ export function AdminContratti() {
   }
   const starting = (section: Section, card: string) => {
     quiet()
-    landing.current = [card, sectionHeading(section)]
+    landing.current = [card, sectionHeading(section), QUADRO_HEADING_ID, MATCHES_HEADING_ID]
     return {
       onError: (error: unknown) => {
         landing.current = []
@@ -226,6 +230,8 @@ export function AdminContratti() {
   const name = person.data ? `${person.data.nome} ${person.data.cognome}` : ''
   const busy = actions.some((action) => action.isPending)
   const focusOnClose = () => focusBack(opener.current, landing.current)
+  // The framework agreement a question is about, by its own type (REB-687).
+  const quadroObject = confirmingQuadro ? objectOf(confirmingQuadro.document) : 'il contratto quadro'
 
   // The signing actions a document has, shared by the framework agreement's card and a
   // match's, which reaches them on its letter.
@@ -370,9 +376,9 @@ export function AdminContratti() {
       />
       <Confirm
         open={confirmingQuadro?.action === 'annulla'}
-        title="Annullare il contratto quadro?"
+        title={`Annullare ${quadroObject}?`}
         description="Se è già partito, viene annullato anche sul sito di firma e il link ricevuto dal freelance smette di funzionare. Le lettere che lo aspettano restano in attesa: «Invia per la firma» sul loro match ne genera uno nuovo."
-        confirm={cancelQuadro.isPending ? 'Annullo…' : 'Sì, annulla il contratto quadro'}
+        confirm={cancelQuadro.isPending ? 'Annullo…' : `Sì, annulla ${quadroObject}`}
         pending={cancelQuadro.isPending}
         onCloseFocus={focusOnClose}
         onConfirm={() => {
@@ -388,7 +394,7 @@ export function AdminContratti() {
       <Confirm
         open={confirmingQuadro?.action === 'disdetta'}
         title="Registrare la disdetta?"
-        description="Da oggi il contratto quadro non è più attivo, e il prossimo match ne genera uno nuovo. Si registra quando il freelance o rebase ha dato disdetta, o uno dei due ha receduto."
+        description={`Da oggi ${quadroObject} non è più attivo, e il prossimo match ne genera uno nuovo. Si registra quando il freelance o rebase ha dato disdetta, o uno dei due ha receduto.`}
         confirm={recordNotice.isPending ? 'Registro…' : 'Sì, registra la disdetta'}
         pending={recordNotice.isPending}
         onCloseFocus={focusOnClose}

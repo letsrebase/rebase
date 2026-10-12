@@ -1060,11 +1060,91 @@ describe('one framework agreement per regime (REB-687)', () => {
     await userEvent.click(
       screen.getByRole('menuitem', { name: 'Annulla il contratto quadro per prestazioni occasionali' }),
     )
-    await userEvent.click(await screen.findByRole('button', { name: 'Sì, annulla il contratto quadro' }))
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Sì, annulla il contratto quadro per prestazioni occasionali' }),
+    )
     await waitFor(() =>
       expect(spy).toHaveBeenCalledWith('/api/hub/contract-documents/d9/cancel', expect.objectContaining({ method: 'POST' })),
     )
     expect(spy).not.toHaveBeenCalledWith('/api/hub/contract-documents/d1/cancel', expect.anything())
+  })
+
+  it('asks about an occasional framework agreement by its own type before cancelling it', async () => {
+    const spy = routeFetch({ 'GET /api/hub/freelancers/f1': PERSON, 'GET /api/hub/freelancers/f1/matches': BOTH })
+    mount('/admin/freelance/f1/contracts')
+    const occasional = await screen.findByRole('region', { name: 'Contratto quadro per prestazioni occasionali' })
+    await openMore(occasional, 'Altre azioni del contratto quadro per prestazioni occasionali')
+    await userEvent.click(
+      screen.getByRole('menuitem', { name: 'Annulla il contratto quadro per prestazioni occasionali' }),
+    )
+    expect(
+      await screen.findByRole('dialog', { name: 'Annullare il contratto quadro per prestazioni occasionali?' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Sì, annulla il contratto quadro per prestazioni occasionali' }),
+    ).toBeInTheDocument()
+    expect(spy).not.toHaveBeenCalledWith('/api/hub/contract-documents/d9/cancel', expect.anything())
+  })
+
+  it('says in the notice question that the occasional framework agreement is the one no longer active', async () => {
+    const active = {
+      ...QUADRO,
+      id: 'd9',
+      regime: 'occasionale',
+      tipo: 'Contratto quadro per prestazioni occasionali',
+      testo_bozza: false,
+      nuova_versione: false,
+    }
+    routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/freelancers/f1/matches': { ...PAGE, quadro: null, quadro_occasionale: active, quadri: [active] },
+    })
+    mount('/admin/freelance/f1/contracts')
+    const occasional = await screen.findByRole('region', { name: 'Contratto quadro per prestazioni occasionali' })
+    await openMore(occasional, 'Altre azioni del contratto quadro per prestazioni occasionali')
+    await userEvent.click(
+      screen.getByRole('menuitem', { name: 'Registra disdetta del contratto quadro per prestazioni occasionali' }),
+    )
+    expect(await screen.findByRole('dialog', { name: 'Registrare la disdetta?' })).toHaveAccessibleDescription(
+      'Da oggi il contratto quadro per prestazioni occasionali non è più attivo, e il prossimo match ne genera uno nuovo. Si registra quando il freelance o rebase ha dato disdetta, o uno dei due ha receduto.',
+    )
+  })
+
+  it('lands on a heading still on the page once a cancelled occasional framework agreement that never left is gone', async () => {
+    const unsent = {
+      ...OCCASIONALE,
+      stato: 'generato',
+      sent_at: null,
+      situazione: 'Parte con «Invia per la firma» sul suo match.',
+      prossima_azione: null,
+      altre_azioni: ['annulla'],
+    }
+    let cancelled = false
+    routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      // Never sent, so once cancelled it is hidden: no framework card is left but the
+      // ordinary one saying there is none.
+      'GET /api/hub/freelancers/f1/matches': () => {
+        const quadri = [cancelled ? { ...unsent, stato: 'annullato' } : unsent]
+        return { ...PAGE, quadro: null, quadro_occasionale: cancelled ? null : unsent, quadri, matches: [] }
+      },
+      'POST /api/hub/contract-documents/d9/cancel': () => {
+        cancelled = true
+        return { ...unsent, stato: 'annullato' }
+      },
+    })
+    mount('/admin/freelance/f1/contracts')
+    const occasional = await screen.findByRole('region', { name: 'Contratto quadro per prestazioni occasionali' })
+    await openMore(occasional, 'Altre azioni del contratto quadro per prestazioni occasionali')
+    await userEvent.click(
+      screen.getByRole('menuitem', { name: 'Annulla il contratto quadro per prestazioni occasionali' }),
+    )
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Sì, annulla il contratto quadro per prestazioni occasionali' }),
+    )
+    expect(await screen.findByText('Nessun contratto quadro: parte con il primo match inviato.')).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Contratto quadro per prestazioni occasionali' })).toBeNull()
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Contratto quadro', level: 2 })).toHaveFocus())
   })
 
   it('names each match’s letter by its type', async () => {
