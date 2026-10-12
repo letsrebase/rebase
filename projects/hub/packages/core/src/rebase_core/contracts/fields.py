@@ -276,7 +276,7 @@ def is_draft(markdown: str, name: str) -> bool:
     return status == "draft"
 
 
-# The fields of the two contracts that describe rebase itself. `REBASE_SIGNER_JSON` may
+# The fields of the contracts that describe rebase itself. `REBASE_SIGNER_JSON` may
 # fill these and nothing else: a freelancer's or a client's data never come from a
 # server setting.
 SIGNER_FIELDS = (

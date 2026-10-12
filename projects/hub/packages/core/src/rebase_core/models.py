@@ -373,7 +373,8 @@ MATCH_STATES = ("bozza", "in_firma", "attivo", "concluso", "annullato")
 PIGRO_STATES = ("da_collegare", "collegato", "errore", "rifiutato")
 CONTRACT_KINDS = ("quadro", "lettera")
 CONTRACT_STATES = ("generato", "in_attesa", "inviato", "firmato", "annullato", "disdetto")
-# `contract_documents.regime` (REB-687): `partita_iva` or `occasionale`, the longer one.
+# `contract_documents.regime` (REB-687): `partita_iva` or `occasionale`, 11 characters each,
+# in the 12 that migration 0033 gave the column.
 REGIME_MAX_LENGTH = 12
 CODICE_FISCALE_MAX_LENGTH = 16
 PARTITA_IVA_MAX_LENGTH = 11
@@ -391,7 +392,7 @@ CANCEL_REASON_MAX_LENGTH = 500
 
 
 class FreelancerFiscal(Base, PrimaryKeyMixin, TimestampMixin):
-    """A freelancer's tax data as the two contracts print them: one row per card
+    """A freelancer's tax data as the contracts print them: one row per card
     (`uq_freelancer_fiscal_freelancer_id`). A table of its own rather than columns on
     `freelancers`, which PostHog's warehouse syncs whole (spec § 2); none of the four
     tables of this section is synced. `updated_by` is the admin who saved them last.

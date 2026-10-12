@@ -1,4 +1,4 @@
-"""A freelancer's tax data, as the two contracts print them (REB-387).
+"""A freelancer's tax data, as the contracts print them (REB-387).
 
 A table of its own rather than columns on `freelancers`, because PostHog's warehouse
 syncs `freelancers` whole (spec § 2). Filled by an admin in the match flow the first

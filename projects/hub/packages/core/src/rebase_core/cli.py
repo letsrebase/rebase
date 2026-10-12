@@ -374,7 +374,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     sub.add_parser(
         "contracts-check",
-        help="Compone i due contratti con pandoc e Typst: questa macchina li sa generare?",
+        help="Compone i contratti con pandoc e Typst: questa macchina li sa generare?",
     )
     sub.add_parser(
         "documenso-check",
