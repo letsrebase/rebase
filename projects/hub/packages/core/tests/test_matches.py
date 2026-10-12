@@ -33,6 +33,12 @@ from rebase_core.contracts.render import text_version as current_text_version
 from rebase_core.db import session_factory
 from rebase_core.errors import InvalidState, NotFound, ValidationFailed
 from rebase_core.fiscal import FiscalService
+from rebase_core.framework import (
+    active_framework,
+    framework_state,
+    framework_states,
+    pending_framework,
+)
 from rebase_core.freelancers import FreelancerService
 from rebase_core.matches import MatchService, require_live_document, require_live_match
 from rebase_core.models import ContractDocument, Freelancer, Match, User
@@ -175,10 +181,12 @@ def _framework(
     signed_at: datetime | None = datetime(2026, 10, 1, 9, 0, tzinfo=UTC),
     notice_at: datetime | None = None,
     text_version: str = QUADRO_VERSION,
+    regime: str = "partita_iva",
 ) -> ContractDocument:
     """A framework agreement as phase 3 will leave one: only a signature makes these."""
     document = ContractDocument(
         kind="quadro",
+        regime=regime,
         freelancer_id=freelancer_id,
         text_version=text_version,
         testo_bozza=False,
@@ -1695,3 +1703,56 @@ def test_an_occasional_document_downloads_under_its_own_texts_name(clean: Sessio
     assert _service(clean).document_pdf(quadro.id).filename == (
         "contratto-quadro-occasionale-v1.0.pdf"
     )
+
+
+def test_framework_lookups_and_states_are_per_regime(clean: Session) -> None:
+    """REB-687: a freelancer may hold a framework agreement of each regime, and no lookup
+    reads one for the other."""
+    admin_id, freelancer_id, _company_id = _setup(clean)
+    ordinary = _framework(clean, freelancer_id, admin_id)
+    occasional = _framework(
+        clean, freelancer_id, admin_id, stato="inviato", signed_at=None, regime="occasionale"
+    )
+    active = active_framework(clean, freelancer_id, "partita_iva")
+    assert active is not None and active.id == ordinary.id
+    assert active_framework(clean, freelancer_id, "occasionale") is None
+    pending = pending_framework(clean, freelancer_id, "occasionale")
+    assert pending is not None and pending.id == occasional.id
+    assert pending_framework(clean, freelancer_id, "partita_iva") is None
+    assert framework_states(clean, {freelancer_id}) == {
+        (freelancer_id, "partita_iva"): "firmato",
+        (freelancer_id, "occasionale"): "inviato",
+    }
+    both = _documents(clean, freelancer_id, "quadro")
+    assert (framework_state(both, "partita_iva"), framework_state(both, "occasionale")) == (
+        "firmato",
+        "inviato",
+    )
+
+
+def test_a_new_version_is_announced_against_the_quadros_own_text(
+    clean: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Once one regime's text moves to a new version, only that regime's
+    framework agreement says «Nuova versione disponibile»."""
+    admin_id, freelancer_id, _company_id = _setup(clean)
+    _framework(clean, freelancer_id, admin_id, text_version="1.0")
+    _framework(clean, freelancer_id, admin_id, text_version="1.0", regime="occasionale")
+    versions = {"partita_iva": "1.1", "occasionale": "1.0"}
+    monkeypatch.setattr(matches_module, "current_quadro_version", versions.__getitem__)
+    quadri = _service(clean).for_freelancer(freelancer_id).quadri
+    assert {(quadro.regime, quadro.nuova_versione) for quadro in quadri} == {
+        ("partita_iva", True),
+        ("occasionale", False),
+    }
+
+
+def test_the_documents_of_an_ordinary_match_say_their_regime_and_type(clean: Session) -> None:
+    admin_id, freelancer_id, company_id = _setup(clean)
+    service = _service(clean)
+    match = service.create(freelancer_id, _body(company_id), admin_id)
+    assert (match.lettera.regime, match.lettera.tipo) == ("partita_iva", "Lettera di incarico")
+    assert {document.regime for document in _documents(clean, freelancer_id)} == {"partita_iva"}
+    page = service.for_freelancer(freelancer_id)
+    assert page.quadro is not None
+    assert (page.quadro.regime, page.quadro.tipo) == ("partita_iva", "Contratto quadro")

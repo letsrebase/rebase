@@ -37,7 +37,7 @@ from rebase_core.models import (
     SEDE_MAX_LENGTH,
 )
 from rebase_core.referral_schemas import MatchReferral
-from rebase_core.regimes import OCCASIONALE, PARTITA_IVA
+from rebase_core.regimes import OCCASIONALE, PARTITA_IVA, Regime
 from rebase_core.schemas import PROGETTO_MAX_LENGTH, TARIFFA_MAX, TARIFFA_MIN, clean_multiline
 from rebase_core.validation import SafeStr
 
@@ -389,6 +389,10 @@ class ContractDocumentRead(BaseModel):
 
     id: UUID
     kind: str
+    # Which family it belongs to and its type as the pages name it (REB-687):
+    # «Contratto quadro per prestazioni occasionali», «Lettera di incarico occasionale».
+    regime: Regime
+    tipo: str
     freelancer_id: UUID
     match_id: UUID | None
     numero: str | None

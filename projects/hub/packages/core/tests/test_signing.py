@@ -471,11 +471,13 @@ def test_a_crea_match_racing_a_send_waits_for_it_and_does_not_annul_the_framewor
     paused, release = threading.Event(), threading.Event()
     real_active_framework = signing_module.active_framework
 
-    def paced_active_framework(session: Session, freelancer_id: UUID) -> ContractDocument | None:
+    def paced_active_framework(
+        session: Session, freelancer_id: UUID, regime: str
+    ) -> ContractDocument | None:
         if session is sender_session:
             paused.set()
             assert release.wait(timeout=5), "the test never released the send"
-        return real_active_framework(session, freelancer_id)
+        return real_active_framework(session, freelancer_id, regime)
 
     monkeypatch.setattr(signing_module, "active_framework", paced_active_framework)
 

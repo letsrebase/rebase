@@ -77,7 +77,7 @@ from rebase_core.audit import AdminActionService, utcnow
 from rebase_core.config import Settings
 from rebase_core.contract_schemas import ContractDocumentRead, MatchRead, SendReport
 from rebase_core.contracts.fields import ContractFailed, Value, signer_data
-from rebase_core.contracts.render import ContractRenderer, Renderer, text_version
+from rebase_core.contracts.render import ContractRenderer, Renderer
 from rebase_core.documenso import (
     COMPLETED,
     REJECTED,
@@ -92,6 +92,7 @@ from rebase_core.engagements import DA_COLLEGARE, EngagementService
 from rebase_core.errors import DocumensoFailed, InvalidState, NotFound, SigningUnavailable
 from rebase_core.framework import (
     active_framework,
+    current_quadro_version,
     document_read,
     is_active,
     pending_framework,
@@ -107,10 +108,10 @@ from rebase_core.mail import (
     signing_cancelled_mail,
     signing_request_mail,
 )
-from rebase_core.matches import DOCUMENT_BY_KIND, ENTITY, LETTERA, QUADRO, MatchService, _full_name
+from rebase_core.matches import ENTITY, LETTERA, QUADRO, MatchService, _full_name
 from rebase_core.models import CANCEL_REASON_MAX_LENGTH, ContractDocument, Freelancer, Match, User
 from rebase_core.referrals import ReferralService
-from rebase_core.regimes import document_stem
+from rebase_core.regimes import document_stem, text_name
 
 _log = logging.getLogger(__name__)
 
@@ -276,17 +277,18 @@ class SigningService:
                     "La lettera di questo match è già partita, firmata o annullata: non c'è "
                     "nulla da inviare."
                 )
-            active = active_framework(self.session, match.freelancer_id)
+            regime = letter.regime
+            active = active_framework(self.session, match.freelancer_id, regime)
             if not self.allow_draft:
                 for kind in (LETTERA,) if active is not None else (QUADRO, LETTERA):
-                    if renderer.is_draft(DOCUMENT_BY_KIND[kind]):
+                    if renderer.is_draft(text_name(kind, regime)):
                         raise InvalidState(DRAFT_REFUSED[kind])
             if active is not None:
                 leaving = letter
                 self._dispatch(letter, active, admin_id)
             else:
                 letter.stato = "in_attesa"
-                leaving = self._framework_to_send(match.freelancer_id, admin_id)
+                leaving = self._framework_to_send(match.freelancer_id, admin_id, regime)
                 if leaving is not None:
                     self._dispatch(leaving, None, admin_id)
             match.stato = "in_firma"
@@ -309,15 +311,17 @@ class SigningService:
             )
         return SendReport(match=self.matches.get(match_id), inviato=sent_kind, mail_inviata=mailed)
 
-    def _framework_to_send(self, freelancer_id: UUID, admin_id: UUID) -> ContractDocument | None:
-        """The framework agreement a waiting letter needs, locked: none when one is out for
-        signature already (the letter leaves after it), the one generated for a draft,
-        else a new one, written now because the last was cancelled or refused. The
-        caller must already hold the freelancer's row lock."""
+    def _framework_to_send(
+        self, freelancer_id: UUID, admin_id: UUID, regime: str
+    ) -> ContractDocument | None:
+        """The framework agreement of `regime` a waiting letter needs, locked: none when
+        one is out for signature already (the letter leaves after it), the one generated
+        for a draft, else a new one, written now because the last was cancelled or
+        refused. The caller must already hold the freelancer's row lock."""
         self._signer()
-        pending = pending_framework(self.session, freelancer_id)
+        pending = pending_framework(self.session, freelancer_id, regime)
         if pending is None:
-            return self.matches.write_framework(freelancer_id, admin_id)
+            return self.matches.write_framework(freelancer_id, admin_id, regime)
         framework = self._lock(pending.id)
         if framework.stato == "inviato":
             return None
@@ -339,7 +343,7 @@ class SigningService:
         pile up drafts under the same externalId."""
         self._signer()
         renderer, documenso = self._renderer(), self._documenso()
-        name = DOCUMENT_BY_KIND[document.kind]
+        name = text_name(document.kind, document.regime)
         data = self.matches.data_for_sending(document, self.today(), framework)
         rendered = renderer.render(name, data, signing=True)
         if rendered.draft and not self.allow_draft:
@@ -892,7 +896,7 @@ class SigningService:
         ):
             self.session.rollback()
             return None
-        if not self.allow_draft and self._renderer().is_draft(DOCUMENT_BY_KIND[LETTERA]):
+        if not self.allow_draft and self._renderer().is_draft(text_name(LETTERA, letter.regime)):
             raise InvalidState(DRAFT_REFUSED[LETTERA])
         self._dispatch(letter, framework, sent_by)
         self.session.commit()
@@ -1062,9 +1066,8 @@ class SigningService:
         return document
 
     def _read(self, document_id: UUID) -> ContractDocumentRead:
-        return document_read(
-            self._document(document_id), self.today(), text_version(DOCUMENT_BY_KIND[QUADRO])
-        )
+        document = self._document(document_id)
+        return document_read(document, self.today(), current_quadro_version(document.regime))
 
     def _record(self, document: ContractDocument, kind: str, admin_id: UUID) -> None:
         """A framework agreement's action lands on its freelancer's trail, since it
