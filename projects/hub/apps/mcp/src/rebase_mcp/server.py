@@ -66,6 +66,7 @@ from rebase_core.matches import (
 from rebase_core.models import Freelancer, FreelancerCard, Signup, User
 from rebase_core.perks import PerkService
 from rebase_core.pigro import PigroRegistry, PigroUnavailable
+from rebase_core.regimes import OCCASIONALE, Regime
 from rebase_core.schemas import (
     CompanyOverride,
     FreelancerDraft,
@@ -145,11 +146,13 @@ def _proposal(
     cliente: dict[str, Any] | None,
     condizioni: dict[str, Any] | None,
     match_id: UUID | None = None,
+    regime: Regime | None = None,
 ) -> MatchCreate:
     """The hub's proposal with the given fields laid over it, a refusal naming a letter's
-    field by the parameter it came in (`condizioni.compenso`)."""
+    field by the parameter it came in (`condizioni.compenso`). `regime` `None` takes the
+    letter type the hub proposes (REB-687)."""
     try:
-        return service.proposal(freelancer_id, company_id, cliente, condizioni, match_id)
+        return service.proposal(freelancer_id, company_id, cliente, condizioni, match_id, regime)
     except ValidationFailed as exc:
         field = str(exc.details["field"])
         if not field.startswith(LETTER_PART):
@@ -1056,7 +1059,9 @@ def build_server(
         altrimenti l'ultimo ancora da inviare o partito per la firma, anche se poi
         annullato o rifiutato; una bozza annullata prima di partire non conta) con
         stato, data di firma, prossimo rinnovo, ultimo giorno per la disdetta e
-        versione del testo; `quadri` li elenca tutti; `matches` sono i
+        versione del testo; `quadri` li elenca tutti; `quadro_occasionale` è il contratto
+        quadro per prestazioni occasionali, con la stessa regola (un freelance può averne
+        uno per tipo); `matches` sono i
         match dal più recente, ognuno con l'azienda, lo stato e la lettera di incarico
         con il suo numero. Ogni documento porta `pdf_url`, il link al PDF da aprire con
         l'accesso admin: mai i byte, mai i dati fiscali. Ogni match e ogni documento
@@ -1070,7 +1075,7 @@ def build_server(
         si salva con `create_match`."""
         body = _run(lambda s: reading(s).for_freelancer(UUID(freelancer_id)))
         body.pop("fiscale", None)
-        for document in (body["quadro"], *body["quadri"]):
+        for document in (body["quadro"], body["quadro_occasionale"], *body["quadri"]):
             if document is not None:
                 _document_links(document)
         for match in body["matches"]:
@@ -1081,9 +1086,10 @@ def build_server(
     def get_match(match_id: str) -> dict[str, Any]:
         """Un match, per id: l'azienda e la figura richiesta, i dati del cliente come li
         stampa la lettera, lo stato (bozza, in_firma, attivo, concluso, annullato), la
-        lettera di incarico con numero e stato, e in `quadro` il contratto quadro del
-        freelance. Ogni documento porta `pdf_url`, mai i byte. Il match e i documenti
-        portano `situazione`, `prossima_azione` e `altre_azioni`, e quale strumento fa
+        lettera di incarico con numero, stato e `tipo` («Lettera di incarico» o «Lettera
+        di incarico occasionale»), e in `quadro` il contratto quadro del freelance dello
+        stesso tipo della lettera. Ogni documento porta `pdf_url`, mai i byte. Il match e
+        i documenti portano `situazione`, `prossima_azione` e `altre_azioni`, e quale strumento fa
         ogni azione lo dice `list_matches`. Solo lettura."""
         key = UUID(match_id)
 
@@ -1094,7 +1100,11 @@ def build_server(
             freelancer_id = require_live_match(session, key).freelancer_id
             service = reading(session)
             body = service.get(key).model_dump(mode="json")
-            quadro = service.for_freelancer(freelancer_id).quadro
+            page = service.for_freelancer(freelancer_id)
+            # The framework agreement of the letter's own regime (REB-687).
+            quadro = (
+                page.quadro_occasionale if body["lettera"]["regime"] == OCCASIONALE else page.quadro
+            )
             body["quadro"] = quadro.model_dump(mode="json") if quadro is not None else None
             return body
 
@@ -1136,28 +1146,34 @@ def build_server(
         company_id: str,
         cliente: dict[str, Any] | None = None,
         condizioni: dict[str, Any] | None = None,
+        regime: Regime | None = None,
     ) -> dict[str, Any]:
         """Cosa farebbe `create_match` con questi dati, senza scrivere nulla: le frasi del
         passo 3 di «Crea match». `riepilogo` è la lettera di incarico in tre o quattro
         frasi, `cosa_succede` quale documento parte per primo, `quadro_necessario` se
         serve un nuovo contratto quadro, `dati_fiscali_mancanti` se mancano i dati
-        fiscali del freelance (si salvano con `set_freelancer_tax_data`). Si parte dalla
-        proposta dell'hub: il cliente come l'ha chiamato l'ultimo match della stessa
-        azienda (altrimenti solo il nome dell'azienda), la lettera dalla richiesta, dalla
-        scheda e dalle condizioni di rebase. `cliente` e `condizioni` la cambiano campo
-        per campo, con i nomi dell'API: per il cliente `cliente_ragione_sociale`,
-        `cliente_piva`, `cliente_sede`; per le condizioni i campi della lettera, come
-        `ruolo`, `attivita`, `data_inizio` e `data_fine` (AAAA-MM-GG), `impegno`, `luogo`,
-        `compenso` (IVA esclusa, anche all'italiana: «1.500», «1.234,50»), `unita`,
+        fiscali del freelance (si salvano con `set_freelancer_tax_data`), `regime` il tipo
+        di lettera. `regime` è `partita_iva` (lettera di incarico, per chi lavora con
+        partita IVA) o `occasionale` (lettera di incarico occasionale, prestazione
+        occasionale); omesso, quello che propone l'hub: occasionale se i dati fiscali sono
+        salvati senza partita IVA. Una lettera con partita IVA senza partita IVA salvata è
+        rifiutata. Si parte dalla proposta dell'hub: il cliente come l'ha chiamato l'ultimo
+        match della stessa azienda (altrimenti solo il nome dell'azienda), la lettera dalla
+        richiesta, dalla scheda e dalle condizioni di rebase. `cliente` e `condizioni` la
+        cambiano campo per campo, con i nomi dell'API: per il cliente
+        `cliente_ragione_sociale`, `cliente_piva`, `cliente_sede`; per le condizioni i campi
+        della lettera, come `ruolo`, `attivita`, `data_inizio` e `data_fine` (AAAA-MM-GG),
+        `impegno`, `luogo`, `compenso` (IVA esclusa nella lettera con partita IVA, lordo in
+        quella occasionale; anche all'italiana: «1.500», «1.234,50»), `unita`,
         `giorni_pagamento`, `fine_mese`. Un campo omesso resta come lo propone l'hub,
-        `null` lo svuota. Risponde anche `cliente` e
-        `condizioni` come verrebbero scritti. Un campo sconosciuto, o obbligatorio e
-        rimasto vuoto, è rifiutato con il suo nome. Solo lettura."""
+        `null` lo svuota. Risponde anche `cliente` e `condizioni` come verrebbero scritti.
+        Un campo sconosciuto, o obbligatorio e rimasto vuoto, è rifiutato con il suo nome.
+        Solo lettura."""
         freelancer, company = UUID(freelancer_id), UUID(company_id)
 
         def call(session: Session) -> dict[str, Any]:
             service = MatchService(session)
-            proposal = _proposal(service, freelancer, company, cliente, condizioni)
+            proposal = _proposal(service, freelancer, company, cliente, condizioni, regime=regime)
             body = service.check(freelancer, proposal).model_dump(mode="json")
             body["cliente"] = proposal.cliente.model_dump(mode="json")
             body["condizioni"] = proposal.lettera.model_dump(mode="json")
@@ -1173,12 +1189,14 @@ def build_server(
         condizioni: dict[str, Any] | None = None,
         match_id: str | None = None,
         giorni_previsti: int | None = None,
+        regime: Regime | None = None,
     ) -> dict[str, Any]:
         """Salva il match come bozza, come «Salva senza inviare» al passo 3 di «Crea
         match»: la lettera di incarico con il suo numero e, se il freelance non ha un
-        contratto quadro attivo né uno già in firma, un contratto quadro nuovo. Non parte
-        nulla: per la firma c'è `send_match_for_signature`. `cliente` e `condizioni` come
-        in `preview_match`, da chiamare prima per rileggere le frasi. Servono i dati
+        contratto quadro attivo né uno già in firma dello stesso tipo della lettera, un
+        contratto quadro nuovo di quel tipo. Non parte nulla: per la firma c'è
+        `send_match_for_signature`. `cliente` e `condizioni` come in `preview_match`, e
+        così `regime`, da chiamare prima per rileggere le frasi. Servono i dati
         fiscali del freelance (`set_freelancer_tax_data`). `giorni_previsti`, i giorni
         attesi per il consuntivo su Pigro (fra 1 e 366, facoltativo), sta sul match e non
         sulla lettera: il suo testo resta quello di «Impegno». `match_id`, un UUID
@@ -1194,7 +1212,7 @@ def build_server(
 
         def call(session: Session) -> dict[str, Any]:
             service = MatchService(session, renderer, signer_data(signer_json))
-            proposal = _proposal(service, freelancer, company, cliente, condizioni, key)
+            proposal = _proposal(service, freelancer, company, cliente, condizioni, key, regime)
             try:
                 proposal = MatchCreate.model_validate(
                     {**proposal.model_dump(mode="json"), "giorni_previsti": giorni_previsti}
