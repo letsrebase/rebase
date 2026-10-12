@@ -16,7 +16,8 @@ is `inviato` and the report says so, for «Reinvia email».
 
 A freelancer may hold framework agreements of both regimes (REB-687): a letter leaves
 only once the framework agreement of its own regime is signed, and a signature releases
-only the waiting letters of its own regime.
+only the waiting letters of its own regime. An ordinary letter whose freelancer has lost
+the partita IVA since the draft is refused on `regime`, as «Crea match» refuses it.
 
 Every write locks the freelancer's row first, as `MatchService.create` and
 `FiscalService.save` already do, then the match, then its document, because two admins,
@@ -112,7 +113,14 @@ from rebase_core.mail import (
     signing_cancelled_mail,
     signing_request_mail,
 )
-from rebase_core.matches import ENTITY, LETTERA, QUADRO, MatchService, _full_name
+from rebase_core.matches import (
+    ENTITY,
+    LETTERA,
+    QUADRO,
+    MatchService,
+    _full_name,
+    require_regime_fits,
+)
 from rebase_core.models import CANCEL_REASON_MAX_LENGTH, ContractDocument, Freelancer, Match, User
 from rebase_core.referrals import ReferralService
 from rebase_core.regimes import document_stem, text_name
@@ -282,6 +290,10 @@ class SigningService:
                     "nulla da inviare."
                 )
             regime = letter.regime
+            # The tax data may have changed since the draft: an ordinary letter whose
+            # freelancer no longer has a partita IVA is refused as «Crea match» refuses
+            # it, before any document is typeset (REB-687).
+            require_regime_fits(self.matches._fiscal(freelancer_id).partita_iva, regime)
             active = active_framework(self.session, match.freelancer_id, regime)
             if not self.allow_draft:
                 for kind in (LETTERA,) if active is not None else (QUADRO, LETTERA):

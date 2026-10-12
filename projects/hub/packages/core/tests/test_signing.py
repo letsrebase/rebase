@@ -43,7 +43,13 @@ from rebase_core.documenso import (
     outcome_from_webhook,
 )
 from rebase_core.engagements import CAUSE_REFUSED, CAUSE_TIMEOUT, EngagementService
-from rebase_core.errors import DocumensoFailed, InvalidState, NotFound, SigningUnavailable
+from rebase_core.errors import (
+    DocumensoFailed,
+    InvalidState,
+    NotFound,
+    SigningUnavailable,
+    ValidationFailed,
+)
 from rebase_core.fiscal import FiscalService
 from rebase_core.http import urllib_engagements_call
 from rebase_core.mail import EmailSender, Mail, RecordingSender, ResendSender
@@ -2558,15 +2564,20 @@ def test_an_occasional_match_goes_out_and_comes_back_on_the_occasional_texts(
 
 def test_an_ordinary_draft_whose_partita_iva_was_removed_does_not_leave(clean: Session) -> None:
     """The tax data changed after the draft, so the ordinary framework
-    agreement would leave with a blank partita IVA: refused, naming it, and nothing
-    reaches Documenso or the mailbox."""
+    agreement would leave with a blank partita IVA: refused with the sentence «Crea
+    match» shows on `regime`, and nothing reaches Documenso or the mailbox."""
     admin_id, freelancer_id, company_id = _setup(clean)
     renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
     match = _draft(clean, renderer, freelancer_id, company_id, admin_id)
     _without_partita_iva(clean, freelancer_id, admin_id)
 
-    with pytest.raises(InvalidState, match="professionista-piva"):
+    with pytest.raises(ValidationFailed) as refused:
         _signing(clean, renderer, fake, sender).send_match(match.id, admin_id)
 
+    assert refused.value.details["field"] == "regime"
+    assert refused.value.details["reason"] == (
+        'Senza partita IVA si fa solo la lettera occasionale: scegli "Prestazione occasionale" '
+        "o salva la partita IVA."
+    )
     assert len(fake.envelopes) == 0 and sender.sent == []
     assert _framework_of(clean, freelancer_id).stato == "generato"
