@@ -266,8 +266,11 @@ def field_reason(error: ErrorDetails) -> str:
 def _request_fingerprint(data: MatchCreate) -> str:
     """The SHA-256 of `data` as `create` actually reads it (REB-406): `id` names the
     match, it is not part of what a retry must match again, so it is excluded. Sorted
-    keys make the digest the same however Python happened to build the model."""
-    canonical = json.dumps(data.model_dump(mode="json", exclude={"id"}), sort_keys=True)
+    keys make the digest the same however Python happened to build the model. An
+    ordinary letter leaves `regime` out (REB-687), so its digest is the one stored
+    before the field existed and a retry across the release still finds its match."""
+    exclude = {"id", "regime"} if data.regime == PARTITA_IVA else {"id"}
+    canonical = json.dumps(data.model_dump(mode="json", exclude=exclude), sort_keys=True)
     return hashlib.sha256(canonical.encode()).hexdigest()
 
 

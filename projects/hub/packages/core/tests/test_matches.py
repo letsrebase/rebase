@@ -2,6 +2,8 @@
 generates, never sent. Every test hands `FakeRenderer`: the real typesetting is
 `test_contract_render.py`'s."""
 
+import hashlib
+import json
 import threading
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
@@ -533,6 +535,28 @@ def test_a_repeated_id_with_no_fingerprint_stored_is_refused(clean: Session) -> 
 
     with pytest.raises(InvalidState, match="dati diversi"):
         service.create(freelancer_id, body, admin_id)
+
+
+def test_an_ordinary_retry_across_the_release_still_finds_its_match(clean: Session) -> None:
+    """A match written before REB-687 stored the digest of a request with no `regime`.
+    An ordinary letter's request still hashes to that digest, so its retry across the
+    release is the match returned, not a 409; an occasional one is another request."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    service = _service(clean)
+    given_id = uuid4()
+    body = _body(company_id).model_copy(update={"id": given_id})
+    first = service.create(freelancer_id, body, admin_id)
+    written = clean.get(Match, given_id)
+    assert written is not None
+    before_regime = json.dumps(
+        body.model_dump(mode="json", exclude={"id", "regime"}), sort_keys=True
+    )
+    written.request_fingerprint = hashlib.sha256(before_regime.encode()).hexdigest()
+    clean.commit()
+
+    assert service.create(freelancer_id, body, admin_id).id == first.id
+    occasional = body.model_copy(update={"regime": "occasionale"})
+    assert matches_module._request_fingerprint(occasional) != written.request_fingerprint
 
 
 def test_create_with_no_id_still_writes_a_fresh_match_each_time(clean: Session) -> None:
