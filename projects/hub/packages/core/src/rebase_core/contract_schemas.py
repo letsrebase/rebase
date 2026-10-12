@@ -351,6 +351,9 @@ class MatchCreate(BaseModel):
 
     id: UUID | None = None
     company_id: UUID
+    # «Tipo di lettera» (REB-687): the letter's regime, and so the match's. An ordinary
+    # letter needs saved tax data with a partita IVA; left out, the letter is ordinary.
+    regime: Regime = PARTITA_IVA
     cliente: ClienteData
     lettera: LetteraFields
     # An admin's estimate of the engagement's billable days (REB-497), read back
@@ -456,25 +459,30 @@ class MatchRead(BaseModel):
 
 
 class FreelancerContracts(BaseModel):
-    """«Match e contratti»: the framework agreement at the top (the active one, else the
-    newest not cancelled), every framework agreement newest first, the matches newest
-    first, and the tax data the page edits."""
+    """«Match e contratti»: the framework agreements at the top, one per regime (REB-687):
+    `quadro` the ordinary one and `quadro_occasionale` the occasional one, each the
+    active one, else the newest that left; every framework agreement newest first, the
+    matches newest first, and the tax data the page edits."""
 
     freelancer_id: UUID
     quadro: ContractDocumentRead | None
+    quadro_occasionale: ContractDocumentRead | None
     quadri: list[ContractDocumentRead]
     matches: list[MatchRead]
     fiscale: FiscalRead | None
 
 
 class MatchPrefill(BaseModel):
-    """What «Chi e per chi» and «Condizioni» start from. `quadro_necessario`: this
-    match writes a framework agreement. `lettera_in_attesa`: the letter waits for a
+    """What «Chi e per chi» and «Condizioni» start from. `regime` is the letter type the
+    hub proposes (REB-687): `occasionale` when the saved tax data have no partita IVA,
+    `partita_iva` otherwise, none saved included. `quadro_necessario`: this match writes a
+    framework agreement of that regime. `lettera_in_attesa`: the letter waits for a
     framework's signature."""
 
     fiscale: FiscalRead | None
     cliente: ClienteDraft
     lettera: LetteraDraft
+    regime: Regime
     quadro_attivo: ContractDocumentRead | None
     quadro_necessario: bool
     lettera_in_attesa: bool
@@ -490,6 +498,7 @@ class MatchCheck(BaseModel):
     cosa_succede: str
     quadro_necessario: bool
     dati_fiscali_mancanti: bool
+    regime: Regime
 
 
 class ContractPdf(BaseModel):

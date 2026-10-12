@@ -709,6 +709,7 @@ def test_the_check_says_what_saving_would_do_and_writes_nothing(
         ),
         "quadro_necessario": True,
         "dati_fiscali_mancanti": False,
+        "regime": "partita_iva",
     }
     assert BUDGET not in checked.text
     assert renderer.calls == []

@@ -1,6 +1,11 @@
 """Matches: a freelancer card paired with a company request, and the contracts they
 write (REB-387, phase 2: generate, never send).
 
+A match's regime is its letter's (REB-687), `partita_iva` or `occasionale`, chosen on
+«Crea match» and proposed from the tax data: every framework lookup here takes it, so an
+ordinary framework agreement never stands in for an occasional one, nor the reverse. An
+ordinary letter needs a saved partita IVA (`require_regime_fits`).
+
 `create` writes in one transaction the match (`bozza`), the letter of engagement with
 the year's next number, and the framework agreement when the freelancer has none
 active. A letter whose framework agreement is not signed yet waits for it (`in_attesa`,
@@ -39,6 +44,7 @@ from rebase_core.audit import AdminActionService, utcnow
 from rebase_core.contract_schemas import (
     DAY_RATE,
     ClienteDraft,
+    ContractDocumentRead,
     ContractPdf,
     FreelancerContracts,
     LetteraDraft,
@@ -74,6 +80,7 @@ from rebase_core.framework import (
 )
 from rebase_core.match_words import (
     MATCH_STATE_LABELS,
+    ORDINARY_NEEDS_PARTITA_IVA,
     DocumentFacts,
     FrameworkStep,
     Words,
@@ -91,7 +98,7 @@ from rebase_core.models import (
 )
 from rebase_core.referral_schemas import MatchReferral
 from rebase_core.referrals import ReferralService, letter_unit
-from rebase_core.regimes import PARTITA_IVA, document_stem, text_name
+from rebase_core.regimes import OCCASIONALE, PARTITA_IVA, Regime, document_stem, text_name
 from rebase_core.search import matches_any
 
 ENTITY = "match"
@@ -183,6 +190,28 @@ def luogo_suggestion(remoto: str, giorni_presenza: int | None) -> str:
     if remoto == "in_sede":
         return "presso la sede del Cliente"
     return "da remoto"
+
+
+def require_regime_fits(partita_iva: str | None, regime: str) -> None:
+    """An ordinary letter prints the freelancer's partita IVA, so it needs saved tax data
+    with one (REB-687). An occasional letter never prints one and is allowed either way:
+    the check warns a partita IVA holder (`match_words.HAS_PARTITA_IVA`). `check`,
+    `preview` and `create` refuse on `regime`, the field «Tipo di lettera» sets."""
+    if regime == PARTITA_IVA and partita_iva is None:
+        raise ValidationFailed(ENTITY, "regime", ORDINARY_NEEDS_PARTITA_IVA)
+
+
+def shown_framework(quadri: list[ContractDocumentRead], regime: str) -> ContractDocumentRead | None:
+    """The framework agreement of `regime` «Match e contratti» shows, one card per regime
+    (REB-687): the active one when there is one; else the newest that actually left,
+    whatever its state now. An `annullato` one is hidden only when it never left
+    (`sent_at` is `None`, a stale draft «Crea match» replaced, spec § 6), never when a
+    refusal or a cancellation turned a sent one `annullato`."""
+    mine = [quadro for quadro in quadri if quadro.regime == regime]
+    return next((quadro for quadro in mine if quadro.attivo), None) or next(
+        (quadro for quadro in mine if quadro.stato != "annullato" or quadro.sent_at is not None),
+        None,
+    )
 
 
 def _full_name(user: User) -> str:
@@ -408,13 +437,6 @@ class MatchService:
             document_read(document, today, current_quadro_version(document.regime))
             for document in frameworks
         ]
-        # The active one when there is one (unchanged); else the newest framework that
-        # actually left, whatever its state now: an `annullato` one is hidden only when
-        # it never left (`sent_at` is `None`, a stale draft «Crea match» replaced, spec
-        # § 6), never when a refusal or a cancellation turned a sent one `annullato`.
-        shown = next((q for q in quadri if q.attivo), None) or next(
-            (q for q in quadri if q.stato != "annullato" or q.sent_at is not None), None
-        )
         rows = self.session.execute(
             select(Match, Company)
             .join(Company, Company.id == Match.company_id)
@@ -432,7 +454,8 @@ class MatchService:
                     letters.setdefault(document.match_id, document)
         return FreelancerContracts(
             freelancer_id=freelancer_id,
-            quadro=shown,
+            quadro=shown_framework(quadri, PARTITA_IVA),
+            quadro_occasionale=shown_framework(quadri, OCCASIONALE),
             quadri=quadri,
             matches=[
                 self._match_read(
@@ -485,14 +508,19 @@ class MatchService:
             giorni_pagamento=days if isinstance(days, int) and not isinstance(days, bool) else None,
             fine_mese=month_end if isinstance(month_end, bool) else None,
         )
-        active, step = self._framework_step(freelancer.id, PARTITA_IVA)
+        fiscale = FiscalService(self.session).get(freelancer.id)
+        regime: Regime = (
+            OCCASIONALE if fiscale is not None and fiscale.partita_iva is None else PARTITA_IVA
+        )
+        active, step = self._framework_step(freelancer.id, regime)
         today = self.today()
         return MatchPrefill(
-            fiscale=FiscalService(self.session).get(freelancer.id),
+            fiscale=fiscale,
             cliente=cliente,
             lettera=lettera,
+            regime=regime,
             quadro_attivo=(
-                document_read(active, today, current_quadro_version(PARTITA_IVA))
+                document_read(active, today, current_quadro_version(regime))
                 if active is not None
                 else None
             ),
@@ -507,15 +535,21 @@ class MatchService:
         cliente: dict[str, object] | None = None,
         lettera: dict[str, object] | None = None,
         match_id: UUID | None = None,
+        regime: Regime | None = None,
     ) -> MatchCreate:
         """`prefill` as the body `create` takes, each field given in `cliente` or
         `lettera` laid over what the hub suggests (a `None` given blanks a suggestion):
-        what an MCP tool saves when the admin asked for a match in a sentence. A key
-        that is not a field of the letter or of the client, and a required field still
-        empty once laid over, are a `ValidationFailed` naming it (`lettera.compenso`), in
-        Italian (`field_reason`)."""
+        what an MCP tool saves when the admin asked for a match in a sentence. `regime`
+        `None` takes the letter type the prefill proposes (REB-687). A key that is not a
+        field of the letter or of the client, and a required field still empty once laid
+        over, are a `ValidationFailed` naming it (`lettera.compenso`), in Italian
+        (`field_reason`)."""
         prefill = self.prefill(freelancer_id, company_id)
-        body: dict[str, object] = {"id": match_id, "company_id": company_id}
+        body: dict[str, object] = {
+            "id": match_id,
+            "company_id": company_id,
+            "regime": regime if regime is not None else prefill.regime,
+        }
         for part, suggested, given, known in (
             ("cliente", prefill.cliente, cliente, ClienteDraft.model_fields),
             ("lettera", prefill.lettera, lettera, LetteraDraft.model_fields),
@@ -545,53 +579,57 @@ class MatchService:
     # ---- writes ------------------------------------------------------------------------
 
     def preview(self, freelancer_id: UUID, data: MatchCreate, kind: str) -> ContractPdf:
-        """One document as `create` would write it, with no number, and nothing saved."""
+        """One document as `create` would write it, of the match's regime, with no number,
+        and nothing saved."""
         renderer = self._renderer()
         freelancer, user = self._freelancer(freelancer_id)
         self._matchable_company(data.company_id)
         fiscal = self._fiscal(freelancer.id)
+        require_regime_fits(fiscal.partita_iva, data.regime)
         today = self.today()
+        if kind not in (QUADRO, LETTERA):
+            raise ValidationFailed(ENTITY, "documento", "uno fra lettera e quadro")
+        name = text_name(kind, data.regime)
         if kind == QUADRO:
-            rendered = renderer.render(
-                text_name(QUADRO, PARTITA_IVA), self._quadro_data(user, fiscal, today, PARTITA_IVA)
-            )
-            return ContractPdf(filename="anteprima-contratto-quadro.pdf", content=rendered.pdf)
-        if kind == LETTERA:
-            active = active_framework(self.session, freelancer.id, PARTITA_IVA)
-            data_fields = self._lettera_data(user, fiscal, data, None, active, today)
-            rendered = renderer.render(text_name(LETTERA, PARTITA_IVA), data_fields)
-            return ContractPdf(filename="anteprima-lettera-di-incarico.pdf", content=rendered.pdf)
-        raise ValidationFailed(ENTITY, "documento", "uno fra lettera e quadro")
+            fields = self._quadro_data(user, fiscal, today, data.regime)
+        else:
+            active = active_framework(self.session, freelancer.id, data.regime)
+            fields = self._lettera_data(user, fiscal, data, None, active, today)
+        rendered = renderer.render(name, fields)
+        return ContractPdf(filename=f"anteprima-{name}.pdf", content=rendered.pdf)
 
     def check(self, freelancer_id: UUID, payload: MatchCreate) -> MatchCheck:
         """What saving `payload` would do, in sentences: step 3 of «Crea match», and what
         an MCP tool reads back before it saves. Refused as `create` refuses it (a card or
-        a request gone, a closed request), except for missing tax data, which are
-        reported rather than refused since the wizard saves them on the way. Reads only:
-        nothing is written, no letter number is taken, no renderer is needed."""
+        a request gone, a closed request, an ordinary letter without a partita IVA),
+        except for missing tax data, which are reported rather than refused since the
+        wizard saves them on the way. Reads only: nothing is written, no letter number is
+        taken, no renderer is needed."""
         _freelancer, user = self._freelancer(freelancer_id)
         self._matchable_company(payload.company_id)
-        missing = (
-            self.session.scalar(
-                select(FreelancerFiscal.freelancer_id).where(
-                    FreelancerFiscal.freelancer_id == freelancer_id
-                )
-            )
-            is None
+        fiscal = self.session.scalar(
+            select(FreelancerFiscal)
+            .where(FreelancerFiscal.freelancer_id == freelancer_id)
+            .execution_options(populate_existing=True)
         )
-        _active, step = self._framework_step(freelancer_id, PARTITA_IVA)
+        if fiscal is not None:
+            require_regime_fits(fiscal.partita_iva, payload.regime)
+        _active, step = self._framework_step(freelancer_id, payload.regime)
         riepilogo, cosa_succede = check_sentences(
             _full_name(user),
             payload.cliente.cliente_ragione_sociale,
             payload.lettera,
             step,
-            dati_fiscali_mancanti=missing,
+            dati_fiscali_mancanti=fiscal is None,
+            regime=payload.regime,
+            ha_partita_iva=fiscal is not None and fiscal.partita_iva is not None,
         )
         return MatchCheck(
             riepilogo=riepilogo,
             cosa_succede=cosa_succede,
             quadro_necessario=step == "da_inviare",
-            dati_fiscali_mancanti=missing,
+            dati_fiscali_mancanti=fiscal is None,
+            regime=payload.regime,
         )
 
     def create(self, freelancer_id: UUID, data: MatchCreate, admin_id: UUID) -> MatchRead:
@@ -652,19 +690,20 @@ class MatchService:
             freelancer, user = self._freelancer(freelancer_id)
             company, _referente = self._matchable_company(data.company_id, lock=True)
             fiscal = self._fiscal(freelancer.id)
+            require_regime_fits(fiscal.partita_iva, data.regime)
             today = self.today()
-            active = active_framework(self.session, freelancer.id, PARTITA_IVA)
+            active = active_framework(self.session, freelancer.id, data.regime)
             documents: list[ContractDocument] = []
             stale_ids: list[UUID] = []
             if active is None:
-                pending = pending_framework(self.session, freelancer.id, PARTITA_IVA)
+                pending = pending_framework(self.session, freelancer.id, data.regime)
                 if pending is None or pending.stato != "inviato":
                     for stale in list(
                         self.session.scalars(
                             select(ContractDocument).where(
                                 ContractDocument.kind == QUADRO,
                                 ContractDocument.freelancer_id == freelancer.id,
-                                ContractDocument.regime == PARTITA_IVA,
+                                ContractDocument.regime == data.regime,
                                 ContractDocument.stato == "generato",
                             )
                         )
@@ -674,7 +713,7 @@ class MatchService:
                     # REB-406: the same write `write_framework` makes for a match whose
                     # letter waits on a cancelled or refused one -- `create` already
                     # holds the freelancer's row lock `write_framework` assumes.
-                    documents.append(self.write_framework(freelancer.id, admin_id, PARTITA_IVA))
+                    documents.append(self.write_framework(freelancer.id, admin_id, data.regime))
             match = Match(
                 **({"id": data.id} if data.id is not None else {}),
                 freelancer_id=freelancer.id,
@@ -715,7 +754,7 @@ class MatchService:
                 self._document(
                     renderer,
                     LETTERA,
-                    PARTITA_IVA,
+                    data.regime,
                     self._lettera_data(user, fiscal, data, numero, active, today),
                     freelancer.id,
                     match.id,
@@ -870,7 +909,7 @@ class MatchService:
             **self._rebase_fields(),
             **data.lettera.to_fields(),
             "numero": numero,
-            **self._letter_party_fields(user, fiscal, signed, PARTITA_IVA),
+            **self._letter_party_fields(user, fiscal, signed, data.regime),
             "cliente-ragione-sociale": data.cliente.cliente_ragione_sociale,
             "cliente-piva": data.cliente.cliente_piva,
             "cliente-sede": data.cliente.cliente_sede,
