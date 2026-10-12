@@ -676,6 +676,50 @@ async def test_set_freelancer_tax_data_saves_them_and_never_answers_them(
         _wipe(factory)
 
 
+async def test_set_freelancer_tax_data_without_a_partita_iva_saves_none(
+    factory: sessionmaker[Session],
+) -> None:
+    """REB-687: `partita_iva` omitted or empty is none; given, it still has 11 digits."""
+    freelancer_id, company_id = _seed(factory, fiscal=False)
+    world = World(
+        factory, freelancer_id, company_id, FakeRenderer(), FakeDocumenso(), RecordingSender()
+    )
+    without = {"codice_fiscale": TAX["codice_fiscale"], "domicilio": TAX["domicilio"]}
+    try:
+        async with Client(world.server()) as client:
+            omitted = await _call(
+                client, "set_freelancer_tax_data", freelancer_id=freelancer_id, **without
+            )
+            empty = await _call(
+                client,
+                "set_freelancer_tax_data",
+                freelancer_id=freelancer_id,
+                partita_iva="",
+                **without,
+            )
+            short = await _refused(
+                client,
+                "set_freelancer_tax_data",
+                freelancer_id=freelancer_id,
+                partita_iva="0123",
+                **without,
+            )
+        assert omitted == empty == {"dati_fiscali": "salvati"}
+        assert short == "partita_iva: la partita IVA ha 11 cifre"
+        session = factory()
+        try:
+            row = session.scalars(
+                select(FreelancerFiscal).where(
+                    FreelancerFiscal.freelancer_id == UUID(freelancer_id)
+                )
+            ).one()
+        finally:
+            session.close()
+        assert row.partita_iva is None
+    finally:
+        _wipe(factory)
+
+
 # ---- a deleted card ---------------------------------------------------------------------
 
 

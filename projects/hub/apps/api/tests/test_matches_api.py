@@ -1077,3 +1077,22 @@ def test_the_link_reads_through_the_long_seam_in_production(api_session: Session
         assert engagements.http is expected
         assert signing.engagements is not None
         assert signing.engagements.http is expected
+
+
+@pytest.mark.parametrize("partita_iva", [None, "", "   "])
+def test_tax_data_may_be_saved_without_a_partita_iva(
+    client: TestClient, admin: None, sender: RecordingSender, partita_iva: str | None
+) -> None:
+    """REB-687: omitted, null or blank is no partita IVA; given, it still has 11 digits."""
+    _login(client, sender)
+    freelancer_id = _apply(client)
+    url = f"/api/hub/freelancers/{freelancer_id}/fiscal"
+    saved = client.put(url, json={**FISCAL, "partita_iva": partita_iva})
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["partita_iva"] is None
+    omitted = client.put(url, json={k: v for k, v in FISCAL.items() if k != "partita_iva"})
+    assert omitted.status_code == 200, omitted.text
+    assert omitted.json()["partita_iva"] is None
+    short = client.put(url, json={**FISCAL, "partita_iva": "0123"})
+    assert short.status_code == 422
+    assert short.json()["detail"][0]["loc"][-1] == "partita_iva"

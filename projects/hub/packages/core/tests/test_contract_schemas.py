@@ -208,3 +208,24 @@ def test_nothing_in_the_flow_can_carry_the_client_budget() -> None:
         MemberContracts,
     ):
         assert not any("budget" in name for name in model.model_fields), model
+
+
+@pytest.mark.parametrize("partita_iva", [None, "", "   "])
+def test_tax_data_without_a_partita_iva_are_stored_as_none(partita_iva: str | None) -> None:
+    """REB-687: a member paid as a prestazione occasionale has no partita IVA."""
+    data = FiscalData(
+        codice_fiscale="LVLDAA85T50H501Z", partita_iva=partita_iva, domicilio="Via Roma 1, Milano"
+    )
+    assert data.partita_iva is None
+    omitted = FiscalData(codice_fiscale="LVLDAA85T50H501Z", domicilio="Via Roma 1, Milano")
+    assert omitted.partita_iva is None
+
+
+@pytest.mark.parametrize("partita_iva", ["IT", "0123456789", "IT 0123456789", "012345678901"])
+def test_a_partita_iva_that_is_given_still_has_eleven_digits(partita_iva: str) -> None:
+    with pytest.raises(ValidationError, match="la partita IVA ha 11 cifre"):
+        FiscalData(
+            codice_fiscale="LVLDAA85T50H501Z",
+            partita_iva=partita_iva,
+            domicilio="Via Roma 1, Milano",
+        )

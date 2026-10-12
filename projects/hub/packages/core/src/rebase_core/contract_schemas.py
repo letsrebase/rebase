@@ -121,12 +121,13 @@ def _compact(value: str) -> str:
 
 class FiscalData(BaseModel):
     """What «Chi e per chi», step 1 of «Crea match», and «Match e contratti» save for a
-    freelancer."""
+    freelancer. `partita_iva` omitted, `null` or blank is none (REB-687): the member works
+    as a prestazione occasionale and signs only the occasional texts."""
 
     model_config = ConfigDict(extra="forbid")
 
     codice_fiscale: SafeStr = Field(min_length=1, max_length=_IDENTIFIER_INPUT_MAX_LENGTH)
-    partita_iva: SafeStr = Field(min_length=1, max_length=_IDENTIFIER_INPUT_MAX_LENGTH)
+    partita_iva: SafeStr | None = Field(default=None, max_length=_IDENTIFIER_INPUT_MAX_LENGTH)
     domicilio: SafeStr = Field(min_length=1, max_length=DOMICILIO_MAX_LENGTH)
     pec: EmailStr | None = None
 
@@ -140,11 +141,17 @@ class FiscalData(BaseModel):
 
     @field_validator("partita_iva", mode="after")
     @classmethod
-    def _partita_iva(cls, value: str) -> str:
-        compact = _compact(value).removeprefix("IT")
-        if not _PARTITA_IVA.fullmatch(compact):
+    def _partita_iva(cls, value: str | None) -> str | None:
+        """Nothing typed is no partita IVA, stored as `NULL`; anything typed is the
+        eleven digits, with its spaces and an `IT` prefix dropped (`IT` alone is not
+        nothing, it is a partita IVA missing its digits)."""
+        compact = _compact(value or "")
+        if not compact:
+            return None
+        digits = compact.removeprefix("IT")
+        if not _PARTITA_IVA.fullmatch(digits):
             raise ValueError("la partita IVA ha 11 cifre")
-        return compact
+        return digits
 
     @field_validator("domicilio", mode="after")
     @classmethod
@@ -157,7 +164,7 @@ class FiscalRead(BaseModel):
 
     freelancer_id: UUID
     codice_fiscale: str
-    partita_iva: str
+    partita_iva: str | None
     domicilio: str
     pec: str | None
     updated_by: UUID

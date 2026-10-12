@@ -1342,20 +1342,21 @@ def build_server(
     def set_freelancer_tax_data(
         freelancer_id: str,
         codice_fiscale: str,
-        partita_iva: str,
         domicilio: str,
+        partita_iva: str | None = None,
         pec: str | None = None,
     ) -> dict[str, Any]:
-        """Salva i dati fiscali di un freelance, quelli che i due contratti stampano:
-        codice fiscale (16 caratteri, o 11 cifre per una ditta), partita IVA (11 cifre),
-        domicilio su una riga e, se c'è, la PEC (omessa o vuota: nessuna). Sostituisce
-        quelli che c'erano. Risponde solo che sono salvati, mai i valori; il registro
-        delle modifiche nomina i campi cambiati, mai i valori."""
+        """Salva i dati fiscali di un freelance, quelli che i contratti stampano: codice
+        fiscale (16 caratteri, o 11 cifre per una ditta), domicilio su una riga, la partita
+        IVA (11 cifre; omessa o vuota: nessuna, per chi lavora con prestazioni occasionali
+        e firma solo la lettera di incarico occasionale) e, se c'è, la PEC (omessa o vuota:
+        nessuna). Sostituisce quelli che c'erano. Risponde solo che sono salvati, mai i
+        valori; il registro delle modifiche nomina i campi cambiati, mai i valori."""
         key = UUID(freelancer_id)
         try:
             data = FiscalData(
                 codice_fiscale=codice_fiscale,
-                partita_iva=partita_iva,
+                partita_iva=partita_iva or None,
                 domicilio=domicilio,
                 pec=pec or None,
             )
