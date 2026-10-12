@@ -410,6 +410,17 @@ def test_an_occasional_document_is_named_as_its_own_text_in_every_mail() -> None
     assert lettera.subject == "Da firmare: lettera di incarico occasionale n. 2026-001"
     cancelled = signing_cancelled_mail("ada@studio.it", "Ada", "quadro", None, regime="occasionale")
     assert cancelled.subject == "Contratto quadro rebase per prestazioni occasionali annullato"
+    assert "Se serve un nuovo contratto quadro per prestazioni occasionali, ti scriviamo." in (
+        cancelled.text
+    )
+    cancelled_letter = signing_cancelled_mail(
+        "ada@studio.it", "Ada", "lettera", "2026-001", regime="occasionale"
+    )
+    assert "Se serve una nuova lettera di incarico occasionale, ti scriviamo." in (
+        cancelled_letter.text
+    )
+    ordinary = signing_cancelled_mail("ada@studio.it", "Ada", "quadro", None)
+    assert "Se serve un nuovo contratto quadro, ti scriviamo." in ordinary.text
     signed = signed_copy_mail(
         "ada@studio.it",
         kind="lettera",

@@ -551,6 +551,8 @@ def signing_cancelled_mail(
     name = document_name(kind, numero, regime)
     cancelled = "annullato" if kind == "quadro" else "annullata"
     nuovo = "un nuovo contratto quadro" if kind == "quadro" else "una nuova lettera di incarico"
+    if regime == OCCASIONALE:
+        nuovo += " per prestazioni occasionali" if kind == "quadro" else " occasionale"
     greeting = f"Ciao {nome}," if nome else "Ciao,"
     paragraph = (
         f"il link che ti avevamo mandato per firmare {_article(kind)} {name} non funziona "
