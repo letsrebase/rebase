@@ -11,6 +11,8 @@ cancelled document's page still opens on Documenso and fails only at the click, 
 state shown here is what tells the person not to sign it. `quadri_precedenti` keeps
 every earlier framework agreement that was signed visible under the current one: a
 notice, or a newer framework replacing it, moves it there rather than off the page.
+Since REB-687 a freelancer may hold an ordinary and an occasional framework agreement,
+and each shows on top in its own place.
 """
 
 from collections.abc import Callable
@@ -26,6 +28,7 @@ from rebase_core.framework import framework_dates, rome_today
 from rebase_core.matches import LETTERA, QUADRO, MatchService
 from rebase_core.members import MemberService
 from rebase_core.models import ContractDocument, Match
+from rebase_core.regimes import OCCASIONALE, PARTITA_IVA, as_regime, document_label
 
 
 def _visible(document: ContractDocument, match: Match | None) -> bool:
@@ -53,6 +56,8 @@ def _read(document: ContractDocument, match: Match | None, today: date) -> Membe
     return MemberContract(
         id=document.id,
         kind=document.kind,
+        regime=as_regime(document.regime),
+        tipo=document_label(document.kind, document.regime),
         numero=document.numero,
         stato=document.stato,
         cliente=match.cliente_ragione_sociale if match is not None else None,
@@ -67,6 +72,13 @@ def _read(document: ContractDocument, match: Match | None, today: date) -> Membe
         ultimo_giorno_disdetta=last_notice,
         pigro_url=pigro_url,
     )
+
+
+def _current(quadri: list[MemberContract], regime: str) -> MemberContract | None:
+    """The framework agreement of `regime` the page shows on top (REB-687): the active
+    one, else the newest that reached the person."""
+    mine = [quadro for quadro in quadri if quadro.regime == regime]
+    return next((quadro for quadro in mine if quadro.attivo), None) or (mine[0] if mine else None)
 
 
 class MemberContractService:
@@ -87,18 +99,22 @@ class MemberContractService:
         quadri = [
             _read(document, None, today) for document, _ in visible if document.kind == QUADRO
         ]
-        quadro = next((q for q in quadri if q.attivo), None) or (quadri[0] if quadri else None)
+        quadro = _current(quadri, PARTITA_IVA)
+        quadro_occasionale = _current(quadri, OCCASIONALE)
         # Every other framework agreement that was signed (REB-392): a notice, or a
-        # newer one taking over as `quadro`, must not make its own signed copy
-        # disappear from the page, only move it down here. Newest first, same as
-        # `quadri` already is.
-        quadri_precedenti = [
-            q for q in quadri if q.ha_pdf_firmato and (quadro is None or q.id != quadro.id)
-        ]
+        # newer one taking over on top, must not make its own signed copy disappear
+        # from the page, only move it down here. Newest first, same as `quadri`.
+        on_top = {shown.id for shown in (quadro, quadro_occasionale) if shown is not None}
+        quadri_precedenti = [q for q in quadri if q.ha_pdf_firmato and q.id not in on_top]
         lettere = [
             _read(document, match, today) for document, match in visible if document.kind == LETTERA
         ]
-        return MemberContracts(quadro=quadro, quadri_precedenti=quadri_precedenti, lettere=lettere)
+        return MemberContracts(
+            quadro=quadro,
+            quadro_occasionale=quadro_occasionale,
+            quadri_precedenti=quadri_precedenti,
+            lettere=lettere,
+        )
 
     def signed_pdf(self, user_id: UUID, document_id: UUID) -> ContractPdf:
         freelancer = MemberService(self.session).require_card(user_id)

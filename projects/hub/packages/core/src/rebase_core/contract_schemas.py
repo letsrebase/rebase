@@ -652,6 +652,9 @@ class MemberContract(BaseModel):
 
     id: UUID
     kind: str
+    # Which family it belongs to and its type as the page names it (REB-687).
+    regime: Regime
+    tipo: str
     numero: str | None
     stato: str
     cliente: str | None
@@ -668,12 +671,14 @@ class MemberContract(BaseModel):
 
 
 class MemberContracts(BaseModel):
-    """«Contratti»: the framework agreement (the active one, else the newest that reached
-    the person), the letters newest first, and `quadri_precedenti` (REB-392): the
-    freelancer's other framework agreements that were signed, newest first, excluding
-    the one in `quadro` -- a notice, or a newer one replacing it, must not make an
-    earlier signed copy disappear from the page."""
+    """«Contratti»: the framework agreements on top, one per regime (REB-687): `quadro`
+    the ordinary one and `quadro_occasionale` the occasional one, each the active one,
+    else the newest that reached the person; the letters newest first; and
+    `quadri_precedenti` (REB-392): the freelancer's other framework agreements that were
+    signed, newest first, excluding the two on top -- a notice, or a newer one replacing
+    it, must not make an earlier signed copy disappear from the page."""
 
     quadro: MemberContract | None
+    quadro_occasionale: MemberContract | None = None
     quadri_precedenti: list[MemberContract] = Field(default_factory=list)
     lettere: list[MemberContract]
