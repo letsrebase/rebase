@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import pytest
-from contract_flow import ADMIN_EMAIL, MISSING, SIGNER, TABLES, draft_match
+from contract_flow import ADMIN_EMAIL, FISCAL, MISSING, SIGNER, TABLES, draft_match
 from fakes_contracts import FakeRenderer
 from fakes_documenso import FakeDocumenso
 from fastapi.testclient import TestClient
@@ -130,6 +130,37 @@ def test_a_draft_text_never_leaves(
     assert answered.status_code == 409
     assert "ancora una bozza" in answered.json()["detail"]
     assert documenso.created() == []
+
+
+def test_an_ordinary_draft_whose_partita_iva_was_removed_is_a_422_on_regime(
+    client: TestClient,
+    admin: None,
+    sender: RecordingSender,
+    renderer: FakeRenderer,
+    documenso: FakeDocumenso,
+) -> None:
+    """REB-687: the tax data lost the partita IVA after the draft, so the send answers as
+    «Crea match» does, a 422 on `regime` with the spec's sentence, and nothing leaves."""
+    match = draft_match(client, sender)
+    fiscal = client.put(
+        f"/api/hub/freelancers/{match['freelancer_id']}/fiscal",
+        json={**FISCAL, "partita_iva": None},
+    )
+    assert fiscal.status_code == 200, fiscal.text
+
+    answered = client.post(f"/api/hub/matches/{match['id']}/send")
+
+    assert answered.status_code == 422
+    assert answered.json()["detail"] == [
+        {
+            "loc": ["body", "regime"],
+            "msg": 'Senza partita IVA si fa solo la lettera occasionale: scegli "Prestazione '
+            'occasionale" o salva la partita IVA.',
+            "type": "value_error",
+        }
+    ]
+    assert documenso.created() == []
+    assert client.get(f"/api/hub/matches/{match['id']}").json()["stato"] == "bozza"
 
 
 def test_documenso_refusing_is_a_502_with_its_sentence_alone(

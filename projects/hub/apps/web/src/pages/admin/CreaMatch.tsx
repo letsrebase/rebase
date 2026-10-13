@@ -4,7 +4,16 @@ import { ArrowLeft } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { cn } from '@rebase/ui/cn'
 import { AMOUNT_PROBLEM, euroAmount } from '@/lib/amount'
-import { admin, ApiError, type Company, type Fiscal, type FiscalData, type Match, type MatchCreate } from '@/lib/api'
+import {
+  admin,
+  ApiError,
+  type Company,
+  type Fiscal,
+  type FiscalData,
+  type Match,
+  type MatchCreate,
+  type Regime,
+} from '@/lib/api'
 import {
   ALTRE_CONDIZIONI_FIELDS,
   CLIENTE_EMPTY,
@@ -44,7 +53,10 @@ const STEPS = ['Chi e per chi', 'Condizioni', 'Controlla e invia'] as const
 
 // A request closed after it was picked: `create` and the check refuse it by this name.
 const REQUEST_FIELD = 'company_id'
-const onStepOne = (field: string) => field === REQUEST_FIELD || CLIENTE_FIELDS.has(field) || FISCAL_FIELDS.has(field)
+// «Tipo di lettera» (REB-687): an ordinary letter without a partita IVA is refused on it.
+const REGIME_FIELD = 'regime'
+const onStepOne = (field: string) =>
+  field === REQUEST_FIELD || field === REGIME_FIELD || CLIENTE_FIELDS.has(field) || FISCAL_FIELDS.has(field)
 
 // A fee the API would refuse or read as another number (three decimals, English
 // notation) is refused on «Condizioni» before any request, in the words every amount
@@ -93,6 +105,8 @@ export function AdminCreaMatch() {
   const [editFiscal, setEditFiscal] = useState(false)
   const [cliente, setCliente] = useState<ClienteForm>(CLIENTE_EMPTY)
   const [editCliente, setEditCliente] = useState(false)
+  // «Tipo di lettera» (REB-687): the prefill proposes it, the admin may change it.
+  const [regime, setRegime] = useState<Regime>('partita_iva')
   const [lettera, setLettera] = useState<LetteraForm>(LETTERA_EMPTY)
   // «Giorni previsti» (REB-497): the match's, so beside the letter's form, never in it.
   const [giorni, setGiorni] = useState('')
@@ -128,6 +142,7 @@ export function AdminCreaMatch() {
       ? {
           id: matchId,
           company_id: company.id,
+          regime,
           cliente: toCliente(cliente),
           lettera: letteraToSend(lettera),
           giorni_previsti: giorniPrevistiToSend(giorni),
@@ -160,6 +175,7 @@ export function AdminCreaMatch() {
       const client = clienteForm(data.cliente)
       const form = letteraForm(data.lettera)
       setPrefillFor(companyId)
+      setRegime(data.regime)
       if (olderFiscal(data.fiscale, heldFiscal.current)) {
         // Read before a tax save the page already has back: the saved record and the
         // draft stay, and the section opens only on text typed and not saved yet.
@@ -344,10 +360,15 @@ export function AdminCreaMatch() {
             fiscal={fiscal}
             onFiscal={(next) => {
               for (const key of typedFiscalFields(fiscal, next)) fiscalTyped.current.add(key)
+              // Without a partita IVA only the occasional letter can be made (REB-687):
+              // ticking the box picks it; unticking leaves the type as it is.
+              if (next.senza_partita_iva && !fiscal.senza_partita_iva) setRegime('occasionale')
               setFiscal(next)
             }}
             editFiscal={editFiscal}
             onEditFiscal={() => setEditFiscal(true)}
+            regime={regime}
+            onRegime={setRegime}
             onNext={submitChi}
             pending={saveFiscal.isPending}
             failure={chiFailure}
@@ -360,6 +381,7 @@ export function AdminCreaMatch() {
             giorniPrevisti={giorni}
             onGiorniPrevisti={setGiorni}
             dayRate={dayRate}
+            regime={regime}
             altreOpen={altreOpen}
             onAltreOpen={setAltreOpen}
             onBack={() => setStep(0)}
@@ -373,6 +395,7 @@ export function AdminCreaMatch() {
             review={review}
             giorniPrevisti={giorniPrevistiToSend(giorni)}
             nome={nome}
+            regime={regime}
             onBack={() => {
               setReview(null)
               setStep(1)

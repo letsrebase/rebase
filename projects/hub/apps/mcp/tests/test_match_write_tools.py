@@ -676,6 +676,50 @@ async def test_set_freelancer_tax_data_saves_them_and_never_answers_them(
         _wipe(factory)
 
 
+async def test_set_freelancer_tax_data_without_a_partita_iva_saves_none(
+    factory: sessionmaker[Session],
+) -> None:
+    """REB-687: `partita_iva` omitted or empty is none; given, it still has 11 digits."""
+    freelancer_id, company_id = _seed(factory, fiscal=False)
+    world = World(
+        factory, freelancer_id, company_id, FakeRenderer(), FakeDocumenso(), RecordingSender()
+    )
+    without = {"codice_fiscale": TAX["codice_fiscale"], "domicilio": TAX["domicilio"]}
+    try:
+        async with Client(world.server()) as client:
+            omitted = await _call(
+                client, "set_freelancer_tax_data", freelancer_id=freelancer_id, **without
+            )
+            empty = await _call(
+                client,
+                "set_freelancer_tax_data",
+                freelancer_id=freelancer_id,
+                partita_iva="",
+                **without,
+            )
+            short = await _refused(
+                client,
+                "set_freelancer_tax_data",
+                freelancer_id=freelancer_id,
+                partita_iva="0123",
+                **without,
+            )
+        assert omitted == empty == {"dati_fiscali": "salvati"}
+        assert short == "partita_iva: la partita IVA ha 11 cifre"
+        session = factory()
+        try:
+            row = session.scalars(
+                select(FreelancerFiscal).where(
+                    FreelancerFiscal.freelancer_id == UUID(freelancer_id)
+                )
+            ).one()
+        finally:
+            session.close()
+        assert row.partita_iva is None
+    finally:
+        _wipe(factory)
+
+
 # ---- a deleted card ---------------------------------------------------------------------
 
 
@@ -775,3 +819,79 @@ async def test_no_match_tool_speaks_of_the_freelancer_as_he_or_she(world: World)
         tools = {tool.name: tool.description or "" for tool in (await client.list_tools()).tools}
     for name in MATCH_TOOLS:
         assert not re.search(r"\b(lui|lei)\b", tools[name]), name
+
+
+# ---- the letter type (REB-687) -----------------------------------------------------------
+
+
+def _seed_without_partita_iva(factory: sessionmaker[Session]) -> tuple[str, str]:
+    freelancer_id, company_id = _seed(factory, fiscal=False)
+    session = factory()
+    try:
+        FiscalService(session).save(
+            UUID(freelancer_id),
+            FiscalData(codice_fiscale=TAX["codice_fiscale"], domicilio=TAX["domicilio"]),
+            IVAN.id,
+        )
+    finally:
+        session.close()
+    return freelancer_id, company_id
+
+
+async def test_preview_and_create_match_take_the_hubs_letter_type_unless_told(
+    factory: sessionmaker[Session],
+) -> None:
+    freelancer_id, company_id = _seed_without_partita_iva(factory)
+    world = World(
+        factory,
+        freelancer_id,
+        company_id,
+        FakeRenderer(draft=False),
+        FakeDocumenso(),
+        RecordingSender(),
+    )
+    try:
+        async with Client(world.server()) as client:
+            proposed = await _call(
+                client,
+                "preview_match",
+                freelancer_id=freelancer_id,
+                company_id=company_id,
+                cliente=CLIENTE,
+            )
+            refused = await _refused(
+                client,
+                "preview_match",
+                freelancer_id=freelancer_id,
+                company_id=company_id,
+                cliente=CLIENTE,
+                regime="partita_iva",
+            )
+            match = await _create(client, world, cliente=CLIENTE)
+        assert proposed["regime"] == "occasionale"
+        assert any("lordi, senza IVA" in sentence for sentence in proposed["riepilogo"])
+        assert refused.endswith(
+            'Senza partita IVA si fa solo la lettera occasionale: scegli "Prestazione '
+            'occasionale" o salva la partita IVA.'
+        )
+        assert (match["lettera"]["regime"], match["lettera"]["tipo"]) == (
+            "occasionale",
+            "Lettera di incarico occasionale",
+        )
+    finally:
+        _wipe(factory)
+
+
+async def test_get_match_attaches_the_framework_of_the_matchs_own_regime(world: World) -> None:
+    async with Client(world.server()) as client:
+        ordinary = await _create(client, world, cliente=CLIENTE)
+        occasional = await _create(client, world, cliente=CLIENTE, regime="occasionale")
+        read_ordinary = await _call(client, "get_match", match_id=ordinary["id"])
+        read_occasional = await _call(client, "get_match", match_id=occasional["id"])
+        page = await _call(client, "list_matches", freelancer_id=world.freelancer_id)
+    assert read_ordinary["quadro"]["tipo"] == "Contratto quadro"
+    assert read_occasional["quadro"]["tipo"] == "Contratto quadro per prestazioni occasionali"
+    assert read_occasional["quadro"]["id"] != read_ordinary["quadro"]["id"]
+    assert page["quadro"]["id"] == read_ordinary["quadro"]["id"]
+    assert page["quadro_occasionale"]["id"] == read_occasional["quadro"]["id"]
+    assert page["quadro_occasionale"]["pdf_url"] == _link(page["quadro_occasionale"])

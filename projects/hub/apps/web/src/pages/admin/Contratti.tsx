@@ -11,7 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@rebase/ui/dialog'
-import { admin, ApiError, matches, type ContractDocument, type Match } from '@/lib/api'
+import { admin, ApiError, matches, type ContractDocument, type Match, type Regime } from '@/lib/api'
 import {
   MATCHES_HEADING_ID,
   QUADRO_HEADING_ID,
@@ -19,6 +19,8 @@ import {
   closeDescription,
   matchHeadingId,
   matchOf,
+  objectOf,
+  quadroHeadingId,
   sendReportMessage,
   whatOf,
 } from '@/lib/contracts'
@@ -27,13 +29,18 @@ import { FrameworkCard, MatchCards, type ActionHandles } from './contratti/Cards
 import { FiscalSection } from './contratti/Fiscal'
 import { Empty, Header } from './lists'
 
-type Section = 'quadro' | 'match'
-const SECTION_HEADING: Record<Section, string> = { quadro: QUADRO_HEADING_ID, match: MATCHES_HEADING_ID }
+/** A framework agreement's actions belong to its regime's card (REB-687), a match's to
+ *  the matches. */
+type Section = Regime | 'match'
+const sectionHeading = (section: Section) => (section === 'match' ? MATCHES_HEADING_ID : quadroHeadingId(section))
 
 /** Where the focus goes back to after an action: the control that started it while it is
- *  still on the page, else the first of `headings` that is (its card's, then its
- *  section's). Radix, and the browser once a focused control is removed, would leave it
- *  on the body. Answers whether it found a place. */
+ *  still on the page, else the first of `headings` that is (its card's, its section's,
+ *  then the ordinary framework card's, there too when no framework card is left, then
+ *  the matches', always there: an occasional framework agreement that never left is
+ *  hidden once cancelled, and its card goes with it). Radix, and the browser once a
+ *  focused control is removed, would leave it on the body. Answers whether it found a
+ *  place. */
 function focusBack(opener: HTMLElement | null, headings: string[]): boolean {
   const target = opener?.isConnected
     ? opener
@@ -129,7 +136,11 @@ export function AdminContratti() {
   const [actionFailure, setActionFailure] = useState<{ section: Section; message: string } | null>(null)
   const [confirming, setConfirming] = useState<Match | null>(null)
   const [closing, setClosing] = useState<Match | null>(null)
-  const [confirmingQuadro, setConfirmingQuadro] = useState<'annulla' | 'disdetta' | null>(null)
+  // The question on a framework agreement, and which one it is about (REB-687).
+  const [confirmingQuadro, setConfirmingQuadro] = useState<{
+    action: 'annulla' | 'disdetta'
+    document: ContractDocument
+  } | null>(null)
   // The control the last action started from, and, once its request left, the headings
   // to land on should the refetched page no longer have that control.
   const opener = useRef<HTMLElement | null>(null)
@@ -153,7 +164,7 @@ export function AdminContratti() {
   }
   const starting = (section: Section, card: string) => {
     quiet()
-    landing.current = [card, SECTION_HEADING[section]]
+    landing.current = [card, sectionHeading(section), QUADRO_HEADING_ID, MATCHES_HEADING_ID]
     return {
       onError: (error: unknown) => {
         landing.current = []
@@ -213,10 +224,14 @@ export function AdminContratti() {
   if (contracts.isError) return <Empty>Non riesco a leggere i contratti di questa persona.</Empty>
   if (contracts.isPending) return <Empty>Caricamento…</Empty>
   const data = contracts.data
-  const quadro = data.quadro
+  const frameworks = [data.quadro, data.quadro_occasionale].filter(
+    (document): document is ContractDocument => document != null,
+  )
   const name = person.data ? `${person.data.nome} ${person.data.cognome}` : ''
   const busy = actions.some((action) => action.isPending)
   const focusOnClose = () => focusBack(opener.current, landing.current)
+  // The framework agreement a question is about, by its own type (REB-687).
+  const quadroObject = confirmingQuadro ? objectOf(confirmingQuadro.document) : 'il contratto quadro'
 
   // The signing actions a document has, shared by the framework agreement's card and a
   // match's, which reaches them on its letter.
@@ -235,17 +250,17 @@ export function AdminContratti() {
     },
   })
   const quadroHandles = (document: ContractDocument): ActionHandles => ({
-    ...signing(document, 'quadro', QUADRO_HEADING_ID),
+    ...signing(document, document.regime, quadroHeadingId(document.regime)),
     annulla: {
-      label: 'Annulla il contratto quadro',
-      pendingLabel: 'Annullo il contratto quadro',
-      run: from(() => setConfirmingQuadro('annulla')),
+      label: `Annulla ${objectOf(document)}`,
+      pendingLabel: `Annullo ${objectOf(document)}`,
+      run: from(() => setConfirmingQuadro({ action: 'annulla', document })),
       pending: runningFor(cancelQuadro, document.id),
     },
     registra_disdetta: {
       label: `${ACTION_LABELS.registra_disdetta} ${whatOf(document)}`,
       pendingLabel: `Registro la disdetta ${whatOf(document)}`,
-      run: from(() => setConfirmingQuadro('disdetta')),
+      run: from(() => setConfirmingQuadro({ action: 'disdetta', document })),
       pending: runningFor(recordNotice, document.id),
     },
   })
@@ -297,12 +312,19 @@ export function AdminContratti() {
         </p>
       )}
       <div className="max-w-3xl space-y-8 px-6 py-6">
-        <FrameworkCard
-          quadro={quadro}
-          handles={quadro ? quadroHandles(quadro) : {}}
-          busy={busy}
-          error={actionFailure?.section === 'quadro' ? actionFailure.message : null}
-        />
+        {frameworks.length === 0 ? (
+          <FrameworkCard quadro={null} handles={{}} busy={busy} error={null} />
+        ) : (
+          frameworks.map((document) => (
+            <FrameworkCard
+              key={document.id}
+              quadro={document}
+              handles={quadroHandles(document)}
+              busy={busy}
+              error={actionFailure?.section === document.regime ? actionFailure.message : null}
+            />
+          ))
+        )}
         <MatchCards
           matches={data.matches}
           handlesFor={matchHandles}
@@ -353,34 +375,36 @@ export function AdminContratti() {
         onClose={() => setClosing(null)}
       />
       <Confirm
-        open={confirmingQuadro === 'annulla'}
-        title="Annullare il contratto quadro?"
+        open={confirmingQuadro?.action === 'annulla'}
+        title={`Annullare ${quadroObject}?`}
         description="Se è già partito, viene annullato anche sul sito di firma e il link ricevuto dal freelance smette di funzionare. Le lettere che lo aspettano restano in attesa: «Invia per la firma» sul loro match ne genera uno nuovo."
-        confirm={cancelQuadro.isPending ? 'Annullo…' : 'Sì, annulla il contratto quadro'}
+        confirm={cancelQuadro.isPending ? 'Annullo…' : `Sì, annulla ${quadroObject}`}
         pending={cancelQuadro.isPending}
         onCloseFocus={focusOnClose}
         onConfirm={() => {
-          if (quadro)
-            cancelQuadro.mutate(quadro.id, {
-              ...starting('quadro', QUADRO_HEADING_ID),
-              onSettled: () => setConfirmingQuadro(null),
-            })
+          if (!confirmingQuadro) return
+          const { document } = confirmingQuadro
+          cancelQuadro.mutate(document.id, {
+            ...starting(document.regime, quadroHeadingId(document.regime)),
+            onSettled: () => setConfirmingQuadro(null),
+          })
         }}
         onClose={() => setConfirmingQuadro(null)}
       />
       <Confirm
-        open={confirmingQuadro === 'disdetta'}
+        open={confirmingQuadro?.action === 'disdetta'}
         title="Registrare la disdetta?"
-        description="Da oggi il contratto quadro non è più attivo, e il prossimo match ne genera uno nuovo. Si registra quando il freelance o rebase ha dato disdetta, o uno dei due ha receduto."
+        description={`Da oggi ${quadroObject} non è più attivo, e il prossimo match ne genera uno nuovo. Si registra quando il freelance o rebase ha dato disdetta, o uno dei due ha receduto.`}
         confirm={recordNotice.isPending ? 'Registro…' : 'Sì, registra la disdetta'}
         pending={recordNotice.isPending}
         onCloseFocus={focusOnClose}
         onConfirm={() => {
-          if (quadro)
-            recordNotice.mutate(quadro.id, {
-              ...starting('quadro', QUADRO_HEADING_ID),
-              onSettled: () => setConfirmingQuadro(null),
-            })
+          if (!confirmingQuadro) return
+          const { document } = confirmingQuadro
+          recordNotice.mutate(document.id, {
+            ...starting(document.regime, quadroHeadingId(document.regime)),
+            onSettled: () => setConfirmingQuadro(null),
+          })
         }}
         onClose={() => setConfirmingQuadro(null)}
       />

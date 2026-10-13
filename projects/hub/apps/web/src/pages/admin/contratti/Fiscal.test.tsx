@@ -39,20 +39,20 @@ afterEach(() => vi.restoreAllMocks())
 describe('«Dati fiscali» on «Match e contratti»', () => {
   it('fills a form nobody typed in with the newer saved record', () => {
     const show = mount(SAVED)
-    expect(screen.getByLabelText('Domicilio professionale')).toHaveValue('Via Roma 1, Milano')
+    expect(screen.getByLabelText('Domicilio')).toHaveValue('Via Roma 1, Milano')
     show(NEWER)
-    expect(screen.getByLabelText('Domicilio professionale')).toHaveValue('Via Po 2, 10121 Torino')
+    expect(screen.getByLabelText('Domicilio')).toHaveValue('Via Po 2, 10121 Torino')
     expect(screen.getByLabelText('Partita IVA')).toHaveValue('01234567899')
   })
 
   it('keeps what the admin is typing, and takes the newer record in the fields left alone', async () => {
     const show = mount(SAVED)
     await userEvent.click(screen.getByText('Dati fiscali'))
-    const domicilio = screen.getByLabelText('Domicilio professionale')
+    const domicilio = screen.getByLabelText('Domicilio')
     await userEvent.clear(domicilio)
     await userEvent.type(domicilio, 'Via Nuova 3, Bari')
     show(NEWER)
-    expect(screen.getByLabelText('Domicilio professionale')).toHaveValue('Via Nuova 3, Bari')
+    expect(screen.getByLabelText('Domicilio')).toHaveValue('Via Nuova 3, Bari')
     expect(screen.getByLabelText('Partita IVA')).toHaveValue('01234567899')
   })
 
@@ -68,7 +68,7 @@ describe('«Dati fiscali» on «Match e contratti»', () => {
     const show = mount(SAVED)
     await userEvent.click(screen.getByText('Dati fiscali'))
     const codice = screen.getByLabelText('Codice fiscale')
-    const domicilio = screen.getByLabelText('Domicilio professionale')
+    const domicilio = screen.getByLabelText('Domicilio')
     await userEvent.clear(codice)
     await userEvent.type(codice, 'lvldaa85t50h501z')
     await userEvent.clear(domicilio)
@@ -101,7 +101,7 @@ describe('«Dati fiscali» on «Match e contratti»', () => {
     )
     const show = mount(SAVED)
     await userEvent.click(screen.getByText('Dati fiscali'))
-    const domicilio = screen.getByLabelText('Domicilio professionale')
+    const domicilio = screen.getByLabelText('Domicilio')
     await userEvent.clear(domicilio)
     await userEvent.type(domicilio, 'corso como 1, milano ')
     await userEvent.click(screen.getByRole('button', { name: 'Salva i dati fiscali' }))
@@ -129,7 +129,7 @@ describe('«Dati fiscali» on «Match e contratti»', () => {
     )
     const show = mount(SAVED)
     await userEvent.click(screen.getByText('Dati fiscali'))
-    const domicilio = screen.getByLabelText('Domicilio professionale')
+    const domicilio = screen.getByLabelText('Domicilio')
     const pec = screen.getByLabelText('PEC, se ce l’ha')
     await userEvent.clear(domicilio)
     await userEvent.type(domicilio, 'Corso Como 1, Milano')
@@ -152,5 +152,38 @@ describe('«Dati fiscali» on «Match e contratti»', () => {
     expect(screen.getByLabelText('Codice fiscale')).toHaveValue('')
     show(SAVED)
     expect(screen.getByLabelText('Codice fiscale')).toHaveValue('LVLDAA85T50H501Z')
+  })
+
+  it('ticks «Senza partita IVA» for a record saved without one, and shows no partita IVA field (REB-687)', async () => {
+    mount({ ...SAVED, partita_iva: null })
+    expect(screen.getByText('Salvati: CF LVLDAA85T50H501Z · senza partita IVA')).toBeInTheDocument()
+    await userEvent.click(screen.getByText('Dati fiscali'))
+    expect(screen.getByRole('checkbox', { name: 'Senza partita IVA (prestazione occasionale)' })).toBeChecked()
+    expect(screen.queryByLabelText('Partita IVA')).toBeNull()
+  })
+
+  it('saves the ticked box as no partita IVA, and the unticked box asks for one again (REB-687)', async () => {
+    const sent: unknown[] = []
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (_input, init) => {
+      sent.push(JSON.parse(String(init!.body)))
+      const record = { ...SAVED, partita_iva: null, updated_at: '2026-09-26T10:00:00Z' }
+      return new Response(JSON.stringify(record), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    })
+    mount(SAVED)
+    await userEvent.click(screen.getByText('Dati fiscali'))
+    const box = screen.getByRole('checkbox', { name: 'Senza partita IVA (prestazione occasionale)' })
+    expect(box).not.toBeChecked()
+    expect(screen.getByLabelText('Partita IVA')).toBeRequired()
+    await userEvent.click(box)
+    expect(screen.queryByLabelText('Partita IVA')).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Salva i dati fiscali' }))
+    expect(await screen.findByText('Dati fiscali salvati.')).toBeInTheDocument()
+    expect(sent).toEqual([
+      { codice_fiscale: 'LVLDAA85T50H501Z', partita_iva: null, domicilio: 'Via Roma 1, Milano', pec: null },
+    ])
+    expect(box).toBeChecked()
+    await userEvent.click(box)
+    expect(screen.getByLabelText('Partita IVA')).toHaveValue('')
+    expect(screen.getByLabelText('Partita IVA')).toBeRequired()
   })
 })

@@ -37,6 +37,7 @@ from rebase_core.models import (
     SEDE_MAX_LENGTH,
 )
 from rebase_core.referral_schemas import MatchReferral
+from rebase_core.regimes import OCCASIONALE, PARTITA_IVA, Regime
 from rebase_core.schemas import PROGETTO_MAX_LENGTH, TARIFFA_MAX, TARIFFA_MIN, clean_multiline
 from rebase_core.validation import SafeStr
 
@@ -106,6 +107,17 @@ LETTER_AUTO_FIELDS = frozenset(
     }
 )
 
+# The occasional letter (REB-687) asks the same form and names its collaborator by the
+# codice fiscale, never by a partita IVA: the same fields the hub fills, with
+# `professionista-cf` in place of `professionista-piva`.
+LETTER_AUTO_FIELDS_OCCASIONALE = (LETTER_AUTO_FIELDS - {"professionista-piva"}) | {
+    "professionista-cf"
+}
+LETTER_AUTO_FIELDS_BY_REGIME: dict[str, frozenset[str]] = {
+    PARTITA_IVA: LETTER_AUTO_FIELDS,
+    OCCASIONALE: LETTER_AUTO_FIELDS_OCCASIONALE,
+}
+
 
 def _one_line(value: str, what: str) -> str:
     cleaned = clean_multiline(value, what=what)
@@ -121,12 +133,13 @@ def _compact(value: str) -> str:
 
 class FiscalData(BaseModel):
     """What «Chi e per chi», step 1 of «Crea match», and «Match e contratti» save for a
-    freelancer."""
+    freelancer. `partita_iva` omitted, `null` or blank is none (REB-687): the member works
+    as a prestazione occasionale and signs only the occasional texts."""
 
     model_config = ConfigDict(extra="forbid")
 
     codice_fiscale: SafeStr = Field(min_length=1, max_length=_IDENTIFIER_INPUT_MAX_LENGTH)
-    partita_iva: SafeStr = Field(min_length=1, max_length=_IDENTIFIER_INPUT_MAX_LENGTH)
+    partita_iva: SafeStr | None = Field(default=None, max_length=_IDENTIFIER_INPUT_MAX_LENGTH)
     domicilio: SafeStr = Field(min_length=1, max_length=DOMICILIO_MAX_LENGTH)
     pec: EmailStr | None = None
 
@@ -140,11 +153,17 @@ class FiscalData(BaseModel):
 
     @field_validator("partita_iva", mode="after")
     @classmethod
-    def _partita_iva(cls, value: str) -> str:
-        compact = _compact(value).removeprefix("IT")
-        if not _PARTITA_IVA.fullmatch(compact):
+    def _partita_iva(cls, value: str | None) -> str | None:
+        """Nothing typed is no partita IVA, stored as `NULL`; anything typed is the
+        eleven digits, with its spaces and an `IT` prefix dropped (`IT` alone is not
+        nothing, it is a partita IVA missing its digits)."""
+        compact = _compact(value or "")
+        if not compact:
+            return None
+        digits = compact.removeprefix("IT")
+        if not _PARTITA_IVA.fullmatch(digits):
             raise ValueError("la partita IVA ha 11 cifre")
-        return compact
+        return digits
 
     @field_validator("domicilio", mode="after")
     @classmethod
@@ -157,7 +176,7 @@ class FiscalRead(BaseModel):
 
     freelancer_id: UUID
     codice_fiscale: str
-    partita_iva: str
+    partita_iva: str | None
     domicilio: str
     pec: str | None
     updated_by: UUID
@@ -332,6 +351,9 @@ class MatchCreate(BaseModel):
 
     id: UUID | None = None
     company_id: UUID
+    # «Tipo di lettera» (REB-687): the letter's regime, and so the match's. An ordinary
+    # letter needs saved tax data with a partita IVA; left out, the letter is ordinary.
+    regime: Regime = PARTITA_IVA
     cliente: ClienteData
     lettera: LetteraFields
     # An admin's estimate of the engagement's billable days (REB-497), read back
@@ -370,6 +392,10 @@ class ContractDocumentRead(BaseModel):
 
     id: UUID
     kind: str
+    # Which family it belongs to and its type as the pages name it (REB-687):
+    # «Contratto quadro per prestazioni occasionali», «Lettera di incarico occasionale».
+    regime: Regime
+    tipo: str
     freelancer_id: UUID
     match_id: UUID | None
     numero: str | None
@@ -433,25 +459,30 @@ class MatchRead(BaseModel):
 
 
 class FreelancerContracts(BaseModel):
-    """«Match e contratti»: the framework agreement at the top (the active one, else the
-    newest not cancelled), every framework agreement newest first, the matches newest
-    first, and the tax data the page edits."""
+    """«Match e contratti»: the framework agreements at the top, one per regime (REB-687):
+    `quadro` the ordinary one and `quadro_occasionale` the occasional one, each the
+    active one, else the newest that left; every framework agreement newest first, the
+    matches newest first, and the tax data the page edits."""
 
     freelancer_id: UUID
     quadro: ContractDocumentRead | None
+    quadro_occasionale: ContractDocumentRead | None
     quadri: list[ContractDocumentRead]
     matches: list[MatchRead]
     fiscale: FiscalRead | None
 
 
 class MatchPrefill(BaseModel):
-    """What «Chi e per chi» and «Condizioni» start from. `quadro_necessario`: this
-    match writes a framework agreement. `lettera_in_attesa`: the letter waits for a
+    """What «Chi e per chi» and «Condizioni» start from. `regime` is the letter type the
+    hub proposes (REB-687): `occasionale` when the saved tax data have no partita IVA,
+    `partita_iva` otherwise, none saved included. `quadro_necessario`: this match writes a
+    framework agreement of that regime. `lettera_in_attesa`: the letter waits for a
     framework's signature."""
 
     fiscale: FiscalRead | None
     cliente: ClienteDraft
     lettera: LetteraDraft
+    regime: Regime
     quadro_attivo: ContractDocumentRead | None
     quadro_necessario: bool
     lettera_in_attesa: bool
@@ -467,6 +498,7 @@ class MatchCheck(BaseModel):
     cosa_succede: str
     quadro_necessario: bool
     dati_fiscali_mancanti: bool
+    regime: Regime
 
 
 class ContractPdf(BaseModel):
@@ -620,6 +652,9 @@ class MemberContract(BaseModel):
 
     id: UUID
     kind: str
+    # Which family it belongs to and its type as the page names it (REB-687).
+    regime: Regime
+    tipo: str
     numero: str | None
     stato: str
     cliente: str | None
@@ -636,12 +671,14 @@ class MemberContract(BaseModel):
 
 
 class MemberContracts(BaseModel):
-    """«Contratti»: the framework agreement (the active one, else the newest that reached
-    the person), the letters newest first, and `quadri_precedenti` (REB-392): the
-    freelancer's other framework agreements that were signed, newest first, excluding
-    the one in `quadro` -- a notice, or a newer one replacing it, must not make an
-    earlier signed copy disappear from the page."""
+    """«Contratti»: the framework agreements on top, one per regime (REB-687): `quadro`
+    the ordinary one and `quadro_occasionale` the occasional one, each the active one,
+    else the newest that reached the person; the letters newest first; and
+    `quadri_precedenti` (REB-392): the freelancer's other framework agreements that were
+    signed, newest first, excluding the two on top -- a notice, or a newer one replacing
+    it, must not make an earlier signed copy disappear from the page."""
 
     quadro: MemberContract | None
+    quadro_occasionale: MemberContract | None = None
     quadri_precedenti: list[MemberContract] = Field(default_factory=list)
     lettere: list[MemberContract]

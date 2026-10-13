@@ -10,7 +10,7 @@ import pytest
 from pydantic import ValidationError
 
 from rebase_core.contract_schemas import (
-    LETTER_AUTO_FIELDS,
+    LETTER_AUTO_FIELDS_BY_REGIME,
     ClienteData,
     FiscalData,
     LetteraDraft,
@@ -23,6 +23,7 @@ from rebase_core.contract_schemas import (
 )
 from rebase_core.contracts.fields import DAYS, FIELD, MONTH_END, TERM
 from rebase_core.contracts.render import text_path
+from rebase_core.regimes import text_name
 
 REQUIRED = {
     "ruolo": "Backend developer",
@@ -186,11 +187,15 @@ def test_expected_days_written_as_a_whole_number_are_taken(days: object) -> None
     assert _match(days).giorni_previsti == 40
 
 
-def test_the_form_covers_every_field_of_the_letter_and_the_hub_fills_the_rest() -> None:
-    """A field added to the Markdown and to neither list is a blank nobody fills."""
-    asked = set(FIELD.findall(text_path("lettera-di-incarico").read_text(encoding="utf-8")))
+@pytest.mark.parametrize("regime", ["partita_iva", "occasionale"])
+def test_the_form_covers_every_field_of_the_letter_and_the_hub_fills_the_rest(regime: str) -> None:
+    """A field added to a letter's Markdown and to neither list is a blank nobody fills.
+    The occasional letter asks the same form and names its collaborator by the codice
+    fiscale instead of a partita IVA (REB-687)."""
+    letter = text_path(text_name("lettera", regime)).read_text(encoding="utf-8")
+    asked = set(FIELD.findall(letter))
     written = {name.replace("_", "-") for name in LetteraDraft.model_fields}
-    assert asked == (written - {DAYS, MONTH_END}) | LETTER_AUTO_FIELDS | {TERM}
+    assert asked == (written - {DAYS, MONTH_END}) | LETTER_AUTO_FIELDS_BY_REGIME[regime] | {TERM}
 
 
 def test_nothing_in_the_flow_can_carry_the_client_budget() -> None:
@@ -208,3 +213,24 @@ def test_nothing_in_the_flow_can_carry_the_client_budget() -> None:
         MemberContracts,
     ):
         assert not any("budget" in name for name in model.model_fields), model
+
+
+@pytest.mark.parametrize("partita_iva", [None, "", "   "])
+def test_tax_data_without_a_partita_iva_are_stored_as_none(partita_iva: str | None) -> None:
+    """REB-687: a member paid as a prestazione occasionale has no partita IVA."""
+    data = FiscalData(
+        codice_fiscale="LVLDAA85T50H501Z", partita_iva=partita_iva, domicilio="Via Roma 1, Milano"
+    )
+    assert data.partita_iva is None
+    omitted = FiscalData(codice_fiscale="LVLDAA85T50H501Z", domicilio="Via Roma 1, Milano")
+    assert omitted.partita_iva is None
+
+
+@pytest.mark.parametrize("partita_iva", ["IT", "0123456789", "IT 0123456789", "012345678901"])
+def test_a_partita_iva_that_is_given_still_has_eleven_digits(partita_iva: str) -> None:
+    with pytest.raises(ValidationError, match="la partita IVA ha 11 cifre"):
+        FiscalData(
+            codice_fiscale="LVLDAA85T50H501Z",
+            partita_iva=partita_iva,
+            domicilio="Via Roma 1, Milano",
+        )

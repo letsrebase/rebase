@@ -8,6 +8,8 @@ import {
   closeDescription,
   clienteComplete,
   clienteLine,
+  compensoHint,
+  draftFromFiscal,
   FISCAL_EMPTY,
   fiscalLine,
   fiscalToSave,
@@ -21,12 +23,17 @@ import {
   letteraToSend,
   newerFiscal,
   matchOf,
+  objectOf,
   payModeOf,
+  previewLabels,
+  quadroHeadingId,
   refillFiscal,
+  REGIME_OPTIONS,
   sendLabel,
   sendReportMessage,
   switchPayMode,
   toCliente,
+  toFiscalData,
   toLettera,
   typedAfterSave,
   typedFiscalFields,
@@ -180,7 +187,13 @@ describe('«Crea match» in three steps (REB-476)', () => {
 
   it('saves tax data only when they were missing, or opened and changed', () => {
     const saved = { codice_fiscale: 'LVLDAA85T50H501Z', partita_iva: '01234567890', domicilio: 'Milano', pec: null }
-    const draft = { codice_fiscale: 'LVLDAA85T50H501Z', partita_iva: '01234567890', domicilio: 'Milano', pec: '' }
+    const draft = {
+      codice_fiscale: 'LVLDAA85T50H501Z',
+      partita_iva: '01234567890',
+      domicilio: 'Milano',
+      pec: '',
+      senza_partita_iva: false,
+    }
     expect(fiscalLine(saved)).toBe('Salvati: CF LVLDAA85T50H501Z · P.IVA 01234567890')
     expect(fiscalToSave(saved, draft, false)).toBeNull()
     expect(fiscalToSave(saved, { ...draft, domicilio: ' Milano ' }, true)).toBeNull()
@@ -194,7 +207,13 @@ describe('«Crea match» in three steps (REB-476)', () => {
   })
 
   it('refills tax fields from a newer record, except the ones typed in', () => {
-    const before = { codice_fiscale: 'LVLDAA85T50H501Z', partita_iva: '01234567890', domicilio: 'Milano', pec: '' }
+    const before = {
+      codice_fiscale: 'LVLDAA85T50H501Z',
+      partita_iva: '01234567890',
+      domicilio: 'Milano',
+      pec: '',
+      senza_partita_iva: false,
+    }
     const after = { ...before, domicilio: 'Bari' }
     expect(typedFiscalFields(before, after)).toEqual(['domicilio'])
     const newer = {
@@ -211,6 +230,7 @@ describe('«Crea match» in three steps (REB-476)', () => {
       partita_iva: '01234567899',
       domicilio: 'Bari',
       pec: 'ada@pec.it',
+      senza_partita_iva: false,
     })
     expect(refillFiscal(after, newer, new Set())).toMatchObject({ domicilio: 'Torino' })
   })
@@ -242,7 +262,13 @@ describe('«Crea match» in three steps (REB-476)', () => {
 
   it('keeps typed only the fields changed after the save was sent', () => {
     const sent = { codice_fiscale: 'LVLDAA85T50H501Z', partita_iva: '01234567890', domicilio: 'Bari', pec: null }
-    const draft = { codice_fiscale: 'LVLDAA85T50H501Z ', partita_iva: '01234567890', domicilio: 'Bari centro', pec: '' }
+    const draft = {
+      codice_fiscale: 'LVLDAA85T50H501Z ',
+      partita_iva: '01234567890',
+      domicilio: 'Bari centro',
+      pec: '',
+      senza_partita_iva: false,
+    }
     const typed = new Set(['codice_fiscale', 'domicilio', 'pec'] as const)
     expect(typedAfterSave(draft, typed, sent)).toEqual(new Set(['domicilio']))
   })
@@ -312,5 +338,85 @@ describe('closeDescription', () => {
     expect(closeDescription(match)).toBe(
       'Il match con Rossi Studio come Designer diventa «Concluso»: l’incarico è finito, e dalla pagina non si riapre. La lettera n. 2026-001 e il contratto quadro restano come sono.',
     )
+  })
+})
+
+describe('tax data without a partita IVA (REB-687)', () => {
+  const record = {
+    freelancer_id: 'f1',
+    codice_fiscale: 'LVLDAA85T50H501Z',
+    partita_iva: null,
+    domicilio: 'Milano',
+    pec: null,
+    updated_by: 'a1',
+    updated_at: '2026-10-12T09:00:00Z',
+  }
+
+  it('reads a saved NULL as the ticked box, and sends the ticked box as NULL', () => {
+    const draft = draftFromFiscal(record)
+    expect(draft).toMatchObject({ partita_iva: '', senza_partita_iva: true })
+    expect(toFiscalData({ ...draft, partita_iva: '0123' })).toMatchObject({ partita_iva: null })
+    expect(toFiscalData({ ...draft, senza_partita_iva: false, partita_iva: ' 01234567890 ' })).toMatchObject({
+      partita_iva: '01234567890',
+    })
+  })
+
+  it('says «senza partita IVA» on the saved line', () => {
+    expect(fiscalLine(record)).toBe('Salvati: CF LVLDAA85T50H501Z · senza partita IVA')
+  })
+
+  it('saves nothing again for a NULL shown as the ticked box, and treats an empty field as NULL', () => {
+    const draft = draftFromFiscal(record)
+    expect(fiscalToSave(record, draft, true)).toBeNull()
+    expect(fiscalToSave(record, { ...draft, senza_partita_iva: false }, true)).toBeNull()
+    expect(fiscalToSave(record, { ...draft, senza_partita_iva: false, partita_iva: '01234567890' }, true)).toEqual({
+      codice_fiscale: 'LVLDAA85T50H501Z',
+      partita_iva: '01234567890',
+      domicilio: 'Milano',
+      pec: null,
+    })
+  })
+
+  it('counts the box as typed only while the save carried another partita IVA', () => {
+    const sent = { codice_fiscale: 'X', partita_iva: null, domicilio: 'Bari', pec: null }
+    const draft = { codice_fiscale: 'X', partita_iva: '', domicilio: 'Bari', pec: '', senza_partita_iva: true }
+    const typed = new Set(['senza_partita_iva'] as const)
+    expect(typedAfterSave(draft, typed, sent)).toEqual(new Set())
+    expect(typedAfterSave({ ...draft, senza_partita_iva: false }, typed, sent)).toEqual(new Set(['senza_partita_iva']))
+  })
+})
+
+describe('the letter type (REB-687)', () => {
+  it('offers the two types in the order step 1 shows them', () => {
+    expect(REGIME_OPTIONS).toEqual([
+      { regime: 'partita_iva', label: 'Incarico con partita IVA' },
+      { regime: 'occasionale', label: 'Prestazione occasionale' },
+    ])
+  })
+
+  it('hints the fee as net of VAT or gross, by type', () => {
+    expect(compensoHint('partita_iva')).toBe('IVA esclusa')
+    expect(compensoHint('occasionale')).toBe('lordo, senza IVA')
+  })
+
+  it('names the previews by type', () => {
+    expect(previewLabels('partita_iva')).toEqual({ lettera: 'Apri la lettera (PDF)', quadro: 'Apri il contratto quadro (PDF)' })
+    expect(previewLabels('occasionale')).toEqual({
+      lettera: 'Apri la lettera occasionale (PDF)',
+      quadro: 'Apri il contratto quadro per prestazioni occasionali (PDF)',
+    })
+  })
+
+  it('names each framework agreement by its type, as complement and as object', () => {
+    const occasionale = { kind: 'quadro', numero: null, regime: 'occasionale' } as const
+    const ordinario = { kind: 'quadro', numero: null, regime: 'partita_iva' } as const
+    const lettera = { kind: 'lettera', numero: '2026-001', regime: 'occasionale' } as const
+    expect(whatOf(occasionale)).toBe('del contratto quadro per prestazioni occasionali')
+    expect(whatOf(ordinario)).toBe('del contratto quadro')
+    expect(objectOf(occasionale)).toBe('il contratto quadro per prestazioni occasionali')
+    expect(objectOf(ordinario)).toBe('il contratto quadro')
+    expect(objectOf(lettera)).toBe('la lettera n. 2026-001')
+    expect(quadroHeadingId('partita_iva')).toBe('contratti-quadro')
+    expect(quadroHeadingId('occasionale')).toBe('contratti-quadro-occasionale')
   })
 })

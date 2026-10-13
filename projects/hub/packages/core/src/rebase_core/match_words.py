@@ -17,6 +17,7 @@ from datetime import date
 from typing import TYPE_CHECKING, Literal
 
 from rebase_core.contracts.fields import FEE, italian_date, rendered
+from rebase_core.regimes import OCCASIONALE, PARTITA_IVA
 
 if TYPE_CHECKING:
     from rebase_core.contract_schemas import LetteraFields, SendReport
@@ -83,6 +84,39 @@ WHAT_LEAVES_FIRST: dict[FrameworkStep, str] = {
     ),
     "attivo": "Il contratto quadro è già attivo: parte subito la lettera di incarico.",
 }
+
+# The same three sentences for an occasional letter (REB-687), naming its own documents.
+WHAT_LEAVES_FIRST_OCCASIONALE: dict[FrameworkStep, str] = {
+    "da_inviare": (
+        "Prima parte il contratto quadro per prestazioni occasionali; la lettera di incarico "
+        "occasionale parte da sola dopo la sua firma."
+    ),
+    "in_firma": (
+        "Il contratto quadro per prestazioni occasionali è già in firma: la lettera di "
+        "incarico occasionale parte da sola dopo la sua firma."
+    ),
+    "attivo": (
+        "Il contratto quadro per prestazioni occasionali è già attivo: parte subito la "
+        "lettera di incarico occasionale."
+    ),
+}
+# How step 3 prices a fee (REB-687): an ordinary letter's is net of VAT, an occasional
+# one's gross and outside VAT altogether.
+VAT_EXCLUDED = "IVA esclusa"
+GROSS_WITHOUT_VAT = "lordi, senza IVA"
+# An occasional letter for someone whose saved tax data have a partita IVA is allowed,
+# since occasional work outside their professional activity exists; step 3 says so.
+HAS_PARTITA_IVA = (
+    "Ha la partita IVA: la prestazione occasionale vale solo per un lavoro fuori dalla sua "
+    "attività professionale."
+)
+# An ordinary letter for someone whose saved tax data have no partita IVA is refused, on
+# `regime`, by `MatchService.check`, `preview` and `create`, and by
+# `SigningService.send_match` when the partita IVA was removed after the draft.
+ORDINARY_NEEDS_PARTITA_IVA = (
+    'Senza partita IVA si fa solo la lettera occasionale: scegli "Prestazione occasionale" '
+    "o salva la partita IVA."
+)
 
 
 @dataclass(frozen=True)
@@ -334,9 +368,14 @@ def check_sentences(
     quadro: FrameworkStep,
     *,
     dati_fiscali_mancanti: bool,
+    regime: str = PARTITA_IVA,
+    ha_partita_iva: bool = False,
 ) -> tuple[list[str], str]:
     """`(riepilogo, cosa_succede)`: step 3 of «Crea match», what the letter says in three
-    sentences and which document leaves first."""
+    sentences and which document leaves first. An occasional letter (REB-687) prices its
+    fee gross and without VAT, names the occasional documents, and adds a warning when
+    the saved tax data have a partita IVA (`ha_partita_iva`)."""
+    occasional = regime == OCCASIONALE
     where = f", {_flat(lettera.luogo)}" if lettera.luogo else ""
     until = f" al {italian_date(lettera.data_fine)}" if lettera.data_fine is not None else ""
     riepilogo = [
@@ -350,12 +389,16 @@ def check_sentences(
     month_end = " fine mese" if lettera.fine_mese else ""
     # The fee exactly as the letter prints it, «450,00 €», so step 3 and the PDF agree.
     fee = rendered(FEE, lettera.to_fields()[FEE])
+    vat = GROSS_WITHOUT_VAT if occasional else VAT_EXCLUDED
     riepilogo.append(
-        f"Compenso: {fee}{per}, IVA esclusa, pagato a {lettera.giorni_pagamento} giorni{month_end}."
+        f"Compenso: {fee}{per}, {vat}, pagato a {lettera.giorni_pagamento} giorni{month_end}."
     )
+    if occasional and ha_partita_iva:
+        riepilogo.append(HAS_PARTITA_IVA)
     if dati_fiscali_mancanti:
         riepilogo.append(MISSING_TAX_DATA)
-    return riepilogo, WHAT_LEAVES_FIRST[quadro]
+    leaves = WHAT_LEAVES_FIRST_OCCASIONALE if occasional else WHAT_LEAVES_FIRST
+    return riepilogo, leaves[quadro]
 
 
 def send_report_sentence(report: "SendReport") -> str:

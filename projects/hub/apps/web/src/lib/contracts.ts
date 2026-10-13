@@ -16,22 +16,34 @@ import {
   type LetteraDraft,
   type LetteraTextKey,
   type Match,
+  type Regime,
   type SendReport,
 } from './api'
 import { amountNumber, sentAmount } from './amount'
 import { formatDate } from './format'
 
-export type FiscalDraft = Record<keyof FiscalData, string>
+/** The tax form as typed: every field a string, and the box «Senza partita IVA
+ *  (prestazione occasionale)» (REB-687), ticked exactly when the partita IVA is saved as
+ *  `null`. */
+export type FiscalTextKey = keyof FiscalData
+export type FiscalDraft = Record<FiscalTextKey, string> & { senza_partita_iva: boolean }
 
-export const FISCAL_EMPTY: FiscalDraft = { codice_fiscale: '', partita_iva: '', domicilio: '', pec: '' }
+export const FISCAL_EMPTY: FiscalDraft = {
+  codice_fiscale: '',
+  partita_iva: '',
+  domicilio: '',
+  pec: '',
+  senza_partita_iva: false,
+}
 
 export function draftFromFiscal(fiscal: Fiscal | null): FiscalDraft {
   if (fiscal === null) return FISCAL_EMPTY
   return {
     codice_fiscale: fiscal.codice_fiscale,
-    partita_iva: fiscal.partita_iva,
+    partita_iva: fiscal.partita_iva ?? '',
     domicilio: fiscal.domicilio,
     pec: fiscal.pec ?? '',
+    senza_partita_iva: fiscal.partita_iva === null,
   }
 }
 
@@ -68,38 +80,47 @@ export function newerFiscal(record: Fiscal | null, held: Fiscal | null): record 
   return held === null || Date.parse(record.updated_at) > Date.parse(held.updated_at)
 }
 
+/** A field as a save carries it: the box is whether the partita IVA went as `null`. */
+function savedValue(data: FiscalData, key: FiscalKey): string | boolean | null {
+  return key === 'senza_partita_iva' ? data.partita_iva === null : data[key]
+}
+
 /** The typed fields a save did not cover, because their text changed after it was sent
  *  (compared as sent, trimmed): once the save succeeds only these stay typed, and the
  *  others take the record that comes back. */
 export function typedAfterSave(draft: FiscalDraft, typed: ReadonlySet<FiscalKey>, sent: FiscalData): Set<FiscalKey> {
   const now = toFiscalData(draft)
-  return new Set([...typed].filter((key) => now[key] !== sent[key]))
+  return new Set([...typed].filter((key) => savedValue(now, key) !== savedValue(sent, key)))
 }
 
-/** An empty PEC is `null`, not `""`, which the API would try to read as an address. */
+/** An empty PEC is `null`, not `""`, which the API would try to read as an address; the
+ *  ticked box is no partita IVA, `null` (REB-687). */
 export function toFiscalData(draft: FiscalDraft): FiscalData {
   return {
     codice_fiscale: draft.codice_fiscale.trim(),
-    partita_iva: draft.partita_iva.trim(),
+    partita_iva: draft.senza_partita_iva ? null : draft.partita_iva.trim(),
     domicilio: draft.domicilio.trim(),
     pec: draft.pec.trim() || null,
   }
 }
 
-/** Saved tax data in one line: «Chi e per chi» shows it instead of their four fields,
- *  and «Dati fiscali» on «Match e contratti» in its closed summary. */
+/** Saved tax data in one line: «Chi e per chi» shows it instead of their fields, and
+ *  «Dati fiscali» on «Match e contratti» in its closed summary. */
 export function fiscalLine(fiscal: FiscalData): string {
-  return `Salvati: CF ${fiscal.codice_fiscale} · P.IVA ${fiscal.partita_iva}`
+  const piva = fiscal.partita_iva ? `P.IVA ${fiscal.partita_iva}` : 'senza partita IVA'
+  return `Salvati: CF ${fiscal.codice_fiscale} · ${piva}`
 }
 
-/** What «Avanti» on «Chi e per chi» saves: the four fields when nothing was saved yet,
- *  or when the admin opened the saved ones and changed them; `null` otherwise, so data
- *  only shown are never written again under this admin's name. */
+/** What «Avanti» on «Chi e per chi» saves: the fields when nothing was saved yet, or
+ *  when the admin opened the saved ones and changed them; `null` otherwise, so data only
+ *  shown are never written again under this admin's name. `null` and an empty string
+ *  are the same value (REB-687): a partita IVA saved as `null` and shown as the ticked
+ *  box is not saved again. */
 export function fiscalToSave(saved: FiscalData | null, draft: FiscalDraft, editing: boolean): FiscalData | null {
   const data = toFiscalData(draft)
   if (saved === null) return data
   if (!editing) return null
-  const same = (Object.keys(data) as (keyof FiscalData)[]).every((key) => (saved[key] ?? null) === data[key])
+  const same = (Object.keys(data) as (keyof FiscalData)[]).every((key) => (saved[key] || null) === (data[key] || null))
   return same ? null : data
 }
 
@@ -238,7 +259,7 @@ export const LETTERA_LABELS: Record<LetteraFieldKey, string> = {
   referente_cliente: 'Referente del cliente',
   referente_rebase: 'Referente di rebase',
   modalita: 'Modalità',
-  compenso: 'Compenso, IVA esclusa (€)',
+  compenso: 'Compenso (€)',
   unita: 'Unità del compenso',
   lavoro_extra: 'Lavoro festivo o fuori fascia',
   spese: 'Spese',
@@ -303,6 +324,25 @@ export function withPayMode(form: LetteraForm, mode: PayMode): LetteraForm {
   return { ...form, modalita: mode, unita: mode }
 }
 
+/** «Tipo di lettera» on «Chi e per chi» (REB-687), in the order the page shows them. */
+export const REGIME_OPTIONS: readonly { regime: Regime; label: string }[] = [
+  { regime: 'partita_iva', label: 'Incarico con partita IVA' },
+  { regime: 'occasionale', label: 'Prestazione occasionale' },
+]
+
+/** The hint under «Compenso (€)»: an ordinary fee is net of VAT, an occasional one gross
+ *  and without VAT. */
+export function compensoHint(regime: Regime): string {
+  return regime === 'occasionale' ? 'lordo, senza IVA' : 'IVA esclusa'
+}
+
+/** The preview links of «Controlla e invia», named by the letter type. */
+export function previewLabels(regime: Regime): { lettera: string; quadro: string } {
+  return regime === 'occasionale'
+    ? { lettera: 'Apri la lettera occasionale (PDF)', quadro: 'Apri il contratto quadro per prestazioni occasionali (PDF)' }
+    : { lettera: 'Apri la lettera (PDF)', quadro: 'Apri il contratto quadro (PDF)' }
+}
+
 const amount = amountNumber
 
 /** «Come si paga» chosen on the page. The prefill's fee is the freelancer's day rate,
@@ -365,13 +405,24 @@ export function letteraToSend(form: LetteraForm): Lettera {
   return toLettera({ ...form, ...Object.fromEntries(A_CORPO_FIELDS.map((field) => [field, ''])) })
 }
 
+type Named = Pick<ContractDocument, 'kind' | 'numero' | 'regime'>
+
 /** How a document is named in a button's label or a confirmation, the one place both
  *  the admin's «Match e contratti» (REB-407) and the member area's «Contratti»
- *  (REB-392) name a document: «del contratto quadro», «della lettera n. 2026-001».
- *  Takes just the two fields a label needs, so a `MemberContract` names a document the
- *  same way a `ContractDocument` does. */
-export function whatOf(document: Pick<ContractDocument, 'kind' | 'numero'>): string {
-  return document.kind === 'quadro' ? 'del contratto quadro' : `della lettera n. ${document.numero}`
+ *  (REB-392) name a document: «del contratto quadro», «del contratto quadro per
+ *  prestazioni occasionali» (REB-687), «della lettera n. 2026-001». Takes just the
+ *  fields a label needs, so a `MemberContract` names a document the same way a
+ *  `ContractDocument` does. */
+export function whatOf(document: Named): string {
+  if (document.kind === 'lettera') return `della lettera n. ${document.numero}`
+  return document.regime === 'occasionale' ? 'del contratto quadro per prestazioni occasionali' : 'del contratto quadro'
+}
+
+/** The same document as the object of a verb: «Firma il contratto quadro», «Annulla il
+ *  contratto quadro per prestazioni occasionali», «Firma la lettera n. 2026-001». */
+export function objectOf(document: Named): string {
+  if (document.kind === 'lettera') return `la lettera n. ${document.numero}`
+  return document.regime === 'occasionale' ? 'il contratto quadro per prestazioni occasionali' : 'il contratto quadro'
 }
 
 /** How a match is named in a button's label: its company and its role, since one
@@ -387,9 +438,13 @@ export function closeDescription(match: Match): string {
 }
 
 /** The headings «Match e contratti» moves the focus to when an action took away the
- *  control that started it: the card's, or the section's when the card went too. */
+ *  control that started it: the card's, or the section's when the card went too. A
+ *  framework agreement's card has one per regime (REB-687). */
 export const QUADRO_HEADING_ID = 'contratti-quadro'
 export const MATCHES_HEADING_ID = 'contratti-match'
+export function quadroHeadingId(regime: Regime): string {
+  return regime === 'occasionale' ? `${QUADRO_HEADING_ID}-occasionale` : QUADRO_HEADING_ID
+}
 export function matchHeadingId(matchId: string): string {
   return `match-${matchId}`
 }

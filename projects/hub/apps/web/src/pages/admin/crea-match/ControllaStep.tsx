@@ -1,7 +1,7 @@
 import { Link } from '@tanstack/react-router'
 import { Button } from '@rebase/ui/button'
-import type { MatchCheck } from '@/lib/api'
-import { sendLabel, type Failure } from '@/lib/contracts'
+import type { MatchCheck, Regime } from '@/lib/api'
+import { previewLabels, sendLabel, type Failure } from '@/lib/contracts'
 
 /** What step 3 shows: the hub's sentences about the match and the two unsaved
  *  previews, blobs in this tab's memory until the page lets them go. */
@@ -24,6 +24,7 @@ export function ControllaStep({
   review,
   giorniPrevisti,
   nome,
+  regime,
   onBack,
   onSave,
   onSend,
@@ -38,6 +39,8 @@ export function ControllaStep({
   /** The match's own estimate, beside the letter's sentences: the check does not say it. */
   giorniPrevisti: number | null
   nome: string
+  /** «Tipo di lettera» from step 1 (REB-687): it names the previews. */
+  regime: Regime
   onBack: () => void
   onSave: () => void
   onSend: () => void
@@ -49,6 +52,7 @@ export function ControllaStep({
   sentMessage: string | null
   freelancerId: string
 }) {
+  const labels = previewLabels(regime)
   // A report already back (even a refusal's, `sentMessage`) means this send already
   // happened once: a second click must not send it again, and the match is no longer a
   // draft to save (REB-406).
@@ -65,13 +69,13 @@ export function ControllaStep({
       <ul className="space-y-2 text-sm">
         <li>
           <a className="underline underline-offset-2" href={review.lettera} target="_blank" rel="noreferrer">
-            Apri la lettera (PDF)
+            {labels.lettera}
           </a>
         </li>
         {review.quadro && (
           <li>
             <a className="underline underline-offset-2" href={review.quadro} target="_blank" rel="noreferrer">
-              Apri il contratto quadro (PDF)
+              {labels.quadro}
             </a>
           </li>
         )}

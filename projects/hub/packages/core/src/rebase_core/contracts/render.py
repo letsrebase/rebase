@@ -41,7 +41,15 @@ PACKAGE = Path(__file__).resolve().parent
 TEXTS = PACKAGE / "texts"
 TEMPLATE = PACKAGE / "contract.typ.template"
 COMPANY_DEFAULTS = TEXTS / "rebase.json"
-DOCUMENTS = ("contratto-quadro", "lettera-di-incarico")
+DOCUMENTS = (
+    "contratto-quadro",
+    "contratto-quadro-occasionale",
+    "lettera-di-incarico",
+    "lettera-di-incarico-occasionale",
+)
+# The texts whose payment term counts from the collaborator's receipt rather than an
+# invoice (REB-687): a prestazione occasionale is paid on a ricevuta.
+RECEIPT_TEXTS = frozenset({"lettera-di-incarico-occasionale"})
 SIGNATURE_LABEL = "signature-blank"
 TOOL_TIMEOUT_SECONDS = 60
 # The page the template sets (`paper: "a4"`), in points.
@@ -186,7 +194,7 @@ def _typst_source(
         raise ContractFailed(f"pandoc failed on {source.name}:\n{pandoc.stderr.strip()}")
     written = intermediate.read_text(encoding="utf-8")
     survived(markdown, written, source.name)
-    typst, blank = fill(written, checked(dict(data)))
+    typst, blank = fill(written, checked(dict(data), receipt=document in RECEIPT_TEXTS))
     intermediate.write_text(mark_proposals(typst, source.name, draft), encoding="utf-8")
     try:
         shutil.copyfile(ECHO, workdir / ECHO.name)

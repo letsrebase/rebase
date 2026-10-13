@@ -709,6 +709,7 @@ def test_the_check_says_what_saving_would_do_and_writes_nothing(
         ),
         "quadro_necessario": True,
         "dati_fiscali_mancanti": False,
+        "regime": "partita_iva",
     }
     assert BUDGET not in checked.text
     assert renderer.calls == []
@@ -1077,3 +1078,70 @@ def test_the_link_reads_through_the_long_seam_in_production(api_session: Session
         assert engagements.http is expected
         assert signing.engagements is not None
         assert signing.engagements.http is expected
+
+
+@pytest.mark.parametrize("partita_iva", [None, "", "   "])
+def test_tax_data_may_be_saved_without_a_partita_iva(
+    client: TestClient, admin: None, sender: RecordingSender, partita_iva: str | None
+) -> None:
+    """REB-687: omitted, null or blank is no partita IVA; given, it still has 11 digits."""
+    _login(client, sender)
+    freelancer_id = _apply(client)
+    url = f"/api/hub/freelancers/{freelancer_id}/fiscal"
+    saved = client.put(url, json={**FISCAL, "partita_iva": partita_iva})
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["partita_iva"] is None
+    omitted = client.put(url, json={k: v for k, v in FISCAL.items() if k != "partita_iva"})
+    assert omitted.status_code == 200, omitted.text
+    assert omitted.json()["partita_iva"] is None
+    short = client.put(url, json={**FISCAL, "partita_iva": "0123"})
+    assert short.status_code == 422
+    assert short.json()["detail"][0]["loc"][-1] == "partita_iva"
+
+
+def test_a_match_for_a_member_without_a_partita_iva_is_occasional_end_to_end(
+    client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
+) -> None:
+    """REB-687 over HTTP: the prefill proposes the occasional letter, the ordinary one is a
+    422 on `regime` with the spec's sentence, and the occasional match reads and downloads
+    as its own type."""
+    freelancer_id, company_id = _ready(client, sender)
+    fiscal = client.put(
+        f"/api/hub/freelancers/{freelancer_id}/fiscal", json={**FISCAL, "partita_iva": None}
+    )
+    assert fiscal.status_code == 200, fiscal.text
+    prefill = client.get(
+        f"/api/hub/freelancers/{freelancer_id}/matches/prefill", params={"company_id": company_id}
+    )
+    assert prefill.json()["regime"] == "occasionale"
+    body = {"company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA}
+    refused = client.post(f"/api/hub/freelancers/{freelancer_id}/matches", json=body)
+    assert refused.status_code == 422
+    assert refused.json()["detail"] == [
+        {
+            "loc": ["body", "regime"],
+            "msg": 'Senza partita IVA si fa solo la lettera occasionale: scegli "Prestazione '
+            'occasionale" o salva la partita IVA.',
+            "type": "value_error",
+        }
+    ]
+    occasional = {**body, "regime": "occasionale"}
+    preview = client.post(
+        f"/api/hub/freelancers/{freelancer_id}/matches/preview",
+        params={"documento": "lettera"},
+        json=occasional,
+    )
+    assert preview.status_code == 200, preview.text
+    assert "anteprima-lettera-di-incarico-occasionale.pdf" in preview.headers["content-disposition"]
+    created = client.post(f"/api/hub/freelancers/{freelancer_id}/matches", json=occasional)
+    assert created.status_code == 201, created.text
+    letter = created.json()["lettera"]
+    assert (letter["regime"], letter["tipo"]) == ("occasionale", "Lettera di incarico occasionale")
+    page = client.get(f"/api/hub/freelancers/{freelancer_id}/matches").json()
+    assert page["quadro"] is None
+    assert page["quadro_occasionale"]["tipo"] == "Contratto quadro per prestazioni occasionali"
+    pdf = client.get(f"/api/hub/contract-documents/{letter['id']}/pdf")
+    assert (
+        f"lettera-di-incarico-occasionale-{letter['numero']}.pdf"
+        in (pdf.headers["content-disposition"])
+    )

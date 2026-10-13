@@ -1,6 +1,7 @@
 import { useMutation } from '@tanstack/react-query'
 import { useState, type ComponentProps, type FormEvent } from 'react'
 import { Button } from '@rebase/ui/button'
+import { Checkbox } from '@rebase/ui/checkbox'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { admin, ApiError, type Fiscal, type FiscalData } from '@/lib/api'
@@ -14,9 +15,12 @@ import {
   typedFiscalFields,
   type FiscalDraft,
   type FiscalKey,
+  type FiscalTextKey,
 } from '@/lib/contracts'
 
-/** The four tax fields, shared by «Match e contratti» and «Chi e per chi» of «Crea match». */
+/** The tax fields, shared by «Match e contratti» and «Chi e per chi» of «Crea match».
+ *  «Senza partita IVA (prestazione occasionale)» (REB-687) clears and hides the partita
+ *  IVA; unticked, the field is required as before. */
 export function FiscalFields({
   idPrefix,
   draft,
@@ -28,7 +32,7 @@ export function FiscalFields({
   onChange: (draft: FiscalDraft) => void
   wrong: (field: string) => true | undefined
 }) {
-  const field = (name: keyof FiscalDraft, label: string, props: ComponentProps<typeof Input> = {}) => (
+  const field = (name: FiscalTextKey, label: string, props: ComponentProps<typeof Input> = {}) => (
     <div className="space-y-1.5">
       <Label htmlFor={`${idPrefix}-${name}`}>{label}</Label>
       <Input
@@ -43,9 +47,20 @@ export function FiscalFields({
   return (
     <div className="grid gap-3 sm:grid-cols-2">
       {field('codice_fiscale', 'Codice fiscale', { required: true, maxLength: 40, autoComplete: 'off' })}
-      {field('partita_iva', 'Partita IVA', { required: true, maxLength: 40, inputMode: 'numeric' })}
-      {field('domicilio', 'Domicilio professionale', { required: true, maxLength: 300 })}
+      {!draft.senza_partita_iva &&
+        field('partita_iva', 'Partita IVA', { required: true, maxLength: 40, inputMode: 'numeric' })}
+      {field('domicilio', 'Domicilio', { required: true, maxLength: 300 })}
       {field('pec', 'PEC, se ce l’ha', { type: 'email', maxLength: 320 })}
+      <div className="flex items-center gap-2 sm:col-span-2">
+        <Checkbox
+          id={`${idPrefix}-senza_partita_iva`}
+          checked={draft.senza_partita_iva}
+          onCheckedChange={(checked) => onChange({ ...draft, senza_partita_iva: checked === true, partita_iva: '' })}
+        />
+        <Label htmlFor={`${idPrefix}-senza_partita_iva`} className="font-normal">
+          Senza partita IVA (prestazione occasionale)
+        </Label>
+      </div>
     </div>
   )
 }

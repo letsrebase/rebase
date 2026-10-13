@@ -16,10 +16,13 @@ from rebase_core.contract_schemas import (
 from rebase_core.documenso import REJECTED, Outcome
 from rebase_core.match_words import (
     DOCUMENT_STATE_LABELS,
+    HAS_PARTITA_IVA,
     HTTPS_ONLY,
     MATCH_STATE_LABELS,
+    ORDINARY_NEEDS_PARTITA_IVA,
     PIGRO_NOT_CONFIGURED,
     PROFILE_WITHOUT_NAME,
+    WHAT_LEAVES_FIRST_OCCASIONALE,
     Action,
     DocumentFacts,
     check_sentences,
@@ -631,6 +634,96 @@ def test_the_check_prints_the_period_once_even_if_the_commitment_ends_with_one()
         dati_fiscali_mancanti=False,
     )
     assert riepilogo[1] == "Impegno: Tre giorni a settimana, per tre mesi."
+
+
+def test_the_check_of_an_occasional_lump_sum_says_gross_and_without_vat() -> None:
+    """The fee of an occasional letter is gross and outside VAT."""
+    riepilogo, cosa_succede = check_sentences(
+        "Ada Lovelace",
+        "ACME S.r.l.",
+        _letter(compenso=Decimal("5000"), modalita="a corpo", unita=None),
+        "da_inviare",
+        dati_fiscali_mancanti=False,
+        regime="occasionale",
+    )
+    assert riepilogo == [
+        "Ada Lovelace lavorerà per ACME S.r.l. come Backend developer, dal 1° ottobre 2026.",
+        "Compenso: 5.000,00 € a corpo, lordi, senza IVA, pagato a 30 giorni fine mese.",
+    ]
+    assert cosa_succede == WHAT_LEAVES_FIRST_OCCASIONALE["da_inviare"]
+
+
+@pytest.mark.parametrize(
+    ("step", "sentence"),
+    [
+        (
+            "da_inviare",
+            "Prima parte il contratto quadro per prestazioni occasionali; la lettera di "
+            "incarico occasionale parte da sola dopo la sua firma.",
+        ),
+        (
+            "in_firma",
+            "Il contratto quadro per prestazioni occasionali è già in firma: la lettera di "
+            "incarico occasionale parte da sola dopo la sua firma.",
+        ),
+        (
+            "attivo",
+            "Il contratto quadro per prestazioni occasionali è già attivo: parte subito la "
+            "lettera di incarico occasionale.",
+        ),
+    ],
+)
+def test_an_occasional_check_names_the_occasional_documents(step: str, sentence: str) -> None:
+    _, cosa_succede = check_sentences(
+        "Ada Lovelace",
+        "ACME S.r.l.",
+        _letter(),
+        step,  # type: ignore[arg-type]
+        dati_fiscali_mancanti=False,
+        regime="occasionale",
+    )
+    assert cosa_succede == sentence
+
+
+def test_an_occasional_letter_for_someone_with_a_partita_iva_carries_the_warning() -> None:
+    """Allowed, since occasional work outside one's professional activity exists, and
+    said; the ordinary letter never carries the warning."""
+    riepilogo, _ = check_sentences(
+        "Ada Lovelace",
+        "ACME S.r.l.",
+        _letter(),
+        "attivo",
+        dati_fiscali_mancanti=False,
+        regime="occasionale",
+        ha_partita_iva=True,
+    )
+    assert (
+        riepilogo[-1]
+        == HAS_PARTITA_IVA
+        == (
+            "Ha la partita IVA: la prestazione occasionale vale solo per un lavoro fuori dalla "
+            "sua attività professionale."
+        )
+    )
+    ordinary, _ = check_sentences(
+        "Ada Lovelace",
+        "ACME S.r.l.",
+        _letter(),
+        "attivo",
+        dati_fiscali_mancanti=False,
+        ha_partita_iva=True,
+    )
+    assert HAS_PARTITA_IVA not in ordinary
+    assert ordinary[-1] == (
+        "Compenso: 450,00 € a giornata, IVA esclusa, pagato a 30 giorni fine mese."
+    )
+
+
+def test_the_refusal_of_an_ordinary_letter_without_a_partita_iva_is_the_specs_sentence() -> None:
+    assert ORDINARY_NEEDS_PARTITA_IVA == (
+        'Senza partita IVA si fa solo la lettera occasionale: scegli "Prestazione occasionale" '
+        "o salva la partita IVA."
+    )
 
 
 # ---- what «Invia per la firma» did ------------------------------------------------------

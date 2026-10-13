@@ -21,6 +21,7 @@ from typing import Protocol
 
 from rebase_core.config import Settings
 from rebase_core.http import HttpCall, urllib_call
+from rebase_core.regimes import OCCASIONALE, PARTITA_IVA
 
 RESEND_URL = "https://api.resend.com/emails"
 
@@ -470,33 +471,47 @@ def welcome_mail(
 # mails a freelancer gets about a contract, in the same box as the magic link.
 
 
-def document_name(kind: str, numero: str | None) -> str:
-    """How a mail names a contract: «contratto quadro rebase», «lettera di incarico n.
-    2026-001». `kind` is `quadro` or `lettera`."""
+def document_name(kind: str, numero: str | None, regime: str = PARTITA_IVA) -> str:
+    """How a mail and Documenso name a contract: «contratto quadro rebase», «lettera di
+    incarico n. 2026-001», and for a prestazione occasionale (REB-687) «contratto quadro
+    rebase per prestazioni occasionali», «lettera di incarico occasionale n. 2026-001».
+    `kind` is `quadro` or `lettera`."""
+    occasional = regime == OCCASIONALE
     if kind == "quadro":
+        if occasional:
+            return "contratto quadro rebase per prestazioni occasionali"
         return "contratto quadro rebase"
-    return f"lettera di incarico n. {numero}"
-
-
-def _article(kind: str) -> str:
-    return "il" if kind == "quadro" else "la"
+    return f"lettera di incarico{' occasionale' if occasional else ''} n. {numero}"
 
 
 def signing_request_mail(
-    to: str, nome: str, kind: str, numero: str | None, signing_url: str
+    to: str,
+    nome: str,
+    kind: str,
+    numero: str | None,
+    signing_url: str,
+    *,
+    regime: str = PARTITA_IVA,
 ) -> Mail:
     """One mail per document to sign (spec § 6): the subject names it, one paragraph says
     what it is, one button opens the signing site. The link is the only way the
     document reaches the person, and it goes into an attribute and into text: escaped
-    both times, like the magic link."""
+    both times, like the magic link. An occasional document says so (REB-687)."""
     e = html_escape.escape
-    name = document_name(kind, numero)
-    what = (
-        "il contratto quadro con rebase: le regole di ogni lavoro che fai tramite noi. "
-        "Si firma una volta e si rinnova da solo ogni dodici mesi"
-        if kind == "quadro"
-        else f"la {name}: il lavoro, le date e il compenso che abbiamo concordato"
-    )
+    name = document_name(kind, numero, regime)
+    if kind != "quadro":
+        what = f"la {name}: il lavoro, le date e il compenso che abbiamo concordato"
+    elif regime == OCCASIONALE:
+        what = (
+            "il contratto quadro per prestazioni occasionali con rebase: le regole di ogni "
+            "prestazione occasionale che fai tramite noi. Si firma una volta e si rinnova "
+            "da solo ogni dodici mesi"
+        )
+    else:
+        what = (
+            "il contratto quadro con rebase: le regole di ogni lavoro che fai tramite noi. "
+            "Si firma una volta e si rinnova da solo ogni dodici mesi"
+        )
     paragraph = (
         f"ti mandiamo da firmare {what}. Si firma online, senza creare un account, dal "
         "bottone qui sotto; la copia firmata ti arriva per email e resta nella tua area "
@@ -521,15 +536,23 @@ def signing_request_mail(
     return Mail(to=to, subject=subject, text=text, html=_frame(subject, body))
 
 
-def signing_cancelled_mail(to: str, nome: str, kind: str, numero: str | None) -> Mail:
+def _article(kind: str) -> str:
+    return "il" if kind == "quadro" else "la"
+
+
+def signing_cancelled_mail(
+    to: str, nome: str, kind: str, numero: str | None, *, regime: str = PARTITA_IVA
+) -> Mail:
     """A document that had already left for signature, cancelled by rebase before it was
     signed (REB-407): the same frame as `signing_request_mail`, with no button, since
     there is nothing left to sign. The link the earlier mail carried is dead from now
     on, and a new document, if one is needed, arrives on its own."""
     e = html_escape.escape
-    name = document_name(kind, numero)
+    name = document_name(kind, numero, regime)
     cancelled = "annullato" if kind == "quadro" else "annullata"
     nuovo = "un nuovo contratto quadro" if kind == "quadro" else "una nuova lettera di incarico"
+    if regime == OCCASIONALE:
+        nuovo += " per prestazioni occasionali" if kind == "quadro" else " occasionale"
     greeting = f"Ciao {nome}," if nome else "Ciao,"
     paragraph = (
         f"il link che ti avevamo mandato per firmare {_article(kind)} {name} non funziona "
@@ -556,13 +579,14 @@ def signed_copy_mail(
     nome: str,
     cognome: str,
     for_rebase: bool = False,
+    regime: str = PARTITA_IVA,
 ) -> Mail:
     """The sealed copy, attached (spec § 6): to the freelancer, and with `for_rebase` to
     rebase's contracts address. Its last page is Documenso's certificate of the
     signature, in English (probe § 7): the mail says so, so nobody takes it for a stray
     page."""
     e = html_escape.escape
-    name = document_name(kind, numero)
+    name = document_name(kind, numero, regime)
     certificate = "L'ultima pagina, in inglese, è il certificato della firma elettronica."
     signed = "Firmato" if kind == "quadro" else "Firmata"
     if for_rebase:

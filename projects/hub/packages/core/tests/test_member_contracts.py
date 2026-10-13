@@ -10,7 +10,7 @@ from fakes_contracts import FakeRenderer
 from fakes_documenso import FakeDocumenso
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-from test_matches import QUADRO_VERSION, _second_card
+from test_matches import QUADRO_VERSION, _body, _second_card
 from test_signing import (
     SIGNED_AT,
     TABLES,
@@ -18,7 +18,9 @@ from test_signing import (
     _envelope_of,
     _framework_of,
     _letter_of,
+    _matches,
     _setup,
+    _sign,
     _signing,
     _webhook,
 )
@@ -219,3 +221,48 @@ def test_a_person_without_a_card_has_no_contracts(clean: Session) -> None:
     admin_id, _freelancer_id, _company_id = _setup(clean)
     with pytest.raises(NotFound, match="scheda"):
         _service(clean).for_user(admin_id)
+
+
+def test_an_occasional_framework_shows_beside_the_ordinary_one_with_its_own_link(
+    clean: Session,
+) -> None:
+    """REB-687: an active ordinary framework agreement and an occasional one out for
+    signature both show on top, the occasional one with its signing link, and neither is
+    filed under «precedenti»; nor is either once both are signed."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake = FakeRenderer(draft=False), FakeDocumenso()
+    signing = _signing(clean, renderer, fake, RecordingSender())
+    ordinary = _draft(clean, renderer, freelancer_id, company_id, admin_id)
+    signing.send_match(ordinary.id, admin_id)
+    _sign(signing, fake, _framework_of(clean, freelancer_id))
+    occasional = _matches(clean, renderer).create(
+        freelancer_id, _body(company_id, regime="occasionale"), admin_id
+    )
+    signing.send_match(occasional.id, admin_id)
+
+    mine = _service(clean).for_user(_user_of(clean, freelancer_id))
+
+    assert mine.quadro is not None and mine.quadro_occasionale is not None
+    assert (mine.quadro.regime, mine.quadro.tipo, mine.quadro.attivo) == (
+        "partita_iva",
+        "Contratto quadro",
+        True,
+    )
+    assert (mine.quadro_occasionale.regime, mine.quadro_occasionale.stato) == (
+        "occasionale",
+        "inviato",
+    )
+    assert mine.quadro_occasionale.tipo == "Contratto quadro per prestazioni occasionali"
+    assert mine.quadro_occasionale.signing_url is not None
+    assert mine.quadri_precedenti == []
+    assert sorted((lettera.tipo, lettera.stato) for lettera in mine.lettere) == [
+        ("Lettera di incarico", "inviato"),
+        ("Lettera di incarico occasionale", "in_attesa"),
+    ]
+
+    _sign(signing, fake, _framework_of(clean, freelancer_id))
+
+    mine = _service(clean).for_user(_user_of(clean, freelancer_id))
+    assert mine.quadro is not None and mine.quadro_occasionale is not None
+    assert (mine.quadro.attivo, mine.quadro_occasionale.attivo) == (True, True)
+    assert mine.quadri_precedenti == []

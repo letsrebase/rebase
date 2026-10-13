@@ -18,8 +18,10 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from rebase_core.contract_schemas import ContractDocumentRead
+from rebase_core.contracts.render import text_version
 from rebase_core.match_words import DocumentFacts, document_words
 from rebase_core.models import ContractDocument, LetterCounter
+from rebase_core.regimes import as_regime, document_label, text_name
 
 ROME = ZoneInfo("Europe/Rome")
 NOTICE_DAYS = 30
@@ -75,12 +77,15 @@ def framework_dates(
     return active, renewal, last_notice_day(renewal) if renewal is not None else None
 
 
-def active_framework(session: Session, freelancer_id: UUID) -> ContractDocument | None:
+def active_framework(session: Session, freelancer_id: UUID, regime: str) -> ContractDocument | None:
+    """The freelancer's active framework agreement of `regime` (REB-687): a freelancer
+    may hold one of each regime, and neither stands in for the other."""
     return session.scalars(
         select(ContractDocument)
         .where(
             ContractDocument.kind == QUADRO,
             ContractDocument.freelancer_id == freelancer_id,
+            ContractDocument.regime == regime,
             ContractDocument.stato == "firmato",
             ContractDocument.notice_at.is_(None),
         )
@@ -89,15 +94,19 @@ def active_framework(session: Session, freelancer_id: UUID) -> ContractDocument 
     ).first()
 
 
-def pending_framework(session: Session, freelancer_id: UUID) -> ContractDocument | None:
-    """A framework agreement written and not signed yet: the one out for signature
-    (`inviato`, phase 3) when there is one, else the newest merely generated."""
+def pending_framework(
+    session: Session, freelancer_id: UUID, regime: str
+) -> ContractDocument | None:
+    """A framework agreement of `regime` written and not signed yet: the one out for
+    signature (`inviato`, phase 3) when there is one, else the newest merely generated.
+    One of the other regime never counts (REB-687)."""
     pending = list(
         session.scalars(
             select(ContractDocument)
             .where(
                 ContractDocument.kind == QUADRO,
                 ContractDocument.freelancer_id == freelancer_id,
+                ContractDocument.regime == regime,
                 ContractDocument.stato.in_(("generato", "inviato")),
             )
             .order_by(ContractDocument.created_at.desc(), ContractDocument.id.desc())
@@ -126,36 +135,51 @@ def _standing(documents: Iterable[tuple[str, datetime | None]]) -> str | None:
     return min(counted, key=_FRAMEWORK_RANK.__getitem__, default=None)
 
 
-def framework_state(frameworks: Iterable[ContractDocument]) -> str | None:
-    """Where one freelancer's framework agreement stands, from the rows already read:
-    `firmato` for an active one (`active_framework`), else `pending_framework`'s state,
-    `inviato` or `generato`, else `None`."""
-    return _standing((document.stato, document.notice_at) for document in frameworks)
+def framework_state(frameworks: Iterable[ContractDocument], regime: str) -> str | None:
+    """Where one freelancer's framework agreement of `regime` stands, from the rows
+    already read: `firmato` for an active one (`active_framework`), else
+    `pending_framework`'s state, `inviato` or `generato`, else `None`. A match reads the
+    one of its letter's regime (REB-687)."""
+    return _standing(
+        (document.stato, document.notice_at) for document in frameworks if document.regime == regime
+    )
 
 
-def framework_states(session: Session, freelancer_ids: Iterable[UUID]) -> dict[UUID, str]:
-    """`framework_state` for many freelancers in one query, so the «Match» list reads one
-    statement for its page rather than one per row. A freelancer with none that counts
-    is absent."""
+def framework_states(
+    session: Session, freelancer_ids: Iterable[UUID]
+) -> dict[tuple[UUID, str], str]:
+    """`framework_state` for many freelancers in one query, keyed by (freelancer,
+    regime), so the «Match» list reads one statement for its page rather than one per
+    row. A pair with none that counts is absent."""
     ids = set(freelancer_ids)
     if not ids:
         return {}
-    documents: dict[UUID, list[tuple[str, datetime | None]]] = {}
-    for freelancer_id, stato, notice_at in session.execute(
+    documents: dict[tuple[UUID, str], list[tuple[str, datetime | None]]] = {}
+    for freelancer_id, regime, stato, notice_at in session.execute(
         select(
-            ContractDocument.freelancer_id, ContractDocument.stato, ContractDocument.notice_at
+            ContractDocument.freelancer_id,
+            ContractDocument.regime,
+            ContractDocument.stato,
+            ContractDocument.notice_at,
         ).where(
             ContractDocument.kind == QUADRO,
             ContractDocument.freelancer_id.in_(ids),
             ContractDocument.stato.in_(tuple(_FRAMEWORK_RANK)),
         )
     ):
-        documents.setdefault(freelancer_id, []).append((stato, notice_at))
+        documents.setdefault((freelancer_id, regime), []).append((stato, notice_at))
     return {
-        freelancer_id: standing
-        for freelancer_id, pairs in documents.items()
+        key: standing
+        for key, pairs in documents.items()
         if (standing := _standing(pairs)) is not None
     }
+
+
+def current_quadro_version(regime: str) -> str:
+    """The `version` of `regime`'s framework agreement text as it is in the package
+    today: what a quadro's own `text_version` is compared with for `nuova_versione`,
+    each against its own text (REB-687)."""
+    return text_version(text_name(QUADRO, regime))
 
 
 def next_letter_number(session: Session, year: int) -> str:
@@ -205,6 +229,8 @@ def document_read(
     return ContractDocumentRead(
         id=document.id,
         kind=document.kind,
+        regime=as_regime(document.regime),
+        tipo=document_label(document.kind, document.regime),
         freelancer_id=document.freelancer_id,
         match_id=document.match_id,
         numero=document.numero,

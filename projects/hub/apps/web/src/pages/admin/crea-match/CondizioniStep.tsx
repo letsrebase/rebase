@@ -2,12 +2,14 @@ import { Checkbox } from '@rebase/ui/checkbox'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { Textarea } from '@rebase/ui/textarea'
+import type { Regime } from '@/lib/api'
 import {
   A_CORPO_FIELDS,
   ALTRE_CONDIZIONI_GROUPS,
   LETTERA_LABELS,
   LETTERA_MULTILINE,
   LETTERA_REQUIRED,
+  compensoHint,
   payModeOf,
   switchPayMode,
   type Failure,
@@ -68,16 +70,19 @@ function LetteraInput({
 }
 
 /** «Come si paga» sets `modalita` and `unita` together; «A corpo» asks what it adds,
- *  and the total rather than the day rate (`switchPayMode`). */
+ *  and the total rather than the day rate (`switchPayMode`). The fee's hint follows the
+ *  letter type (REB-687). */
 function Pagamento({
   form,
   onChange,
   dayRate,
+  regime,
   invalid,
 }: {
   form: LetteraForm
   onChange: (form: LetteraForm) => void
   dayRate: string
+  regime: Regime
   invalid: Invalid
 }) {
   const mode = payModeOf(form)
@@ -113,12 +118,15 @@ function Pagamento({
             value={form.compenso}
             onChange={(event) => onChange({ ...form, compenso: event.target.value })}
             aria-invalid={invalid('compenso')}
-            aria-describedby="lettera-compenso-per"
+            aria-describedby="lettera-compenso-per lettera-compenso-iva"
           />
           <span id="lettera-compenso-per" className="text-sm text-muted-foreground">
             {per}
           </span>
         </div>
+        <p id="lettera-compenso-iva" className="text-sm text-muted-foreground">
+          {compensoHint(regime)}
+        </p>
       </div>
       {mode === 'a corpo' &&
         A_CORPO_FIELDS.map((field) => (
@@ -200,6 +208,7 @@ export function CondizioniStep({
   giorniPrevisti,
   onGiorniPrevisti,
   dayRate,
+  regime,
   altreOpen,
   onAltreOpen,
   onBack,
@@ -214,6 +223,8 @@ export function CondizioniStep({
   onGiorniPrevisti: (value: string) => void
   /** The freelancer's day rate as the prefill wrote it into the fee. */
   dayRate: string
+  /** «Tipo di lettera» from step 1 (REB-687). */
+  regime: Regime
   altreOpen: boolean
   onAltreOpen: (open: boolean) => void
   onBack: () => void
@@ -241,7 +252,7 @@ export function CondizioniStep({
       </div>
       {input('impegno')}
       {input('luogo')}
-      <Pagamento form={form} onChange={onChange} dayRate={dayRate} invalid={invalid} />
+      <Pagamento form={form} onChange={onChange} dayRate={dayRate} regime={regime} invalid={invalid} />
       <GiorniPrevisti value={giorniPrevisti} onChange={onGiorniPrevisti} invalid={invalid} />
       <details
         open={altreOpen}

@@ -1,8 +1,10 @@
-"""A freelancer's tax data, as the two contracts print them (REB-387).
+"""A freelancer's tax data, as the contracts print them (REB-387).
 
 A table of its own rather than columns on `freelancers`, because PostHog's warehouse
 syncs `freelancers` whole (spec § 2). Filled by an admin in the match flow the first
-time, reused afterwards, editable from «Match e contratti». The audit entry names the
+time, reused afterwards, editable from «Match e contratti».
+The partita IVA may be missing (REB-687): a member paid as a prestazione occasionale
+has none, and signs the occasional texts only. The audit entry names the
 fields that changed and never their values: a codice fiscale copied into
 `admin_actions` would be one more place to delete it from.
 """

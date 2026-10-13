@@ -10,6 +10,7 @@ is `test_contract_render.py`.
 
 import json
 import os
+import re
 import struct
 import subprocess
 import sys
@@ -38,11 +39,14 @@ from rebase_core.contracts.fields import (
     signer_data,
     survived,
 )
-from rebase_core.contracts.render import COMPANY_DEFAULTS, DOCUMENTS, TEXTS
+from rebase_core.contracts.render import COMPANY_DEFAULTS, DOCUMENTS, RECEIPT_TEXTS, TEXTS
+from rebase_core.regimes import TEXT_NAMES
 
 EXAMPLE = CONTRACTS / "incarico.esempio.json"
 # Signed on the signing site or on paper, never typed into a data file ahead of time.
 SIGNATURES = {"firma-rebase", "firma-professionista"}
+LETTERS = ("lettera-di-incarico", "lettera-di-incarico-occasionale")
+OCCASIONAL_TEXTS = ("contratto-quadro-occasionale", "lettera-di-incarico-occasionale")
 
 
 @pytest.mark.parametrize(
@@ -182,14 +186,20 @@ def test_every_contract_has_the_front_matter_the_page_reads() -> None:
         is_draft(markdown, path.name)
         for key in ("title", "version", "date", "status"):
             assert matter.get(key), f"{path.name} lacks {key}"
-    letter = (TEXTS / "lettera-di-incarico.md").read_text(encoding="utf-8")
-    assert "{{numero}}" in front_matter(letter, "lettera-di-incarico.md")["subtitle"]
+    for letter in LETTERS:
+        markdown = (TEXTS / f"{letter}.md").read_text(encoding="utf-8")
+        assert "{{numero}}" in front_matter(markdown, letter)["subtitle"]
 
 
-def test_the_example_names_every_field_the_letter_asks_for() -> None:
-    """A field added to the letter and not to the example is a field nobody knows to fill."""
-    letter = (TEXTS / "lettera-di-incarico.md").read_text(encoding="utf-8")
-    asked = set(FIELD.findall(letter))
+def test_the_texts_are_one_per_kind_and_regime() -> None:
+    """REB-687: the four texts the registry names are the four in the package."""
+    assert sorted(DOCUMENTS) == sorted(TEXT_NAMES.values())
+
+
+@pytest.mark.parametrize("letter", LETTERS)
+def test_the_example_names_every_field_the_letter_asks_for(letter: str) -> None:
+    """A field added to a letter and not to the example is a field nobody knows to fill."""
+    asked = set(FIELD.findall((TEXTS / f"{letter}.md").read_text(encoding="utf-8")))
     company = json.loads(COMPANY_DEFAULTS.read_text(encoding="utf-8"))
     example = json.loads(EXAMPLE.read_text(encoding="utf-8"))
     # `termine-pagamento` is in no data file on purpose: the build writes it.
@@ -202,7 +212,65 @@ def test_the_example_is_fiction() -> None:
     example = json.loads(Path(EXAMPLE).read_text(encoding="utf-8"))
     assert example["professionista-nome"] == "Nome Cognome"
     assert set(example["professionista-piva"]) == {"0"}
+    assert set(example["professionista-cf"]) == {"X", "0"}
     assert set(example["cliente-piva"]) == {"0"}
+
+
+def test_the_payment_term_of_an_occasional_letter_counts_from_the_receipt() -> None:
+    """REB-687: a prestazione occasionale is paid on a ricevuta, not an invoice."""
+    assert {"lettera-di-incarico-occasionale"} == RECEIPT_TEXTS
+    assert checked({"giorni-pagamento": 30, "fine-mese": True}, receipt=True)[
+        "termine-pagamento"
+    ] == ("30 giorni data ricevuta fine mese")
+    assert checked({"giorni-pagamento": 60}, receipt=True)["termine-pagamento"] == (
+        "60 giorni data ricevuta"
+    )
+
+
+@pytest.mark.parametrize("document", OCCASIONAL_TEXTS)
+def test_an_occasional_text_prints_no_partita_iva_no_vat_excluded_and_no_invoice(
+    document: str,
+) -> None:
+    """Spec § 5: the occasional texts never print the collaborator's partita IVA, never
+    price a fee «IVA esclusa» and never speak of a «fattura», outside the field names."""
+    markdown = (TEXTS / f"{document}.md").read_text(encoding="utf-8")
+    prose = FIELD.sub("", markdown)
+    assert "professionista-piva" not in markdown
+    assert "IVA esclusa" not in prose
+    assert "fattur" not in prose.lower()
+    assert "Professionista" not in prose
+    matter = front_matter(markdown, document)
+    assert (matter["version"], matter["date"], matter["status"]) == (
+        "1.0",
+        "12 ottobre 2026",
+        "final",
+    )
+
+
+def test_the_occasional_quadro_keeps_the_ordinary_articles_and_adds_only_5_7() -> None:
+    """Spec § 5.1: a copy of the ordinary text with the listed changes and no others, so
+    the letter cites the same article numbers; the one new clause is 5.7, and rebase's
+    paragraph loses the codice destinatario."""
+    ordinary = (TEXTS / "contratto-quadro.md").read_text(encoding="utf-8")
+    occasional = (TEXTS / "contratto-quadro-occasionale.md").read_text(encoding="utf-8")
+
+    def headings(markdown: str) -> list[str]:
+        return [line for line in markdown.splitlines() if line.startswith("## ")]
+
+    def clauses(markdown: str) -> list[str]:
+        return re.findall(r"^(\d+\.\d+|[A-D]\.|A\.\d) ", markdown, re.MULTILINE)
+
+    assert [line.replace("fattura", "ricevuta") for line in headings(ordinary)] == headings(
+        occasional
+    )
+    ordinary_clauses = clauses(ordinary)
+    after = ordinary_clauses.index("5.6") + 1
+    assert clauses(occasional) == [*ordinary_clauses[:after], "5.7", *ordinary_clauses[after:]]
+    assert "rebase-codice-destinatario" not in occasional
+    assert set(FIELD.findall(occasional)) == set(FIELD.findall(ordinary)) - {
+        "professionista-piva",
+        "rebase-codice-destinatario",
+    }
 
 
 def test_the_contracts_read_the_brand_exactly_as_the_guide_does() -> None:

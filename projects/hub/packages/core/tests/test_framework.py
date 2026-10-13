@@ -9,8 +9,10 @@ import pytest
 from sqlalchemy import Engine, text
 from sqlalchemy.orm import Session
 
+from rebase_core.contracts.render import text_version
 from rebase_core.db import session_factory
 from rebase_core.framework import (
+    current_quadro_version,
     document_read,
     is_active,
     last_notice_day,
@@ -90,6 +92,7 @@ def test_the_read_model_computes_the_dates_only_for_an_active_framework() -> Non
         "testo_bozza": False,
         "sent_at": None,
         "signed_pdf": None,
+        "regime": "partita_iva",
     }
     signed = _quadro(
         **common,
@@ -151,3 +154,45 @@ def test_two_letters_taken_at_once_get_two_numbers(hub_engine: Engine, clean: Se
     finally:
         first.close()
         second.close()
+
+
+DOCUMENT = {
+    "id": UUID("01a00000-0000-7000-8000-00000000001a"),
+    "freelancer_id": UUID("01a00000-0000-7000-8000-00000000001b"),
+    "created_by": UUID("01a00000-0000-7000-8000-00000000001c"),
+    "created_at": datetime(2026, 10, 12, tzinfo=UTC),
+    "testo_bozza": False,
+    "sent_at": None,
+    "signed_at": None,
+    "notice_at": None,
+    "signed_pdf": None,
+    "text_version": "1.0",
+    "stato": "generato",
+}
+
+
+def test_the_read_model_names_the_documents_regime_and_type() -> None:
+    """REB-687: every document read says which family it belongs to, in a word for the
+    code and a type for the pages."""
+    quadro = ContractDocument(
+        kind="quadro", regime="occasionale", match_id=None, numero=None, **DOCUMENT
+    )
+    letter = ContractDocument(
+        kind="lettera",
+        regime="partita_iva",
+        match_id=UUID("01a00000-0000-7000-8000-00000000001d"),
+        numero="2026-001",
+        **DOCUMENT,
+    )
+    read = document_read(quadro, date(2026, 10, 12), current_version="1.0")
+    assert (read.regime, read.tipo) == (
+        "occasionale",
+        "Contratto quadro per prestazioni occasionali",
+    )
+    read = document_read(letter, date(2026, 10, 12), current_version="1.0")
+    assert (read.regime, read.tipo) == ("partita_iva", "Lettera di incarico")
+
+
+def test_each_quadro_compares_its_version_with_its_own_regimes_text() -> None:
+    assert current_quadro_version("partita_iva") == text_version("contratto-quadro")
+    assert current_quadro_version("occasionale") == text_version("contratto-quadro-occasionale")

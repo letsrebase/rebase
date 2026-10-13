@@ -128,8 +128,10 @@ def amount(data: Mapping[str, Value], key: str) -> Decimal | None:
     return exact
 
 
-def checked(data: dict[str, Value]) -> dict[str, Value]:
-    """The data, with the fee checked and the payment term written from its two parts."""
+def checked(data: dict[str, Value], *, receipt: bool = False) -> dict[str, Value]:
+    """The data, with the fee checked and the payment term written from its two parts,
+    counted from the invoice's date or, with `receipt`, from the receipt's: an occasional
+    letter is paid on a ricevuta (REB-687)."""
     fee = amount(data, FEE)
     if fee is not None and fee <= 0:
         raise ContractFailed(f"{FEE} is {fee}: a fee above zero")
@@ -151,7 +153,8 @@ def checked(data: dict[str, Value]) -> dict[str, Value]:
             + (" when counted from the end of the month," if month_end else ",")
             + " or the letter breaks the 60 days of law 81/2017"
         )
-    term = f"{days} giorni data fattura" + (" fine mese" if month_end else "")
+    paid_on = "ricevuta" if receipt else "fattura"
+    term = f"{days} giorni data {paid_on}" + (" fine mese" if month_end else "")
     return {**data, TERM: term}
 
 
@@ -273,7 +276,7 @@ def is_draft(markdown: str, name: str) -> bool:
     return status == "draft"
 
 
-# The fields of the two contracts that describe rebase itself. `REBASE_SIGNER_JSON` may
+# The fields of the contracts that describe rebase itself. `REBASE_SIGNER_JSON` may
 # fill these and nothing else: a freelancer's or a client's data never come from a
 # server setting.
 SIGNER_FIELDS = (

@@ -196,6 +196,7 @@ def test_someone_elses_document_is_a_404_never_a_403(
     assert client.get(f"/api/hub/me/contracts/{ada_quadro.id}/pdf").status_code == 404
     assert client.get("/api/hub/me/contracts").json() == {
         "quadro": None,
+        "quadro_occasionale": None,
         "quadri_precedenti": [],
         "lettere": [],
     }

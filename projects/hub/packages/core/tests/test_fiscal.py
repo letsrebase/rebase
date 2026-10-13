@@ -177,3 +177,24 @@ def test_two_admins_saving_one_cards_tax_data_at_once_run_one_after_the_other(
     finally:
         first.close()
         second.close()
+
+
+def test_tax_data_without_a_partita_iva_store_null_and_the_audit_names_it(
+    clean: Session,
+) -> None:
+    admin_id, card = _admin(clean), _card(clean)
+    fiscal = FiscalService(clean)
+    fiscal.save(card, _data(), admin_id)
+    saved = fiscal.save(card, _data(partita_iva=None), admin_id)
+    assert saved.partita_iva is None
+    row = clean.scalars(
+        select(FreelancerFiscal).where(FreelancerFiscal.freelancer_id == card)
+    ).one()
+    assert row.partita_iva is None
+    fiscal.save(card, _data(partita_iva=""), admin_id)  # the same value: nothing moved
+    trail = AdminActionService(clean).timeline("freelancer_fiscal", card)
+    assert [action.payload for action in trail] == [
+        {"changed": ["partita_iva"]},
+        {"changed": ["codice_fiscale", "partita_iva", "domicilio"]},
+    ]
+    assert "01234567890" not in str([action.payload for action in trail])

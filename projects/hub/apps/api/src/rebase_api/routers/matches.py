@@ -263,7 +263,8 @@ def send_match(
     """«Invia per la firma»: the document that can leave now goes to Documenso and the
     freelancer gets its mail; a letter whose framework agreement is not signed yet waits
     for it. 503 when this environment cannot sign, 502 when Documenso refuses, 409 for a
-    draft text or a match with nothing left to send."""
+    draft text or a match with nothing left to send, 422 on `regime` for an ordinary
+    letter whose freelancer has no partita IVA any more."""
     require_live_match(session, match_id)
     return signing(session).send_match(match_id, admin.id)
 

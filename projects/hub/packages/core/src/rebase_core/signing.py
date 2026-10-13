@@ -9,10 +9,15 @@ rebase il ...», spec § 5) and the labels under the signing blanks left undrawn
 gets the PDF with the freelancer as its one signer (`rebase_core.documenso`), and the hub
 mails the link itself, one mail per document. A text that says `status: draft` never
 leaves (spec § 1f), unless `allow_draft` is true, which only the preview's `.env` sets
-through `REBASE_CONTRACTS_ALLOW_DRAFT`; with both texts `status: final` the preview
+through `REBASE_CONTRACTS_ALLOW_DRAFT`; with every text `status: final` the preview
 leaves it false too, kept for the next draft. If Documenso refuses or does not answer, the
 transaction rolls back and nothing is marked sent; if only the mail fails, the document
 is `inviato` and the report says so, for «Reinvia email».
+
+A freelancer may hold framework agreements of both regimes (REB-687): a letter leaves
+only once the framework agreement of its own regime is signed, and a signature releases
+only the waiting letters of its own regime. An ordinary letter whose freelancer has lost
+the partita IVA since the draft is refused on `regime`, as «Crea match» refuses it.
 
 Every write locks the freelancer's row first, as `MatchService.create` and
 `FiscalService.save` already do, then the match, then its document, because two admins,
@@ -77,7 +82,7 @@ from rebase_core.audit import AdminActionService, utcnow
 from rebase_core.config import Settings
 from rebase_core.contract_schemas import ContractDocumentRead, MatchRead, SendReport
 from rebase_core.contracts.fields import ContractFailed, Value, signer_data
-from rebase_core.contracts.render import ContractRenderer, Renderer, text_version
+from rebase_core.contracts.render import ContractRenderer, Renderer
 from rebase_core.documenso import (
     COMPLETED,
     REJECTED,
@@ -89,9 +94,16 @@ from rebase_core.documenso import (
     outcome_from_envelope,
 )
 from rebase_core.engagements import DA_COLLEGARE, EngagementService
-from rebase_core.errors import DocumensoFailed, InvalidState, NotFound, SigningUnavailable
+from rebase_core.errors import (
+    DocumensoFailed,
+    InvalidState,
+    NotFound,
+    SigningUnavailable,
+    ValidationFailed,
+)
 from rebase_core.framework import (
     active_framework,
+    current_quadro_version,
     document_read,
     is_active,
     pending_framework,
@@ -107,9 +119,17 @@ from rebase_core.mail import (
     signing_cancelled_mail,
     signing_request_mail,
 )
-from rebase_core.matches import DOCUMENT_BY_KIND, ENTITY, LETTERA, QUADRO, MatchService, _full_name
+from rebase_core.matches import (
+    ENTITY,
+    LETTERA,
+    QUADRO,
+    MatchService,
+    _full_name,
+    require_regime_fits,
+)
 from rebase_core.models import CANCEL_REASON_MAX_LENGTH, ContractDocument, Freelancer, Match, User
 from rebase_core.referrals import ReferralService
+from rebase_core.regimes import document_stem, text_name
 
 _log = logging.getLogger(__name__)
 
@@ -160,10 +180,9 @@ def _cancel_reason(outcome: Outcome) -> str:
 
 
 def _filename(document: ContractDocument, version: str) -> str:
-    """The name Documenso keeps and seals as `<name>_signed.pdf` (probe § 4)."""
-    if document.kind == LETTERA:
-        return f"lettera-di-incarico-{document.numero}.pdf"
-    return f"contratto-quadro-v{version}.pdf"
+    """The name Documenso keeps and seals as `<name>_signed.pdf` (probe § 4): the
+    document's own text, so the two families never share one (REB-687)."""
+    return f"{document_stem(document.kind, document.regime, document.numero, version)}.pdf"
 
 
 def _refuse_blanks(blank: list[str]) -> None:
@@ -276,17 +295,22 @@ class SigningService:
                     "La lettera di questo match è già partita, firmata o annullata: non c'è "
                     "nulla da inviare."
                 )
-            active = active_framework(self.session, match.freelancer_id)
+            regime = letter.regime
+            # The tax data may have changed since the draft: an ordinary letter whose
+            # freelancer no longer has a partita IVA is refused as «Crea match» refuses
+            # it, before any document is typeset (REB-687).
+            require_regime_fits(self.matches._fiscal(freelancer_id).partita_iva, regime)
+            active = active_framework(self.session, match.freelancer_id, regime)
             if not self.allow_draft:
                 for kind in (LETTERA,) if active is not None else (QUADRO, LETTERA):
-                    if renderer.is_draft(DOCUMENT_BY_KIND[kind]):
+                    if renderer.is_draft(text_name(kind, regime)):
                         raise InvalidState(DRAFT_REFUSED[kind])
             if active is not None:
                 leaving = letter
                 self._dispatch(letter, active, admin_id)
             else:
                 letter.stato = "in_attesa"
-                leaving = self._framework_to_send(match.freelancer_id, admin_id)
+                leaving = self._framework_to_send(match.freelancer_id, admin_id, regime)
                 if leaving is not None:
                     self._dispatch(leaving, None, admin_id)
             match.stato = "in_firma"
@@ -309,15 +333,17 @@ class SigningService:
             )
         return SendReport(match=self.matches.get(match_id), inviato=sent_kind, mail_inviata=mailed)
 
-    def _framework_to_send(self, freelancer_id: UUID, admin_id: UUID) -> ContractDocument | None:
-        """The framework agreement a waiting letter needs, locked: none when one is out for
-        signature already (the letter leaves after it), the one generated for a draft,
-        else a new one, written now because the last was cancelled or refused. The
-        caller must already hold the freelancer's row lock."""
+    def _framework_to_send(
+        self, freelancer_id: UUID, admin_id: UUID, regime: str
+    ) -> ContractDocument | None:
+        """The framework agreement of `regime` a waiting letter needs, locked: none when
+        one is out for signature already (the letter leaves after it), the one generated
+        for a draft, else a new one, written now because the last was cancelled or
+        refused. The caller must already hold the freelancer's row lock."""
         self._signer()
-        pending = pending_framework(self.session, freelancer_id)
+        pending = pending_framework(self.session, freelancer_id, regime)
         if pending is None:
-            return self.matches.write_framework(freelancer_id, admin_id)
+            return self.matches.write_framework(freelancer_id, admin_id, regime)
         framework = self._lock(pending.id)
         if framework.stato == "inviato":
             return None
@@ -339,7 +365,7 @@ class SigningService:
         pile up drafts under the same externalId."""
         self._signer()
         renderer, documenso = self._renderer(), self._documenso()
-        name = DOCUMENT_BY_KIND[document.kind]
+        name = text_name(document.kind, document.regime)
         data = self.matches.data_for_sending(document, self.today(), framework)
         rendered = renderer.render(name, data, signing=True)
         if rendered.draft and not self.allow_draft:
@@ -347,7 +373,7 @@ class SigningService:
         _refuse_blanks(rendered.blank)
         fields = fields_from_blanks(renderer.signature_blanks(name, data, signing=True))
         user = self._owner(document.freelancer_id)
-        title = document_name(document.kind, document.numero)
+        title = document_name(document.kind, document.numero, document.regime)
         envelope_id = documenso.create(
             title=title[0].upper() + title[1:],
             external_id=str(document.id),
@@ -423,7 +449,12 @@ class SigningService:
             return False
         user = self._owner(document.freelancer_id)
         mail = signing_request_mail(
-            user.email, user.nome, document.kind, document.numero, document.signing_url
+            user.email,
+            user.nome,
+            document.kind,
+            document.numero,
+            document.signing_url,
+            regime=document.regime,
         )
         if not self.sender.send(mail):
             _log.warning("the signing mail of document %s was refused by the provider", document.id)
@@ -681,8 +712,8 @@ class SigningService:
         envelope, whose outcome (a completion, a rejection or a cancellation) a lost
         webhook delivery never confirmed (REB-431); a signature or a notice whose sealed
         copy is missing or not yet mailed to either recipient; and every active
-        framework agreement that still has a letter `in_attesa` on a match `in_firma` (a
-        release `finish` itself missed, or never ran
+        framework agreement that still has a letter of its own regime (REB-687)
+        `in_attesa` on a match `in_firma` (a release `finish` itself missed, or never ran
         for). `finish` is idempotent either way, so the three sets are simply run
         together. The first costs one GET to Documenso per waiting document per sweep --
         acceptable at the hub's volume."""
@@ -710,6 +741,7 @@ class SigningService:
                     waiting_letter.kind == LETTERA,
                     waiting_letter.stato == "in_attesa",
                     waiting_letter.freelancer_id == ContractDocument.freelancer_id,
+                    waiting_letter.regime == ContractDocument.regime,
                     Match.stato == "in_firma",
                 )
             ),
@@ -783,6 +815,7 @@ class SigningService:
             nome=user.nome,
             cognome=user.cognome,
             for_rebase=not to_freelancer,
+            regime=document.regime,
         )
         if not self.sender.send(mail):
             _log.warning(
@@ -800,10 +833,11 @@ class SigningService:
         return True
 
     def _release_letters(self, framework: ContractDocument) -> bool:
-        """The letters that waited for this framework agreement (spec § 1e), each in a
-        transaction of its own and mailed after its commit: a Documenso refusal leaves
-        that letter waiting for the next `finish` and lets the others go. Only matches an
-        admin sent (`in_firma`); a draft's letter leaves when its match is sent.
+        """The letters of this framework agreement's regime that waited for it (spec § 1e,
+        REB-687), each in a transaction of its own and mailed after its commit: a
+        Documenso refusal leaves that letter waiting for the next `finish` and lets the
+        others go. Only matches an admin sent (`in_firma`); a draft's letter leaves when
+        its match is sent.
 
         `send_match` refuses up front without a mail sender (`_sender`), so a release
         must not dispatch a letter to Documenso either when nobody could then be told
@@ -826,6 +860,7 @@ class SigningService:
                 .where(
                     ContractDocument.kind == LETTERA,
                     ContractDocument.freelancer_id == framework.freelancer_id,
+                    ContractDocument.regime == framework.regime,
                     ContractDocument.stato == "in_attesa",
                     Match.stato == "in_firma",
                 )
@@ -842,7 +877,14 @@ class SigningService:
                 letter = self._send_waiting(
                     letter_id, match_id, framework_id, freelancer_id, sent_by
                 )
-            except (ContractFailed, DocumensoFailed, InvalidState, NotFound, SigningUnavailable):
+            except (
+                ContractFailed,
+                DocumensoFailed,
+                InvalidState,
+                NotFound,
+                SigningUnavailable,
+                ValidationFailed,
+            ):
                 self.session.rollback()
                 _log.warning(
                     "letter %s keeps waiting: its release failed", letter_id, exc_info=True
@@ -883,11 +925,15 @@ class SigningService:
             or match.stato != "in_firma"
             or framework is None
             or not is_active(framework)
+            or framework.regime != letter.regime
         ):
             self.session.rollback()
             return None
-        if not self.allow_draft and self._renderer().is_draft(DOCUMENT_BY_KIND[LETTERA]):
+        if not self.allow_draft and self._renderer().is_draft(text_name(LETTERA, letter.regime)):
             raise InvalidState(DRAFT_REFUSED[LETTERA])
+        # The same rule `send_match` applies (REB-687): a partita IVA removed while the
+        # letter waited refuses it in those words, not as a blank field.
+        require_regime_fits(self.matches._fiscal(freelancer_id).partita_iva, letter.regime)
         self._dispatch(letter, framework, sent_by)
         self.session.commit()
         return letter
@@ -1056,9 +1102,8 @@ class SigningService:
         return document
 
     def _read(self, document_id: UUID) -> ContractDocumentRead:
-        return document_read(
-            self._document(document_id), self.today(), text_version(DOCUMENT_BY_KIND[QUADRO])
-        )
+        document = self._document(document_id)
+        return document_read(document, self.today(), current_quadro_version(document.regime))
 
     def _record(self, document: ContractDocument, kind: str, admin_id: UUID) -> None:
         """A framework agreement's action lands on its freelancer's trail, since it
@@ -1080,7 +1125,9 @@ class SigningService:
             _log.warning("no mail sender: nobody was told document %s was cancelled", document.id)
             return
         user = self._owner(document.freelancer_id)
-        mail = signing_cancelled_mail(user.email, user.nome, document.kind, document.numero)
+        mail = signing_cancelled_mail(
+            user.email, user.nome, document.kind, document.numero, regime=document.regime
+        )
         if not self.sender.send(mail):
             _log.warning(
                 "the cancellation mail of document %s was refused by the provider", document.id
