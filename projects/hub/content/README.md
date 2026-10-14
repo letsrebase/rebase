@@ -178,13 +178,13 @@ How the general terms give rebase what the framework agreement promises the free
 |---|---|
 | 7.1, paid at 30 days from the end of the invoice's month | 7.1, the same default term |
 | 7.2, paid whether or not the client has paid | 7.2 to 7.4, late interest and suspension |
-| 6.2, seven working days to answer a Rendiconto | 6.2, five working days for the client to contest |
+| 6.2, seven working days to answer a Rendiconto | 6.1 and 6.2, forwarded the next working day, five working days for the client to contest: six in all |
 | 6.3, ten working days after delivery | 6.4, the same ten working days |
 | 10.1 and 10.2, 30 days' notice, or the missing notice paid | 8.3, the same notice, the same payment to close sooner |
 | 10.3, two working days during the opening check | 3.5, the same two days |
 | 10.4, up to two paid handover days | 8.5, the same two days, paid by the client |
 | 12, twelve months, 24-month declaration, penalty | 12, the same twelve months and declaration, the client's own penalty |
-| 14.1, rights to rebase on the freelancer's payment | 10.1, rights to the client on the client's payment |
+| 14.1, rights to rebase on the freelancer's payment | 10.1, rights to the client on the client's payment, or later when rebase pays the freelancer |
 | 16.2 and Allegato A, sub-processor with the client's authorisation | 14.3 and Allegato A.5, the authorisation |
 
 Open in these drafts, for the lawyer and for Ivan (the highlighted proposals): whether

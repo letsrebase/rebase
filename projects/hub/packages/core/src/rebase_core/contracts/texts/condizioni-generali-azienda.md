@@ -138,9 +138,10 @@ Professionisti, non modifica i Corrispettivi e non è comunicato al Cliente.
 
 ## 6. Rendiconto, consegne e fatture
 
-6.1 Per i Servizi a giornata o a ora, entro il [[quinto]] giorno lavorativo di ogni mese
-rebase invia al Cliente il Rendiconto del mese precedente, con le giornate o le ore
-lavorate da ciascun Professionista e una breve descrizione delle attività.
+6.1 Per i Servizi a giornata o a ora, rebase invia al Cliente il Rendiconto del mese
+precedente, con le giornate o le ore lavorate da ciascun Professionista e una breve
+descrizione delle attività, entro il giorno lavorativo successivo a quello in cui lo
+riceve dai Professionisti e comunque entro il [[quinto]] giorno lavorativo del mese.
 
 6.2 Il Cliente può contestare il Rendiconto per iscritto, con i motivi, entro
 [[cinque giorni lavorativi]] dal ricevimento. Se in quel termine non arriva una
@@ -220,8 +221,12 @@ il diritto al risarcimento del danno.
 ## 10. Diritti sui Lavori
 
 10.1 I diritti di utilizzazione economica sui Lavori realizzati per il Cliente passano
-al Cliente dal momento in cui ha pagato per intero i Corrispettivi di quei Lavori. Fino
-a quel momento il Cliente può usarli per le finalità del Servizio.
+al Cliente dal momento in cui ha pagato per intero i Corrispettivi di quei Lavori. Se in
+quel momento rebase non ha ancora acquisito quei diritti dal Professionista che ha
+realizzato i Lavori, passano al Cliente nel momento in cui rebase li acquisisce, cioè
+quando paga il Professionista, cosa che rebase fa in ogni caso, indipendentemente dal
+pagamento del Cliente. Fino al passaggio il Cliente può usare i Lavori per le finalità
+del Servizio.
 
 10.2 Restano di rebase e dei Professionisti i metodi, il know-how, le conoscenze e
 l'esperienza generali, e gli strumenti, le librerie, i modelli e il codice che avevano
