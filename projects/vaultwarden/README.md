@@ -147,7 +147,7 @@ pnpm --filter @rebase/brand exec node ../../projects/vaultwarden/branding/build.
 ```
 
 **The mails** (REB-690) use the same mechanism: `branding/templates/email/` overrides upstream's
-header and footer partials and the organisation invitation. Upstream's carry the Vaultwarden
+header and footer partials and the organisation invitation (in Italian, since the team reads it). Upstream's carry the Vaultwarden
 wordmark and a GitHub icon as inline images, and attach both to every mail whatever the
 template uses; the first invitation went to Spam in Gmail as «similar to messages identified as
 spam» although SPF, DKIM and DMARC all passed. Ours draw the mark from table cells and attach

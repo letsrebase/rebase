@@ -117,7 +117,7 @@ for (const file of ['templates/scss/user.vaultwarden.scss.hbs', 'images/safari-p
 
 // The mails carry no image and no link away from the page they are about, and the compose
 // file stops the server attaching its own.
-for (const file of ['email_header.hbs', 'email_footer.hbs', 'email_footer_text.hbs', 'send_org_invite.html.hbs']) {
+for (const file of ['email_header.hbs', 'email_footer.hbs', 'email_footer_text.hbs', 'send_org_invite.html.hbs', 'send_org_invite.hbs']) {
   const body = readFileSync(join(project, 'branding', 'templates', 'email', file), 'utf8')
   if (/<img|<picture|<link|\bsrc\s*=|url\(|github|cid:/i.test(body)) fail(`branding/templates/email/${file} has an image, a stylesheet or a GitHub link`)
   const links = [...body.matchAll(/href\s*=\s*"([^"]*)"/gi)].map((m) => m[1]).filter((href) => href !== '{{{url}}}')
