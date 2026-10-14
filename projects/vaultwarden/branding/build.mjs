@@ -14,6 +14,8 @@
 //       the Vaultwarden wordmark of the pre-login header, the sidebar and the splash.
 //   images/*                                   the favicons, mounted over the image's own
 //       (compose file), drawn from the four tiles of the mark.
+//   templates/email/*                          the mail header, footer and organisation
+//       invitation (REB-690): the mark from table cells, no image, no link away.
 //   branding.env                               a hash of all of the above, so that a new
 //       look recreates the container (see `revision()`).
 //
@@ -347,12 +349,19 @@ const mail = () => ({
 export function emailHeader() {
   const c = mail()
   const cell = (bg) => `<td width="14" height="14" bgcolor="${bg}" style="width:14px;height:14px;font-size:0;line-height:0">&nbsp;</td>`
+  // The mark's tiles in the lockup's own order and colours: top row, then bottom row.
+  const [a, b, d, e] = tilesOf('lockup.svg')
+    .sort((p, q) => p.y - q.y || p.x - q.x)
+    .map(({ fill }) => fill)
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta name="viewport" content="width=device-width">
 <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<meta name="color-scheme" content="light">
+<meta name="supported-color-schemes" content="light">
 <title>Rebase</title>
+<style>a{color:${c.action}}</style>
 </head>
 <body bgcolor="${c.paper}" style="margin:0;padding:0;background-color:${c.paper};color:${c.ink};font-family:Helvetica,Arial,sans-serif;font-size:16px;line-height:24px">
 <table width="100%" cellpadding="0" cellspacing="0" role="presentation" bgcolor="${c.paper}" style="background-color:${c.paper}">
@@ -362,8 +371,8 @@ export function emailHeader() {
 <table cellpadding="0" cellspacing="0" role="presentation"><tr>
 <td valign="middle" style="padding-right:10px">
 <table cellpadding="0" cellspacing="0" role="presentation" style="border-collapse:collapse">
-<tr>${cell(c.ink)}${cell(c.gold)}</tr>
-<tr>${cell(c.watermelon)}${cell(c.ink)}</tr>
+<tr>${cell(a)}${cell(b)}</tr>
+<tr>${cell(d)}${cell(e)}</tr>
 </table>
 </td>
 <td valign="middle" style="font-size:26px;line-height:28px;font-weight:bold;letter-spacing:-0.035em;color:${c.ink}">rebase</td>
@@ -377,7 +386,7 @@ export function emailFooter() {
   const c = mail()
   return `</td></tr>
 <tr><td style="padding:16px 4px 0 4px;color:${c.charcoal};font-size:12px;line-height:18px">
-Sent by the Rebase password manager. If you were not expecting this message you can ignore it.
+Sent by the Rebase password manager.
 </td></tr>
 </table>
 </td></tr>
@@ -390,7 +399,7 @@ Sent by the Rebase password manager. If you were not expecting this message you 
 export function emailFooterText() {
   return `
 ---
-Sent by the Rebase password manager. If you were not expecting this message you can ignore it.
+Sent by the Rebase password manager.
 `
 }
 
@@ -402,9 +411,9 @@ export function orgInviteHtml() {
 <!---------------->
 {{> email/email_header }}
 <p style="margin:0 0 16px 0;color:${c.ink}">You have been invited to join the <b>{{org_name}}</b> organization.</p>
-<p style="margin:0 0 20px 0">
-<a data-testid="invite" href="{{{url}}}" clicktracking=off target="_blank" style="display:inline-block;background-color:${c.action};color:#ffffff;text-decoration:none;font-weight:bold;padding:12px 24px;border-radius:4px">Join {{org_name}}</a>
-</p>
+<div style="margin:0 0 20px 0">
+<table cellpadding="0" cellspacing="0" role="presentation"><tr><td bgcolor="${c.action}" style="background-color:${c.action};border-radius:4px;padding:12px 24px"><a data-testid="invite" href="{{{url}}}" clicktracking=off target="_blank" style="display:block;color:#ffffff;text-decoration:none;font-weight:bold">Join {{org_name}}</a></td></tr></table>
+</div>
 <p style="margin:0;color:${c.charcoal};font-size:14px;line-height:20px">If you do not wish to join this organization, you can safely ignore this email.</p>
 {{> email/email_footer }}
 `
