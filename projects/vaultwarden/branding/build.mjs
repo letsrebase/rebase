@@ -14,6 +14,8 @@
 //       the Vaultwarden wordmark of the pre-login header, the sidebar and the splash.
 //   images/*                                   the favicons, mounted over the image's own
 //       (compose file), drawn from the four tiles of the mark.
+//   templates/email/*                          the mail header, footer and organisation
+//       invitation (REB-690): the mark from table cells, no image, no link away.
 //   branding.env                               a hash of all of the above, so that a new
 //       look recreates the container (see `revision()`).
 //
@@ -127,6 +129,10 @@ export const PAIRS = {
     ['prussian-blue', 'paper', 'the lockup in the pre-login header'],
     ['prussian-blue', '#e6ecf2', 'the lockup on the Admin Console sidebar'],
     ['paper', 'nav-bg-primary', 'the lockup on the vault sidebar'],
+    // The mails, which have no dark theme: ink on their white card, the small print on paper.
+    ['prussian-blue', '#ffffff', 'the text of a mail'],
+    ['charcoal-blue', 'paper', 'the small print of a mail'],
+    ['#ffffff', 'watermelon-deep', 'the button of the invitation'],
   ],
   dark: [
     ['fg-brand', '#0f172b', 'a link on the dark ground'],
@@ -324,9 +330,102 @@ async function writeImages() {
   writeFileSync(join(HERE, 'images/favicon.ico'), Buffer.concat([head, png]))
 }
 
+// The mails (REB-690). Vaultwarden's own header and footer attach the Vaultwarden wordmark
+// and a GitHub icon that links to upstream's repository, and every mail it sends has the
+// shape of every other self-hosted instance's: Gmail put the first invitation in Spam as
+// «similar to messages identified as spam in the past» although SPF, DKIM and DMARC all
+// passed. These partials draw the mark from table cells, in the palette, with no image
+// and no link to anywhere but the page the mail is about; with `SMTP_EMBED_IMAGES=false`
+// (compose file) the mail carries no attachment either.
+const mail = () => ({
+  ink: token('prussian-blue'),
+  paper: token('paper'),
+  charcoal: token('charcoal-blue'),
+  gold: token('royal-gold'),
+  watermelon: token('watermelon'),
+  action: token('watermelon-deep'),
+})
+
+export function emailHeader() {
+  const c = mail()
+  const cell = (bg) => `<td width="14" height="14" bgcolor="${bg}" style="width:14px;height:14px;font-size:0;line-height:0">&nbsp;</td>`
+  // The mark's tiles in the lockup's own order and colours: top row, then bottom row.
+  const [a, b, d, e] = tilesOf('lockup.svg')
+    .sort((p, q) => p.y - q.y || p.x - q.x)
+    .map(({ fill }) => fill)
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta name="viewport" content="width=device-width">
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<meta name="color-scheme" content="light">
+<meta name="supported-color-schemes" content="light">
+<title>Rebase</title>
+<style>a{color:${c.action}}</style>
+</head>
+<body bgcolor="${c.paper}" style="margin:0;padding:0;background-color:${c.paper};color:${c.ink};font-family:Helvetica,Arial,sans-serif;font-size:16px;line-height:24px">
+<table width="100%" cellpadding="0" cellspacing="0" role="presentation" bgcolor="${c.paper}" style="background-color:${c.paper}">
+<tr><td align="center" style="padding:24px 12px">
+<table width="560" cellpadding="0" cellspacing="0" role="presentation" style="width:100%;max-width:560px">
+<tr><td style="padding:0 0 16px 4px">
+<table cellpadding="0" cellspacing="0" role="presentation"><tr>
+<td valign="middle" style="padding-right:10px">
+<table cellpadding="0" cellspacing="0" role="presentation" style="border-collapse:collapse">
+<tr>${cell(a)}${cell(b)}</tr>
+<tr>${cell(d)}${cell(e)}</tr>
+</table>
+</td>
+<td valign="middle" style="font-size:26px;line-height:28px;font-weight:bold;letter-spacing:-0.035em;color:${c.ink}">rebase</td>
+</tr></table>
+</td></tr>
+<tr><td bgcolor="#ffffff" style="background-color:#ffffff;border-top:4px solid ${c.ink};padding:28px 24px;color:${c.ink};font-size:16px;line-height:24px">
+`
+}
+
+export function emailFooter() {
+  const c = mail()
+  return `</td></tr>
+<tr><td style="padding:16px 4px 0 4px;color:${c.charcoal};font-size:12px;line-height:18px">
+Sent by the Rebase password manager.
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>
+`
+}
+
+export function emailFooterText() {
+  return `
+---
+Sent by the Rebase password manager.
+`
+}
+
+// The invitation, the one mail a person gets before they have an account: the same words
+// as upstream's, the button in the brand's action colour and nothing else.
+export function orgInviteHtml() {
+  const c = mail()
+  return `Join {{{org_name}}}
+<!---------------->
+{{> email/email_header }}
+<p style="margin:0 0 16px 0;color:${c.ink}">You have been invited to join the <b>{{org_name}}</b> organization.</p>
+<div style="margin:0 0 20px 0">
+<table cellpadding="0" cellspacing="0" role="presentation"><tr><td bgcolor="${c.action}" style="background-color:${c.action};border-radius:4px;padding:12px 24px"><a data-testid="invite" href="{{{url}}}" clicktracking=off target="_blank" style="display:block;color:#ffffff;text-decoration:none;font-weight:bold">Join {{org_name}}</a></td></tr></table>
+</div>
+<p style="margin:0;color:${c.charcoal};font-size:14px;line-height:20px">If you do not wish to join this organization, you can safely ignore this email.</p>
+{{> email/email_footer }}
+`
+}
+
 const texts = {
   'templates/scss/user.vaultwarden.scss.hbs': scss,
   'images/safari-pinned-tab.svg': pinnedSvg,
+  'templates/email/email_header.hbs': emailHeader,
+  'templates/email/email_footer.hbs': emailFooter,
+  'templates/email/email_footer_text.hbs': emailFooterText,
+  'templates/email/send_org_invite.html.hbs': orgInviteHtml,
 }
 const GENERATED = [...Object.keys(texts), ...IMAGES.map(([file]) => file), 'images/favicon.ico'].sort()
 

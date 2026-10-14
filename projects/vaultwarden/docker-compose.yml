@@ -61,6 +61,10 @@ services:
       # this folder and appends it to /css/vaultwarden.css. Mounted read-only from the
       # repository, so the data directory (and with it the backup) holds nothing of it.
       TEMPLATES_FOLDER: /templates
+      # The same folder carries the mail partials (`email/`). Upstream attaches its wordmark and
+      # a GitHub icon to every mail as inline images whether the template uses them or not,
+      # which is part of why Gmail files its mails under Spam (REB-690); ours uses neither.
+      SMTP_EMBED_IMAGES: 'false'
     # On the host, outside Docker and outside the repository, like the hub's own data. No
     # default, for the reason `projects/hub/docker-compose.yml` gives for REBASE_DATA_DIR:
     # a `.env` that forgets it must refuse to start, not come up on an empty directory.

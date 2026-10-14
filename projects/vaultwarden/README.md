@@ -146,8 +146,17 @@ pnpm install --frozen-lockfile --filter @rebase/brand
 pnpm --filter @rebase/brand exec node ../../projects/vaultwarden/branding/build.mjs
 ```
 
+**The mails** (REB-690) use the same mechanism: `branding/templates/email/` overrides upstream's
+header and footer partials and the organisation invitation. Upstream's carry the Vaultwarden
+wordmark and a GitHub icon as inline images, and attach both to every mail whatever the
+template uses; the first invitation went to Spam in Gmail as «similar to messages identified as
+spam» although SPF, DKIM and DMARC all passed. Ours draw the mark from table cells and attach
+nothing (`SMTP_EMBED_IMAGES=false` in the compose file). The other mails keep upstream's body
+inside our frame, so the frame's footer says nothing about ignoring the message: some of those
+bodies are security alerts. Render one after a bump with the admin page's SMTP test.
+
 What is deliberately not themed: the browser extension and the mobile apps (their look is
-Bitwarden's and is not served from here), the mails, the page title, the browser chrome
+Bitwarden's and is not served from here), the body of every mail but the invitation, the page title, the browser chrome
 colours (`theme-color`, the manifest's colours and the pinned tab's tint, all still
 Bitwarden's blue), the one-time welcome dialog and the illustrations other than the
 pre-login pictures, and the attribution line in the footer, which says what this server is

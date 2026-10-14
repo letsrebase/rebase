@@ -8,7 +8,9 @@
 //    with `shared/brand/contrast.ts` against the web vault's own grounds, in both themes.
 // 3. Every icon's four tiles are the mark's, in the palette's colours, and the .ico is the
 //    32 pixel PNG.
-// 4. Every file the compose file mounts from `branding/` exists.
+// 4. Every file the compose file mounts from `branding/` exists, and `branding.env` is loaded.
+// 5. The mail templates carry no image and link only to the page the mail is about, and the
+//    compose file stops the server attaching its own inline images.
 import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -113,7 +115,17 @@ for (const file of ['templates/scss/user.vaultwarden.scss.hbs', 'images/safari-p
   if (readFileSync(join(project, 'branding', file), 'utf8').includes('undefined')) fail(`branding/${file} contains "undefined"`)
 }
 
+// The mails carry no image and no link away from the page they are about, and the compose
+// file stops the server attaching its own.
+for (const file of ['email_header.hbs', 'email_footer.hbs', 'email_footer_text.hbs', 'send_org_invite.html.hbs']) {
+  const body = readFileSync(join(project, 'branding', 'templates', 'email', file), 'utf8')
+  if (/<img|<picture|<link|\bsrc\s*=|url\(|github|cid:/i.test(body)) fail(`branding/templates/email/${file} has an image, a stylesheet or a GitHub link`)
+  const links = [...body.matchAll(/href\s*=\s*"([^"]*)"/gi)].map((m) => m[1]).filter((href) => href !== '{{{url}}}')
+  if (links.length) fail(`branding/templates/email/${file} links to ${links.join(', ')}, not only to the page the mail is about`)
+}
+
 const compose = readFileSync(join(project, 'docker-compose.yml'), 'utf8')
+if (!/^\s+SMTP_EMBED_IMAGES: 'false'\s*$/m.test(compose)) fail("docker-compose.yml lets the server attach its inline images (SMTP_EMBED_IMAGES: 'false')")
 const mounted = [...compose.matchAll(/^\s*- (\.\/branding\/[^:]+):/gm)].map((m) => m[1])
 if (mounted.length === 0) fail('docker-compose.yml mounts nothing from branding/')
 if (!compose.includes('env_file: ./branding/branding.env')) fail('docker-compose.yml does not load branding/branding.env, so a new look would not recreate the container')
