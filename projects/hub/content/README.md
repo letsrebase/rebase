@@ -172,6 +172,16 @@ wiring one in is a card of its own after the review.
   more when the framework agreement (13) or a company's own NDA covers the same
   information.
 
+The build makes PDFs only. The Word copies a lawyer marks up come from the same
+Markdown through pandoc, with each field turned into a bracketed label and each proposal
+into highlighted text; the edits that come back go into the Markdown, never the reverse:
+
+```
+perl -0pe 's/\{\{([a-z0-9-]+)\}\}/"[*".($1 =~ s#-# #gr)."*]"/ge; s/\[\[(.*?)\]\]/[$1]{.mark}/gs' \
+  projects/hub/packages/core/src/rebase_core/contracts/texts/proposta-azienda.md \
+  | pandoc --from=markdown+smart --shift-heading-level-by=-1 -o proposta-azienda.docx
+```
+
 How the general terms give rebase what the framework agreement promises the freelancer:
 
 | Framework agreement (freelancer) | General terms (company) |

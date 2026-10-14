@@ -284,9 +284,10 @@ lavorato nei 24 mesi precedenti alla presentazione, se lo dichiara per iscritto 
 entro sette giorni dalla presentazione.
 
 12.4 Se il Cliente fa lavorare per sé un Professionista presentato senza passare da
-rebase e senza averlo detto, deve a rebase una penale pari a [[sei volte il Corrispettivo
-medio mensile dell'ultimo lavoro di quel Professionista per il Cliente, e comunque non
-inferiore a 10.000 euro]], salvo il maggior danno.
+rebase e senza averlo detto, deve a rebase una penale, salvo il maggior danno. Se il
+Professionista ha già lavorato per il Cliente tramite rebase, la penale è pari a [[sei
+volte il Corrispettivo medio mensile del suo ultimo lavoro per il Cliente, e comunque
+non inferiore a 10.000 euro]]; se non ci ha mai lavorato, è di [[10.000 euro]].
 
 12.5 Il Cliente non propone ai Professionisti di lavorare per lui fuori da rebase,
 neanche durante il Servizio.
