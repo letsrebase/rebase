@@ -56,14 +56,15 @@ services:
       SMTP_USERNAME: resend
       SMTP_PASSWORD: ${VAULTWARDEN_SMTP_PASSWORD:?set it in .env, a Resend API key made for Vaultwarden only}
       SMTP_FROM: ${VAULTWARDEN_MAIL_FROM:-vault@letsrebase.com}
-      SMTP_FROM_NAME: Rebase
+      # The display name a mail shows beside vault@letsrebase.com: it says what sends it.
+      SMTP_FROM_NAME: Rebase Password Manager
       # The look (README, "Look"): the server compiles `scss/user.vaultwarden.scss.hbs` from
       # this folder and appends it to /css/vaultwarden.css. Mounted read-only from the
       # repository, so the data directory (and with it the backup) holds nothing of it.
       TEMPLATES_FOLDER: /templates
       # The same folder carries the mail partials (`email/`). Upstream attaches its wordmark and
-      # a GitHub icon to every mail as inline images whether the template uses them or not,
-      # which is part of why Gmail files its mails under Spam (REB-690); ours uses neither.
+      # a GitHub icon to every mail as inline images whether the template uses them or not;
+      # ours uses neither, so the server is told to attach nothing (REB-690).
       SMTP_EMBED_IMAGES: 'false'
     # On the host, outside Docker and outside the repository, like the hub's own data. No
     # default, for the reason `projects/hub/docker-compose.yml` gives for REBASE_DATA_DIR:

@@ -15,7 +15,7 @@ ufficiali di Bitwarden; il server a cui si collegano lo scegli tu al passo 2.
 
 ## 2. Accetta l'invito e punta l'app al nostro server
 
-1. Ti arriva una mail da **vault@letsrebase.com**: «Invito a Rebase, il gestore di password».
+1. Ti arriva una mail da **vault@letsrebase.com**: «Invito al password manager di Rebase», da **Rebase Password Manager**.
    Apri il link: si apre `vault.letsrebase.com`. Se non la trovi, guarda nello spam: a volte i
    filtri la mettono lì, soprattutto la prima. Aprila e usa «Non è spam», così le prossime
    arrivano in posta in arrivo.
