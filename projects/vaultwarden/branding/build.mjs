@@ -458,17 +458,18 @@ Rebase password manager
 `
 }
 
-// The invitation, the one mail a person gets before they have an account. It is read by the
-// team, in Italian, and it does not read like upstream's English template: Gmail kept filing
-// the first one under Spam after the frame changed, while the mails to an address that
-// already had an account (welcome, new device, invitation confirmed) reached the inbox.
-const INVITE_SUBJECT = 'Invito al password manager di Rebase'
+// The invitation, the one mail a person gets before they have an account. It is in English
+// like every other mail of the server and like the apps (Lorenzo, 2026-10-14), but it does not
+// read like upstream's English template: Gmail kept filing the first one under Spam after the
+// frame changed, while the mails to an address that already had an account (welcome, new
+// device, invitation confirmed) reached the inbox.
+const INVITE_SUBJECT = 'Your invitation to the Rebase password manager'
 const INVITE_LINES = {
-  intro: 'Ti hanno invitato a usare il password manager di Rebase, nell\'organizzazione {{org_name}}.',
-  button: "Accetta l'invito",
+  intro: 'You have been invited to join the {{org_name}} organization on the Rebase password manager.',
+  button: 'Accept the invitation',
   password:
-    'Apri il link e scegli una password principale solo tua: è la sola che serve per entrare e nessuno di Rebase te la chiederà mai.',
-  ignore: 'Se non ti aspettavi questo invito, ignora il messaggio.',
+    'Open the link and choose a master password that is yours alone: it is the only one you need to sign in, and nobody at Rebase will ever ask you for it.',
+  ignore: 'If you were not expecting this invitation, ignore this message.',
 }
 
 export function orgInviteHtml() {

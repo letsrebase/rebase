@@ -109,6 +109,15 @@ there, `config.json` holds it and the backup carries it.
   view, view with hidden passwords, edit, edit with hidden passwords, or manage.
   Organisation owners and admins can open every collection, so those roles stay with the
   few people trusted with all of it. `ORG_GROUPS_ENABLED` stays off.
+- The collections, named in English like the apps (REB-691, `docs/design/DECISIONS.md`
+  2026-10-14): `Infrastructure` and `Administration` for rebase's own credentials, assigned to
+  no User today; `Clients/<client>` for what every project of a client shares, and
+  `Clients/<client>/<project>` for one match, assigned to the freelancers on it. Nesting is a
+  name and nothing else: a collection inherits no item, access or permission from its parent,
+  so assigning `Clients/<client>/<project>` does not show `Clients/<client>`. A freelancer gets
+  «View items»; «manage» stays with the owners. «View items, hidden passwords» is not a
+  protection: it hides the eye and the copy button, and the decrypted password is still in
+  the page (checked on a test member, 2026-10-14).
 
 ## Look
 
@@ -149,7 +158,8 @@ pnpm --filter @rebase/brand exec node ../../projects/vaultwarden/branding/build.
 ```
 
 **The mails** (REB-690, REB-692) use the same mechanism: `branding/templates/email/` overrides upstream's
-header and footer partials and the organisation invitation (in Italian, since the team reads it).
+header and footer partials and the organisation invitation (in English, like every other mail
+and the apps).
 Upstream's partials carry the Vaultwarden wordmark and a GitHub icon as inline images, and the
 server attaches both to every mail whatever the template uses. Ours draw the mark from table
 cells and attach nothing (`SMTP_EMBED_IMAGES=false` in the compose file). Every mail says
