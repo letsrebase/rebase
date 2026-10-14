@@ -386,7 +386,7 @@ export function emailFooter() {
   const c = mail()
   return `</td></tr>
 <tr><td style="padding:16px 4px 0 4px;color:${c.charcoal};font-size:12px;line-height:18px">
-Sent by the Rebase password manager.
+Rebase password manager
 </td></tr>
 </table>
 </td></tr>
@@ -399,23 +399,49 @@ Sent by the Rebase password manager.
 export function emailFooterText() {
   return `
 ---
-Sent by the Rebase password manager.
+Rebase password manager
 `
 }
 
-// The invitation, the one mail a person gets before they have an account: the same words
-// as upstream's, the button in the brand's action colour and nothing else.
+// The invitation, the one mail a person gets before they have an account. It is read by the
+// team, in Italian, and it does not read like upstream's English template: Gmail kept filing
+// the first one under Spam after the frame changed, while the mails to an address that
+// already had an account (welcome, new device, invitation confirmed) reached the inbox.
+const INVITE_SUBJECT = 'Invito a {{{org_name}}}, il gestore di password'
+const INVITE_LINES = {
+  intro: 'Ti hanno invitato a entrare in {{org_name}}, il gestore di password del team.',
+  button: "Accetta l'invito",
+  password:
+    'Apri il link e scegli una password principale solo tua: è la sola che serve per entrare e nessuno di Rebase te la chiederà mai.',
+  ignore: 'Se non ti aspettavi questo invito, ignora il messaggio.',
+}
+
 export function orgInviteHtml() {
   const c = mail()
-  return `Join {{{org_name}}}
+  return `${INVITE_SUBJECT}
 <!---------------->
 {{> email/email_header }}
-<p style="margin:0 0 16px 0;color:${c.ink}">You have been invited to join the <b>{{org_name}}</b> organization.</p>
+<p style="margin:0 0 16px 0;color:${c.ink}">${INVITE_LINES.intro.replace('{{org_name}}', '<b>{{org_name}}</b>')}</p>
 <div style="margin:0 0 20px 0">
-<table cellpadding="0" cellspacing="0" role="presentation"><tr><td bgcolor="${c.action}" style="background-color:${c.action};border-radius:4px;padding:12px 24px"><a data-testid="invite" href="{{{url}}}" clicktracking=off target="_blank" style="display:block;color:#ffffff;text-decoration:none;font-weight:bold">Join {{org_name}}</a></td></tr></table>
+<table cellpadding="0" cellspacing="0" role="presentation"><tr><td bgcolor="${c.action}" style="background-color:${c.action};border-radius:4px;padding:12px 24px"><a data-testid="invite" href="{{{url}}}" clicktracking=off target="_blank" style="display:block;color:#ffffff;text-decoration:none;font-weight:bold">${INVITE_LINES.button}</a></td></tr></table>
 </div>
-<p style="margin:0;color:${c.charcoal};font-size:14px;line-height:20px">If you do not wish to join this organization, you can safely ignore this email.</p>
+<p style="margin:0 0 16px 0;color:${c.ink}">${INVITE_LINES.password}</p>
+<p style="margin:0;color:${c.charcoal};font-size:14px;line-height:20px">${INVITE_LINES.ignore}</p>
 {{> email/email_footer }}
+`
+}
+
+export function orgInviteText() {
+  return `${INVITE_SUBJECT}
+<!---------------->
+${INVITE_LINES.intro}
+
+${INVITE_LINES.button}: {{{url}}}
+
+${INVITE_LINES.password}
+
+${INVITE_LINES.ignore}
+{{> email/email_footer_text }}
 `
 }
 
@@ -426,6 +452,7 @@ const texts = {
   'templates/email/email_footer.hbs': emailFooter,
   'templates/email/email_footer_text.hbs': emailFooterText,
   'templates/email/send_org_invite.html.hbs': orgInviteHtml,
+  'templates/email/send_org_invite.hbs': orgInviteText,
 }
 const GENERATED = [...Object.keys(texts), ...IMAGES.map(([file]) => file), 'images/favicon.ico'].sort()
 
