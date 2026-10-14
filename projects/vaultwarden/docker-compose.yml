@@ -17,6 +17,11 @@ services:
   vaultwarden:
     image: &vaultwarden-image vaultwarden/server:1.37.4@sha256:efb3cde962015fcc036b2ea625242248611943b27212ebf4392841fb30fad055
     restart: unless-stopped
+    # One variable, `BRANDING_REV`, a hash of the look's files (`branding/build.mjs`). Compose
+    # recreates a service when its configuration changes, not when a bind-mounted file does,
+    # and the server reads its templates once at start, so without this a deploy of a new
+    # look would go green and change nothing. The server ignores the variable.
+    env_file: ./branding/branding.env
     environment:
       DOMAIN: https://${VAULTWARDEN_DOMAIN:-vault.letsrebase.com}
       # Nobody registers on their own. A member is invited by an organisation owner (or,
@@ -52,11 +57,25 @@ services:
       SMTP_PASSWORD: ${VAULTWARDEN_SMTP_PASSWORD:?set it in .env, a Resend API key made for Vaultwarden only}
       SMTP_FROM: ${VAULTWARDEN_MAIL_FROM:-vault@letsrebase.com}
       SMTP_FROM_NAME: Rebase
+      # The look (README, "Look"): the server compiles `scss/user.vaultwarden.scss.hbs` from
+      # this folder and appends it to /css/vaultwarden.css. Mounted read-only from the
+      # repository, so the data directory (and with it the backup) holds nothing of it.
+      TEMPLATES_FOLDER: /templates
     # On the host, outside Docker and outside the repository, like the hub's own data. No
     # default, for the reason `projects/hub/docker-compose.yml` gives for REBASE_DATA_DIR:
     # a `.env` that forgets it must refuse to start, not come up on an empty directory.
     volumes:
       - ${VAULTWARDEN_DATA_DIR:?set it in .env, to its own directory outside the repository}:/data
+      - ./branding/templates:/templates:ro
+      # The favicons, over the image's own at the paths its index.html and manifest read.
+      # Single files, because the image's other pictures in those directories stay as they are.
+      - ./branding/images/favicon-16x16.png:/web-vault/images/favicon-16x16.png:ro
+      - ./branding/images/favicon-32x32.png:/web-vault/images/favicon-32x32.png:ro
+      - ./branding/images/apple-touch-icon.png:/web-vault/images/apple-touch-icon.png:ro
+      - ./branding/images/safari-pinned-tab.svg:/web-vault/images/safari-pinned-tab.svg:ro
+      - ./branding/images/favicon.ico:/web-vault/favicon.ico:ro
+      - ./branding/images/icons/android-chrome-192x192.png:/web-vault/images/icons/android-chrome-192x192.png:ro
+      - ./branding/images/icons/android-chrome-512x512.png:/web-vault/images/icons/android-chrome-512x512.png:ro
     ports:
       # Loopback only, and the address is not a variable: a `.env` can change the port
       # and cannot publish this wider. The host's nginx serves it as

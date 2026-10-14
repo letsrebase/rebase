@@ -374,6 +374,7 @@ jobs:
             # drill that runs them.
             vaultwarden:
               - 'projects/vaultwarden/**'
+              - 'shared/brand/**'
               - '.github/workflows/ci.yml'
               - '.github/workflows/deploy-vaultwarden.yml'
               - '.github/workflows/_deploy-compose.yml'
@@ -866,6 +867,8 @@ jobs:
         run: |
           docker run --rm -v "$PWD/projects/vaultwarden/deploy/vault.letsrebase.conf:/etc/nginx/conf.d/vault.conf:ro" \
             nginx:1.31-alpine nginx -t
+      - name: The look is the brand's and readable
+        run: node --experimental-strip-types --no-warnings projects/vaultwarden/tests/branding.mjs
       - name: Backup and restore drill
         run: projects/vaultwarden/tests/backup-restore.sh
 

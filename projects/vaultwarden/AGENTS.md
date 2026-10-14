@@ -36,6 +36,10 @@ system that holds other people's secrets.
   after anything that changes the bundle's shape.
 - **The member guide is Italian**, because it is read by members; everything else here is
   English. When the clients or the policies change, change the guide in the same PR.
+- **`branding/` is generated, never edited.** The stylesheet and the favicons come out of
+  `shared/brand` through `branding/build.mjs` (README, "Look"); a colour or a logo written
+  into them by hand is a copy that drifts, and `tests/branding.mjs` fails on it. The look is
+  files mounted over upstream's, never a patch to the image or a fork of the web vault.
 
 ## Changing the backup bundle
 
@@ -51,8 +55,10 @@ From the repository root (Docker, node 22, openssl, shellcheck):
 
 ```
 shellcheck projects/vaultwarden/scripts/*.sh projects/vaultwarden/tests/*.sh
+node --experimental-strip-types --no-warnings projects/vaultwarden/tests/branding.mjs
 projects/vaultwarden/tests/backup-restore.sh
 ```
 
-The second starts the real compose file on throwaway servers and takes about two minutes.
-`ci.yml`'s `vaultwarden` job and preflight's `vaultwarden-drill` run the same thing.
+The second checks the generated look against `shared/brand` and the contrast of every pair.
+The third starts the real compose file on throwaway servers and takes about two minutes.
+`ci.yml`'s `vaultwarden` job and preflight's `vaultwarden-drill` run the same three.

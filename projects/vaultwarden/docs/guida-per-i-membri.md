@@ -42,6 +42,37 @@ lo fa vedi solo il tuo spazio personale. Quando succede, nell'app compare l'orga
 Se una voce che ti aspetti non c'è, non è un errore: non è stata assegnata a te. Chiedi a
 chi gestisce la raccolta.
 
+### Come sono organizzate le raccolte
+
+Una **voce** è un singolo accesso (un sito, un servizio, un account) con il suo utente e la
+sua password. Una **raccolta** è una cartella condivisa che raggruppa voci, e ha i suoi
+membri, ciascuno con il suo permesso. Quindi i permessi si decidono per raccolta e per
+persona, non per singola voce:
+
+- **Una password specifica per un account**: una voce per account («Hetzner, console»,
+  «GitHub, organizzazione letsrebase»), dentro la raccolta dell'area a cui appartiene. Ogni
+  servizio ha la sua voce, con la sua password: non si riusa mai la stessa.
+- **Un gruppo di persone che vede le stesse cose**: una raccolta assegnata a tutte quelle
+  persone. Per il cliente X, una raccolta «Cliente X» assegnata a chi ci lavora; chi non ci
+  lavora non la vede. Non usiamo i «gruppi» del server (sono una funzione ancora in prova):
+  si assegna la raccolta ai nomi, uno per uno.
+- **Una voce in più raccolte**: si può, ed è la voce stessa a comparire in entrambe, non una
+  copia. Se cambi la password in un posto, è cambiata dappertutto.
+
+Per aggiungere una voce che serve agli altri, nell'app scegli «Nuovo elemento», come
+proprietario **Rebase** e almeno una raccolta. Puoi farlo solo nelle raccolte in cui hai il
+permesso di modifica: con «solo visualizzazione» non puoi aggiungere voci, e se ti serve lo
+chiedi a chi gestisce la raccolta. Una voce creata nel tuo spazio personale («La mia
+cassaforte») resta tua e di nessun altro. Per condividerla, aprila dal menu e scegli
+«Assegna alle raccolte», poi l'organizzazione Rebase e le raccolte giuste: **la voce passa
+all'organizzazione**, non ne resta una copia personale, e da quel momento la gestisce chi ha
+il permesso sulla raccolta.
+
+I ruoli principali di chi fa parte dell'organizzazione sono tre e si distinguono per quanto vedono: un
+**proprietario** e un **amministratore** aprono tutte le raccolte, anche quelle a cui non
+sono assegnati; un **utente** vede solo le raccolte che gli sono state date. Per questo i
+primi due ruoli restano a poche persone.
+
 ## 4. Iscriviti al recupero dell'account (non saltarlo)
 
 Questo è il passo che decide cosa succede se **dimentichi la password principale**.

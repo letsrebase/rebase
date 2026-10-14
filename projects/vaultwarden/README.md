@@ -9,6 +9,7 @@ is how it runs (REB-648). The members' own page is `docs/guida-per-i-membri.md`,
 docker-compose.yml          the server and its backup service, image pinned by tag and digest
 .env.example                every host variable, and which ones the deploy writes for you
 deploy/vault.letsrebase.conf  the host's nginx vhost
+branding/                   the look of the web vault, generated from shared/brand (see "Look")
 scripts/backup.sh           one encrypted backup, to R2    scripts/backup-loop.sh  its schedule
 scripts/restore.sh          open one backup into an empty directory
 docs/restore.md             the restore runbook
@@ -108,6 +109,57 @@ there, `config.json` holds it and the backup carries it.
   view, view with hidden passwords, edit, edit with hidden passwords, or manage.
   Organisation owners and admins can open every collection, so those roles stay with the
   few people trusted with all of it. `ORG_GROUPS_ENABLED` stays off.
+
+## Look
+
+The web vault is upstream's, unmodified, wearing the rebase brand through three
+mechanisms that survive an image bump because none of them edits the image (REB-688):
+
+- **A stylesheet.** The server compiles `branding/templates/scss/user.vaultwarden.scss.hbs`
+  (`TEMPLATES_FOLDER=/templates`, mounted read-only) and appends it to `/css/vaultwarden.css`,
+  which every page loads. It sets the web vault's own colour properties (both the older RGB
+  triplets and the newer hex ones, light and dark theme) to palette tokens, and replaces the
+  inline Vaultwarden wordmark of the pre-login header and of the sidebar with `lockup.svg`
+  (`lockup-paper.svg` on a dark ground: the vault's sidebar and the dark theme; the Admin
+  Console's sidebar is light in the light theme and takes the ink one; a collapsed sidebar
+  takes the mark alone), and the boot splash's logo likewise.
+- **Favicons**, mounted file by file over the image's own at the paths `index.html` and the
+  manifest read (checked against the served page of 1.37.4).
+- **`branding/branding.env`**, a hash of the files above, loaded as the server's `env_file`.
+  Compose recreates a service when its configuration changes and not when a bind-mounted
+  file's content does, and the server reads its templates once and caches the stylesheet, so
+  without the hash a deploy of a new look would go green and change nothing.
+- **Nothing in the data directory**, so the backup carries none of it and a restore onto a
+  fresh host gets the look back from the repository.
+
+Nothing here restates a colour or a drawing: `branding/build.mjs` reads `shared/brand/palette.css`
+and the two lockups and writes the files, and `tests/branding.mjs` (run by the `vaultwarden`
+job and by preflight) fails when the stylesheet or the pinned-tab icon is not what the brand
+produces, when `branding.env` is not the hash of the files as committed, when an image is
+missing or the wrong size, or when a colour pair is below AA (4.5:1) in either theme,
+measured against the web vault's own grounds. It cannot tell a favicon drawn in last
+month's palette from this month's: redraw them whenever the mark changes.
+Change a colour in `palette.css`, then:
+
+```
+pnpm install --frozen-lockfile --filter @rebase/brand
+pnpm --filter @rebase/brand exec node ../../projects/vaultwarden/branding/build.mjs
+```
+
+What is deliberately not themed: the browser extension and the mobile apps (their look is
+Bitwarden's and is not served from here), the mails, the page title, the browser chrome
+colours (`theme-color`, the manifest's colours and the pinned tab's tint, all still
+Bitwarden's blue), the one-time welcome dialog and the illustrations other than the
+pre-login pictures, and the attribution line in the footer, which says what this server is
+and is left alone.
+
+**After bumping the image**, check it by eye as well as by the drill: the stylesheet selects
+the web vault's own elements (`bit-landing-header header a bit-svg`, `bit-nav-logo a bit-svg`,
+`app-organization-layout`, a link's `!tw-h-[55px]` class when the sidebar is collapsed) and
+sets its own custom properties, none of which upstream promises. The drill proves the
+stylesheet, the lockup rules and every mounted image are served; a renamed element would
+show only as the Vaultwarden wordmark coming back, so look at the login page, the vault and
+the Admin Console, expanded and collapsed, after a bump.
 
 ## Backup
 
