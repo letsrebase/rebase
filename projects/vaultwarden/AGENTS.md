@@ -55,7 +55,7 @@ From the repository root (Docker, node 22, openssl, shellcheck):
 
 ```
 shellcheck projects/vaultwarden/scripts/*.sh projects/vaultwarden/tests/*.sh
-node --no-warnings projects/vaultwarden/tests/branding.mjs
+node --experimental-strip-types --no-warnings projects/vaultwarden/tests/branding.mjs
 projects/vaultwarden/tests/backup-restore.sh
 ```
 

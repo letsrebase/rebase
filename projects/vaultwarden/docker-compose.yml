@@ -17,6 +17,11 @@ services:
   vaultwarden:
     image: &vaultwarden-image vaultwarden/server:1.37.4@sha256:efb3cde962015fcc036b2ea625242248611943b27212ebf4392841fb30fad055
     restart: unless-stopped
+    # One variable, `BRANDING_REV`, a hash of the look's files (`branding/build.mjs`). Compose
+    # recreates a service when its configuration changes, not when a bind-mounted file does,
+    # and the server reads its templates once at start, so without this a deploy of a new
+    # look would go green and change nothing. The server ignores the variable.
+    env_file: ./branding/branding.env
     environment:
       DOMAIN: https://${VAULTWARDEN_DOMAIN:-vault.letsrebase.com}
       # Nobody registers on their own. A member is invited by an organisation owner (or,

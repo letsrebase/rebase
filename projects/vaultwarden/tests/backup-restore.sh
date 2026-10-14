@@ -86,13 +86,23 @@ node "$here/drill.mjs" refuse "$base" stranger@example.test
 admin=$(curl -s -o "$tmp/admin.out" -w '%{http_code}' "$base/admin")
 echo "GET /admin: HTTP $admin: $(head -c 200 "$tmp/admin.out" | tr '\n' ' ')"
 grep -qi 'admin panel is disabled' "$tmp/admin.out" || { echo "FAIL: the admin page is not disabled" >&2; exit 1; }
-# The look (REB-688): the server took the SCSS template and the mounted favicon, which is
+# The look (REB-688): the server took the SCSS template and every mounted image, which is
 # what an image bump that moves either mechanism would break without a word.
 curl -s "$base/css/vaultwarden.css" > "$tmp/vaultwarden.css"
 watermelon_deep=$(sed -n 's/^ *--color-watermelon-deep: *\(#[0-9a-fA-F]*\);.*/\1/p' "$project_dir/../../shared/brand/palette.css" | tr 'A-F' 'a-f')
+[ -n "$watermelon_deep" ] || { echo "FAIL: no --color-watermelon-deep in palette.css" >&2; exit 1; }
 grep -q -- "--color-bg-brand: *$watermelon_deep" "$tmp/vaultwarden.css" || { echo "FAIL: the brand colours are not in /css/vaultwarden.css" >&2; exit 1; }
-curl -s "$base/favicon.ico" | cmp - "$project_dir/branding/images/favicon.ico" || { echo "FAIL: /favicon.ico is not the mounted one" >&2; exit 1; }
-echo "the look is served: brand colours in the stylesheet, our favicon"
+grep -q 'bit-landing-header header a bit-svg' "$tmp/vaultwarden.css" || { echo "FAIL: the lockup rules are not in /css/vaultwarden.css" >&2; exit 1; }
+grep -q 'data:image/svg+xml;base64' "$tmp/vaultwarden.css" || { echo "FAIL: the lockup is not in /css/vaultwarden.css" >&2; exit 1; }
+mounts=0
+while IFS= read -r line; do
+  src=${line#*- ./}; src=${src%%:*}
+  dst=${line#*:}; dst=${dst%%:*}
+  curl -fsS "$base${dst#/web-vault}" | cmp - "$project_dir/$src" || { echo "FAIL: $dst is not $src" >&2; exit 1; }
+  mounts=$((mounts + 1))
+done < <(grep -E '^ *- \./branding/images/.*:/web-vault/' "$project_dir/docker-compose.yml")
+[ "$mounts" -gt 0 ] || { echo "FAIL: the compose file mounts no favicon" >&2; exit 1; }
+echo "the look is served: brand colours and lockup rules in the stylesheet, $mounts mounted images as committed"
 [ "$(node "$here/drill.mjs" read "$base" "$email" "$password")" = "$item" ] || { echo "FAIL: item missing before backup" >&2; exit 1; }
 
 step "2b. the admin page opens with a hash and closes when the line is removed"

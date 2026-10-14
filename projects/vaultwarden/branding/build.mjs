@@ -5,21 +5,26 @@
 //   node projects/vaultwarden/branding/build.mjs --check   fail when a committed file is
 //                                                          not what the brand produces now
 //
-// What it writes, all of it committed so the deploy rsyncs this directory and nothing
-// reaches outside it:
+// What it writes, all of it committed. The deploy rsyncs the whole checkout, but the compose
+// file mounts from this directory only, so the mounts need nothing from outside it:
 //
 //   templates/scss/user.vaultwarden.scss.hbs   the server compiles it and appends it to
 //       /css/vaultwarden.css, which every page loads (`TEMPLATES_FOLDER`, compose file):
 //       the palette on the web vault's own custom properties, and the lockup in place of
-//       the Vaultwarden wordmark of the pre-login header and of the sidebar.
+//       the Vaultwarden wordmark of the pre-login header, the sidebar and the splash.
 //   images/*                                   the favicons, mounted over the image's own
 //       (compose file), drawn from the four tiles of the mark.
+//   branding.env                               a hash of all of the above, so that a new
+//       look recreates the container (see `revision()`).
 //
 // The PNGs and the .ico come from a browser (`@playwright/test`, through the brand package)
-// and are not byte-stable across Chromium versions, so `--check` compares the text files
-// and only asks that the images exist at the sizes the compose file mounts them as.
-// Redraw them with `pnpm --filter @rebase/brand exec node ../../projects/vaultwarden/branding/build.mjs`
-// when the mark changes.
+// and are not byte-stable across Chromium versions, so `--check` compares the text files,
+// asks that the images exist at the sizes the compose file mounts them as, and that
+// `branding.env` is the hash of the files as committed. A palette or lockup change that
+// leaves the favicons stale is not caught: redraw them with
+// `pnpm --filter @rebase/brand exec node ../../projects/vaultwarden/branding/build.mjs`
+// whenever the mark changes.
+import { createHash } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -117,6 +122,11 @@ export const PAIRS = {
     ['#ffffff', 'bg-brand-strong', 'the label of a hovered primary button'],
     ['#ffffff', 'nav-bg-primary', 'the sidebar text'],
     ['#ffffff', 'nav-bg-primary-strong', 'the active sidebar item'],
+    // The lockup, which is drawn in these two inks, on the three grounds the web vault puts
+    // it on. #e6ecf2 is the light Admin Console sidebar.
+    ['prussian-blue', 'paper', 'the lockup in the pre-login header'],
+    ['prussian-blue', '#e6ecf2', 'the lockup on the Admin Console sidebar'],
+    ['paper', 'nav-bg-primary', 'the lockup on the vault sidebar'],
   ],
   dark: [
     ['fg-brand', '#0f172b', 'a link on the dark ground'],
@@ -126,6 +136,12 @@ export const PAIRS = {
     ['fg-brand', 'bg-brand-soft', 'a link on a selected row'],
     ['#ffffff', 'nav-bg-primary', 'the sidebar text'],
     ['#ffffff', 'nav-bg-primary-strong', 'the active sidebar item'],
+    // The lockup, which is drawn in these two inks (README of shared/brand), on the three
+    // grounds the web vault puts it on. #121a27 is the dark page ground, #1d293d the dark
+    // Admin Console sidebar.
+    ['paper', '#121a27', 'the lockup in the pre-login header'],
+    ['paper', '#1d293d', 'the lockup on the Admin Console sidebar'],
+    ['paper', 'nav-bg-primary', 'the lockup on the vault sidebar'],
   ],
 }
 
@@ -140,7 +156,10 @@ function block(theme) {
   ].join('\n')
 }
 
-const dataUri = (svg) => `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`
+// A lockup carries its design notes as an XML comment and pretty-printing; none of that
+// belongs in a stylesheet every visitor downloads.
+const compact = (svg) => svg.replace(/<!--[\s\S]*?-->/g, '').replace(/>\s+</g, '><').trim()
+const dataUri = (svg) => `data:image/svg+xml;base64,${Buffer.from(compact(svg)).toString('base64')}`
 const read = (f) => readFileSync(join(BRAND, f), 'utf8')
 
 // Both lockups share one viewBox: the mark and the word at cap height, then the graft
@@ -152,10 +171,52 @@ for (const f of ['lockup.svg', 'lockup-paper.svg']) {
 }
 const ratio = '3943.5 / 945'
 
+// The four tiles of a lockup, which is where the mark's order and colours live.
+function tilesOf(source) {
+  const tiles = [...read(source).matchAll(/<rect x="(\d+)" y="(\d+)" width="350" height="350" fill="(#[0-9a-f]{6})"\/>/g)]
+  if (tiles.length !== 4) throw new Error(`${source} has ${tiles.length} tiles, expected 4`)
+  return tiles.map(([, x, y, fill]) => ({ x: Number(x), y: Number(y), fill }))
+}
+
+// The mark alone, 700 by 700 with `pad` around it and an optional ground.
+function markSvg({ pad = 0, ground = null, source = 'lockup.svg' } = {}) {
+  const size = 700 + 2 * pad
+  const rects = tilesOf(source)
+    .map(({ x, y, fill }) => `<rect x="${x + pad}" y="${y + pad}" width="350" height="350" fill="${fill}"/>`)
+    .join('')
+  const bg = ground ? `<rect width="${size}" height="${size}" fill="${ground}"/>` : ''
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" shape-rendering="crispEdges">${bg}${rects}</svg>`
+}
+
 export function scss() {
-  const logo = (file) => `  background: url('${dataUri(read(file))}') no-repeat left center / contain;`
+  // Each picture is a custom property holding its data URI once, so the stylesheet does not
+  // carry a lockup per rule.
+  const pictures = {
+    'lockup-ink': read('lockup.svg'),
+    'lockup-paper': read('lockup-paper.svg'),
+    'mark-ink': markSvg(),
+    'mark-paper': markSvg({ source: 'lockup-paper.svg' }),
+  }
+  const defs = Object.entries(pictures)
+    .map(([name, svg]) => `  --rebase-${name}: url('${dataUri(svg)}');`)
+    .join('\n')
+  const fill = (name) => `  background-image: var(--rebase-${name});`
+  const content = (name) => `  content: var(--rebase-${name});`
+  const lockupInk = fill('lockup-ink')
+  const lockupPaper = fill('lockup-paper')
+  const markInk = fill('mark-ink')
+  const markPaper = fill('mark-paper')
+  // The sidebar of the Admin Console is light in the light theme (`variant="secondary"`),
+  // the one of the vault is dark in both; a collapsed sidebar has room for the mark only,
+  // and says so with the `!tw-h-[55px]` class on its link.
+  const collapsed = 'a[class~="!tw-h-[55px]"]'
+  const lightConsole = '.theme_light app-organization-layout'
   return `// Generated by projects/vaultwarden/branding/build.mjs from shared/brand. Edit that, never this file.
 // The server appends this to /css/vaultwarden.css (README, "Look").
+
+:root {
+${defs}
+}
 
 .theme_light {
 ${block('light')}
@@ -165,46 +226,55 @@ ${block('light')}
 ${block('dark')}
 }
 
-// The wordmark of the pre-login header and of the sidebar. The web vault draws it as an
-// inline <svg>, so it cannot be swapped for a file: the drawing is hidden and the lockup
-// takes its box.
+// The wordmark of the pre-login header, the sidebar and the page that shows before the
+// app has started. The web vault draws the first two as an inline <svg>, so they cannot
+// be swapped for a file: the drawing is hidden and the lockup takes the box.
 bit-landing-header header a bit-svg,
 bit-nav-logo a bit-svg {
-  display: block;
   width: 100%;
   aspect-ratio: ${ratio};
-  max-height: 3rem;
+  background: no-repeat left center / contain;
 }
 bit-landing-header header a bit-svg > svg,
 bit-nav-logo a bit-svg > svg {
   display: none;
 }
 bit-landing-header header a bit-svg {
-${logo('lockup.svg')}
+${lockupInk}
 }
 .theme_dark bit-landing-header header a bit-svg,
 bit-nav-logo a bit-svg {
-${logo('lockup-paper.svg')}
+${lockupPaper}
+}
+${lightConsole} bit-nav-logo a bit-svg {
+${lockupInk}
+}
+bit-nav-logo ${collapsed} bit-svg {
+  width: 1.625rem;
+  aspect-ratio: 1;
+${markPaper}
+}
+${lightConsole} bit-nav-logo ${collapsed} bit-svg {
+${markInk}
+}
+app-root img.new-logo-themed {
+${content('lockup-ink')}
+}
+.theme_dark app-root img.new-logo-themed {
+${content('lockup-paper')}
 }
 `
 }
 
-// The four tiles of the mark alone, 700 by 700, read out of the lockup so the order and
-// the colours stay the brand's.
-function markSvg({ pad = 0, ground = null } = {}) {
-  const tiles = [...read('lockup.svg').matchAll(/<rect x="(\d+)" y="(\d+)" width="350" height="350" fill="(#[0-9a-f]{6})"\/>/g)]
-  if (tiles.length !== 4) throw new Error(`lockup.svg has ${tiles.length} tiles, expected 4`)
-  const size = 700 + 2 * pad
-  const rects = tiles
-    .map(([, x, y, , fill]) => `<rect x="${Number(x) + pad}" y="${Number(y) + pad}" width="350" height="350" fill="${fill}"/>`)
-    .join('')
-  const bg = ground ? `<rect width="${size}" height="${size}" fill="${ground}"/>` : ''
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" shape-rendering="crispEdges">${bg}${rects}</svg>`
-}
-
-// Safari's pinned tab takes a single-colour mask, whatever colour the tiles had.
+// Safari's pinned tab takes a single-colour mask, whatever colour the tiles had: the two
+// ink tiles of the mark, which sit on a diagonal.
 export function pinnedSvg() {
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 700"><path fill="#000" d="M0 0h350v350H0zM350 350h350v350H350zM0 350h350v350H0z"/></svg>\n`
+  const ink = token('prussian-blue')
+  const rects = tilesOf('lockup.svg')
+    .filter(({ fill }) => fill === ink)
+    .map(({ x, y }) => `<rect x="${x}" y="${y}" width="350" height="350"/>`)
+    .join('')
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 700" fill="#000">${rects}</svg>\n`
 }
 
 export const IMAGES = [
@@ -258,6 +328,20 @@ const texts = {
   'templates/scss/user.vaultwarden.scss.hbs': scss,
   'images/safari-pinned-tab.svg': pinnedSvg,
 }
+const GENERATED = [...Object.keys(texts), ...IMAGES.map(([file]) => file), 'images/favicon.ico'].sort()
+
+// A hash of every file the container mounts. Docker Compose recreates a service when its
+// own configuration changes and not when the content of a bind-mounted file does, and the
+// server reads its templates once at start and caches the compiled stylesheet, so a deploy
+// of a new look would go green and change nothing. The hash rides in an `env_file`, which
+// is part of the configuration, so a new look means a new container.
+export function revision() {
+  const hash = createHash('sha256')
+  for (const file of GENERATED) hash.update(file).update(readFileSync(join(HERE, file)))
+  return hash.digest('hex').slice(0, 16)
+}
+const envFile = () =>
+  `# Generated by branding/build.mjs: a hash of the files this directory mounts into the server,\n# so that changing the look recreates the container (README, "Look"). Never edit it.\nBRANDING_REV=${revision()}\n`
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   if (CHECK) {
@@ -280,6 +364,11 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       console.error('branding/images/favicon.ico is missing')
       bad++
     }
+    const envPath = join(HERE, 'branding.env')
+    if (bad === 0 && (!existsSync(envPath) || readFileSync(envPath, 'utf8') !== envFile())) {
+      console.error('branding/branding.env does not match the files it hashes: run build.mjs')
+      bad++
+    }
     process.exit(bad ? 1 : 0)
   }
   for (const [file, make] of Object.entries(texts)) {
@@ -287,5 +376,6 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     writeFileSync(join(HERE, file), make())
   }
   await writeImages()
+  writeFileSync(join(HERE, 'branding.env'), envFile())
   console.log('branding written')
 }

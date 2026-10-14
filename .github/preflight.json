@@ -333,7 +333,7 @@
     },
     {
       "id": "vaultwarden-drill",
-      "run": "shellcheck projects/vaultwarden/scripts/*.sh projects/vaultwarden/tests/*.sh && node --no-warnings projects/vaultwarden/tests/branding.mjs && projects/vaultwarden/tests/backup-restore.sh",
+      "run": "shellcheck projects/vaultwarden/scripts/*.sh projects/vaultwarden/tests/*.sh && node --experimental-strip-types --no-warnings projects/vaultwarden/tests/branding.mjs && projects/vaultwarden/tests/backup-restore.sh",
       "when": [
         "projects/vaultwarden/**",
         "shared/brand/**"
