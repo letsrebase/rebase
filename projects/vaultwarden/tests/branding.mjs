@@ -6,7 +6,8 @@
 //    so a palette or lockup change that nobody regenerated fails here.
 // 2. Every colour pair the stylesheet creates is readable: text at WCAG AA (4.5:1), measured
 //    with `shared/brand/contrast.ts` against the web vault's own grounds, in both themes.
-// 3. The favicon's four tiles are the mark's, in the palette's colours.
+// 3. Every icon's four tiles are the mark's, in the palette's colours, and the .ico is the
+//    32 pixel PNG.
 // 4. Every file the compose file mounts from `branding/` exists.
 import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
@@ -16,7 +17,7 @@ import { inflateSync } from 'node:zlib'
 
 import { AA_TEXT, contrastRatio } from '../../../shared/brand/contrast.ts'
 import { BRAND_TILES } from '../../../shared/brand/mark.ts'
-import { PAIRS, resolvePair, token } from '../branding/build.mjs'
+import { IMAGES, PAIRS, resolvePair, token } from '../branding/build.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const project = join(here, '..')
@@ -82,19 +83,31 @@ function paeth(a, b, c) {
   return pa <= pb && pa <= pc ? a : pb <= pc ? b : c
 }
 const hex = ([r, g, b]) => `#${[r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('')}`
-const favicon = pixels(readFileSync(join(project, 'branding', 'images', 'favicon-32x32.png')))
-const quarter = favicon.width / 4
-const tiles = [
-  [quarter, quarter, BRAND_TILES[0]],
-  [3 * quarter, quarter, BRAND_TILES[1]],
-  [quarter, 3 * quarter, BRAND_TILES[2]],
-  [3 * quarter, 3 * quarter, BRAND_TILES[3]],
-]
-for (const [x, y, name] of tiles) {
-  const want = token(name === 'ink' ? 'prussian-blue' : name)
-  const got = hex(favicon.at(x, y))
-  if (got !== want) fail(`favicon-32x32.png: the ${name} tile is ${got}, shared/brand says ${want}`)
+// Every generated icon, not only the 32 pixel one, and the .ico must carry that one.
+for (const [file, size, pad, ground] of IMAGES) {
+  const icon = pixels(readFileSync(join(project, 'branding', file)))
+  // The mark occupies 700 of the 700 + 2 * pad units, so a tile's middle sits a quarter and
+  // three quarters of the way across the 700.
+  const at = (fraction) => Math.round(((pad + 700 * fraction) / (700 + 2 * pad)) * size)
+  const tiles = [
+    [at(0.25), at(0.25), BRAND_TILES[0]],
+    [at(0.75), at(0.25), BRAND_TILES[1]],
+    [at(0.25), at(0.75), BRAND_TILES[2]],
+    [at(0.75), at(0.75), BRAND_TILES[3]],
+  ]
+  for (const [x, y, name] of tiles) {
+    const want = token(name === 'ink' ? 'prussian-blue' : name)
+    const got = hex(icon.at(x, y))
+    if (got !== want) fail(`${file}: the ${name} tile is ${got}, shared/brand says ${want}`)
+  }
+  if (ground) {
+    const got = hex(icon.at(1, 1))
+    if (got !== token(ground)) fail(`${file}: the ground is ${got}, shared/brand says ${token(ground)}`)
+  }
 }
+const ico = readFileSync(join(project, 'branding', 'images', 'favicon.ico'))
+const png32 = readFileSync(join(project, 'branding', 'images', 'favicon-32x32.png'))
+if (!ico.subarray(22).equals(png32)) fail('favicon.ico does not carry favicon-32x32.png')
 
 for (const file of ['templates/scss/user.vaultwarden.scss.hbs', 'images/safari-pinned-tab.svg']) {
   if (readFileSync(join(project, 'branding', file), 'utf8').includes('undefined')) fail(`branding/${file} contains "undefined"`)

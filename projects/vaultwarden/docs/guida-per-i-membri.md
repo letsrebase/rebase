@@ -60,9 +60,13 @@ persona, non per singola voce:
   copia. Se cambi la password in un posto, è cambiata dappertutto.
 
 Per aggiungere una voce che serve agli altri, nell'app scegli «Nuovo elemento», come
-proprietario **Rebase** e almeno una raccolta. Una voce creata nel tuo spazio personale
-(«La mia cassaforte») resta tua e di nessun altro. Per condividerla, aprila dal menu e scegli
-«Assegna alle raccolte», poi l'organizzazione Rebase e le raccolte giuste.
+proprietario **Rebase** e almeno una raccolta. Puoi farlo solo nelle raccolte in cui hai il
+permesso di modifica: con «solo visualizzazione» non puoi aggiungere voci, e se ti serve lo
+chiedi a chi gestisce la raccolta. Una voce creata nel tuo spazio personale («La mia
+cassaforte») resta tua e di nessun altro. Per condividerla, aprila dal menu e scegli
+«Assegna alle raccolte», poi l'organizzazione Rebase e le raccolte giuste: **la voce passa
+all'organizzazione**, non ne resta una copia personale, e da quel momento la gestisce chi ha
+il permesso sulla raccolta.
 
 I ruoli principali di chi fa parte dell'organizzazione sono tre e si distinguono per quanto vedono: un
 **proprietario** e un **amministratore** aprono tutte le raccolte, anche quelle a cui non
