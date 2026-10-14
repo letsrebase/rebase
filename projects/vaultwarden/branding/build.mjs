@@ -465,7 +465,7 @@ Rebase password manager
 // device, invitation confirmed) reached the inbox.
 const INVITE_SUBJECT = 'Your invitation to the Rebase password manager'
 const INVITE_LINES = {
-  intro: 'You have been invited to join the {{org_name}} organization on the Rebase password manager.',
+  intro: 'Rebase has given you a place in its password manager, in the {{org_name}} organization.',
   button: 'Accept the invitation',
   password:
     'Open the link and choose a master password that is yours alone: it is the only one you need to sign in, and nobody at Rebase will ever ask you for it.',
