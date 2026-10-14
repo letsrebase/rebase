@@ -113,7 +113,15 @@ for (const file of ['templates/scss/user.vaultwarden.scss.hbs', 'images/safari-p
   if (readFileSync(join(project, 'branding', file), 'utf8').includes('undefined')) fail(`branding/${file} contains "undefined"`)
 }
 
+// The mails carry no image and no link away from the page they are about, and the compose
+// file stops the server attaching its own.
+for (const file of ['email_header.hbs', 'email_footer.hbs', 'email_footer_text.hbs', 'send_org_invite.html.hbs']) {
+  const body = readFileSync(join(project, 'branding', 'templates', 'email', file), 'utf8')
+  if (/<img|github|cid:/i.test(body)) fail(`branding/templates/email/${file} has an image or a GitHub link`)
+}
+
 const compose = readFileSync(join(project, 'docker-compose.yml'), 'utf8')
+if (!compose.includes("SMTP_EMBED_IMAGES: 'false'")) fail("docker-compose.yml lets the server attach its inline images (SMTP_EMBED_IMAGES: 'false')")
 const mounted = [...compose.matchAll(/^\s*- (\.\/branding\/[^:]+):/gm)].map((m) => m[1])
 if (mounted.length === 0) fail('docker-compose.yml mounts nothing from branding/')
 if (!compose.includes('env_file: ./branding/branding.env')) fail('docker-compose.yml does not load branding/branding.env, so a new look would not recreate the container')

@@ -16,7 +16,9 @@ ufficiali di Bitwarden; il server a cui si collegano lo scegli tu al passo 2.
 ## 2. Accetta l'invito e punta l'app al nostro server
 
 1. Ti arriva una mail da **vault@letsrebase.com**: «Unisciti all'organizzazione Rebase».
-   Apri il link: si apre `vault.letsrebase.com`. Se non la trovi, guarda nello spam.
+   Apri il link: si apre `vault.letsrebase.com`. Se non la trovi, guarda nello spam: a volte i
+   filtri la mettono lì, soprattutto la prima. Aprila e usa «Non è spam», così le prossime
+   arrivano in posta in arrivo.
 2. Scegli la **password principale** (master password). Usane una lunga, solo tua, che
    non usi altrove: una frase di quattro o cinque parole va bene. Non è la password della
    tua mail e il server non la conosce.
