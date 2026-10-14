@@ -129,6 +129,10 @@ export const PAIRS = {
     ['prussian-blue', 'paper', 'the lockup in the pre-login header'],
     ['prussian-blue', '#e6ecf2', 'the lockup on the Admin Console sidebar'],
     ['paper', 'nav-bg-primary', 'the lockup on the vault sidebar'],
+    // The «password manager» label under it: charcoal on the two light grounds, paper on the
+    // dark sidebar (the same pairs as the lockup for the last).
+    ['charcoal-blue', 'paper', 'the label under the lockup in the pre-login header'],
+    ['charcoal-blue', '#e6ecf2', 'the label under the lockup on the Admin Console sidebar'],
     // The mails, which have no dark theme: ink on their white card, the small print on paper.
     ['prussian-blue', '#ffffff', 'the text of a mail'],
     ['charcoal-blue', 'paper', 'the small print of a mail'],
@@ -172,10 +176,22 @@ const read = (f) => readFileSync(join(BRAND, f), 'utf8')
 // under it, so the picture is wider than tall (3943.5 by 945).
 for (const f of ['lockup.svg', 'lockup-paper.svg']) {
   if (!read(f).includes('viewBox="0 0 3943.5 945"')) {
-    throw new Error(`${f} changed shape: update the aspect ratio in build.mjs`)
+    throw new Error(`${f} changed shape: update the crop in build.mjs`)
   }
 }
-const ratio = '3943.5 / 945'
+
+// The password manager draws the mark and the word without the graft, the dotted line that
+// runs on under the word (REB-692: it reads as a stray rule in a sidebar). The graft is the
+// lockup's second group of rects and lies below the word's baseline overshoot (714), so
+// the product's lockup is the same file with that group dropped and the box cut at 714.
+// The site's and the hub's headers keep the full lockup.
+const GRAFT_FREE_HEIGHT = 714
+const lockupWithoutGraft = (svg) => {
+  const groups = svg.match(/<g shape-rendering="crispEdges">[\s\S]*?<\/g>/g) ?? []
+  if (groups.length !== 2) throw new Error(`a lockup has ${groups.length} rect groups, expected the tiles and the graft`)
+  return svg.replace(groups[1], '').replace('viewBox="0 0 3943.5 945"', `viewBox="0 0 3943.5 ${GRAFT_FREE_HEIGHT}"`)
+}
+const ratio = `3943.5 / ${GRAFT_FREE_HEIGHT}`
 
 // The four tiles of a lockup, which is where the mark's order and colours live.
 function tilesOf(source) {
@@ -198,8 +214,8 @@ export function scss() {
   // Each picture is a custom property holding its data URI once, so the stylesheet does not
   // carry a lockup per rule.
   const pictures = {
-    'lockup-ink': read('lockup.svg'),
-    'lockup-paper': read('lockup-paper.svg'),
+    'lockup-ink': lockupWithoutGraft(read('lockup.svg')),
+    'lockup-paper': lockupWithoutGraft(read('lockup-paper.svg')),
     'mark-ink': markSvg(),
     'mark-paper': markSvg({ source: 'lockup-paper.svg' }),
   }
@@ -262,6 +278,41 @@ ${markPaper}
 }
 ${lightConsole} bit-nav-logo ${collapsed} bit-svg {
 ${markInk}
+}
+
+// «password manager» under the wordmark, in the page's own face, so that the product says
+// what it is where the name is (REB-692), as the mails do. It starts where the word does
+// (the word begins 24.4% along the lockup) and is sized from the link's own width, so one
+// rule holds at the 128px of a phone, the 200px of the header and the sidebar's 248px.
+// A collapsed sidebar has room for the mark only.
+bit-landing-header header a,
+bit-nav-logo a {
+  container-type: inline-size;
+}
+bit-landing-header header a::after,
+bit-nav-logo a::after {
+  content: 'password manager';
+  display: block;
+  box-sizing: border-box;
+  padding-left: 24.4%;
+  margin-top: 0.35em;
+  white-space: nowrap;
+  font-size: 5.2cqw;
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: ${token('charcoal-blue')};
+}
+.theme_dark bit-landing-header header a::after,
+bit-nav-logo a::after {
+  color: ${token('paper')};
+}
+${lightConsole} bit-nav-logo a::after {
+  color: ${token('charcoal-blue')};
+}
+bit-nav-logo ${collapsed}::after {
+  display: none;
 }
 app-root img.new-logo-themed {
 ${content('lockup-ink')}
@@ -330,13 +381,13 @@ async function writeImages() {
   writeFileSync(join(HERE, 'images/favicon.ico'), Buffer.concat([head, png]))
 }
 
-// The mails (REB-690). Vaultwarden's own header and footer attach the Vaultwarden wordmark
-// and a GitHub icon that links to upstream's repository, and every mail it sends has the
-// shape of every other self-hosted instance's: Gmail put the first invitation in Spam as
-// «similar to messages identified as spam in the past» although SPF, DKIM and DMARC all
-// passed. These partials draw the mark from table cells, in the palette, with no image
-// and no link to anywhere but the page the mail is about; with `SMTP_EMBED_IMAGES=false`
-// (compose file) the mail carries no attachment either.
+// The mails (REB-690, REB-692). Vaultwarden's own header and footer attach the Vaultwarden
+// wordmark and a GitHub icon that links to upstream's repository. Ours draw the mark from
+// table cells, in the palette, with no image and no link to anywhere but the page the mail
+// is about; `SMTP_EMBED_IMAGES=false` (compose file) switches off the two attachments the
+// server adds to every mail whatever its template uses. Every mail says «password manager»
+// where a reader looks first: the sender's display name (compose file), the label under the
+// wordmark, the footer, and in the invitation the subject and its first sentence.
 const mail = () => ({
   ink: token('prussian-blue'),
   paper: token('paper'),
@@ -348,7 +399,7 @@ const mail = () => ({
 
 export function emailHeader() {
   const c = mail()
-  const cell = (bg) => `<td width="14" height="14" bgcolor="${bg}" style="width:14px;height:14px;font-size:0;line-height:0">&nbsp;</td>`
+  const cell = (bg) => `<td width="18" height="18" bgcolor="${bg}" style="width:18px;height:18px;font-size:0;line-height:0">&nbsp;</td>`
   // The mark's tiles in the lockup's own order and colours: top row, then bottom row.
   const [a, b, d, e] = tilesOf('lockup.svg')
     .sort((p, q) => p.y - q.y || p.x - q.x)
@@ -360,7 +411,7 @@ export function emailHeader() {
 <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 <meta name="color-scheme" content="light">
 <meta name="supported-color-schemes" content="light">
-<title>Rebase</title>
+<title>Rebase password manager</title>
 <style>a{color:${c.action}}</style>
 </head>
 <body bgcolor="${c.paper}" style="margin:0;padding:0;background-color:${c.paper};color:${c.ink};font-family:Helvetica,Arial,sans-serif;font-size:16px;line-height:24px">
@@ -375,7 +426,7 @@ export function emailHeader() {
 <tr>${cell(d)}${cell(e)}</tr>
 </table>
 </td>
-<td valign="middle" style="font-size:26px;line-height:28px;font-weight:bold;letter-spacing:-0.035em;color:${c.ink}">rebase</td>
+<td valign="middle" style="color:${c.ink}"><div style="font-size:26px;line-height:24px;font-weight:bold;letter-spacing:-0.035em">rebase</div><div style="padding-top:2px;font-size:11px;line-height:12px;font-weight:bold;letter-spacing:0.16em;text-transform:uppercase;color:${c.charcoal}">password manager</div></td>
 </tr></table>
 </td></tr>
 <tr><td bgcolor="#ffffff" style="background-color:#ffffff;border-top:4px solid ${c.ink};padding:28px 24px;color:${c.ink};font-size:16px;line-height:24px">
@@ -407,9 +458,9 @@ Rebase password manager
 // team, in Italian, and it does not read like upstream's English template: Gmail kept filing
 // the first one under Spam after the frame changed, while the mails to an address that
 // already had an account (welcome, new device, invitation confirmed) reached the inbox.
-const INVITE_SUBJECT = 'Invito a {{{org_name}}}, il gestore di password'
+const INVITE_SUBJECT = 'Invito al password manager di {{{org_name}}}'
 const INVITE_LINES = {
-  intro: 'Ti hanno invitato a entrare in {{org_name}}, il gestore di password del team.',
+  intro: 'Ti hanno invitato a usare il password manager di Rebase, nell\'organizzazione {{org_name}}.',
   button: "Accetta l'invito",
   password:
     'Apri il link e scegli una password principale solo tua: è la sola che serve per entrare e nessuno di Rebase te la chiederà mai.',

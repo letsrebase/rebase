@@ -126,6 +126,29 @@ for (const file of ['email_header.hbs', 'email_footer.hbs', 'email_footer_text.h
 
 const compose = readFileSync(join(project, 'docker-compose.yml'), 'utf8')
 if (!/^\s+SMTP_EMBED_IMAGES: 'false'\s*$/m.test(compose)) fail("docker-compose.yml lets the server attach its inline images (SMTP_EMBED_IMAGES: 'false')")
+if (!/^\s+SMTP_FROM_NAME: Rebase Password Manager\s*$/m.test(compose)) fail('docker-compose.yml does not send the mails as «Rebase Password Manager» (SMTP_FROM_NAME)')
+if (!/^\s+TEMPLATES_FOLDER: \/templates\s*$/m.test(compose)) fail('docker-compose.yml does not point TEMPLATES_FOLDER at the mounted /templates, so no override would load')
+
+// Every mail says «password manager» where a reader looks first: the frame's head and
+// footer, and the invitation's subject and body.
+for (const file of ['email_header.hbs', 'email_footer.hbs', 'email_footer_text.hbs', 'send_org_invite.html.hbs', 'send_org_invite.hbs']) {
+  const body = readFileSync(join(project, 'branding', 'templates', 'email', file), 'utf8')
+  if (!/password manager/i.test(body)) fail(`branding/templates/email/${file} does not say «password manager»`)
+}
+const invite = readFileSync(join(project, 'branding', 'templates', 'email', 'send_org_invite.hbs'), 'utf8')
+if (!/^Invito al password manager/i.test(invite.split('\n')[0])) fail('the invitation subject does not name the password manager')
+
+// The stylesheet: balanced, the product's lockup has no graft (four tiles, the box cut under
+// the word), and the label is there.
+const sheet = readFileSync(join(project, 'branding', 'templates', 'scss', 'user.vaultwarden.scss.hbs'), 'utf8')
+if ((sheet.match(/\{/g) ?? []).length !== (sheet.match(/\}/g) ?? []).length) fail('the generated stylesheet has unbalanced braces')
+if (!sheet.includes("content: 'password manager'")) fail('the stylesheet has no «password manager» label under the lockup')
+const lockups = [...sheet.matchAll(/--rebase-lockup-(?:ink|paper): url\('data:image\/svg\+xml;base64,([^']+)'\)/g)].map((m) => Buffer.from(m[1], 'base64').toString())
+if (lockups.length !== 2) fail(`the stylesheet carries ${lockups.length} lockups, expected 2`)
+for (const svg of lockups) {
+  if (!/viewBox="0 0 3943\.5 714"/.test(svg)) fail('a lockup in the stylesheet keeps the graft box')
+  if ((svg.match(/<rect/g) ?? []).length !== 4) fail('a lockup in the stylesheet still draws the graft')
+}
 const mounted = [...compose.matchAll(/^\s*- (\.\/branding\/[^:]+):/gm)].map((m) => m[1])
 if (mounted.length === 0) fail('docker-compose.yml mounts nothing from branding/')
 if (!compose.includes('env_file: ./branding/branding.env')) fail('docker-compose.yml does not load branding/branding.env, so a new look would not recreate the container')

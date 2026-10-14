@@ -120,9 +120,11 @@ mechanisms that survive an image bump because none of them edits the image (REB-
   which every page loads. It sets the web vault's own colour properties (both the older RGB
   triplets and the newer hex ones, light and dark theme) to palette tokens, and replaces the
   inline Vaultwarden wordmark of the pre-login header and of the sidebar with `lockup.svg`
-  (`lockup-paper.svg` on a dark ground: the vault's sidebar and the dark theme; the Admin
+  without its graft (the dotted line under the word, cropped out of the picture here: in a
+  sidebar it read as a stray rule, REB-692), with «password manager» under the word as text in
+  the page's own face (`lockup-paper.svg` on a dark ground: the vault's sidebar and the dark theme; the Admin
   Console's sidebar is light in the light theme and takes the ink one; a collapsed sidebar
-  takes the mark alone), and the boot splash's logo likewise.
+  takes the mark alone, without the label), and the boot splash's logo likewise.
 - **Favicons**, mounted file by file over the image's own at the paths `index.html` and the
   manifest read (checked against the served page of 1.37.4).
 - **`branding/branding.env`**, a hash of the files above, loaded as the server's `env_file`.
@@ -146,12 +148,14 @@ pnpm install --frozen-lockfile --filter @rebase/brand
 pnpm --filter @rebase/brand exec node ../../projects/vaultwarden/branding/build.mjs
 ```
 
-**The mails** (REB-690) use the same mechanism: `branding/templates/email/` overrides upstream's
-header and footer partials and the organisation invitation (in Italian, since the team reads it). Upstream's carry the Vaultwarden
-wordmark and a GitHub icon as inline images, and attach both to every mail whatever the
-template uses; the first invitation went to Spam in Gmail as «similar to messages identified as
-spam» although SPF, DKIM and DMARC all passed. Ours draw the mark from table cells and attach
-nothing (`SMTP_EMBED_IMAGES=false` in the compose file). The other mails keep upstream's body
+**The mails** (REB-690, REB-692) use the same mechanism: `branding/templates/email/` overrides upstream's
+header and footer partials and the organisation invitation (in Italian, since the team reads it).
+Upstream's partials carry the Vaultwarden wordmark and a GitHub icon as inline images, and the
+server attaches both to every mail whatever the template uses. Ours draw the mark from table
+cells and attach nothing (`SMTP_EMBED_IMAGES=false` in the compose file). Every mail says
+«password manager» where a reader looks first: the sender's display name (`SMTP_FROM_NAME`,
+`Rebase Password Manager`), a label under the wordmark, the footer, and in the invitation its
+subject and first sentence. The other mails keep upstream's body
 inside our frame, so the frame's footer says nothing about ignoring the message: some of those
 bodies are security alerts. Render one after a bump with the admin page's SMTP test.
 
