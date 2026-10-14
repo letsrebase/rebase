@@ -124,7 +124,7 @@ mechanisms that survive an image bump because none of them edits the image (REB-
   sidebar it read as a stray rule, REB-692), with «password manager» under the word as text in
   the page's own face (`lockup-paper.svg` on a dark ground: the vault's sidebar and the dark theme; the Admin
   Console's sidebar is light in the light theme and takes the ink one; a collapsed sidebar
-  takes the mark alone, without the label), and the boot splash's logo likewise.
+  takes the mark alone, without the label). The boot splash's logo takes the cropped lockup and no label.
 - **Favicons**, mounted file by file over the image's own at the paths `index.html` and the
   manifest read (checked against the served page of 1.37.4).
 - **`branding/branding.env`**, a hash of the files above, loaded as the server's `env_file`.

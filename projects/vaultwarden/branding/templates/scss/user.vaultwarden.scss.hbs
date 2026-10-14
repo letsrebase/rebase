@@ -106,7 +106,9 @@ bit-nav-logo a::after {
   padding-left: 24.4%;
   margin-top: 0.35em;
   white-space: nowrap;
-  font-size: 5.2cqw;
+  /* 5.2cqw is 10.4px in the header and 12.9px in the sidebar; on a phone the link is 128px wide,
+     and the floor lets the label run past it into the empty header rather than shrink to 6.7px. */
+  font-size: max(5.2cqw, 0.625rem);
   line-height: 1.2;
   font-weight: 700;
   letter-spacing: 0.14em;

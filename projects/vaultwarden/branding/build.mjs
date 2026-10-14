@@ -189,6 +189,8 @@ const GRAFT_FREE_HEIGHT = 714
 const lockupWithoutGraft = (svg) => {
   const groups = svg.match(/<g shape-rendering="crispEdges">[\s\S]*?<\/g>/g) ?? []
   if (groups.length !== 2) throw new Error(`a lockup has ${groups.length} rect groups, expected the tiles and the graft`)
+  const graftTop = Math.min(...[...groups[1].matchAll(/ y="(\d+)"/g)].map((m) => Number(m[1])))
+  if (!(graftTop >= GRAFT_FREE_HEIGHT)) throw new Error(`the graft starts at y=${graftTop}, above the crop at ${GRAFT_FREE_HEIGHT}: the word would be cut`)
   return svg.replace(groups[1], '').replace('viewBox="0 0 3943.5 945"', `viewBox="0 0 3943.5 ${GRAFT_FREE_HEIGHT}"`)
 }
 const ratio = `3943.5 / ${GRAFT_FREE_HEIGHT}`
@@ -297,7 +299,9 @@ bit-nav-logo a::after {
   padding-left: 24.4%;
   margin-top: 0.35em;
   white-space: nowrap;
-  font-size: 5.2cqw;
+  /* 5.2cqw is 10.4px in the header and 12.9px in the sidebar; on a phone the link is 128px wide,
+     and the floor lets the label run past it into the empty header rather than shrink to 6.7px. */
+  font-size: max(5.2cqw, 0.625rem);
   line-height: 1.2;
   font-weight: 700;
   letter-spacing: 0.14em;
@@ -458,7 +462,7 @@ Rebase password manager
 // team, in Italian, and it does not read like upstream's English template: Gmail kept filing
 // the first one under Spam after the frame changed, while the mails to an address that
 // already had an account (welcome, new device, invitation confirmed) reached the inbox.
-const INVITE_SUBJECT = 'Invito al password manager di {{{org_name}}}'
+const INVITE_SUBJECT = 'Invito al password manager di Rebase'
 const INVITE_LINES = {
   intro: 'Ti hanno invitato a usare il password manager di Rebase, nell\'organizzazione {{org_name}}.',
   button: "Accetta l'invito",
