@@ -142,6 +142,56 @@ Still open, before the first real signature (spec § 11):
   client payment terms that let rebase pay the freelancer at 30 days from the end of the
   month, rights on the work passing on payment, a notice from the client at least as long
   as the freelancer's, and the client's authorisation to appoint the freelancer as a
-  sub-processor.
+  sub-processor. Its first draft is below (REB-689).
 
 No lawyer has read these texts (#285: our own draft).
+
+### The company's contract and the confidentiality agreement (REB-689)
+
+Three drafts at version 0.1, `status: draft`, written for a lawyer's review. They sit in
+`REVIEW_TEXTS` (`rebase_core.contracts.render`), apart from `DOCUMENTS`: the build and
+the renderer typeset them, the registry and the signing flow do not know them, and
+wiring one in is a card of its own after the review.
+
+- `condizioni-generali-azienda.md`: the general terms attached to every proposal. They
+  are what a company accepts with each proposal, the way Ivan's own consulting
+  proposals already work: a proposal with the general terms attached.
+- `proposta-azienda.md`: the proposal for one engagement. It follows the layout of
+  those consulting proposals (addressee and subject, scope and goals, activities, exclusions,
+  economic terms, invoicing and payment, privacy, a summary of the general terms,
+  validity, acceptance) and carries the company's specific approval of the onerous
+  clauses (articles 1341 and 1342). One profile per proposal for now: the professionals'
+  table has one row of fields, and a team needs a list field the renderer does not have.
+  `corrispettivo` is held to the rules of `compenso` and printed the same way.
+  `proposta.esempio.json` is fiction and names every field it asks for, which
+  `test_contract_pdf.py` checks.
+- `accordo-di-riservatezza.md`: the confidentiality agreement the freelancer signs on
+  top of the framework agreement and the letter. It covers what a member sees before any
+  engagement too (open requests, company names, a selection's material), lasts three
+  years after the last information or engagement, and yields to whichever rule protects
+  more when the framework agreement (13) or a company's own NDA covers the same
+  information.
+
+How the general terms give rebase what the framework agreement promises the freelancer:
+
+| Framework agreement (freelancer) | General terms (company) |
+|---|---|
+| 7.1, paid at 30 days from the end of the invoice's month | 7.1, the same default term |
+| 7.2, paid whether or not the client has paid | 7.2 to 7.4, late interest and suspension |
+| 6.2, seven working days to answer a Rendiconto | 6.2, five working days for the client to contest |
+| 6.3, ten working days after delivery | 6.4, the same ten working days |
+| 10.1 and 10.2, 30 days' notice, or the missing notice paid | 8.3, the same notice, the same payment to close sooner |
+| 10.3, two working days during the opening check | 3.5, the same two days |
+| 10.4, up to two paid handover days | 8.5, the same two days, paid by the client |
+| 12, twelve months, 24-month declaration, penalty | 12, the same twelve months and declaration, the client's own penalty |
+| 14.1, rights to rebase on the freelancer's payment | 10.1, rights to the client on the client's payment |
+| 16.2 and Allegato A, sub-processor with the client's authorisation | 14.3 and Allegato A.5, the authorisation |
+
+Open in these drafts, for the lawyer and for Ivan (the highlighted proposals): whether
+the service shape of article 3 keeps rebase clear of labour supply (legislative decree
+276/2003) when the client coordinates a freelancer day to day; whether a fee on hiring a
+presented professional as an employee (12.2) needs an employment-agency authorisation,
+or the penalty of 12.4 should stand alone, and its amount; the liability cap (11.3) and
+whether data and confidentiality breaches sit outside it; the 48 hours for a data breach
+(A.7); the NDA's reach back to information received before its signature (8.1) and the
+companies as third-party beneficiaries (5.3, article 1411 of the civil code).

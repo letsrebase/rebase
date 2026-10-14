@@ -47,6 +47,16 @@ DOCUMENTS = (
     "lettera-di-incarico",
     "lettera-di-incarico-occasionale",
 )
+# Texts the laptop typesets for review and that no hub flow signs yet (REB-689): the
+# company's general terms and proposal, and the freelancer's confidentiality agreement.
+# They are drafts, kept out of `DOCUMENTS` so the registry and the signing flow ignore
+# them until a card wires them in.
+REVIEW_TEXTS = (
+    "accordo-di-riservatezza",
+    "condizioni-generali-azienda",
+    "proposta-azienda",
+)
+ALL_TEXTS = DOCUMENTS + REVIEW_TEXTS
 # The texts whose payment term counts from the collaborator's receipt rather than an
 # invoice (REB-687): a prestazione occasionale is paid on a ricevuta.
 RECEIPT_TEXTS = frozenset({"lettera-di-incarico-occasionale"})
@@ -118,8 +128,8 @@ class ContractRenderer:
 
 
 def text_path(document: str) -> Path:
-    if document not in DOCUMENTS:
-        raise ContractFailed(f"no such document: {document} (have: {', '.join(DOCUMENTS)})")
+    if document not in ALL_TEXTS:
+        raise ContractFailed(f"no such document: {document} (have: {', '.join(ALL_TEXTS)})")
     return TEXTS / f"{document}.md"
 
 

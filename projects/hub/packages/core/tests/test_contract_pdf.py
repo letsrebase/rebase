@@ -39,12 +39,20 @@ from rebase_core.contracts.fields import (
     signer_data,
     survived,
 )
-from rebase_core.contracts.render import COMPANY_DEFAULTS, DOCUMENTS, RECEIPT_TEXTS, TEXTS
+from rebase_core.contracts.render import (
+    ALL_TEXTS,
+    COMPANY_DEFAULTS,
+    DOCUMENTS,
+    RECEIPT_TEXTS,
+    REVIEW_TEXTS,
+    TEXTS,
+)
 from rebase_core.regimes import TEXT_NAMES
 
 EXAMPLE = CONTRACTS / "incarico.esempio.json"
+PROPOSAL_EXAMPLE = CONTRACTS / "proposta.esempio.json"
 # Signed on the signing site or on paper, never typed into a data file ahead of time.
-SIGNATURES = {"firma-rebase", "firma-professionista"}
+SIGNATURES = {"firma-rebase", "firma-professionista", "firma-cliente"}
 LETTERS = ("lettera-di-incarico", "lettera-di-incarico-occasionale")
 OCCASIONAL_TEXTS = ("contratto-quadro-occasionale", "lettera-di-incarico-occasionale")
 
@@ -67,6 +75,9 @@ def test_a_fee_the_page_could_not_print_as_given_stops_the_build(
 ) -> None:
     with pytest.raises(ContractFailed, match=complaint):
         checked({"compenso": fee})
+    # A proposal's price (REB-689) is held to the same rules.
+    with pytest.raises(ContractFailed, match=complaint):
+        checked({"corrispettivo": fee})
 
 
 def test_the_payment_term_is_written_from_the_days_and_the_month_end() -> None:
@@ -108,6 +119,7 @@ def test_the_fee_is_written_the_italian_way_and_identifiers_as_given() -> None:
     assert rendered("compenso", 450) == "450,00 €"
     assert italian(Decimal("1234.5"), 2) == "1.234,50"
     assert rendered("compenso", 12000) == "12.000,00 €"
+    assert rendered("corrispettivo", 600) == "600,00 €"
     assert rendered("numero", 2026001) == "2026001"
     assert rendered("giorni-preavviso", 30) == "30"
     assert rendered("risultati", "l'Incarico") == "l’Incarico"
@@ -179,7 +191,7 @@ def test_a_marker_pandoc_stopped_passing_through_stops_the_build() -> None:
 
 def test_every_contract_has_the_front_matter_the_page_reads() -> None:
     sources = sorted(TEXTS.glob("*.md"))
-    assert {path.stem for path in sources} == set(DOCUMENTS)
+    assert {path.stem for path in sources} == set(ALL_TEXTS)
     for path in sources:
         markdown = path.read_text(encoding="utf-8")
         matter = front_matter(markdown, path.name)
@@ -194,6 +206,35 @@ def test_every_contract_has_the_front_matter_the_page_reads() -> None:
 def test_the_texts_are_one_per_kind_and_regime() -> None:
     """REB-687: the four texts the registry names are the four in the package."""
     assert sorted(DOCUMENTS) == sorted(TEXT_NAMES.values())
+
+
+def test_the_texts_for_review_are_drafts_no_flow_signs() -> None:
+    """REB-689: the company's terms and proposal and the freelancer's confidentiality
+    agreement typeset for the lawyer, and the registry, which drives the signing flow,
+    names none of them. Wiring one in is a card of its own, after the review."""
+    assert set(REVIEW_TEXTS).isdisjoint(DOCUMENTS)
+    assert set(REVIEW_TEXTS).isdisjoint(TEXT_NAMES.values())
+    for document in REVIEW_TEXTS:
+        source = TEXTS / f"{document}.md"
+        assert is_draft(source.read_text(encoding="utf-8"), source.name), document
+
+
+def test_the_proposal_example_names_every_field_the_proposal_asks_for() -> None:
+    asked = set(FIELD.findall((TEXTS / "proposta-azienda.md").read_text(encoding="utf-8")))
+    company = json.loads(COMPANY_DEFAULTS.read_text(encoding="utf-8"))
+    example = json.loads(PROPOSAL_EXAMPLE.read_text(encoding="utf-8"))
+    known = set(checked({**company, **example}))
+    assert asked - known - SIGNATURES == set()
+
+
+def test_the_proposal_example_is_fiction() -> None:
+    """The repository is public: the example names no real company and no real person."""
+    example = json.loads(PROPOSAL_EXAMPLE.read_text(encoding="utf-8"))
+    assert example["cliente-ragione-sociale"] == "Azienda Esempio S.r.l."
+    assert example["professionista-nome"] == "Nome Cognome"
+    assert set(example["cliente-piva"]) == {"0"}
+    assert set(example["cliente-codice-destinatario"]) == {"0"}
+    assert example["cliente-pec"].endswith("@pec.example.com")
 
 
 @pytest.mark.parametrize("letter", LETTERS)

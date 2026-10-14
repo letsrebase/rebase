@@ -23,6 +23,7 @@ from rebase_core.contracts.render import (
     A4_HEIGHT_PT,
     A4_WIDTH_PT,
     DOCUMENTS,
+    REVIEW_TEXTS,
     ContractRenderer,
     company_defaults,
     render,
@@ -31,7 +32,9 @@ from rebase_core.contracts.render import (
     text_version,
 )
 
-EXAMPLE = Path(__file__).resolve().parents[3] / "content" / "contratti" / "incarico.esempio.json"
+CONTRACTS = Path(__file__).resolve().parents[3] / "content" / "contratti"
+EXAMPLE = CONTRACTS / "incarico.esempio.json"
+PROPOSAL_EXAMPLE = CONTRACTS / "proposta.esempio.json"
 # 55 mm, the room a pen needs, in points.
 SIGNATURE_WIDTH_PT = 155.0
 LETTER_BLANKS = {
@@ -56,6 +59,35 @@ def test_both_contracts_typeset_into_a_pdf_that_carries_its_version() -> None:
         assert rendered.pdf.startswith(b"%PDF-"), document
         assert rendered.version == text_version(document), document
         assert rendered.draft is False, document
+
+
+def test_the_texts_for_review_typeset_as_drafts() -> None:
+    """REB-689: the three texts for the lawyer print, with the BOZZA watermark on."""
+    proposal = read_layer(PROPOSAL_EXAMPLE.read_text(encoding="utf-8"), PROPOSAL_EXAMPLE.name)
+    for document in REVIEW_TEXTS:
+        data = {**_example(), **proposal} if document == "proposta-azienda" else _example()
+        rendered = render(document, data)
+        assert rendered.pdf.startswith(b"%PDF-"), document
+        assert rendered.draft is True, document
+
+
+def test_a_filled_proposal_prints_the_price_and_leaves_only_rebase_and_the_signatures() -> None:
+    data = {
+        **company_defaults(),
+        **read_layer(PROPOSAL_EXAMPLE.read_text(encoding="utf-8"), PROPOSAL_EXAMPLE.name),
+    }
+    rendered = render("proposta-azienda", data)
+    assert set(rendered.blank) == {
+        "rebase-sede",
+        "rebase-piva",
+        "rebase-pec",
+        "rebase-rappresentante",
+        "firma-rebase",
+        "firma-cliente",
+    }
+    text = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(rendered.pdf)).pages)
+    assert "600,00 €" in text
+    assert "30 giorni data fattura fine mese" in text
 
 
 def test_a_filled_letter_leaves_blank_only_what_nobody_typed_ahead() -> None:
