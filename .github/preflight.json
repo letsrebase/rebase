@@ -333,9 +333,10 @@
     },
     {
       "id": "vaultwarden-drill",
-      "run": "shellcheck projects/vaultwarden/scripts/*.sh projects/vaultwarden/tests/*.sh && projects/vaultwarden/tests/backup-restore.sh",
+      "run": "shellcheck projects/vaultwarden/scripts/*.sh projects/vaultwarden/tests/*.sh && node --no-warnings projects/vaultwarden/tests/branding.mjs && projects/vaultwarden/tests/backup-restore.sh",
       "when": [
-        "projects/vaultwarden/**"
+        "projects/vaultwarden/**",
+        "shared/brand/**"
       ],
       "serial": true,
       "why": "REB-648. Vaultwarden has no code and no unit tests: what can break is the compose file, the backup and restore scripts and the pinned image, and the only check that reads all three is running them. This starts the real compose file on a throwaway data directory, proves it publishes on the loopback only, refuses a signup without an invitation and has the admin page off (and opens it with a hash, as the README writes it), then backs up into an S3 gateway, checks the object is an encrypted envelope and restores it on a scratch server. ci.yml runs the same script as the `vaultwarden` job. Serial: it starts containers and pulls an image."

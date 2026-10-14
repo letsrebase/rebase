@@ -86,6 +86,13 @@ node "$here/drill.mjs" refuse "$base" stranger@example.test
 admin=$(curl -s -o "$tmp/admin.out" -w '%{http_code}' "$base/admin")
 echo "GET /admin: HTTP $admin: $(head -c 200 "$tmp/admin.out" | tr '\n' ' ')"
 grep -qi 'admin panel is disabled' "$tmp/admin.out" || { echo "FAIL: the admin page is not disabled" >&2; exit 1; }
+# The look (REB-688): the server took the SCSS template and the mounted favicon, which is
+# what an image bump that moves either mechanism would break without a word.
+curl -s "$base/css/vaultwarden.css" > "$tmp/vaultwarden.css"
+watermelon_deep=$(sed -n 's/^ *--color-watermelon-deep: *\(#[0-9a-fA-F]*\);.*/\1/p' "$project_dir/../../shared/brand/palette.css" | tr 'A-F' 'a-f')
+grep -q -- "--color-bg-brand: *$watermelon_deep" "$tmp/vaultwarden.css" || { echo "FAIL: the brand colours are not in /css/vaultwarden.css" >&2; exit 1; }
+curl -s "$base/favicon.ico" | cmp - "$project_dir/branding/images/favicon.ico" || { echo "FAIL: /favicon.ico is not the mounted one" >&2; exit 1; }
+echo "the look is served: brand colours in the stylesheet, our favicon"
 [ "$(node "$here/drill.mjs" read "$base" "$email" "$password")" = "$item" ] || { echo "FAIL: item missing before backup" >&2; exit 1; }
 
 step "2b. the admin page opens with a hash and closes when the line is removed"

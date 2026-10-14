@@ -9,6 +9,7 @@ is how it runs (REB-648). The members' own page is `docs/guida-per-i-membri.md`,
 docker-compose.yml          the server and its backup service, image pinned by tag and digest
 .env.example                every host variable, and which ones the deploy writes for you
 deploy/vault.letsrebase.conf  the host's nginx vhost
+branding/                   the look of the web vault, generated from shared/brand (see "Look")
 scripts/backup.sh           one encrypted backup, to R2    scripts/backup-loop.sh  its schedule
 scripts/restore.sh          open one backup into an empty directory
 docs/restore.md             the restore runbook
@@ -108,6 +109,44 @@ there, `config.json` holds it and the backup carries it.
   view, view with hidden passwords, edit, edit with hidden passwords, or manage.
   Organisation owners and admins can open every collection, so those roles stay with the
   few people trusted with all of it. `ORG_GROUPS_ENABLED` stays off.
+
+## Look
+
+The web vault is upstream's, unmodified, wearing the rebase brand through three
+mechanisms that survive an image bump because none of them edits the image (REB-688):
+
+- **A stylesheet.** The server compiles `branding/templates/scss/user.vaultwarden.scss.hbs`
+  (`TEMPLATES_FOLDER=/templates`, mounted read-only) and appends it to `/css/vaultwarden.css`,
+  which every page loads. It sets the web vault's own colour properties (both the older RGB
+  triplets and the newer hex ones, light and dark theme) to palette tokens, and replaces the
+  inline Vaultwarden wordmark of the pre-login header and of the sidebar with `lockup.svg`
+  (`lockup-paper.svg` on the sidebar's dark ground and in the dark theme).
+- **Favicons**, mounted file by file over the image's own at the paths `index.html` and the
+  manifest read.
+- **Nothing in the data directory**, so the backup carries none of it and a restore onto a
+  fresh host gets the look back from the repository.
+
+Nothing here restates a colour or a drawing: `branding/build.mjs` reads `shared/brand/palette.css`
+and the two lockups and writes the files, and `tests/branding.mjs` (run by the `vaultwarden`
+job and by preflight) fails when a committed file is not what the brand produces, or when a
+text pair is below AA (4.5:1) in either theme, measured against the web vault's own grounds.
+Change a colour in `palette.css`, then:
+
+```
+pnpm install --frozen-lockfile --filter @rebase/brand
+pnpm --filter @rebase/brand exec node ../../projects/vaultwarden/branding/build.mjs
+```
+
+What is deliberately not themed: the browser extension and the mobile apps (their look is
+Bitwarden's and is not served from here), the mails, the page title, the one-time welcome
+dialog and the illustrations other than the pre-login pictures, and the attribution line in
+the footer, which says what this server is and is left alone.
+
+**After bumping the image**, check it by eye as well as by the drill: the stylesheet selects
+the web vault's own elements (`bit-landing-header header a bit-svg`, `bit-nav-logo a bit-svg`)
+and sets its own custom properties, none of which upstream promises. The drill proves the
+stylesheet and the favicon are served; a renamed element would show only as the Vaultwarden
+wordmark coming back on the login page.
 
 ## Backup
 
