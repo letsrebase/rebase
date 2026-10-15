@@ -278,6 +278,8 @@ def build_scope(export: InvoiceForExport, *, riferimento: str | None) -> dict[st
             # The whole line, or nothing: the template wraps it in `{{#if}}`, so a
             # document with no period prints no label with an empty value after it.
             "periodo_competenza": _periodo_competenza(export),
+            # The same rule as the period: the whole line or nothing (REB-693).
+            "riferimento_ordine": _riferimento_ordine(export),
             "imponibile": format_euro(export.imponibile),
             "imposta": format_euro(export.imposta),
             "totale": format_euro(export.totale),
@@ -314,6 +316,23 @@ def _periodo_competenza(export: InvoiceForExport) -> str:
     if export.competenza_da is None or export.competenza_a is None:
         return _EMPTY
     return f"dal {format_data(export.competenza_da)} al {format_data(export.competenza_a)}"
+
+
+def _riferimento_ordine(export: InvoiceForExport) -> str:
+    """`n. <numero> del dd-mm-yyyy, CIG <cig>, CUP <cup>`, each part only when the
+    order has it, or `""` without an order number (REB-693). The date goes through
+    `format_data` like every other date the document prints."""
+    if not export.ordine_numero:
+        return _EMPTY
+    numero = f"n. {export.ordine_numero}"
+    if export.ordine_data is not None:
+        numero = f"{numero} del {format_data(export.ordine_data)}"
+    parti = [numero]
+    if export.ordine_cig:
+        parti.append(f"CIG {export.ordine_cig}")
+    if export.ordine_cup:
+        parti.append(f"CUP {export.ordine_cup}")
+    return ", ".join(parti)
 
 
 def _dichiarazione_regime(export: InvoiceForExport) -> str:

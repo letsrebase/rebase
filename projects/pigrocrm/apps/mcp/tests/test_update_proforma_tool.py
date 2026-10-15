@@ -179,3 +179,43 @@ async def test_update_proforma_refuses_a_fattura_and_a_consumed_proforma(
         assert "consumata" in frozen.content[0].text
         read = await client.call_tool("get_invoice", {"invoice_id": proforma_id})
         assert read.structured_content["data_emissione"] == "2026-09-05"
+
+
+async def test_a_proforma_takes_its_purchase_order_at_creation_and_on_update(
+    server: Any, mcp_session: Session
+) -> None:
+    """REB-693: the order goes in on `create_proforma`, a CIG is added on
+    `update_proforma` without touching what was stored, `get_invoice` reads it back,
+    and a CIG with no number comes back as the service's sentence, not a raw dump."""
+    customer_id = _customer(mcp_session)
+    async with Client(server) as client:
+        created = await client.call_tool(
+            "create_proforma",
+            {
+                "customer_id": customer_id,
+                "righe": [RIGA],
+                "ordine_numero": "ODA-14",
+                "ordine_data": "2026-10-09",
+            },
+        )
+        assert not created.is_error, created.content[0].text
+        invoice_id = created.structured_content["id"]
+        assert created.structured_content["ordine_numero"] == "ODA-14"
+
+        updated = await client.call_tool(
+            "update_proforma", {"invoice_id": invoice_id, "ordine_cig": "z0a1b2c3d4"}
+        )
+        assert not updated.is_error, updated.content[0].text
+        assert updated.structured_content["ordine_cig"] == "Z0A1B2C3D4"
+        assert updated.structured_content["ordine_data"] == "2026-10-09"
+
+        read = await client.call_tool("get_invoice", {"invoice_id": invoice_id})
+        assert read.structured_content["ordine_numero"] == "ODA-14"
+
+        orphan = await client.call_tool(
+            "create_proforma",
+            {"customer_id": customer_id, "righe": [RIGA], "ordine_cig": "Z0A1B2C3D4"},
+        )
+        assert orphan.is_error
+        assert "numero dell'ordine" in orphan.content[0].text
+        assert "errors.pydantic.dev" not in orphan.content[0].text

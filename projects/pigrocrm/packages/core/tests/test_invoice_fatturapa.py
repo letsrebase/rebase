@@ -142,6 +142,7 @@ def _invoice(
     causale: str | None = "Consulenza tecnica",
     numero: int = 7,
     competenza: tuple[date, date] | None = None,
+    ordine: dict[str, object] | None = None,
 ) -> InvoiceForExport:
     imponibile, imposta, totale = sum_totals(_build_riepilogo_from(righe))
     return InvoiceForExport(
@@ -158,6 +159,7 @@ def _invoice(
         causale=causale,
         competenza_da=competenza[0] if competenza else None,
         competenza_a=competenza[1] if competenza else None,
+        **(ordine or {}),
         snapshot=InvoiceSnapshot(
             versione=SNAPSHOT_VERSIONE,
             emittente=emittente or EMITTENTE,
@@ -1260,3 +1262,89 @@ def test_a_pec_padded_with_whitespace_is_accepted_and_written_trimmed() -> None:
     assert_valid(xml)
     root = etree.fromstring(xml)
     assert root.findtext(".//PECDestinatario") == "acme@pec.it"
+
+
+# --- the purchase order in DatiGenerali (REB-693) -------------------------------------
+
+ORDINE_INTERO: dict[str, object] = {
+    "ordine_numero": "ODA-14",
+    "ordine_data": date(2026, 10, 9),
+    "ordine_cig": "Z0A1B2C3D4",
+    "ordine_cup": "J41E22000110005",
+}
+
+
+def _ordini(xml: bytes) -> list[list[tuple[str, str | None]]]:
+    root = etree.fromstring(xml)
+    return [
+        [(child.tag, child.text) for child in blocco] for blocco in root.iter("DatiOrdineAcquisto")
+    ]
+
+
+def test_a_whole_purchase_order_is_written_in_the_schema_s_order_and_validates() -> None:
+    """`DatiDocumentiCorrelatiType` is a sequence and CUP comes before CIG in it: the
+    file is invalid with every value right if the two swap, which is why this validates
+    rather than only reading the elements back."""
+    xml = FatturaPAExporter().to_bytes(
+        _invoice([_line(1, "Consulenza", "1.000000", "250.000000", "250.00")], ordine=ORDINE_INTERO)
+    )
+    assert_valid(xml)
+    assert _ordini(xml) == [
+        [
+            ("IdDocumento", "ODA-14"),
+            ("Data", "2026-10-09"),
+            ("CodiceCUP", "J41E22000110005"),
+            ("CodiceCIG", "Z0A1B2C3D4"),
+        ]
+    ]
+    generali = etree.fromstring(xml).find(".//DatiGenerali")
+    assert generali is not None
+    assert [child.tag for child in generali] == ["DatiGeneraliDocumento", "DatiOrdineAcquisto"]
+
+
+def test_an_order_number_alone_writes_only_the_identifier() -> None:
+    xml = FatturaPAExporter().to_bytes(
+        _invoice(
+            [_line(1, "Consulenza", "1.000000", "250.000000", "250.00")],
+            ordine={"ordine_numero": "8"},
+        )
+    )
+    assert_valid(xml)
+    assert _ordini(xml) == [[("IdDocumento", "8")]]
+
+
+def test_without_an_order_no_block_is_written() -> None:
+    xml = FatturaPAExporter().to_bytes(
+        _invoice([_line(1, "Consulenza", "1.000000", "250.000000", "250.00")])
+    )
+    assert_valid(xml)
+    assert _ordini(xml) == []
+
+
+def test_markup_characters_in_an_order_number_reach_the_xml_unchanged() -> None:
+    xml = FatturaPAExporter().to_bytes(
+        _invoice(
+            [_line(1, "Consulenza", "1.000000", "250.000000", "250.00")],
+            ordine={"ordine_numero": "ODA#14*<&>"},
+        )
+    )
+    assert_valid(xml)
+    assert _ordini(xml) == [[("IdDocumento", "ODA#14*<&>")]]
+
+
+def test_an_order_number_the_xml_cannot_carry_is_refused_by_the_writer_and_the_pre_check() -> None:
+    export = _invoice(
+        [_line(1, "Consulenza", "1.000000", "250.000000", "250.00")],
+        ordine={"ordine_numero": "Ordine citt\u00e0 5"},
+    )
+    with pytest.raises(ValidationFailed) as caught:
+        FatturaPAExporter().to_bytes(export)
+    assert caught.value.details["field"] == "ordine_numero"
+    with pytest.raises(ValidationFailed) as caught:
+        check_document_text_exportable(
+            "Consulenza", export.righe, ordine_numero="Ordine citt\u00e0 5"
+        )
+    assert caught.value.details["field"] == "ordine_numero"
+    with pytest.raises(ValidationFailed) as caught:
+        check_document_text_exportable("Consulenza", export.righe, ordine_cig="Z0A1B2C3D\u00e8")
+    assert caught.value.details["field"] == "ordine_cig"

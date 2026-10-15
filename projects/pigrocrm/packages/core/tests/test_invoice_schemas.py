@@ -134,6 +134,10 @@ def test_update_exposes_the_editable_columns_and_custom_fields() -> None:
         "competenza_a",
         "data_emissione",
         "data_scadenza",
+        "ordine_numero",
+        "ordine_data",
+        "ordine_cig",
+        "ordine_cup",
     }
 
 
@@ -343,3 +347,47 @@ def test_an_import_can_declare_a_drive_file_as_its_original_pdf() -> None:
     assert data.pdf_sorgente is not None
     assert data.pdf_sorgente.drive_file_id == "1PreventivoPdfXXXX"
     assert data.pdf_sorgente.document_id is None
+
+
+def test_the_purchase_order_is_carried_by_every_shape_that_reaches_a_document() -> None:
+    """Settable on creation and on update, read back, and part of what the exporter
+    and the PDF read (REB-693). Not on the import: reading `DatiOrdineAcquisto` back
+    from an external XML is out of this card, and an import that half-supported it
+    would store an order nobody checked."""
+    from pigrocrm.core.invoices.schemas import InvoiceForExport, InvoiceImport, InvoiceRead
+
+    ordine = {"ordine_numero", "ordine_data", "ordine_cig", "ordine_cup"}
+    for model in (InvoiceCreate, InvoiceUpdate, InvoiceRead, InvoiceForExport):
+        assert ordine <= set(model.model_fields), model.__name__
+    assert not ordine & set(InvoiceImport.model_fields)
+    assert InvoiceCreate(customer_id=uuid4()).ordine_numero is None
+    assert InvoiceForExport.model_fields["ordine_cig"].default is None
+
+
+def test_the_purchase_order_widths_mirror_the_columns() -> None:
+    with pytest.raises(ValidationError):
+        InvoiceCreate(customer_id=uuid4(), ordine_numero="x" * 21)
+    with pytest.raises(ValidationError):
+        InvoiceCreate(customer_id=uuid4(), ordine_cig="x" * 16)
+    with pytest.raises(ValidationError):
+        InvoiceUpdate(ordine_cup="x" * 16)
+
+
+def test_a_padded_purchase_order_code_is_not_refused_for_its_raw_width() -> None:
+    """The service strips; the schema must strip first, or the 17 characters of
+    `" J41E22000110005 "` fail `max_length=15` before the strip gets a say."""
+    for model in (InvoiceCreate, InvoiceUpdate):
+        kwargs = {} if model is InvoiceUpdate else {"customer_id": uuid4()}
+        built = model(
+            **kwargs,
+            ordine_numero="  ODA-1234567890123456  ",
+            ordine_cig=" Z0A1B2C3D4  ",
+            ordine_cup=" J41E22000110005 ",
+        )
+        assert built.ordine_numero == "ODA-1234567890123456"
+        assert built.ordine_cig == "Z0A1B2C3D4"
+        assert built.ordine_cup == "J41E22000110005"
+        with pytest.raises(ValidationError):
+            model(**kwargs, ordine_cup=" " + "x" * 16 + " ")
+        with pytest.raises(ValidationError):
+            model(**kwargs, ordine_numero=" " + "x" * 21 + " ")

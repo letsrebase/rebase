@@ -696,3 +696,63 @@ def test_the_period_is_frozen_once_issued_and_travels_to_the_xml(
     assert xml.status_code == 200, xml.text
     assert b"<DataInizioPeriodo>2026-08-01</DataInizioPeriodo>" in xml.content
     assert b"<DataFinePeriodo>2026-08-31</DataFinePeriodo>" in xml.content
+
+
+# --- the purchase order on the wire (REB-693) ----------------------------------------
+
+
+def test_a_proforma_carries_its_purchase_order_through_post_and_patch(
+    logged_in: TestClient, customer: dict[str, Any], fiscal_profile: dict[str, Any]
+) -> None:
+    created = logged_in.post(
+        "/api/invoices",
+        json={
+            "customer_id": customer["id"],
+            "tipo": "proforma",
+            "ordine_numero": "ODA-14",
+            "ordine_data": "2026-10-09",
+            "ordine_cig": "z0a1b2c3d4",
+            "righe": [{"descrizione": "Consulenza", "prezzo_unitario": "250.00"}],
+        },
+    )
+    assert created.status_code == 201, created.text
+    body = created.json()
+    assert (body["ordine_numero"], body["ordine_data"], body["ordine_cig"], body["ordine_cup"]) == (
+        "ODA-14",
+        "2026-10-09",
+        "Z0A1B2C3D4",
+        None,
+    )
+
+    patched = logged_in.patch(f"/api/invoices/{body['id']}", json={"ordine_cup": "J41E22000110005"})
+    assert patched.status_code == 200, patched.text
+    assert patched.json()["ordine_cup"] == "J41E22000110005"
+    assert patched.json()["ordine_numero"] == "ODA-14"
+
+    bad = logged_in.patch(f"/api/invoices/{body['id']}", json={"ordine_cig": "Z0A1"})
+    assert bad.status_code == 422, bad.text
+    assert bad.json()["field"] == "ordine_cig"
+
+    orphan = logged_in.patch(f"/api/invoices/{body['id']}", json={"ordine_numero": None})
+    assert orphan.status_code == 422, orphan.text
+    assert orphan.json()["field"] == "ordine_numero"
+
+    cleared = logged_in.patch(
+        f"/api/invoices/{body['id']}",
+        json={"ordine_numero": None, "ordine_data": None, "ordine_cig": None, "ordine_cup": None},
+    )
+    assert cleared.status_code == 200, cleared.text
+    assert cleared.json()["ordine_numero"] is None
+
+
+def test_the_order_of_an_issued_invoice_cannot_change(
+    logged_in: TestClient,
+    customer: dict[str, Any],
+    fiscal_profile: dict[str, Any],
+    emitter: dict[str, Any],
+) -> None:
+    draft = _draft(logged_in, customer["id"])
+    issued = logged_in.post(f"/api/invoices/{draft['id']}/issue", json={}).json()
+    response = logged_in.patch(f"/api/invoices/{issued['id']}", json={"ordine_numero": "ODA-14"})
+    assert response.status_code == 409, response.text
+    assert response.json()["code"] == "immutable_field"

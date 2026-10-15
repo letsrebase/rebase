@@ -416,3 +416,38 @@ def test_a_one_day_accrual_period_is_a_period(db_session: Session, customer_id: 
         db_session,
         _draft(customer_id, competenza_da=date(2026, 8, 20), competenza_a=date(2026, 8, 20)),
     )
+
+
+# --- the purchase order: its date, CIG and CUP hang on its number (REB-693) ---------
+
+
+@pytest.mark.parametrize(
+    "orphan",
+    [
+        {"ordine_data": date(2026, 10, 9)},
+        {"ordine_cig": "Z0A1B2C3D4"},
+        {"ordine_cup": "J41E22000110005"},
+    ],
+)
+def test_an_order_s_date_cig_or_cup_needs_its_number(
+    db_session: Session, customer_id: UUID, orphan: dict[str, object]
+) -> None:
+    """`IdDocumento` is the one mandatory child of `DatiOrdineAcquisto`: a CIG with no
+    order to belong to is refused by the table, whatever path wrote it."""
+    _refuses(db_session, _draft(customer_id, **orphan), "ck_invoices_ordine_needs_numero")
+
+
+def test_an_order_number_alone_or_with_everything_is_an_order(
+    db_session: Session, customer_id: UUID
+) -> None:
+    _add(db_session, _draft(customer_id, ordine_numero="8"))
+    _add(
+        db_session,
+        _draft(
+            customer_id,
+            ordine_numero="ODA-14",
+            ordine_data=date(2026, 10, 9),
+            ordine_cig="Z0A1B2C3D4",
+            ordine_cup="J41E22000110005",
+        ),
+    )

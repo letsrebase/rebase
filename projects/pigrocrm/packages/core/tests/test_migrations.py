@@ -9,6 +9,7 @@ from alembic.config import Config
 from alembic.migration import MigrationContext
 from alembic.script import ScriptDirectory
 from sqlalchemy import Engine, create_engine, text
+from sqlalchemy.exc import IntegrityError
 
 import pigrocrm.core.models_registry  # noqa: F401
 from pigrocrm.core.config import get_settings
@@ -1604,3 +1605,85 @@ def test_0049_puts_the_fast_path_first_and_its_downgrade_restores_0048(
             assert at_0048[1][name].lstrip().startswith("SELECT scope_tutte() OR "), name
     assert back_at_0048 == at_0048
     assert at_head_again == at_head
+
+
+def _ordine_shape(url: str) -> tuple[set[str], set[str]]:
+    engine: Engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            columns = set(
+                connection.execute(
+                    text(
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_name = 'invoices' AND column_name LIKE 'ordine\\_%'"
+                    )
+                ).scalars()
+            )
+            checks = set(
+                connection.execute(
+                    text(
+                        "SELECT conname FROM pg_constraint "
+                        "WHERE conrelid = 'invoices'::regclass "
+                        "AND conname = 'ck_invoices_ordine_needs_numero'"
+                    )
+                ).scalars()
+            )
+            return columns, checks
+    finally:
+        engine.dispose()
+
+
+def _insert_orphan_cig_draft(url: str) -> None:
+    """A draft fattura with a CIG and no order number, straight through SQL."""
+    engine: Engine = create_engine(url)
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO emitter_profile (id, nome, predefinita, attiva, "
+                    "ragione_sociale, nazione, created_at, updated_at) VALUES "
+                    "('00000000-0000-7000-8000-0000000000a1', 'Studio', true, true, "
+                    "'Studio Rossi', 'IT', now(), now())"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO customers (id, azienda_id, ragione_sociale, nazione, "
+                    "custom_fields, created_at, updated_at) VALUES "
+                    "('00000000-0000-7000-8000-0000000000c1', "
+                    "'00000000-0000-7000-8000-0000000000a1', 'Acme', 'IT', '{}', now(), now())"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO invoices (id, azienda_id, customer_id, tipo, stato, "
+                    "tipo_documento, divisa, imponibile, imposta, bollo, totale, "
+                    "stato_pagamento, custom_fields, ordine_cig, created_at, updated_at) VALUES "
+                    "('00000000-0000-7000-8000-0000000000d1', "
+                    "'00000000-0000-7000-8000-0000000000a1', "
+                    "'00000000-0000-7000-8000-0000000000c1', 'fattura', 'bozza', 'TD01', "
+                    "'EUR', 0, 0, 0, 0, 'da_incassare', '{}', 'Z0A1B2C3D4', now(), now())"
+                )
+            )
+    finally:
+        engine.dispose()
+
+
+def test_0050_adds_the_purchase_order_columns_and_its_downgrade_drops_them(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-693: four nullable columns and one CHECK, no backfill, both ways."""
+    ordine = {"ordine_numero", "ordine_data", "ordine_cig", "ordine_cup"}
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0049")
+        assert _ordine_shape(url) == (set(), set())
+        upgrade(config, "0050")
+        assert _ordine_shape(url) == (ordine, {"ck_invoices_ordine_needs_numero"})
+        with pytest.raises(IntegrityError, match="ck_invoices_ordine_needs_numero"):
+            _insert_orphan_cig_draft(url)
+        downgrade(config, "0049")
+        assert _ordine_shape(url) == (set(), set())
+        upgrade(config, "0050")
+        assert _ordine_shape(url) == (ordine, {"ck_invoices_ordine_needs_numero"})

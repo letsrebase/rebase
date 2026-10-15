@@ -156,3 +156,21 @@ export function previewImponibile(rows: readonly PricedRow[]): string {
   }
   return decimalStringFromScaled(cents, MONEY_SCALE)
 }
+
+/**
+ * The purchase order as the detail page states it once the document is frozen
+ * (REB-693): the same words the PDF prints, «n. ODA-14 del …, CIG …, CUP …», with only
+ * the parts the order has. The dash without an order number.
+ */
+export function formatPurchaseOrder(
+  invoice: Pick<Invoice, 'ordine_numero' | 'ordine_data' | 'ordine_cig' | 'ordine_cup'>,
+): string {
+  if (!invoice.ordine_numero) return EMPTY
+  const numero = invoice.ordine_data
+    ? `n. ${invoice.ordine_numero} del ${formatDate(invoice.ordine_data)}`
+    : `n. ${invoice.ordine_numero}`
+  const parts = [numero]
+  if (invoice.ordine_cig) parts.push(`CIG ${invoice.ordine_cig}`)
+  if (invoice.ordine_cup) parts.push(`CUP ${invoice.ordine_cup}`)
+  return parts.join(', ')
+}

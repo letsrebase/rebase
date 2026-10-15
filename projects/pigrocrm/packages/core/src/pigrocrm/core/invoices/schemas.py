@@ -17,10 +17,10 @@ column widths is necessary and is not sufficient.
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 # The strict check for an id that arrives *from outside*, imported rather than
 # re-typed: `drive/query.py` is the module that owns that shape, `drive/reader.py`
@@ -64,6 +64,26 @@ DIVISA = "EUR"
 # String200Type, UnitaMisura is String10Type, Natura is 2-4 characters.
 DESCRIZIONE_MAX_LENGTH = 1000
 CAUSALE_MAX_LENGTH = 200
+
+# `DatiOrdineAcquisto` (REB-693): IdDocumento is String20Type, CodiceCIG and CodiceCUP
+# are String15Type. The columns mirror them like every width above.
+ORDINE_NUMERO_MAX_LENGTH = 20
+ORDINE_CODICE_MAX_LENGTH = 15
+
+# Stripped before the width: the service strips too, so a value padded by a paste
+# (" J41E22000110005 ") must not be refused for a width it does not have once stripped.
+# The constraints sit on the bare `str` and `SafeStr`'s NUL check wraps them from the
+# outside: a constraint added on top of `SafeStr` would run its width on the raw value.
+OrdineNumeroStr = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, max_length=ORDINE_NUMERO_MAX_LENGTH),
+    *SafeStr.__metadata__,
+]
+OrdineCodiceStr = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, max_length=ORDINE_CODICE_MAX_LENGTH),
+    *SafeStr.__metadata__,
+]
 UNITA_MISURA_MAX_LENGTH = 10
 NATURA_MAX_LENGTH = 4
 RIFERIMENTO_MAX_LENGTH = 30
@@ -203,6 +223,13 @@ class InvoiceCreate(BaseModel):
     # against the merged row and by the table on every write path.
     competenza_da: date | None = None
     competenza_a: date | None = None
+    # The customer's purchase order (REB-693): its number, and optionally its date, CIG
+    # and CUP. The widths are the columns'; stripping, case and ANAC's lengths are
+    # `invoices/ordine.py`'s, applied by the service on the merged row.
+    ordine_numero: OrdineNumeroStr | None = None
+    ordine_data: date | None = None
+    ordine_cig: OrdineCodiceStr | None = None
+    ordine_cup: OrdineCodiceStr | None = None
     righe: list[InvoiceLineIn] = Field(default_factory=list, max_length=MAX_LINES)
     custom_fields: dict[str, Any] = {}
 
@@ -216,10 +243,10 @@ class InvoiceUpdate(BaseModel):
     key leaves it alone -- which is what lets the three `date` columns sit here without
     reproducing A14.
 
-    `causale`, the accrual period and a proforma's `data_emissione` are on this schema
-    because a draft has to be correctable before it is issued, and they are frozen
-    afterwards by `InvoiceService.update`, which raises `ImmutableField` -- not by
-    leaving them off the schema, which would have made a draft's own subject line
+    `causale`, the accrual period, the purchase order and a proforma's `data_emissione`
+    are on this schema because a draft has to be correctable before it is issued, and
+    they are frozen afterwards by `InvoiceService.update`, which raises `ImmutableField`
+    -- not by leaving them off the schema, which would have made a draft's own subject line
     unfixable. The period is cleared as a pair and a proforma's date is never cleared;
     a fattura's `data_emissione` is refused here outright, since `issue` owns it.
     """
@@ -236,6 +263,13 @@ class InvoiceUpdate(BaseModel):
     data_scadenza: date | None = None
     competenza_da: date | None = None
     competenza_a: date | None = None
+    # The purchase order (REB-693), frozen with the rest of the header after emission.
+    # An explicit null clears a field; the service refuses a date, CIG or CUP left
+    # without the number on the merged row.
+    ordine_numero: OrdineNumeroStr | None = None
+    ordine_data: date | None = None
+    ordine_cig: OrdineCodiceStr | None = None
+    ordine_cup: OrdineCodiceStr | None = None
     custom_fields: dict[str, Any] | None = None
 
 
@@ -451,6 +485,10 @@ class InvoiceRead(BaseModel):
     data_scadenza: date | None
     competenza_da: date | None
     competenza_a: date | None
+    ordine_numero: str | None
+    ordine_data: date | None
+    ordine_cig: str | None
+    ordine_cup: str | None
     tipo_documento: str
     divisa: str
     imponibile: Decimal
@@ -574,5 +612,11 @@ class InvoiceForExport(BaseModel):
     # exporter writes on every `DettaglioLinee` is what the document said at issue.
     competenza_da: date | None = None
     competenza_a: date | None = None
+    # Read off the row and frozen by the same rule as the period (REB-693): what the
+    # exporter writes in `DatiOrdineAcquisto` is what the document said at issue.
+    ordine_numero: str | None = Field(default=None, max_length=ORDINE_NUMERO_MAX_LENGTH)
+    ordine_data: date | None = None
+    ordine_cig: str | None = Field(default=None, max_length=ORDINE_CODICE_MAX_LENGTH)
+    ordine_cup: str | None = Field(default=None, max_length=ORDINE_CODICE_MAX_LENGTH)
     snapshot: InvoiceSnapshot
     righe: tuple[InvoiceLineRead, ...]

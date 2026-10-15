@@ -334,6 +334,62 @@ def test_a_document_without_a_period_prints_no_period_line(
     assert "Periodo di competenza" not in extract_pdf_text(storage, db_session, pdf.document_id)
 
 
+def test_the_pdf_prints_the_order_reference_with_its_markup_characters_literally(
+    service: InvoiceService,
+    customer_id: UUID,
+    db_session: Session,
+    storage: LocalFileStorage,
+    extract_pdf_text: Callable[[LocalFileStorage, Session, UUID], str],
+) -> None:
+    """REB-693. `#` opens code and `*` strong text in Typst: an order number carrying
+    either must still print as typed."""
+    from datetime import date
+
+    draft = service.create(
+        InvoiceCreate(
+            customer_id=customer_id,
+            causale="Consulenza",
+            ordine_numero="ODA#14*",
+            ordine_data=date(2026, 10, 9),
+            ordine_cig="Z0A1B2C3D4",
+            ordine_cup="J41E22000110005",
+            righe=[InvoiceLineIn(descrizione="Consulenza", prezzo_unitario=Decimal("250.00"))],
+        ),
+        ADMIN,
+    )
+    invoice_id = service.issue(draft.id, InvoiceIssue(), ADMIN).id
+    pdf, _xml = service.produce_artifacts(invoice_id, ADMIN)
+    testo = extract_pdf_text(storage, db_session, pdf.document_id)
+    assert (
+        "Riferimento ordine: n. ODA#14* del 09-10-2026, CIG Z0A1B2C3D4, CUP J41E22000110005"
+        in testo
+    )
+
+
+def test_a_proforma_prints_its_order_and_a_document_without_one_prints_no_order_line(
+    service: InvoiceService,
+    customer_id: UUID,
+    db_session: Session,
+    storage: LocalFileStorage,
+    extract_pdf_text: Callable[[LocalFileStorage, Session, UUID], str],
+) -> None:
+    proforma = service.create(
+        InvoiceCreate(
+            customer_id=customer_id,
+            tipo="proforma",
+            ordine_numero="ODA-14",
+            righe=[InvoiceLineIn(descrizione="Consulenza", prezzo_unitario=Decimal("250.00"))],
+        ),
+        ADMIN,
+    )
+    (pdf,) = service.produce_artifacts(proforma.id, ADMIN)
+    assert "Riferimento ordine: n. ODA-14" in extract_pdf_text(storage, db_session, pdf.document_id)
+
+    invoice_id = _issue(service, customer_id)
+    pdf, _xml = service.produce_artifacts(invoice_id, ADMIN)
+    assert "Riferimento ordine" not in extract_pdf_text(storage, db_session, pdf.document_id)
+
+
 def test_the_proforma_pdf_prints_its_own_date_and_its_period_not_the_render_day(
     service: InvoiceService,
     customer_id: UUID,

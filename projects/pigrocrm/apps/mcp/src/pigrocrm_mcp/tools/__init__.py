@@ -1450,6 +1450,10 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         data_emissione: IsoDateStr = None,
         competenza_da: IsoDateStr = None,
         competenza_a: IsoDateStr = None,
+        ordine_numero: str | None = None,
+        ordine_data: IsoDateStr = None,
+        ordine_cig: str | None = None,
+        ordine_cup: str | None = None,
     ) -> dict[str, Any]:
         """Crea una proforma. Una proforma non e' un documento fiscale: non prende un
         numero, non produce un file per il Sistema di Interscambio, e diventa una
@@ -1460,7 +1464,12 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         la propria all'emissione. `competenza_da` e `competenza_a` (YYYY-MM-DD, insieme o
         nessuno dei due) sono il periodo di competenza del lavoro fatturato, per esempio
         il mese: finisce sul PDF, su ogni riga dell'XML della fattura e nel conto economico
-        letto per competenza."""
+        letto per competenza.
+
+        `ordine_numero`, `ordine_data` (YYYY-MM-DD), `ordine_cig` e `ordine_cup` sono
+        l'ordine d'acquisto del cliente a cui la fattura risponde: finiscono nel blocco
+        DatiOrdineAcquisto dell'XML e su una riga del PDF. Data, CIG e CUP vogliono il
+        numero; il CIG ha 10 caratteri e il CUP 15, lettere e cifre."""
         return invoices.create_proforma(
             context,
             {
@@ -1470,6 +1479,10 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
                 "data_emissione": _iso_date(data_emissione),
                 "competenza_da": _iso_date(competenza_da),
                 "competenza_a": _iso_date(competenza_a),
+                "ordine_numero": ordine_numero,
+                "ordine_data": _iso_date(ordine_data),
+                "ordine_cig": ordine_cig,
+                "ordine_cup": ordine_cup,
                 "righe": righe,
             },
         )
@@ -1483,9 +1496,14 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         data_scadenza: IsoDateStr = None,
         competenza_da: IsoDateStr = None,
         competenza_a: IsoDateStr = None,
+        ordine_numero: str | None = None,
+        ordine_data: IsoDateStr = None,
+        ordine_cig: str | None = None,
+        ordine_cup: str | None = None,
     ) -> dict[str, Any]:
         """Corregge l'intestazione di una proforma ancora modificabile: la causale, la
-        data del documento, la scadenza e il periodo di competenza. Si cambia solo cio'
+        data del documento, la scadenza, il periodo di competenza e l'ordine d'acquisto
+        del cliente (numero, data, CIG, CUP). Si cambia solo cio'
         che si passa; un campo omesso resta com'e', e da qui non si svuota niente.
         `data_scadenza` e' la scadenza che la fattura emessa da questa proforma portera';
         non passata, all'emissione la calcolano i termini di pagamento del cliente
@@ -1500,6 +1518,10 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
             data_scadenza=_iso_date(data_scadenza),
             competenza_da=_iso_date(competenza_da),
             competenza_a=_iso_date(competenza_a),
+            ordine_numero=ordine_numero,
+            ordine_data=_iso_date(ordine_data),
+            ordine_cig=ordine_cig,
+            ordine_cup=ordine_cup,
         )
 
     @mcp.tool()

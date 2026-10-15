@@ -6573,6 +6573,14 @@ export interface components {
             competenza_da?: string | null;
             /** Competenza A */
             competenza_a?: string | null;
+            /** Ordine Numero */
+            ordine_numero?: string | null;
+            /** Ordine Data */
+            ordine_data?: string | null;
+            /** Ordine Cig */
+            ordine_cig?: string | null;
+            /** Ordine Cup */
+            ordine_cup?: string | null;
             /** Righe */
             righe?: components["schemas"]["InvoiceLineIn"][];
             /**
@@ -6827,6 +6835,14 @@ export interface components {
             competenza_da: string | null;
             /** Competenza A */
             competenza_a: string | null;
+            /** Ordine Numero */
+            ordine_numero: string | null;
+            /** Ordine Data */
+            ordine_data: string | null;
+            /** Ordine Cig */
+            ordine_cig: string | null;
+            /** Ordine Cup */
+            ordine_cup: string | null;
             /** Tipo Documento */
             tipo_documento: string;
             /** Divisa */
@@ -6918,10 +6934,10 @@ export interface components {
          *     key leaves it alone -- which is what lets the three `date` columns sit here without
          *     reproducing A14.
          *
-         *     `causale`, the accrual period and a proforma's `data_emissione` are on this schema
-         *     because a draft has to be correctable before it is issued, and they are frozen
-         *     afterwards by `InvoiceService.update`, which raises `ImmutableField` -- not by
-         *     leaving them off the schema, which would have made a draft's own subject line
+         *     `causale`, the accrual period, the purchase order and a proforma's `data_emissione`
+         *     are on this schema because a draft has to be correctable before it is issued, and
+         *     they are frozen afterwards by `InvoiceService.update`, which raises `ImmutableField`
+         *     -- not by leaving them off the schema, which would have made a draft's own subject line
          *     unfixable. The period is cleared as a pair and a proforma's date is never cleared;
          *     a fattura's `data_emissione` is refused here outright, since `issue` owns it.
          */
@@ -6938,6 +6954,14 @@ export interface components {
             competenza_da?: string | null;
             /** Competenza A */
             competenza_a?: string | null;
+            /** Ordine Numero */
+            ordine_numero?: string | null;
+            /** Ordine Data */
+            ordine_data?: string | null;
+            /** Ordine Cig */
+            ordine_cig?: string | null;
+            /** Ordine Cup */
+            ordine_cup?: string | null;
             /** Custom Fields */
             custom_fields?: {
                 [key: string]: unknown;

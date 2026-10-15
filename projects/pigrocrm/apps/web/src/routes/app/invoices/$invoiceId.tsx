@@ -8,6 +8,7 @@ import { ConsumedProformaNotice } from '@/features/invoices/ConsumedProformaNoti
 import { InvoiceActions } from '@/features/invoices/InvoiceActions'
 import { InvoiceHeaderEditor } from '@/features/invoices/InvoiceHeaderEditor'
 import { InvoiceLinesEditor } from '@/features/invoices/InvoiceLinesEditor'
+import { PurchaseOrderEditor } from '@/features/invoices/PurchaseOrderEditor'
 import { InvoicePdfPreview } from '@/features/invoices/InvoicePdfPreview'
 import { InvoiceStateBadge } from '@/features/invoices/InvoiceStateBadge'
 import {
@@ -15,6 +16,7 @@ import {
   formatInvoiceNumber,
   formatMoney,
   formatPeriod,
+  formatPurchaseOrder,
 } from '@/features/invoices/format'
 import {
   PAYMENT_STATE_LABELS,
@@ -117,6 +119,8 @@ export function InvoiceDetail() {
                 and the list below states only what nobody can edit here; once frozen, the
                 same facts come back as rows. Stated or asked, never both. */}
             {readOnly ? null : <InvoiceHeaderEditor invoice={row} />}
+            {/* key: moving to another invoice must not carry this one's draft along */}
+            {readOnly ? null : <PurchaseOrderEditor key={row.id} invoice={row} />}
 
             <dl className="grid max-w-lg grid-cols-2 gap-2 text-sm">
               {readOnly ? (
@@ -135,6 +139,12 @@ export function InvoiceDetail() {
                 <>
                   <dt className="text-muted-foreground">Periodo di competenza</dt>
                   <dd>{formatPeriod(row.competenza_da, row.competenza_a)}</dd>
+                </>
+              ) : null}
+              {readOnly && row.ordine_numero ? (
+                <>
+                  <dt className="text-muted-foreground">Riferimento ordine</dt>
+                  <dd>{formatPurchaseOrder(row)}</dd>
                 </>
               ) : null}
               <dt className="text-muted-foreground">Imponibile</dt>
