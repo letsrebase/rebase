@@ -731,6 +731,13 @@ Expected: FAIL (unexpected keyword `ordine_numero`, missing fields).
 
 The two width constants are already in this module (Task 2).
 
+> Changed after review: the snippet below put `max_length` on the raw `SafeStr`, which
+> refuses a value padded by a paste (`" J41E22000110005 "`) for a width it does not have
+> once stripped. The branch declares `OrdineNumeroStr` and `OrdineCodiceStr` in `schemas.py`
+> (`StringConstraints(strip_whitespace=True, max_length=...)`) and the four fields use
+> them with no `Field(max_length=...)`. The same round makes `ordine.py` check a CIG or
+> CUP as typed, before upper-casing (`ß` and `ﬁ` expand into ASCII).
+
 In `InvoiceCreate`, right after `competenza_a`:
 
 ```python
@@ -1861,6 +1868,15 @@ export function formatPurchaseOrder(
 - [ ] **Step 6: Write the editor**
 
 Create `PurchaseOrderEditor.tsx`:
+
+> Changed after review: the snippet below is the first draft. The branch's editor has no
+> `maxLength` on the inputs (a long paste is refused by the server with its own sentence,
+> not silently cut), and it saves only the fields the person edited (`purchaseOrderChanges`
+> in `purchaseOrder.ts` replaces `purchaseOrderBody`). It tracks a `touched` set, refreshes
+> the untouched fields when the stored order changes, validates the merged order, sends
+> nothing when nothing was edited, disables the inputs while the save is pending and
+> clears the error and the server problem on every edit. A save no longer erases a CIG
+> added elsewhere. See the review-round commit `fix(web): ...` on the branch.
 
 ```tsx
 import { useState } from 'react'
