@@ -107,6 +107,7 @@ def _export(
     imposta: str = "0.00",
     bollo: str = "0.00",
     competenza: tuple[date, date] | None = None,
+    ordine: dict[str, object] | None = None,
 ) -> InvoiceForExport:
     righe = righe or (_line("Consulenza Remote Console", "1760.00"),)
     imponibile = sum((r.prezzo_totale for r in righe), Decimal("0.00"))
@@ -124,6 +125,7 @@ def _export(
         causale="Consulenza",
         competenza_da=competenza[0] if competenza else None,
         competenza_a=competenza[1] if competenza else None,
+        **(ordine or {}),
         snapshot=InvoiceSnapshot(versione=1, emittente=EMITTENTE, cliente=cliente, fiscale=fiscale),
         righe=righe,
     )
@@ -307,3 +309,30 @@ def test_an_ordinario_invoice_still_shows_its_vat() -> None:
     assert "Imposta 44,00 €" in testo
     assert "Totale documento 244,00 €" in testo
     assert "Regime fiscale: RF01 Regime ordinario" in testo
+
+
+def test_the_order_reference_reads_as_one_line_with_the_parts_it_has() -> None:
+    """REB-693: the number, then each part the order has, the date spelled like every
+    other date on the document; nothing at all without a number, so the template's
+    `{{#if}}` prints no label with an empty value after it."""
+    whole = build_scope(
+        _export(
+            ordine={
+                "ordine_numero": "ODA-14",
+                "ordine_data": date(2026, 10, 9),
+                "ordine_cig": "Z0A1B2C3D4",
+                "ordine_cup": "J41E22000110005",
+            }
+        ),
+        riferimento=None,
+    )
+    assert whole["fattura"]["riferimento_ordine"] == (
+        "n. ODA-14 del 09-10-2026, CIG Z0A1B2C3D4, CUP J41E22000110005"
+    )
+    numero = build_scope(_export(ordine={"ordine_numero": "8"}), riferimento=None)
+    assert numero["fattura"]["riferimento_ordine"] == "n. 8"
+    cig = build_scope(
+        _export(ordine={"ordine_numero": "8", "ordine_cig": "Z0A1B2C3D4"}), riferimento=None
+    )
+    assert cig["fattura"]["riferimento_ordine"] == "n. 8, CIG Z0A1B2C3D4"
+    assert build_scope(_export(), riferimento=None)["fattura"]["riferimento_ordine"] == ""
