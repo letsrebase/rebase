@@ -34,14 +34,17 @@ export function validatePurchaseOrder(draft: PurchaseOrderDraft): string | undef
   return undefined
 }
 
-/** All four, always: `null` is how the server clears a field, so an order emptied in
- * the form is cleared as a whole. */
-export function purchaseOrderBody(draft: PurchaseOrderDraft): Record<string, string | null> {
-  const text = (value: string) => (value.trim() === '' ? null : value.trim())
-  return {
-    ordine_numero: text(draft.ordine_numero),
-    ordine_data: draft.ordine_data === '' ? null : draft.ordine_data,
-    ordine_cig: text(draft.ordine_cig),
-    ordine_cup: text(draft.ordine_cup),
+/** Only the fields the person edited, trimmed, `null` for an empty one (how the server
+ * clears a field). A field left alone is not sent, so a value changed elsewhere since the
+ * page loaded is never overwritten by a save of another field. */
+export function purchaseOrderChanges(
+  draft: PurchaseOrderDraft,
+  touched: ReadonlySet<keyof PurchaseOrderDraft>,
+): Record<string, string | null> {
+  const changes: Record<string, string | null> = {}
+  for (const field of touched) {
+    const value = draft[field].trim()
+    changes[field] = value === '' ? null : value
   }
+  return changes
 }

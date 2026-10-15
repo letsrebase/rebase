@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { purchaseOrderBody, purchaseOrderDraft, validatePurchaseOrder } from './purchaseOrder'
+import { purchaseOrderChanges, purchaseOrderDraft, validatePurchaseOrder } from './purchaseOrder'
 import type { Invoice } from './queries'
 
 const EMPTY_DRAFT = { ordine_numero: '', ordine_data: '', ordine_cig: '', ordine_cup: '' }
@@ -24,21 +24,23 @@ describe('purchaseOrder', () => {
     expect(purchaseOrderDraft({} as unknown as Invoice)).toEqual(EMPTY_DRAFT)
   })
 
-  it('sends every field, trimmed, with null for an empty input', () => {
-    expect(
-      purchaseOrderBody({
-        ordine_numero: ' ODA-14 ',
-        ordine_data: '2026-10-09',
-        ordine_cig: '',
-        ordine_cup: '  ',
-      }),
-    ).toEqual({ ordine_numero: 'ODA-14', ordine_data: '2026-10-09', ordine_cig: null, ordine_cup: null })
-    expect(purchaseOrderBody(EMPTY_DRAFT)).toEqual({
-      ordine_numero: null,
-      ordine_data: null,
-      ordine_cig: null,
+  it('sends only the touched fields, trimmed, with null for an empty input', () => {
+    const draft = {
+      ordine_numero: ' ODA-14 ',
+      ordine_data: '2026-10-09',
+      ordine_cig: '',
+      ordine_cup: '  ',
+    }
+    expect(purchaseOrderChanges(draft, new Set(['ordine_numero', 'ordine_cup']))).toEqual({
+      ordine_numero: 'ODA-14',
       ordine_cup: null,
     })
+    expect(purchaseOrderChanges(draft, new Set(['ordine_data', 'ordine_cig']))).toEqual({
+      ordine_data: '2026-10-09',
+      ordine_cig: null,
+    })
+    expect(purchaseOrderChanges(EMPTY_DRAFT, new Set())).toEqual({})
+    expect(purchaseOrderChanges(EMPTY_DRAFT, new Set(['ordine_data']))).toEqual({ ordine_data: null })
   })
 
   it('refuses a date, a CIG or a CUP without the number, and nothing else', () => {
