@@ -94,6 +94,15 @@ class Invoice(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     # at issue like `causale`, since the XML writes it on every `DettaglioLinee`.
     competenza_da: Mapped[date | None] = mapped_column(Date, default=None)
     competenza_a: Mapped[date | None] = mapped_column(Date, default=None)
+    # The customer's purchase order this invoice answers (REB-693): one per document,
+    # written as `DatiOrdineAcquisto` in the XML and as a line on the PDF. The widths
+    # are FPR12's: `IdDocumento` is String20Type, `CodiceCIG` and `CodiceCUP` are
+    # String15Type. The date, the CIG and the CUP need the number (the CHECK below),
+    # and all four are frozen at issue like `causale`.
+    ordine_numero: Mapped[str | None] = mapped_column(String(20), default=None)
+    ordine_data: Mapped[date | None] = mapped_column(Date, default=None)
+    ordine_cig: Mapped[str | None] = mapped_column(String(15), default=None)
+    ordine_cup: Mapped[str | None] = mapped_column(String(15), default=None)
     tipo_documento: Mapped[str] = mapped_column(String(4), nullable=False, default="TD01")
     divisa: Mapped[str] = mapped_column(String(3), nullable=False, default="EUR")
     # Derived by the service and stored. Never recomputed by a client: a total computed
@@ -185,6 +194,14 @@ class Invoice(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
         CheckConstraint(
             "competenza_da IS NULL OR competenza_da <= competenza_a",
             name="ck_invoices_competenza_ordered",
+        ),
+        # An order's date, CIG and CUP hang on its number: `IdDocumento` is the one
+        # mandatory child of `DatiOrdineAcquisto`, so a CIG alone is a fact with nothing
+        # to belong to (REB-693).
+        CheckConstraint(
+            "ordine_numero IS NOT NULL "
+            "OR (ordine_data IS NULL AND ordine_cig IS NULL AND ordine_cup IS NULL)",
+            name="ck_invoices_ordine_needs_numero",
         ),
         # Spec 4: what never consumed a number is deletable; what consumed one is not,
         # not even by direct SQL -- and neither is a `consumata` proforma, which is the
