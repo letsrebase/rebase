@@ -72,6 +72,9 @@ of the four fields optional:
 - `ordine_data`: a `date`. No rule against its position relative to the invoice date:
   an order is normally earlier, and nothing is gained by refusing the rare case.
 
+The Pydantic widths mirror the columns (20, 15, 15), as every other field of these
+schemas does; the rules above are the service's (§ 5), applied to the stripped value,
+through a small pure module (`invoices/ordine.py`) so they are testable with no session.
 Messages are Italian, in the shape the module already uses (`ValidationFailed(entity,
 field, message, expected=...)`): «il CIG ha 10 caratteri, lettere e cifre», «il CUP ha 15
 caratteri, lettere e cifre», «il numero d'ordine ammette solo caratteri latini di base».
@@ -94,14 +97,15 @@ The "needs a number" rule is the service's, on the merged row (§ 5), because on
 - `issue` from a proforma copies the four onto the fattura it creates, next to
   `competenza_da` and `competenza_a`. `issue` of a draft fattura keeps its own.
 - The issue pre-check, which runs before the register number is spent, adds the order
-  number to what `check_document_text_exportable` already measures (causale, lines), so
-  a value the exporter would refuse never costs a number. CIG and CUP need no pre-check:
-  their pattern is narrower than the schema's and was enforced when they were written.
+  number, the CIG and the CUP to what `check_document_text_exportable` already measures
+  (causale, lines), with the tag, width and pattern the writer will apply, so a value the
+  exporter would refuse never costs a number, whichever path wrote it.
 - `_for_export` and `_for_export_proforma` pass the four to `InvoiceForExport`, which
   gains them as optional fields.
 - `import_issued` does not read them: an imported invoice keeps four nulls (§ 9).
-- `schema_registry.py` lists the four as native fields of `invoice`, so `describe_schema`
-  shows them.
+- `describe_schema` needs no change: `schema_registry.native_fields` derives the native
+  fields of `invoice` from `InvoiceCreate`, so the four appear as soon as the schema
+  carries them.
 
 ## 6. XML
 
@@ -126,9 +130,11 @@ Basic Latin pattern, the same single path every other text node takes.
 ## 7. PDF
 
 `pdf.py` builds `fattura.riferimento_ordine` when `ordine_numero` is set, for example
-«n. ODA-14 del 09/10/2026, CIG Z0A1B2C3D4, CUP …», leaving out the parts that are absent.
-`template-invoice.md` and `template-proforma.md` print it under the accrual period:
-`Riferimento ordine: {{fattura.riferimento_ordine}}`, inside an `{{#if}}` like the period.
+«n. ODA-14 del 09-10-2026, CIG Z0A1B2C3D4, CUP …», leaving out the parts that are absent
+and spelling the date with `format_data`, like every other date on the document.
+`template-invoice.md`, the one template both the fattura and the proforma render
+through, prints it under the accrual period: `Riferimento ordine:
+{{fattura.riferimento_ordine}}`, inside an `{{#if}}` like the period.
 
 ## 8. Surfaces
 
@@ -139,8 +145,11 @@ Basic Latin pattern, the same single path every other text node takes.
   `InvoiceRead`. On `update_proforma`, as for every other field there, `None` means "not
   supplied", so an agent sets or changes the order but cannot clear it; clearing is the
   application's, where the four are one control.
-- **Web**: `InvoiceHeaderEditor` gains a «Riferimento ordine» group with four inputs
-  (Numero ordine, Data ordine, CIG, CUP). It sends all four on save, `null` for an empty
+- **Web**: a new `PurchaseOrderEditor`, rendered under `InvoiceHeaderEditor` while the
+  document is editable, with a «Riferimento ordine» heading, four inputs (Numero ordine,
+  Data ordine, CIG, CUP) and its own «Salva ordine» button. A component of its own rather
+  than four more inputs in `InvoiceHeaderEditor`, whose section is «Date del documento»
+  and whose button is «Salva date». It sends all four on save, `null` for an empty
   input, and refuses locally a date, CIG or CUP without a number («Indica il numero
   dell'ordine.»), so the common mistake is caught before the request; the server's
   answer is shown as it comes for everything else. When the document is no longer
@@ -175,7 +184,7 @@ Basic Latin pattern, the same single path every other text node takes.
   validated against `tests/fpr12/Schema_VFPR12_v1.2.3.xsd`; the block sits between
   `DatiGeneraliDocumento` and `DatiBeniServizi`, CUP before CIG.
 - **PDF**: the line is present with the parts that exist and absent without a number, on
-  both the invoice and the proforma template.
+  an issued fattura and on a proforma.
 - **API**: POST and PATCH round-trip, 422 for a bad CIG, 409 on an issued invoice.
 - **MCP**: `create_proforma` and `update_proforma` set the fields; `get_invoice` shows
   them.
