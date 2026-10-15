@@ -87,6 +87,12 @@ _INDIRIZZO_MAX = 60
 _COMUNE_MAX = 60
 _DESCRIZIONE_MAX = 1000
 _CAUSALE_MAX = 200
+
+# `DatiOrdineAcquisto` (REB-693): IdDocumento is String20Type, CodiceCUP and CodiceCIG are
+# String15Type, all three Basic Latin.
+_ID_DOCUMENTO_MAX = 20
+_CODICE_CUP_MAX = 15
+_CODICE_CIG_MAX = 15
 _RIFERIMENTO_NORMATIVO_MAX = 100
 _UNITA_MISURA_MAX = 10
 _EMAIL_MAX = 256
@@ -537,7 +543,14 @@ class _LineText(Protocol):
     def riferimento_normativo(self) -> str | None: ...
 
 
-def check_document_text_exportable(causale: str | None, righe: Iterable[_LineText]) -> None:
+def check_document_text_exportable(
+    causale: str | None,
+    righe: Iterable[_LineText],
+    *,
+    ordine_numero: str | None = None,
+    ordine_cig: str | None = None,
+    ordine_cup: str | None = None,
+) -> None:
     """The document's own free text, checked before a number is spent (ORB-140).
 
     `_check_latin` covered the two parties and nothing covered the invoice: a causale
@@ -545,7 +558,9 @@ def check_document_text_exportable(causale: str | None, righe: Iterable[_LineTex
     it refused by `invoice.causale`. Every value here is the one the writer will pass to
     `_text`, with the same tag, entity, field and bound, through the same `_check_text`:
     `Causale`, and per line `Descrizione`, `UnitaMisura` and the `RiferimentoNormativo`
-    the line carries into `DatiRiepilogo`. `issue` calls this before it touches the
+    the line carries into `DatiRiepilogo`. Since REB-693 also the purchase order's
+    `IdDocumento`, `CodiceCUP` and `CodiceCIG`, which the service checks when it stores
+    them but which another path could have written. `issue` calls this before it touches the
     counter, so a value the mapping cannot spell costs one correction and not a hole in
     the register.
     """
@@ -577,6 +592,20 @@ def check_document_text_exportable(causale: str | None, righe: Iterable[_LineTex
                 entity="fiscal_profile",
                 field="riferimento_normativo",
                 max_length=_RIFERIMENTO_NORMATIVO_MAX,
+            )
+    for value, tag, field, width in (
+        (ordine_numero, "IdDocumento", "ordine_numero", _ID_DOCUMENTO_MAX),
+        (ordine_cup, "CodiceCUP", "ordine_cup", _CODICE_CUP_MAX),
+        (ordine_cig, "CodiceCIG", "ordine_cig", _CODICE_CIG_MAX),
+    ):
+        if value:
+            _check_text(
+                value,
+                tag,
+                entity="invoice",
+                field=field,
+                max_length=width,
+                pattern=_BASIC_LATIN_RE,
             )
 
 
@@ -1032,7 +1061,10 @@ class FatturaPAExporter:
     def _dati_generali(self, body: etree._Element, invoice: InvoiceForExport) -> None:
         """Sequence: TipoDocumento, Divisa, Data, Numero, DatiRitenuta*, DatiBollo?,
         DatiCassaPrevidenziale*, ScontoMaggiorazione*, ImportoTotaleDocumento?,
-        Arrotondamento?, Causale*, Art73?."""
+        Arrotondamento?, Causale*, Art73?.
+
+        Then `DatiOrdineAcquisto`, the next element of `DatiGenerali`, when the document
+        has an order."""
         generali = etree.SubElement(body, "DatiGenerali")
         documento = etree.SubElement(generali, "DatiGeneraliDocumento")
 
@@ -1069,6 +1101,52 @@ class FatturaPAExporter:
                 entity="invoice",
                 field="causale",
                 max_length=_CAUSALE_MAX,
+            )
+
+        self._dati_ordine_acquisto(generali, invoice)
+
+    def _dati_ordine_acquisto(self, generali: etree._Element, invoice: InvoiceForExport) -> None:
+        """Sequence (`DatiDocumentiCorrelatiType`): RiferimentoNumeroLinea*, IdDocumento,
+        Data?, NumItem?, CodiceCommessaConvenzione?, CodiceCUP?, CodiceCIG?.
+
+        One block, after `DatiGeneraliDocumento`, only when the document has an order
+        (REB-693). No `RiferimentoNumeroLinea`: the order covers every line, which is
+        what the element's absence means. CUP before CIG is the schema's order.
+        """
+        if not (invoice.ordine_numero or "").strip():
+            return
+        ordine = etree.SubElement(generali, "DatiOrdineAcquisto")
+        self._text(
+            ordine,
+            "IdDocumento",
+            invoice.ordine_numero or "",
+            entity="invoice",
+            field="ordine_numero",
+            max_length=_ID_DOCUMENTO_MAX,
+            pattern=_BASIC_LATIN_RE,
+        )
+        if invoice.ordine_data is not None:
+            data = etree.SubElement(ordine, "Data")
+            data.text = self._iso(invoice.ordine_data)
+        if invoice.ordine_cup:
+            self._text(
+                ordine,
+                "CodiceCUP",
+                invoice.ordine_cup,
+                entity="invoice",
+                field="ordine_cup",
+                max_length=_CODICE_CUP_MAX,
+                pattern=_BASIC_LATIN_RE,
+            )
+        if invoice.ordine_cig:
+            self._text(
+                ordine,
+                "CodiceCIG",
+                invoice.ordine_cig,
+                entity="invoice",
+                field="ordine_cig",
+                max_length=_CODICE_CIG_MAX,
+                pattern=_BASIC_LATIN_RE,
             )
 
     def _dati_beni_servizi(self, body: etree._Element, invoice: InvoiceForExport) -> None:

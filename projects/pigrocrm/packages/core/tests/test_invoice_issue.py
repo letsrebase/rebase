@@ -865,3 +865,22 @@ def test_a_fattura_issued_from_a_proforma_answers_the_proforma_s_order(
     ):
         with pytest.raises(ImmutableField):
             service.update(proforma.id, change, ADMIN)
+
+
+def test_an_order_number_the_xml_cannot_carry_is_refused_before_the_number_is_spent(
+    service: InvoiceService, db_session: Session
+) -> None:
+    """A value written by another path than the service (a fix-up script, raw SQL) is
+    measured with the writer's own rules before the counter moves, like the causale
+    since ORB-140."""
+    customer_id = _customer(db_session)
+    draft_id = _draft(service, customer_id)
+    db_session.execute(
+        text("UPDATE invoices SET ordine_numero = 'Ordine citt\u00e0 5' WHERE id = :id"),
+        {"id": draft_id},
+    )
+    db_session.expire_all()
+    with pytest.raises(ValidationFailed) as caught:
+        service.issue(draft_id, InvoiceIssue(), ADMIN)
+    assert caught.value.details["field"] == "ordine_numero"
+    assert service.get(draft_id, ADMIN).numero is None

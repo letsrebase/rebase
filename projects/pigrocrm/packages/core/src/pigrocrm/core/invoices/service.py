@@ -1004,7 +1004,13 @@ class InvoiceService:
         # em dash in a causale spent a number whose XML was then refused on every export
         # (ORB-140). What the check accepts here is what `export_xml` will serialise.
         if not abroad:
-            check_document_text_exportable(source.causale, righe)
+            check_document_text_exportable(
+                source.causale,
+                righe,
+                ordine_numero=source.ordine_numero,
+                ordine_cig=source.ordine_cig,
+                ordine_cup=source.ordine_cup,
+            )
 
         computed = tuple(
             ComputedLine(
