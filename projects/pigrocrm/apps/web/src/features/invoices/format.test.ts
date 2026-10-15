@@ -4,6 +4,7 @@ import {
   formatInvoiceNumber,
   formatMoney,
   formatPeriod,
+  formatPurchaseOrder,
   formatQuantity,
   formatRate,
   previewImponibile,
@@ -161,5 +162,27 @@ describe('formatPeriod', () => {
   it('survives an API that predates the two columns', () => {
     // `undefined`, not `null`: the key is simply absent from an older `InvoiceRead`.
     expect(formatPeriod(undefined as unknown as null, undefined as unknown as null)).toBe('—')
+  })
+})
+
+describe('formatPurchaseOrder', () => {
+  it('reads like the PDF line, with only the parts the order has', () => {
+    expect(
+      formatPurchaseOrder({
+        ordine_numero: 'ODA-14',
+        ordine_data: '2026-10-09',
+        ordine_cig: 'Z0A1B2C3D4',
+        ordine_cup: 'J41E22000110005',
+      }),
+    ).toBe(`n. ODA-14 del ${formatDate('2026-10-09')}, CIG Z0A1B2C3D4, CUP J41E22000110005`)
+    expect(
+      formatPurchaseOrder({ ordine_numero: '8', ordine_data: null, ordine_cig: null, ordine_cup: null }),
+    ).toBe('n. 8')
+  })
+
+  it('is the dash without an order number', () => {
+    expect(
+      formatPurchaseOrder({ ordine_numero: null, ordine_data: null, ordine_cig: null, ordine_cup: null }),
+    ).toBe('—')
   })
 })
