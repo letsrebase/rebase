@@ -88,7 +88,9 @@ def test_a_number_outside_printable_basic_latin_is_refused_not_transliterated(
     assert code_point in caught.value.details["reason"]
 
 
-@pytest.mark.parametrize("cig", ["Z0A1B2C3D", "Z0A1B2C3D45", "Z0A1-2C3D4", "Z0A1B2C3Dè"])
+@pytest.mark.parametrize(
+    "cig", ["Z0A1B2C3D", "Z0A1B2C3D45", "Z0A1-2C3D4", "Z0A1B2C3Dè", "ß12345678"]
+)
 def test_a_cig_is_exactly_ten_letters_or_digits(cig: str) -> None:
     with pytest.raises(ValidationFailed) as caught:
         checked_ordine("ODA-14", None, cig, None)
@@ -96,7 +98,9 @@ def test_a_cig_is_exactly_ten_letters_or_digits(cig: str) -> None:
     assert caught.value.details["reason"] == "il CIG ha 10 caratteri, lettere e cifre"
 
 
-@pytest.mark.parametrize("cup", ["J41E2200011000", "J41E220001100055", "J41E2200011000-"])
+@pytest.mark.parametrize(
+    "cup", ["J41E2200011000", "J41E220001100055", "J41E2200011000-", "\ufb01J41E220001100"]
+)
 def test_a_cup_is_exactly_fifteen_letters_or_digits(cup: str) -> None:
     with pytest.raises(ValidationFailed) as caught:
         checked_ordine("ODA-14", None, None, cup)

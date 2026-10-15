@@ -26,8 +26,10 @@ ORDINE_FIELDS: tuple[str, ...] = ("ordine_numero", "ordine_data", "ordine_cig", 
 # Printable Basic Latin. `String20Type` is `\p{IsBasicLatin}{1,20}`, which also admits
 # control characters; a tab inside an identifier is never what somebody meant.
 _NUMERO_RE = re.compile(r"[\x20-\x7e]+")
-_CIG_RE = re.compile(r"[A-Z0-9]{10}")
-_CUP_RE = re.compile(r"[A-Z0-9]{15}")
+# Checked as typed, before upper-casing: `str.upper()` expands some characters into ASCII
+# (`ß` into `SS`, `ﬁ` into `FI`), so a value the caller never typed would pass.
+_CIG_RE = re.compile(r"[A-Za-z0-9]{10}")
+_CUP_RE = re.compile(r"[A-Za-z0-9]{15}")
 
 
 @dataclass(frozen=True)
@@ -82,10 +84,10 @@ def _codice(
 ) -> str | None:
     if value is None:
         return None
-    pulito = value.strip().upper()
+    pulito = value.strip()
     if not pattern.fullmatch(pulito):
         raise ValidationFailed(ENTITY, field, reason, expected=expected)
-    return pulito
+    return pulito.upper()
 
 
 def checked_ordine(
