@@ -1,4 +1,4 @@
-"""Typeset the freelancer contracts into PDFs, on a laptop.
+"""Typeset the contracts into PDFs, on a laptop.
 
     uv run python projects/hub/tools/build_contract_pdf.py
     uv run python projects/hub/tools/build_contract_pdf.py lettera-di-incarico --data job.json
@@ -6,8 +6,9 @@
 Since REB-387 the texts, the Typst template and rebase's defaults are package data of
 `rebase_core.contracts`, which the hub's API renders at request time; this script is the
 thin wrapper that keeps a preview on a laptop. With no argument it builds every document
-as blank forms; naming one or more (by stem) builds only those. `--data` fills the
-fields from a JSON object, read over the package's `rebase.json` and over
+as blank forms, the drafts no hub flow signs yet included (`REVIEW_TEXTS`, REB-689);
+naming one or more (by stem) builds only those. `--data` fills the fields from a JSON
+object, read over the package's `rebase.json` and over
 `content/contratti/rebase.local.json` when that file exists: git ignores it, and it holds
 the real data of whoever signs for rebase today, which a public repository does not
 print. `--public` leaves it out and writes to `dist/public/`. The PDFs land in
@@ -19,7 +20,7 @@ import sys
 from pathlib import Path
 
 from rebase_core.contracts.fields import ContractFailed, Value, merge_data, read_layer
-from rebase_core.contracts.render import DOCUMENTS, company_defaults, render
+from rebase_core.contracts.render import ALL_TEXTS, company_defaults, render
 
 HUB = Path(__file__).resolve().parent.parent
 REPO = HUB.parent.parent
@@ -46,11 +47,11 @@ def load_data(path: Path | None, local: bool = True) -> dict[str, Value]:
 
 def documents(names: list[str]) -> list[str]:
     if not names:
-        return list(DOCUMENTS)
-    unknown = [name for name in names if name not in DOCUMENTS]
+        return list(ALL_TEXTS)
+    unknown = [name for name in names if name not in ALL_TEXTS]
     if unknown:
         raise ContractFailed(
-            f"no such document: {', '.join(unknown)} (have: {', '.join(DOCUMENTS)})"
+            f"no such document: {', '.join(unknown)} (have: {', '.join(ALL_TEXTS)})"
         )
     return names
 
