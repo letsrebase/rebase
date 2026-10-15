@@ -132,9 +132,13 @@ def update_proforma(
     data_scadenza: date | None = None,
     competenza_da: date | None,
     competenza_a: date | None,
+    ordine_numero: str | None = None,
+    ordine_data: date | None = None,
+    ordine_cig: str | None = None,
+    ordine_cup: str | None = None,
 ) -> dict[str, Any]:
-    """The header of a proforma: causale, document date, due date, accrual period
-    (ORB-61, ORB-63, REB-326).
+    """The header of a proforma: causale, document date, due date, accrual period,
+    purchase order (ORB-61, ORB-63, REB-326, REB-693).
 
     Same guard as `replace_proforma_lines`, and for the same reason: a proforma is the
     only document an agent shapes from here, and the service's own `ImmutableField`
@@ -154,6 +158,10 @@ def update_proforma(
             "data_scadenza": data_scadenza,
             "competenza_da": competenza_da,
             "competenza_a": competenza_a,
+            "ordine_numero": ordine_numero,
+            "ordine_data": ordine_data,
+            "ordine_cig": ordine_cig,
+            "ordine_cup": ordine_cup,
         }.items()
         if value is not None
     }
