@@ -137,7 +137,7 @@ for (const file of ['email_header.hbs', 'email_footer.hbs', 'email_footer_text.h
 }
 if (!/>password manager<\/div>/.test(readFileSync(join(project, 'branding', 'templates', 'email', 'email_header.hbs'), 'utf8'))) fail('the mail header has no visible «password manager» label under the wordmark (the <title> does not count)')
 const invite = readFileSync(join(project, 'branding', 'templates', 'email', 'send_org_invite.hbs'), 'utf8')
-if (invite.split('\n')[0] !== 'Invito al password manager di Rebase') fail('the invitation subject does not name the password manager')
+if (!/password manager/i.test(invite.split('\n')[0])) fail('the invitation subject does not name the password manager')
 
 // The stylesheet: balanced, the product's lockup has no graft (four tiles, the box cut under
 // the word), and the label is there.

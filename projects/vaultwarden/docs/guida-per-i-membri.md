@@ -15,7 +15,7 @@ ufficiali di Bitwarden; il server a cui si collegano lo scegli tu al passo 2.
 
 ## 2. Accetta l'invito e punta l'app al nostro server
 
-1. Ti arriva una mail da **vault@letsrebase.com**: «Invito al password manager di Rebase», da **Rebase Password Manager**.
+1. Ti arriva una mail da **vault@letsrebase.com**: «Your invitation to the Rebase password manager», da **Rebase Password Manager**. Come le app, le mail sono in inglese.
    Apri il link: si apre `vault.letsrebase.com`. Se non la trovi, guarda nello spam: a volte i
    filtri la mettono lì, soprattutto la prima. Aprila e usa «Non è spam», così le prossime
    arrivano in posta in arrivo.
@@ -37,12 +37,14 @@ lo fa vedi solo il tuo spazio personale. Quando succede, nell'app compare l'orga
 - **solo visualizzazione**: vedi le voci e puoi copiare le password;
 - **visualizzazione, password nascoste**: vedi la voce ma puoi solo usare la password
   (compilazione automatica), non leggerla né copiarla dall'app. Non la tiene segreta a
-  te: il sito in cui la compili la riceve, e lì potresti vederla;
+  te: il sito in cui la compili la riceve, e la pagina del gestore la contiene comunque in
+  chiaro. Non è una protezione, e per questo non la usiamo;
 - **modifica** (con password visibili o nascoste): puoi anche cambiare le voci;
-- **gestione**: puoi anche decidere chi altro entra nella raccolta.
+- **gestione**: permette anche di decidere chi altro entra nella raccolta. Non la
+  assegniamo: ce l'hanno solo i proprietari.
 
-Se una voce che ti aspetti non c'è, non è un errore: non è stata assegnata a te. Chiedi a
-chi gestisce la raccolta.
+Se una voce che ti aspetti non c'è, non è un errore: non è stata assegnata a te. Chiedila a
+un proprietario dell'organizzazione: solo i proprietari decidono chi entra in una raccolta.
 
 ### Come sono organizzate le raccolte
 
@@ -54,17 +56,23 @@ persona, non per singola voce:
 - **Una password specifica per un account**: una voce per account («Hetzner, console»,
   «GitHub, organizzazione letsrebase»), dentro la raccolta dell'area a cui appartiene. Ogni
   servizio ha la sua voce, con la sua password: non si riusa mai la stessa.
-- **Un gruppo di persone che vede le stesse cose**: una raccolta assegnata a tutte quelle
-  persone. Per il cliente X, una raccolta «Cliente X» assegnata a chi ci lavora; chi non ci
-  lavora non la vede. Non usiamo i «gruppi» del server (sono una funzione ancora in prova):
+- **Le raccolte che ci sono**, con i nomi in inglese come le app: `Infrastructure` (server,
+  DNS, servizi tecnici) e `Administration` (account dell'azienda, fornitori) per le
+  credenziali di Rebase, e per ogni cliente `Clients/<cliente>`, con dentro una raccolta per
+  progetto, `Clients/<cliente>/<progetto>`. Chi lavora a un progetto riceve la raccolta di
+  quel progetto, di solito in **solo visualizzazione**; chi non ci lavora non la vede.
+- **Annidare è solo un nome**: `Clients/<cliente>/<progetto>` compare sotto il cliente, ma
+  non eredita niente da `Clients/<cliente>`. Avere il progetto non ti fa vedere le voci del
+  cliente, e il contrario: ogni raccolta si assegna da sola.
+- **Niente gruppi**: non usiamo i «gruppi» del server (sono una funzione ancora in prova):
   si assegna la raccolta ai nomi, uno per uno.
 - **Una voce in più raccolte**: si può, ed è la voce stessa a comparire in entrambe, non una
   copia. Se cambi la password in un posto, è cambiata dappertutto.
 
 Per aggiungere una voce che serve agli altri, nell'app scegli «Nuovo elemento», come
 proprietario **Rebase** e almeno una raccolta. Puoi farlo solo nelle raccolte in cui hai il
-permesso di modifica: con «solo visualizzazione» non puoi aggiungere voci, e se ti serve lo
-chiedi a chi gestisce la raccolta. Una voce creata nel tuo spazio personale («La mia
+permesso di modifica: con «solo visualizzazione» la raccolta non compare nemmeno fra quelle
+che puoi scegliere, e se ti serve aggiungere una voce lo chiedi a un proprietario. Una voce creata nel tuo spazio personale («La mia
 cassaforte») resta tua e di nessun altro. Per condividerla, aprila dal menu e scegli
 «Assegna alle raccolte», poi l'organizzazione Rebase e le raccolte giuste: **la voce passa
 all'organizzazione**, non ne resta una copia personale, e da quel momento la gestisce chi ha
