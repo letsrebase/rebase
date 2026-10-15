@@ -72,6 +72,7 @@ from pigrocrm.core.invoices.naming import (
     proforma_storage_prefix,
     sdi_filename,
 )
+from pigrocrm.core.invoices.ordine import ORDINE_FIELDS, checked_ordine
 from pigrocrm.core.invoices.repository import InvoiceRepository
 from pigrocrm.core.invoices.scadenza import scadenza_da_termini
 from pigrocrm.core.invoices.schemas import (
@@ -450,6 +451,9 @@ class InvoiceService:
         azienda_id = self._azienda_of_parent(customer, data.deal_id)
         _, profile = self._regime(azienda_id)
         self._check_competenza(data.competenza_da, data.competenza_a)
+        ordine = checked_ordine(
+            data.ordine_numero, data.ordine_data, data.ordine_cig, data.ordine_cup
+        )
         if data.tipo != "proforma" and data.data_emissione is not None:
             raise ValidationFailed(
                 ENTITY,
@@ -470,6 +474,7 @@ class InvoiceService:
             causale=data.causale,
             competenza_da=data.competenza_da,
             competenza_a=data.competenza_a,
+            **ordine.columns(),
             note_interne=data.note_interne,
             imponibile=ZERO,
             imposta=ZERO,
@@ -543,6 +548,19 @@ class InvoiceService:
             self._check_competenza(
                 changes.get("competenza_da", invoice.competenza_da),
                 changes.get("competenza_a", invoice.competenza_a),
+            )
+        if any(key in changes for key in ORDINE_FIELDS):
+            # On the merged row, like the period: a CIG added to a document whose number
+            # is stored is one field, and a number cleared while the CIG stays is
+            # refused before anything is written (REB-693).
+            ordine = checked_ordine(
+                changes.get("ordine_numero", invoice.ordine_numero),
+                changes.get("ordine_data", invoice.ordine_data),
+                changes.get("ordine_cig", invoice.ordine_cig),
+                changes.get("ordine_cup", invoice.ordine_cup),
+            )
+            changes.update(
+                {key: value for key, value in ordine.columns().items() if key in changes}
             )
         if data.custom_fields is not None:
             changes["custom_fields"] = self._update_custom_fields(invoice, data.custom_fields)
@@ -1045,6 +1063,12 @@ class InvoiceService:
                     # (ORB-63), and the fattura takes the register's below.
                     competenza_da=source.competenza_da,
                     competenza_a=source.competenza_a,
+                    # The order is the customer's and the fattura answers it, so it
+                    # travels with the work like the period (REB-693).
+                    ordine_numero=source.ordine_numero,
+                    ordine_data=source.ordine_data,
+                    ordine_cig=source.ordine_cig,
+                    ordine_cup=source.ordine_cup,
                     note_interne=source.note_interne,
                     imponibile=ZERO,
                     imposta=ZERO,
@@ -2220,6 +2244,10 @@ class InvoiceService:
             causale=invoice.causale,
             competenza_da=invoice.competenza_da,
             competenza_a=invoice.competenza_a,
+            ordine_numero=invoice.ordine_numero,
+            ordine_data=invoice.ordine_data,
+            ordine_cig=invoice.ordine_cig,
+            ordine_cup=invoice.ordine_cup,
             snapshot=InvoiceSnapshot.model_validate(invoice.snapshot),
             righe=tuple(InvoiceLineRead.model_validate(r) for r in self.repo.lines(invoice.id)),
         )
@@ -2253,6 +2281,10 @@ class InvoiceService:
             causale=invoice.causale,
             competenza_da=invoice.competenza_da,
             competenza_a=invoice.competenza_a,
+            ordine_numero=invoice.ordine_numero,
+            ordine_data=invoice.ordine_data,
+            ordine_cig=invoice.ordine_cig,
+            ordine_cup=invoice.ordine_cup,
             snapshot=snapshot,
             righe=tuple(InvoiceLineRead.model_validate(r) for r in self.repo.lines(invoice.id)),
         )

@@ -934,3 +934,88 @@ def test_the_customer_name_costs_one_query_for_the_whole_page(
         "ACME 1",
         "ACME 2",
     ]
+
+
+# --- the purchase order (REB-693) -----------------------------------------------------
+
+
+def test_a_draft_may_carry_a_purchase_order_stored_clean(
+    service: InvoiceService, customer_id: UUID
+) -> None:
+    invoice = service.create(
+        InvoiceCreate(
+            customer_id=customer_id,
+            ordine_numero=" ODA-14 ",
+            ordine_data=date(2026, 10, 9),
+            ordine_cig="z0a1b2c3d4",
+            ordine_cup="j41e22000110005",
+        ),
+        ADMIN,
+    )
+    assert (
+        invoice.ordine_numero,
+        invoice.ordine_data,
+        invoice.ordine_cig,
+        invoice.ordine_cup,
+    ) == ("ODA-14", date(2026, 10, 9), "Z0A1B2C3D4", "J41E22000110005")
+    bare = service.create(InvoiceCreate(customer_id=customer_id), ADMIN)
+    assert (bare.ordine_numero, bare.ordine_data, bare.ordine_cig, bare.ordine_cup) == (
+        None,
+        None,
+        None,
+        None,
+    )
+
+
+def test_a_padded_cup_is_stored_stripped_and_upper_case(
+    service: InvoiceService, customer_id: UUID
+) -> None:
+    invoice = service.create(
+        InvoiceCreate(
+            customer_id=customer_id, ordine_numero="ODA-14", ordine_cup=" j41e22000110005 "
+        ),
+        ADMIN,
+    )
+    assert invoice.ordine_cup == "J41E22000110005"
+
+
+def test_a_cig_without_an_order_number_is_refused_on_the_number(
+    service: InvoiceService, customer_id: UUID
+) -> None:
+    with pytest.raises(ValidationFailed) as caught:
+        service.create(InvoiceCreate(customer_id=customer_id, ordine_cig="Z0A1B2C3D4"), ADMIN)
+    assert caught.value.details["field"] == "ordine_numero"
+
+
+def test_a_malformed_cig_is_refused_by_field_name(
+    service: InvoiceService, customer_id: UUID
+) -> None:
+    with pytest.raises(ValidationFailed) as caught:
+        service.create(
+            InvoiceCreate(customer_id=customer_id, ordine_numero="ODA-14", ordine_cig="Z0A1"),
+            ADMIN,
+        )
+    assert caught.value.details["field"] == "ordine_cig"
+
+
+def test_the_order_is_edited_on_the_merged_row_and_cleared_as_a_whole(
+    service: InvoiceService, customer_id: UUID
+) -> None:
+    """Like the accrual period: adding a CIG to a document whose number is stored is
+    one field, dropping the number while the CIG stays is refused and leaves the row as
+    it was, and four nulls clear the order."""
+    invoice = service.create(InvoiceCreate(customer_id=customer_id, ordine_numero="ODA-14"), ADMIN)
+    with_cig = service.update(invoice.id, InvoiceUpdate(ordine_cig="z0a1b2c3d4"), ADMIN)
+    assert (with_cig.ordine_numero, with_cig.ordine_cig) == ("ODA-14", "Z0A1B2C3D4")
+
+    with pytest.raises(ValidationFailed) as caught:
+        service.update(invoice.id, InvoiceUpdate(ordine_numero=None), ADMIN)
+    assert caught.value.details["field"] == "ordine_numero"
+    assert service.get(invoice.id, ADMIN).ordine_numero == "ODA-14"
+
+    cleared = service.update(
+        invoice.id,
+        InvoiceUpdate(ordine_numero=None, ordine_data=None, ordine_cig=None, ordine_cup=None),
+        ADMIN,
+    )
+    assert (cleared.ordine_numero, cleared.ordine_cig) == (None, None)

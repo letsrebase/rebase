@@ -805,3 +805,63 @@ def test_an_em_dash_in_the_causale_is_issued_and_its_xml_spells_a_hyphen(
     root = etree.fromstring(data)
     assert root.findtext(".//Causale") == "Consulting services - August 2026"
     assert root.findtext(".//Descrizione") == "Consulting - August"
+
+
+# --- the purchase order across the emission (REB-693) --------------------------------
+
+
+def test_the_purchase_order_is_frozen_at_issue_like_the_causale(
+    service: InvoiceService, db_session: Session
+) -> None:
+    customer_id = _customer(db_session)
+    draft = service.create(
+        InvoiceCreate(
+            customer_id=customer_id,
+            ordine_numero="ODA-14",
+            ordine_cig="Z0A1B2C3D4",
+            righe=[InvoiceLineIn(descrizione="Consulenza", prezzo_unitario=Decimal("250.00"))],
+        ),
+        ADMIN,
+    )
+    issued = service.issue(draft.id, InvoiceIssue(), ADMIN)
+    assert (issued.ordine_numero, issued.ordine_cig) == ("ODA-14", "Z0A1B2C3D4")
+    with pytest.raises(ImmutableField):
+        service.update(issued.id, InvoiceUpdate(ordine_cig="Z9Z9Z9Z9Z9"), ADMIN)
+    assert service.get(issued.id, ADMIN).ordine_cig == "Z0A1B2C3D4"
+
+
+def test_a_fattura_issued_from_a_proforma_answers_the_proforma_s_order(
+    service: InvoiceService, db_session: Session
+) -> None:
+    """The order is the customer's and the fattura answers it, so it travels from the
+    proforma like the period does; the consumed proforma is frozen with it."""
+    customer_id = _customer(db_session)
+    proforma = service.create(
+        InvoiceCreate(
+            customer_id=customer_id,
+            tipo="proforma",
+            ordine_numero="ODA-14",
+            ordine_data=date(2026, 10, 9),
+            ordine_cig="Z0A1B2C3D4",
+            ordine_cup="J41E22000110005",
+            righe=[InvoiceLineIn(descrizione="Consulenza", prezzo_unitario=Decimal("250.00"))],
+        ),
+        ADMIN,
+    )
+    service.confirm_proforma(proforma.id, ADMIN)
+    issued = service.issue(proforma.id, InvoiceIssue(), ADMIN)
+    assert issued.id != proforma.id
+    assert (
+        issued.ordine_numero,
+        issued.ordine_data,
+        issued.ordine_cig,
+        issued.ordine_cup,
+    ) == ("ODA-14", date(2026, 10, 9), "Z0A1B2C3D4", "J41E22000110005")
+    for change in (
+        InvoiceUpdate(ordine_numero="ODA-15"),
+        InvoiceUpdate(ordine_data=date(2026, 10, 10)),
+        InvoiceUpdate(ordine_cig="Z9Z9Z9Z9Z9"),
+        InvoiceUpdate(ordine_cup=None),
+    ):
+        with pytest.raises(ImmutableField):
+            service.update(proforma.id, change, ADMIN)
