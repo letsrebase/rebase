@@ -64,6 +64,11 @@ DIVISA = "EUR"
 # String200Type, UnitaMisura is String10Type, Natura is 2-4 characters.
 DESCRIZIONE_MAX_LENGTH = 1000
 CAUSALE_MAX_LENGTH = 200
+
+# `DatiOrdineAcquisto` (REB-693): IdDocumento is String20Type, CodiceCIG and CodiceCUP
+# are String15Type. The columns mirror them like every width above.
+ORDINE_NUMERO_MAX_LENGTH = 20
+ORDINE_CODICE_MAX_LENGTH = 15
 UNITA_MISURA_MAX_LENGTH = 10
 NATURA_MAX_LENGTH = 4
 RIFERIMENTO_MAX_LENGTH = 30
