@@ -32,25 +32,37 @@ projects/vaultwarden/scripts/restore.sh vaultwarden-<stamp>.tar.gz.cms vaultward
 
 It prints the bundle's `MANIFEST` (when it was taken, which server version wrote it) and
 refuses a target directory that is not empty. What is in the directory is a data directory:
-`db.sqlite3`, `attachments/`, `sends/`, `config.json`, `rsa_key*`.
+`db.sqlite3`, `rsa_key*` and `MANIFEST` always, `attachments/`, `sends/` and `config.json`
+only when the live server had them (the 2026-10-15 drill's bundle had none of the three).
 
 ## 3. Drill: a scratch container on it
 
+The web vault refuses a server over plain HTTP, `localhost` included: the login stops on
+«Insecure URL not allowed. All URLs must use HTTPS.» and sends nothing. So the scratch
+container serves TLS itself, with a throwaway self-signed certificate:
+
 ```
+mkdir /tmp/vw-ssl
+openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=localhost \
+  -addext subjectAltName=DNS:localhost -keyout /tmp/vw-ssl/key.pem -out /tmp/vw-ssl/cert.pem
+chmod 644 /tmp/vw-ssl/*.pem
 docker run -d --name vw-scratch -p 127.0.0.1:8099:80 -v /tmp/vw-restore:/data \
-  -e SIGNUPS_ALLOWED=false -e DOMAIN=http://localhost:8099 \
+  -v /tmp/vw-ssl:/ssl:ro -e 'ROCKET_TLS={certs="/ssl/cert.pem",key="/ssl/key.pem"}' \
+  -e SIGNUPS_ALLOWED=false -e DOMAIN=https://localhost:8099 \
   vaultwarden/server:1.37.4@sha256:efb3cde962015fcc036b2ea625242248611943b27212ebf4392841fb30fad055
 ```
 
 Use the tag and digest in `docker-compose.yml` now, not this page's. Open
-`http://localhost:8099`, log in as a member whose item you know is in the backup, and find
-it. That is the drill's whole pass condition: **the test item came back**. Then
-`docker rm -f vw-scratch` and `rm -rf /tmp/vw-restore` (the files are root's: use
-`docker run --rm -v /tmp:/t --entrypoint rm <image> -rf /t/vw-restore`).
+`https://localhost:8099`, accept the certificate warning, log in as a member whose item you
+know is in the backup, and find it. That is the drill's whole pass condition: **the test
+item came back**. Then `docker rm -f vw-scratch`, `rm -rf /tmp/vw-ssl` and
+`rm -rf /tmp/vw-restore` (the files are root's: use
+`docker run --rm -v /tmp:/t --entrypoint rm <image> -rf /t/vw-restore`), and delete the
+private key you used.
 
-Notes: a browser at `localhost` over plain HTTP can log in, but the Bitwarden web vault
-needs a secure context for some operations, and `localhost` counts as one; a LAN address does
-not. The scratch server has no SMTP, so nothing is mailed from it.
+Notes: the scratch server has no SMTP, so nothing is mailed from it. The unpacked directory
+is the whole vault (`db.sqlite3` with every master-password hash, `rsa_key*`), so keep it
+and the key off any committed path and out of any log.
 
 ## 4. Recovery: the real data directory
 
