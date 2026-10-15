@@ -45,7 +45,6 @@ container serves TLS itself, with a throwaway self-signed certificate:
 mkdir /tmp/vw-ssl
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=localhost \
   -addext subjectAltName=DNS:localhost -keyout /tmp/vw-ssl/key.pem -out /tmp/vw-ssl/cert.pem
-chmod 644 /tmp/vw-ssl/*.pem
 docker run -d --name vw-scratch -p 127.0.0.1:8099:80 -v /tmp/vw-restore:/data \
   -v /tmp/vw-ssl:/ssl:ro -e 'ROCKET_TLS={certs="/ssl/cert.pem",key="/ssl/key.pem"}' \
   -e SIGNUPS_ALLOWED=false -e DOMAIN=https://localhost:8099 \
