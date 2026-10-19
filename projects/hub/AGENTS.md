@@ -432,13 +432,13 @@ it since #428), with the same `nginx -t` and reload. Production's:
 location = /api/hub/team/proposals {
     client_max_body_size 6M;
     proxy_pass http://127.0.0.1:8084;
-    include /etc/nginx/snippets/orbiters-proxy.conf;
+    include /etc/nginx/snippets/rebase-proxy.conf;
     proxy_read_timeout 90s;
 }
 location = /api/hub/me/cloud/proposals {
     client_max_body_size 6M;
     proxy_pass http://127.0.0.1:8084;
-    include /etc/nginx/snippets/orbiters-proxy.conf;
+    include /etc/nginx/snippets/rebase-proxy.conf;
     proxy_read_timeout 90s;
 }
 ```
