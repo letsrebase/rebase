@@ -1,0 +1,9 @@
+Your Email Change
+<!---------------->
+{{> email/email_header }}
+<p style="margin:0 0 16px 0;color:#011936">A user ({{ acting_address }}) recently tried to change their account to use this email address ({{ existing_address }}). You have already been invited to join the Rebase Password Manager using this address.</p>
+<p style="margin:0 0 16px 0;color:#011936">To change your email address you first would have to delete the account associated with this email address ({{ existing_address }}):</p>
+<p style="margin:0 0 16px 0;color:#011936"><a data-testid="recover-delete" href="{{url}}/#/recover-delete" clicktracking=off target="_blank" style="color:#c50d33">Request account deletion</a></p>
+<p style="margin:0 0 16px 0;color:#011936">Once that is done you can change the email address of your existing account to this address. Any invitation would have to be redone.</p>
+<p style="margin:0;color:#011936">If you did not try to change an email address, contact your administrator.</p>
+{{> email/email_footer }}

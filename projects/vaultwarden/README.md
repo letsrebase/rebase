@@ -123,8 +123,10 @@ there, `config.json` holds it and the backup carries it.
 
 ## Look
 
-The web vault is upstream's, unmodified, wearing the rebase brand through three
-mechanisms that survive an image bump because none of them edits the image (REB-688):
+The web vault is upstream's, unmodified on disk, wearing the rebase brand through mechanisms
+that survive an image bump because none of them edits the image (REB-688, REB-699). **What a
+member sees says «Rebase Password Manager», never Vaultwarden** (Lorenzo, 2026-10-19,
+`docs/design/DECISIONS.md`); code, comments and this repository keep the upstream name.
 
 - **A stylesheet.** The server compiles `branding/templates/scss/user.vaultwarden.scss.hbs`
   (`TEMPLATES_FOLDER=/templates`, mounted read-only) and appends it to `/css/vaultwarden.css`,
@@ -136,9 +138,24 @@ mechanisms that survive an image bump because none of them edits the image (REB-
   the page's own face (`lockup-paper.svg` on a dark ground: the vault's sidebar and the dark theme; the Admin
   Console's sidebar is light in the light theme and takes the ink one; a collapsed sidebar
   takes the mark alone, without the label). The boot splash's logo takes the cropped lockup and no label.
-- **Favicons**, mounted file by file over the image's own at the paths `index.html` and the
-  manifest read (checked against the served page of 1.37.4).
-- **`branding/branding.env`**, a hash of the files above, loaded as the server's `env_file`.
+- **A branded copy of the web vault**, built at every start by `scripts/brand-web-vault.sh`,
+  which the compose file mounts into `/etc/vaultwarden.d/`: the image's `/start.sh` sources
+  every script there just before it execs the server, and `WEB_VAULT_FOLDER` then points the
+  server at the copy (`/web-vault-rebase`, in the container's own layer, not the data
+  directory). In the copy it rewrites the literals of the page, as upstream spells them: the
+  tab's title (`index.html`, and `app/main.<hash>.js` for every route: «Vaults | Rebase
+  Password Manager»), the footer, the splash's alt text, the authenticator's issuer, the
+  manifest's name and colours, `theme-color` and the pinned tab's tint, the logo SVGs'
+  titles; and it puts `branding/images` in as the favicons. The favicons, the manifest and
+  `main.js` get a hash in their file name and `index.html` (served `public, max-age=600`) names the new
+  ones: upstream serves them `public, immutable, max-age=604800`, so a browser that visited
+  before the look existed would otherwise keep the old favicon for a week (that is why the
+  mounted favicons of REB-688 still showed Vaultwarden's in one tab, 2026-10-19). A literal
+  that an image bump moved is a warning on the container's log, `brand-web-vault:`, and the
+  server starts all the same; the drill fails on it. The footer keeps Bitwarden's trademark
+  disclaimer, with the product's name in it.
+- **`branding/branding.env`**, a hash of the files above and of the script, plus the product's
+  name and browser colours the script reads, loaded as the server's `env_file`.
   Compose recreates a service when its configuration changes and not when a bind-mounted
   file's content does, and the server reads its templates once and caches the stylesheet, so
   without the hash a deploy of a new look would go green and change nothing.
@@ -159,9 +176,11 @@ pnpm install --frozen-lockfile --filter @rebase/brand
 pnpm --filter @rebase/brand exec node ../../projects/vaultwarden/branding/build.mjs
 ```
 
-**The mails** (REB-690, REB-692) use the same mechanism: `branding/templates/email/` overrides upstream's
-header and footer partials and the organisation invitation (in English, like every other mail
-and the apps).
+**The mails** (REB-690, REB-692, REB-699) use the same mechanism: `branding/templates/email/` overrides upstream's
+header and footer partials, the organisation invitation (in English, like every other mail
+and the apps) and the six mails whose upstream body says Vaultwarden (sign-in code, protected
+action, email change, invitation accepted, invitation confirmed, SMTP test: same words, the
+product's name), the server's own 404 page (`branding/templates/404.hbs`) and, through `INVITATION_ORG_NAME`, the name an invitation from the admin page carries.
 Upstream's partials carry the Vaultwarden wordmark and a GitHub icon as inline images, and the
 server attaches both to every mail whatever the template uses. Ours draw the mark from table
 cells and attach nothing (`SMTP_EMBED_IMAGES=false` in the compose file). Every mail says
@@ -169,14 +188,16 @@ cells and attach nothing (`SMTP_EMBED_IMAGES=false` in the compose file). Every 
 `Rebase Password Manager`), a label under the wordmark, the footer, and in the invitation its
 subject and first sentence. The other mails keep upstream's body
 inside our frame, so the frame's footer says nothing about ignoring the message: some of those
-bodies are security alerts. Render one after a bump with the admin page's SMTP test.
+bodies are security alerts. Those bodies do not mention Vaultwarden (checked against 1.37.4's
+templates; `tests/branding.mjs` holds our own to it). Render one after a bump with the admin page's SMTP test.
 
-What is deliberately not themed: the browser extension and the mobile apps (their look is
-Bitwarden's and is not served from here), the body of every mail but the invitation, the page title, the browser chrome
-colours (`theme-color`, the manifest's colours and the pinned tab's tint, all still
-Bitwarden's blue), the one-time welcome dialog and the illustrations other than the
-pre-login pictures, and the attribution line in the footer, which says what this server is
-and is left alone.
+What is deliberately not themed, because it is out of reach without a fork or is not what a
+member reads: the browser extension and the mobile apps (their look and name are Bitwarden's and
+are not served from here), the bodies of the mails not listed above, the one-time welcome dialog
+and the illustrations other than the pre-login pictures, the Admin Console's mark («Bitwarden
+logo» alt texts, which name the upstream client), the admin page itself (`/admin`, off by
+design, upstream's page), and the server's API metadata and HTTP headers, which name the server
+software to a client and not to a person.
 
 **After bumping the image**, check it by eye as well as by the drill: the stylesheet selects
 the web vault's own elements (`bit-landing-header header a bit-svg`, `bit-nav-logo a bit-svg`,

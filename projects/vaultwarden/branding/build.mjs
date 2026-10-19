@@ -12,12 +12,15 @@
 //       /css/vaultwarden.css, which every page loads (`TEMPLATES_FOLDER`, compose file):
 //       the palette on the web vault's own custom properties, and the lockup in place of
 //       the Vaultwarden wordmark of the pre-login header, the sidebar and the splash.
-//   images/*                                   the favicons, mounted over the image's own
-//       (compose file), drawn from the four tiles of the mark.
+//   images/*                                   the favicons; `scripts/brand-web-vault.sh` copies
+//       them into a branded copy of the web vault at start (compose file), drawn from the four
+//       tiles of the mark.
 //   templates/email/*                          the mail header, footer and organisation
-//       invitation (REB-690): the mark from table cells, no image, no link away.
-//   branding.env                               a hash of all of the above, so that a new
-//       look recreates the container (see `revision()`).
+//       invitation (REB-690), and the six mails whose upstream body names Vaultwarden (REB-699):
+//       the mark from table cells, no image, no link away.
+//   branding.env                               a hash of all of the above and of the script, and
+//       the product's name and browser colours the script reads, so that a new look recreates
+//       the container (see `revision()`).
 //
 // The PNGs and the .ico come from a browser (`@playwright/test`, through the brand package)
 // and are not byte-stable across Chromium versions, so `--check` compares the text files,
@@ -43,6 +46,19 @@ export function token(name) {
   if (!m) throw new Error(`--color-${name} is not in shared/brand/palette.css`)
   return m[1].toLowerCase()
 }
+
+// What every surface a member sees calls the product (REB-699, Lorenzo 2026-10-19): the web
+// vault's tab, footer and manifest, and every mail. Code, comments and the repository keep the
+// upstream name. `branding.env` hands these to the container, where `scripts/brand-web-vault.sh`
+// reads them; the compose file's `SMTP_FROM_NAME` is the same string and the test holds it to it.
+export const PRODUCT_NAME = 'Rebase Password Manager'
+// The browser's chrome (`theme-color`, the manifest's theme and splash background), as hex
+// digits: the env file carries no `#`, which a dotenv parser may take for a comment.
+export const BROWSER_COLORS = () => ({
+  theme: token('prussian-blue').slice(1),
+  background: token('paper').slice(1),
+})
+
 const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(' ')
 
 // The web vault paints itself from two generations of custom property, and an override
@@ -501,7 +517,121 @@ ${INVITE_LINES.ignore}
 `
 }
 
+// The other mails (REB-699). Upstream's bodies for these six say «Vaultwarden» to the person
+// who reads them (a sign-in code, a protected action, an invitation accepted or confirmed, an
+// email change, the SMTP test), and a template overrides a whole file, so each is rewritten in
+// our frame with the product's name and upstream's words otherwise. The only hrefs they carry
+// are the server's own (`{{url}}`), like the invitation's.
+const NOTICES = {
+  twofactor_email: {
+    subject: `Your ${PRODUCT_NAME} sign-in code`,
+    paragraphs: [
+      { text: 'Your two-step verification code is: {{token}}', html: 'Your two-step verification code is: <b data-testid="2fa">{{token}}</b>' },
+      { text: `Use this code to complete signing in to the ${PRODUCT_NAME}.` },
+    ],
+  },
+  protected_action: {
+    subject: `Your ${PRODUCT_NAME} verification code`,
+    paragraphs: [
+      { text: 'Your email verification code is: {{token}}', html: 'Your email verification code is: <b>{{token}}</b>' },
+      { text: `Use this code to complete the protected action in the ${PRODUCT_NAME}.` },
+    ],
+  },
+  smtp_test: {
+    subject: `${PRODUCT_NAME} SMTP test`,
+    paragraphs: [
+      { text: 'This is a test email to verify the SMTP configuration for {{url}}.', html: 'This is a test email to verify the SMTP configuration for <a href="{{url}}" style="color:ACTION">{{url}}</a>.' },
+      { text: 'When you can read this email it is probably configured correctly.' },
+    ],
+  },
+  change_email_invited: {
+    subject: 'Your Email Change',
+    paragraphs: [
+      {
+        text: `A user ({{ acting_address }}) recently tried to change their account to use this email address ({{ existing_address }}). You have already been invited to join the ${PRODUCT_NAME} using this address.`,
+      },
+      { text: 'To change your email address you first would have to delete the account associated with this email address ({{ existing_address }}):' },
+      {
+        text: 'Request account deletion: {{url}}/#/recover-delete',
+        html: '<a data-testid="recover-delete" href="{{url}}/#/recover-delete" clicktracking=off target="_blank" style="color:ACTION">Request account deletion</a>',
+      },
+      { text: 'Once that is done you can change the email address of your existing account to this address. Any invitation would have to be redone.' },
+      { text: 'If you did not try to change an email address, contact your administrator.' },
+    ],
+  },
+  invite_accepted: {
+    subject: 'Invitation to {{{org_name}}} accepted',
+    paragraphs: [
+      { text: 'This email is to notify you that {{email}} has accepted your invitation to join {{org_name}}.', html: 'This email is to notify you that {{email}} has accepted your invitation to join <b>{{org_name}}</b>.' },
+      {
+        text: `Please log in via {{url}} to the ${PRODUCT_NAME} and confirm them from the organization management page.`,
+        html: `Please <a href="{{url}}/" style="color:ACTION">log in</a> to the ${PRODUCT_NAME} and confirm them from the organization management page.`,
+      },
+      { text: 'If you do not wish to confirm this user, you can also remove them from the organization on the same page.' },
+    ],
+  },
+  invite_confirmed: {
+    subject: 'Invitation to {{{org_name}}} confirmed',
+    paragraphs: [
+      { text: 'This email is to notify you that you have been confirmed as a user of {{org_name}}.', html: 'This email is to notify you that you have been confirmed as a user of <b>{{org_name}}</b>.' },
+      {
+        text: `Any collections and logins being shared with you by this organization will now appear in your ${PRODUCT_NAME} vault at {{url}}.`,
+        html: `Any collections and logins being shared with you by this organization will now appear in your ${PRODUCT_NAME} vault. <a href="{{url}}/" style="color:ACTION">Log in</a>`,
+      },
+    ],
+  },
+}
+
+function noticeHtml({ subject, paragraphs }) {
+  const c = mail()
+  const body = paragraphs
+    .map(({ text, html = text }, i) => {
+      const last = i === paragraphs.length - 1
+      return `<p style="margin:0${last ? '' : ' 0 16px 0'};color:${c.ink}">${html.replace(/ACTION/g, c.action)}</p>`
+    })
+    .join('\n')
+  return `${subject}\n<!---------------->\n{{> email/email_header }}\n${body}\n{{> email/email_footer }}\n`
+}
+
+function noticeText({ subject, paragraphs }) {
+  return `${subject}\n<!---------------->\n${paragraphs.map(({ text }) => text).join('\n\n')}\n{{> email/email_footer_text }}\n`
+}
+
+export const NOTICE_FILES = Object.fromEntries(
+  Object.entries(NOTICES).flatMap(([name, notice]) => [
+    [`templates/email/${name}.hbs`, () => noticeText(notice)],
+    [`templates/email/${name}.html.hbs`, () => noticeHtml(notice)],
+  ]),
+)
+
+// The server's own 404 page (REB-699), which any path nobody serves answers, and which names
+// Vaultwarden, shows its icon and links to its GitHub repository. Ours is one self-contained page
+// in the palette: no image, no stylesheet to fetch, a way back to the vault.
+export function notFoundPage() {
+  const c = mail()
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Page not found | ${PRODUCT_NAME}</title>
+<style>html,body{margin:0;height:100%;background:${c.paper};color:${c.ink};font-family:Helvetica,Arial,sans-serif}main{max-width:560px;margin:0 auto;padding:96px 24px;text-align:center}h1{margin:0 0 12px 0;font-size:32px}p{margin:0 0 16px 0;font-size:18px;line-height:28px}a{color:${c.action}}footer{color:${c.charcoal};font-size:14px}</style>
+</head>
+<body>
+<main>
+<h1>Page not found</h1>
+<p>Sorry, but the page you were looking for could not be found.</p>
+<p><a href="{{urlpath}}/">Return to the vault</a></p>
+<footer>${PRODUCT_NAME}</footer>
+</main>
+</body>
+</html>
+`
+}
+
 const texts = {
+  'templates/404.hbs': notFoundPage,
   'templates/scss/user.vaultwarden.scss.hbs': scss,
   'images/safari-pinned-tab.svg': pinnedSvg,
   'templates/email/email_header.hbs': emailHeader,
@@ -509,8 +639,11 @@ const texts = {
   'templates/email/email_footer_text.hbs': emailFooterText,
   'templates/email/send_org_invite.html.hbs': orgInviteHtml,
   'templates/email/send_org_invite.hbs': orgInviteText,
+  ...NOTICE_FILES,
 }
 const GENERATED = [...Object.keys(texts), ...IMAGES.map(([file]) => file), 'images/favicon.ico'].sort()
+// Not generated, and mounted all the same: the script that builds the web vault's copy.
+const SCRIPT = join('..', 'scripts', 'brand-web-vault.sh')
 
 // A hash of every file the container mounts. Docker Compose recreates a service when its
 // own configuration changes and not when the content of a bind-mounted file does, and the
@@ -519,11 +652,13 @@ const GENERATED = [...Object.keys(texts), ...IMAGES.map(([file]) => file), 'imag
 // is part of the configuration, so a new look means a new container.
 export function revision() {
   const hash = createHash('sha256')
-  for (const file of GENERATED) hash.update(file).update(readFileSync(join(HERE, file)))
+  for (const file of [...GENERATED, SCRIPT]) hash.update(file).update(readFileSync(join(HERE, file)))
   return hash.digest('hex').slice(0, 16)
 }
-const envFile = () =>
-  `# Generated by branding/build.mjs: a hash of the files this directory mounts into the server,\n# so that changing the look recreates the container (README, "Look"). Never edit it.\nBRANDING_REV=${revision()}\n`
+const envFile = () => {
+  const { theme, background } = BROWSER_COLORS()
+  return `# Generated by branding/build.mjs: a hash of the files this directory mounts into the server,\n# so that changing the look recreates the container, and the product's name and browser colours that\n# scripts/brand-web-vault.sh reads (README, "Look"). Never edit it.\nBRANDING_REV=${revision()}\nBRAND_NAME=${PRODUCT_NAME}\nBRAND_THEME_COLOR=${theme}\nBRAND_BACKGROUND_COLOR=${background}\n`
+}
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   if (CHECK) {

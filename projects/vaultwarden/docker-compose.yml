@@ -58,6 +58,10 @@ services:
       SMTP_FROM: ${VAULTWARDEN_MAIL_FROM:-vault@letsrebase.com}
       # The display name a mail shows beside vault@letsrebase.com: it says what sends it.
       SMTP_FROM_NAME: Rebase Password Manager
+      # The name the server puts in an invitation sent from the admin page, in the link's
+      # organisation parameter and in the mail confirming that member. Upstream's default is
+      # «Vaultwarden».
+      INVITATION_ORG_NAME: Rebase Password Manager
       # The look (README, "Look"): the server compiles `scss/user.vaultwarden.scss.hbs` from
       # this folder and appends it to /css/vaultwarden.css. Mounted read-only from the
       # repository, so the data directory (and with it the backup) holds nothing of it.
@@ -72,15 +76,12 @@ services:
     volumes:
       - ${VAULTWARDEN_DATA_DIR:?set it in .env, to its own directory outside the repository}:/data
       - ./branding/templates:/templates:ro
-      # The favicons, over the image's own at the paths its index.html and manifest read.
-      # Single files, because the image's other pictures in those directories stay as they are.
-      - ./branding/images/favicon-16x16.png:/web-vault/images/favicon-16x16.png:ro
-      - ./branding/images/favicon-32x32.png:/web-vault/images/favicon-32x32.png:ro
-      - ./branding/images/apple-touch-icon.png:/web-vault/images/apple-touch-icon.png:ro
-      - ./branding/images/safari-pinned-tab.svg:/web-vault/images/safari-pinned-tab.svg:ro
-      - ./branding/images/favicon.ico:/web-vault/favicon.ico:ro
-      - ./branding/images/icons/android-chrome-192x192.png:/web-vault/images/icons/android-chrome-192x192.png:ro
-      - ./branding/images/icons/android-chrome-512x512.png:/web-vault/images/icons/android-chrome-512x512.png:ro
+      # The web vault's look (README, "Look", REB-699). The image's /start.sh sources every
+      # /etc/vaultwarden.d/*.sh before it execs the server; this one builds a copy of the web
+      # vault in the product's name, from the favicons mounted beside it, and points the
+      # server at the copy. Nothing in the image is replaced, so a bump keeps working.
+      - ./scripts/brand-web-vault.sh:/etc/vaultwarden.d/10-rebase-web-vault.sh:ro
+      - ./branding/images:/branding/images:ro
     ports:
       # Loopback only, and the address is not a variable: a `.env` can change the port
       # and cannot publish this wider. The host's nginx serves it as

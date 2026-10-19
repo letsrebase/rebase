@@ -1,9 +1,9 @@
 # Le password di Rebase: guida per i membri
 
 Rebase tiene le credenziali condivise in un gestore di password che gira su un server
-nostro: **Vaultwarden**, che parla con le app di Bitwarden. Tu usi le app di Bitwarden;
-l'indirizzo del server è quello di Rebase. Ognuno vede solo le raccolte che gli sono state
-assegnate, e solo con il permesso che gli è stato dato.
+nostro: il **Rebase Password Manager**, che parla con le app di Bitwarden. Tu usi le app di
+Bitwarden; l'indirizzo del server è quello di Rebase. Ognuno vede solo le raccolte che gli
+sono state assegnate, e solo con il permesso che gli è stato dato.
 
 **Indirizzo del server: `https://vault.letsrebase.com`**
 
@@ -12,6 +12,14 @@ assegnate, e solo con il permesso che gli è stato dato.
 Estensione per il browser (Chrome, Firefox, Edge, Safari), app per Android e iOS, app per
 computer: tutte su [bitwarden.com/download](https://bitwarden.com/download). Sono le app
 ufficiali di Bitwarden; il server a cui si collegano lo scegli tu al passo 2.
+
+**Attenzione alla password di Chrome.** Nelle impostazioni dell'estensione (Impostazioni,
+Compilazione automatica) c'è «Usa Bitwarden come gestore di password predefinito». Se la
+attivi, l'estensione spegne il salvataggio e la compilazione di password, indirizzi e carte
+di Chrome (Gestore password di Google, o il portachiavi del Mac): sembra che il gestore
+«abbia bloccato il portachiavi». Non è un guasto, è quell'interruttore. Se vuoi continuare a
+usare le password di Chrome, lascialo spento; se l'hai già attivato, spegnilo da lì e Chrome
+torna a salvare e compilare come prima.
 
 ## 2. Accetta l'invito e punta l'app al nostro server
 
