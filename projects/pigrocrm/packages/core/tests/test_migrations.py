@@ -1687,3 +1687,37 @@ def test_0050_adds_the_purchase_order_columns_and_its_downgrade_drops_them(
         assert _ordine_shape(url) == (set(), set())
         upgrade(config, "0050")
         assert _ordine_shape(url) == (ordine, {"ck_invoices_ordine_needs_numero"})
+
+
+def _invitation_mail_columns(url: str) -> set[str]:
+    engine: Engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            return set(
+                connection.execute(
+                    text(
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_name = 'invitations' AND column_name LIKE 'mail\\_%'"
+                    )
+                ).scalars()
+            )
+    finally:
+        engine.dispose()
+
+
+def test_0051_adds_the_invitation_mail_columns_and_its_downgrade_drops_them(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-678: three nullable columns, no backfill, both ways."""
+    mail = {"mail_id", "mail_status", "mail_sent_at"}
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0050")
+        assert _invitation_mail_columns(url) == set()
+        upgrade(config, "0051")
+        assert _invitation_mail_columns(url) == mail
+        downgrade(config, "0050")
+        assert _invitation_mail_columns(url) == set()
+        upgrade(config, "0051")
+        assert _invitation_mail_columns(url) == mail
