@@ -69,6 +69,10 @@ RIASSUNTO = (
     "React, sei mesi da remoto."
 )
 AZIENDA = "Acme S.r.l."
+# What a log line may carry of a request is its id, and an id is not text to scan for a
+# secret: a UUIDv7 opens with the top bits of the millisecond clock, so for minutes at a
+# time every id carries the same hex digits, and a phone's «345» is in them (REB-667).
+LOGGED_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 
 
 def _settings(**overrides: Any) -> Settings:
@@ -421,9 +425,12 @@ def test_request_logs_a_summary_that_names_the_company(
     [record] = warnings
     logged = record.getMessage()
     assert str(read.id) in logged
-    # Nothing personal: not the company, not the address, not the summary.
+    # Nothing personal: not the company, not the address, not the summary. The ids come
+    # out first, so what is scanned is the message's own words and no clock can match.
+    rest = LOGGED_ID.sub("", logged)
+    assert str(read.id) not in rest
     for secret in ("ACME", "Acme", "wile@acme.it", "gestionale", "345"):
-        assert secret not in logged
+        assert secret not in rest
     assert clean.get(TeamRequest, read.id) is not None
 
 
