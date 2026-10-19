@@ -117,13 +117,17 @@ services:
       VAULTWARDEN_BACKUP_ACCESS_KEY_ID: ${VAULTWARDEN_BACKUP_ACCESS_KEY_ID:?an Environment secret, written by the deploy}
       VAULTWARDEN_BACKUP_SECRET_ACCESS_KEY: ${VAULTWARDEN_BACKUP_SECRET_ACCESS_KEY:?an Environment secret, written by the deploy}
       VAULTWARDEN_BACKUP_AT: ${VAULTWARDEN_BACKUP_AT:-03:30}
+      # The healthchecks.io check the loop pings after every run (REB-671), the alarm a
+      # person actually receives; the healthcheck below only shows on the host.
+      VAULTWARDEN_BACKUP_PING_URL: ${VAULTWARDEN_BACKUP_PING_URL:?an Environment secret, written by the deploy}
     volumes:
       - ${VAULTWARDEN_DATA_DIR:?set it in .env, to its own directory outside the repository}:/data
       - ./scripts:/scripts:ro
     # The image's HEALTHCHECK curls the server's port, which this container does not
     # serve. This one says whether the last backup finished less than 26 hours ago, so
     # `docker compose ps` shows `unhealthy` for a backup that is failing quietly. It does
-    # not fail a deploy: only a container that is not `running` does.
+    # not fail a deploy: only a container that is not `running` does. Nobody reads it
+    # unprompted, which is why the loop also pings the monitor.
     healthcheck:
       test: ['CMD-SHELL', 'test -n "$$(find /tmp/last-backup-ok -mmin -1560 2>/dev/null)"']
       interval: 10m

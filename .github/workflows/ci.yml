@@ -859,6 +859,7 @@ jobs:
           VAULTWARDEN_BACKUP_R2_ACCOUNT_ID: x
           VAULTWARDEN_BACKUP_ACCESS_KEY_ID: x
           VAULTWARDEN_BACKUP_SECRET_ACCESS_KEY: x
+          VAULTWARDEN_BACKUP_PING_URL: https://hc-ping.example.test/x
         run: |
           docker compose -p vaultwarden config --services | sort | tr '\n' ' ' | grep -qx 'backup vaultwarden '
           docker compose -p vaultwarden config | grep -q 'host_ip: 127.0.0.1'

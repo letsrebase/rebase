@@ -62,8 +62,10 @@ tests/                      the drill: config, backup and restore, on throwaway 
    `certbot --nginx --redirect -d vault.letsrebase.com`, then `Strict-Transport-Security`
    added to the installed 443 block by hand (the vhost's own header comment says why).
 6. **GitHub**: the Environment `vaultwarden-production` with the five `DEPLOY_*` secrets
-   (`DEPLOY_KNOWN_HOSTS` captured as `docs/adding-a-project.md` §7 says) and the three
-   secrets above, then the variable `VAULTWARDEN_DEPLOY_ENABLED=true`.
+   (`DEPLOY_KNOWN_HOSTS` captured as `docs/adding-a-project.md` §7 says), the three
+   secrets above and `VAULTWARDEN_BACKUP_PING_URL`, the ping URL of the healthchecks.io
+   check («Backup» below; as healthchecks.io shows it, no trailing slash), then the
+   variable `VAULTWARDEN_DEPLOY_ENABLED=true`.
 7. **The release**: `git tag vaultwarden-v0.1.0 && git push origin vaultwarden-v0.1.0`,
    after the PR is merged and Lorenzo says so. The tag's CI run, the deploy run and
    `https://vault.letsrebase.com/alive` answering are the evidence.
@@ -200,18 +202,34 @@ one backup a minute after the container starts, then one a day at `VAULTWARDEN_B
 
 R2 deletes objects after ninety days (`infra/cloudflare/r2.tf`). `docker compose -p
 vaultwarden ps` on the host shows the backup container `unhealthy` when no backup has
-finished in the last 26 hours; `docker compose -p vaultwarden logs backup` says why. There
-is no alert beyond that (a follow-up card). **The restore is the proof of a backup**:
+finished in the last 26 hours; `docker compose -p vaultwarden logs backup` says why.
+
+**The alarm is a healthchecks.io check** (REB-671), so nothing extra runs on the host. After
+every run the loop pings `VAULTWARDEN_BACKUP_PING_URL`, the check's URL, or `<url>/fail`
+when the run failed; the check mails on a failure, and when its period plus grace passes
+with no success, which is what a revoked R2 key, a full disk or a container that is gone
+look like. The URL is a secret, since whoever holds it can report a success: it lives in
+the `vaultwarden-production` Environment, the deploy writes it into the host `.env`
+(`env-secrets`), and the loop refuses to start without one. A ping that cannot get through
+is logged and nothing more: the check going quiet is its own alarm.
+
+The account is `ciao@letsrebase.com` on healthchecks.io (its password is in the `Rebase`
+organisation's `Infrastructure` collection and in the `ciao-rebase` Chrome profile; a login
+link by mail works too). The check is «Vaultwarden backup», slug `vaultwarden-backup`,
+period one day, grace two hours, and it mails both `ciao@letsrebase.com` and Lorenzo. A new
+URL means a new Environment secret and a deploy. **The restore is the proof of a backup**:
 `docs/restore.md`, to be done once on a scratch container before anything real is stored,
 and again whenever the scripts or the image change.
 
 ## The drill
 
 `tests/backup-restore.sh` runs the real compose file and the real scripts on throwaway
-servers (an S3 gateway stands in for R2): it registers an account and puts an item in it,
-then proves the server answers on `127.0.0.1` only, refuses a signup without an
-invitation and has the admin page off; takes a backup into the bucket, checks the object is
-an encrypted envelope holding none of the plain text; restores it into a new directory
+servers (an S3 gateway stands in for R2, a small listener for healthchecks.io): it registers
+an account and puts an item in it, then proves the server answers on `127.0.0.1` only,
+refuses a signup without an invitation and has the admin page off; takes a backup into the
+bucket, checks the object is an encrypted envelope holding none of the plain text; runs the
+loop once with the right key and once with a revoked one and checks the monitor heard a
+success and then a `/fail`; restores the backup into a new directory
 with `scripts/restore.sh` and reads the item back from a scratch server. CI runs it on every
 change to this directory and on every `vaultwarden-v*` tag. Locally, from the repository
 root: `projects/vaultwarden/tests/backup-restore.sh` (Docker, node 22 and openssl).

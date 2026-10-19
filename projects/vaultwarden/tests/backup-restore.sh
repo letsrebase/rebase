@@ -10,7 +10,9 @@
 #      alone, a signup without an invitation is refused, the admin page is off, and
 #      opens with a hash (written as README says) and closes again when it is removed;
 #   3. run the `backup` service's script against an S3 gateway, and prove the object in
-#      the bucket is an encrypted envelope that holds none of the plain text;
+#      the bucket is an encrypted envelope that holds none of the plain text; then run
+#      its loop against a stand-in monitor, and prove a backup that finished pings the
+#      check and one that failed pings `<check>/fail`;
 #   4. download it, restore.sh it with the private key into a new directory, start a
 #      scratch server on that directory and read the item back.
 set -euo pipefail
@@ -53,6 +55,8 @@ export VAULTWARDEN_BACKUP_R2_ACCOUNT_ID=drill
 export VAULTWARDEN_BACKUP_BUCKET=drill-bucket
 export VAULTWARDEN_BACKUP_ACCESS_KEY_ID=drillkey
 export VAULTWARDEN_BACKUP_SECRET_ACCESS_KEY=drillsecret
+export VAULTWARDEN_BACKUP_PING_URL=http://ping:8080/drill-check
+export VAULTWARDEN_DRILL_IMAGE="$image"
 
 email=drill@example.test
 password='correct horse battery staple, drill'
@@ -181,6 +185,46 @@ openssl cms -decrypt -binary -inform DER -in "$fake_object" -inkey "$tmp/backup.
   || { echo "FAIL: the attachment made during the backup is not in the bundle" >&2; exit 1; }
 echo "the attachment made during the backup is in the bundle"
 
+step "3c. the monitor hears a backup that finished, and one that failed"
+# A ping URL that is not one ends the container instead of running with no alarm, and so
+# does one with a trailing slash, which would send `/fail` to a path nobody watches.
+for bad in not-a-url http://ping:8080/drill-check/; do
+  if refusal=$(compose -f "$here/s3.yml" run --rm --no-deps -T -e VAULTWARDEN_BACKUP_PING_URL="$bad" backup 2>&1); then
+    echo "FAIL: the backup loop accepted the ping URL '$bad'" >&2; exit 1
+  fi
+  grep -q "must be the monitor's http(s) ping URL" <<<"$refusal" \
+    || { echo "FAIL: '$bad' was refused for another reason: $refusal" >&2; exit 1; }
+done
+echo "a ping URL that is not one, or ends in a slash, is refused"
+compose -f "$here/s3.yml" up -d ping
+pings() { compose -f "$here/s3.yml" logs --no-log-prefix ping 2>/dev/null | grep -c "^ping: GET $1 HTTP" || true; }
+wait_ping() {
+  for _ in $(seq 90); do
+    [ "$(pings "$1")" -ge 1 ] && return 0
+    sleep 1
+  done
+  echo "FAIL: the monitor never heard GET $1" >&2
+  exit 1
+}
+loop=$(compose -f "$here/s3.yml" run -d --no-deps -e VAULTWARDEN_BACKUP_FIRST_DELAY=0 backup)
+wait_ping /drill-check
+loop_logs=$(docker logs "$loop" 2>&1)
+docker rm -f "$loop" >/dev/null
+[ "$(pings /drill-check/fail)" -eq 0 ] || { echo "FAIL: a backup that finished was reported as failed" >&2; exit 1; }
+echo "a backup that finished pings the check"
+# A revoked R2 key: the upload is refused, the loop survives and says so to the monitor.
+loop=$(compose -f "$here/s3.yml" run -d --no-deps -e VAULTWARDEN_BACKUP_FIRST_DELAY=0 \
+  -e VAULTWARDEN_BACKUP_SECRET_ACCESS_KEY=revoked backup)
+wait_ping /drill-check/fail
+[ "$(docker inspect -f '{{.State.Running}}' "$loop")" = true ] || { echo "FAIL: a failed backup ended the loop" >&2; exit 1; }
+loop_logs+=$(docker logs "$loop" 2>&1)
+docker rm -f "$loop" >/dev/null
+[ "$(pings /drill-check)" -eq 1 ] || { echo "FAIL: a backup that failed was reported as a success" >&2; exit 1; }
+echo "a backup that failed pings <check>/fail and nothing else"
+# Whoever holds the URL can report a success, so neither run may print it.
+if grep -q drill-check <<<"$loop_logs"; then echo "FAIL: the loop printed the ping URL" >&2; exit 1; fi
+echo "neither run printed the ping URL"
+
 step "4. restore into a new directory, a scratch server on it, the item back"
 mkdir -m 700 "$tmp/restored"
 "$project_dir/scripts/restore.sh" "$tmp/object.cms" "$tmp/backup.key" "$tmp/restored"
@@ -199,4 +243,4 @@ got=$(node "$here/drill.mjs" read "$scratch" "$email" "$password")
 [ "$got" = "$item" ] || { echo "FAIL: restored server returned '$got', expected '$item'" >&2; exit 1; }
 echo "restored server returned the item: $got"
 
-printf '\nOK: backup, encryption, restore and the three refusals all held\n'
+printf '\nOK: backup, encryption, the monitor, restore and every refusal held\n'
