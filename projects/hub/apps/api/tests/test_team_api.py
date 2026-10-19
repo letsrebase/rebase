@@ -48,6 +48,10 @@ DESCRIZIONE = (
 )
 RIASSUNTO = "Un'azienda di logistica rifà il gestionale degli ordini, backend in Python."
 CONTACTS = {"azienda": "Acme S.r.l.", "email": "wile@acme.it", "telefono": "+39 345 1234567"}
+# What a log line may carry of a request is its id, and an id is not text to scan for a
+# secret: a UUIDv7 opens with the top bits of the millisecond clock, so for minutes at a
+# time every id carries the same hex digits, and a phone's «345» is in them (REB-667).
+LOGGED_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 # 00:00:01 in Rome on 29 September (CEST, UTC+2), a second into the day the daily cap
 # counts from: the instant a test that read the wall clock fell over (REB-581).
 JUST_AFTER_MIDNIGHT = datetime(2026, 9, 28, 22, 0, 1, tzinfo=UTC)
@@ -619,8 +623,11 @@ def test_public_request_logs_nothing_personal_when_the_mail_is_refused(
     [record] = [record for record in caplog.records if record.levelno == logging.WARNING]
     logged = record.getMessage()
     assert created.json()["id"] in logged
+    # The ids come out first, so what is scanned is the message's own words.
+    rest = LOGGED_ID.sub("", logged)
+    assert created.json()["id"] not in rest
     for secret in ("ciao@letsrebase.com", "wile@acme.it", "Acme", "gestionale", "345"):
-        assert secret not in logged
+        assert secret not in rest
 
 
 def test_public_request_refuses_an_old_a_cloud_or_an_empty_proposal(
