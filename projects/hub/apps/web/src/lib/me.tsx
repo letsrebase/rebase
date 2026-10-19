@@ -21,7 +21,7 @@ import type { Utm } from './utm'
  *  fields read and write -- is unchanged from what `lib/member.tsx` used to hold. */
 export const ME_KEY = ['me'] as const
 
-/** Whoever `orbiters_user` resolves to, member or admin, or `null` signed out. A 401 is
+/** Whoever `rebase_user` resolves to, member or admin, or `null` signed out. A 401 is
  *  "not signed in", not an error. */
 export function useMe() {
   return useQuery({

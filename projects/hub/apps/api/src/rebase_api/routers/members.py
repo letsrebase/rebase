@@ -3,7 +3,7 @@
 `POST /auth/link` answers 202 whether the address applied or not, and the mail goes out
 in a background task after the response, so neither the status nor the timing nor a
 provider failure says whether an address is known. `POST /auth/enter` spends the token
-and sets `orbiters_user`, for anyone with a `users` row, member or admin alike
+and sets `rebase_user`, for anyone with a `users` row, member or admin alike
 (REB-278): the identity resolution behind both lives in `rebase_core.users`, not here.
 Everything under `/me` reads the row from the session and never from the URL: there is
 no `/me/{id}`. The one id the URL does carry is a company request's: `PATCH
@@ -48,13 +48,15 @@ from fastapi import (
 )
 
 from rebase_api.deps import (
-    MEMBER_COOKIE,
     LlmDep,
     MeDep,
     SenderDep,
     SessionDep,
     SessionOpenerDep,
     SettingsDep,
+    clear_member_cookie,
+    session_tokens,
+    set_member_cookie,
 )
 from rebase_api.downloads import cv_response, pdf_response, perk_response
 from rebase_api.ratelimit import spend_one
@@ -128,15 +130,7 @@ def enter(
             status.HTTP_401_UNAUTHORIZED, "Link non valido o scaduto. Chiedine un altro."
         )
     user, raw = outcome
-    response.set_cookie(
-        MEMBER_COOKIE,
-        raw,
-        httponly=True,
-        secure=settings.cookie_secure,
-        samesite="lax",
-        max_age=settings.member_session_days * 86400,
-        path="/",
-    )
+    set_member_cookie(response, settings, raw)
     return MemberService(session).me_read(user.id)
 
 
@@ -277,5 +271,7 @@ def lookup_member(
 def logout(
     request: Request, response: Response, session: SessionDep, settings: SettingsDep
 ) -> None:
-    UserService(session, settings).close_session(request.cookies.get(MEMBER_COOKIE))
-    response.delete_cookie(MEMBER_COOKIE, path="/")
+    users = UserService(session, settings)
+    for raw in session_tokens(request):
+        users.close_session(raw)
+    clear_member_cookie(response, settings)

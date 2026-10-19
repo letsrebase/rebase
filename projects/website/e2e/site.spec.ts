@@ -10,7 +10,7 @@ const BUDGET_BYTES = 40 * 1024
 const PIXEL_HOST = 'bzrcdn.openai.com'
 const POSTHOG_HOSTS = ['eu.i.posthog.com', 'eu-assets.i.posthog.com']
 const TRACKER_HOSTS = [PIXEL_HOST, ...POSTHOG_HOSTS]
-const CONSENT_KEY = 'orbiters.consent'
+const CONSENT_KEY = 'rebase.consent'
 // The two pages that carry the notice, and therefore the two that can end up with
 // a tracker. `src/pixel.test.ts` owns which pages declare it.
 const MEASURED_PATHS = ['/', '/pigrocrm'] as const
@@ -545,10 +545,10 @@ test.describe('a visitor from a campaign', () => {
       // which page it is on (ORB-167).
       expect(doors.some((href) => href!.startsWith('/hub/freelance?perk=guida&utm_source=linkedin'))).toBe(true)
       for (const href of doors) expect(new URL(href!, 'https://letsrebase.com').searchParams.get('da'), href!).toBe(path === '/' ? 'home' : 'pigrocrm')
-      expect(await page.evaluate(() => sessionStorage.getItem('orbiters.da'))).toBe(path === '/' ? 'home' : 'pigrocrm')
+      expect(await page.evaluate(() => sessionStorage.getItem('rebase.da'))).toBe(path === '/' ? 'home' : 'pigrocrm')
       // The rest of the page's links are what the markup says.
       expect(await page.locator('a[href="/privacy"]').count()).toBeGreaterThan(0)
-      expect(await page.evaluate(() => sessionStorage.getItem('orbiters.utm'))).toBe('utm_source=linkedin&utm_campaign=orbita&utm_id=42')
+      expect(await page.evaluate(() => sessionStorage.getItem('rebase.utm'))).toBe('utm_source=linkedin&utm_campaign=orbita&utm_id=42')
     })
   }
 
@@ -557,8 +557,8 @@ test.describe('a visitor from a campaign', () => {
     const doors = await page.locator('a[href^="/hub/"]').evaluateAll((links) => links.map((a) => a.getAttribute('href')))
     expect(doors.filter((href) => href!.includes('utm_'))).toEqual([])
     for (const href of doors) expect(new URL(href!, 'https://letsrebase.com').searchParams.get('da'), href!).toBe('home')
-    expect(await page.evaluate(() => sessionStorage.getItem('orbiters.utm'))).toBeNull()
-    expect(await page.evaluate(() => sessionStorage.getItem('orbiters.da'))).toBe('home')
+    expect(await page.evaluate(() => sessionStorage.getItem('rebase.utm'))).toBeNull()
+    expect(await page.evaluate(() => sessionStorage.getItem('rebase.da'))).toBe('home')
   })
 })
 

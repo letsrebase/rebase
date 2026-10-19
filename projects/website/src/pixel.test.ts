@@ -107,14 +107,17 @@ describe('consent.js', () => {
     // Not duplicated anywhere else in the codebase: one id, one place.
   })
 
-  it('privacy.html withdraws the same key it names, held in lockstep here', () => {
+  it('privacy.html withdraws the same keys it names, held in lockstep here', () => {
     // privacy.html carries no reference to this script (the test above), so it
-    // reimplements decide's two steps against the same key by hand rather than
-    // calling window.__consent.withdraw; a rename here has to fail loudly there.
-    const key = consent.match(/var STORAGE_KEY = '([^']+)'/)?.[1]
-    expect(key).toBeTruthy()
-    expect(page['privacy.html']).toContain(`getItem('${key}') === 'granted'`)
-    expect(page['privacy.html']).toContain(`removeItem('${key}')`)
+    // reimplements decide's two steps against the same keys by hand rather than
+    // calling window.__consent.withdraw; a rename here has to fail loudly there. The
+    // second key is the name the first had before REB-668.
+    for (const name of ['STORAGE_KEY', 'LEGACY_STORAGE_KEY']) {
+      const key = consent.match(new RegExp(`var ${name} = '([^']+)'`))?.[1]
+      expect(key, name).toBeTruthy()
+      expect(page['privacy.html']).toContain(`getItem('${key}') === 'granted'`)
+      expect(page['privacy.html']).toContain(`removeItem('${key}')`)
+    }
   })
 
   it('carries the same PostHog project as every other surface', () => {

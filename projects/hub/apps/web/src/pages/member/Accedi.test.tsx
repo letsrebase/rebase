@@ -114,8 +114,8 @@ describe('/login', () => {
   it('does not pin a campaign the tab remembers from elsewhere on a bare login', async () => {
     // A wizard opened from an ad leaves its campaign in the tab (`rememberUtm`); the
     // thanks page then links a bare /login. That login came from no campaign.
-    window.sessionStorage.setItem('orbiters.utm', 'utm_source=linkedin&utm_campaign=ads')
-    window.sessionStorage.setItem('orbiters.da', 'home')
+    window.sessionStorage.setItem('rebase.utm', 'utm_source=linkedin&utm_campaign=ads')
+    window.sessionStorage.setItem('rebase.da', 'home')
     const fetchSpy = fetchMock(() => answer(202, { ok: true }))
     mount()
     const user = userEvent.setup()

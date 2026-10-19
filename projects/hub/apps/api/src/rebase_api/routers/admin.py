@@ -1,6 +1,6 @@
 """The admin area's API: the lists an admin reads, and the promote/demote pair.
 
-One cookie, `orbiters_user`, the same one every signed-in person carries, resolved
+One cookie, `rebase_user`, the same one every signed-in person carries, resolved
 against `sessions` on every request (`deps.get_admin`, checking `role == 'admin'`).
 Everything under this router reads or moves rows other people wrote, or grants the role
 to one more person (ORB-123); nothing here writes on an applicant's behalf. The one

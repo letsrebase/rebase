@@ -643,7 +643,7 @@ class MemberRequest(BaseModel):
 
 
 class MeRead(BaseModel):
-    """Whoever `orbiters_user` resolves to, member or admin, replacing `MemberProfile`
+    """Whoever `rebase_user` resolves to, member or admin, replacing `MemberProfile`
     on `GET /me` (REB-278): a `users` row is not necessarily an applicant with a card
     any more, so `ha_scheda` says whether one exists, and the seven card fields answer
     blank -- `None`, `False`, `[]` -- when it does not, the shape a signed-in admin

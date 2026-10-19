@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { afterEach, beforeEach } from 'vitest'
-import { LOGIN_ATTRIBUTION_KEY, ORIGIN_STORAGE_KEY, REFERRAL_STORAGE_KEY, UTM_STORAGE_KEY, loginAttribution, readOrigin, readReferral, readUtm, recallUtm, rememberLoginAttribution, rememberUtm, resolveAttribution, resolveOrigin, resolveReferral, resolveUtm } from './utm'
+import { LEGACY_ORIGIN_STORAGE_KEY, LEGACY_REFERRAL_STORAGE_KEY, LEGACY_UTM_STORAGE_KEY, LOGIN_ATTRIBUTION_KEY, ORIGIN_STORAGE_KEY, REFERRAL_STORAGE_KEY, UTM_STORAGE_KEY, loginAttribution, readOrigin, readReferral, readUtm, recallUtm, rememberLoginAttribution, rememberUtm, resolveAttribution, resolveOrigin, resolveReferral, resolveUtm } from './utm'
 
 describe('readUtm', () => {
   it('keeps the six UTM keys and nothing else', () => {
@@ -173,5 +173,70 @@ describe('what a login sends, remembered for the tab by the login page only (REB
     })
     expect(loginAttribution('?utm_campaign=outreach')).toEqual({ utm_campaign: 'outreach' })
     expect(loginAttribution('')).toEqual({})
+  })
+})
+
+describe('the keys a tab opened before the rename still holds (REB-668)', () => {
+  beforeEach(() => window.sessionStorage.clear())
+  afterEach(() => window.sessionStorage.clear())
+
+  it('names the keys rebase.*, and the old ones orbiters.*', () => {
+    expect([UTM_STORAGE_KEY, ORIGIN_STORAGE_KEY, REFERRAL_STORAGE_KEY]).toEqual(['rebase.utm', 'rebase.da', 'rebase.rif'])
+    expect([LEGACY_UTM_STORAGE_KEY, LEGACY_ORIGIN_STORAGE_KEY, LEGACY_REFERRAL_STORAGE_KEY]).toEqual(['orbiters.utm', 'orbiters.da', 'orbiters.rif'])
+  })
+
+  it('reads the campaign the old landing left and moves it to the new key', () => {
+    window.sessionStorage.setItem(LEGACY_UTM_STORAGE_KEY, 'utm_source=linkedin&utm_campaign=orbita')
+    expect(resolveUtm('')).toEqual({ utm_source: 'linkedin', utm_campaign: 'orbita' })
+    expect(window.sessionStorage.getItem(UTM_STORAGE_KEY)).toBe('utm_source=linkedin&utm_campaign=orbita')
+    expect(window.sessionStorage.getItem(LEGACY_UTM_STORAGE_KEY)).toBeNull()
+    expect(resolveUtm('')).toEqual({ utm_source: 'linkedin', utm_campaign: 'orbita' })
+  })
+
+  it('reads the page and the referral code the old landing left, and moves them', () => {
+    window.sessionStorage.setItem(LEGACY_ORIGIN_STORAGE_KEY, 'pigrocrm')
+    window.sessionStorage.setItem(LEGACY_REFERRAL_STORAGE_KEY, 'ABC123')
+    expect(resolveOrigin('')).toBe('pigrocrm')
+    expect(resolveReferral('')).toBe('ABC123')
+    expect(window.sessionStorage.getItem(ORIGIN_STORAGE_KEY)).toBe('pigrocrm')
+    expect(window.sessionStorage.getItem(REFERRAL_STORAGE_KEY)).toBe('ABC123')
+    expect(window.sessionStorage.getItem(LEGACY_ORIGIN_STORAGE_KEY)).toBeNull()
+    expect(window.sessionStorage.getItem(LEGACY_REFERRAL_STORAGE_KEY)).toBeNull()
+  })
+
+  it('prefers the new key when both exist, and still checks the shape of the old one', () => {
+    window.sessionStorage.setItem(ORIGIN_STORAGE_KEY, 'home')
+    window.sessionStorage.setItem(LEGACY_ORIGIN_STORAGE_KEY, 'pigrocrm')
+    expect(resolveOrigin('')).toBe('home')
+    window.sessionStorage.clear()
+    window.sessionStorage.setItem(LEGACY_REFERRAL_STORAGE_KEY, 'not a code!')
+    expect(resolveReferral('')).toBeNull()
+  })
+
+  it('writes the new key only, dropping the old one a tab still held', () => {
+    window.sessionStorage.setItem(LEGACY_UTM_STORAGE_KEY, 'utm_source=old')
+    window.sessionStorage.setItem(LEGACY_ORIGIN_STORAGE_KEY, 'home')
+    window.sessionStorage.setItem(LEGACY_REFERRAL_STORAGE_KEY, 'OLD1')
+    resolveUtm('?utm_source=linkedin')
+    resolveOrigin('?da=pigrocrm')
+    resolveReferral('?rif=NEW1')
+    expect(window.sessionStorage.getItem(UTM_STORAGE_KEY)).toBe('utm_source=linkedin')
+    expect(window.sessionStorage.getItem(ORIGIN_STORAGE_KEY)).toBe('pigrocrm')
+    expect(window.sessionStorage.getItem(REFERRAL_STORAGE_KEY)).toBe('NEW1')
+    for (const key of [LEGACY_UTM_STORAGE_KEY, LEGACY_ORIGIN_STORAGE_KEY, LEGACY_REFERRAL_STORAGE_KEY]) {
+      expect(window.sessionStorage.getItem(key)).toBeNull()
+    }
+  })
+
+  it('still answers from the old key when the storage refuses the move', () => {
+    window.sessionStorage.setItem(LEGACY_ORIGIN_STORAGE_KEY, 'pigrocrm')
+    const refuse = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('quota', 'QuotaExceededError')
+    })
+    try {
+      expect(resolveOrigin('')).toBe('pigrocrm')
+    } finally {
+      refuse.mockRestore()
+    }
   })
 })

@@ -21,7 +21,11 @@
  * two, so they cannot drift quietly.
  */
 ;(function () {
-  var STORAGE_KEY = 'orbiters.consent'
+  var STORAGE_KEY = 'rebase.consent'
+  /* What the key was called until REB-668. A visitor who decided before the rename still
+     has the decision under this name, and is not asked again: `remembered` reads it when
+     the new key is empty and moves it across, `remember` drops it. Gone with REB-697. */
+  var LEGACY_STORAGE_KEY = 'orbiters.consent'
   var GRANTED = 'granted'
   var DENIED = 'denied'
   var PIXEL_ID = '9r6qrnPxBV8WDVGtpuaqxh'
@@ -50,16 +54,28 @@
      is a visitor who sees the notice again, which is a nuisance; a page that breaks on
      it is worse. */
   function remembered() {
+    var current
     try {
-      return window.localStorage.getItem(STORAGE_KEY)
+      current = window.localStorage.getItem(STORAGE_KEY)
+      if (current) return current
+      current = window.localStorage.getItem(LEGACY_STORAGE_KEY)
     } catch {
       return null
     }
+    if (!current) return null
+    try {
+      window.localStorage.setItem(STORAGE_KEY, current)
+      window.localStorage.removeItem(LEGACY_STORAGE_KEY)
+    } catch {
+      /* Niente da fare: la scelta si legge da dove sta. */
+    }
+    return current
   }
 
   function remember(decision) {
     try {
       window.localStorage.setItem(STORAGE_KEY, decision)
+      window.localStorage.removeItem(LEGACY_STORAGE_KEY)
     } catch {
       /* Niente da fare: la scelta vale per questa visita. */
     }
@@ -223,8 +239,9 @@
      three notice pages grows its own control. */
   function withdraw() {
     try {
-      if (window.localStorage.getItem(STORAGE_KEY) === GRANTED) {
+      if (remembered() === GRANTED) {
         window.localStorage.removeItem(STORAGE_KEY)
+        window.localStorage.removeItem(LEGACY_STORAGE_KEY)
       }
     } catch {
       /* Niente da fare: la scelta resta finché dura la sessione. */

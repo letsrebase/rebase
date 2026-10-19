@@ -4,7 +4,7 @@
  * doors into the hub are plain paths, so the first click used to lose them. `carryUtm`
  * appends the keys the page was opened with to every link into `/hub/` (never
  * overriding one a link already carries, `perk` and the like untouched) and writes them
- * in `sessionStorage` under `orbiters.utm`, the key the hub's `resolveUtm` reads when
+ * in `sessionStorage` under `rebase.utm`, the key the hub's `resolveUtm` reads when
  * its own URL has none. Session storage on purpose: it dies with the tab, and the only
  * thing it holds is the campaign, never the person. Without JavaScript the links are
  * what the markup says and the attribution is lost, which is what happened before and
@@ -12,7 +12,7 @@
  *
  * Campaign or not, every door also says which page it is on (ORB-167): `da=home` from
  * `/`, `da=pigrocrm` from `/pigrocrm`, so the hub can tell who came through which
- * page. Remembered for the tab as `orbiters.da`.
+ * page. Remembered for the tab as `rebase.da`.
  *
  * An IIFE publishing `window.__utm`, like `field.js` and `typewriter.js`: `landing.js`,
  * the page script that calls it, stays self-contained and its tests can load it with
@@ -21,8 +21,13 @@
  */
 ;(function () {
   var UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'utm_id']
-  var UTM_STORAGE_KEY = 'orbiters.utm'
-  var ORIGIN_STORAGE_KEY = 'orbiters.da'
+  var UTM_STORAGE_KEY = 'rebase.utm'
+  var ORIGIN_STORAGE_KEY = 'rebase.da'
+  /* What the two keys were called until REB-668. A tab opened before the rename may still
+     hold them, and the hub reads them as a fallback; writing the new key drops the old
+     one so the tab keeps a single copy. Gone with REB-697. */
+  var LEGACY_UTM_STORAGE_KEY = 'orbiters.utm'
+  var LEGACY_ORIGIN_STORAGE_KEY = 'orbiters.da'
 
   /** The page's slug for `da=`: `home` for the front door, the path's own name otherwise. */
   function pageSlug(pathname) {
@@ -48,8 +53,12 @@
     var keys = Array.from(utm.keys())
     var page = pageSlug(pathname)
     try {
-      if (keys.length) window.sessionStorage.setItem(UTM_STORAGE_KEY, utm.toString())
+      if (keys.length) {
+        window.sessionStorage.setItem(UTM_STORAGE_KEY, utm.toString())
+        window.sessionStorage.removeItem(LEGACY_UTM_STORAGE_KEY)
+      }
       window.sessionStorage.setItem(ORIGIN_STORAGE_KEY, page)
+      window.sessionStorage.removeItem(LEGACY_ORIGIN_STORAGE_KEY)
     } catch {
       /* storage refused: the links still carry everything */
     }

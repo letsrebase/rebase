@@ -15,14 +15,24 @@ export const UTM_KEYS = [
 export type Utm = Partial<Record<(typeof UTM_KEYS)[number] | 'origine', string>>
 
 /** Where the landing leaves the page it was, beside the campaign. */
-export const ORIGIN_STORAGE_KEY = 'orbiters.da'
+export const ORIGIN_STORAGE_KEY = 'rebase.da'
 const ORIGIN_SHAPE = /^[a-z0-9-]{1,40}$/
+
+/** The keys below carried the platform's old name until REB-668. The landing may still
+ *  write them (the website and the hub are released apart) and a tab opened before the
+ *  rename holds them, so a read falls back to the old name when the new one is empty and
+ *  moves the value across, and a write drops the old name. Remove them, `recall` and
+ *  `remember`, and the matching lines in `projects/website/src/utm.js` and `consent.js`
+ *  with REB-697. */
+export const LEGACY_ORIGIN_STORAGE_KEY = 'orbiters.da'
+export const LEGACY_UTM_STORAGE_KEY = 'orbiters.utm'
+export const LEGACY_REFERRAL_STORAGE_KEY = 'orbiters.rif'
 
 /** Where the landing (`projects/website/src/landing.js`) leaves the campaign for the
  *  tab, and where this app leaves what it read, so a detour through the chooser or a
  *  reload of the wizard without the query string still knows where the person came
  *  from (ORB-166). Session storage: it dies with the tab and holds only the campaign. */
-export const UTM_STORAGE_KEY = 'orbiters.utm'
+export const UTM_STORAGE_KEY = 'rebase.utm'
 
 export function readUtm(search: string): Utm {
   const params = new URLSearchParams(search)
@@ -42,9 +52,33 @@ function storage(): Storage | null {
   }
 }
 
+/** A stored value under `key`, else the one under the name it had before REB-668, which
+ *  is moved to `key` on the way out so the next read finds it where it now belongs. */
+function recall(key: string, legacyKey: string): string | null {
+  const store = storage()
+  const current = store?.getItem(key)
+  if (current) return current
+  const legacy = store?.getItem(legacyKey)
+  if (!legacy) return null
+  try {
+    store?.setItem(key, legacy)
+    store?.removeItem(legacyKey)
+  } catch {
+    /* refused: the value is still read, from where it is */
+  }
+  return legacy
+}
+
+/** Write `value` under `key` and drop the old name, so a tab holds one copy. */
+function remember(key: string, legacyKey: string, value: string): void {
+  const store = storage()
+  store?.setItem(key, value)
+  store?.removeItem(legacyKey)
+}
+
 /** What the tab remembers, if anything readable. */
 export function recallUtm(): Utm {
-  const raw = storage()?.getItem(UTM_STORAGE_KEY)
+  const raw = recall(UTM_STORAGE_KEY, LEGACY_UTM_STORAGE_KEY)
   return raw ? readUtm(`?${raw}`) : {}
 }
 
@@ -52,7 +86,7 @@ export function recallUtm(): Utm {
 export function rememberUtm(utm: Utm): void {
   if (Object.keys(utm).length === 0) return
   try {
-    storage()?.setItem(UTM_STORAGE_KEY, new URLSearchParams(utm).toString())
+    remember(UTM_STORAGE_KEY, LEGACY_UTM_STORAGE_KEY, new URLSearchParams(utm).toString())
   } catch {
     /* refused: the URL still has it, or nothing does */
   }
@@ -82,19 +116,19 @@ export function resolveOrigin(search: string): string | null {
   const own = readOrigin(search)
   if (own) {
     try {
-      storage()?.setItem(ORIGIN_STORAGE_KEY, own)
+      remember(ORIGIN_STORAGE_KEY, LEGACY_ORIGIN_STORAGE_KEY, own)
     } catch {
       /* refused: the URL still has it */
     }
     return own
   }
-  const remembered = storage()?.getItem(ORIGIN_STORAGE_KEY) ?? ''
+  const remembered = recall(ORIGIN_STORAGE_KEY, LEGACY_ORIGIN_STORAGE_KEY) ?? ''
   return ORIGIN_SHAPE.test(remembered) ? remembered : null
 }
 
 /** Where a member's own link leaves the code it carried, the same tab-lasting
  *  attribution `ORIGIN_STORAGE_KEY` already keeps for `da=` (P-REB-44). */
-export const REFERRAL_STORAGE_KEY = 'orbiters.rif'
+export const REFERRAL_STORAGE_KEY = 'rebase.rif'
 const REFERRAL_SHAPE = /^[A-Za-z0-9]{1,10}$/
 
 /** `rif=` off a search string, when it looks like a code; anything else is unknown. */
@@ -112,13 +146,13 @@ export function resolveReferral(search: string): string | null {
   const own = readReferral(search)
   if (own) {
     try {
-      storage()?.setItem(REFERRAL_STORAGE_KEY, own)
+      remember(REFERRAL_STORAGE_KEY, LEGACY_REFERRAL_STORAGE_KEY, own)
     } catch {
       /* refused: the URL still has it */
     }
     return own
   }
-  const remembered = storage()?.getItem(REFERRAL_STORAGE_KEY) ?? ''
+  const remembered = recall(REFERRAL_STORAGE_KEY, LEGACY_REFERRAL_STORAGE_KEY) ?? ''
   return REFERRAL_SHAPE.test(remembered) ? remembered : null
 }
 

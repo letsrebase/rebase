@@ -203,15 +203,18 @@ def test_the_link_enters_once_sets_the_member_cookie_and_opens_only_the_members_
     profile, entered = _enter(client, sender, "ada@studio.it")
     assert profile["email"] == "ada@studio.it"
     assert "stato" not in profile and "note" not in profile and "utm_source" not in profile
-    cookie = client.cookies.get("orbiters_user")
+    cookie = client.cookies.get("rebase_user")
     assert cookie
-    set_cookie = entered.headers["set-cookie"].lower()
-    assert "orbiters_user=" in set_cookie
+    set_cookies = _set_cookies(entered)
+    set_cookie = next(line for line in set_cookies if line.startswith("rebase_user="))
     assert "httponly" in set_cookie
     assert "secure" in set_cookie
     assert "samesite=lax" in set_cookie
     assert "path=/" in set_cookie
     assert "max-age=2592000" in set_cookie  # settings.member_session_days * 86400, 30 days
+    # The name before REB-668 is dropped in the same answer, so a browser that still holds
+    # it does not keep two cookies for one session.
+    assert any(line.startswith("orbiters_user=") and "max-age=0" in line for line in set_cookies)
     assert client.get("/api/hub/me").json()["nome"] == "Ada"
 
     # The same link a second time opens nothing.
@@ -231,10 +234,150 @@ def test_the_link_enters_once_sets_the_member_cookie_and_opens_only_the_members_
 
     logged_out = client.post("/api/hub/me/logout")
     assert logged_out.status_code == 204
-    cleared = logged_out.headers["set-cookie"].lower()
-    assert "orbiters_user=" in cleared
-    assert 'orbiters_user=""' in cleared or "max-age=0" in cleared
+    cleared = _set_cookies(logged_out)
+    assert any(line.startswith("rebase_user=") and "max-age=0" in line for line in cleared)
+    assert any(line.startswith("orbiters_user=") and "max-age=0" in line for line in cleared)
     assert client.get("/api/hub/me").status_code == 401
+
+
+def _set_cookies(response: httpx.Response) -> list[str]:
+    """Every `Set-Cookie` line of an answer, lower-cased: `headers[...]` would join them."""
+    return [line.lower() for line in response.headers.get_list("set-cookie")]
+
+
+def _as_legacy_cookie(client: TestClient) -> str:
+    """Turn the session the client just opened into one carried under the cookie's name
+    before REB-668, and nothing else: what a browser signed in before the deploy sends."""
+    raw = client.cookies.get("rebase_user")
+    assert raw
+    client.cookies.clear()
+    client.cookies.set("orbiters_user", raw)
+    return raw
+
+
+def test_a_session_opened_under_the_old_cookie_name_stays_signed_in_and_moves_to_the_new_one(
+    client: TestClient, sender: RecordingSender, clean: None
+) -> None:
+    """REB-668: a member who signed in before the rename holds `orbiters_user`. They must
+    not be logged out by it: the API reads the old name, answers as normal, and reissues
+    the same session under `rebase_user` with a fresh 30 days, dropping the old name."""
+    _apply(client, "ada@studio.it")
+    _enter(client, sender, "ada@studio.it")
+    raw = _as_legacy_cookie(client)
+
+    me = client.get("/api/hub/me")
+    assert me.status_code == 200
+    assert me.json()["nome"] == "Ada"
+    moved = _set_cookies(me)
+    adopted = next(line for line in moved if line.startswith("rebase_user="))
+    assert adopted.startswith(f"rebase_user={raw.lower()};")  # lower-cased with the line
+    assert "max-age=2592000" in adopted and "httponly" in adopted and "secure" in adopted
+    assert any(line.startswith("orbiters_user=") and "max-age=0" in line for line in moved)
+
+    # The browser now sends the new name only: same session, nothing left to move.
+    client.cookies.clear()
+    client.cookies.set("rebase_user", raw)
+    again = client.get("/api/hub/me")
+    assert again.status_code == 200 and again.json()["nome"] == "Ada"
+    assert _set_cookies(again) == []
+
+
+def test_an_admin_session_under_the_old_cookie_name_still_opens_the_admin_routes(
+    client: TestClient, sender: RecordingSender, api_session: Session, clean: None
+) -> None:
+    api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", cognome="", role="admin"))
+    api_session.commit()
+    _enter(client, sender, ADMIN_EMAIL)
+    assert client.get("/api/hub/freelancers").status_code == 200
+    raw = _as_legacy_cookie(client)
+
+    listed = client.get("/api/hub/freelancers")
+    assert listed.status_code == 200
+    assert any(line.startswith(f"rebase_user={raw.lower()};") for line in _set_cookies(listed))
+
+
+def test_the_new_cookie_name_wins_when_a_browser_sends_both(
+    client: TestClient, sender: RecordingSender, clean: None
+) -> None:
+    _apply(client, "ada@studio.it")
+    _enter(client, sender, "ada@studio.it")
+    client.cookies.set("orbiters_user", "a-token-that-opens-nothing")
+
+    me = client.get("/api/hub/me")
+    assert me.status_code == 200 and me.json()["nome"] == "Ada"
+    assert _set_cookies(me) == []
+
+
+def test_a_stale_new_cookie_does_not_hide_a_live_session_under_the_old_name(
+    client: TestClient, sender: RecordingSender, clean: None
+) -> None:
+    """A rollback followed by a roll-forward can leave a browser with a `rebase_user` that
+    opens nothing beside an `orbiters_user` that still does: the session is found and the
+    live token is reissued under the new name."""
+    _apply(client, "ada@studio.it")
+    _enter(client, sender, "ada@studio.it")
+    raw = _as_legacy_cookie(client)
+    client.cookies.set("rebase_user", "a-token-that-opens-nothing")
+
+    me = client.get("/api/hub/me")
+    assert me.status_code == 200 and me.json()["nome"] == "Ada"
+    assert any(line.startswith(f"rebase_user={raw.lower()};") for line in _set_cookies(me))
+
+
+def test_a_download_under_the_old_cookie_name_opens_and_the_next_json_call_moves_the_cookie(
+    client: TestClient, sender: RecordingSender, clean: None
+) -> None:
+    """A route that returns its own `Response` does not carry the reissued cookie, but the
+    old name still authorizes it; the session moves on the next call that answers JSON."""
+    _apply(client, "ada@studio.it")
+    _enter(client, sender, "ada@studio.it")
+    raw = _as_legacy_cookie(client)
+
+    cv = client.get("/api/hub/me/cv")
+    assert cv.status_code == 200 and cv.content == PDF
+    me = client.get("/api/hub/me")
+    assert any(line.startswith(f"rebase_user={raw.lower()};") for line in _set_cookies(me))
+
+
+def test_logging_out_closes_the_session_behind_each_cookie_name_the_browser_sends(
+    client: TestClient, sender: RecordingSender, clean: None
+) -> None:
+    _apply(client, "ada@studio.it")
+    _enter(client, sender, "ada@studio.it")
+    first = client.cookies.get("rebase_user")
+    client.cookies.clear()
+    _enter(client, sender, "ada@studio.it")
+    second = client.cookies.get("rebase_user")
+    assert first and second and first != second
+    client.cookies.clear()
+    client.cookies.set("rebase_user", first)
+    client.cookies.set("orbiters_user", second)
+
+    assert client.post("/api/hub/me/logout").status_code == 204
+    for token in (first, second):
+        client.cookies.clear()
+        client.cookies.set("rebase_user", token)
+        assert client.get("/api/hub/me").status_code == 401
+
+
+def test_logging_out_under_the_old_cookie_name_closes_the_session_and_clears_both_names(
+    client: TestClient, sender: RecordingSender, clean: None
+) -> None:
+    _apply(client, "ada@studio.it")
+    _enter(client, sender, "ada@studio.it")
+    raw = _as_legacy_cookie(client)
+
+    logged_out = client.post("/api/hub/me/logout")
+    assert logged_out.status_code == 204
+    cleared = _set_cookies(logged_out)
+    assert any(line.startswith("rebase_user=") and "max-age=0" in line for line in cleared)
+    assert any(line.startswith("orbiters_user=") and "max-age=0" in line for line in cleared)
+
+    # The row is closed, not only the browser's copy: the token opens nothing under either name.
+    for name in ("rebase_user", "orbiters_user"):
+        client.cookies.clear()
+        client.cookies.set(name, raw)
+        assert client.get("/api/hub/me").status_code == 401, name
 
 
 def test_a_cv_filename_outside_latin_1_still_downloads_instead_of_500(
