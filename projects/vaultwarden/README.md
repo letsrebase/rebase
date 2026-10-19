@@ -209,8 +209,13 @@ with no success, which is what a revoked R2 key, a full disk or a container that
 look like. The URL is a secret, since whoever holds it can report a success: it lives in
 the `vaultwarden-production` Environment, the deploy writes it into the host `.env`
 (`env-secrets`), and the loop refuses to start without one. A ping that cannot get through
-is logged and nothing more: the check going quiet is its own alarm. **The restore is the
-proof of a backup**:
+is logged and nothing more: the check going quiet is its own alarm.
+
+The account is `ciao@letsrebase.com` on healthchecks.io (its password is in the `Rebase`
+organisation's `Infrastructure` collection and in the `ciao-rebase` Chrome profile; a login
+link by mail works too). The check is «Vaultwarden backup», slug `vaultwarden-backup`,
+period one day, grace two hours, and it mails both `ciao@letsrebase.com` and Lorenzo. A new
+URL means a new Environment secret and a deploy. **The restore is the proof of a backup**:
 `docs/restore.md`, to be done once on a scratch container before anything real is stored,
 and again whenever the scripts or the image change.
 
