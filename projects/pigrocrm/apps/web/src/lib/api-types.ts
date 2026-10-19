@@ -2925,6 +2925,13 @@ export interface paths {
          *     before (`MagicLinkService.enter`). Without a sender or a public origin the space is
          *     created all the same, and the login page's own link does the rest. Throttled per
          *     client like the member question: a `CREATE DATABASE` per anonymous POST.
+         *
+         *     The one exception to "the signup proves nothing" (REB-677): a browser that holds a
+         *     live `pigrocrm_identity` cookie for the very address the signup carries has already
+         *     proven it, by a link it spent in another space, so the new admin starts with
+         *     `email_verificata_il` set and can invite at once. No cookie, an expired or revoked
+         *     one, or another address changes nothing: typing an address proves nothing, and
+         *     trusting it would let anyone browse the spaces of an address they do not own.
          */
         post: operations["signup_api_tenants__post"];
         delete?: never;
