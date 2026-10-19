@@ -90,23 +90,59 @@ node "$here/drill.mjs" refuse "$base" stranger@example.test
 admin=$(curl -s -o "$tmp/admin.out" -w '%{http_code}' "$base/admin")
 echo "GET /admin: HTTP $admin: $(head -c 200 "$tmp/admin.out" | tr '\n' ' ')"
 grep -qi 'admin panel is disabled' "$tmp/admin.out" || { echo "FAIL: the admin page is not disabled" >&2; exit 1; }
-# The look (REB-688): the server took the SCSS template and every mounted image, which is
-# what an image bump that moves either mechanism would break without a word.
+# The look (REB-688, REB-699): the server took the SCSS template, and `brand-web-vault.sh`
+# built the web vault in the product's name. An image bump that moves either mechanism, or
+# a literal the script looks for, would break this without a word anywhere else.
 curl -s "$base/css/vaultwarden.css" > "$tmp/vaultwarden.css"
 watermelon_deep=$(sed -n 's/^ *--color-watermelon-deep: *\(#[0-9a-fA-F]*\);.*/\1/p' "$project_dir/../../shared/brand/palette.css" | tr 'A-F' 'a-f')
 [ -n "$watermelon_deep" ] || { echo "FAIL: no --color-watermelon-deep in palette.css" >&2; exit 1; }
 grep -q -- "--color-bg-brand: *$watermelon_deep" "$tmp/vaultwarden.css" || { echo "FAIL: the brand colours are not in /css/vaultwarden.css" >&2; exit 1; }
 grep -q 'bit-landing-header header a bit-svg' "$tmp/vaultwarden.css" || { echo "FAIL: the lockup rules are not in /css/vaultwarden.css" >&2; exit 1; }
 grep -q 'data:image/svg+xml;base64' "$tmp/vaultwarden.css" || { echo "FAIL: the lockup is not in /css/vaultwarden.css" >&2; exit 1; }
-mounts=0
-while IFS= read -r line; do
-  src=${line#*- ./}; src=${src%%:*}
-  dst=${line#*:}; dst=${dst%%:*}
-  curl -fsS "$base${dst#/web-vault}" | cmp - "$project_dir/$src" || { echo "FAIL: $dst is not $src" >&2; exit 1; }
-  mounts=$((mounts + 1))
-done < <(grep -E '^ *- \./branding/images/.*:/web-vault/' "$project_dir/docker-compose.yml")
-[ "$mounts" -gt 0 ] || { echo "FAIL: the compose file mounts no favicon" >&2; exit 1; }
-echo "the look is served: brand colours and lockup rules in the stylesheet, $mounts mounted images as committed"
+# The page, the manifest and the app say the product's name and not upstream's, and every
+# icon the page names is ours under a fingerprinted name (upstream serves them immutable for
+# a week, so a browser would keep the old file under the old name).
+name=$(sed -n 's/^BRAND_NAME=//p' "$project_dir/branding/branding.env")
+[ -n "$name" ] || { echo "FAIL: no BRAND_NAME in branding/branding.env" >&2; exit 1; }
+curl -fsS "$base/" > "$tmp/index.html"
+grep -q "<title page-title>$name</title>" "$tmp/index.html" || { echo "FAIL: the tab does not read «$name» before the app boots" >&2; exit 1; }
+if grep -q Vaultwarden "$tmp/index.html"; then echo "FAIL: index.html still says Vaultwarden" >&2; exit 1; fi
+images=0
+for file in favicon-16x16.png favicon-32x32.png apple-touch-icon.png safari-pinned-tab.svg; do
+  stem=${file%.*}; ext=${file##*.}
+  href=$(grep -o "href=\"images/$stem\.[0-9a-f]\{12\}\.$ext\"" "$tmp/index.html" | head -n 1 | sed 's/^href="//; s/"$//')
+  [ -n "$href" ] || { echo "FAIL: index.html names no fingerprinted $file" >&2; exit 1; }
+  curl -fsS "$base/$href" | cmp - "$project_dir/branding/images/$file" || { echo "FAIL: $href is not branding/images/$file" >&2; exit 1; }
+  images=$((images + 1))
+done
+curl -fsS "$base/favicon.ico" | cmp - "$project_dir/branding/images/favicon.ico" || { echo "FAIL: /favicon.ico is not branding/images/favicon.ico" >&2; exit 1; }
+manifest=$(grep -o 'rel="manifest" href="[^"]*"' "$tmp/index.html" | sed 's/^rel="manifest" href="//; s/"$//')
+curl -fsS "$base/$manifest" > "$tmp/manifest.json"
+grep -q "\"name\": \"$name\"" "$tmp/manifest.json" || { echo "FAIL: the web manifest is not named «$name»" >&2; exit 1; }
+if grep -q Vaultwarden "$tmp/manifest.json"; then echo "FAIL: the web manifest still says Vaultwarden" >&2; exit 1; fi
+for size in 192 512; do
+  src=$(grep -o "images/icons/android-chrome-${size}x${size}\.[0-9a-f]\{12\}\.png" "$tmp/manifest.json" | head -n 1)
+  [ -n "$src" ] || { echo "FAIL: the manifest names no fingerprinted ${size} pixel icon" >&2; exit 1; }
+  curl -fsS "$base/$src" | cmp - "$project_dir/branding/images/icons/android-chrome-${size}x${size}.png" || { echo "FAIL: $src is not ours" >&2; exit 1; }
+  images=$((images + 1))
+done
+main=$(grep -o 'src="app/main\.[^"]*\.js"' "$tmp/index.html" | sed 's/^src="//; s/"$//')
+[ -n "$main" ] || { echo "FAIL: index.html names no app/main.*.js" >&2; exit 1; }
+curl -fsS "$base/$main" > "$tmp/main.js"
+# Every literal the script rewrites, as upstream spells it: any of them left is a miss.
+for left in 'Vaultwarden Web' 'Vaultwarden is not associated' 'for Vaultwarden (an unofficial' '["alt","Vaultwarden"' 'totp/Vaultwarden:' 'issuer=Vaultwarden' '<title>Vaultwarden</title>'; do
+  if grep -qF -- "$left" "$tmp/main.js"; then echo "FAIL: $main still holds «$left»" >&2; exit 1; fi
+done
+grep -qF "let l=\"$name\"" "$tmp/main.js" || { echo "FAIL: the app does not title its pages with «$name»" >&2; exit 1; }
+# The script warns, and does not stop the server, when a literal it looks for is not there.
+if compose logs vaultwarden 2>&1 | grep -q 'brand-web-vault:'; then
+  compose logs vaultwarden 2>&1 | grep 'brand-web-vault:' >&2
+  echo "FAIL: brand-web-vault.sh could not do what it is for" >&2; exit 1
+fi
+curl -s "$base/no-such-page" > "$tmp/404.html"
+grep -q "<title>Page not found | $name</title>" "$tmp/404.html" || { echo "FAIL: the server's 404 page is not ours" >&2; exit 1; }
+if grep -q Vaultwarden "$tmp/404.html"; then echo "FAIL: the 404 page still says Vaultwarden" >&2; exit 1; fi
+echo "the look is served: brand colours and lockup rules in the stylesheet, the name «$name» in the tab, the manifest and the app, $images icons as committed under fingerprinted names"
 [ "$(node "$here/drill.mjs" read "$base" "$email" "$password")" = "$item" ] || { echo "FAIL: item missing before backup" >&2; exit 1; }
 
 step "2b. the admin page opens with a hash and closes when the line is removed"
