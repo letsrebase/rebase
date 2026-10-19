@@ -559,3 +559,40 @@ def test_open_for_refuses_an_address_with_nothing_open(db_session: Session) -> N
     db_session.commit()
     with pytest.raises(NotFound):
         service.open_for(INVITEE)
+
+
+def test_a_resend_during_a_lookup_is_not_given_the_old_mails_verdict(db_session: Session) -> None:
+    """The provider is asked with no transaction open, so a resend can land while it
+    answers. The old mail's `bounced` is then for a mail the row no longer holds, and
+    writing it onto the new one would show «Non consegnata» for a mail that may arrive."""
+    row, _ = _invite(db_session)
+    service = InvitationService(db_session)
+    service.record_mail(row.id, Receipt(True, "prov-1"))
+
+    class ResendsWhileAnswering(RecordingSender):
+        def status(self, mail_id: str):  # type: ignore[no-untyped-def]
+            service.resend(row.id, _admin(db_session))
+            service.record_mail(row.id, Receipt(True, "prov-2"))
+            return "bounced"
+
+    service.refresh_mail_status(_admin(db_session), ResendsWhileAnswering())
+    db_session.refresh(row)
+    assert (row.mail_id, row.mail_status) == ("prov-2", "sent")
+
+
+def test_a_lookup_that_has_run_out_of_time_asks_no_more(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for number in range(3):
+        row, _ = _invite(db_session, email=f"p{number}@x.it")
+        InvitationService(db_session).record_mail(row.id, Receipt(True, f"prov-{number}"))
+    asked: list[str] = []
+
+    class Slow(RecordingSender):
+        def status(self, mail_id: str):  # type: ignore[no-untyped-def]
+            asked.append(mail_id)
+            return "sent"
+
+    monkeypatch.setattr("pigrocrm.core.auth.invitations.MAIL_LOOKUP_BUDGET_SECONDS", 0.0)
+    InvitationService(db_session).refresh_mail_status(_admin(db_session), Slow())
+    assert asked == []

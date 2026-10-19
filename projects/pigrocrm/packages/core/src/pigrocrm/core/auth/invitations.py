@@ -21,6 +21,7 @@ the fact.
 
 import hashlib
 import secrets
+import time
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -65,6 +66,9 @@ PENDING = Invitation.accepted_at.is_(None) & Invitation.revoked_at.is_(None)
 # asked a sixth time in one request (REB-678).
 MAIL_LOOKUPS_PER_LIST = 5
 MAIL_LOOKUP_WINDOW = timedelta(days=1)
+# The whole of one look at the list may spend this long asking the provider, on top of
+# the one question already in flight when it runs out.
+MAIL_LOOKUP_BUDGET_SECONDS = 4.0
 
 
 def _hash(raw: str) -> str:
@@ -253,13 +257,19 @@ class InvitationService:
         the 201 the admin saw said neither (REB-678): this is how the panel learns it.
 
         Only a mail not yet at an end (`sent`, `delayed`), only one sent in the last day,
-        newest first and at most `MAIL_LOOKUPS_PER_LIST` of them. The first question the
-        provider cannot answer (down, or a key that may only send) ends the round: the
-        rest would get the same answer and the admin would wait for each."""
+        newest first, at most `MAIL_LOOKUPS_PER_LIST` of them and for at most
+        `MAIL_LOOKUP_BUDGET_SECONDS`. The first question the provider cannot answer (down,
+        or a key that may only send) ends the round: the rest would get the same answer
+        and the admin would wait for each.
+
+        The rows are read and the transaction ended before the provider is asked, and each
+        answer is written only to the very mail it was asked about and only while that mail
+        is still open: a resend that lands during a lookup starts a new mail, and the old
+        one's `bounced` must not be written onto it."""
         actor.require_admin("list_invites")
         now = datetime.now(UTC)
-        rows = self.session.scalars(
-            select(Invitation)
+        open_mails = self.session.execute(
+            select(Invitation.id, Invitation.mail_id, Invitation.mail_status)
             .where(
                 PENDING,
                 Invitation.expires_at > now,
@@ -270,16 +280,25 @@ class InvitationService:
             .order_by(Invitation.mail_sent_at.desc())
             .limit(MAIL_LOOKUPS_PER_LIST)
         ).all()
-        changed = False
-        for row in rows:
-            state = sender.status(row.mail_id or "")
+        self.session.rollback()
+        deadline = time.monotonic() + MAIL_LOOKUP_BUDGET_SECONDS
+        for invitation_id, mail_id, known in open_mails:
+            if time.monotonic() >= deadline:
+                break
+            state = sender.status(mail_id or "")
             if state is None:
                 break
-            if state != row.mail_status:
-                row.mail_status = state
-                changed = True
-        if changed:
-            self.session.commit()
+            if state != known:
+                self.session.execute(
+                    update(Invitation)
+                    .where(
+                        Invitation.id == invitation_id,
+                        Invitation.mail_id == mail_id,
+                        Invitation.mail_status.in_(OPEN_MAIL_STATES),
+                    )
+                    .values(mail_status=state)
+                )
+        self.session.commit()
 
     # ---- invitee surface (unauthenticated) --------------------------------------
 

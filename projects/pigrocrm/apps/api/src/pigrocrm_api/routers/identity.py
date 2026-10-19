@@ -270,6 +270,11 @@ def open_invitation(slug: str, email: IdentityEmailDep, settings: SettingsDep) -
             raw = InvitationService(space).open_for(email)
     except NotFound as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, NO_INVITATION) from exc
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Questo spazio non risponde in questo momento. Riprova tra poco.",
+        ) from exc
     return InvitationDoor(url=f"/{slug}/app/invite?t={raw}")
 
 
