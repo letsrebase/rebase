@@ -1,5 +1,6 @@
 """The CRM's outbound mail: a seam, Resend behind it, and the one mail this slice sends."""
 
+import json
 import logging
 import urllib.request
 from datetime import date, timedelta
@@ -22,6 +23,7 @@ from pigrocrm.core.mail import (
     RESEND_URL,
     USER_AGENT,
     Mail,
+    Receipt,
     RecordingSender,
     ResendSender,
     digest_mail,
@@ -484,3 +486,128 @@ def test_a_send_that_never_reached_the_provider_leaves_a_line_too(
     assert caplog.text != ""
     assert "a@x.it" not in caplog.text
     assert "re_secret" not in caplog.text
+
+
+# --- what became of a mail the provider took (REB-678) -------------------------------
+
+
+def test_submit_answers_the_id_the_provider_filed_the_mail_under() -> None:
+    http = lambda *a: (200, b'{"id": "49a3999c-0ce1-4ea6-ab68-afcd6dc2e794"}')  # noqa: E731
+    receipt = ResendSender("re_x", "x", http=http).submit(Mail("a@x.it", "s", "t"))
+    assert receipt == Receipt(True, "49a3999c-0ce1-4ea6-ab68-afcd6dc2e794")
+
+
+@pytest.mark.parametrize("body", [b"", b"not json", b"[]", b'{"id": 7}', b'{"id": ""}', b"{}"])
+def test_a_body_that_names_no_id_is_still_an_accepted_mail(body: bytes) -> None:
+    """A 2xx is the answer to «did it take it»: a body that is not what it was last time
+    costs the id, never the send."""
+    receipt = ResendSender("re_x", "x", http=lambda *a: (200, body)).submit(
+        Mail("a@x.it", "s", "t")
+    )
+    assert receipt == Receipt(True, None)
+
+
+def test_a_refused_or_unreachable_submit_is_a_receipt_that_says_so() -> None:
+    mail = Mail("a@x.it", "s", "t")
+    assert ResendSender("re_x", "x", http=lambda *a: (422, b"{}")).submit(mail) == Receipt(False)
+
+    def boom(method: str, url: str, headers: dict[str, str], body: bytes) -> tuple[int, bytes]:
+        raise OSError("down")
+
+    assert ResendSender("re_x", "x", http=boom).submit(mail) == Receipt(False)
+
+
+@pytest.mark.parametrize(
+    ("event", "state"),
+    [
+        ("queued", "sent"),
+        ("scheduled", "sent"),
+        ("sent", "sent"),
+        ("delivery_delayed", "delayed"),
+        ("delivered", "delivered"),
+        ("opened", "delivered"),
+        ("clicked", "delivered"),
+        ("bounced", "bounced"),
+        ("suppressed", "suppressed"),
+        ("complained", "complained"),
+        ("failed", "failed"),
+        ("canceled", "failed"),
+    ],
+)
+def test_status_names_what_the_provider_last_recorded(event: str, state: str) -> None:
+    """The events are Resend's own, as `GET /emails/{id}` answers `last_event`; the
+    `suppressed`, `bounced` and `clicked` ones were read off the production record of the
+    invitation that never arrived (2026-10-07)."""
+    calls: list[tuple[str, str, dict[str, str], bytes]] = []
+
+    def http(method: str, url: str, headers: dict[str, str], body: bytes) -> tuple[int, bytes]:
+        calls.append((method, url, headers, body))
+        return 200, json.dumps({"id": "abc", "last_event": event}).encode()
+
+    assert ResendSender("re_x", "x", http=http).status("abc") == state
+    assert calls == [("GET", f"{RESEND_URL}/abc", calls[0][2], b"")]
+    assert calls[0][2]["Authorization"] == "Bearer re_x"
+
+
+def test_status_quotes_the_id_it_puts_in_the_path() -> None:
+    seen: list[str] = []
+
+    def http(method: str, url: str, headers: dict[str, str], body: bytes) -> tuple[int, bytes]:
+        seen.append(url)
+        return 200, b'{"last_event": "delivered"}'
+
+    ResendSender("re_x", "x", http=http).status("../domains?x=1#")
+    assert seen == [f"{RESEND_URL}/..%2Fdomains%3Fx%3D1%23"]
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [(401, b'{"name": "restricted_api_key"}'), (404, b"{}"), (200, b"{}"), (200, b"nope")],
+)
+def test_status_is_none_when_the_provider_cannot_say(
+    answer: tuple[int, bytes], caplog: pytest.LogCaptureFixture
+) -> None:
+    """A key that may only send is refused here with a 401, and a body with no
+    `last_event` or one nobody mapped says nothing: all of them leave the row as it was,
+    and none of them leaks the key or the id into the log."""
+    with caplog.at_level(logging.WARNING):
+        assert ResendSender("re_secret", "x", http=lambda *a: answer).status("abc") is None
+    assert "re_secret" not in caplog.text
+
+
+def test_status_never_raises_and_says_nothing_for_an_event_nobody_mapped() -> None:
+    def boom(method: str, url: str, headers: dict[str, str], body: bytes) -> tuple[int, bytes]:
+        raise OSError("down")
+
+    assert ResendSender("re_x", "x", http=boom).status("abc") is None
+    novel = lambda *a: (200, b'{"last_event": "a_new_event"}')  # noqa: E731
+    assert ResendSender("re_x", "x", http=novel).status("abc") is None
+
+
+def test_a_get_leaves_with_no_body_and_no_form_content_type(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: list[urllib.request.Request] = []
+
+    def fake_open(request: urllib.request.Request, timeout: float) -> _Response:
+        seen.append(request)
+        return _Response()
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_open)
+    urllib_call("GET", "https://api.example.test/y", {}, b"")
+    assert seen[0].data is None and seen[0].get_method() == "GET"
+    assert seen[0].get_header("Content-type") is None
+
+
+def test_the_recording_sender_can_refuse_and_can_be_asked() -> None:
+    mail = Mail(to="a@x.it", subject="s", text="t")
+    refusing = RecordingSender(accepts=False)
+    assert refusing.submit(mail) == Receipt(False) and refusing.send(mail) is False
+    assert refusing.sent == []
+
+    recording = RecordingSender()
+    assert recording.submit(mail) == Receipt(True, "recorded-1")
+    assert recording.status("recorded-1") == "sent"
+    recording.states["recorded-1"] = "bounced"
+    assert recording.status("recorded-1") == "bounced"
+    assert RecordingSender(readable=False).status("recorded-1") is None

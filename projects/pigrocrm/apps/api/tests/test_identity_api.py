@@ -876,3 +876,190 @@ def test_a_link_asked_at_an_unnamed_root_still_names_only_the_space_the_address_
     body = recording.sent[0].text
     assert f"https://pigro.test/{SLUG}/app/verify?t=" in body
     assert "https://pigro.test/app/verify?t=" not in body
+
+
+# --- REB-678: the invitation whose mail never came, found from the chooser -------------
+#
+# The invitation to the Rebase space went to a mistyped address, and its invitee, who had
+# a chooser of their own, could not see it there: the scan listed only spaces where an
+# account exists. These hold the other half of that fix, so a mail that is lost (spam, a
+# typo corrected later, a message nobody opened) leaves the invitation findable.
+
+
+def _expire_invitations(settings: Settings, slug: str) -> None:
+    engine = create_engine(tenant_database_url(settings, tenant_database_name(slug)), future=True)
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text("UPDATE invitations SET expires_at = now() - interval '1 minute'")
+            )
+    finally:
+        engine.dispose()
+
+
+def _graces_invitation_to_ada(grace: TestClient, nome: str | None = "Ada") -> tuple[str, str]:
+    """Grace opens SLUG2 and invites Ada, who has no account there. The mail never
+    reaches the test (nothing reads it), as for the person this fix is for. Returns the
+    token the mail carried and the name its inviter goes by."""
+    recording = _sign_up_and_verify(grace, slug=SLUG2, signup=OWNER2)
+    invite = grace.post(
+        f"/{SLUG2}/api/users/invites", json={"email": SIGNUP["email"], "nome": nome}
+    )
+    assert invite.status_code == 201, invite.text
+    return _token_from(recording.sent[0].text), grace.get(f"/{SLUG2}/api/auth/me").json()["nome"]
+
+
+def test_spaces_lists_an_invitation_held_in_a_space_the_address_has_no_account_in(
+    spaces_client: TestClient, container_settings: Settings
+) -> None:
+    grace = spaces_client
+    try:
+        _, inviter = _graces_invitation_to_ada(grace)
+        ada = TestClient(grace.app, base_url="https://testserver")
+        _sign_up_and_verify(ada)
+
+        listed = {row["slug"]: row for row in ada.get("/api/identity/spaces").json()}
+        assert set(listed) == {SLUG, SLUG2}
+        assert listed[SLUG] == {"slug": SLUG, "ruolo": "admin"}  # an account row is as it was
+        assert listed[SLUG2] == {
+            "slug": SLUG2,
+            "ruolo": "collaboratore",
+            "invito": True,
+            "invitato_da": inviter,
+            "nome": "Ada",
+        }
+    finally:
+        _drop_second_tenant(container_settings)
+
+
+def test_an_invitation_that_carries_no_name_lists_without_one(
+    spaces_client: TestClient, container_settings: Settings
+) -> None:
+    """Nothing is made up for the acceptance page to ask: a row with no `nome` is the one
+    whose page will want a name."""
+    grace = spaces_client
+    try:
+        _, inviter = _graces_invitation_to_ada(grace, nome=None)
+        ada = TestClient(grace.app, base_url="https://testserver")
+        _sign_up_and_verify(ada)
+        rows = {row["slug"]: row for row in ada.get("/api/identity/spaces").json()}
+        assert rows[SLUG2] == {
+            "slug": SLUG2,
+            "ruolo": "collaboratore",
+            "invito": True,
+            "invitato_da": inviter,
+        }
+    finally:
+        _drop_second_tenant(container_settings)
+
+
+def test_an_invitation_found_in_the_chooser_is_accepted_on_the_spaces_own_page(
+    spaces_client: TestClient, container_settings: Settings
+) -> None:
+    """`POST /api/identity/invite/{slug}` accepts nothing: it answers the acceptance
+    page with a token minted for the address the cookie proved, so the name prompt and
+    the dead states stay that page's. The mailed link dies with it, as in a resend."""
+    grace = spaces_client
+    try:
+        mailed, _ = _graces_invitation_to_ada(grace)
+        ada = TestClient(grace.app, base_url="https://testserver")
+        _sign_up_and_verify(ada)
+
+        door = ada.post(f"/api/identity/invite/{SLUG2}")
+        assert door.status_code == 200, door.text
+        url = door.json()["url"]
+        assert url.startswith(f"/{SLUG2}/app/invite?t=")
+        raw = url.split("?t=", 1)[1]
+        assert raw != mailed
+        assert ada.get(f"/{SLUG2}/api/auth/invite", params={"t": mailed}).status_code == 404
+
+        peek = ada.get(f"/{SLUG2}/api/auth/invite", params={"t": raw})
+        assert peek.status_code == 200, peek.text
+        assert peek.json()["nome"] == "Ada"
+        # Asking did not spend it, and did not give Ada a seat in the space.
+        assert {
+            row["slug"]: row.get("invito", False) for row in ada.get("/api/identity/spaces").json()
+        } == {SLUG: False, SLUG2: True}
+
+        accepted = ada.post(f"/{SLUG2}/api/auth/invite", json={"t": raw})
+        assert accepted.status_code == 200, accepted.text
+        after = {row["slug"]: row for row in ada.get("/api/identity/spaces").json()}
+        assert after[SLUG2] == {"slug": SLUG2, "ruolo": "collaboratore"}
+    finally:
+        _drop_second_tenant(container_settings)
+
+
+def test_an_expired_or_revoked_invitation_is_neither_listed_nor_opened(
+    spaces_client: TestClient, container_settings: Settings
+) -> None:
+    """Dead is dead here as in the Team panel: an expired invitation waits for a resend
+    and a revoked one is over, so the chooser offers neither and the door answers 404."""
+    grace = spaces_client
+    try:
+        _graces_invitation_to_ada(grace)
+        ada = TestClient(grace.app, base_url="https://testserver")
+        _sign_up_and_verify(ada)
+
+        _expire_invitations(container_settings, SLUG2)
+        assert {row["slug"] for row in ada.get("/api/identity/spaces").json()} == {SLUG}
+        assert ada.post(f"/api/identity/invite/{SLUG2}").status_code == 404
+
+        # Grace resends it, which revives it; then revokes it, which ends it.
+        pending_id = grace.get(f"/{SLUG2}/api/users/invites").json()
+        assert pending_id == []
+        engine = create_engine(
+            tenant_database_url(container_settings, tenant_database_name(SLUG2)), future=True
+        )
+        try:
+            with engine.connect() as connection:
+                invitation_id = str(connection.execute(text("SELECT id FROM invitations")).scalar())
+        finally:
+            engine.dispose()
+        assert grace.post(f"/{SLUG2}/api/users/invites/{invitation_id}/resend").status_code == 200
+        assert {row["slug"] for row in ada.get("/api/identity/spaces").json()} == {SLUG, SLUG2}
+        assert grace.delete(f"/{SLUG2}/api/users/invites/{invitation_id}").status_code == 204
+        assert {row["slug"] for row in ada.get("/api/identity/spaces").json()} == {SLUG}
+        assert ada.post(f"/api/identity/invite/{SLUG2}").status_code == 404
+    finally:
+        _drop_second_tenant(container_settings)
+
+
+def test_the_invitation_door_needs_a_live_identity_and_a_space_that_exists(
+    spaces_client: TestClient,
+) -> None:
+    assert spaces_client.post(f"/api/identity/invite/{SLUG}").status_code == 401
+    _sign_up_and_verify(spaces_client)
+    unknown = spaces_client.post("/api/identity/invite/questo-spazio-non-esiste")
+    assert unknown.status_code == 404
+    # A space that exists and holds no invitation for this address answers the same, in
+    # the invitee's language and without the address or the slug in the sentence.
+    none_held = spaces_client.post(f"/api/identity/invite/{SLUG}")
+    assert none_held.status_code == 404
+    assert none_held.json()["detail"] == unknown.json()["detail"]
+    assert "Questo invito non c'è più" in none_held.json()["detail"]
+    assert SIGNUP["email"] not in none_held.text and "not found" not in none_held.text
+
+
+def test_an_invitation_for_another_address_is_not_listed_nor_opened(
+    spaces_client: TestClient, container_settings: Settings
+) -> None:
+    """The invitation belongs to the address it was sent to: Linus proved his own, and
+    Ada's pending invitation is neither in his chooser nor behind his door."""
+    grace = spaces_client
+    try:
+        _graces_invitation_to_ada(grace)
+        linus = TestClient(grace.app, base_url="https://testserver")
+        _sign_up_and_verify(
+            linus,
+            signup={**WIZARD_SIGNUP, "email": "linus@identita.it"},
+        )
+        assert {row["slug"] for row in linus.get("/api/identity/spaces").json()} == {SLUG}
+        assert linus.post(f"/api/identity/invite/{SLUG2}").status_code == 404
+    finally:
+        _drop_second_tenant(container_settings)
+
+
+def test_the_root_name_is_never_an_invitation_door(rooted_client: TestClient) -> None:
+    login = rooted_client.post("/api/auth/login", json=ROOT_ADMIN)
+    assert login.status_code == 200, login.text
+    assert rooted_client.post(f"/api/identity/invite/{ROOT_SLUG}").status_code == 404

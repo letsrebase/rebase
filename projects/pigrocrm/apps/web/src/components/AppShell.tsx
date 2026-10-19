@@ -13,6 +13,7 @@ import {
   KeyRound,
   LayoutDashboard,
   LogOut,
+  MailPlus,
   PanelLeftIcon,
   Plug,
   Plus,
@@ -382,10 +383,19 @@ export function AppShell({
   /** Opens another space with no second proof (design §3, REB-345): the identity
    *  cookie already is one. A different basepath is a different application
    *  instance, so landing there is a full navigation, the same shape the login
-   *  chooser already uses. */
-  async function onEnterSpace(slug: string) {
+   *  chooser already uses. An invitation (REB-678) goes to its acceptance page
+   *  instead: the API mints the token for the address this browser proved. */
+  async function onEnterSpace(space: IdentitySpace) {
+    const slug = space.slug
     setEnteringSlug(slug)
     try {
+      if (space.invito) {
+        const door = await unwrap(
+          api.POST('/api/identity/invite/{slug}', { params: { path: { slug } } }),
+        )
+        go(door.url)
+        return
+      }
       await unwrap(api.POST('/api/identity/enter/{slug}', { params: { path: { slug } } }))
       go(`/${slug}/app/`)
     } catch (error) {
@@ -717,12 +727,16 @@ export function AppShell({
                   <DropdownMenuItem
                     key={space.slug}
                     disabled={enteringSlug !== null}
-                    onSelect={() => void onEnterSpace(space.slug)}
+                    onSelect={() => void onEnterSpace(space)}
                   >
-                    <ArrowLeftRight className="size-4" />
+                    {space.invito ? (
+                      <MailPlus className="size-4" />
+                    ) : (
+                      <ArrowLeftRight className="size-4" />
+                    )}
                     <span className="flex-1 truncate">{space.slug}</span>
                     <span className="text-xs text-muted-foreground">
-                      {roleLabel(space.ruolo)}
+                      {space.invito ? 'Invito' : roleLabel(space.ruolo)}
                     </span>
                   </DropdownMenuItem>
                 ))}

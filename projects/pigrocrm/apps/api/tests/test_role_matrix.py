@@ -583,6 +583,13 @@ PUBLIC_ROUTES: dict[tuple[str, str], str] = {
         "database is even open, and the three role clients here hold no identity "
         "session worth entering with."
     ),
+    ("POST", "/api/identity/invite/{slug}"): (
+        "Root-scoped and gated by the identity cookie, not a space actor (REB-678): it "
+        "mints a token for the address that cookie proved and answers the acceptance "
+        "page's path. No role exists before a space's database is open, the three role "
+        "clients hold no identity session, and calling it would rotate a token no test "
+        "minted."
+    ),
 }
 
 _SAFE_METHODS = {"get", "head", "options", "trace"}

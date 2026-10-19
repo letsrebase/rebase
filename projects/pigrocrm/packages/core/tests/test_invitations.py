@@ -37,6 +37,7 @@ from pigrocrm.core.auth.schemas import InvitationCreate, UserCreate
 from pigrocrm.core.auth.service import UserService
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
+from pigrocrm.core.mail import Receipt, RecordingSender
 
 # The system actor cannot send an invitation (`invited_by` needs a person's id), and
 # an unverified admin cannot either; so every test invites as a real, password-carrying
@@ -465,3 +466,96 @@ def test_a_scoped_admin_cannot_invite(db_session: Session) -> None:
         InvitationService(db_session).create(InvitationCreate(email=INVITEE), scoped)
     assert refused.value.code == "permission_denied"
     assert "senza limiti di azienda" in refused.value.details["reason"]
+
+
+# --- what became of the mail, and the invitation an address can find (REB-678) ------------
+
+
+def test_record_mail_writes_the_providers_answer_and_a_resend_clears_it(
+    db_session: Session,
+) -> None:
+    row, _ = _invite(db_session)
+    assert row.mail_id is None and row.mail_status is None and row.mail_sent_at is None
+    service = InvitationService(db_session)
+    read = service.record_mail(row.id, Receipt(True, "prov-1"))
+    assert read.mail_status == "sent" and read.mail_sent_at is not None
+    assert row.mail_id == "prov-1"
+    failed = service.record_mail(row.id, Receipt(False))
+    assert failed.mail_status == "failed" and row.mail_id is None
+    service.record_mail(row.id, Receipt(True, "prov-2"))
+    service.resend(row.id, _admin(db_session))
+    assert row.mail_id is None and row.mail_status is None and row.mail_sent_at is None
+
+
+def test_an_expired_row_rewritten_by_create_forgets_the_old_mail(db_session: Session) -> None:
+    row, _ = _invite(db_session)
+    InvitationService(db_session).record_mail(row.id, Receipt(True, "prov-1"))
+    row.expires_at = datetime.now(UTC) - timedelta(minutes=1)
+    db_session.commit()
+    InvitationService(db_session).create(
+        InvitationCreate(email=INVITEE, nome=None, ruolo="readonly"), _admin(db_session)
+    )
+    assert row.mail_id is None and row.mail_status is None and row.mail_sent_at is None
+
+
+def test_a_terminal_row_takes_no_mail_outcome(db_session: Session) -> None:
+    row, _ = _invite(db_session)
+    InvitationService(db_session).revoke(row.id, _admin(db_session))
+    with pytest.raises(NotFound):
+        InvitationService(db_session).record_mail(row.id, Receipt(True, "prov-1"))
+
+
+def test_refresh_mail_status_reads_only_the_admin_surface(db_session: Session) -> None:
+    _invite(db_session)
+    collaboratore = Actor(id=_admin(db_session).id, type="user", role="collaboratore")
+    with pytest.raises(PermissionDenied):
+        InvitationService(db_session).refresh_mail_status(collaboratore, RecordingSender())
+
+
+def test_offer_for_shows_a_live_invitation_to_the_address_it_was_sent_to(
+    db_session: Session,
+) -> None:
+    row, _ = _invite(db_session, email="Atteso@X.it", nome=None, ruolo="readonly")
+    service = InvitationService(db_session)
+    offer = service.offer_for("atteso@x.it")
+    assert offer is not None
+    assert (offer.ruolo, offer.invitato_da, offer.nome) == ("readonly", "Ada", None)
+    assert service.offer_for("altro@x.it") is None
+    # Dead is not an offer: an expired row waits for a resend, a revoked one is over.
+    row.expires_at = datetime.now(UTC) - timedelta(minutes=1)
+    db_session.commit()
+    assert service.offer_for("atteso@x.it") is None
+    service.resend(row.id, _admin(db_session))
+    assert service.offer_for("atteso@x.it") is not None
+    service.revoke(row.id, _admin(db_session))
+    assert service.offer_for("atteso@x.it") is None
+
+
+def test_open_for_mints_a_token_the_acceptance_page_takes_and_kills_the_mailed_one(
+    db_session: Session,
+) -> None:
+    row, mailed = _invite(db_session)
+    expires_at = row.expires_at
+    service = InvitationService(db_session)
+    raw = service.open_for(INVITEE)
+    assert raw != mailed and row.token_hash == _hash(raw)
+    assert row.expires_at == expires_at  # finding it does not lengthen it
+    with pytest.raises(InvitationUnknown):
+        service.peek(mailed, spazio="x")
+    assert service.peek(raw, spazio="x").nome == "Luca"
+    opened = db_session.scalars(
+        select(Activity).where(Activity.entity_type == "invitation", Activity.kind == "opened")
+    ).all()
+    assert len(opened) == 1 and opened[0].actor_type == "system"
+    assert service.accept(raw, None).email == INVITEE
+
+
+def test_open_for_refuses_an_address_with_nothing_open(db_session: Session) -> None:
+    row, _ = _invite(db_session)
+    service = InvitationService(db_session)
+    with pytest.raises(NotFound):
+        service.open_for("altro@x.it")
+    row.expires_at = datetime.now(UTC) - timedelta(minutes=1)
+    db_session.commit()
+    with pytest.raises(NotFound):
+        service.open_for(INVITEE)
