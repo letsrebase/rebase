@@ -91,7 +91,10 @@ rebase_brand_web_vault() {
     # The manifest, which index.html names by a hash of upstream's content.
     manifest=$(sed -n 's/.*rel="manifest" href="\([^"]*\)".*/\1/p' index.html)
     for file in manifest.json "$manifest"; do
-      [ -n "$file" ] && [ -f "$file" ] || { echo "brand-web-vault: no manifest '$file'" >&2; continue; }
+      if [ -z "$file" ] || [ ! -f "$file" ]; then
+        echo "brand-web-vault: no manifest '$file'" >&2
+        continue
+      fi
       replace "$file" 'Vaultwarden Web' "$BRAND_NAME"
       replace "$file" '"theme_color": "#FFFFFF"' "\"theme_color\": \"$theme\""
       replace "$file" '"background_color": "#FFFFFF"' "\"background_color\": \"$background\""
@@ -134,10 +137,14 @@ rebase_brand_web_vault() {
     replace images/logo-white.svg '<title>Vaultwarden</title>' "<title>$BRAND_NAME</title>"
     replace images/icon-white.svg '<title>Vaultwarden Icon - White</title>' "<title>$BRAND_NAME</title>"
     replace duo-redirect-connector.html 'alt="Vaultwarden"' "alt=\"$BRAND_NAME\""
-  ) || return 1
+  )
 }
 
-if rebase_brand_web_vault; then
+# Called as a plain statement, not as the condition of an `if` or an `||`: `set -e` does nothing
+# inside anything run as a condition, so the subshell's would not stop it at a failed `cp`.
+rebase_brand_web_vault
+rebase_status=$?
+if [ "$rebase_status" -eq 0 ]; then
   export WEB_VAULT_FOLDER=/web-vault-rebase
 else
   echo "brand-web-vault: could not build the branded web vault, serving upstream's as it is" >&2

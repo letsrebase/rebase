@@ -13,13 +13,13 @@ Estensione per il browser (Chrome, Firefox, Edge, Safari), app per Android e iOS
 computer: tutte su [bitwarden.com/download](https://bitwarden.com/download). Sono le app
 ufficiali di Bitwarden; il server a cui si collegano lo scegli tu al passo 2.
 
-**Attenzione alla password di Chrome.** Nelle impostazioni dell'estensione (Impostazioni,
+**Attenzione alle password di Chrome.** Nelle impostazioni dell'estensione (Impostazioni,
 Compilazione automatica) c'è «Usa Bitwarden come gestore di password predefinito». Se la
-attivi, l'estensione spegne il salvataggio e la compilazione di password, indirizzi e carte
-di Chrome (Gestore password di Google, o il portachiavi del Mac): sembra che il gestore
-«abbia bloccato il portachiavi». Non è un guasto, è quell'interruttore. Se vuoi continuare a
-usare le password di Chrome, lascialo spento; se l'hai già attivato, spegnilo da lì e Chrome
-torna a salvare e compilare come prima.
+attivi, l'estensione spegne in Chrome il salvataggio e la compilazione automatica delle
+password, degli indirizzi e delle carte (il Gestore password di Google): a chi non lo sa
+sembra che il gestore «abbia bloccato il portachiavi». Non è un guasto, è quell'interruttore.
+Se vuoi continuare a usare le password di Chrome, lascialo spento; se l'hai già attivato,
+spegnilo da lì e Chrome torna a salvare e compilare come prima.
 
 ## 2. Accetta l'invito e punta l'app al nostro server
 
