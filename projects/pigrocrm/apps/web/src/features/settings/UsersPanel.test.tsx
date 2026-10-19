@@ -652,7 +652,7 @@ describe('the mail of an invitation', () => {
     expect(screen.getByText('Non partita')).toBeInTheDocument()
     // A bounce is the address's problem and a resend would be refused, so the hint
     // sends the admin to the address; a mail that never left is the button's.
-    expect(screen.getByText(/revoca l'invito e invita di nuovo con quello corretto/)).toBeInTheDocument()
+    expect(screen.getByText(/revoca l'invito e invita di nuovo con quello giusto/)).toBeInTheDocument()
     expect(screen.getByText(/Usa «Reinvia il link» per riprovare/)).toBeInTheDocument()
     expect(screen.getByRole('row', { name: /Bianca/ })).toHaveTextContent('Non consegnata')
     expect(screen.getByRole('row', { name: /Luca/ })).not.toHaveTextContent('Non consegnata')

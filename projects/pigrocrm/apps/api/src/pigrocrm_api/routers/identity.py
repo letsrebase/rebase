@@ -191,13 +191,16 @@ def spaces(
         if root_role is not None:
             result.append(IdentitySpace(slug=settings.root_slug, ruolo=root_role))
     slugs = [tenant.slug for tenant in TenantService(registry, settings).list()]
+    invitations: list[IdentitySpace] = []
     for slug in slugs:
         if is_root_name(settings.root_slug, slug):
             continue
         entry = _space_entry_for(settings, slug, email)
         if entry is not None:
-            result.append(entry)
-    return result
+            # Spaces first, in the order they were always listed; the invitations after
+            # them, so a row that is not a seat yet never sits above one that is.
+            (invitations if entry.invito else result).append(entry)
+    return [*result, *invitations]
 
 
 @router.post("/enter/{slug}", response_model=UserRead)

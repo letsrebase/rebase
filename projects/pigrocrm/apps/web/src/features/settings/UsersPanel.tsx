@@ -363,7 +363,9 @@ export function UsersPanel() {
         return (
           <div className="space-y-1">
             <StatusPill tone={MAIL_TONE[state]}>{MAIL_LABEL[state]}</StatusPill>
-            {hint && <p className="max-w-xs text-xs text-muted-foreground">{hint}</p>}
+            {hint && (
+              <p className="max-w-72 whitespace-normal text-xs text-muted-foreground">{hint}</p>
+            )}
           </div>
         )
       },

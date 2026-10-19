@@ -28,16 +28,16 @@ export const MAIL_TONE: Record<InviteMailState, StatusTone> = {
 }
 
 /** What the admin does about it, for the states that ask for something. A resend to an
- *  address that bounced is refused by the provider (it suppresses an address that already
- *  bounced), so for those the way out is the address, not the button. */
+ *  address that bounced is refused by the mail service (it stops writing to an address
+ *  that already bounced), so for those the way out is the address, not the button. */
 export const MAIL_HINT: Partial<Record<InviteMailState, string>> = {
-  delayed: 'Il provider sta ancora provando a consegnarla.',
+  delayed: 'Il servizio di posta sta ancora provando a consegnarla.',
   bounced:
-    "L'indirizzo ha rifiutato la mail. Controlla che sia scritto giusto: se no, revoca l'invito e invita di nuovo con quello corretto.",
+    "L'indirizzo ha rifiutato la mail. Se è scritto male, revoca l'invito e invita di nuovo con quello giusto.",
   suppressed:
-    "Il provider non scrive più a questo indirizzo perché una mail precedente è rimbalzata. Controlla che sia scritto giusto: se no, revoca l'invito e invita di nuovo con quello corretto.",
+    "Una mail precedente a questo indirizzo è rimbalzata e il servizio di posta non ci scrive più. Se è scritto male, revoca l'invito e invita di nuovo con quello giusto.",
   complained:
-    'Chi l’ha ricevuta l’ha segnalata come spam. Verifica con la persona che sia l’indirizzo giusto.',
+    'Chi l’ha ricevuta l’ha segnalata come spam. Controlla con la persona che sia l’indirizzo giusto.',
   failed: 'La mail non è partita. Usa «Reinvia il link» per riprovare.',
 }
 
