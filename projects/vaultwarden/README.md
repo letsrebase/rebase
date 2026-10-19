@@ -200,18 +200,31 @@ one backup a minute after the container starts, then one a day at `VAULTWARDEN_B
 
 R2 deletes objects after ninety days (`infra/cloudflare/r2.tf`). `docker compose -p
 vaultwarden ps` on the host shows the backup container `unhealthy` when no backup has
-finished in the last 26 hours; `docker compose -p vaultwarden logs backup` says why. There
-is no alert beyond that (a follow-up card). **The restore is the proof of a backup**:
+finished in the last 26 hours; `docker compose -p vaultwarden logs backup` says why.
+
+**The alarm is healthchecks.io** (REB-671), so nothing extra runs on the host. After every
+run the loop pings `VAULTWARDEN_BACKUP_PING_URL`, the check's URL, or `<url>/fail` when the
+run failed; a failure mails at once, and so does a day plus the grace period with no
+success, which is what a revoked R2 key, a full disk or a container that is gone look
+like. The account is `ciao@letsrebase.com` (credentials in the `Infrastructure` collection),
+the check is `vaultwarden-backup` with a period of one day and a grace of two hours, and
+the alerts go to the account's address and to Lorenzo's. The URL is a secret, since whoever
+holds it can report a success: it lives in the `vaultwarden-production` Environment and the
+deploy writes it into the host `.env` (`env-secrets`), and the loop refuses to start
+without one. A ping that cannot get through is logged and nothing more: the check going
+quiet is its own alarm. **The restore is the proof of a backup**:
 `docs/restore.md`, to be done once on a scratch container before anything real is stored,
 and again whenever the scripts or the image change.
 
 ## The drill
 
 `tests/backup-restore.sh` runs the real compose file and the real scripts on throwaway
-servers (an S3 gateway stands in for R2): it registers an account and puts an item in it,
-then proves the server answers on `127.0.0.1` only, refuses a signup without an
-invitation and has the admin page off; takes a backup into the bucket, checks the object is
-an encrypted envelope holding none of the plain text; restores it into a new directory
+servers (an S3 gateway stands in for R2, a small listener for healthchecks.io): it registers
+an account and puts an item in it, then proves the server answers on `127.0.0.1` only,
+refuses a signup without an invitation and has the admin page off; takes a backup into the
+bucket, checks the object is an encrypted envelope holding none of the plain text; runs the
+loop once with the right key and once with a revoked one and checks the monitor heard a
+success and then a `/fail`; restores the backup into a new directory
 with `scripts/restore.sh` and reads the item back from a scratch server. CI runs it on every
 change to this directory and on every `vaultwarden-v*` tag. Locally, from the repository
 root: `projects/vaultwarden/tests/backup-restore.sh` (Docker, node 22 and openssl).

@@ -44,13 +44,15 @@ jobs:
       # SQLite file opened, not only that the process started.
       health-url: http://127.0.0.1:8091/alive
       url: https://vault.letsrebase.com
-      # The three values the compose file requires and nobody should type onto the host:
-      # the Resend key the server mails with, and the R2 access key pair the backup
-      # service uploads with (REB-650: written into the host `.env` by the deploy). The
-      # non-secret host values (data directory, port, domain, account id, backup
-      # certificate) stay in the hand-written `.env`, projects/vaultwarden/.env.example.
+      # The four values the compose file requires and nobody should type onto the host:
+      # the Resend key the server mails with, the R2 access key pair the backup service
+      # uploads with (REB-650: written into the host `.env` by the deploy), and the
+      # healthchecks.io URL it reports each backup to (REB-671). The non-secret host
+      # values (data directory, port, domain, account id, backup certificate) stay in the
+      # hand-written `.env`, projects/vaultwarden/.env.example.
       env-secrets: |
         VAULTWARDEN_SMTP_PASSWORD
         VAULTWARDEN_BACKUP_ACCESS_KEY_ID
         VAULTWARDEN_BACKUP_SECRET_ACCESS_KEY
+        VAULTWARDEN_BACKUP_PING_URL
     secrets: inherit
