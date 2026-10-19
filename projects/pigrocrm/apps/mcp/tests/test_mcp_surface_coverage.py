@@ -464,6 +464,22 @@ _CREDENZIALI: dict[Method, str] = {
         "peek",
     ): "e' la pagina d'accettazione che legge l'invito, non un'operazione",
     ("InvitationService", "accept"): "e' il passo d'ingresso dell'invitato, non un'operazione",
+    # REB-678: l'esito della mail di un invito e l'invito ritrovato dal chooser.
+    ("InvitationService", "record_mail"): (
+        "scrive la risposta del provider sulla riga dell'invito che la rotaia ha appena "
+        "spedito: nessuno la chiama a mano"
+    ),
+    ("InvitationService", "refresh_mail_status"): (
+        "legge il provider e aggiorna la lista degli inviti: e' parte della lettura di "
+        "`list`, che e' amministrativa"
+    ),
+    ("InvitationService", "offer_for"): (
+        "e' la riga che il chooser mostra a chi ha provato l'indirizzo, non un'operazione"
+    ),
+    ("InvitationService", "open_for"): (
+        "rigenera il token grezzo dell'invito per chi ha provato l'indirizzo: come "
+        "`resend`, il token esiste solo per la pagina d'accettazione"
+    ),
     ("UserService", "create"): "creare utenti e' amministrazione dell'account",
     ("UserService", "create_scoped"): (
         "la variante di `create` che un invito accettato usa per scrivere l'ambito "
