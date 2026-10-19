@@ -62,10 +62,23 @@ describe('carryUtm', () => {
   it('remembers the campaign and the page for the tab under the names the hub reads', () => {
     const utm = load()
     utm.carryUtm(fixture(['/hub/freelance']), '?utm_source=linkedin&utm_medium=paid', '/pigrocrm')
-    expect(utm.UTM_STORAGE_KEY).toBe('orbiters.utm')
-    expect(utm.ORIGIN_STORAGE_KEY).toBe('orbiters.da')
-    expect(window.sessionStorage.getItem('orbiters.utm')).toBe('utm_source=linkedin&utm_medium=paid')
-    expect(window.sessionStorage.getItem('orbiters.da')).toBe('pigrocrm')
+    expect(utm.UTM_STORAGE_KEY).toBe('rebase.utm')
+    expect(utm.ORIGIN_STORAGE_KEY).toBe('rebase.da')
+    expect(window.sessionStorage.getItem('rebase.utm')).toBe('utm_source=linkedin&utm_medium=paid')
+    expect(window.sessionStorage.getItem('rebase.da')).toBe('pigrocrm')
+  })
+
+  it('drops the names the keys had before REB-668 when it writes the new ones', () => {
+    // A tab opened before the rename still holds `orbiters.*`; the hub reads those as a
+    // fallback, so leaving a stale campaign beside the fresh one would be the wrong copy
+    // surviving a release skew.
+    window.sessionStorage.setItem('orbiters.utm', 'utm_source=old')
+    window.sessionStorage.setItem('orbiters.da', 'home')
+    load().carryUtm(fixture(['/hub/freelance']), '?utm_source=linkedin', '/pigrocrm')
+    expect(window.sessionStorage.getItem('rebase.utm')).toBe('utm_source=linkedin')
+    expect(window.sessionStorage.getItem('rebase.da')).toBe('pigrocrm')
+    expect(window.sessionStorage.getItem('orbiters.utm')).toBeNull()
+    expect(window.sessionStorage.getItem('orbiters.da')).toBeNull()
   })
 
   it('never overrides a key a link already carries', () => {
@@ -80,8 +93,8 @@ describe('carryUtm', () => {
     const root = fixture(['/hub/freelance', '/hub/aziende'])
     expect(utm.carryUtm(root, '?ref=friend', '/pigrocrm')).toBe(2)
     expect(hrefsOf(root)).toEqual(['/hub/freelance?da=pigrocrm', '/hub/aziende?da=pigrocrm'])
-    expect(window.sessionStorage.getItem('orbiters.utm')).toBeNull()
-    expect(window.sessionStorage.getItem('orbiters.da')).toBe('pigrocrm')
+    expect(window.sessionStorage.getItem('rebase.utm')).toBeNull()
+    expect(window.sessionStorage.getItem('rebase.da')).toBe('pigrocrm')
   })
 
   it('names the page by its path, home for the front door', () => {

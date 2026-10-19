@@ -6,7 +6,7 @@ from contextlib import closing
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, HTTPException, Request, Response, status
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -29,7 +29,71 @@ from rebase_core.signing import SigningFactory, signing_from_settings
 from rebase_core.team_builder import TeamBuilder
 from rebase_core.users import UserService
 
-MEMBER_COOKIE = "orbiters_user"
+MEMBER_COOKIE = "rebase_user"
+# What the cookie was called until REB-668. The value is the same raw session token and
+# the `sessions` row behind it does not change, so a person signed in before the rename
+# stays signed in: `session_token` reads this name when the new one is absent and
+# `adopt_legacy_cookie` reissues the session under the new name on the first request
+# that resolves it. REB-697 drops both, and this constant, once `member_session_days`
+# (30) have passed since the release that carries the rename: every cookie under the
+# old name has expired by then.
+LEGACY_MEMBER_COOKIE = "orbiters_user"
+
+
+def session_tokens(request: Request) -> list[str]:
+    """The raw session tokens the request carries, the new cookie's first and the old
+    one's after it. A caller tries each in turn: a stale new cookie beside a live old
+    one (a rollback followed by a roll-forward) must not hide the session."""
+    names = (MEMBER_COOKIE, LEGACY_MEMBER_COOKIE)
+    return list(dict.fromkeys(request.cookies[name] for name in names if request.cookies.get(name)))
+
+
+def set_member_cookie(response: Response, settings: Settings, raw: str) -> None:
+    """The session cookie under its current name, and the old name dropped in the same
+    answer so a browser never holds both."""
+    response.set_cookie(
+        MEMBER_COOKIE,
+        raw,
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite="lax",
+        max_age=settings.member_session_days * 86400,
+        path="/",
+    )
+    _drop_legacy_cookie(response, settings)
+
+
+def clear_member_cookie(response: Response, settings: Settings) -> None:
+    """Both names, so a sign-out leaves nothing behind in a browser that still has the old."""
+    response.delete_cookie(
+        MEMBER_COOKIE,
+        path="/",
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite="lax",
+    )
+    _drop_legacy_cookie(response, settings)
+
+
+def _drop_legacy_cookie(response: Response, settings: Settings) -> None:
+    response.delete_cookie(
+        LEGACY_MEMBER_COOKIE,
+        path="/",
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite="lax",
+    )
+
+
+def adopt_legacy_cookie(request: Request, response: Response, settings: Settings, raw: str) -> None:
+    """A session that resolved through anything but the current cookie is reissued under
+    the new name, with a fresh 30 days: the server already slid the row's own deadline, so
+    the browser's copy follows it once. It rides the response of a route that answers with
+    a model; a route that returns its own `Response` (a download) or raises does not carry
+    it, and the next call that does, `/me` on every page load, reissues it."""
+    if request.cookies.get(MEMBER_COOKIE) != raw:
+        set_member_cookie(response, settings, raw)
+
 
 _engine: Engine | None = None
 _factory: sessionmaker[Session] | None = None
@@ -58,17 +122,22 @@ SessionDep = Annotated[Session, Depends(get_session)]
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 
 
-def get_admin(request: Request, session: SessionDep, settings: SettingsDep) -> AdminRead:
+def get_admin(
+    request: Request, response: Response, session: SessionDep, settings: SettingsDep
+) -> AdminRead:
     """A signed-in person whose role is admin: a signed-in non-admin is a real identity
     hitting the wrong door (403), nobody signed in at all is 401 (design record
     2026-09-17 §4). The password login and its `orbiters_admin` cookie are gone
-    (REB-281): every admin resolves through the one cookie, `orbiters_user`, like
-    everyone else."""
+    (REB-281): every admin resolves through the one cookie, `rebase_user` (`orbiters_user`
+    until REB-668, still read), like everyone else."""
     users = UserService(session, settings)
-    me = users.resolve_admin(request.cookies.get(MEMBER_COOKIE))
-    if me is not None:
-        return AdminRead.model_validate(me)
-    if users.resolve(request.cookies.get(MEMBER_COOKIE)) is not None:
+    tokens = session_tokens(request)
+    for raw in tokens:
+        me = users.resolve_admin(raw)
+        if me is not None:
+            adopt_legacy_cookie(request, response, settings, raw)
+            return AdminRead.model_validate(me)
+    if any(users.resolve(raw) is not None for raw in tokens):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Serve il ruolo di amministratore")
     raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Autenticazione richiesta")
 
@@ -76,13 +145,18 @@ def get_admin(request: Request, session: SessionDep, settings: SettingsDep) -> A
 AdminDep = Annotated[AdminRead, Depends(get_admin)]
 
 
-def get_me(request: Request, session: SessionDep, settings: SettingsDep) -> MeRead:
+def get_me(
+    request: Request, response: Response, session: SessionDep, settings: SettingsDep
+) -> MeRead:
     """Whoever the cookie resolves to, member or admin: the one dependency every
     signed-in route may depend on."""
-    user = UserService(session, settings).resolve(request.cookies.get(MEMBER_COOKIE))
-    if user is None:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Autenticazione richiesta")
-    return MemberService(session).me_read(user.id)
+    users = UserService(session, settings)
+    for raw in session_tokens(request):
+        user = users.resolve(raw)
+        if user is not None:
+            adopt_legacy_cookie(request, response, settings, raw)
+            return MemberService(session).me_read(user.id)
+    raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Autenticazione richiesta")
 
 
 MeDep = Annotated[MeRead, Depends(get_me)]
