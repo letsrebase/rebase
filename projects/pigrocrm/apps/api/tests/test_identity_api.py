@@ -15,6 +15,7 @@ from contextlib import contextmanager
 
 import pytest
 from fastapi.testclient import TestClient
+from httpx import Response
 from sqlalchemy import Engine, create_engine, select, text
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -1063,3 +1064,175 @@ def test_the_root_name_is_never_an_invitation_door(rooted_client: TestClient) ->
     login = rooted_client.post("/api/auth/login", json=ROOT_ADMIN)
     assert login.status_code == 200, login.text
     assert rooted_client.post(f"/api/identity/invite/{ROOT_SLUG}").status_code == 404
+
+
+# --- REB-677: an address this browser already proved opens a new space verified ----
+
+
+def _second_space(client: TestClient, email: str) -> None:
+    """The second signup of the same browser: the name is the only thing that differs."""
+    created = client.post(
+        "/api/tenants/",
+        json={"slug": SLUG2, "nome": "Secondo spazio", "email": email, "membro": False},
+    )
+    assert created.status_code == 201, created.text
+
+
+def _invite_in_second_space(client: TestClient) -> Response:
+    return client.post(
+        f"/{SLUG2}/api/users/invites", json={"email": "collega@identita.it", "nome": "Collega"}
+    )
+
+
+def test_a_signup_with_the_address_this_browser_proved_can_invite_at_once(
+    spaces_client: TestClient, container_settings: Settings
+) -> None:
+    """Lorenzo, 2026-10-07: confirmed in one space, a second space asked for the address
+    again before it let him invite. The live identity cookie for the very address the
+    signup carries is that proof, so the new admin starts verified: the invitation is
+    accepted with no link spent in the new space."""
+    recording = _sign_up_and_verify(spaces_client)
+    try:
+        _second_space(spaces_client, SIGNUP["email"])
+        invited = _invite_in_second_space(spaces_client)
+        assert invited.status_code == 201, invited.text
+        assert [m.to for m in recording.sent if "collega@" in m.to] == ["collega@identita.it"]
+    finally:
+        _drop_second_tenant(container_settings)
+
+
+def test_the_address_is_trusted_whatever_its_case(
+    spaces_client: TestClient, container_settings: Settings
+) -> None:
+    _sign_up_and_verify(spaces_client)
+    try:
+        _second_space(spaces_client, SIGNUP["email"].upper())
+        assert _invite_in_second_space(spaces_client).status_code == 201
+    finally:
+        _drop_second_tenant(container_settings)
+
+
+def test_a_signup_without_an_identity_cookie_still_needs_the_welcome_link(
+    spaces_client: TestClient, container_settings: Settings
+) -> None:
+    """The same address from a browser that holds no identity cookie proves nothing: the
+    refusal stands until the welcome link is spent, and then it lifts."""
+    _sign_up_and_verify(spaces_client)
+    spaces_client.cookies.clear()
+    recording = RecordingSender()
+    spaces_client.app.dependency_overrides[get_sender] = lambda: recording  # type: ignore[attr-defined]
+    try:
+        _second_space(spaces_client, SIGNUP["email"])
+        refused = _invite_in_second_space(spaces_client)
+        assert refused.status_code == 422, refused.text
+        assert "conferma il tuo indirizzo" in refused.text
+        entered = spaces_client.post(
+            f"/{SLUG2}/api/auth/verify", json={"t": _token_from(recording.sent[0].text)}
+        )
+        assert entered.status_code == 200, entered.text
+        assert _invite_in_second_space(spaces_client).status_code == 201
+    finally:
+        _drop_second_tenant(container_settings)
+
+
+def test_a_signup_with_another_address_than_the_proven_one_is_not_trusted(
+    spaces_client: TestClient, container_settings: Settings
+) -> None:
+    _sign_up_and_verify(spaces_client)
+    try:
+        _second_space(spaces_client, "altra@identita.it")
+        refused = _invite_in_second_space(spaces_client)
+        assert refused.status_code == 422, refused.text
+    finally:
+        _drop_second_tenant(container_settings)
+
+
+def test_a_revoked_identity_cookie_proves_nothing_to_the_signup(
+    spaces_client: TestClient, container_settings: Settings
+) -> None:
+    """A copy of the cookie kept past the identity's logout decodes fine and is dead in
+    the registry: the signup reads liveness the way the chooser does, never the JWT's
+    own `exp` alone."""
+    _sign_up_and_verify(spaces_client)
+    stale = spaces_client.cookies[IDENTITY_COOKIE]
+    assert spaces_client.post("/api/identity/logout").status_code == 204
+    spaces_client.cookies.clear()
+    spaces_client.cookies.set(IDENTITY_COOKIE, stale)
+    try:
+        _second_space(spaces_client, SIGNUP["email"])
+        refused = _invite_in_second_space(spaces_client)
+        assert refused.status_code == 422, refused.text
+    finally:
+        _drop_second_tenant(container_settings)
+
+
+def test_a_garbage_identity_cookie_does_not_break_the_signup(
+    spaces_client: TestClient, container_settings: Settings
+) -> None:
+    spaces_client.app.dependency_overrides[get_sender] = lambda: RecordingSender()  # type: ignore[attr-defined]
+    spaces_client.cookies.set(IDENTITY_COOKIE, "not-a-token")
+    try:
+        _second_space(spaces_client, SIGNUP["email"])
+        assert _invite_in_second_space(spaces_client).status_code == 422
+    finally:
+        _drop_second_tenant(container_settings)
+
+
+def _space_admin_verified_at(settings: Settings, slug: str, email: str) -> object:
+    engine = create_engine(tenant_database_url(settings, tenant_database_name(slug)), future=True)
+    try:
+        with session_factory(engine)() as space:
+            row = UserRepository(space).get_by_email(email)
+            assert row is not None
+            return row.email_verificata_il
+    finally:
+        engine.dispose()
+
+
+def test_the_proof_is_kept_when_no_welcome_mail_can_be_sent(
+    spaces_client: TestClient, container_settings: Settings
+) -> None:
+    """Without a sender `welcome` returns before it commits anything, so the signup's own
+    commit is what keeps `email_verificata_il`."""
+    _sign_up_and_verify(spaces_client)
+    spaces_client.app.dependency_overrides[get_sender] = lambda: None  # type: ignore[attr-defined]
+    try:
+        _second_space(spaces_client, SIGNUP["email"])
+        assert _space_admin_verified_at(container_settings, SLUG2, SIGNUP["email"]) is not None
+    finally:
+        _drop_second_tenant(container_settings)
+
+
+def test_the_welcome_link_still_enters_a_space_that_opened_verified(
+    spaces_client: TestClient, container_settings: Settings
+) -> None:
+    recording = _sign_up_and_verify(spaces_client)
+    try:
+        _second_space(spaces_client, SIGNUP["email"])
+        link = next(m for m in recording.sent if m.to == SIGNUP["email"])
+        entered = spaces_client.post(
+            f"/{SLUG2}/api/auth/verify", json={"t": _token_from(link.text)}
+        )
+        assert entered.status_code == 200, entered.text
+        assert _invite_in_second_space(spaces_client).status_code == 201
+    finally:
+        _drop_second_tenant(container_settings)
+
+
+def test_an_unreachable_registry_does_not_fail_a_signup_that_created_the_space(
+    spaces_client: TestClient, container_settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The cookie read happens after the space exists: failing there would leave a space
+    the retry answers 409 for. The welcome link is the fallback, as without a cookie."""
+    from pigrocrm_api.routers import tenants as tenants_router
+
+    def unreachable(*_: object) -> str:
+        raise SQLAlchemyError("registry down")
+
+    _sign_up_and_verify(spaces_client)
+    monkeypatch.setattr(tenants_router, "proven_email", unreachable)
+    try:
+        _second_space(spaces_client, SIGNUP["email"])
+        assert _invite_in_second_space(spaces_client).status_code == 422
+    finally:
+        _drop_second_tenant(container_settings)

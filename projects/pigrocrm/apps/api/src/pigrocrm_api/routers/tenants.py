@@ -7,11 +7,13 @@ differently, but the page never offers it there, and a space creating spaces is 
 thing this product means.
 """
 
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel, ConfigDict, EmailStr
 from sqlalchemy import create_engine
+from sqlalchemy.exc import SQLAlchemyError
 
 from pigrocrm.core.auth.repository import UserRepository
 from pigrocrm.core.auth.tokens import issue_access_token
@@ -32,6 +34,7 @@ from pigrocrm_api.ratelimit import (
     TOO_MANY_REQUESTS_RESPONSE,
     spend_one,
 )
+from pigrocrm_api.routers.identity import proven_email
 from pigrocrm_api.service_token import require_service_token
 from pigrocrm_api.sessions import SenderDep, set_access_cookie
 
@@ -152,9 +155,22 @@ def signup(
     the first click proves the address, opens the durable session and revokes what came
     before (`MagicLinkService.enter`). Without a sender or a public origin the space is
     created all the same, and the login page's own link does the rest. Throttled per
-    client like the member question: a `CREATE DATABASE` per anonymous POST."""
+    client like the member question: a `CREATE DATABASE` per anonymous POST.
+
+    The one exception to "the signup proves nothing" (REB-677): a browser that holds a
+    live `pigrocrm_identity` cookie for the very address the signup carries has already
+    proven it, by a link it spent in another space, so the new admin starts with
+    `email_verificata_il` set and can invite at once. No cookie, an expired or revoked
+    one, or another address changes nothing: typing an address proves nothing, and
+    trusting it would let anyone browse the spaces of an address they do not own."""
     spend_one(request)
     tenant = TenantService(registry, settings).provision(data)
+    try:
+        already_proven = proven_email(request, registry, settings) == tenant.owner_email.lower()
+    except SQLAlchemyError:
+        # A bonus lookup never turns a signup that already created the space into a
+        # 500, which a retry would answer 409: the welcome link is the fallback.
+        already_proven = False
     engine = create_engine(
         tenant_database_url(settings, tenant_database_name(tenant.slug)), future=True
     )
@@ -163,6 +179,9 @@ def signup(
             admin = UserRepository(space).get_by_email(tenant.owner_email)
             if admin is None:  # pragma: no cover - provision just created it
                 raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "spazio senza admin")
+            if already_proven:
+                admin.email_verificata_il = datetime.now(UTC)
+                space.commit()
             access = issue_access_token(admin.id, admin.ruolo, settings)
             mail = welcome(
                 space, settings, sender, tenant.owner_email, tenant.slug, membro=data.membro

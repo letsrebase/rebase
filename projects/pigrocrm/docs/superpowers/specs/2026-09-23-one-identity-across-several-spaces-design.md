@@ -221,6 +221,14 @@ of the three call sites above. A freshly signed-up space's admin gets an identit
 the first time they click that link, not at signup itself; nothing is lost, and the one
 existing call site already covers it.
 
+*Amended 2026-10-19 (REB-677).* One thing at signup is trusted: a browser that already
+holds a live `pigrocrm_identity` cookie for the very address the signup carries has
+proven it, so the new space's first admin starts with `email_verificata_il` set and can
+invite at once, where before a person who confirmed in one space had to confirm again in
+the next. The cookie is read through `proven_email` (`routers/identity.py`), which is
+the chooser's own liveness check; no cookie, a revoked or expired one, or a different
+address leaves signup exactly as described above. Signup still mints no identity cookie.
+
 A password login proves the identity exactly as well as a magic-link click does for this
 purpose: `require_verified_identity` (`auth/service.py:80-93`) already treats a
 self-chosen password and a proven magic link as equally sufficient grounds to trust an
