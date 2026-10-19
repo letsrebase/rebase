@@ -62,8 +62,10 @@ tests/                      the drill: config, backup and restore, on throwaway 
    `certbot --nginx --redirect -d vault.letsrebase.com`, then `Strict-Transport-Security`
    added to the installed 443 block by hand (the vhost's own header comment says why).
 6. **GitHub**: the Environment `vaultwarden-production` with the five `DEPLOY_*` secrets
-   (`DEPLOY_KNOWN_HOSTS` captured as `docs/adding-a-project.md` §7 says) and the three
-   secrets above, then the variable `VAULTWARDEN_DEPLOY_ENABLED=true`.
+   (`DEPLOY_KNOWN_HOSTS` captured as `docs/adding-a-project.md` §7 says), the three
+   secrets above and `VAULTWARDEN_BACKUP_PING_URL`, the ping URL of the healthchecks.io
+   check («Backup» below; as healthchecks.io shows it, no trailing slash), then the
+   variable `VAULTWARDEN_DEPLOY_ENABLED=true`.
 7. **The release**: `git tag vaultwarden-v0.1.0 && git push origin vaultwarden-v0.1.0`,
    after the PR is merged and Lorenzo says so. The tag's CI run, the deploy run and
    `https://vault.letsrebase.com/alive` answering are the evidence.

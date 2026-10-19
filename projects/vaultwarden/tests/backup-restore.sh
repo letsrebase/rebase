@@ -186,11 +186,16 @@ openssl cms -decrypt -binary -inform DER -in "$fake_object" -inkey "$tmp/backup.
 echo "the attachment made during the backup is in the bundle"
 
 step "3c. the monitor hears a backup that finished, and one that failed"
-# A ping URL that is not a URL ends the container instead of running with no alarm.
-if compose -f "$here/s3.yml" run --rm --no-deps -T -e VAULTWARDEN_BACKUP_PING_URL=not-a-url backup 2>/dev/null; then
-  echo "FAIL: the backup loop accepted a ping URL that is not a URL" >&2; exit 1
-fi
-echo "a ping URL that is not a URL is refused"
+# A ping URL that is not one ends the container instead of running with no alarm, and so
+# does one with a trailing slash, which would send `/fail` to a path nobody watches.
+for bad in not-a-url http://ping:8080/drill-check/; do
+  if refusal=$(compose -f "$here/s3.yml" run --rm --no-deps -T -e VAULTWARDEN_BACKUP_PING_URL="$bad" backup 2>&1); then
+    echo "FAIL: the backup loop accepted the ping URL '$bad'" >&2; exit 1
+  fi
+  grep -q "must be the monitor's http(s) ping URL" <<<"$refusal" \
+    || { echo "FAIL: '$bad' was refused for another reason: $refusal" >&2; exit 1; }
+done
+echo "a ping URL that is not one, or ends in a slash, is refused"
 compose -f "$here/s3.yml" up -d ping
 pings() { compose -f "$here/s3.yml" logs --no-log-prefix ping 2>/dev/null | grep -c "^ping: GET $1 HTTP" || true; }
 wait_ping() {
@@ -203,6 +208,7 @@ wait_ping() {
 }
 loop=$(compose -f "$here/s3.yml" run -d --no-deps -e VAULTWARDEN_BACKUP_FIRST_DELAY=0 backup)
 wait_ping /drill-check
+loop_logs=$(docker logs "$loop" 2>&1)
 docker rm -f "$loop" >/dev/null
 [ "$(pings /drill-check/fail)" -eq 0 ] || { echo "FAIL: a backup that finished was reported as failed" >&2; exit 1; }
 echo "a backup that finished pings the check"
@@ -211,9 +217,13 @@ loop=$(compose -f "$here/s3.yml" run -d --no-deps -e VAULTWARDEN_BACKUP_FIRST_DE
   -e VAULTWARDEN_BACKUP_SECRET_ACCESS_KEY=revoked backup)
 wait_ping /drill-check/fail
 [ "$(docker inspect -f '{{.State.Running}}' "$loop")" = true ] || { echo "FAIL: a failed backup ended the loop" >&2; exit 1; }
+loop_logs+=$(docker logs "$loop" 2>&1)
 docker rm -f "$loop" >/dev/null
 [ "$(pings /drill-check)" -eq 1 ] || { echo "FAIL: a backup that failed was reported as a success" >&2; exit 1; }
 echo "a backup that failed pings <check>/fail and nothing else"
+# Whoever holds the URL can report a success, so neither run may print it.
+if grep -q drill-check <<<"$loop_logs"; then echo "FAIL: the loop printed the ping URL" >&2; exit 1; fi
+echo "neither run printed the ping URL"
 
 step "4. restore into a new directory, a scratch server on it, the item back"
 mkdir -m 700 "$tmp/restored"

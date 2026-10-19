@@ -18,15 +18,19 @@ ping_url=${VAULTWARDEN_BACKUP_PING_URL:-}
 here=$(dirname "$0")
 
 # The URL is a secret of sorts (anyone holding it can report a success), so it is never
-# printed, and a value that is not an http(s) URL ends the container like a bad time does.
-if ! [[ $ping_url =~ ^https?://[^[:space:]]+$ ]]; then
-  echo "backup: VAULTWARDEN_BACKUP_PING_URL must be the monitor's http(s) URL" >&2
+# printed. It is the check's ping URL as healthchecks.io shows it: no trailing slash and no
+# query, since `/fail` is appended to it. Anything else ends the container like a bad time
+# does, rather than sending the failure ping to a path nobody watches.
+if ! [[ $ping_url =~ ^https?://[^[:space:]?#]*[^[:space:]/?#]$ ]]; then
+  echo "backup: VAULTWARDEN_BACKUP_PING_URL must be the monitor's http(s) ping URL, with no trailing slash or query" >&2
   exit 1
 fi
 
 notify() {
-  if ! curl --fail --silent --show-error --max-time 10 --retry 3 --output /dev/null "${ping_url}$1"; then
-    echo "backup: could not tell the monitor (${1:-success})" >&2
+  local what=${1:-} outcome=finished
+  [ -z "$what" ] || outcome=failed
+  if ! curl --fail --silent --show-error --max-time 10 --retry 3 --output /dev/null "${ping_url}${what}"; then
+    echo "backup: could not tell the monitor that the backup ${outcome}" >&2
   fi
 }
 
