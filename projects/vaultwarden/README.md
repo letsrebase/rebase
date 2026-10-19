@@ -202,17 +202,15 @@ R2 deletes objects after ninety days (`infra/cloudflare/r2.tf`). `docker compose
 vaultwarden ps` on the host shows the backup container `unhealthy` when no backup has
 finished in the last 26 hours; `docker compose -p vaultwarden logs backup` says why.
 
-**The alarm is healthchecks.io** (REB-671), so nothing extra runs on the host. After every
-run the loop pings `VAULTWARDEN_BACKUP_PING_URL`, the check's URL, or `<url>/fail` when the
-run failed; a failure mails at once, and so does a day plus the grace period with no
-success, which is what a revoked R2 key, a full disk or a container that is gone look
-like. The account is `ciao@letsrebase.com` (credentials in the `Infrastructure` collection),
-the check is `vaultwarden-backup` with a period of one day and a grace of two hours, and
-the alerts go to the account's address and to Lorenzo's. The URL is a secret, since whoever
-holds it can report a success: it lives in the `vaultwarden-production` Environment and the
-deploy writes it into the host `.env` (`env-secrets`), and the loop refuses to start
-without one. A ping that cannot get through is logged and nothing more: the check going
-quiet is its own alarm. **The restore is the proof of a backup**:
+**The alarm is a healthchecks.io check** (REB-671), so nothing extra runs on the host. After
+every run the loop pings `VAULTWARDEN_BACKUP_PING_URL`, the check's URL, or `<url>/fail`
+when the run failed; the check mails on a failure, and when its period plus grace passes
+with no success, which is what a revoked R2 key, a full disk or a container that is gone
+look like. The URL is a secret, since whoever holds it can report a success: it lives in
+the `vaultwarden-production` Environment, the deploy writes it into the host `.env`
+(`env-secrets`), and the loop refuses to start without one. A ping that cannot get through
+is logged and nothing more: the check going quiet is its own alarm. **The restore is the
+proof of a backup**:
 `docs/restore.md`, to be done once on a scratch container before anything real is stored,
 and again whenever the scripts or the image change.
 
