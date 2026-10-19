@@ -210,8 +210,9 @@ def login(
     # up with any address and a password of their own choosing: with that row's login
     # minting the identity, one space's admin could enter every other space that
     # address belongs to, the root included (REB-583's review). `email_verificata_il`
-    # is set only by `enter_with_link` and `accept_invite`, each of which needs the
-    # mailbox; `authenticate` answers a `UserRead`, which does not carry it.
+    # is set only once the mailbox has proven itself: by `enter_with_link` and
+    # `accept_invite`, or by a signup whose browser already held a live identity for
+    # that address (REB-677); `authenticate` answers a `UserRead`, which does not carry it.
     row = UserRepository(session).get_by_email(user.email)
     if row is not None and row.email_verificata_il is not None:
         _issue_identity_cookie(response, settings, user.email)
@@ -398,8 +399,9 @@ def enter_with_link(
     # up with any address and a password of their own choosing: with that row's login
     # minting the identity, one space's admin could enter every other space that
     # address belongs to, the root included (REB-583's review). `email_verificata_il`
-    # is set only by `enter_with_link` and `accept_invite`, each of which needs the
-    # mailbox; `authenticate` answers a `UserRead`, which does not carry it.
+    # is set only once the mailbox has proven itself: by `enter_with_link` and
+    # `accept_invite`, or by a signup whose browser already held a live identity for
+    # that address (REB-677); `authenticate` answers a `UserRead`, which does not carry it.
     row = UserRepository(session).get_by_email(user.email)
     if row is not None and row.email_verificata_il is not None:
         _issue_identity_cookie(response, settings, user.email)
@@ -499,8 +501,9 @@ def accept_invite(
     # up with any address and a password of their own choosing: with that row's login
     # minting the identity, one space's admin could enter every other space that
     # address belongs to, the root included (REB-583's review). `email_verificata_il`
-    # is set only by `enter_with_link` and `accept_invite`, each of which needs the
-    # mailbox; `authenticate` answers a `UserRead`, which does not carry it.
+    # is set only once the mailbox has proven itself: by `enter_with_link` and
+    # `accept_invite`, or by a signup whose browser already held a live identity for
+    # that address (REB-677); `authenticate` answers a `UserRead`, which does not carry it.
     row = UserRepository(session).get_by_email(user.email)
     if row is not None and row.email_verificata_il is not None:
         _issue_identity_cookie(response, settings, user.email)

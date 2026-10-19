@@ -25,6 +25,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel
 from sqlalchemy import create_engine
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
 from pigrocrm.core.auth.invitations import InvitationService
 from pigrocrm.core.auth.refresh_service import RefreshTokenService
@@ -66,24 +67,34 @@ NO_INVITATION = (
 )
 
 
+def proven_email(request: Request, registry: Session, settings: Settings) -> str | None:
+    """The proven email behind a live `pigrocrm_identity` cookie, or `None`: no cookie, a
+    malformed/expired/wrong-type token, or a token whose `IdentitySession` is unknown,
+    revoked or past its own `expires_at` (`IdentityService.resolve`, the
+    "checked-on-every-read" liveness §2 describes). The one read of the cookie, shared
+    by the chooser's gate below and by the signup, which trusts an address this browser
+    already proved (REB-677)."""
+    token = first_cookie(request, IDENTITY_COOKIE)
+    if not token:
+        return None
+    try:
+        payload = decode_token(token, settings, expected_type="identity")
+    except DomainError:
+        return None
+    return IdentityService(registry, settings).resolve(payload.sub, payload.jti)
+
+
 def _get_identity_email(
     request: Request, registry: TenantsRegistryDep, settings: SettingsDep
 ) -> str:
-    """The proven email behind a live `pigrocrm_identity` cookie, or a 401: no
-    cookie, a malformed/expired/wrong-type token, or a token whose `IdentitySession`
-    is unknown, revoked or past its own `expires_at` (`IdentityService.resolve`, the
-    "checked-on-every-read" liveness §2 describes). §3's own gate: "the chooser is
-    never shown to an unproven visitor." No `ActorDep` here at all -- this cookie is
-    not a space actor, there is no role to check, and the routes below are
-    `PUBLIC_ROUTES`-exempt in the role-matrix sweep for exactly that reason."""
-    token = first_cookie(request, IDENTITY_COOKIE)
-    if not token:
+    """The proven email behind a live `pigrocrm_identity` cookie, or a 401 (`proven_email`
+    says what counts as live). §3's own gate: "the chooser is never shown to an unproven
+    visitor." No `ActorDep` here at all -- this cookie is not a space actor, there is no
+    role to check, and the routes below are `PUBLIC_ROUTES`-exempt in the role-matrix
+    sweep for exactly that reason."""
+    if not first_cookie(request, IDENTITY_COOKIE):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Nessuna identità provata")
-    try:
-        payload = decode_token(token, settings, expected_type="identity")
-    except DomainError as exc:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Sessione scaduta") from exc
-    email = IdentityService(registry, settings).resolve(payload.sub, payload.jti)
+    email = proven_email(request, registry, settings)
     if email is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Sessione scaduta")
     return email
