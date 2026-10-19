@@ -3,6 +3,7 @@ import { api, fetchWithRefresh, toProblem, unwrap, type ProblemDetail } from '@/
 import type { components } from '@/lib/api-types'
 import type { EntityType } from '@/lib/schema'
 import { queryKeys } from '@/lib/query'
+import { isWatched } from './inviteMail'
 
 // -- Field definitions --------------------------------------------------------
 
@@ -178,11 +179,16 @@ export function useInviteUser() {
 
 /** «Inviti in attesa»: open and not yet expired only (the server's predicate, spec §3),
  *  newest first. A dead invitation is not shown as waiting; a resend or a fresh invite
- *  revives an expired one. */
+ *  revives an expired one. Each row says what became of its mail (REB-678), and a mail
+ *  still on its way is asked about again every few seconds, so «Inviata» turns into
+ *  «Consegnata» or «Non consegnata» without a reload. The list reads the provider
+ *  itself, so the poll stops the moment no recent mail is still open. */
 export function usePendingInvites() {
   return useQuery({
     queryKey: queryKeys.invites,
     queryFn: () => unwrap(api.GET('/api/users/invites')),
+    refetchInterval: (query) =>
+      query.state.data?.some((invite) => isWatched(invite, Date.now())) ? 4000 : false,
   })
 }
 

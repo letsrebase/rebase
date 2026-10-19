@@ -638,6 +638,41 @@ describe('the space switcher', () => {
     expect(await menu.findByRole('menuitem', { name: /altro/ })).toBeInTheDocument()
     expect(spacesCalls).toBeGreaterThanOrEqual(2)
   })
+
+  // REB-678: an invitation whose mail never came is in the switcher too, and choosing it
+  // goes to the acceptance page rather than entering a space this address has no seat in.
+  it('lists an invitation beside the spaces, marked as one', async () => {
+    GET.mockResolvedValue({
+      data: [{ slug: 'rebase', ruolo: 'collaboratore', invito: true, invitato_da: 'Ivan' }],
+      response: { status: 200 },
+    })
+    renderShell()
+    await userEvent.click(screen.getByRole('button', { name: 'Menu del profilo' }))
+    const menu = within(await screen.findByRole('menu'))
+    expect(await menu.findByRole('menuitem', { name: /rebase/ })).toHaveTextContent('Invito')
+  })
+
+  it('opens an invitation on the space’s own acceptance page, entering nothing', async () => {
+    GET.mockResolvedValue({
+      data: [{ slug: 'rebase', ruolo: 'collaboratore', invito: true }],
+      response: { status: 200 },
+    })
+    POST.mockResolvedValue({
+      data: { url: '/rebase/app/invite?t=abc' },
+      response: { status: 200 },
+    })
+    renderShell()
+    await userEvent.click(screen.getByRole('button', { name: 'Menu del profilo' }))
+    const menu = within(await screen.findByRole('menu'))
+    await userEvent.click(await menu.findByRole('menuitem', { name: /rebase/ }))
+    await waitFor(() =>
+      expect(POST).toHaveBeenCalledWith('/api/identity/invite/{slug}', {
+        params: { path: { slug: 'rebase' } },
+      }),
+    )
+    await waitFor(() => expect(mockGo).toHaveBeenCalledWith('/rebase/app/invite?t=abc'))
+    expect(POST).not.toHaveBeenCalledWith('/api/identity/enter/{slug}', expect.anything())
+  })
 })
 
 describe('the azienda selector (REB-625)', () => {

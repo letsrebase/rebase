@@ -5,6 +5,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from pigrocrm.core.actor import Role
+from pigrocrm.core.mail import MailState
 from pigrocrm.core.validation import SafeStr
 
 MIN_PASSWORD_LENGTH = 10
@@ -55,7 +56,14 @@ class InvitationCreate(BaseModel):
 class InvitationRead(BaseModel):
     """What «Inviti in attesa» lists. Never `token_hash`: an open invitation's hash
     is, for every practical purpose, the credential (the same line `PatService` draws
-    for its own timeline payloads)."""
+    for its own timeline payloads), and never `mail_id`, which is the provider's handle
+    and nobody's business but the server's.
+
+    `mail_status` is what became of the mail that carries the invitation (REB-678):
+    `None` for one written before it was recorded, `failed` when the provider never took
+    it, `sent` and `delayed` while it is still on its way, and `bounced`, `suppressed` or
+    `complained` when it will never be read, which is the admin's cue to check the
+    address."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -67,6 +75,8 @@ class InvitationRead(BaseModel):
     invited_by: UUID
     expires_at: datetime
     created_at: datetime
+    mail_status: MailState | None = None
+    mail_sent_at: datetime | None = None
 
 
 class InvitationPeek(BaseModel):
@@ -75,6 +85,17 @@ class InvitationPeek(BaseModel):
     the invitee has no business seeing the row's ids or expiry arithmetic."""
 
     spazio: str
+    invitato_da: str
+    nome: str | None
+
+
+class InvitationOffer(BaseModel):
+    """An open invitation as the owner of the address may read it without the mail
+    (REB-678): the role it carries, who sent it and the name it holds, which is `None`
+    when the acceptance page will have to ask. Like `InvitationPeek`, never the row's
+    ids or its expiry arithmetic."""
+
+    ruolo: Role
     invitato_da: str
     nome: str | None
 

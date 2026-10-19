@@ -28,6 +28,7 @@ import { fieldErrorFrom, toProblem, type ProblemDetail } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { useLegalEntity, type LegalEntityRecord } from '@/lib/legalEntity'
 import { scopeBody, scopeLabel } from './scope'
+import { MAIL_HINT, MAIL_LABEL, MAIL_TONE } from './inviteMail'
 import { roleLabel } from '@/lib/roles'
 import {
   useInviteUser,
@@ -189,8 +190,16 @@ export function UsersPanel() {
         ...(several ? { aziende: scopeBody(inviteAziende, azienda.aziende) } : {}),
       },
       {
-        onSuccess: () => {
-          toast.success('Invito inviato')
+        onSuccess: (sent) => {
+          // The invitation exists either way; what the toast owes the admin is whether
+          // the mail left (REB-678: it used to say «inviato» for one that never did).
+          if (sent.mail_status === 'failed') {
+            toast.error(
+              'Invito creato, ma la mail non è partita. Usa «Reinvia il link» nella lista.',
+            )
+          } else {
+            toast.success('Invito inviato')
+          }
           setOpen(false)
         },
         onError: (error) => setProblem(toProblem(error)),
@@ -344,6 +353,24 @@ export function UsersPanel() {
         ]
       : []),
     {
+      header: 'Mail',
+      id: 'mail',
+      // `null` is an invitation written before the outcome was recorded: nothing to say.
+      cell: (info) => {
+        const state = info.row.original.mail_status
+        if (!state) return null
+        const hint = MAIL_HINT[state]
+        return (
+          <div className="space-y-1">
+            <StatusPill tone={MAIL_TONE[state]}>{MAIL_LABEL[state]}</StatusPill>
+            {hint && (
+              <p className="max-w-72 whitespace-normal text-xs text-muted-foreground">{hint}</p>
+            )}
+          </div>
+        )
+      },
+    },
+    {
       header: 'Scadenza',
       id: 'scadenza',
       cell: (info) => shortDateTime.format(new Date(info.row.original.expires_at)),
@@ -364,7 +391,10 @@ export function UsersPanel() {
                 disabled: resend.isPending,
                 onSelect: () =>
                   resend.mutate(row.id, {
-                    onSuccess: () => toast.success('Invito reinviato'),
+                    onSuccess: (sent) =>
+                      sent.mail_status === 'failed'
+                        ? toast.error('La mail non è partita. Riprova tra poco.')
+                        : toast.success('Invito reinviato'),
                     onError: (error) => toast.error(toProblem(error).detail),
                   }),
               },

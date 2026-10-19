@@ -41,6 +41,15 @@ class Invitation(Base, PrimaryKeyMixin, TimestampMixin):
     # moment it is accepted or revoked; it carries no foreign key, so accepting drops
     # any id that no longer names an active azienda.
     aziende: Mapped[list[UUID] | None] = mapped_column(ARRAY(Uuid()), default=None)
+    # What became of the mail that carries this invitation (REB-678). A provider's 2xx is
+    # only «I took it»: the mail can still bounce, and the Team panel is the one place an
+    # admin can learn the address was wrong. `mail_id` is the provider's handle for the
+    # latest send, `mail_status` one of `pigrocrm.core.mail.MailState`, `mail_sent_at`
+    # when that send was handed over. Every send rewrites all three, and a row that was
+    # written before this existed holds `NULL`, which the panel reads as «unknown».
+    mail_id: Mapped[str | None] = mapped_column(String(64), default=None)
+    mail_status: Mapped[str | None] = mapped_column(String(12), default=None)
+    mail_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
     __table_args__ = (
         # Same functional-index shape as `uq_users_email_lower`, with a partial

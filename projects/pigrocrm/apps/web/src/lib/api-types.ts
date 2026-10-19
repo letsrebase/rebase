@@ -828,20 +828,31 @@ export interface paths {
         };
         /**
          * List Invites
-         * @description «Inviti in attesa»: open and not yet expired, newest first (spec §3).
+         * @description «Inviti in attesa»: open and not yet expired, newest first (spec §3), each with
+         *     what became of its mail. A mail the provider took can still bounce afterwards, and
+         *     the answer to that is the provider's alone: asking it for the mails still on their
+         *     way is part of reading the list (REB-678), a handful at most and only while the
+         *     provider answers. Without a sender there is nothing to ask and the list is what
+         *     the rows say.
          */
         get: operations["list_invites_api_users_invites_get"];
         put?: never;
         /**
          * Create Invite
-         * @description Invite a person into the space (spec 2026-09-17): the row is written first, the
-         *     mail leaves after the response -- never before, and never inside a transaction that
-         *     could still roll back, exactly like `request_link`. 409 for an address that already
+         * @description Invite a person into the space (spec 2026-09-17): the row is committed first and
+         *     the mail leaves after it -- never before, and never inside a transaction that could
+         *     still roll back -- and what the provider answered is written on the row and
+         *     answered here (`mail_status`), so a mail that did not leave is the admin's to see
+         *     and not a line in a log (REB-678). 409 for an address that already
          *     has an active user here, or one with an open, unexpired invitation. Admin-only and
          *     behind `require_verified_identity` (action `"invite_user"`): an address nobody ever
          *     proved mints no durable credential for anybody else. 503 while no sender is
          *     configured: an invitation nobody can receive is not half-created instead, and the
          *     raw token is never answered, so there is no way to hand the link over by hand.
+         *
+         *     The mail is sent in the request and not after the response, unlike `request_link`'s:
+         *     that one hides whether the address is known by answering the same way at the same
+         *     speed, and an admin who is told an invitation exists has nothing to hide.
          */
         post: operations["create_invite_api_users_invites_post"];
         delete?: never;
@@ -864,7 +875,10 @@ export interface paths {
          * @description A fresh token on the same row and a week measured from now; the old link dies
          *     the instant the hash it matched is gone. 404 for a row that is not pending, or not
          *     this space's. The guard runs before the write: a resend into an installation that
-         *     cannot mail would spend the old token to produce a link nobody receives.
+         *     cannot mail would spend the old token to produce a link nobody receives. The mail
+         *     leaves in the request and its outcome is on the row, as in `create_invite`; a resend
+         *     to an address that bounced answers `sent` here and `suppressed` on the next look,
+         *     because the provider refuses an address that already bounced.
          */
         post: operations["resend_invite_api_users_invites__invitation_id__resend_post"];
         delete?: never;
@@ -3026,7 +3040,9 @@ export interface paths {
          * Spaces
          * @description Every space this identity may enter, per §3's live scan (§7 decision B1): one
          *     bounded connection per tenant, so one unreachable space is silently absent from
-         *     this one response rather than failing it -- the next visit tries again.
+         *     this one response rather than failing it -- the next visit tries again. A space
+         *     where the address holds only an open invitation is listed too, as an `invito` row
+         *     (REB-678).
          *
          *     The root comes first, under its own name, when it has one and this email has an
          *     active row there (REB-583): it is nobody's registry row, so the scan below would
@@ -3072,6 +3088,33 @@ export interface paths {
          *     one on every request under the alias.
          */
         post: operations["enter_api_identity_enter__slug__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/identity/invite/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Open Invitation
+         * @description The way into the invitation this identity holds in the space `slug` (REB-678),
+         *     for the one whose mail never came: the chooser lists it, and this answers the
+         *     acceptance page with a fresh token minted for the proven address, so the name
+         *     prompt and the dead states are that page's own and nothing is accepted here. The
+         *     token in the original mail dies with it, as in a resend, and the invitation does not
+         *     run longer for having been looked at. 404 for a slug nobody registered, for the
+         *     root (an installation's own name is not a space an invitation is held in) and for
+         *     a space that holds none for this address, or one that has run out.
+         */
+        post: operations["open_invitation_api_identity_invite__slug__post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6375,12 +6418,24 @@ export interface components {
          *     the role it holds there -- never more, and never the slugs of spaces it cannot
          *     reach (§0's own "an unproven email learns a number, never a list"; this route
          *     requires a proven one and lists exactly the spaces it proved).
+         *
+         *     `invito` is on the rows of a different kind (REB-678), and on no other: a space where
+         *     this address holds an open invitation and no account yet, so a mail that never
+         *     arrived does not leave the invitation unfindable. `ruolo` is then the role it
+         *     carries, `invitato_da` who sent it and `nome` the name it holds (absent when the
+         *     acceptance page will ask). The route leaves out whatever is still its default.
          */
         IdentitySpace: {
             /** Slug */
             slug: string;
             /** Ruolo */
             ruolo: string;
+            /** Invito */
+            invito?: true | null;
+            /** Invitato Da */
+            invitato_da?: string | null;
+            /** Nome */
+            nome?: string | null;
         };
         /**
          * InvitationCreate
@@ -6410,6 +6465,16 @@ export interface components {
             aziende?: string[] | null;
         };
         /**
+         * InvitationDoor
+         * @description Where an open invitation is accepted: the space's own acceptance page, with a
+         *     token minted for the person who proved the address (REB-678). A path and not a
+         *     URL, because the chooser is already on the origin it is served from.
+         */
+        InvitationDoor: {
+            /** Url */
+            url: string;
+        };
+        /**
          * InvitationPeek
          * @description The acceptance page's read before the spend (spec §1): who to thank, which
          *     space, and whether a name is still missing. Deliberately not a `InvitationRead`:
@@ -6427,7 +6492,14 @@ export interface components {
          * InvitationRead
          * @description What «Inviti in attesa» lists. Never `token_hash`: an open invitation's hash
          *     is, for every practical purpose, the credential (the same line `PatService` draws
-         *     for its own timeline payloads).
+         *     for its own timeline payloads), and never `mail_id`, which is the provider's handle
+         *     and nobody's business but the server's.
+         *
+         *     `mail_status` is what became of the mail that carries the invitation (REB-678):
+         *     `None` for one written before it was recorded, `failed` when the provider never took
+         *     it, `sent` and `delayed` while it is still on its way, and `bounced`, `suppressed` or
+         *     `complained` when it will never be read, which is the admin's cue to check the
+         *     address.
          */
         InvitationRead: {
             /**
@@ -6461,6 +6533,10 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Mail Status */
+            mail_status?: ("sent" | "delayed" | "delivered" | "bounced" | "suppressed" | "complained" | "failed") | null;
+            /** Mail Sent At */
+            mail_sent_at?: string | null;
         };
         /**
          * InviteAccept
@@ -33299,6 +33375,125 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UserRead"];
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    open_invitation_api_identity_invite__slug__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationDoor"];
                 };
             };
             /** @description Permesso negato: l'actor non ha il ruolo richiesto. */

@@ -114,7 +114,8 @@ describe('the login page', () => {
 })
 
 describe('the chooser (REB-377)', () => {
-  function mockSpaces(spaces: Array<{ slug: string; ruolo: string }> | null, status = 200) {
+  type Row = { slug: string; ruolo: string; invito?: true; invitato_da?: string; nome?: string }
+  function mockSpaces(spaces: Row[] | null, status = 200) {
     GET.mockImplementation((path: string) => {
       if (path === '/api/identity/spaces') {
         return Promise.resolve(
@@ -224,5 +225,58 @@ describe('the chooser (REB-377)', () => {
     resolveEntering({ error: { detail: 'No.' }, response: { status: 404 } })
     await waitFor(() => expect(create).toBeEnabled())
     expect(screen.getByRole('button', { name: /studio/ })).toBeEnabled()
+  })
+
+  // REB-678: the invitation whose mail never came is a row of its own, and choosing it
+  // goes to the acceptance page instead of entering a space this address has no seat in.
+  it('lists an invitation as a row that says who sent it', async () => {
+    mockSpaces([
+      { slug: 'studio', ruolo: 'admin' },
+      { slug: 'rebase', ruolo: 'collaboratore', invito: true, invitato_da: 'Ivan', nome: 'Ada' },
+    ])
+    render(<LoginPage />)
+    const invitation = await screen.findByRole('button', { name: /rebase/ })
+    expect(invitation).toHaveTextContent('Invito da Ivan, da accettare')
+    expect(screen.getByRole('button', { name: /studio/ })).not.toHaveTextContent(/Invito/)
+  })
+
+  it('says an invitation is waiting even when the sender has no name to give', async () => {
+    mockSpaces([{ slug: 'rebase', ruolo: 'readonly', invito: true }])
+    render(<LoginPage />)
+    expect(await screen.findByRole('button', { name: /rebase/ })).toHaveTextContent(
+      'Invito da accettare',
+    )
+  })
+
+  it('opens an invitation on the space’s own acceptance page, entering nothing', async () => {
+    mockSpaces([{ slug: 'rebase', ruolo: 'collaboratore', invito: true, invitato_da: 'Ivan' }])
+    POST.mockResolvedValue({
+      data: { url: '/rebase/app/invite?t=abc' },
+      response: { status: 200 },
+    })
+    const go = vi.fn()
+    render(<LoginPage go={go} />)
+    await userEvent.click(await screen.findByRole('button', { name: /rebase/ }))
+    await waitFor(() =>
+      expect(POST).toHaveBeenCalledWith('/api/identity/invite/{slug}', {
+        params: { path: { slug: 'rebase' } },
+      }),
+    )
+    await waitFor(() => expect(go).toHaveBeenCalledWith('/rebase/app/invite?t=abc'))
+    expect(POST).not.toHaveBeenCalledWith('/api/identity/enter/{slug}', expect.anything())
+  })
+
+  it('reports the sentence and keeps the invitation usable when it has run out', async () => {
+    mockSpaces([{ slug: 'rebase', ruolo: 'collaboratore', invito: true }])
+    const sentence =
+      "Questo invito non c'è più: è scaduto, è stato revocato o lo hai già accettato. " +
+      'Chiedi a chi ti ha invitato di rimandarlo.'
+    POST.mockResolvedValue({ error: { detail: sentence }, response: { status: 404 } })
+    const go = vi.fn()
+    render(<LoginPage go={go} />)
+    await userEvent.click(await screen.findByRole('button', { name: /rebase/ }))
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(sentence))
+    expect(go).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: /rebase/ })).toBeEnabled()
   })
 })

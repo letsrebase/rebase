@@ -8,7 +8,7 @@ from typing import Annotated
 from fastapi import Depends, HTTPException, Response, status
 
 from pigrocrm.core.config import Settings
-from pigrocrm.core.mail import EmailSender, sender_from_settings
+from pigrocrm.core.mail import TrackedSender, sender_from_settings
 from pigrocrm_api.deps import ACCESS_COOKIE, REFRESH_COOKIE, SettingsDep
 
 
@@ -32,13 +32,15 @@ def set_refresh_cookie(
     set_session_cookie(response, REFRESH_COOKIE, token, days * 86400, secure=secure, path=path)
 
 
-def get_sender(settings: SettingsDep) -> EmailSender | None:
+def get_sender(settings: SettingsDep) -> TrackedSender | None:
     """The mail sender, or `None` without a key: the endpoints that mail answer 503.
-    Tests override this one dependency with a `RecordingSender`."""
+    Tests override this one dependency with a `RecordingSender`. A `TrackedSender`
+    rather than a bare `EmailSender`, because the invitations show the admin what became
+    of the mail (REB-678); every other caller still only calls `send`."""
     return sender_from_settings(settings)
 
 
-SenderDep = Annotated[EmailSender | None, Depends(get_sender)]
+SenderDep = Annotated[TrackedSender | None, Depends(get_sender)]
 
 
 # The two refusals every mailing endpoint answers with when the installation cannot

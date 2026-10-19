@@ -1,7 +1,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 
 from pigrocrm.core.activities.schemas import ActivityRead
 from pigrocrm.core.activities.service import ActivityService
@@ -78,20 +78,25 @@ def _invitation_mail(
 def create_invite(
     data: InvitationCreate,
     request: Request,
-    background: BackgroundTasks,
     session: SessionDep,
     actor: ActorDep,
     settings: SettingsDep,
     sender: SenderDep,
 ) -> InvitationRead:
-    """Invite a person into the space (spec 2026-09-17): the row is written first, the
-    mail leaves after the response -- never before, and never inside a transaction that
-    could still roll back, exactly like `request_link`. 409 for an address that already
+    """Invite a person into the space (spec 2026-09-17): the row is committed first and
+    the mail leaves after it -- never before, and never inside a transaction that could
+    still roll back -- and what the provider answered is written on the row and
+    answered here (`mail_status`), so a mail that did not leave is the admin's to see
+    and not a line in a log (REB-678). 409 for an address that already
     has an active user here, or one with an open, unexpired invitation. Admin-only and
     behind `require_verified_identity` (action `"invite_user"`): an address nobody ever
     proved mints no durable credential for anybody else. 503 while no sender is
     configured: an invitation nobody can receive is not half-created instead, and the
-    raw token is never answered, so there is no way to hand the link over by hand."""
+    raw token is never answered, so there is no way to hand the link over by hand.
+
+    The mail is sent in the request and not after the response, unlike `request_link`'s:
+    that one hides whether the address is known by answering the same way at the same
+    speed, and an admin who is told an invitation exists has nothing to hide."""
     if sender is None:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, NO_MAIL_SENDER)
     # Resolved before the row: without a public origin nothing is created at all.
@@ -99,25 +104,32 @@ def create_invite(
     inviter = UserRepository(session).get(actor.id) if actor.id is not None else None
     if inviter is None:  # pragma: no cover - an ActorDep actor always resolves
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Utente non trovato")
-    invite, raw = InvitationService(session).create(data, actor)
-    background.add_task(
-        sender.send,
-        _invitation_mail(request, settings, origin, invite.email, inviter.nome, invite.nome, raw),
+    service = InvitationService(session)
+    invite, raw = service.create(data, actor)
+    receipt = sender.submit(
+        _invitation_mail(request, settings, origin, invite.email, inviter.nome, invite.nome, raw)
     )
-    return invite
+    return service.record_mail(invite.id, receipt)
 
 
 @router.get("/invites", response_model=list[InvitationRead])
-def list_invites(session: SessionDep, actor: ActorDep) -> list[InvitationRead]:
-    """«Inviti in attesa»: open and not yet expired, newest first (spec §3)."""
-    return InvitationService(session).list(actor)
+def list_invites(session: SessionDep, actor: ActorDep, sender: SenderDep) -> list[InvitationRead]:
+    """«Inviti in attesa»: open and not yet expired, newest first (spec §3), each with
+    what became of its mail. A mail the provider took can still bounce afterwards, and
+    the answer to that is the provider's alone: asking it for the mails still on their
+    way is part of reading the list (REB-678), a handful at most and only while the
+    provider answers. Without a sender there is nothing to ask and the list is what
+    the rows say."""
+    service = InvitationService(session)
+    if sender is not None:
+        service.refresh_mail_status(actor, sender)
+    return service.list(actor)
 
 
 @router.post("/invites/{invitation_id}/resend", response_model=InvitationRead)
 def resend_invite(
     invitation_id: UUID,
     request: Request,
-    background: BackgroundTasks,
     session: SessionDep,
     actor: ActorDep,
     settings: SettingsDep,
@@ -126,14 +138,17 @@ def resend_invite(
     """A fresh token on the same row and a week measured from now; the old link dies
     the instant the hash it matched is gone. 404 for a row that is not pending, or not
     this space's. The guard runs before the write: a resend into an installation that
-    cannot mail would spend the old token to produce a link nobody receives."""
+    cannot mail would spend the old token to produce a link nobody receives. The mail
+    leaves in the request and its outcome is on the row, as in `create_invite`; a resend
+    to an address that bounced answers `sent` here and `suppressed` on the next look,
+    because the provider refuses an address that already bounced."""
     if sender is None:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, NO_MAIL_SENDER)
     origin = mail_origin(settings)
-    invite, raw = InvitationService(session).resend(invitation_id, actor)
+    service = InvitationService(session)
+    invite, raw = service.resend(invitation_id, actor)
     inviter = UserRepository(session).get(invite.invited_by)
-    background.add_task(
-        sender.send,
+    receipt = sender.submit(
         _invitation_mail(
             request,
             settings,
@@ -142,9 +157,9 @@ def resend_invite(
             inviter.nome if inviter else "",
             invite.nome,
             raw,
-        ),
+        )
     )
-    return invite
+    return service.record_mail(invite.id, receipt)
 
 
 @router.delete("/invites/{invitation_id}", status_code=status.HTTP_204_NO_CONTENT)

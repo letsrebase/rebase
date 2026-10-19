@@ -21,6 +21,7 @@ the fact.
 
 import hashlib
 import secrets
+import time
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -35,6 +36,7 @@ from pigrocrm.core.auth.models import User
 from pigrocrm.core.auth.repository import UserRepository
 from pigrocrm.core.auth.schemas import (
     InvitationCreate,
+    InvitationOffer,
     InvitationPeek,
     InvitationRead,
     UserCreate,
@@ -44,6 +46,7 @@ from pigrocrm.core.auth.scope import active_only, check_scope
 from pigrocrm.core.auth.service import UserService, require_verified_identity
 from pigrocrm.core.db.scope import bind_scope
 from pigrocrm.core.errors import Conflict, DomainError, NotFound, ValidationFailed
+from pigrocrm.core.mail import OPEN_MAIL_STATES, Receipt, TrackedSender
 
 # Seven days, not fifteen minutes: an invitation is handed to someone who may not open
 # their mail until tomorrow, and revocation, not a short fuse, is what takes back one
@@ -56,6 +59,16 @@ INVITATION_TTL_DAYS = 7
 ENTITY = "invitation"
 
 PENDING = Invitation.accepted_at.is_(None) & Invitation.revoked_at.is_(None)
+
+# How many mails one look at the list may ask the provider about, and how long after it
+# left a mail is still worth asking about. Both are ceilings: the answer comes within
+# seconds for a mail that is going to arrive, and a provider that has gone quiet is not
+# asked a sixth time in one request (REB-678).
+MAIL_LOOKUPS_PER_LIST = 5
+MAIL_LOOKUP_WINDOW = timedelta(days=1)
+# The whole of one look at the list may spend this long asking the provider, on top of
+# the one question already in flight when it runs out.
+MAIL_LOOKUP_BUDGET_SECONDS = 4.0
 
 
 def _hash(raw: str) -> str:
@@ -148,6 +161,9 @@ class InvitationService:
             open_row.token_hash = _hash(raw)
             open_row.invited_by = actor.id
             open_row.expires_at = expires_at
+            open_row.mail_id = None
+            open_row.mail_status = None
+            open_row.mail_sent_at = None
             row = open_row
         else:
             row = Invitation(
@@ -201,6 +217,9 @@ class InvitationService:
         raw = secrets.token_urlsafe(32)
         row.token_hash = _hash(raw)
         row.expires_at = datetime.now(UTC) + timedelta(days=INVITATION_TTL_DAYS)
+        row.mail_id = None
+        row.mail_status = None
+        row.mail_sent_at = None
         self.activities.record(ENTITY, row.id, "resent", actor, {"email": row.email})
         self.session.commit()
         return InvitationRead.model_validate(row), raw
@@ -213,6 +232,72 @@ class InvitationService:
         row = self._pending_row(invitation_id)
         row.revoked_at = datetime.now(UTC)
         self.activities.record(ENTITY, row.id, "revoked", actor, {"email": row.email})
+        self.session.commit()
+
+    def record_mail(self, invitation_id: UUID, receipt: Receipt) -> InvitationRead:
+        """Writes what the provider answered when the mail of this invitation was handed
+        over (REB-678): `sent` with the id it filed it under, or `failed` when it took
+        nothing. The invitation itself was committed before the mail left, so a process
+        that dies between the two leaves a row with no recorded outcome, which the panel
+        reads as unknown, never one that says `failed` for a mail that left.
+
+        Not an admin action of its own: the route that created or resent the invitation
+        has already been through `require_unscoped_admin`, and this only records the
+        answer of the call that route made."""
+        row = self._pending_row(invitation_id)
+        row.mail_id = receipt.id
+        row.mail_status = "sent" if receipt.accepted else "failed"
+        row.mail_sent_at = datetime.now(UTC)
+        self.session.commit()
+        return InvitationRead.model_validate(row)
+
+    def refresh_mail_status(self, actor: Actor, sender: TrackedSender) -> None:
+        """Asks the provider what became of the mails still on their way, and writes the
+        answers down. A mail the provider accepted can still bounce or be suppressed, and
+        the 201 the admin saw said neither (REB-678): this is how the panel learns it.
+
+        Only a mail not yet at an end (`sent`, `delayed`), only one sent in the last day,
+        newest first, at most `MAIL_LOOKUPS_PER_LIST` of them and for at most
+        `MAIL_LOOKUP_BUDGET_SECONDS`. The first question the provider cannot answer (down,
+        or a key that may only send) ends the round: the rest would get the same answer
+        and the admin would wait for each.
+
+        The rows are read and the transaction ended before the provider is asked, and each
+        answer is written only to the very mail it was asked about and only while that mail
+        is still open: a resend that lands during a lookup starts a new mail, and the old
+        one's `bounced` must not be written onto it."""
+        actor.require_admin("list_invites")
+        now = datetime.now(UTC)
+        open_mails = self.session.execute(
+            select(Invitation.id, Invitation.mail_id, Invitation.mail_status)
+            .where(
+                PENDING,
+                Invitation.expires_at > now,
+                Invitation.mail_id.is_not(None),
+                Invitation.mail_status.in_(OPEN_MAIL_STATES),
+                Invitation.mail_sent_at > now - MAIL_LOOKUP_WINDOW,
+            )
+            .order_by(Invitation.mail_sent_at.desc())
+            .limit(MAIL_LOOKUPS_PER_LIST)
+        ).all()
+        self.session.rollback()
+        deadline = time.monotonic() + MAIL_LOOKUP_BUDGET_SECONDS
+        for invitation_id, mail_id, known in open_mails:
+            if time.monotonic() >= deadline:
+                break
+            state = sender.status(mail_id or "")
+            if state is None:
+                break
+            if state != known:
+                self.session.execute(
+                    update(Invitation)
+                    .where(
+                        Invitation.id == invitation_id,
+                        Invitation.mail_id == mail_id,
+                        Invitation.mail_status.in_(OPEN_MAIL_STATES),
+                    )
+                    .values(mail_status=state)
+                )
         self.session.commit()
 
     # ---- invitee surface (unauthenticated) --------------------------------------
@@ -310,6 +395,44 @@ class InvitationService:
         self.session.commit()
         return user
 
+    def offer_for(self, email: str) -> InvitationOffer | None:
+        """The live invitation held for `email`, as the person who owns the address may
+        see it without the mail: the role it carries, who sent it, the name it holds. The
+        chooser lists it (REB-678) once that person has proven the address another way,
+        so an invitation whose mail never arrived is still findable. `None` for an
+        address with none open, or one that has run out: an expired invitation is dead
+        until an admin resends it, here as in the Team panel."""
+        row = self._open_row_for(email)
+        if row is None:
+            return None
+        inviter = self.users.get(row.invited_by)
+        ruolo: Role = row.ruolo  # type: ignore[assignment]  # same narrowing as `accept`
+        return InvitationOffer(
+            ruolo=ruolo,
+            invitato_da=inviter.nome if inviter is not None else "",
+            nome=row.nome,
+        )
+
+    def open_for(self, email: str) -> str:
+        """A new token on the invitation held for `email`, answered raw, for the person
+        who proved the address by a door of its own (the identity cookie, REB-678): the
+        acceptance page then takes it from there, name prompt and dead states included.
+        The old token dies with the hash, as in a resend, and `expires_at` stays where
+        it was: finding the invitation must not lengthen it. `NotFound` when nothing is
+        open for the address.
+
+        Bound to the system actor's scope first, like `accept`: this runs on a route
+        with no space actor, and the audit row it writes is a policied table."""
+        bind_scope(self.session, Actor.system())
+        row = self._open_row_for(email)
+        if row is None:
+            raise NotFound("invitation", email)
+        raw = secrets.token_urlsafe(32)
+        row.token_hash = _hash(raw)
+        self.activities.record(ENTITY, row.id, "opened", Actor.system(), {"email": row.email})
+        self.session.commit()
+        return raw
+
     # ---- shared reads -----------------------------------------------------------
 
     def _pending_row(self, invitation_id: UUID) -> Invitation:
@@ -332,3 +455,12 @@ class InvitationService:
         if row.expires_at <= datetime.now(UTC):
             raise InvitationExpired
         return row
+
+    def _open_row_for(self, email: str) -> Invitation | None:
+        """The one invitation still open and not yet expired for `email` (the partial
+        unique index allows at most one open row per address)."""
+        return self.session.scalar(
+            select(Invitation).where(
+                Invitation.email == email, PENDING, Invitation.expires_at > datetime.now(UTC)
+            )
+        )

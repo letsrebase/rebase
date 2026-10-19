@@ -2,9 +2,16 @@
 
 The seam exists so tests never send and production never guesses: `sender_from_settings`
 answers `None` without a key, and the API turns that into a 503 sentence rather than a
-mail that does not arrive. Nothing here raises past `send`; a refusal leaves a warning
-carrying the status and nothing else, because the caller drops what `send` answers and
-the log is the only trace a mail did not leave. No address and no key are ever logged.
+mail that does not arrive. Nothing here raises past `send`, `submit` or `status`; a
+refusal leaves a warning carrying the status and nothing else, because a caller that
+drops the answer (the link by mail, the digest's retry) has the log as the only trace a
+mail did not leave. No address and no key are ever logged.
+
+A provider's 2xx is only «I took it»: the mail can still bounce, and one to an address
+that bounced before is suppressed without leaving at all (REB-678: an invitation to a
+mistyped address was accepted, bounced, and nothing in the product said so). `submit`
+therefore answers the id the provider filed the mail under, and `status` asks what became
+of it, for the callers that show a person the outcome (the invitations).
 
 The HTML is the same box the hub's mails use (tables, inline styles, the brand values
 written out), with PigroCRM's name and the site's legal pages.
@@ -18,12 +25,13 @@ import html as html_escape
 import json
 import logging
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
-from typing import Protocol
+from typing import Literal, Protocol
 
 from pigrocrm.core.config import Settings
 from pigrocrm.core.digest.schemas import (
@@ -49,9 +57,10 @@ HttpCall = Callable[[str, str, dict[str, str], bytes], tuple[int, bytes]]
 def urllib_call(method: str, url: str, headers: dict[str, str], body: bytes) -> tuple[int, bytes]:
     """The one HTTP call this module makes, as a function so a test can replace it.
 
-    The request names itself, unless the caller already named it."""
+    The request names itself, unless the caller already named it. An empty body is no
+    body: a `GET` must not leave with a form content type and a length of zero."""
     sent = {"User-Agent": USER_AGENT, **headers}
-    request = urllib.request.Request(url, data=body, method=method, headers=sent)
+    request = urllib.request.Request(url, data=body or None, method=method, headers=sent)
     try:
         with urllib.request.urlopen(request, timeout=10) as response:  # noqa: S310
             return int(response.status), bytes(response.read())
@@ -67,21 +76,84 @@ class Mail:
     html: str | None = None
 
 
+# What a provider says became of a mail it accepted, in this product's words. `sent` and
+# `delayed` are the two a later look may still change; every other one is where a mail
+# ends, so nobody asks again. `failed` also stands for a mail the provider never took.
+MailState = Literal["sent", "delayed", "delivered", "bounced", "suppressed", "complained", "failed"]
+OPEN_MAIL_STATES: tuple[MailState, ...] = ("sent", "delayed")
+
+# Resend's `last_event`, as `GET /emails/{id}` answers it (its own event names). An opened
+# or clicked mail was delivered; a name nobody mapped is `None`, never a guess.
+RESEND_STATES: dict[str, MailState] = {
+    "queued": "sent",
+    "scheduled": "sent",
+    "sent": "sent",
+    "delivery_delayed": "delayed",
+    "delivered": "delivered",
+    "opened": "delivered",
+    "clicked": "delivered",
+    "bounced": "bounced",
+    "suppressed": "suppressed",
+    "complained": "complained",
+    "failed": "failed",
+    "canceled": "failed",
+}
+
+
+@dataclass(frozen=True)
+class Receipt:
+    """What the provider answered when it was handed a mail: whether it took it, and the
+    id it filed it under, the only handle for asking afterwards what became of it."""
+
+    accepted: bool
+    id: str | None = None
+
+
 class EmailSender(Protocol):
     def send(self, mail: Mail) -> bool:
         """`True` when the provider accepted it. Never raises."""
         ...
 
 
-class RecordingSender:
-    """Keeps every mail in a list. For tests, and for reading a link in development."""
+class TrackedSender(EmailSender, Protocol):
+    """An `EmailSender` that can also say what became of a mail it accepted, for the
+    callers that show a person the outcome instead of dropping it."""
 
-    def __init__(self) -> None:
+    def submit(self, mail: Mail) -> Receipt:
+        """`send`, with the provider's id for the mail. Never raises."""
+        ...
+
+    def status(self, mail_id: str) -> MailState | None:
+        """What the provider last recorded for `mail_id`, or `None` when it cannot say:
+        no answer, a refusal (a key that may only send cannot read), or an event this
+        module has no word for. Never raises."""
+        ...
+
+
+class RecordingSender:
+    """Keeps every mail in a list. For tests, and for reading a link in development.
+
+    `accepts=False` is a provider that refuses every mail; `states` is what `status`
+    answers by id (a mail not in it is still `sent`); `readable=False` is a provider
+    that cannot be asked."""
+
+    def __init__(self, *, accepts: bool = True, readable: bool = True) -> None:
         self.sent: list[Mail] = []
+        self.accepts = accepts
+        self.readable = readable
+        self.states: dict[str, MailState] = {}
+
+    def submit(self, mail: Mail) -> Receipt:
+        if not self.accepts:
+            return Receipt(False)
+        self.sent.append(mail)
+        return Receipt(True, f"recorded-{len(self.sent)}")
 
     def send(self, mail: Mail) -> bool:
-        self.sent.append(mail)
-        return True
+        return self.submit(mail).accepted
+
+    def status(self, mail_id: str) -> MailState | None:
+        return self.states.get(mail_id, "sent") if self.readable else None
 
 
 class ResendSender:
@@ -92,7 +164,10 @@ class ResendSender:
         self.sender = sender
         self.http = http or urllib_call
 
-    def send(self, mail: Mail) -> bool:
+    def _headers(self) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
+
+    def submit(self, mail: Mail) -> Receipt:
         body: dict[str, object] = {
             "from": self.sender,
             "to": [mail.to],
@@ -102,22 +177,48 @@ class ResendSender:
         if mail.html is not None:
             body["html"] = mail.html
         payload = json.dumps(body).encode()
-        headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
         try:
-            status, _ = self.http("POST", RESEND_URL, headers, payload)
+            status, raw = self.http("POST", RESEND_URL, self._headers(), payload)
         except Exception:  # noqa: BLE001 - the seam's contract is "never raises"
-            # The caller hands `send` to a background task and drops what it answers,
-            # so this line is the only trace the mail did not leave. The status, and
-            # nothing else: neither the address nor the key may reach a log.
+            # A caller that drops the answer has this line as the only trace the mail
+            # did not leave. The status, and nothing else: neither the address nor the
+            # key may reach a log.
             logger.warning("mail non inviata: la chiamata al provider non ha risposto")
-            return False
+            return Receipt(False)
         if not 200 <= status < 300:
             logger.warning("mail non inviata: il provider ha risposto %s", status)
-            return False
-        return True
+            return Receipt(False)
+        return Receipt(True, _json_field(raw, "id"))
+
+    def send(self, mail: Mail) -> bool:
+        return self.submit(mail).accepted
+
+    def status(self, mail_id: str) -> MailState | None:
+        url = f"{RESEND_URL}/{urllib.parse.quote(mail_id, safe='')}"
+        try:
+            status, raw = self.http("GET", url, self._headers(), b"")
+        except Exception:  # noqa: BLE001 - the seam's contract is "never raises"
+            logger.warning("stato della mail non letto: il provider non ha risposto")
+            return None
+        if not 200 <= status < 300:
+            logger.warning("stato della mail non letto: il provider ha risposto %s", status)
+            return None
+        event = _json_field(raw, "last_event")
+        return RESEND_STATES.get(event) if event is not None else None
 
 
-def sender_from_settings(settings: Settings) -> EmailSender | None:
+def _json_field(raw: bytes, name: str) -> str | None:
+    """`name` from a JSON object body when it is a non-empty string, else `None`: a
+    provider body that is not what it was last time is not worth a failed send."""
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return None
+    value = data.get(name) if isinstance(data, dict) else None
+    return value if isinstance(value, str) and value else None
+
+
+def sender_from_settings(settings: Settings) -> TrackedSender | None:
     if not settings.resend_api_key:
         return None
     return ResendSender(settings.resend_api_key, settings.mail_from)

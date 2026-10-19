@@ -626,3 +626,128 @@ describe('UsersPanel', () => {
     })
   })
 })
+
+// REB-678: the invitation to the Rebase space went to a mistyped address, the provider
+// took it and the address bounced, and the panel kept showing a pending invitation. What
+// the admin reads now is what became of the mail.
+describe('the mail of an invitation', () => {
+  function withMail(mail_status: string | null, extra: Record<string, unknown> = {}) {
+    return { ...PENDING_INVITE, mail_status, mail_sent_at: '2026-09-22T10:00:05Z', ...extra }
+  }
+
+  it('says where each mail stands, and what to do about the ones that did not arrive', async () => {
+    respond({
+      ...lists,
+      '/api/users/invites': () =>
+        ok([
+          withMail('delivered', { id: 'i1', nome: 'Luca' }),
+          withMail('bounced', { id: 'i2', nome: 'Bianca', email: 'bianca@pigro.it' }),
+          withMail('failed', { id: 'i3', nome: 'Carla', email: 'carla@pigro.it' }),
+        ]),
+    })
+    renderPanel()
+
+    expect(await screen.findByText('Consegnata')).toBeInTheDocument()
+    expect(screen.getByText('Non consegnata')).toBeInTheDocument()
+    expect(screen.getByText('Non partita')).toBeInTheDocument()
+    // A bounce is the address's problem and a resend would be refused, so the hint
+    // sends the admin to the address; a mail that never left is the button's.
+    expect(screen.getByText(/revoca l'invito e invita di nuovo con quello giusto/)).toBeInTheDocument()
+    expect(screen.getByText(/Usa «Reinvia il link» per riprovare/)).toBeInTheDocument()
+    expect(screen.getByRole('row', { name: /Bianca/ })).toHaveTextContent('Non consegnata')
+    expect(screen.getByRole('row', { name: /Luca/ })).not.toHaveTextContent('Non consegnata')
+  })
+
+  it('tones the pill by the mail’s state: a bounce is danger, a delivery is settled', async () => {
+    respond({
+      ...lists,
+      '/api/users/invites': () =>
+        ok([withMail('delivered', { id: 'i1' }), withMail('suppressed', { id: 'i2', nome: 'B' })]),
+    })
+    renderPanel()
+
+    const delivered = await screen.findByText('Consegnata')
+    expect(delivered.closest('[data-tone]')).toHaveAttribute('data-tone', 'ink')
+    expect(screen.getByText('Non consegnata').closest('[data-tone]')).toHaveAttribute(
+      'data-tone',
+      'danger',
+    )
+  })
+
+  it('says nothing for an invitation written before the outcome was recorded', async () => {
+    respond({ ...lists, '/api/users/invites': () => ok([PENDING_INVITE]) })
+    renderPanel()
+
+    const row = await screen.findByRole('row', { name: /Luca/ })
+    expect(row).not.toHaveTextContent(/Inviata|Consegnata|Non consegnata|Non partita/)
+  })
+
+  it('does not tell the admin «Invito inviato» when the mail did not leave', async () => {
+    respond(lists)
+    vi.mocked(api.POST).mockReturnValueOnce(
+      Promise.resolve(ok({ ...PENDING_INVITE, mail_status: 'failed' }, 201)),
+    )
+    renderPanel()
+
+    await userEvent.click(await screen.findByRole('button', { name: /^invita$/i }))
+    await userEvent.type(screen.getByLabelText('Email'), 'giulia@pigro.it')
+    await userEvent.click(screen.getByRole('button', { name: 'Invia invito' }))
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        'Invito creato, ma la mail non è partita. Usa «Reinvia il link» nella lista.',
+      ),
+    )
+    expect(toast.success).not.toHaveBeenCalledWith('Invito inviato')
+  })
+
+  it('says so when a resend did not leave either', async () => {
+    respond({ ...lists, '/api/users/invites': () => ok([withMail('failed')]) })
+    vi.mocked(api.POST).mockReturnValueOnce(
+      Promise.resolve(ok(withMail('failed'))),
+    )
+    renderPanel()
+
+    await openRowMenu('Luca')
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Reinvia il link' }))
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith('La mail non è partita. Riprova tra poco.'),
+    )
+    expect(toast.success).not.toHaveBeenCalledWith('Invito reinviato')
+  })
+
+  it('asks the list again while a recent mail is still on its way, and stops once it has ended', async () => {
+    // `clearInterval` too: a faked `setInterval` cleared by the real one is never cleared.
+    vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ['setInterval', 'clearInterval', 'Date'] })
+    try {
+      vi.setSystemTime(new Date('2026-09-22T10:00:30Z'))
+      let mail = 'sent'
+      respond({
+        ...lists,
+        '/api/users/invites': () => ok([withMail(mail)]),
+      })
+      renderPanel()
+
+      expect(await screen.findByText('Inviata')).toBeInTheDocument()
+      const reads = () =>
+        vi.mocked(api.GET).mock.calls.filter((call: [string]) => call[0] === '/api/users/invites')
+          .length
+      expect(reads()).toBe(1)
+
+      mail = 'bounced'
+      // The provider's verdict changes before the next look.
+      await vi.advanceTimersByTimeAsync(4100)
+      // That look comes four seconds after the first.
+      expect(await screen.findByText('Non consegnata')).toBeInTheDocument()
+      const after = reads()
+      expect(after).toBeGreaterThanOrEqual(2)
+
+      // An ended mail is not asked about again.
+      await vi.advanceTimersByTimeAsync(20_000)
+      expect(reads()).toBe(after)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})

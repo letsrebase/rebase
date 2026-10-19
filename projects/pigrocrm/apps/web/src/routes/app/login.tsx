@@ -165,10 +165,21 @@ export function LoginPage({
   /** Opens the chosen space with no second proof (design §3): the identity cookie
    *  already is one. A different basepath is a different application instance, so
    *  landing there is a full navigation, the same shape every other cross-space move
-   *  on this page already uses. */
-  async function onEnter(slug: string) {
+   *  on this page already uses. An invitation (REB-678) is not a space yet: the API
+   *  answers the acceptance page, with a token for the address this browser proved,
+   *  and the page takes it from there (it asks for the name when the invitation has
+   *  none). */
+  async function onEnter(space: IdentitySpace) {
+    const slug = space.slug
     setEnteringSlug(slug)
     try {
+      if (space.invito) {
+        const door = await unwrap(
+          api.POST('/api/identity/invite/{slug}', { params: { path: { slug } } }),
+        )
+        go(door.url)
+        return
+      }
       await unwrap(api.POST('/api/identity/enter/{slug}', { params: { path: { slug } } }))
       go(`/${slug}/app/`)
     } catch (error) {
@@ -210,11 +221,20 @@ export function LoginPage({
                   key={space.slug}
                   type="button"
                   variant="outline"
-                  className="w-full justify-between"
+                  className="h-auto min-h-9 w-full justify-between py-1.5"
                   disabled={enteringSlug !== null}
-                  onClick={() => void onEnter(space.slug)}
+                  onClick={() => void onEnter(space)}
                 >
-                  <span>{space.slug}</span>
+                  <span className="text-left">
+                    {space.slug}
+                    {space.invito && (
+                      <span className="text-muted-foreground block text-xs font-normal">
+                        {space.invitato_da
+                          ? `Invito da ${space.invitato_da}, da accettare`
+                          : 'Invito da accettare'}
+                      </span>
+                    )}
+                  </span>
                   <span className="text-muted-foreground text-xs">{roleLabel(space.ruolo)}</span>
                 </Button>
               ))}
