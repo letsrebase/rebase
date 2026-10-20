@@ -114,7 +114,8 @@ resource "cloudflare_dns_record" "rebase_send_txt" {
 }
 
 # Google Search Console's proof of ownership for the domain property (ORB-195). The
-# token is per Google account and per property; it is not a secret.
+# token is per Google account and per property; it is not a secret. Ivan's account
+# verifies with it; do not remove it.
 resource "cloudflare_dns_record" "rebase_apex_google_site_verification_txt" {
   provider = cloudflare.rebase
   zone_id  = local.rebase_zone_id
@@ -123,6 +124,51 @@ resource "cloudflare_dns_record" "rebase_apex_google_site_verification_txt" {
   content  = "\"google-site-verification=ClhNGnYHY95wDv2fWqKoRz60_7wVXZw7SI0UciLQWsc\""
   ttl      = 1
   comment  = "Search Console domain property (2026-09-14)"
+}
+
+# Google Workspace for ciao@letsrebase.com, added in the panel on 2026-09-18 and taken
+# into this file on 2026-10-20 (REB-702) exactly as they were, which is why none carries
+# a Cloudflare comment: adding one would be a change, and these four are only imported.
+# The mailbox (MX), its signature (DKIM) and its sender policy (SPF) make ciao@ work at
+# all. The site verification is the Workspace domain's own, and most likely also what
+# verified ciao@ as an owner of the Search Console domain property on 2026-10-20
+# (REB-700): Search Console says only «domain name provider», not which record. Remove
+# none of them.
+resource "cloudflare_dns_record" "rebase_google_workspace_mx" {
+  provider = cloudflare.rebase
+  zone_id  = local.rebase_zone_id
+  name     = "letsrebase.com"
+  type     = "MX"
+  content  = "smtp.google.com"
+  ttl      = 300
+  priority = 10
+}
+
+resource "cloudflare_dns_record" "rebase_google_workspace_domainkey_txt" {
+  provider = cloudflare.rebase
+  zone_id  = local.rebase_zone_id
+  name     = "google._domainkey.letsrebase.com"
+  type     = "TXT"
+  content  = "\"v=DKIM1;k=rsa;p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAv/jSJRgzZpZmYZ1LCxVna8gayA3OGRmNa3TxUtJvznp8RQVJu7cxy8dy6yec4UW3Av0NEFdgrSxmFh39oTh69WBxw5yirs5LMazqdCuUb88xGkMrwUX5ZlDdHduH4p/amYWOk5kATDXMB7GLZsIjJHixMzeO7KBbhIHjDLE0Eg3fEv5YAskx2fCefIhXwqa6Oy6\" \"L8uZzOn2qxyp8Pp/OAbWU0SyOM4qDacUZdU89yEGbykW84P0DMtWnEeVkYNOklbL520K472mfDD5Q86C0NY8r/Gia192oHH7QwfxuAveVCf7GHaoRxM4wrVs8HtUtIkK8UnRxmEewutvDpiwfewIDAQAB\""
+  ttl      = 3600
+}
+
+resource "cloudflare_dns_record" "rebase_google_workspace_spf_txt" {
+  provider = cloudflare.rebase
+  zone_id  = local.rebase_zone_id
+  name     = "letsrebase.com"
+  type     = "TXT"
+  content  = "\"v=spf1 include:_spf.google.com ~all\""
+  ttl      = 3600
+}
+
+resource "cloudflare_dns_record" "rebase_google_workspace_site_verification_txt" {
+  provider = cloudflare.rebase
+  zone_id  = local.rebase_zone_id
+  name     = "letsrebase.com"
+  type     = "TXT"
+  content  = "\"google-site-verification=dSF1rAy3hgizON3rYAH29kjA_XBr17gYgOUNaRq2Qus\""
+  ttl      = 3600
 }
 
 resource "cloudflare_dns_record" "rebase_links_cname" {
