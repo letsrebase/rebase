@@ -66,6 +66,7 @@ from rebase_core.referral_schemas import (
     MatchReferral,
     MemberReferral,
     MemberReferralItem,
+    PublicReferralRates,
     ReferralLedgerItem,
     ReferralLedgerList,
 )
@@ -456,9 +457,7 @@ class ReferralService:
         release them and close that transaction early, ahead of the reward and the
         signature it belongs to (CodeRabbit) -- the same reason `write_framework`
         never commits either."""
-        row = self.session.scalar(
-            select(ReferralSettings).order_by(ReferralSettings.created_at).limit(1)
-        )
+        row = self._settings_row()
         if row is not None:
             return row
         row = ReferralSettings()
@@ -466,6 +465,29 @@ class ReferralService:
         self.session.flush()
         self.session.refresh(row)
         return row
+
+    def _settings_row(self) -> ReferralSettings | None:
+        """The oldest settings row, the one every reader agrees is the row."""
+        return self.session.scalar(
+            select(ReferralSettings).order_by(ReferralSettings.created_at).limit(1)
+        )
+
+    def public_rates(self) -> PublicReferralRates | None:
+        """The two rates a stranger may read (`GET /api/hub/referral-rates`), from the
+        same row `get_settings` serves the member area and the ledger, live on every call.
+
+        Unlike `get_settings` this never writes: it is a public GET, and a request nobody
+        authenticated must not seed a row. With no row it answers `None`, never the
+        column defaults, because a figure the admin did not set is a figure nobody chose
+        and the public page drops a rate it cannot read (design record 2026-09-29).
+        Migration 0024 seeds the row, so `None` is a database that lost it, not a state
+        a deploy reaches."""
+        row = self._settings_row()
+        if row is None:
+            return None
+        return PublicReferralRates(
+            rate_freelancer=row.rate_freelancer, rate_company=row.rate_company
+        )
 
     def save_settings(
         self, rate_freelancer: Decimal, rate_company: Decimal, admin_id: UUID
