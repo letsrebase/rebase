@@ -57,9 +57,9 @@ you introduce on top of that one is still yours to explain before you commit
 The state is a local `terraform.tfstate`, ignored by git, on the machine that ran the
 last `apply`. That is acceptable while one person runs this, because the state holds
 nothing that is not in Cloudflare and the `*-imports.tf` files rebuild it from nothing:
-`rebase.tf` and `orbiters.tf` declare twenty-five records, and on a fresh clone
-`terraform init && terraform apply` imports the twenty-four that carry an import
-block into a new state and changes none. The twenty-fifth,
+`rebase.tf` and `orbiters.tf` declare thirty records, and on a fresh clone
+`terraform init && terraform apply` imports the twenty-nine that carry an import
+block into a new state and changes none. The thirtieth,
 `orbiters_apex_google_site_verification_txt` (the second, change-of-address Search
 Console token from ORB-195, not the older `orbiters_apex_txt` imported above),
 still has no block: a fresh clone's `apply` plans it as a record to create, which
@@ -67,9 +67,13 @@ either fails against Cloudflare's duplicate-record check or writes a second copy
 a token that already verifies the zone, so read the plan and stop before `apply` if
 that record still shows up as an addition. That zone is Ivan's Cloudflare account,
 and the token to read the record's id is still not on this machine: the Cloudflare
-token available here resolves `letsrebase.com` only and returns an authentication
-error against `joinorbiters.com`'s zone (checked again for REB-259). When a second
-person needs to run it, the decision to take is a remote backend, not a copied file.
+token available here (`~/.config/agents-mcp/clients/rebase/cloudflare-terraform.token`,
+«rebase terraform (devbox): DNS + R2») resolves `letsrebase.com` only and returns an
+authentication error against `joinorbiters.com`'s zone (checked again for REB-259). A
+plan of the `letsrebase.com` half alone runs with `-target` on its resources and any
+placeholder for `TF_VAR_orbiters_api_token` (REB-702: 18 to import, nothing else).
+When a second person needs to run it, the decision to take is a remote backend, not a
+copied file.
 
 ## What is not here
 

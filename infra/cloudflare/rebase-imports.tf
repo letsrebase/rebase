@@ -85,3 +85,28 @@ import {
   id       = "904a60b42314c819a66340ae8c1a0e88/a798637506d00c575901c67b7a15925f"
   provider = cloudflare.rebase
 }
+
+# Google Workspace for ciao@letsrebase.com (REB-702): created in the panel on 2026-09-18.
+import {
+  to       = cloudflare_dns_record.rebase_google_workspace_mx
+  id       = "904a60b42314c819a66340ae8c1a0e88/2bc3aacd1601c30090da942bce6aea6c"
+  provider = cloudflare.rebase
+}
+
+import {
+  to       = cloudflare_dns_record.rebase_google_workspace_domainkey_txt
+  id       = "904a60b42314c819a66340ae8c1a0e88/40833ce8f34e82cb4632693f28c64b99"
+  provider = cloudflare.rebase
+}
+
+import {
+  to       = cloudflare_dns_record.rebase_google_workspace_spf_txt
+  id       = "904a60b42314c819a66340ae8c1a0e88/6c0677c5d2582b967ca4e025cee3b170"
+  provider = cloudflare.rebase
+}
+
+import {
+  to       = cloudflare_dns_record.rebase_google_workspace_site_verification_txt
+  id       = "904a60b42314c819a66340ae8c1a0e88/703970a8f2a6c304fed89bc5d50b9849"
+  provider = cloudflare.rebase
+}
