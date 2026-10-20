@@ -580,7 +580,8 @@ Anything you run by hand against production passes `-p rebase --env-file
 webhook, its SSRF bypass and `REBASE_DOCUMENSO_*` are described above (§ "Contracts are
 signed on Documenso"); this section is the container's own.
 
-- **Image**: `documenso/documenso:v2.18.0`, pinned by digest, the one phase 1 probed. An
+- **Image**: `documenso/documenso:v2.20.0`, pinned by digest (phase 1 probed v2.18.0; REB-712
+  moved it after the v2.19 and v2.20 release notes). An
   upgrade is a pull request that moves the pin, after reading the release notes.
 - **Rolling back past this release**: `COMPOSE_FILE=docker-compose.yml:docker-compose.documenso.yml`
   lives in `/opt/hub/.env` on the server, not in the checkout, so redeploying an older
