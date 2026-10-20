@@ -634,6 +634,32 @@ test.describe('the path map, as production serves it', () => {
     // /pitch is noindex and stays out of the sitemap, the point of REB-110.
     expect(built).not.toContain('<loc>https://letsrebase.com/pitch</loc>')
   })
+
+  // REB-701, the same reasoning again for llms.txt. The FAQPage is injected by a
+  // transformIndexHtml hook, so the home as served carries two JSON-LD blocks while its
+  // source carries one; and the logo the Organization names is the fixed-name copy the
+  // writeBundle hook makes, which only a build produces.
+  test('llms.txt is served as UTF-8 text, and the build actually wrote it', async ({ request }) => {
+    const response = await request.get('/llms.txt')
+    expect(response.status()).toBe(200)
+    expect(response.headers()['content-type']).toBe('text/plain; charset=utf-8')
+    const built = readFileSync(new URL('../dist/llms.txt', import.meta.url), 'utf-8')
+    expect(built).toMatch(/^# rebase\n\n> /)
+    expect(built).toContain('(https://letsrebase.com/pigrocrm): PigroCRM: clienti')
+    expect(built).not.toContain('https://letsrebase.com/pitch')
+  })
+
+  test('the home carries a FAQPage with its own questions, and the logo it names is served', async ({ request }) => {
+    const page = await (await request.get('/')).text()
+    const blocks = [...page.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map((m) =>
+      JSON.parse(m[1]!),
+    )
+    const faqPage = blocks.find((block) => block['@type'] === 'FAQPage')
+    expect(faqPage.mainEntity.map((q: { name: string }) => q.name)).toContain('Quanto costa entrare?')
+    const logo = await request.get('/assets/rebase-logo.svg')
+    expect(logo.status()).toBe(200)
+    expect(logo.headers()['content-type']).toContain('image/svg+xml')
+  })
 })
 
 // The two policy pages are the two whose text column carries long unbreakable strings:

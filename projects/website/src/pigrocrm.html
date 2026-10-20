@@ -49,6 +49,32 @@
       question and loads the SDK only on a yes. privacy.html names both. -->
     <script type="module" src="./consent.js"></script>
     <script type="module" src="./session.js"></script>
+    <!-- REB-701: the CRM as a SoftwareApplication, published by the Organization the
+      home describes (its @id, with its name and url so this page reads on its own).
+      Every value is said on this page or the home: the
+      description is this page's meta description, the four features are «Cosa c'è
+      dentro», and the price is the home's «Quanto costa entrare? Niente.» and this
+      page's «Gratis per chi è in community». No licence, rating, review or version:
+      the site states none of them, and each would be one more thing to keep true by
+      hand. Without a rating or a review Google shows no SoftwareApplication rich
+      result, and none is expected: the block is for what a crawler or an assistant
+      understands, and the Schema.org validator is the check it has to pass. -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "@id": "https://letsrebase.com/pigrocrm#software",
+        "name": "PigroCRM",
+        "url": "https://letsrebase.com/pigrocrm",
+        "description": "PigroCRM: clienti, offerte, fatture e pagamenti in un posto solo, e un assistente AI che fa il lavoro noioso. Lo abbiamo costruito da freelance per i freelance. Gratis per chi è in rebase, open source per tutti.",
+        "applicationCategory": "BusinessApplication",
+        "inLanguage": "it-IT",
+        "featureList": ["Clienti e trattative", "Offerte e contratti", "Fatture e ore", "Un assistente AI"],
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "EUR" },
+        "isAccessibleForFree": true,
+        "publisher": { "@type": "Organization", "@id": "https://letsrebase.com/#organization", "name": "rebase", "url": "https://letsrebase.com/" }
+      }
+    </script>
   </head>
   <body>
     <canvas id="field" aria-hidden="true"></canvas>

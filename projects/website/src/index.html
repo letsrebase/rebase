@@ -55,29 +55,39 @@
       server's .env, used only by the API. -->
     <script type="module" src="./consent.js"></script>
     <script type="module" src="./session.js"></script>
-    <!-- REB-113: WebSite and Organization structured data, on this page only, the one
-      a search result attaches to. Every value already appears elsewhere on the site:
-      privacy.html and terms.html name the legal entity, its VAT number and its
-      contact address; og:image above already names the share card this points at as
-      a logo. No FAQPage, no Product, no Review: nothing here that is not true anywhere
-      else on the site. -->
+    <!-- REB-113, extended by REB-701: WebSite and Organization structured data, on this
+      page, the one a search result attaches to; /pigrocrm carries the CRM's own block.
+      Every value already appears elsewhere on the site: privacy.html and terms.html
+      name the legal entity, its VAT number and its contact address; the description is
+      this page's og:description; the logo is the favicon's own mark under the fixed
+      name path-map-plugin.ts copies it to; the one profile in sameAs is the GitHub
+      organisation the questions below link into. The FAQPage for «Le domande» is not
+      written here: site-text.ts builds it from that section's markup at build time, so
+      an answer changes in one place. No Product, no Review, no founders: nothing here
+      that is not true anywhere else on the site. -->
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
         "@graph": [
           {
             "@type": "WebSite",
+            "@id": "https://letsrebase.com/#website",
             "name": "rebase",
-            "url": "https://letsrebase.com/"
+            "url": "https://letsrebase.com/",
+            "inLanguage": "it-IT",
+            "publisher": { "@id": "https://letsrebase.com/#organization" }
           },
           {
             "@type": "Organization",
+            "@id": "https://letsrebase.com/#organization",
             "name": "rebase",
             "legalName": "Humancraft di Ivan Sala",
             "url": "https://letsrebase.com/",
-            "logo": "https://letsrebase.com/assets/share-card-2.png",
+            "logo": "https://letsrebase.com/assets/rebase-logo.svg",
+            "description": "La community di chi fa software in proprio, costruita da chi lo fa: progetti da aziende vere, persone che ci sono passate, strumenti per fatturare e farsi pagare. PigroCRM gratis per chi entra.",
             "vatID": "14518240966",
-            "email": "ivansala@humancraft.tech"
+            "email": "ivansala@humancraft.tech",
+            "sameAs": ["https://github.com/letsrebase"]
           }
         ]
       }
