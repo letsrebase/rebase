@@ -97,7 +97,10 @@ own `.env` (Documenso runs inside the hub's production project), and publishes o
 loopback only (the port table is in `docs/adding-a-project.md` § 7). The machine's
 own nginx is the only thing that faces the internet: it terminates TLS with Let's Encrypt
 certificates that certbot renews, and proxies by name and by path to those containers,
-using the vhosts committed under each project's `deploy/` directory. The `letsrebase.com`
+using the vhosts committed under each project's `deploy/` directory. A name no vhost
+carries, the bare IP included, gets nothing: a catch-all closes plain HTTP and refuses the
+TLS handshake, and the access log records the host of every request (`infra/origin/`,
+REB-714). The `letsrebase.com`
 names (`letsrebase.com`, `pigro`, `preview`, `preview.pigro`, `firma`) are DNS-only
 records pointing at it (`infra/cloudflare/rebase.tf`). The old `joinorbiters.com` names
 answered with redirects until 2026-10-20 and no longer have a vhost
