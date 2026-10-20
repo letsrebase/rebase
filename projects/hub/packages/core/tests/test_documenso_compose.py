@@ -1,4 +1,4 @@
-"""Documenso as production runs it (REB-393): the image phase 1 probed, pinned by digest;
+"""Documenso as production runs it (REB-393): the pinned image, by tag and digest;
 a loopback port and an unpublished database; nobody can open an account; the webhook may
 reach the API by its compose name; and a compose file of its own, so the preview's deploy
 and CI's image build never need Documenso's secrets. The `sweep` service (also REB-393)
@@ -13,9 +13,11 @@ HUB = Path(__file__).resolve().parents[3]
 COMPOSE = HUB / "docker-compose.yml"
 DOCUMENSO = HUB / "docker-compose.documenso.yml"
 EXAMPLE = HUB / ".env.example"
-PROBED = (
-    "documenso/documenso:v2.18.0"
-    "@sha256:126976b9e3be54193e1a3be8d22130af1913aaa894c550b98870a2cc4c422650"
+# Phase 1 probed v2.18.0; v2.20.0 replaced it after its release notes, which list no
+# breaking change, migration or new variable for v2.19 or v2.20 (REB-712).
+PINNED = (
+    "documenso/documenso:v2.20.0"
+    "@sha256:05d2ede9fb87bfd8eedc11d81b8bdee43c3e775ea46c4fb64973153ca5ef8eb8"
 )
 
 
@@ -27,8 +29,8 @@ def _compose() -> str:
     return COMPOSE.read_text(encoding="utf-8")
 
 
-def test_documenso_runs_the_image_phase_1_probed_pinned_by_digest() -> None:
-    assert f"image: {PROBED}" in _documenso()
+def test_documenso_runs_the_pinned_image_by_digest() -> None:
+    assert f"image: {PINNED}" in _documenso()
 
 
 def test_the_hub_compose_file_starts_no_documenso() -> None:

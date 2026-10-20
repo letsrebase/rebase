@@ -9,8 +9,9 @@
 # and CI's image build, neither of which runs Documenso. The preview signs on this same
 # instance through a Documenso user of its own (probe § 8).
 #
-# The image is the one phase 1 probed, pinned by tag and digest
-# (docs/superpowers/specs/2026-09-23-documenso-probe.md § 1). Its uploaded and sealed PDFs
+# The image is pinned by tag and digest. Phase 1 probed v2.18.0
+# (docs/superpowers/specs/2026-09-23-documenso-probe.md § 1); v2.20.0 replaced it after
+# its release notes (REB-712). Documenso's uploaded and sealed PDFs
 # live in its own Postgres (`NEXT_PUBLIC_UPLOAD_TRANSPORT=database`), so the data to back
 # up is REBASE_DOCUMENSO_DATA_DIR and nothing else. About 630 MiB of memory once warm,
 # 80 MiB for its Postgres.
