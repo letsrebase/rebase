@@ -88,10 +88,10 @@ working untouched.
 rebase has exactly two servers (Lorenzo, 2026-10-06, `docs/design/DECISIONS.md`). Every
 other page in this repository that says "the host" or "the server" means the first one.
 
-**The origin, on Hetzner.** One machine runs the website, the hub, PigroCRM and
-Documenso. The website, the hub and PigroCRM each have a production stack and a preview
-stack beside it; Documenso has a production instance only, which the hub's preview signs
-on. Vaultwarden is to join them behind the same nginx (REB-644, REB-648, not live yet).
+**The origin, on Hetzner.** One machine runs the website, the hub, PigroCRM, Documenso
+and Vaultwarden. The website, the hub and PigroCRM each have a production stack and a
+preview stack beside it; Documenso has a production instance only, which the hub's preview
+signs on, and Vaultwarden has a production instance only as well (REB-648).
 Every environment is a Docker Compose project in its own `DEPLOY_PATH` directory with its
 own `.env` (Documenso runs inside the hub's production project), and publishes on the
 loopback only (the port table is in `docs/adding-a-project.md` § 7). The machine's
@@ -101,7 +101,7 @@ using the vhosts committed under each project's `deploy/` directory. A name no v
 carries, the bare IP included, gets nothing: a catch-all closes plain HTTP and refuses the
 TLS handshake, and the access log records the host of every request (`infra/origin/`,
 REB-714). The `letsrebase.com`
-names (`letsrebase.com`, `pigro`, `preview`, `preview.pigro`, `firma`) are DNS-only
+names (`letsrebase.com`, `pigro`, `preview`, `preview.pigro`, `firma`, `vault`) are DNS-only
 records pointing at it (`infra/cloudflare/rebase.tf`). The old `joinorbiters.com` names
 answered with redirects until 2026-10-20 and no longer have a vhost
 (`docs/migrations/2026-09-14-letsrebase.md`). A deploy
