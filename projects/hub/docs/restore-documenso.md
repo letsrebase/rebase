@@ -74,7 +74,7 @@ host: `docker exec rebase-documenso-db-1 psql -U documenso -d documenso -Atc '..
 ```
 docker exec documenso-scratch psql -U documenso -d documenso -Atc 'SELECT count(*) FROM "Envelope"'
 docker exec documenso-scratch psql -U documenso -d documenso -Atc 'SELECT count(*) FROM "DocumentData"'
-docker exec documenso-scratch psql -U documenso -d documenso -Atc 'SELECT migration_name FROM _prisma_migrations ORDER BY finished_at DESC LIMIT 1'
+docker exec documenso-scratch psql -U documenso -d documenso -Atc 'SELECT migration_name FROM _prisma_migrations ORDER BY finished_at DESC NULLS LAST, migration_name DESC LIMIT 1'
 ```
 
 A backup is a day behind production, so the counts match the day it was taken, and the last

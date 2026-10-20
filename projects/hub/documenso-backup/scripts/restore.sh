@@ -34,17 +34,25 @@ if [ -d "$target" ] && [ -n "$(ls -A "$target")" ]; then
   echo "restore: $target is not empty; restore into a new directory" >&2
   exit 1
 fi
-# umask 077, so a target this creates is 0700 and so is everything under it; a target
-# that already exists keeps the mode its owner gave it (see --no-overwrite-dir below).
+# umask 077, so a target this creates is 0700 and so is everything under it. The bundle
+# has no `./` entry, so unpacking never changes the mode of a target that already exists.
 umask 077
 mkdir -p "$target"
 
 decrypt=(openssl cms -decrypt -binary -inform DER -in "$backup" -inkey "$key")
 [ -z "$cert" ] || decrypt+=(-recip "$cert")
-if ! "${decrypt[@]}" | tar --no-overwrite-dir -C "$target" -xf -; then
+set +e
+"${decrypt[@]}" | tar -C "$target" -xf -
+status=("${PIPESTATUS[@]}")
+set -e
+if [ "${status[0]}" -ne 0 ] || [ "${status[1]}" -ne 0 ]; then
   # The target was empty when this started, so whatever is in it now is this run's.
   find "$target" -mindepth 1 -delete
-  echo "restore: could not open $backup with that key; if it was made for several certificates, pass the one that belongs to the key as a fourth argument" >&2
+  if [ "${status[0]}" -ne 0 ]; then
+    echo "restore: could not open $backup with that key; if it was made for several certificates, pass the one that belongs to the key as a fourth argument" >&2
+  else
+    echo "restore: the decrypted bundle of $backup is not a tar archive" >&2
+  fi
   exit 1
 fi
 [ -s "$target/documenso.dump" ] || { echo "restore: the bundle holds no archive" >&2; exit 1; }

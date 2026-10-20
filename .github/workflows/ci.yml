@@ -256,11 +256,14 @@ jobs:
               - 'projects/hub/apps/web/src/lib/amount_cases.json'
               - 'projects/hub/conftest.py'
               - 'projects/hub/ruff.toml'
-              # Production's Documenso compose file (REB-715): `test_documenso_compose.py`
-              # reads it, and it sat under none of the paths above. Dependabot's #587 moved
-              # its image pin, no job of the hub's Python suite ran on the PR or on the
-              # trunk, and the stale pin test failed only on the `hub-v0.62.0` tag run.
+              # Production's Documenso compose file, the backup's Dockerfile and the hub's
+              # deploy workflow (REB-715): `test_documenso_compose.py` reads all three, and
+              # they sat under none of the paths above. Dependabot's #587 moved the image
+              # pin, no job of the hub's Python suite ran on the PR or on the trunk, and the
+              # stale pin test failed only on the `hub-v0.62.0` tag run.
               - 'projects/hub/docker-compose.documenso.yml'
+              - 'projects/hub/documenso-backup/Dockerfile'
+              - '.github/workflows/deploy-hub.yml'
               # The guide PDF's own inputs (REB-310): `test_guide_pdf.py` under
               # `packages/core/tests` asserts the hash of every source recorded in
               # `tools/guide-pdf.lock.json`, and none of the lock's five sources nor

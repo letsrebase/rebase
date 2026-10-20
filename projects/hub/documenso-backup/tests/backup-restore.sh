@@ -235,7 +235,7 @@ scratch_psql() { docker exec -i "$scratch_name" psql -v ON_ERROR_STOP=1 -U docum
 docker exec -i "$scratch_name" pg_restore --exit-on-error --no-owner --no-acl -U documenso -d restored < "$tmp/restored/documenso.dump"
 got=$(scratch_psql -d restored -c "SELECT encode(sha256(data), 'hex') FROM \"DocumentData\" WHERE id = 'doc-1'")
 [ "$got" = "$want_sha" ] || { echo "FAIL: the restored contract is '$got', expected '$want_sha'" >&2; exit 1; }
-scratch_psql -d restored -c "SELECT migration_name FROM _prisma_migrations ORDER BY finished_at DESC LIMIT 1" | grep -qx 20260922002212_add_auth_handoff \
+scratch_psql -d restored -c "SELECT migration_name FROM _prisma_migrations ORDER BY finished_at DESC NULLS LAST, migration_name DESC LIMIT 1" | grep -qx 20260922002212_add_auth_handoff \
   || { echo "FAIL: the restored database lacks the last migration" >&2; exit 1; }
 echo "restored from the unpacked file: contract doc-1 byte for byte ($got)"
 # The same, straight from the envelope into pg_restore: the contracts never touch a disk.

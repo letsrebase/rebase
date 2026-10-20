@@ -180,6 +180,9 @@
         "projects/hub/packages/**",
         "projects/hub/apps/web/src/lib/amount_cases.json",
         "projects/hub/conftest.py",
+        "projects/hub/docker-compose.documenso.yml",
+        "projects/hub/documenso-backup/Dockerfile",
+        ".github/workflows/deploy-hub.yml",
         "pyproject.toml",
         "uv.lock"
       ],
