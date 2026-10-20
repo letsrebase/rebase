@@ -114,8 +114,10 @@ resource "cloudflare_dns_record" "rebase_send_txt" {
 }
 
 # Google Search Console's proof of ownership for the domain property (ORB-195). The
-# token is per Google account and per property; it is not a secret. Ivan's account
-# verifies with it; do not remove it.
+# token is per Google account and per property; it is not a secret. The property has
+# two owners (Ivan and ciao@letsrebase.com, read on 2026-10-20) and the zone carries two
+# verification tokens, this one and the Workspace one below; which account each serves
+# is not recorded anywhere we can read. Remove neither.
 resource "cloudflare_dns_record" "rebase_apex_google_site_verification_txt" {
   provider = cloudflare.rebase
   zone_id  = local.rebase_zone_id
@@ -130,10 +132,10 @@ resource "cloudflare_dns_record" "rebase_apex_google_site_verification_txt" {
 # into this file on 2026-10-20 (REB-702) exactly as they were, which is why none carries
 # a Cloudflare comment: adding one would be a change, and these four are only imported.
 # The mailbox (MX), its signature (DKIM) and its sender policy (SPF) make ciao@ work at
-# all. The site verification is the Workspace domain's own, and most likely also what
-# verified ciao@ as an owner of the Search Console domain property on 2026-10-20
-# (REB-700): Search Console says only «domain name provider», not which record. Remove
-# none of them.
+# all. The site verification was added in the same second as the SPF, so it came with
+# the Workspace setup; whether it is also what keeps an account verified in Search
+# Console is not known (the console says only «domain name provider»). Remove none of
+# them.
 resource "cloudflare_dns_record" "rebase_google_workspace_mx" {
   provider = cloudflare.rebase
   zone_id  = local.rebase_zone_id
