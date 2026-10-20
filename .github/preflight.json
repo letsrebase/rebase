@@ -180,6 +180,9 @@
         "projects/hub/packages/**",
         "projects/hub/apps/web/src/lib/amount_cases.json",
         "projects/hub/conftest.py",
+        "projects/hub/docker-compose.documenso.yml",
+        "projects/hub/documenso-backup/Dockerfile",
+        ".github/workflows/deploy-hub.yml",
         "pyproject.toml",
         "uv.lock"
       ],
@@ -324,7 +327,7 @@
     },
     {
       "id": "hub-documenso-compose",
-      "run": "cd projects/hub && [ \"$(POSTGRES_PASSWORD=x REBASE_DATA_DIR=. docker compose -p rebase config --services | sort | tr '\\n' ' ')\" = 'api campaigns cards db mcp sweep web ' ] && [ \"$(POSTGRES_PASSWORD=x REBASE_DATA_DIR=. REBASE_DOCUMENSO_DATA_DIR=. DOCUMENSO_DB_PASSWORD=x DOCUMENSO_NEXTAUTH_SECRET=x DOCUMENSO_ENCRYPTION_KEY=x DOCUMENSO_ENCRYPTION_SECONDARY_KEY=x DOCUMENSO_SIGNING_PASSPHRASE=x DOCUMENSO_SIGNING_CERT_BASE64=x REBASE_RESEND_API_KEY=x COMPOSE_FILE=docker-compose.yml:docker-compose.documenso.yml docker compose -p rebase config --services | sort | tr '\\n' ' ')\" = 'api campaigns cards db documenso documenso-db mcp sweep web ' ]",
+      "run": "cd projects/hub && [ \"$(POSTGRES_PASSWORD=x REBASE_DATA_DIR=. docker compose -p rebase config --services | sort | tr '\\n' ' ')\" = 'api campaigns cards db mcp sweep web ' ] && [ \"$(POSTGRES_PASSWORD=x REBASE_DATA_DIR=. REBASE_DOCUMENSO_DATA_DIR=. DOCUMENSO_DB_PASSWORD=x DOCUMENSO_NEXTAUTH_SECRET=x DOCUMENSO_ENCRYPTION_KEY=x DOCUMENSO_ENCRYPTION_SECONDARY_KEY=x DOCUMENSO_SIGNING_PASSPHRASE=x DOCUMENSO_SIGNING_CERT_BASE64=x REBASE_RESEND_API_KEY=x DOCUMENSO_BACKUP_CERT_B64=x DOCUMENSO_BACKUP_R2_ACCOUNT_ID=x DOCUMENSO_BACKUP_BUCKET=x DOCUMENSO_BACKUP_ACCESS_KEY_ID=x DOCUMENSO_BACKUP_SECRET_ACCESS_KEY=x DOCUMENSO_BACKUP_PING_URL=https://hc-ping.example.test/x COMPOSE_FILE=docker-compose.yml:docker-compose.documenso.yml docker compose -p rebase config --services | sort | tr '\\n' ' ')\" = 'api campaigns cards db documenso documenso-backup documenso-db mcp sweep web ' ]",
       "when": [
         "projects/hub/docker-compose.yml",
         "projects/hub/docker-compose.documenso.yml"
@@ -340,6 +343,16 @@
       ],
       "serial": true,
       "why": "REB-648. Vaultwarden has no code and no unit tests: what can break is the compose file, the backup and restore scripts and the pinned image, and the only check that reads all three is running them. This starts the real compose file on a throwaway data directory, proves it publishes on the loopback only, refuses a signup without an invitation and has the admin page off (and opens it with a hash, as the README writes it), then backs up into an S3 gateway, checks the object is an encrypted envelope and restores it on a scratch server. ci.yml runs the same script as the `vaultwarden` job. Serial: it starts containers and pulls an image."
+    },
+    {
+      "id": "hub-documenso-backup-drill",
+      "run": "shellcheck projects/hub/documenso-backup/scripts/*.sh projects/hub/documenso-backup/tests/*.sh && projects/hub/documenso-backup/tests/backup-restore.sh",
+      "when": [
+        "projects/hub/documenso-backup/**",
+        "projects/hub/docker-compose.documenso.yml"
+      ],
+      "serial": true,
+      "why": "REB-715. The Documenso backup is bash around pg_dump, openssl and curl, and the only check that reads the compose file, the image, the scripts and the pinned Postgres together is running them. This builds the backup service's image from the real compose file, starts the real `documenso-db` with a migration row and a contract in it, backs up into an S3 gateway, checks the object is an encrypted envelope for two recipients that no other key opens, runs the loop against a stand-in for healthchecks.io (a ping after a success, `/fail` after a refused upload, the URL never printed), and restores the object into a scratch Postgres twice, from the unpacked file and straight from the envelope, reading the contract back byte for byte. ci.yml runs the same script as the `hub · documenso backup and restore drill` job. Serial: it builds an image and starts containers."
     },
     {
       "id": "nix-packages",

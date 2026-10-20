@@ -118,4 +118,15 @@ jobs:
       health-url: http://127.0.0.1:8084/health
       extra-health-url: http://127.0.0.1:8088/health
       url: https://letsrebase.com/hub/
+      # What the Documenso backup uploads and reports with (REB-715): the R2 key pair and
+      # the healthchecks.io ping URL, templated into the host `.env` from this
+      # environment's secret of the same name, as the CRM's role password is (REB-650).
+      # The compose file requires all three only where COMPOSE_FILE names
+      # `docker-compose.documenso.yml`, which is production's `.env` alone; the preview
+      # job above lists none, since it never loads that file. A name listed and unset on
+      # `hub-production` fails the deploy loudly, which is the point.
+      env-secrets: |
+        DOCUMENSO_BACKUP_ACCESS_KEY_ID
+        DOCUMENSO_BACKUP_SECRET_ACCESS_KEY
+        DOCUMENSO_BACKUP_PING_URL
     secrets: inherit

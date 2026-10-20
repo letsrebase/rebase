@@ -1,0 +1,23 @@
+# The drill's stand-ins on the compose network: for R2, an S3 gateway that verifies
+# Signature V4, and for healthchecks.io, `ping`, which answers 200 to anything and logs
+# each request line (`docker compose logs ping`). The backup service is pointed at both.
+# Throwaway keys, throwaway storage.
+services:
+  s3:
+    image: ghcr.io/versity/versitygw:v1.8.0
+    command: ['--access', 'drillkey', '--secret', 'drillsecret', 'posix', '--nometa', '/data']
+    tmpfs:
+      - /data
+  ping:
+    image: nginx:1.31-alpine
+    volumes:
+      - ./documenso-backup/tests/ping.conf:/etc/nginx/conf.d/default.conf:ro
+  documenso-backup:
+    depends_on:
+      s3:
+        condition: service_started
+      ping:
+        condition: service_started
+    environment:
+      DOCUMENSO_BACKUP_S3_ENDPOINT: http://s3:7070
+      DOCUMENSO_BACKUP_REGION: us-east-1

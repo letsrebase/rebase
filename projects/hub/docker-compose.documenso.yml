@@ -13,8 +13,9 @@
 # (docs/superpowers/specs/2026-09-23-documenso-probe.md § 1); v2.20.0 replaced it after
 # its release notes (REB-712). Documenso's uploaded and sealed PDFs
 # live in its own Postgres (`NEXT_PUBLIC_UPLOAD_TRANSPORT=database`), so the data to back
-# up is REBASE_DOCUMENSO_DATA_DIR and nothing else. About 630 MiB of memory once warm,
-# 80 MiB for its Postgres.
+# up is REBASE_DOCUMENSO_DATA_DIR and nothing else: `documenso-backup` below does it every
+# night (REB-715). About 630 MiB of memory once warm, 80 MiB for its Postgres, 20 MiB
+# for the backup between its runs.
 services:
   documenso-db:
     image: postgres:17-alpine
@@ -79,3 +80,57 @@ services:
       # Loopback only: the host's nginx serves it as firma.letsrebase.com
       # (deploy/firma.letsrebase.conf).
       - '${REBASE_DOCUMENSO_PORT:-127.0.0.1:8090}:3000'
+
+  documenso-backup:
+    # The off-host backup (docs/restore-documenso.md, REB-715): once a day, and once at
+    # start, it dumps the database with `pg_dump`, encrypts the archive to the public
+    # certificate(s) in DOCUMENSO_BACKUP_CERT_B64, whose private key is not on this host,
+    # and puts the result in the private R2 bucket under `documenso/`. Vaultwarden's
+    # backup service is the model (projects/vaultwarden): a loop and not a one-shot,
+    # because `_deploy-compose.yml` fails a deploy on any container that is not
+    # `running`, and scheduled here and not by a host cron, because the schedule is
+    # released by the deploy and there is nothing to install on the host by hand.
+    #
+    # Built from the database's own image (./documenso-backup/Dockerfile) so `pg_dump`
+    # matches the server's major version; the scripts are copied in, so a change to one is
+    # a new image and a recreated container. Its work directory is a tmpfs: the archive is
+    # every contract in clear until the envelope is made, and a container killed in the
+    # middle (an OOM kill, a power cut) must leave it nowhere a disk keeps it. Twice the
+    # archive fits in it (about 25 MiB today); an archive more than about 380 MiB fails
+    # the run with a full disk, which the monitor hears, and the size here is the line to
+    # change.
+    build:
+      context: ./documenso-backup
+    restart: unless-stopped
+    init: true
+    entrypoint: ['/bin/bash', '/scripts/backup-loop.sh']
+    depends_on:
+      documenso-db:
+        condition: service_healthy
+    environment:
+      TMPDIR: /scratch
+      PGHOST: documenso-db
+      PGUSER: documenso
+      PGDATABASE: documenso
+      PGPASSWORD: ${DOCUMENSO_DB_PASSWORD:?set it in .env, openssl rand -hex 24}
+      DOCUMENSO_BACKUP_CERT_B64: ${DOCUMENSO_BACKUP_CERT_B64:?set it in .env, one or more PEM certificates as one line of base64}
+      DOCUMENSO_BACKUP_S3_ENDPOINT: https://${DOCUMENSO_BACKUP_R2_ACCOUNT_ID:?set it in .env, the Cloudflare account id}.r2.cloudflarestorage.com
+      DOCUMENSO_BACKUP_BUCKET: ${DOCUMENSO_BACKUP_BUCKET:?set it in .env, the R2 bucket the backup is written to}
+      DOCUMENSO_BACKUP_ACCESS_KEY_ID: ${DOCUMENSO_BACKUP_ACCESS_KEY_ID:?an Environment secret, written by the deploy}
+      DOCUMENSO_BACKUP_SECRET_ACCESS_KEY: ${DOCUMENSO_BACKUP_SECRET_ACCESS_KEY:?an Environment secret, written by the deploy}
+      DOCUMENSO_BACKUP_AT: ${DOCUMENSO_BACKUP_AT:-03:45}
+      # The healthchecks.io check the loop pings after every run, the alarm a person
+      # actually receives; the healthcheck below only shows on the host.
+      DOCUMENSO_BACKUP_PING_URL: ${DOCUMENSO_BACKUP_PING_URL:?an Environment secret, written by the deploy}
+    tmpfs:
+      - /scratch:mode=0700,size=768m
+    # Whether the last backup finished less than 26 hours ago, so `docker compose ps`
+    # shows `unhealthy` for a backup that is failing quietly. It does not fail a deploy:
+    # only a container that is not `running` does. Nobody reads it unprompted, which is
+    # why the loop also pings the monitor.
+    healthcheck:
+      test: ['CMD-SHELL', 'test -n "$$(find /tmp/last-backup-ok -mmin -1560 2>/dev/null)"']
+      interval: 10m
+      timeout: 10s
+      retries: 1
+      start_period: 15m

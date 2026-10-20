@@ -22,11 +22,14 @@ terraform init
 terraform plan        # nothing to do is the expected answer
 ```
 
-`r2.tf` is not DNS: the private bucket of Vaultwarden's backup (REB-648) and its ninety-day
-expiry. It needs the `letsrebase.com` token to carry *Account → Workers R2 Storage → Edit*
-as well as *Zone → DNS → Edit*, and the account id above. The S3 access key the backup
+`r2.tf` is not DNS: the private bucket of the backups, Vaultwarden's (REB-648) and, under
+the prefix `documenso/`, Documenso's database (REB-715), and the ninety-day expiry rule of
+each prefix. It needs the `letsrebase.com` token to carry *Account → Workers R2 Storage →
+Edit* as well as *Zone → DNS → Edit*, and the account id above. The S3 access key a backup
 uploads with is made in the dashboard (R2, Manage API tokens, Object Read and Write, that
-one bucket) and is a GitHub Environment secret, never a Terraform output.
+one bucket) and is a GitHub Environment secret, never a Terraform output. The expiry
+resource cannot be imported in provider 5.25.0, so a checkout without the state that made
+it plans to create it, which sets the same rules on the bucket again.
 
 A change is a change to a `.tf` file, a `plan` read twice, an `apply`, and the commit
 that ships the file. Never the panel first: a record changed by hand is drift, and the
