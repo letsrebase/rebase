@@ -2,6 +2,7 @@ import path from 'node:path'
 import { defineConfig } from 'vitest/config'
 import { palettePlugin } from './src/palette-plugin'
 import { pathMapPlugin } from './src/path-map-plugin'
+import { structuredDataPlugin } from './src/site-text'
 
 const apiUrl = process.env.WEBSITE_API_URL ?? 'http://localhost:8000'
 
@@ -18,8 +19,9 @@ export default defineConfig({
   // `pathMapPlugin` is the dev and preview servers' copy of deploy/nginx.conf: `/` is
   // the landing, `/pigrocrm` the CRM's page, `/community` and `/orbiters` both 301 to
   // it since the community page was retired (REB-72), and anything else a 404. Its
-  // unit test reads nginx.conf, so the two cannot drift quietly.
-  plugins: [palettePlugin(), pathMapPlugin()],
+  // unit test reads nginx.conf, so the two cannot drift quietly. structuredDataPlugin
+  // writes the home's FAQPage from its own «Le domande» markup (REB-701).
+  plugins: [palettePlugin(), pathMapPlugin(), structuredDataPlugin()],
   // 'mpa' turns off Vite's fallback to index.html for a path that resolves to no file.
   // With it on, an unknown path answered 200 with PigroCRM's page here and 404 in
   // production (ORB-21); the plugin above decides the known paths, this makes the

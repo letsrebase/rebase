@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { SITE_HOST } from './path-map-plugin'
+import { LOGO_PATH, SITE_HOST } from './path-map-plugin'
 
 const PAGES = ['index.html', 'pigrocrm.html', 'privacy.html', 'terms.html'] as const
 const html = Object.fromEntries(
@@ -391,9 +391,10 @@ describe('index.html', () => {
   })
 
   it('carries WebSite and Organization structured data, with nothing invented', () => {
-    // REB-113: one block, on this page only (links.test.ts checks the other five carry
-    // none). The legal entity, its VAT number and its contact address are the ones
-    // privacy.html and terms.html already state.
+    // REB-113, extended by REB-701: one hand-written block here (the FAQPage is added at
+    // build time from the page's own questions, site-text.test.ts). The legal entity,
+    // its VAT number and its contact address are the ones privacy.html and terms.html
+    // already state.
     const scripts = [...page.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)]
     expect(scripts).toHaveLength(1)
     const data = JSON.parse(scripts[0]![1]!)
@@ -404,10 +405,14 @@ describe('index.html', () => {
     // toMatchObject alone would not fail on an extra, invented property (a postal
     // address, say); the exact key set is checked too, so the "nothing invented" rule
     // this test's name promises actually holds.
-    expect(Object.keys(website).sort()).toEqual(['@type', 'name', 'url'].sort())
-    expect(website).toMatchObject({ name: 'rebase', url: 'https://letsrebase.com/' })
+    expect(Object.keys(website).sort()).toEqual(['@type', '@id', 'name', 'url', 'inLanguage', 'publisher'].sort())
+    expect(website).toMatchObject({
+      name: 'rebase',
+      url: 'https://letsrebase.com/',
+      publisher: { '@id': organization['@id'] },
+    })
     expect(Object.keys(organization).sort()).toEqual(
-      ['@type', 'name', 'legalName', 'url', 'logo', 'vatID', 'email'].sort(),
+      ['@type', '@id', 'name', 'legalName', 'url', 'logo', 'description', 'vatID', 'email', 'sameAs'].sort(),
     )
     expect(organization).toMatchObject({
       name: 'rebase',
@@ -415,11 +420,15 @@ describe('index.html', () => {
       url: 'https://letsrebase.com/',
       vatID: '14518240966',
       email: 'ivansala@humancraft.tech',
+      sameAs: ['https://github.com/letsrebase'],
     })
-    // The logo is checked against the page's own og:image rather than a second
-    // hardcoded literal, so a future redraw (the numbered file REB-205 already owns)
-    // cannot update one and silently leave the other stale.
-    expect(organization.logo).toBe(meta(page, 'og:image'))
+    // Checked against what the page and the build already say rather than a second
+    // literal: the description is the og:description, the logo the fixed-name copy of
+    // the favicon's mark, and the one profile the organisation the FAQ links into.
+    expect(organization.description).toBe(meta(page, 'og:description'))
+    expect(organization.logo).toBe(`${SITE_HOST}${LOGO_PATH}`)
+    expect(page).toMatch(/<link rel="icon" type="image\/svg\+xml" href="\.\/rebase-logo\.svg" \/>/)
+    expect(page).toContain('href="https://github.com/letsrebase/rebase"')
   })
 
   it('signs its footer with the studio behind the site, never with a fixture', () => {
@@ -596,5 +605,33 @@ describe('terms.html', () => {
       expect(page.toLowerCase()).toContain(claim)
     }
     expect(page).not.toMatch(/abbonamento|canone|SLA/i)
+  })
+})
+
+describe('pigrocrm.html structured data (REB-701)', () => {
+  const page = html['pigrocrm.html']
+
+  it('describes the CRM as a SoftwareApplication, with only what the site already says', () => {
+    const scripts = [...page.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)]
+    expect(scripts).toHaveLength(1)
+    const app = JSON.parse(scripts[0]![1]!)
+    expect(Object.keys(app).sort()).toEqual(
+      [
+        '@context', '@type', '@id', 'name', 'url', 'description', 'applicationCategory', 'inLanguage',
+        'featureList', 'offers', 'isAccessibleForFree', 'publisher',
+      ].sort(),
+    )
+    expect(app).toMatchObject({
+      '@type': 'SoftwareApplication',
+      name: 'PigroCRM',
+      url: `${SITE_HOST}/pigrocrm`,
+      offers: { '@type': 'Offer', price: '0', priceCurrency: 'EUR' },
+      publisher: { '@id': `${SITE_HOST}/#organization` },
+    })
+    expect(app.description).toBe(meta(page, 'description'))
+    // The four features are the four card titles of «Cosa c'è dentro», read off the page.
+    for (const feature of app.featureList as string[]) expect(page).toContain(`<h3>${feature}</h3>`)
+    // Free is what the home's FAQ answers to «Quanto costa entrare?».
+    expect(html['index.html']).toContain('<h3>Quanto costa entrare?</h3>\n              <p>Niente.')
   })
 })

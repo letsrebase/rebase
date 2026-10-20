@@ -192,10 +192,11 @@ describe.each(PAGE_FILES)('%s', (name) => {
     expect(ogUrl, `${name} og:url`).toBe(expected)
   })
 
-  it('carries structured data only if it is the front door', () => {
-    // REB-113: the WebSite/Organization block lives on index.html alone; the assertion
-    // that block is well-formed and says what the legal pages say is landing-pages.test.ts's.
-    expect(html[name].includes('application/ld+json'), name).toBe(name === 'index.html')
+  it('carries structured data only if it is the front door or the CRM\'s page', () => {
+    // REB-113: the WebSite/Organization block lives on index.html; REB-701 added the
+    // SoftwareApplication on pigrocrm.html. Both blocks are checked for what they say in
+    // landing-pages.test.ts; the decks and the legal pages carry none.
+    expect(html[name].includes('application/ld+json'), name).toBe(['index.html', 'pigrocrm.html'].includes(name))
   })
 })
 

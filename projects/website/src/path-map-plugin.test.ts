@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { ELSEWHERE, GENERATED_PATHS, NOINDEX, PAGES, REDIRECTS, SITE_HOST, pathMapPlugin, route } from './path-map-plugin'
+import { ELSEWHERE, GENERATED_PATHS, LOGO_PATH, NOINDEX, PAGES, REDIRECTS, SITE_HOST, pathMapPlugin, route } from './path-map-plugin'
 
 const nginx = readFileSync(join(__dirname, '..', 'deploy', 'nginx.conf'), 'utf-8')
 const vhost = readFileSync(join(__dirname, '..', 'deploy', 'letsrebase.conf'), 'utf-8')
@@ -11,8 +11,9 @@ const vhost = readFileSync(join(__dirname, '..', 'deploy', 'letsrebase.conf'), '
 function nginxMap(conf: string): { pages: Record<string, string>; redirects: Record<string, string> } {
   const pages: Record<string, string> = {}
   const redirects: Record<string, string> = {}
+  // A `charset` before `try_files` is allowed: llms.txt's location carries one (REB-701).
   for (const [, path, file, to] of conf.matchAll(
-    /^\s*location = (\S+)\s*\{\s*(?:try_files (\S+) =404|return 301 (\S+));\s*\}/gm,
+    /^\s*location = (\S+)\s*\{\s*(?:charset \S+;\s*)?(?:try_files (\S+) =404|return 301 (\S+));\s*\}/gm,
   )) {
     if (file) pages[path!] = file
     // `$is_args$args` is how nginx says "carry the query string", which the dev server
@@ -169,6 +170,48 @@ describe('sitemap.xml (REB-110)', () => {
       if (typeof writeBundle !== 'function') throw new Error('writeBundle is not a plain function')
       writeBundle.call({} as never, { dir } as never, {} as never)
       expect(readFileSync(join(dir, 'sitemap.xml'), 'utf-8')).toContain(`${SITE_HOST}/pigrocrm`)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('llms.txt (REB-701)', () => {
+  it('has its own exact-match location in nginx.conf, which names the charset', () => {
+    expect(nginx).toMatch(/location = \/llms\.txt \{ charset utf-8; try_files \/llms\.txt =404; \}/)
+  })
+
+  it('links exactly the indexable pages, each with its own title and description', () => {
+    const decision = route('/llms.txt')
+    if (decision.kind !== 'generated') throw new Error('unreachable')
+    expect(decision.contentType).toBe('text/plain; charset=utf-8')
+    const pages = decision.content.split('## Per entrare')[0]!
+    const linked = [...pages.matchAll(/^- \[[^\]]+\]\((\S+)\): \S/gm)].map((m) => m[1])
+    const expected = Object.keys(PAGES)
+      .filter((path) => !(NOINDEX as readonly string[]).includes(path))
+      .map((path) => `${SITE_HOST}${path}`)
+    expect([...linked].sort()).toEqual([...expected].sort())
+    const pigrocrm = readFileSync(join(__dirname, 'pigrocrm.html'), 'utf-8')
+    const title = pigrocrm.match(/<title>([^<]+)<\/title>/)![1]!
+    expect(decision.content).toContain(`- [${title}](${SITE_HOST}/pigrocrm): PigroCRM: clienti`)
+  })
+
+  it('starts with the site name and a summary line, the two parts llmstxt.org requires', () => {
+    const decision = route('/llms.txt')
+    if (decision.kind !== 'generated') throw new Error('unreachable')
+    expect(decision.content).toMatch(/^# rebase\n\n> rebase mette insieme /)
+  })
+
+  it('is written into the build output with the brand mark under its fixed name', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'website-llms-'))
+    try {
+      const { writeBundle } = pathMapPlugin()
+      if (typeof writeBundle !== 'function') throw new Error('writeBundle is not a plain function')
+      writeBundle.call({} as never, { dir } as never, {} as never)
+      expect(readFileSync(join(dir, 'llms.txt'), 'utf-8')).toContain('## Le domande')
+      expect(readFileSync(join(dir, LOGO_PATH.slice(1)), 'utf-8')).toBe(
+        readFileSync(join(__dirname, 'rebase-logo.svg'), 'utf-8'),
+      )
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

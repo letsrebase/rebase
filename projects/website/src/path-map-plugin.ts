@@ -1,7 +1,8 @@
-import { writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, writeFileSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import type { Plugin } from 'vite'
+import { llmsTxt } from './site-text'
 
 /**
  * The path map, as the dev and preview servers serve it.
@@ -44,11 +45,18 @@ export const REDIRECTS: Readonly<Record<string, string>> = { '/orbiters': '/', '
 
 /** Paths nginx serves via `try_files`, exactly like `PAGES`, whose file this plugin
  *  writes at build time instead of Vite building it from an HTML input named in
- *  `vite.config.ts`: robots.txt (REB-109), naming the sitemap, and sitemap.xml
- *  (REB-110), listing every entry in `PAGES` that is not in `NOINDEX`. A page added to
- *  `PAGES` needs no edit here. */
-export const GENERATED_PATHS = ['/robots.txt', '/sitemap.xml'] as const
+ *  `vite.config.ts`: robots.txt (REB-109), naming the sitemap, sitemap.xml (REB-110),
+ *  listing every entry in `PAGES` that is not in `NOINDEX`, and llms.txt (REB-701), the
+ *  same pages described for an AI assistant from their own titles and descriptions. A
+ *  page added to `PAGES` needs no edit here. */
+export const GENERATED_PATHS = ['/robots.txt', '/sitemap.xml', '/llms.txt'] as const
 type GeneratedPath = (typeof GENERATED_PATHS)[number]
+
+/** The brand mark under a name that never changes, for the Organization's `logo` in
+ *  index.html's structured data (REB-701). The favicon links the same file through
+ *  Vite, which hashes its name on every build; a crawler needs an address that holds
+ *  still, so the build also copies it here, the way `share-card-<N>.png` sits beside it. */
+export const LOGO_PATH = '/assets/rebase-logo.svg'
 
 /** Pages excluded from the sitemap, in the same list shape as `GENERATED_PATHS` since
  *  neither is a `PAGES`-style map from a path to a file: the two decks, `/pitch` and
@@ -72,12 +80,18 @@ function robotsTxt(): string {
   return `User-agent: *\nSitemap: ${SITE_HOST}/sitemap.xml\n`
 }
 
+/** `PAGES` without `NOINDEX`: the pages the sitemap and llms.txt both list. */
+function indexablePages(): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(PAGES).filter(([path]) => !(NOINDEX as readonly string[]).includes(path)),
+  )
+}
+
 /** No `lastmod`, `changefreq` or `priority`: none of them would be true. A build
  *  timestamp on every page every deploy tells a crawler nothing and is worse than
  *  their absence (REB-110). */
 function sitemapXml(): string {
-  const urls = Object.keys(PAGES)
-    .filter((path) => !(NOINDEX as readonly string[]).includes(path))
+  const urls = Object.keys(indexablePages())
     .map((path) => `  <url><loc>${SITE_HOST}${path}</loc></url>`)
     .join('\n')
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`
@@ -94,6 +108,10 @@ function generate(pathname: GeneratedPath): { content: string; contentType: stri
       // its own mime.types, which maps .xml to text/xml, and this module's whole
       // point is saying the same thing nginx says.
       return { content: sitemapXml(), contentType: 'text/xml; charset=utf-8' }
+    case '/llms.txt':
+      // charset spelled out, unlike robots.txt: this file is Italian prose, and
+      // deploy/nginx.conf adds `charset utf-8` to its location for the same reason.
+      return { content: llmsTxt(SITE_HOST, indexablePages()), contentType: 'text/plain; charset=utf-8' }
   }
 }
 
@@ -211,6 +229,9 @@ export function pathMapPlugin(): Plugin {
       for (const pathname of GENERATED_PATHS) {
         writeFileSync(join(dir, pathname.slice(1)), generate(pathname).content)
       }
+      const logo = join(dir, LOGO_PATH.slice(1))
+      mkdirSync(dirname(logo), { recursive: true })
+      copyFileSync(join(__dirname, 'rebase-logo.svg'), logo)
     },
   }
 }

@@ -89,11 +89,28 @@ thing twice, once for production and once for the dev and preview servers. Chang
 and change the other: `path-map-plugin.test.ts` reads `nginx.conf` and fails until you
 have.
 
-`robots.txt` (REB-109) and `sitemap.xml` (REB-110) are a third kind of build output,
-next to the six pages and the hashed assets: `src/path-map-plugin.ts`'s own
-`writeBundle` hook writes both straight into `dist/`, since neither has an HTML input
-in `vite.config.ts` to build it from. `GENERATED_PATHS` in that file lists them, and
-is where the next file made this way goes.
+`robots.txt` (REB-109), `sitemap.xml` (REB-110) and `llms.txt` (REB-701) are a third
+kind of build output, next to the six pages and the hashed assets:
+`src/path-map-plugin.ts`'s own `writeBundle` hook writes them straight into `dist/`,
+since none has an HTML input in `vite.config.ts` to build it from. `GENERATED_PATHS` in
+that file lists them, and is where the next file made this way goes. The same hook
+copies the brand mark to `/assets/rebase-logo.svg`, a name that never changes, for the
+Organization's logo.
+
+What a search engine or an AI assistant reads about the site is derived from the pages,
+never written a second time (`src/site-text.ts`). `llms.txt` lists the indexable pages
+with their own `<title>` and meta description, the hub doors the home offers as
+buttons, and the home's «Le domande» with their answers. The home's FAQPage structured
+data is added at build time from that same section. The WebSite, Organization (home)
+and SoftwareApplication (`/pigrocrm`) blocks are hand-written in the heads, and their
+tests hold every value to something the site already says. So a new question in «Le
+domande» needs no other edit; a new fact in a JSON-LD block needs the page to say it
+first.
+
+Search Console's domain property for `letsrebase.com` is owned by ciao@letsrebase.com
+and by Ivan; the sitemap is submitted there. Only the four pages in the sitemap are
+meant to be indexed: `/pitch` and `/company` say `noindex`, the hub's SPA says
+`noindex` on every route, and PigroCRM's host answers `Disallow: /`.
 
 `deploy/letsrebase.conf` is the host's vhost: it terminates TLS and sends everything
 here except what belongs to the other tenants of the origin: `/hub/`, `/api/hub/`,
