@@ -593,10 +593,21 @@ signed on Documenso"); this section is the container's own.
 - **Name and port**: `https://firma.letsrebase.com`, the vhost `deploy/firma.letsrebase.conf`
   (its own certificate) in front of 127.0.0.1:8090.
 - **Data**: its own Postgres, `documenso-db`, on `REBASE_DOCUMENSO_DATA_DIR`
-  (`/srv/rebase-data/documenso-postgres`), with every uploaded and sealed PDF in it:
-  nothing backs it up yet, nor the hub's own Postgres (REB-475). About 500 to 630 MiB of
-  memory once warm, 45 to 80 MiB for its Postgres; the origin has 3.8 GB and 4 GB of swap
-  since 2026-09-25.
+  (`/srv/rebase-data/documenso-postgres`), with every uploaded and sealed PDF in it.
+  About 500 to 630 MiB of memory once warm, 45 to 80 MiB for its Postgres; the origin has
+  3.8 GB and 4 GB of swap since 2026-09-25.
+- **Backup** (REB-715): the `documenso-backup` service of `docker-compose.documenso.yml`
+  dumps that database with `pg_dump` every night at 03:45 UTC (and once after a start),
+  encrypts the archive to the public certificate in `DOCUMENSO_BACKUP_CERT_B64`, uploads it
+  to R2 under `documenso/` and pings a healthchecks.io check, the way Vaultwarden's backup
+  does (`projects/vaultwarden`). The private key is on no server. `documenso-backup/` holds
+  its Dockerfile, scripts and drill (`tests/backup-restore.sh`, run by the `hub · documenso
+  backup and restore drill` job and preflight's `hub-documenso-backup-drill`); the restore
+  is [`docs/restore-documenso.md`](docs/restore-documenso.md). A change to `scripts/` is
+  done when the drill passes. **The hub's own Postgres is still backed up by nothing**
+  (REB-475, Ivan, postponed on 2026-09-28), and the dump holds neither Documenso's
+  encryption keys nor its seal certificate: the runbook says where those are and what that
+  costs.
 - **Certificate**: self-signed, made on the host with OpenSSL, in the `.env` as the
   `.p12` on one line of base64 with its passphrase. The seal is valid and PDF readers say
   its issuer is not trusted; a certificate on Adobe's trust list is a later purchase.

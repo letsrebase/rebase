@@ -13,6 +13,8 @@ HUB = Path(__file__).resolve().parents[3]
 COMPOSE = HUB / "docker-compose.yml"
 DOCUMENSO = HUB / "docker-compose.documenso.yml"
 EXAMPLE = HUB / ".env.example"
+BACKUP_DOCKERFILE = HUB / "documenso-backup" / "Dockerfile"
+DEPLOY = HUB.parents[1] / ".github" / "workflows" / "deploy-hub.yml"
 # Phase 1 probed v2.18.0; v2.20.0 replaced it after its release notes, which list no
 # breaking change, migration or new variable for v2.19 or v2.20 (REB-712).
 PINNED = (
@@ -82,9 +84,14 @@ def test_every_variable_documenso_requires_is_in_the_env_example_and_commented()
         "REBASE_RESEND_API_KEY",
     }
     example = EXAMPLE.read_text(encoding="utf-8")
+    managed = _managed_secrets()
     # The hub's own Resend key is already there, uncommented: Documenso reuses it.
     for name in required - {"REBASE_RESEND_API_KEY"}:
-        assert f"# {name}=" in example, name
+        if name in managed:
+            # Written by the deploy, never by hand: the example names it and says so.
+            assert f"#   {name} " in example, name
+        else:
+            assert f"# {name}=" in example, name
     # Commented: a `.env` copied from the example loads no Documenso until someone means it.
     assert "# COMPOSE_FILE=docker-compose.yml:docker-compose.documenso.yml" in example
     assert "\nCOMPOSE_FILE=" not in example
@@ -132,3 +139,66 @@ def test_the_hub_compose_file_runs_the_campaigns_loop_every_minute_with_no_port(
     assert "init: true" in loop
     assert "environment: *api-environment" in loop
     assert "ports:" not in loop
+
+
+def _backup_service() -> str:
+    return _documenso().split("\n  documenso-backup:", 1)[1]
+
+
+def _managed_secrets() -> set[str]:
+    """The names `deploy-hub.yml`'s production job writes into the host `.env` from the
+    `hub-production` Environment (`env-secrets`)."""
+    deploy = DEPLOY.read_text(encoding="utf-8")
+    assert deploy.count("env-secrets:") == 1, "only production templates secrets into .env"
+    assert deploy.index("env-secrets:") > deploy.index("\n  production:")
+    block = re.search(r"env-secrets: \|\n((?:[ ]+[A-Z0-9_]+\n)+)", deploy)
+    assert block is not None
+    return set(block.group(1).split())
+
+
+def test_the_nightly_backup_is_a_loop_with_no_port_in_productions_file_only() -> None:
+    """REB-715: a loop and not a one-shot, since `_deploy-compose.yml` fails a deploy on
+    any container that is not `running`; no port, since nothing ever calls it; and not in
+    the hub's own compose file, which the preview loads and which must never need the
+    backup's secrets."""
+    service = _backup_service()
+    assert "entrypoint: ['/bin/bash', '/scripts/backup-loop.sh']" in service
+    assert "restart: unless-stopped" in service
+    assert "init: true" in service
+    assert "ports:" not in service
+    assert "condition: service_healthy" in service
+    assert "documenso-backup" not in _compose()
+
+
+def test_the_backup_dumps_with_the_same_postgres_the_database_runs_pinned_by_digest() -> None:
+    """A `pg_dump` older than its server refuses to run; a newer one writes an archive an
+    older `pg_restore` cannot read. The backup image is built FROM the database's tag, and
+    by digest as well: `build --pull` on the deploy would otherwise move the host's tag and
+    recreate every database container that names it."""
+    database = re.search(r"\n  documenso-db:\n    image: (postgres:\S+)\n", _documenso())
+    assert database is not None
+    dockerfile = BACKUP_DOCKERFILE.read_text(encoding="utf-8")
+    assert re.search(
+        rf"^FROM {re.escape(database.group(1))}@sha256:[0-9a-f]{{64}}$", dockerfile, re.MULTILINE
+    )
+
+
+def test_the_backup_is_encrypted_to_a_certificate_and_its_secrets_are_the_deploys() -> None:
+    """The certificate is a hand-written line of `.env` (it is public); the R2 key pair and
+    the monitor's URL are Environment secrets the production deploy templates in, and the
+    compose file requires every one of them, so a deploy that lost one refuses to start
+    rather than running a backup that cannot upload or cannot be heard."""
+    required = set(re.findall(r"\$\{(DOCUMENSO_BACKUP_[A-Z0-9_]+):\?", _backup_service()))
+    assert required == {
+        "DOCUMENSO_BACKUP_CERT_B64",
+        "DOCUMENSO_BACKUP_R2_ACCOUNT_ID",
+        "DOCUMENSO_BACKUP_BUCKET",
+        "DOCUMENSO_BACKUP_ACCESS_KEY_ID",
+        "DOCUMENSO_BACKUP_SECRET_ACCESS_KEY",
+        "DOCUMENSO_BACKUP_PING_URL",
+    }
+    assert _managed_secrets() == {
+        "DOCUMENSO_BACKUP_ACCESS_KEY_ID",
+        "DOCUMENSO_BACKUP_SECRET_ACCESS_KEY",
+        "DOCUMENSO_BACKUP_PING_URL",
+    }
