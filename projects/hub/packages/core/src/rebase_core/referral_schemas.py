@@ -42,6 +42,18 @@ class MemberReferral(BaseModel):
     referred: list[MemberReferralItem]
 
 
+class PublicReferralRates(BaseModel):
+    """`GET /api/hub/referral-rates`: the two percentages of rebase's margin a referral
+    earns, as the admin's settings row holds them right now, and nothing else. This is
+    the one referral shape a stranger reads, so it is closed on purpose: no code, no
+    count, no margin, no euro figure of any engagement. Both fields are `Decimal`, which
+    JSON carries as a string with the column's four places (`"0.1000"` is 10%), exactly as
+    `MemberReferral` does: the site multiplies by 100 and drops the trailing zeros."""
+
+    rate_freelancer: Decimal
+    rate_company: Decimal
+
+
 class MatchReferral(BaseModel):
     """One referred side of a match, as the admin's «Match» list reads it (REB-609).
     `stato` is a reward's own state once one exists for this referral and its letter
@@ -200,6 +212,7 @@ __all__ = [
     "MatchReferral",
     "MemberReferral",
     "MemberReferralItem",
+    "PublicReferralRates",
     "REFERRAL_CODE_LENGTH",
     "ReferralEvidence",
     "ReferralLedgerItem",

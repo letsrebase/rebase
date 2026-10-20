@@ -19,6 +19,7 @@ from rebase_api.routers import (
     matches,
     members,
     pigro,
+    referral_rates,
     resend,
     signups,
     team,
@@ -109,6 +110,7 @@ def create_app() -> FastAPI:
     app.include_router(matches.router)
     app.include_router(documenso.router)
     app.include_router(members.router)
+    app.include_router(referral_rates.router)
     app.include_router(campaigns.public)
     app.include_router(campaigns.router)
     app.include_router(pigro.router)
