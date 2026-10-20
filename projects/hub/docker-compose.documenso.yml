@@ -96,9 +96,9 @@ services:
     # a new image and a recreated container. Its work directory is a tmpfs: the archive is
     # every contract in clear until the envelope is made, and a container killed in the
     # middle (an OOM kill, a power cut) must leave it nowhere a disk keeps it. Twice the
-    # archive fits in it (about 25 MiB today); an archive more than about 380 MiB fails
-    # the run with a full disk, which the monitor hears, and the size here is the line to
-    # change.
+    # archive fits in it (the dump is about 5 MiB today); an archive of more than about
+    # 380 MiB fails the run with a full disk, which the monitor hears, and the size here
+    # is the line to change.
     build:
       context: ./documenso-backup
     restart: unless-stopped
