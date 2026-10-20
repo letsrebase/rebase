@@ -57,11 +57,8 @@ describe.each(PAGES)('%s', (name) => {
     // Policy, which Google's verification requires. Allowed as an `<a href>` the reader
     // clicks and nothing else: the same host as a `src`, or as a `<link>`, still fails
     // the allowlist below.
-    // REB-605: the landing's events link the rebase house's own Luma page the same
-    // way, an `<a href>` a reader clicks and nothing else: `luma.com` is not in the
-    // allowlist below, so a Luma `src` or `<link>` still fails it.
     const hrefOnlyLinks = new Set(
-      [...page.matchAll(/<a\b[^>]*\bhref="(https:\/\/(?:developers\.google\.com|luma\.com)\/[^"]*)"/g)].map(
+      [...page.matchAll(/<a\b[^>]*\bhref="(https:\/\/developers\.google\.com\/[^"]*)"/g)].map(
         (anchor) => anchor[1]!,
       ),
     )
@@ -301,12 +298,12 @@ describe('index.html', () => {
     // Seven roles, and the line that keeps the door open for an eighth.
     expect(page.match(/<ul class="roles"[\s\S]*?<\/ul>/)?.[0]?.match(/<li>/g)).toHaveLength(7)
     expect(page).toContain('Candidati lo stesso')
-    // The events are the roadmap's, the rebase house the only one with a link, on Luma.
-    // SFSCon (roadmap #295) is a maybe until the end of October: not on the page until
-    // it is decided.
-    for (const event of ['Milano Digital Week', 'rebase house', 'Wave by Vento', 'Codemotion']) expect(page).toContain(`<h3>${event}</h3>`)
-    expect(section('eventi').match(/<a /g)).toHaveLength(1)
-    expect(section('eventi')).toMatch(/<a class="quiet-link" href="https:\/\/luma\.com\/2n8qng2x">/)
+    // The events are the roadmap's, and only the ones still ahead: REB-703 took off the
+    // three that had passed by 2026-10-20. SFSCon (roadmap #295) is a maybe until the
+    // end of October: not on the page until it is decided.
+    const events = [...section('eventi').matchAll(/<h3>([^<]+)<\/h3>/g)].map((m) => m[1])
+    expect(events).toEqual(['Codemotion'])
+    expect(section('eventi')).not.toContain('<a ')
     expect(page).not.toContain('SFSCon')
     // Eight questions, each followed by its answer, in the same words the page uses
     // elsewhere.
