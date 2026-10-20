@@ -68,16 +68,10 @@ export function Shell({ children, panel = true }: { children: ReactNode; panel?:
         >
           Termini
         </a>
-        {/* The same attribution the landing's own footer carries, in the same shape
-            and pointing at the same host (ORB-116). Two footers that disagree is how
-            this one ended up naming a test fixture in production for a week (ORB-97),
-            so when one changes the other changes with it. */}
-        <a
-          href="https://humancraft.tech/"
-          className="bg-[var(--landing-surface)] p-[var(--landing-link-pad)] underline-offset-2 hover:underline"
-        >
-          Humancraft
-        </a>
+        {/* Privacy and terms only, like the landing's own footer: the studio link left
+            both with REB-704 (2026-10-20). Two footers that disagree is how this one
+            ended up naming a test fixture in production for a week (ORB-97), so when
+            one changes the other changes with it. */}
       </footer>
     </div>
   )

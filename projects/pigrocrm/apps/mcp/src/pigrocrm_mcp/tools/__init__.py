@@ -1635,7 +1635,7 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         volta emessa una fattura, un'azienda non si cancella piu', al massimo si disattiva.
 
         `dati` ha la forma di `update_azienda` piu' `nome` obbligatorio (il nome breve
-        mostrato nel selettore e nelle liste: «humancraft», «rebase ltd»). `profilo_fiscale`
+        mostrato nel selettore e nelle liste: «studio rossi», «rebase ltd»). `profilo_fiscale`
         ha la forma di `update_fiscal_profile`: `pack_id` `it-flat-rate` con `codice_regime`
         per un'azienda italiana, `non-it` per una con sede all'estero, che non ha regime,
         non applica il bollo e, con aliquota IVA zero, richiede una `natura_default`. Un

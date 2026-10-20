@@ -49,7 +49,7 @@ class LegalEntity(Base, PrimaryKeyMixin, TimestampMixin):
     the name they already carry. The fiscal columns mirror `customers` exactly rather
     than being free text, because FatturaPA is built on them (slice 3).
 
-    What the row gained: `nome`, the short name the selector shows («humancraft»,
+    What the row gained: `nome`, the short name the selector shows («studio rossi»,
     distinct from `ragione_sociale`); `predefinita`, exactly one `True` per space,
     enforced by the partial unique index below and not by a check in the service; and
     `attiva`, because an azienda that issued an invoice is never deleted, only switched

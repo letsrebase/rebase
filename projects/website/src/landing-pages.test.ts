@@ -68,12 +68,9 @@ describe.each(PAGES)('%s', (name) => {
       if (hrefOnlyLinks.has(url) && !page.includes(`src="${url}"`)) continue
       // An href the reader clicks -- the repository, the hosted signup, or OpenAI's
       // own privacy policy, which the cookie section has to point at -- is fine; a
-      // subresource is not. `humancraft.tech` is in the list because Italian law
-      // requires the privacy and terms pages to name the titolare del trattamento and
-      // link to it, so those two pages carry a real company's site and this test has to
-      // allow the origin; since ORB-116 index.html's footer links the same studio,
-      // restored to what production served before website-v0.4.0. It is the only real
-      // identity left anywhere in this repository.
+      // subresource is not. `humancraft.tech` left this list with REB-704 (2026-10-20):
+      // the policy pages still name Humancraft di Ivan Sala as titolare, as the law asks,
+      // but no page links its site any more.
       // `www.linkedin.com` since ORB-151: the four voices' avatars link to their public
       // profiles. An href, never a src: the photos themselves are served from here.
       // `posthog.com` since ORB-183: the cookie section links PostHog's policy the way
@@ -85,7 +82,7 @@ describe.each(PAGES)('%s', (name) => {
       // (that call is the hub's, over `rebase_core/llm.py`): this host only ever appears
       // as an `<a href>` a reader clicks.
       expect(url, 'external subresource').toMatch(
-        /^https:\/\/(?:github\.com|pigro\.letsrebase\.com|openai\.com|posthog\.com|humancraft\.tech|www\.linkedin\.com|www\.anthropic\.com)\//,
+        /^https:\/\/(?:github\.com|pigro\.letsrebase\.com|openai\.com|posthog\.com|www\.linkedin\.com|www\.anthropic\.com)\//,
       )
     }
     expect(page).not.toMatch(/fonts\.googleapis\.com|fonts\.gstatic\.com/)
@@ -417,7 +414,7 @@ describe('index.html', () => {
       legalName: 'Humancraft di Ivan Sala',
       url: 'https://letsrebase.com/',
       vatID: '14518240966',
-      email: 'ivansala@humancraft.tech',
+      email: 'ciao@letsrebase.com',
       sameAs: ['https://github.com/letsrebase'],
     })
     // Checked against what the page and the build already say rather than a second
@@ -429,13 +426,13 @@ describe('index.html', () => {
     expect(page).toContain('href="https://github.com/letsrebase/rebase"')
   })
 
-  it('signs its footer with the studio behind the site, never with a fixture', () => {
-    // ORB-116: the pre-publication sanitisation swapped this link for «Studio Rossi» at
-    // example.com, the suite's stock customer, and website-v0.4.0 shipped it. The studio
-    // is the same entity the two policy pages name as titolare, so the footer says what
-    // they say; a fixture host on a public page fails here and in links.test.ts.
+  it('signs its footer with the site alone, never with a fixture', () => {
+    // ORB-116 put the studio behind the site in this footer; REB-704 (2026-10-20) took
+    // it off: the legal entity is named where the law needs it, in privacy.html and
+    // terms.html, and nowhere else. A fixture host on a public page still fails here
+    // and in links.test.ts.
     const footer = page.match(/<footer[\s\S]*?<\/footer>/)?.[0] ?? ''
-    expect(footer).toMatch(/<a[^>]*\bhref="https:\/\/humancraft\.tech\/"[^>]*>Humancraft<\/a>/)
+    expect(footer).not.toMatch(/humancraft/i)
     expect(page).not.toMatch(/Studio Rossi|example\.com/)
   })
 
@@ -640,5 +637,20 @@ describe('pigrocrm.html structured data (REB-701)', () => {
     // Free is what the home's FAQ answers to «Quanto costa entrare?».
     const cost = faq(html['index.html']).find((q) => q.question === 'Quanto costa entrare?')
     expect(cost?.answerHtml).toMatch(/^Niente\./)
+  })
+})
+
+describe('who to write to, and who stands behind the site (REB-704)', () => {
+  it('names the legal entity and its VAT number on the two policy pages, with ciao@ as the address', () => {
+    for (const name of ['privacy.html', 'terms.html'] as const) {
+      expect(html[name], name).toMatch(/<strong>Humancraft di Ivan Sala<\/strong>, partita IVA\s+14518240966\./)
+      expect(html[name], name).toContain('href="mailto:ciao@letsrebase.com"')
+    }
+  })
+
+  it('carries no personal address and no link to the studio on any public page', () => {
+    for (const name of PAGES) {
+      expect(html[name], name).not.toMatch(/ivansala@|humancraft\.tech/)
+    }
   })
 })
