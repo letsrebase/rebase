@@ -38,7 +38,6 @@ describe('the path map, against deploy/nginx.conf', () => {
   })
 
   it('carries the query string through the redirect, so an old ad link keeps its utm_*', () => {
-    expect(nginx).toMatch(/location = \/orbiters \{ return 301 \/\$is_args\$args; \}/)
     expect(nginx).toMatch(/location = \/community \{ return 301 \/\$is_args\$args; \}/)
   })
 
@@ -61,10 +60,9 @@ describe('the path map, against deploy/nginx.conf', () => {
 })
 
 describe('route', () => {
-  it('puts the landing at the front door, and redirects the community page\'s two old names there (ORB-145, REB-72, REB-318)', () => {
+  it('puts the landing at the front door, and redirects the community page\'s old name there (ORB-145, REB-72, REB-318)', () => {
     expect(route('/')).toEqual({ kind: 'page', file: '/index.html' })
     expect(route('/community')).toEqual({ kind: 'redirect', to: '/' })
-    expect(route('/orbiters')).toEqual({ kind: 'redirect', to: '/' })
     expect(route('/pitch')).toEqual({ kind: 'page', file: '/pitch.html' })
     expect(route('/privacy')).toEqual({ kind: 'page', file: '/privacy.html' })
     expect(route('/terms')).toEqual({ kind: 'page', file: '/terms.html' })

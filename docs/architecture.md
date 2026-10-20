@@ -99,8 +99,9 @@ own nginx is the only thing that faces the internet: it terminates TLS with Let'
 certificates that certbot renews, and proxies by name and by path to those containers,
 using the vhosts committed under each project's `deploy/` directory. The `letsrebase.com`
 names (`letsrebase.com`, `pigro`, `preview`, `preview.pigro`, `firma`) are DNS-only
-records pointing at it (`infra/cloudflare/rebase.tf`); the old zone's records point at
-it too, to answer with redirects (`docs/migrations/2026-09-14-letsrebase.md`). A deploy
+records pointing at it (`infra/cloudflare/rebase.tf`). The old `joinorbiters.com` names
+answered with redirects until 2026-10-20 and no longer have a vhost
+(`docs/migrations/2026-09-14-letsrebase.md`). A deploy
 reaches it over SSH with its host key pinned, and `DEPLOY_HOST` names it in every GitHub
 Environment, since one host carries every environment of every project
 (`docs/adding-a-project.md` § 7).

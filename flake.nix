@@ -597,8 +597,8 @@
                 machine.succeed("curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' http://localhost/termini | grep -Fx '301 http://localhost/terms'")
                 machine.succeed("curl -fsS http://localhost/pitch >/dev/null")
                 machine.succeed("curl -fsS http://localhost/company >/dev/null")
-                # The community page's old name, with its query string kept.
-                machine.succeed("curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' 'http://localhost/orbiters?x=1' | grep -Fx '301 http://localhost/community?x=1'")
+                # The community page's older name, dropped on 2026-10-20 (REB-670).
+                machine.succeed("curl -sS -o /dev/null -w '%{http_code}' http://localhost/orbiters | grep -Ex '404'")
                 # The three files the build generates from the same map.
                 machine.succeed("curl -fsS http://localhost/robots.txt | grep -F 'Sitemap:'")
                 machine.succeed("curl -fsS http://localhost/sitemap.xml | grep -F '<urlset'")
@@ -1318,9 +1318,6 @@
                             root = webRoot;
                             tryFiles = "$uri /hub/index.html";
                           };
-                          # letsrebase.conf also keeps `/api/orbiters/signups`, the
-                          # name before REB-204, for pages cached with it; a fresh
-                          # self-host has no such pages, so the alias is not carried.
                           "= /api/community/signups" = proxyLocation cfg.address cfg.port;
                           "^~ /api/hub/" = proxyLocation cfg.address cfg.port // {
                             extraConfig = "client_max_body_size 6M;";
@@ -1386,13 +1383,6 @@
                       "= /" = page "index.html";
                       "= /pigrocrm" = page "pigrocrm.html";
                       "= /community" = page "community.html";
-                      # The community page's old name (ORB-194). A relative Location,
-                      # on the location itself rather than the server: the hub's
-                      # module may share this name (see there).
-                      "= /orbiters" = {
-                        return = "301 /community$is_args$args";
-                        extraConfig = "absolute_redirect off;";
-                      };
                       # The pitch deck, a page shared by link (ORB-153), and the deck for
                       # companies (REB-553), the same kind of page.
                       "= /pitch" = page "pitch.html";

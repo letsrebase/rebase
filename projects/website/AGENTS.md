@@ -42,8 +42,8 @@ silently thinner site.
 after the landing page, `index.html`, which is PigroCRM's own page and shares its
 stylesheet with `/privacy` and `/terms`. The **project** was renamed from `landing` to
 `website` on 2026-09-09 because it is the whole site; the page inside it did not go
-anywhere. The community page, `src/community.*`, is gone (REB-72): `/community` and
-its own old name `/orbiters` (REB-212, 2026-09-15) both 301 to `/` now.
+anywhere. The community page, `src/community.*`, is gone (REB-72): `/community`
+301s to `/` now, and its older name `/orbiters` is a 404 since 2026-10-20 (REB-670).
 
 ## What this project does not own
 

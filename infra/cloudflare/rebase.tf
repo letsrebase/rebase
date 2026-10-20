@@ -14,7 +14,7 @@ resource "cloudflare_dns_record" "rebase_apex_a" {
   content  = "204.168.255.175"
   ttl      = 1
   proxied  = false
-  comment  = "Hetzner origin, same host as joinorbiters.com (migration 2026-09-14)"
+  comment  = "Hetzner origin (migration 2026-09-14)"
 }
 
 resource "cloudflare_dns_record" "rebase_pigro_a" {
@@ -25,7 +25,7 @@ resource "cloudflare_dns_record" "rebase_pigro_a" {
   content  = "204.168.255.175"
   ttl      = 1
   proxied  = false
-  comment  = "Hetzner origin, same host as joinorbiters.com (migration 2026-09-14)"
+  comment  = "Hetzner origin (migration 2026-09-14)"
 }
 
 resource "cloudflare_dns_record" "rebase_preview_a" {
@@ -36,7 +36,7 @@ resource "cloudflare_dns_record" "rebase_preview_a" {
   content  = "204.168.255.175"
   ttl      = 1
   proxied  = false
-  comment  = "Hetzner origin, same host as joinorbiters.com (migration 2026-09-14)"
+  comment  = "Hetzner origin (migration 2026-09-14)"
 }
 
 resource "cloudflare_dns_record" "rebase_preview_pigro_a" {
@@ -47,7 +47,7 @@ resource "cloudflare_dns_record" "rebase_preview_pigro_a" {
   content  = "204.168.255.175"
   ttl      = 1
   proxied  = false
-  comment  = "Hetzner origin, same host as joinorbiters.com (migration 2026-09-14)"
+  comment  = "Hetzner origin (migration 2026-09-14)"
 }
 
 resource "cloudflare_dns_record" "rebase_rsend_cname" {
@@ -90,7 +90,7 @@ resource "cloudflare_dns_record" "rebase_dmarc_txt" {
   type     = "TXT"
   content  = "\"v=DMARC1; p=quarantine; adkim=r; aspf=r;\""
   ttl      = 1
-  comment  = "mirrors joinorbiters.com without the GoDaddy rua"
+  comment  = "DMARC for the zone (migration 2026-09-14)"
 }
 
 resource "cloudflare_dns_record" "rebase_resend_domainkey_txt" {

@@ -21,7 +21,6 @@ export const RESERVED_SLUGS = new Set([
   'assets',
   'privacy',
   'termini',
-  'orbiters',
   'pigrocrm',
   'pigro',
   'login',
