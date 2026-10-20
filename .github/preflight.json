@@ -324,7 +324,7 @@
     },
     {
       "id": "hub-documenso-compose",
-      "run": "cd projects/hub && [ \"$(POSTGRES_PASSWORD=x REBASE_DATA_DIR=. docker compose -p rebase config --services | sort | tr '\\n' ' ')\" = 'api db mcp sweep web ' ] && [ \"$(POSTGRES_PASSWORD=x REBASE_DATA_DIR=. REBASE_DOCUMENSO_DATA_DIR=. DOCUMENSO_DB_PASSWORD=x DOCUMENSO_NEXTAUTH_SECRET=x DOCUMENSO_ENCRYPTION_KEY=x DOCUMENSO_ENCRYPTION_SECONDARY_KEY=x DOCUMENSO_SIGNING_PASSPHRASE=x DOCUMENSO_SIGNING_CERT_BASE64=x REBASE_RESEND_API_KEY=x COMPOSE_FILE=docker-compose.yml:docker-compose.documenso.yml docker compose -p rebase config --services | sort | tr '\\n' ' ')\" = 'api db documenso documenso-db mcp sweep web ' ]",
+      "run": "cd projects/hub && [ \"$(POSTGRES_PASSWORD=x REBASE_DATA_DIR=. docker compose -p rebase config --services | sort | tr '\\n' ' ')\" = 'api campaigns cards db mcp sweep web ' ] && [ \"$(POSTGRES_PASSWORD=x REBASE_DATA_DIR=. REBASE_DOCUMENSO_DATA_DIR=. DOCUMENSO_DB_PASSWORD=x DOCUMENSO_NEXTAUTH_SECRET=x DOCUMENSO_ENCRYPTION_KEY=x DOCUMENSO_ENCRYPTION_SECONDARY_KEY=x DOCUMENSO_SIGNING_PASSPHRASE=x DOCUMENSO_SIGNING_CERT_BASE64=x REBASE_RESEND_API_KEY=x COMPOSE_FILE=docker-compose.yml:docker-compose.documenso.yml docker compose -p rebase config --services | sort | tr '\\n' ' ')\" = 'api campaigns cards db documenso documenso-db mcp sweep web ' ]",
       "when": [
         "projects/hub/docker-compose.yml",
         "projects/hub/docker-compose.documenso.yml"

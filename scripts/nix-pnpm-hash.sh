@@ -39,11 +39,11 @@
 # again. Delete it with: docker volume rm rebase-nix-store
 #
 # Docker Desktop's credential helper can hang the image pull; this script
-# always points its own docker calls at an empty, throwaway DOCKER_CONFIG to
-# sidestep that, without touching your shell's own docker config. Blanking
-# DOCKER_CONFIG also drops Docker Desktop's context, which is how it knows
-# where the daemon's socket is; this script reads that endpoint first
-# (unless DOCKER_HOST is already set) and carries it over.
+# points its own docker calls at a throwaway DOCKER_CONFIG (which also holds
+# the container's [safe] gitconfig) to sidestep that, without touching your
+# shell's own docker config. Blanking DOCKER_CONFIG also drops Docker Desktop's
+# context, which is how it knows where the daemon's socket is; this script reads
+# that endpoint first (unless DOCKER_HOST is already set) and carries it over.
 
 set -euo pipefail
 
@@ -299,6 +299,13 @@ fi
 
 echo "nix-pnpm-hash: building packages.$system.pigrocrm-web.pnpmDeps in a $IMAGE container ($platform)..." >&2
 echo '{}' >"$docker_config_dir/config.json"
+# On a Linux host the bind-mounted copy keeps this user's uid, and the container
+# runs as root, so the ownership check of Nix's libgit2 refuses /workspace ("is
+# not owned by current user") before Nix can read the flake. Docker Desktop on a
+# Mac hides the owner, which is why this only shows on Linux (REB-710). The
+# container's system gitconfig, which libgit2 reads, marks that one path safe;
+# nothing outside the container reads it.
+printf '[safe]\n\tdirectory = /workspace\n' >"$docker_config_dir/gitconfig"
 
 set +e
 # /nix and /workspace name paths inside the container image, not on this host.
@@ -306,6 +313,7 @@ build_log=$(DOCKER_CONFIG="$docker_config_dir" docker run --rm \
   --platform "$platform" \
   -v "${DOCKER_VOLUME}:/nix" \
   -v "${copy_dir}:/workspace:ro" \
+  -v "${docker_config_dir}/gitconfig:/etc/gitconfig:ro" \
   -w /workspace \
   "$IMAGE" \
   sh -c "nix build --extra-experimental-features 'nix-command flakes' --no-link '.#packages.${system}.pigrocrm-web.pnpmDeps'" 2>&1)
