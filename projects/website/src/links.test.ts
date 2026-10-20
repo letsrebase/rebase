@@ -76,7 +76,6 @@ const EXTERNAL_HOSTS = [
   'pigro.letsrebase.com',
   'openai.com',
   'posthog.com',
-  'humancraft.tech',
   'www.linkedin.com',
   'developers.google.com',
   'www.anthropic.com',
