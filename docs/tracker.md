@@ -61,9 +61,20 @@ archives before that. On 2026-09-17 the board stood at 275 while the three proje
 were being filed; the 69 terminal issues (Done, Canceled, Duplicate) that sat in a
 Completed project or in no project were archived by hand through the API, which is what
 Linear would have done in six months and is undone from the archive view, and the count
-went to 206. Before a bulk filing, read `teams { issueCount }` and, when there is no room,
-archive terminal issues of Completed projects. Never delete an issue to make room: an
-archived issue keeps its URL, its comments and its links, a deleted one does not.
+went to 206. Before a bulk filing, read `teams { issueCount }`, and never delete an issue
+to make room: an archived issue keeps its URL, its comments and its links, a deleted one
+does not.
+
+**When there is no room, archive the oldest Done issues first, and only those that are
+no longer current** (Lorenzo, 2026-10-20, as a standing rule). Oldest means by
+`completedAt`, across every team of the workspace. Not current means the issue is in a
+Completed or Canceled project, or in none; an issue whose project is still open
+(`planned`, `started`, `paused`, `backlog`) stays out of the archive, and one found
+archived there is unarchived (`issueUnarchive`). Archive in a batch that leaves room
+(on 2026-10-20: the 30 oldest, from 255 to 225), and say on the card that needed the room
+which issues went. The first pass of that day archived by a date cut-off instead and took
+cards of open projects with it; they were restored the same day, which is why the rule
+says oldest first and current never.
 
 Every project always carries a lead, whoever it is. A project created without a
 lead is incomplete. Adding both of us as members used to be required too
