@@ -372,6 +372,62 @@
         </div>
       </section>
 
+      <!-- Porta qualcuno (REB-711, REB-645 option B, Lorenzo 2026-10-20): the referral as
+        a split of rebase's margin. The two figures and their bars are not here: no rate is
+        typed into this page, referral.js reads them from /api/hub/referral-rates and a
+        rate it cannot read leaves the row as written below, «una quota del margine di
+        rebase». A light band after a light band on purpose: the next one is the ink. -->
+      <section class="band referral" aria-labelledby="referral" data-referral>
+        <div class="wrap section">
+          <p class="kicker" data-reveal>Porta qualcuno</p>
+          <h2 class="statement" id="referral" data-reveal style="--d: 0.1s">
+            Conosci qualcuno bravo? <span class="accent">Una parte è tua.</span>
+          </h2>
+          <div class="box" data-reveal style="--d: 0.25s">
+            <div class="split-row" data-rate="rate_freelancer">
+              <div class="split-head">
+                <h3>Porti un talento</h3>
+                <span class="figure" data-figure hidden></span>
+              </div>
+              <div class="split" role="img" data-bar hidden>
+                <span class="split-fill talent"></span>
+                <span class="split-rest">il margine di rebase sul primo incarico</span>
+              </div>
+              <p class="terms" data-fallback>
+                Ricevi una quota del margine di rebase sul primo incarico che firma con noi.
+              </p>
+            </div>
+            <div class="split-row" data-rate="rate_company">
+              <div class="split-head">
+                <h3>Porti un'azienda</h3>
+                <span class="figure" data-figure hidden></span>
+              </div>
+              <div class="split" role="img" data-bar hidden>
+                <span class="split-fill company"></span>
+                <span class="split-rest">il margine di rebase sul primo incarico</span>
+              </div>
+              <p class="terms" data-fallback>
+                Ricevi una quota del margine di rebase sul primo incarico che l'azienda firma.
+              </p>
+            </div>
+            <div class="rule lines">
+              <p class="terms">
+                Conta quando la persona che porti ha fatto il suo primo accesso. rebase conferma il
+                compenso e poi te lo paga.
+              </p>
+              <p class="example" data-example hidden>
+                <span class="ex-label">Esempio con numeri inventati</span>
+                <span data-example-text></span>
+              </p>
+            </div>
+            <p class="actions">
+              <a class="cta" href="/hub/freelance">Entra e prendi il tuo link</a>
+              <a class="cta secondary" href="/hub/login">Sono già dentro</a>
+            </p>
+          </div>
+        </div>
+      </section>
+
       <!-- The four voices: two talents and two companies, one short sentence each about
         the platform (Ivan, 2026-09-11, ORB-145 then ORB-146). Real names, no placeholder
         left: a tile here is a person who agreed to be quoted, and the role line says
@@ -595,6 +651,7 @@
       </footer>
     </main>
 
+    <script type="module" src="./referral.js"></script>
     <script type="module" src="./utm.js"></script>
     <script type="module" src="./team.js"></script>
     <script type="module" src="./typewriter.js"></script>

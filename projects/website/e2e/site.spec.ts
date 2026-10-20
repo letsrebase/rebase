@@ -24,6 +24,9 @@ const towards = (hosts: readonly string[]) => (url: string) => hosts.includes(ne
 // per test to exercise the signed-in cases.
 test.beforeEach(async ({ page }) => {
   await page.route('**/api/hub/me', (route) => route.fulfill({ status: 401, body: '' }))
+  // REB-711: referral.js reads the two rates from the hub; the default is the endpoint's
+  // own 503 (no row), the page's no-rate state. The block at the end overrides it.
+  await page.route('**/api/hub/referral-rates', (route) => route.fulfill({ status: 503, body: '' }))
 })
 
 test.describe('every page of the site', () => {
@@ -764,4 +767,68 @@ test.describe('the decks', () => {
       expect(new URL(page.url()).hash).toBe('#2')
     })
   }
+})
+
+// REB-711: the referral band reads its rates at runtime, and a rate it cannot read is
+// dropped rather than replaced by a number of ours.
+test.describe('the referral band on /', () => {
+  const band = (page: import('@playwright/test').Page) => page.locator('section[data-referral]')
+
+  test('sits between «Per le aziende» and «Hanno lavorato con noi», with the live rates, bars and example', async ({
+    page,
+  }) => {
+    await page.route('**/api/hub/referral-rates', (route) =>
+      route.fulfill({ json: { rate_freelancer: '0.1000', rate_company: '0.3000' } }),
+    )
+    await page.goto('/')
+    const referral = band(page)
+    await referral.scrollIntoViewIfNeeded()
+    await expect(referral.locator('[data-rate="rate_freelancer"] [data-figure]')).toHaveText('10%')
+    await expect(referral.locator('[data-rate="rate_company"] [data-figure]')).toHaveText('30%')
+    await expect(referral.locator('[data-rate="rate_company"] [data-bar]')).toHaveAttribute(
+      'aria-label',
+      'Ricevi il 30% del margine di rebase sul primo incarico',
+    )
+    // The fill is the share of the bar: 30% of the bar's width, give or take the border.
+    const widths = await referral.locator('[data-rate="rate_company"] [data-bar]').evaluate((bar) => {
+      const fill = bar.querySelector('.split-fill') as HTMLElement
+      return [fill.getBoundingClientRect().width, bar.getBoundingClientRect().width]
+    })
+    expect(widths[0]! / widths[1]!).toBeGreaterThan(0.28)
+    expect(widths[0]! / widths[1]!).toBeLessThan(0.32)
+    await expect(referral.locator('[data-example]')).toContainText('200,00')
+    await expect(referral.locator('[data-example]')).toContainText('600,00')
+    await expect(referral.getByRole('link', { name: 'Entra e prendi il tuo link' })).toHaveAttribute(
+      'href',
+      /^\/hub\/freelance/,
+    )
+    await expect(referral.getByRole('link', { name: 'Sono già dentro' })).toHaveAttribute('href', /^\/hub\/login/)
+    const order = await page.evaluate(() =>
+      [...document.querySelectorAll('main > section')].map((section) => section.getAttribute('aria-labelledby')),
+    )
+    expect(order.indexOf('referral')).toBe(order.indexOf('aziende') + 1)
+    expect(order.indexOf('worked-with')).toBe(order.indexOf('referral') + 1)
+  })
+
+  test('says «una quota del margine di rebase», with no figure, bar or example, when no rate reads', async ({ page }) => {
+    await page.goto('/')
+    const referral = band(page)
+    await referral.scrollIntoViewIfNeeded()
+    await expect(referral.locator('[data-fallback]').first()).toContainText('una quota del margine di rebase')
+    await expect(referral.locator('[data-figure]:visible')).toHaveCount(0)
+    await expect(referral.locator('[data-bar]:visible')).toHaveCount(0)
+    await expect(referral.locator('[data-example]')).toBeHidden()
+    await expect(referral.getByText('Conta quando la persona che porti ha fatto il suo primo accesso.')).toBeVisible()
+  })
+
+  test('does not overflow at 390 wide', async ({ page }) => {
+    await page.route('**/api/hub/referral-rates', (route) =>
+      route.fulfill({ json: { rate_freelancer: '0.1000', rate_company: '0.3000' } }),
+    )
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto('/')
+    await band(page).scrollIntoViewIfNeeded()
+    await expect(band(page).locator('[data-example]')).toBeVisible()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  })
 })
