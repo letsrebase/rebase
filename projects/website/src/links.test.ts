@@ -32,8 +32,8 @@ import { PAGES, REDIRECTS, SITE_HOST, route } from './path-map-plugin'
  *   route to resolve.
  * - A link that resolves through `REDIRECTS` is treated as wrong, not merely checked
  *   for a working target. `REDIRECTS` exists for a bookmark or an inbound link this
- *   site does not control (`/orbiters` and `/community`, the community page's old and
- *   its own name, gone entirely since REB-72); markup this build produces itself
+ *   site does not control (`/community`, the community page's name, gone entirely
+ *   since REB-72); markup this build produces itself
  *   should say what it means directly. That rule is what the three links this issue
  *   names actually trip: none of them 404, all three still 301 to a page that
  *   exists, and all three are "wrong" only in that sense, which is exactly why
@@ -218,9 +218,6 @@ describe('checkHref, edge cases none of the four pages exercise today', () => {
     // The redirect-is-wrong rule still applies once the query string is gone.
     expect(checkHref('index.html', '/pigrocrm?utm_source=newsletter')).toBeUndefined()
     expect(checkHref('index.html', '/community?utm_source=newsletter')).toMatch(
-      /redirect to \//,
-    )
-    expect(checkHref('index.html', '/orbiters?utm_source=newsletter')).toMatch(
       /redirect to \//,
     )
     // An unknown path is still refused.

@@ -32,9 +32,10 @@ pnpm --filter website lint
 | `src/pitch.html` | `/pitch` | The pitch deck, nineteen slides with keyboard, swipe and wheel navigation; shared by link, `noindex`. Its own stylesheet, `pitch.css`; its pictures under `src/pitch/`; its script, `deck.js`, shared with the page below |
 | `src/company.html` | `/company` | The deck for companies hiring a freelancer (REB-553): fifteen slides on the same stage, `pitch.css` and `deck.js`, the numbers, the selection, the day rates, the three services with a price each, the team builder, the talent cloud; shared by link, `noindex`. Its own picture under `src/company/` |
 
-The community page (its own signup form, at `/community`, `/orbiters` before
-REB-212) is gone (REB-72): both names 301 to `/` now, a week after the landing had
-held the front door long enough that nothing still pointed people at the old one. The
+The community page (its own signup form, at `/community`) is gone (REB-72): the name
+301s to `/` now, a week after the landing had held the front door long enough that
+nothing still pointed people at the old one. Its older name, `/orbiters`, answered the
+same 301 until 2026-10-20 (REB-670) and is a 404 now. The
 hub owns every signup since 2026-09-09 (REB-17), so the page's own form was not
 carried forward.
 

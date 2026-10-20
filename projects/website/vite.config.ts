@@ -17,8 +17,8 @@ export default defineConfig({
   // application's bundle behind it.
   //
   // `pathMapPlugin` is the dev and preview servers' copy of deploy/nginx.conf: `/` is
-  // the landing, `/pigrocrm` the CRM's page, `/community` and `/orbiters` both 301 to
-  // it since the community page was retired (REB-72), and anything else a 404. Its
+  // the landing, `/pigrocrm` the CRM's page, `/community` 301s to it since the
+  // community page was retired (REB-72), and anything else a 404. Its
   // unit test reads nginx.conf, so the two cannot drift quietly. structuredDataPlugin
   // writes the home's FAQPage from its own «Le domande» markup (REB-701).
   plugins: [palettePlugin(), pathMapPlugin(), structuredDataPlugin()],

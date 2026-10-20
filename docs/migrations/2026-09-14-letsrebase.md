@@ -6,6 +6,9 @@ is the record of the migration and the runbook for whoever has to read it back a
 The brand in copy, logos, the deck and the guide is follow-up work with cards of its
 own; this page is about names, mail and the host.
 
+**The old names were retired on 2026-10-20 (REB-670)**: see the last section. Everything
+below says what was true from 2026-09-14 until then, and is kept as the record.
+
 ## The names
 
 | Old | New | What answers |
@@ -119,7 +122,41 @@ day: the repository is `letsrebase/rebase` since 2026-09-15 (ORB-204).
 
 ## Rolling back
 
+*Superseded on 2026-10-20 (REB-670): the old vhosts and their certificates are gone, see the last
+section. What follows is the rollback as it was until then.*
+
 Put the four backed-up vhosts back in `/etc/nginx/sites-available`, `nginx -t &&
 systemctl reload nginx`, restore the four `.env` files from the backup and redeploy the
 last tag of each project. The `letsrebase.com` zone and certificates can stay: unused,
 they cost nothing.
+
+## Retired on 2026-10-20 (REB-670)
+
+Lorenzo approved it on 2026-10-20 («si puoi togliere tutto»), after 14 days of the origin's
+access log showed 7 hits on `/orbiters` (all Googlebot, all answered 301), none on
+`/api/orbiters/signups`, and on the old CRM host scanners and link previews but no person
+and no MCP client. What went:
+
+- **The four redirect vhosts** (`joinorbiters.conf`, `preview.joinorbiters.conf`,
+  `pigro.joinorbiters.conf`, `preview.pigro.joinorbiters.conf`): out of the repository
+  (`projects/website/deploy/redirects/`, `projects/pigrocrm/deploy/nginx/redirects/`) and
+  off the origin, with their two certbot certificates. The backup of the four files is
+  `/root/retired-joinorbiters-2026-10-20/` on the origin.
+- **The legacy paths**: `/orbiters` on the website (`deploy/nginx.conf`,
+  `src/path-map-plugin.ts`, the NixOS module in `flake.nix`) and on both CRM names
+  (`pigro.letsrebase.conf`, `preview.pigro.letsrebase.conf`), and `/api/orbiters/signups`
+  in the two website host vhosts. They answer a plain 404 (the website) once the
+  `website-v*` tag that carries this change ships; the CRM's `/orbiters` falls to the
+  space-name rule like any unknown name.
+- **The reserved slug**: `orbiters` is no longer in the CRM's `RESERVED_SLUGS`
+  (`schemas.py`, `tenant.ts`). No space by that name existed in production or preview.
+- **The zone's Terraform** (`infra/cloudflare/orbiters.tf`, `orbiters-imports.tf`, the
+  second provider and its token variable).
+
+Left on purpose: the domain registration (GoDaddy, to 2027-09-07), the hub's `orbiters_user`
+cookie and `orbiters.*` storage-key fallbacks (REB-697, due 2026-11-18), and the domain's
+verification in Resend, which nothing names any more and which is Ivan's to remove.
+
+There is no rollback of the retirement by copying files back: the two certificates were
+deleted, so putting the old names back means issuing new ones and a zone that still
+points at the origin.

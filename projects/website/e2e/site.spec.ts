@@ -574,12 +574,12 @@ test.describe('the path map, as production serves it', () => {
     await expect(page).toHaveTitle(source('index.html')!)
   })
 
-  test('/orbiters and /community both redirect to /, the community page gone since REB-72', async ({ request }) => {
-    for (const path of ['/orbiters', '/community']) {
-      const response = await request.get(path, { maxRedirects: 0 })
-      expect(response.status(), path).toBe(301)
-      expect(response.headers()['location'], path).toBe('/')
-    }
+  test('/community redirects to /, the community page gone since REB-72, and /orbiters, its older name, 404s since REB-670', async ({ request }) => {
+    const community = await request.get('/community', { maxRedirects: 0 })
+    expect(community.status()).toBe(301)
+    expect(community.headers()['location']).toBe('/')
+    const orbiters = await request.get('/orbiters', { maxRedirects: 0 })
+    expect(orbiters.status()).toBe(404)
   })
 
   test('/termini redirects to /terms, its name before REB-318', async ({ request }) => {

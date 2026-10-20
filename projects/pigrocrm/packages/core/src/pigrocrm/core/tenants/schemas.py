@@ -26,7 +26,6 @@ RESERVED_SLUGS = frozenset(
         "assets",
         "privacy",
         "termini",
-        "orbiters",
         "pigrocrm",
         "pigro",
         "login",
