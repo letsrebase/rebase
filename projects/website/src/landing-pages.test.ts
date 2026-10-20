@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { LOGO_PATH, SITE_HOST } from './path-map-plugin'
+import { faq } from './site-text'
 
 const PAGES = ['index.html', 'pigrocrm.html', 'privacy.html', 'terms.html'] as const
 const html = Object.fromEntries(
@@ -626,12 +627,21 @@ describe('pigrocrm.html structured data (REB-701)', () => {
       name: 'PigroCRM',
       url: `${SITE_HOST}/pigrocrm`,
       offers: { '@type': 'Offer', price: '0', priceCurrency: 'EUR' },
-      publisher: { '@id': `${SITE_HOST}/#organization` },
+    })
+    // The publisher is the home's own Organization: same @id, name and url.
+    const home = JSON.parse(html['index.html'].match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/)![1]!)
+    const organization = home['@graph'].find((node: { '@type': string }) => node['@type'] === 'Organization')
+    expect(app.publisher).toEqual({
+      '@type': 'Organization',
+      '@id': organization['@id'],
+      name: organization.name,
+      url: organization.url,
     })
     expect(app.description).toBe(meta(page, 'description'))
     // The four features are the four card titles of «Cosa c'è dentro», read off the page.
     for (const feature of app.featureList as string[]) expect(page).toContain(`<h3>${feature}</h3>`)
     // Free is what the home's FAQ answers to «Quanto costa entrare?».
-    expect(html['index.html']).toContain('<h3>Quanto costa entrare?</h3>\n              <p>Niente.')
+    const cost = faq(html['index.html']).find((q) => q.question === 'Quanto costa entrare?')
+    expect(cost?.answerHtml).toMatch(/^Niente\./)
   })
 })

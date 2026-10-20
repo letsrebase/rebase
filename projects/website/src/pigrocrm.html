@@ -50,7 +50,8 @@
     <script type="module" src="./consent.js"></script>
     <script type="module" src="./session.js"></script>
     <!-- REB-701: the CRM as a SoftwareApplication, published by the Organization the
-      home describes (its @id). Every value is said on this page or the home: the
+      home describes (its @id, with its name and url so this page reads on its own).
+      Every value is said on this page or the home: the
       description is this page's meta description, the four features are «Cosa c'è
       dentro», and the price is the home's «Quanto costa entrare? Niente.» and this
       page's «Gratis per chi è in community». No licence, rating, review or version:
@@ -69,7 +70,7 @@
         "featureList": ["Clienti e trattative", "Offerte e contratti", "Fatture e ore", "Un assistente AI"],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "EUR" },
         "isAccessibleForFree": true,
-        "publisher": { "@id": "https://letsrebase.com/#organization" }
+        "publisher": { "@type": "Organization", "@id": "https://letsrebase.com/#organization", "name": "rebase", "url": "https://letsrebase.com/" }
       }
     </script>
   </head>

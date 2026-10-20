@@ -196,10 +196,17 @@ describe('llms.txt (REB-701)', () => {
     expect(decision.content).toContain(`- [${title}](${SITE_HOST}/pigrocrm): PigroCRM: clienti`)
   })
 
-  it('starts with the site name and a summary line, the two parts llmstxt.org requires', () => {
+  it('lists the hub doors the home offers as buttons, each once, without query strings', () => {
     const decision = route('/llms.txt')
     if (decision.kind !== 'generated') throw new Error('unreachable')
-    expect(decision.content).toMatch(/^# rebase\n\n> rebase mette insieme /)
+    const doors = decision.content.split('## Per entrare')[1]!.split('## Le domande')[0]!
+    const paths = [...doors.matchAll(/^- \[[^\]]+\]\(([^)]+)\)$/gm)].map((m) => m[1])
+    // The home links /hub/freelance with and without ?da=...; it is one door.
+    expect(paths).toEqual(
+      expect.arrayContaining([`${SITE_HOST}/hub/freelance`, `${SITE_HOST}/hub/aziende`, `${SITE_HOST}/hub/team`]),
+    )
+    expect(new Set(paths).size).toBe(paths.length)
+    for (const path of paths) expect(path).not.toContain('?')
   })
 
   it('is written into the build output with the brand mark under its fixed name', () => {

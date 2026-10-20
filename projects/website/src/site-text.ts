@@ -27,15 +27,19 @@ const ENTITIES: Readonly<Record<string, string>> = {
   nbsp: ' ',
 }
 
-/** Markup to the text a reader sees: no tags, entities decoded, whitespace collapsed. */
+/** Markup to the text a reader sees: no tags, entities decoded once, whitespace
+ *  collapsed. A named entity outside `ENTITIES` fails the build, so a page that starts
+ *  using `&rsquo;` gets it added here instead of shipping it verbatim. */
 export function plainText(html: string): string {
   return html
     .replace(/<!--[\s\S]*?-->/g, '')
     .replace(/<[^>]*>/g, '')
-    .replace(/&(#\d+|#x[0-9a-f]+|[a-z]+);/gi, (whole, code: string) => {
-      if (code.startsWith('#x') || code.startsWith('#X')) return String.fromCodePoint(parseInt(code.slice(2), 16))
+    .replace(/&(#\d{1,6}|#x[0-9a-f]{1,5}|[a-z]+);/gi, (whole, code: string) => {
+      if (code[1] === 'x' || code[1] === 'X') return String.fromCodePoint(parseInt(code.slice(2), 16))
       if (code.startsWith('#')) return String.fromCodePoint(parseInt(code.slice(1), 10))
-      return ENTITIES[code.toLowerCase()] ?? whole
+      const named = ENTITIES[code.toLowerCase()]
+      if (named === undefined) throw new Error(`site-text: no decoding for the entity ${whole}; add it to ENTITIES`)
+      return named
     })
     .replace(/\s+/g, ' ')
     .trim()
@@ -54,13 +58,13 @@ export function pageSummary(html: string, file = 'page'): { title: string; descr
 }
 
 /** Markup to Markdown text: each link becomes `[label](href)`, a relative href made
- *  absolute on `host`, and the rest goes through `plainText`. For llms.txt, where a
- *  link in an answer («su GitHub») is half of what the answer says. */
+ *  absolute on `host`, and the whole goes through `plainText` once. For llms.txt, where
+ *  a link in an answer («su GitHub») is half of what the answer says. */
 export function markdownText(html: string, host: string): string {
   return plainText(
     html.replace(/<a\s[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/g, (_whole, href: string, label: string) => {
       const target = href.startsWith('/') ? `${host}${href}` : href
-      return `[${plainText(label)}](${target})`
+      return `[${label}](${target})`
     }),
   )
 }
@@ -83,7 +87,9 @@ export function faq(html: string): Question[] {
   return items
 }
 
-/** schema.org FAQPage for the questions above, as one JSON-LD document. */
+/** schema.org FAQPage for the questions above, as one JSON-LD document. Every `<` is
+ *  escaped, so a decoded `&lt;/script&gt;` in an answer cannot close the script tag the
+ *  document is written into. */
 export function faqPageJsonLd(questions: Question[]): string {
   return JSON.stringify({
     '@context': 'https://schema.org',
@@ -93,16 +99,18 @@ export function faqPageJsonLd(questions: Question[]): string {
       name: question,
       acceptedAnswer: { '@type': 'Answer', text: plainText(answerHtml) },
     })),
-  })
+  }).replace(/</g, '\\u003c')
 }
 
 /** The doors into the hub the home offers as buttons (`a.cta` to `/hub/...`), each path
- *  once with the first label the page gives it and its query string dropped. */
+ *  once with the first label the page gives it and its query string dropped. Attributes
+ *  are read in any order. */
 export function hubDoors(html: string): { label: string; path: string }[] {
   const doors = new Map<string, string>()
-  for (const link of html.matchAll(/<a class="cta[^"]*" href="(\/hub\/[^"?#]*)[^"]*">([\s\S]*?)<\/a>/g)) {
-    const path = link[1]!
-    if (!doors.has(path)) doors.set(path, plainText(link[2]!))
+  for (const [, attributes, label] of html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/g)) {
+    if (!/\bclass="(?:[^"]*\s)?cta[\s"]/.test(attributes!)) continue
+    const path = attributes!.match(/\bhref="(\/hub\/[^"?#]*)/)?.[1]
+    if (path !== undefined && !doors.has(path)) doors.set(path, plainText(label!))
   }
   return [...doors].map(([path, label]) => ({ path, label }))
 }
@@ -123,6 +131,9 @@ export function llmsTxt(host: string, indexable: Readonly<Record<string, string>
   })
   const doors = hubDoors(home).map(({ label, path }) => `- [${label}](${host}${path})`)
   const questions = faq(home).map(({ question, answerHtml }) => `### ${question}\n\n${markdownText(answerHtml, host)}`)
+  // An empty heading is a silent failure: a restructured page fails the build instead.
+  if (doors.length === 0) throw new Error('site-text: index.html offers no a.cta into /hub/ for llms.txt')
+  if (questions.length === 0) throw new Error('site-text: index.html has no «Le domande» for llms.txt')
   return [
     '# rebase',
     `> ${summary.description}`,
@@ -145,13 +156,14 @@ export function structuredDataPlugin(): Plugin {
   return {
     name: 'website-structured-data',
     transformIndexHtml(html, ctx) {
-      if (!ctx.filename.endsWith('/index.html')) return html
+      // `ctx.path` is the page's path under `root` in the build and in the dev server
+      // alike, so a future `src/x/index.html` is not mistaken for the home.
+      if (ctx.path !== '/index.html') return html
       const questions = faq(html)
       if (questions.length === 0) throw new Error('site-text: index.html has no «Le domande» section to describe')
-      return html.replace(
-        '</head>',
-        `    <script type="application/ld+json">${faqPageJsonLd(questions)}</script>\n  </head>`,
-      )
+      const block = `    <script type="application/ld+json">${faqPageJsonLd(questions)}</script>\n  </head>`
+      // A function, so a `$&` in an answer is text, not a replacement pattern.
+      return html.replace('</head>', () => block)
     },
   }
 }
