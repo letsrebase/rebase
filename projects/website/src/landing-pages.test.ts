@@ -265,14 +265,25 @@ describe('index.html', () => {
       'Cosa trovi dentro',
       'La selezione',
       'Per le aziende',
+      'Porta qualcuno',
       'Hanno lavorato con noi',
       'Gli eventi',
       'Le domande',
       'I perk',
       'PigroCRM',
     ])
-    const bands = [...page.matchAll(/<section class="band( dark)?/g)].map((m) => (m[1] ? 'dark' : 'light'))
-    for (let index = 1; index < bands.length; index += 1) expect(bands[index], `band ${index}`).not.toBe(bands[index - 1])
+    const bands = [...page.matchAll(/<section class="band( dark| referral)?/g)].map((m) => (m[1] === ' dark' ? 'dark' : m[1] ? 'referral' : 'light'))
+    // The bands alternate, with one exception on purpose: «Porta qualcuno» (REB-711) is a
+    // light band of its own between «Per le aziende» and the ink of «Hanno lavorato con noi».
+    const alternating = bands.map((band) => (band === 'referral' ? 'light' : band))
+    for (let index = 1; index < bands.length; index += 1) {
+      if (bands[index] === 'referral') {
+        expect(bands[index - 1], 'before the referral band').toBe('light')
+        expect(bands[index + 1], 'after the referral band').toBe('dark')
+        continue
+      }
+      expect(alternating[index], `band ${index}`).not.toBe(alternating[index - 1])
+    }
     // The three cards sell what REB-681 settled (the deck's slide still carries its own
     // wording, REB-682), and «top 1%» enters through the selection, nowhere else: the
     // hero is unchanged.
