@@ -40,7 +40,7 @@ x-db-backup: &db-backup
   # and a recreated container. The work directory is a tmpfs: the archive is the whole
   # database in clear until the envelope is made, and a container killed in the middle (an
   # OOM kill, a power cut) must leave it nowhere a disk keeps it. Twice the archive fits in
-  # it: the dumps are about 5 MiB (Documenso's) and 4 MiB (the hub's) today, and an
+  # it: the dumps are about 5 MiB (Documenso's) and 31 MiB (the hub's) today, and an
   # archive of more than about 380 MiB fails the run with a full disk, which the monitor
   # hears; the size here is the line to change.
   build:
