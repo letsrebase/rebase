@@ -35,6 +35,19 @@ refuses a target directory that is not empty. What is in the directory is a data
 `db.sqlite3`, `rsa_key*` and `MANIFEST` always, `attachments/`, `sends/` and `config.json`
 only when the live server had them (the 2026-10-15 drill's bundle had none of the three).
 
+**On a Mac, use Homebrew's OpenSSL.** The system `/usr/bin/openssl` is LibreSSL 3.3.6, which
+cannot decrypt the backup; the one from Homebrew can (tested with OpenSSL 3.6.3 at
+`/opt/homebrew/bin/openssl` on 2026-10-21). Put it first on the path for the one command
+(`$(brew --prefix)/bin` on an Intel Mac):
+
+```
+PATH=/opt/homebrew/bin:$PATH projects/vaultwarden/scripts/restore.sh vaultwarden-<stamp>.tar.gz.cms vaultwarden-backup.key /tmp/vw-restore
+```
+
+The script runs on macOS's own `tar` (bsdtar) as it is, and leaves the target `0700` with
+either kind of `tar` (REB-718). A restore that fails part-way can leave the target
+half-filled: remove it and run again into a new directory.
+
 ## 3. Drill: a scratch container on it
 
 The web vault refuses a server over plain HTTP, `localhost` included: the login stops on
