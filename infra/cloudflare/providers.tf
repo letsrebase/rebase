@@ -7,8 +7,8 @@
 #
 # The state is local and ignored by git (see .gitignore here). The import blocks in
 # `*-imports.tf` make it reproducible from nothing: on a fresh clone `terraform init &&
-# terraform apply` reads every record and the bucket into a new state without changing
-# any (see README.md).
+# terraform apply` reads every record and both buckets into a new state and writes the
+# expiry rules again, which cannot be imported, without changing anything (see README.md).
 
 terraform {
   required_version = ">= 1.5"
