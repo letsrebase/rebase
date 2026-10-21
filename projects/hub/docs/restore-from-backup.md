@@ -89,8 +89,8 @@ editing anything. Run it on both sides and diff:
 ```
 # the restore
 docker exec -i scratch psql -U <db> -d <db> -At -f - < projects/hub/db-backup/scripts/row-counts.sql > restored.txt
-# production (on the host; `rebase-db-1` for the hub, `rebase-documenso-db-1` for Documenso)
-ssh <host> 'docker exec -i rebase-db-1 psql -U rebase -d rebase -At -f -' < projects/hub/db-backup/scripts/row-counts.sql > live.txt
+# production, on the host: container `rebase-db-1` for the hub, `rebase-documenso-db-1` for Documenso
+ssh <host> 'docker exec -i <container> psql -U <db> -d <db> -At -f -' < projects/hub/db-backup/scripts/row-counts.sql > live.txt
 diff restored.txt live.txt
 ```
 
