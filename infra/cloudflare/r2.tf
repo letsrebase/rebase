@@ -1,16 +1,16 @@
 # Cloudflare R2 in the letsrebase.com account: the private buckets the backup services
-# write to, one per project so a project's key pair reaches only its own backups.
-# Vaultwarden's (REB-648) and the hub's (REB-716), which holds the nightly dumps of
-# Documenso's database (REB-715) and of the hub's own (REB-717), each under its own
-# prefix. Not a record of the zone, so it needs an account-level token (see providers.tf
-# and README.md) on top of the DNS one.
+# write to, one per project so a project's key pair reaches only its own backups. The
+# buckets are Vaultwarden's (REB-648) and the hub's (REB-716); the hub's holds the nightly
+# dumps of Documenso's database (REB-715) and of the hub's own (REB-717), each under its
+# own prefix. Not a record of the zone, so it needs an account-level token (see
+# providers.tf and README.md) on top of the DNS one.
 #
 # A bucket is private by construction: it has no public domain and no `r2.dev` access,
 # and what lands in it is already an encrypted envelope (projects/vaultwarden/scripts/
 # backup.sh, projects/hub/documenso-backup/scripts/backup.sh) whose private key is not on
 # any server. The S3 access key pair a backup service uploads with is made in the
-# Cloudflare dashboard (R2, Manage API tokens), scoped to that one bucket with Object
-# Read and Write; it is a secret, so it is an Environment secret of
+# Cloudflare dashboard (R2, Manage API tokens, Create Account API token), scoped to that
+# one bucket with Object Read and Write; it is a secret, so it is an Environment secret of
 # `vaultwarden-production` or `hub-production` and not an output of this file.
 
 resource "cloudflare_r2_bucket" "rebase_vaultwarden_backup" {

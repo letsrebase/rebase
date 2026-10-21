@@ -30,9 +30,13 @@ has a ninety-day expiry rule. It needs the `letsrebase.com` token to carry *Acco
 Workers R2 Storage → Edit* as well as *Zone → DNS → Edit*, and the account id above. The
 S3 access key a backup uploads with is made in the dashboard (R2, Manage API tokens,
 Create Account API token, Object Read and Write, that one bucket) and is a GitHub
-Environment secret, never a Terraform output; the devbox's Terraform token cannot mint one.
+Environment secret, never a Terraform output. The devbox's Terraform token cannot mint
+one: `GET /accounts/<id>/tokens` answers it 9109 Unauthorized (2026-10-21), and the
+dashboard refuses the same call made from a script, so it is the form, by hand.
 The expiry resource cannot be imported in provider 5.25.0, so a checkout without the state
 that made it plans to create it, which sets the same rules on the bucket again.
+Documenso's objects written to Vaultwarden's bucket before REB-716 were deleted by hand
+once the first one landed in the hub's bucket; no rule covers `documenso/` there any more.
 
 A change is a change to a `.tf` file, a `plan` read twice, an `apply`, and the commit
 that ships the file. Never the panel first: a record changed by hand is drift, and the
