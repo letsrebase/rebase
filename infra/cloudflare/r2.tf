@@ -7,7 +7,7 @@
 #
 # A bucket is private by construction: it has no public domain and no `r2.dev` access,
 # and what lands in it is already an encrypted envelope (projects/vaultwarden/scripts/
-# backup.sh, projects/hub/documenso-backup/scripts/backup.sh) whose private key is not on
+# backup.sh, projects/hub/db-backup/scripts/backup.sh) whose private key is not on
 # any server. The S3 access key pair a backup service uploads with is made in the
 # Cloudflare dashboard (R2, Manage API tokens, Create Account API token), scoped to that
 # one bucket with Object Read and Write; it is a secret, so it is an Environment secret of
