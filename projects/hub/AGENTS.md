@@ -30,6 +30,7 @@ apps/mcp/        rebase_mcp: the same services over stdio or Streamable HTTP, fo
 apps/web/        pnpm package `hub`: the SPA at letsrebase.com/hub/ (wizards, the member area, admin)
 content/         the prose a perk is made of, reviewed as prose, and the contracts' example data
 tools/           the scripts that typeset that prose into PDFs
+db-backup/       the nightly encrypted backups of the hub's and Documenso's databases: one image, the script, the drill
 ```
 
 `packages/core` may import neither adapter, and neither adapter may import the other:
@@ -568,6 +569,48 @@ both files, generated once; without it the page answers 503 with a sentence and 
 side does not even have the route. The call goes through `rebase_core.http`, the seam
 the mail uses, so the tests hand a fake and never reach a CRM.
 
+### Database backups
+
+Both of production's databases are backed up off the origin every night (REB-715,
+REB-717): the hub's own (`rebase-db-1`) by the `hub-backup` service at 03:15 UTC, under
+`hub/`, and Documenso's (`rebase-documenso-db-1`, every uploaded and sealed PDF) by
+`documenso-backup` at 03:45, under `documenso/`. They are one definition in
+`docker-compose.documenso.yml`, production's overlay (the preview never loads it, so it
+never needs a backup's secrets), and one image and one script in `db-backup/`; a service
+differs from the other only in `BACKUP_NAME` (the prefix, the file stems), `BACKUP_HEAD_SQL`
+(the query whose answer goes in the `MANIFEST` as the schema version: Alembic's revision
+for the hub, Prisma's newest migration for Documenso), the database it reads and its
+monitor. Each run is `pg_dump` into a tmpfs, a `MANIFEST`, a CMS envelope to the public
+certificate in `HUB_BACKUP_CERT_B64` (Vaultwarden's; the private key is on no server), an
+upload to the private R2 bucket `rebase-hub-backup`, a size check against the bucket, and a
+ping to that service's healthchecks.io check («Hub database backup», «Documenso backup»;
+`/fail` after a failed run, and a check mails when a day plus two hours pass with no
+success). R2 expires both prefixes after ninety days (`infra/cloudflare/r2.tf`).
+
+- **Settings.** In the host `.env`, by hand: `HUB_BACKUP_CERT_B64`, `HUB_BACKUP_R2_ACCOUNT_ID`,
+  `HUB_BACKUP_BUCKET`, and the optional `HUB_BACKUP_AT` and `DOCUMENSO_BACKUP_AT`. Written
+  by the deploy from the `hub-production` Environment (`env-secrets` in `deploy-hub.yml`):
+  `HUB_BACKUP_ACCESS_KEY_ID` and `HUB_BACKUP_SECRET_ACCESS_KEY` (one key pair, Object Read
+  and Write on that one bucket), `HUB_BACKUP_PING_URL` and `DOCUMENSO_BACKUP_PING_URL`. The
+  compose file refuses to start without any of them.
+- **The databases are never recreated by the backups.** The image is built `FROM` the
+  databases' own `postgres:17-alpine`, pinned by digest in `db-backup/Dockerfile`, because
+  the deploy's `build --pull` would otherwise move the host's tag and the next `up -d`
+  would recreate every database container on a Postgres nobody chose (REB-715).
+  `test_documenso_compose.py` fails when the two databases' tag and the Dockerfile's drift.
+  After a deploy, `docker ps` must show the databases' "Up" age unchanged.
+- **Tests.** `db-backup/tests/backup-restore.sh` is the drill, with the real compose files
+  and scripts against throwaway Postgres servers, an S3 gateway and a stand-in monitor: it
+  backs up, proves the object is an envelope no other key opens, proves each monitor is
+  pinged (and only its own), and restores both databases into a scratch Postgres, comparing
+  every table's row count (`scripts/row-counts.sql`) and the schema version. CI runs it as
+  `hub · database backups drill`, preflight as `hub-db-backup-drill`. A change to
+  `db-backup/` is done when it passes.
+- **Restore** is [`docs/restore-from-backup.md`](docs/restore-from-backup.md), and a real
+  object is restored into a scratch Postgres by hand after a change to the backup, never
+  only in CI. The dumps hold neither application's secrets (the runbook says where those
+  are).
+
 ### Documenso, the signing site
 
 Since REB-393 Documenso runs beside production in the `rebase` compose project, from
@@ -587,27 +630,21 @@ signed on Documenso"); this section is the container's own.
   lives in `/opt/hub/.env` on the server, not in the checkout, so redeploying an older
   tag rsyncs `docker-compose.documenso.yml` away while `.env` still names it, and compose
   refuses to come up. Remove the `COMPOSE_FILE` line from `/opt/hub/.env` before rolling
-  back past this release. `documenso` and `documenso-db` are not stopped by that: they
-  keep running as orphans, unmanaged by the older compose project, until stopped by hand
-  (`docker stop rebase-documenso-1 rebase-documenso-db-1`).
+  back past this release. `documenso`, `documenso-db` and the two backup services are not
+  stopped by that: they keep running as orphans, unmanaged by the older compose project,
+  until stopped by hand (`docker stop rebase-documenso-1 rebase-documenso-db-1
+  rebase-documenso-backup-1 rebase-hub-backup-1`).
 - **Name and port**: `https://firma.letsrebase.com`, the vhost `deploy/firma.letsrebase.conf`
   (its own certificate) in front of 127.0.0.1:8090.
 - **Data**: its own Postgres, `documenso-db`, on `REBASE_DOCUMENSO_DATA_DIR`
   (`/srv/rebase-data/documenso-postgres`), with every uploaded and sealed PDF in it.
   About 500 to 630 MiB of memory once warm, 45 to 80 MiB for its Postgres; the origin has
   3.8 GB and 4 GB of swap since 2026-09-25.
-- **Backup** (REB-715): the `documenso-backup` service of `docker-compose.documenso.yml`
-  dumps that database with `pg_dump` every night at 03:45 UTC (and once after a start),
-  encrypts the archive to the public certificate in `DOCUMENSO_BACKUP_CERT_B64`, uploads it
-  to R2 under `documenso/` and pings a healthchecks.io check, the way Vaultwarden's backup
-  does (`projects/vaultwarden`). The private key is on no server. `documenso-backup/` holds
-  its Dockerfile, scripts and drill (`tests/backup-restore.sh`, run by the `hub · documenso
-  backup and restore drill` job and preflight's `hub-documenso-backup-drill`); the restore
-  is [`docs/restore-documenso.md`](docs/restore-documenso.md). A change to `scripts/` is
-  done when the drill passes. **The hub's own Postgres is still backed up by nothing**
-  (REB-475, Ivan, postponed on 2026-09-28), and the dump holds neither Documenso's
-  encryption keys nor its seal certificate: the runbook says where those are and what that
-  costs.
+- **Backup** (REB-715): the `documenso-backup` service, one of the two database backups
+  described under "Database backups" below; it writes under `documenso/` at 03:45 UTC. The
+  dump holds neither Documenso's encryption keys nor its seal certificate: the runbook
+  ([`docs/restore-from-backup.md`](docs/restore-from-backup.md)) says where those are and
+  what that costs.
 - **Certificate**: self-signed, made on the host with OpenSSL, in the `.env` as the
   `.p12` on one line of base64 with its passphrase. The seal is valid and PDF readers say
   its issuer is not trusted; a certificate on Adobe's trust list is a later purchase.

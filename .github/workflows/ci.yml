@@ -120,7 +120,7 @@ jobs:
       hub_deploy: ${{ steps.tag.outputs.hub_deploy || steps.filter.outputs.hub_deploy }}
       tooling: ${{ steps.tag.outputs.tooling || steps.filter.outputs.tooling }}
       vaultwarden: ${{ steps.tag.outputs.vaultwarden || steps.filter.outputs.vaultwarden }}
-      hub_documenso_backup: ${{ steps.tag.outputs.hub_documenso_backup || steps.filter.outputs.hub_documenso_backup }}
+      hub_db_backup: ${{ steps.tag.outputs.hub_db_backup || steps.filter.outputs.hub_db_backup }}
     steps:
       - uses: actions/checkout@v7
         if: github.event_name != 'pull_request'
@@ -190,12 +190,12 @@ jobs:
           set -euo pipefail
           case "$PROJECT" in
             website)  on='website website_image website_deploy shared_analytics' ;;
-            hub)      on='hub_py hub_web hub_image hub_deploy hub_documenso_backup shared_ui shared_analytics' ;;
+            hub)      on='hub_py hub_web hub_image hub_deploy hub_db_backup shared_ui shared_analytics' ;;
             pigrocrm) on='pigrocrm_py pigrocrm_web pigrocrm_image pigrocrm_deploy shared_ui shared_analytics' ;;
             vaultwarden) on='vaultwarden' ;;
             *) echo "::error::no job list for project '${PROJECT}'"; exit 1 ;;
           esac
-          for key in pigrocrm_py pigrocrm_web pigrocrm_image website website_image hub_py hub_web shared_analytics shared_ui hub_image pigrocrm_deploy website_deploy hub_deploy tooling vaultwarden hub_documenso_backup; do
+          for key in pigrocrm_py pigrocrm_web pigrocrm_image website website_image hub_py hub_web shared_analytics shared_ui hub_image pigrocrm_deploy website_deploy hub_deploy tooling vaultwarden hub_db_backup; do
             case " $on " in *" $key "*) value=true ;; *) value=false ;; esac
             echo "${key}=${value}" >> "$GITHUB_OUTPUT"
           done
@@ -256,13 +256,14 @@ jobs:
               - 'projects/hub/apps/web/src/lib/amount_cases.json'
               - 'projects/hub/conftest.py'
               - 'projects/hub/ruff.toml'
-              # Production's Documenso compose file, the backup's Dockerfile and the hub's
-              # deploy workflow (REB-715): `test_documenso_compose.py` reads all three, and
+              # The hub's two compose files, the backups' Dockerfile and the hub's deploy
+              # workflow (REB-715, REB-717): `test_documenso_compose.py` reads all four, and
               # they sat under none of the paths above. Dependabot's #587 moved the image
               # pin, no job of the hub's Python suite ran on the PR or on the trunk, and the
               # stale pin test failed only on the `hub-v0.62.0` tag run.
+              - 'projects/hub/docker-compose.yml'
               - 'projects/hub/docker-compose.documenso.yml'
-              - 'projects/hub/documenso-backup/Dockerfile'
+              - 'projects/hub/db-backup/Dockerfile'
               - '.github/workflows/deploy-hub.yml'
               # The guide PDF's own inputs (REB-310): `test_guide_pdf.py` under
               # `packages/core/tests` asserts the hash of every source recorded in
@@ -387,12 +388,14 @@ jobs:
               - '.github/workflows/ci.yml'
               - '.github/workflows/deploy-vaultwarden.yml'
               - '.github/workflows/_deploy-compose.yml'
-            # The Documenso backup's drill (REB-715): the service's image and scripts, the
-            # drill that runs them and the compose file that wires them. It builds the
-            # hub's `documenso-db` image tag, so a bump of that pin is checked here too.
-            hub_documenso_backup:
-              - 'projects/hub/documenso-backup/**'
+            # The database backups' drill (REB-715, REB-717): the services' image and
+            # scripts, the drill that runs them and the compose files that wire them. It
+            # builds the Postgres image tag of Documenso's database and of the hub's `db`,
+            # so a bump of either pin is checked here too.
+            hub_db_backup:
+              - 'projects/hub/db-backup/**'
               - 'projects/hub/docker-compose.documenso.yml'
+              - 'projects/hub/docker-compose.yml'
               - '.github/workflows/ci.yml'
 
       # The deploy workflows used to answer "did this push touch my project?" for
@@ -889,24 +892,24 @@ jobs:
       - name: Backup and restore drill
         run: projects/vaultwarden/tests/backup-restore.sh
 
-  # REB-715: the backup and restore drill of Documenso's database. Needs Docker, openssl
-  # and shellcheck, all on the hosted runner. It builds the backup service's image and
-  # starts the real compose file's database and the real scripts against throwaway
-  # servers (an S3 gateway for R2, a listener for healthchecks.io); Documenso's own image
-  # is not pulled. A hub tag runs it with the rest of the hub, which is what releases the
-  # service.
-  hub-documenso-backup:
-    name: hub · documenso backup and restore drill
+  # REB-715, REB-717: the backup and restore drill of Documenso's database and of the
+  # hub's. Needs Docker, openssl and shellcheck, all on the hosted runner. It builds the
+  # backup services' image and starts the real compose files' databases and the real
+  # scripts against throwaway servers (an S3 gateway for R2, a listener for
+  # healthchecks.io); Documenso's own image and the hub's are not pulled or built. A hub
+  # tag runs it with the rest of the hub, which is what releases the services.
+  hub-db-backup:
+    name: hub · database backups drill
     needs: changes
-    if: ${{ !cancelled() && (needs.changes.outputs.all == 'true' || needs.changes.outputs.hub_documenso_backup == 'true') }}
+    if: ${{ !cancelled() && (needs.changes.outputs.all == 'true' || needs.changes.outputs.hub_db_backup == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - name: Scripts
-        run: shellcheck projects/hub/documenso-backup/scripts/*.sh projects/hub/documenso-backup/tests/*.sh
+        run: shellcheck projects/hub/db-backup/scripts/*.sh projects/hub/db-backup/tests/*.sh
       - name: Backup and restore drill
-        run: projects/hub/documenso-backup/tests/backup-restore.sh
+        run: projects/hub/db-backup/tests/backup-restore.sh
 
   ci:
     name: ci
@@ -914,7 +917,7 @@ jobs:
     # arrives. This is the only status check the repository should ever be asked to
     # require: every job name above can change forever without touching a ruleset.
     if: always()
-    needs: [changes, pigrocrm-py, pigrocrm-py-lint, pigrocrm-web, pigrocrm-web-lint, pigrocrm-api-types, website, website-e2e, hub-py, hub-web, hub-web-lint, shared-analytics, shared-ui, pigrocrm-images, website-image, hub-images, tooling-starter, vaultwarden, hub-documenso-backup]
+    needs: [changes, pigrocrm-py, pigrocrm-py-lint, pigrocrm-web, pigrocrm-web-lint, pigrocrm-api-types, website, website-e2e, hub-py, hub-web, hub-web-lint, shared-analytics, shared-ui, pigrocrm-images, website-image, hub-images, tooling-starter, vaultwarden, hub-db-backup]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

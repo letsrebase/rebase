@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# The backup and restore drill of Documenso's database (REB-715), on throwaway servers,
-# with the real compose file and the real scripts. Needs Docker, openssl, python3 and
-# curl; touches nothing outside a temporary directory and a compose project called
-# `docdrill-<random>`, so two runs on one machine (two worktrees, preflight and a hand
-# run) never share containers. Documenso itself is not started: its image is a gigabyte
-# and the backup reads its Postgres, not the application.
+# The backup and restore drill of both databases' backups, Documenso's (REB-715) and the
+# hub's (REB-717), on throwaway servers, with the real compose files and the real scripts.
+# Needs Docker, openssl, python3 and curl; touches nothing outside a temporary directory
+# and a compose project called `dbdrill-<random>`, so two runs on one machine (two
+# worktrees, preflight and a hand run) never share containers. Neither application is
+# started: Documenso's image is a gigabyte and the backups read their Postgres, not the
+# application.
 #
 #   1. start the real `documenso-db` and put in it what Documenso puts there: a Prisma
 #      migrations table and a contract stored as bytea;
@@ -15,7 +16,11 @@
 #      the check and one that failed pings `<check>/fail` without ending the loop;
 #   3. download the object, restore.sh it with a private key, load the archive into a
 #      scratch Postgres with pg_restore, from the unpacked file and straight from the
-#      envelope with no file at all, and read the contract back byte for byte.
+#      envelope with no file at all, and read the contract back byte for byte;
+#   4. the same for the hub: the real `db` with an Alembic revision and rows in it, the
+#      `hub-backup` service's script and loop (its own monitor), the object under `hub/`
+#      and not under `documenso/`, and a restore whose row counts of every table and
+#      revision match the source's.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -23,18 +28,20 @@ backup_dir=$(dirname "$here")
 hub_dir=$(dirname "$backup_dir")
 postgres_image=$(sed -n 's/^ *image: \(postgres:[^ ]*\)$/\1/p' "$hub_dir/docker-compose.documenso.yml" | head -n 1)
 [ -n "$postgres_image" ] || { echo "FAIL: no postgres image in docker-compose.documenso.yml" >&2; exit 1; }
+[ "$(sed -n 's/^ *image: \(postgres:[^ ]*\)$/\1/p' "$hub_dir/docker-compose.yml")" = "$postgres_image" ] \
+  || { echo "FAIL: the hub's db and Documenso's run different Postgres images" >&2; exit 1; }
 tmp=$(mktemp -d)
 suffix=$(date +%s)-$$
-export COMPOSE_PROJECT_NAME="docdrill-$suffix"
-scratch_name="docdrill-scratch-$suffix"
+export COMPOSE_PROJECT_NAME="dbdrill-$suffix"
+scratch_name="dbdrill-scratch-$suffix"
 compose() {
-  docker compose --project-directory "$hub_dir" -f "$hub_dir/docker-compose.documenso.yml" -f "$here/s3.yml" "$@"
+  docker compose --project-directory "$hub_dir" -f "$hub_dir/docker-compose.yml" -f "$hub_dir/docker-compose.documenso.yml" -f "$here/s3.yml" "$@"
 }
 cleanup() {
   compose down -v --remove-orphans --rmi local >/dev/null 2>&1 || true
   docker rm -f "$scratch_name" >/dev/null 2>&1 || true
   # Postgres writes as its own user, so its files are not ours to remove from here.
-  docker run --rm -v "$tmp:/t" --entrypoint rm "$postgres_image" -rf /t/pgdata >/dev/null 2>&1 || true
+  docker run --rm -v "$tmp:/t" --entrypoint rm "$postgres_image" -rf /t/pgdata /t/hubpgdata >/dev/null 2>&1 || true
   rm -rf "$tmp"
 }
 step() { printf '\n== %s\n' "$*"; }
@@ -43,44 +50,55 @@ trap cleanup EXIT
 
 # Two recipients and a stranger. The certificates go to the service, the keys stay here.
 for who in lorenzo second stranger; do
-  openssl req -x509 -newkey rsa:3072 -nodes -days 3 -subj "/CN=docdrill-$who" \
+  openssl req -x509 -newkey rsa:3072 -nodes -days 3 -subj "/CN=dbdrill-$who" \
     -keyout "$tmp/$who.key" -out "$tmp/$who.crt" 2>/dev/null
 done
 
-mkdir "$tmp/pgdata"
+mkdir "$tmp/pgdata" "$tmp/hubpgdata"
 export REBASE_DOCUMENSO_DATA_DIR="$tmp/pgdata"
+export REBASE_DATA_DIR="$tmp/hubpgdata"
+export POSTGRES_PASSWORD=drill-not-a-password-either
+# The real `db` publishes on a fixed loopback port; an ephemeral one cannot collide with a stack on this machine.
+export REBASE_DB_PORT=127.0.0.1:
 export DOCUMENSO_DB_PASSWORD=drill-not-a-password
 export DOCUMENSO_NEXTAUTH_SECRET=x DOCUMENSO_ENCRYPTION_KEY=x DOCUMENSO_ENCRYPTION_SECONDARY_KEY=x
 export DOCUMENSO_SIGNING_PASSPHRASE=x DOCUMENSO_SIGNING_CERT_BASE64=x REBASE_RESEND_API_KEY=x
-DOCUMENSO_BACKUP_CERT_B64=$(cat "$tmp/lorenzo.crt" "$tmp/second.crt" | base64 -w0)
-export DOCUMENSO_BACKUP_CERT_B64
-export DOCUMENSO_BACKUP_R2_ACCOUNT_ID=drill
-export DOCUMENSO_BACKUP_BUCKET=drill-bucket
-export DOCUMENSO_BACKUP_ACCESS_KEY_ID=drillkey
-export DOCUMENSO_BACKUP_SECRET_ACCESS_KEY=drillsecret
+HUB_BACKUP_CERT_B64=$(cat "$tmp/lorenzo.crt" "$tmp/second.crt" | base64 -w0)
+export HUB_BACKUP_CERT_B64
+export HUB_BACKUP_R2_ACCOUNT_ID=drill
+export HUB_BACKUP_BUCKET=drill-bucket
+export HUB_BACKUP_ACCESS_KEY_ID=drillkey
+export HUB_BACKUP_SECRET_ACCESS_KEY=drillsecret
 export DOCUMENSO_BACKUP_PING_URL=http://ping:8080/drill-check
+export HUB_BACKUP_PING_URL=http://ping:8080/hub-check
 
 marker="drill-contract-$RANDOM-$RANDOM"
 
-step "0. the compose file: three services, the backup one publishes nothing and is built from the database's own image"
-services=$(docker compose --project-directory "$hub_dir" -f "$hub_dir/docker-compose.documenso.yml" config --services | sort | tr '\n' ' ')
-[ "$services" = 'documenso documenso-backup documenso-db ' ] || { echo "FAIL: services are '$services'" >&2; exit 1; }
+step "0. the compose files: both backups publish nothing, wait for a healthy database and are built from the databases' own image"
+services=$(compose config --services | sort | tr '\n' ' ')
+[ "$services" = 'api campaigns cards db documenso documenso-backup documenso-db hub-backup mcp ping s3 sweep web ' ] || { echo "FAIL: services are '$services'" >&2; exit 1; }
 compose config --format json | python3 -c '
 import json, sys
-backup = json.load(sys.stdin)["services"]["documenso-backup"]
-assert "ports" not in backup, "the backup service publishes a port"
-assert backup["depends_on"]["documenso-db"]["condition"] == "service_healthy", "it does not wait for a healthy database"
+services = json.load(sys.stdin)["services"]
+for name, database, backup_name in (("documenso-backup", "documenso-db", "documenso"), ("hub-backup", "db", "hub")):
+    backup = services[name]
+    assert "ports" not in backup, f"{name} publishes a port"
+    assert backup["depends_on"][database]["condition"] == "service_healthy", f"{name} does not wait for a healthy database"
+    assert backup["environment"]["BACKUP_NAME"] == backup_name
+    assert backup["environment"]["BACKUP_BUCKET"] == "drill-bucket"
+    assert backup["tmpfs"], f"{name} has no tmpfs scratch"
+assert services["documenso-backup"]["environment"]["BACKUP_PING_URL"] != services["hub-backup"]["environment"]["BACKUP_PING_URL"], "the two backups share a monitor"
 '
 from=$(sed -n 's/^FROM //p' "$backup_dir/Dockerfile")
 case "$from" in
   "$postgres_image"@sha256:*) ;;
-  *) echo "FAIL: the backup image is built FROM $from, the database runs $postgres_image (and the base is pinned by digest)" >&2; exit 1 ;;
+  *) echo "FAIL: the backup image is built FROM $from, the databases run $postgres_image (and the base is pinned by digest)" >&2; exit 1 ;;
 esac
-compose build documenso-backup
-echo "services, no port, a healthy database first, and pg_dump from the same image as the server"
+compose build documenso-backup hub-backup
+echo "services, no port, a healthy database first, and pg_dump from the same image as the servers"
 
 step "1. the real documenso-db, with a migration row and a contract in it"
-compose up -d documenso-db s3 ping
+compose up -d documenso-db db s3 ping
 # The image's first server, the one that runs initdb, listens on its socket only and then
 # restarts: ready on the socket is not ready, ready on TCP is.
 db=$(compose ps -q documenso-db)
@@ -108,12 +126,12 @@ s3() {
 }
 for _ in $(seq 30); do s3 -X PUT "http://$s3_ip:7070/drill-bucket" 2>/dev/null && break; sleep 1; done
 # A schedule `date` cannot read ends the container instead of spinning.
-if compose run --rm --no-deps -T -e DOCUMENSO_BACKUP_AT=25:00 documenso-backup 2>/dev/null; then
-  echo "FAIL: the backup loop accepted DOCUMENSO_BACKUP_AT=25:00" >&2; exit 1
+if compose run --rm --no-deps -T -e BACKUP_AT=25:00 documenso-backup 2>/dev/null; then
+  echo "FAIL: the backup loop accepted BACKUP_AT=25:00" >&2; exit 1
 fi
-echo "DOCUMENSO_BACKUP_AT=25:00 is refused"
+echo "BACKUP_AT=25:00 is refused"
 # A certificate line that is not one is refused before anything is dumped.
-if compose run --rm --no-deps -T --entrypoint /bin/bash -e DOCUMENSO_BACKUP_CERT_B64="$(printf 'not a certificate' | base64 -w0)" documenso-backup /scripts/backup.sh 2>"$tmp/badcert.err"; then
+if compose run --rm --no-deps -T --entrypoint /bin/bash -e BACKUP_CERT_B64="$(printf 'not a certificate' | base64 -w0)" documenso-backup /scripts/backup.sh 2>"$tmp/badcert.err"; then
   echo "FAIL: the backup accepted a certificate line with no certificate in it" >&2; exit 1
 fi
 grep -q 'holds no PEM certificate' "$tmp/badcert.err" || { echo "FAIL: the bad certificate was refused for another reason: $(cat "$tmp/badcert.err")" >&2; exit 1; }
@@ -151,7 +169,7 @@ step "2b. the monitor hears a backup that finished, and one that failed"
 # A ping URL that is not one ends the container instead of running with no alarm, and so
 # does one with a trailing slash, which would send `/fail` to a path nobody watches.
 for bad in not-a-url http://ping:8080/drill-check/; do
-  if refusal=$(compose run --rm --no-deps -T -e DOCUMENSO_BACKUP_PING_URL="$bad" documenso-backup 2>&1); then
+  if refusal=$(compose run --rm --no-deps -T -e BACKUP_PING_URL="$bad" documenso-backup 2>&1); then
     echo "FAIL: the backup loop accepted the ping URL '$bad'" >&2; exit 1
   fi
   grep -q "must be the monitor's http(s) ping URL" <<<"$refusal" \
@@ -167,7 +185,7 @@ wait_ping() {
   echo "FAIL: the monitor never heard GET $1" >&2
   exit 1
 }
-loop=$(compose run -d --no-deps -e DOCUMENSO_BACKUP_FIRST_DELAY=0 documenso-backup)
+loop=$(compose run -d --no-deps -e BACKUP_FIRST_DELAY=0 documenso-backup)
 wait_ping /drill-check
 # The healthcheck, as the container has it (compose has already turned `$$` into `$`), is
 # true right after a backup and false for a backup two days old.
@@ -187,7 +205,7 @@ docker rm -f "$loop" >/dev/null
 [ "$(pings /drill-check/fail)" -eq 0 ] || { echo "FAIL: a backup that finished was reported as failed" >&2; exit 1; }
 echo "a backup that finished pings the check, the healthcheck is true, and the loop sleeps $secs seconds to the next slot"
 # A revoked R2 key: the upload is refused, the loop survives and says so to the monitor.
-loop=$(compose run -d --no-deps -e DOCUMENSO_BACKUP_FIRST_DELAY=0 -e DOCUMENSO_BACKUP_SECRET_ACCESS_KEY=revoked documenso-backup)
+loop=$(compose run -d --no-deps -e BACKUP_FIRST_DELAY=0 -e BACKUP_SECRET_ACCESS_KEY=revoked documenso-backup)
 wait_ping /drill-check/fail
 [ "$(docker inspect -f '{{.State.Running}}' "$loop")" = true ] || { echo "FAIL: a failed backup ended the loop" >&2; exit 1; }
 loop_logs+=$(docker logs "$loop" 2>&1)
@@ -246,4 +264,67 @@ got=$(scratch_psql -d restored_stream -c "SELECT encode(sha256(data), 'hex') FRO
 [ "$got" = "$want_sha" ] || { echo "FAIL: the contract restored from the stream is '$got', expected '$want_sha'" >&2; exit 1; }
 echo "restored straight from the envelope, no file: contract doc-1 byte for byte"
 
-printf '\nOK: backup, encryption, the monitor, restore and every refusal held\n'
+step "4. the hub: the real db with an Alembic revision and rows in it, backed up under hub/, restored, every table counted"
+hubdb=$(compose ps -q db)
+for _ in $(seq 90); do
+  docker exec "$hubdb" pg_isready -h 127.0.0.1 -U rebase -d rebase >/dev/null 2>&1 && break
+  sleep 1
+done
+docker exec "$hubdb" pg_isready -h 127.0.0.1 -U rebase -d rebase >/dev/null || { echo "FAIL: the hub's db never answered on TCP" >&2; exit 1; }
+psql_hub() { docker exec -i "$hubdb" psql -v ON_ERROR_STOP=1 -U rebase -d rebase -At "$@"; }
+psql_hub <<SQL >/dev/null
+CREATE TABLE alembic_version (version_num varchar(32) NOT NULL PRIMARY KEY);
+INSERT INTO alembic_version VALUES ('0033');
+CREATE TABLE members (id serial PRIMARY KEY, name text NOT NULL);
+INSERT INTO members (name) SELECT 'member-' || i FROM generate_series(1, 37) AS i;
+CREATE TABLE signed_copies (id text PRIMARY KEY, pdf bytea NOT NULL);
+INSERT INTO signed_copies VALUES ('match-1', convert_to('$marker', 'UTF8') || convert_to((SELECT string_agg(md5(i::text), '') FROM generate_series(1, 20000) AS i), 'UTF8'));
+CREATE TABLE campaigns (id serial PRIMARY KEY);
+SQL
+hub_sha=$(psql_hub -c "SELECT encode(sha256(pdf), 'hex') FROM signed_copies WHERE id = 'match-1'")
+hub_counts() { "$@" -f - < "$backup_dir/scripts/row-counts.sql"; }
+want_counts=$(hub_counts psql_hub)
+[ "$want_counts" = "$(printf 'alembic_version|1\ncampaigns|0\nmembers|37\nsigned_copies|1')" ] || { echo "FAIL: row-counts.sql printed '$want_counts'" >&2; exit 1; }
+echo "the hub's rows seeded: $(tr '\n' ' ' <<<"$want_counts")"
+
+hub_log=$(compose run --rm --no-deps -T --entrypoint /bin/bash hub-backup /scripts/backup.sh)
+echo "$hub_log"
+grep -q 'last migration 0033' <<<"$hub_log" || { echo "FAIL: the hub's run did not read the Alembic revision" >&2; exit 1; }
+listing() { s3 "http://$s3_ip:7070/drill-bucket?list-type=2&prefix=$1"; }
+hub_key=$(listing hub/ | grep -o 'hub/hub-[0-9TZ]*\.tar\.cms' | head -n 1)
+[ -n "$hub_key" ] || { echo "FAIL: no object under hub/ in the bucket" >&2; exit 1; }
+# Each backup keeps to its own prefix: the hub's object is not under documenso/ and Documenso's is not under hub/.
+if listing documenso/ | grep -q 'hub-[0-9TZ]*\.tar\.cms'; then echo "FAIL: a hub backup is under documenso/" >&2; exit 1; fi
+if listing hub/ | grep -q 'documenso-[0-9TZ]*\.tar\.cms'; then echo "FAIL: a Documenso backup is under hub/" >&2; exit 1; fi
+s3 -o "$tmp/hub-object.cms" "http://$s3_ip:7070/drill-bucket/$hub_key"
+echo "object $hub_key, $(stat -c %s "$tmp/hub-object.cms") bytes"
+if grep -aq "$marker" "$tmp/hub-object.cms"; then echo "FAIL: the signed copy's text is in the hub's object in clear" >&2; exit 1; fi
+if openssl cms -decrypt -binary -inform DER -in "$tmp/hub-object.cms" -inkey "$tmp/stranger.key" -out /dev/null 2>/dev/null; then
+  echo "FAIL: a stranger's key opened the hub's object" >&2; exit 1
+fi
+
+mkdir -m 700 "$tmp/hub-restored"
+"$backup_dir/scripts/restore.sh" "$tmp/hub-object.cms" "$tmp/second.key" "$tmp/hub-restored" "$tmp/second.crt" >/dev/null
+if ! grep -qx 'name=hub' "$tmp/hub-restored/MANIFEST" || ! grep -qx 'last_migration=0033' "$tmp/hub-restored/MANIFEST" || [ ! -s "$tmp/hub-restored/hub.dump" ]; then
+  echo "FAIL: the hub's MANIFEST or archive is not what was written" >&2; exit 1
+fi
+scratch_psql -d restored -c 'CREATE DATABASE hub_restored' >/dev/null
+openssl cms -decrypt -binary -inform DER -in "$tmp/hub-object.cms" -inkey "$tmp/lorenzo.key" -recip "$tmp/lorenzo.crt" | tar -xOf - hub.dump \
+  | docker exec -i "$scratch_name" pg_restore --exit-on-error --no-owner --no-acl -U documenso -d hub_restored
+scratch_hub() { docker exec -i "$scratch_name" psql -v ON_ERROR_STOP=1 -U documenso -d hub_restored -At "$@"; }
+got_counts=$(hub_counts scratch_hub)
+[ "$got_counts" = "$want_counts" ] || { echo "FAIL: the restored row counts are '$got_counts', production's are '$want_counts'" >&2; exit 1; }
+[ "$(scratch_hub -c 'SELECT version_num FROM alembic_version')" = 0033 ] || { echo "FAIL: the restored database is not at the Alembic revision it was backed up at" >&2; exit 1; }
+got=$(scratch_hub -c "SELECT encode(sha256(pdf), 'hex') FROM signed_copies WHERE id = 'match-1'")
+[ "$got" = "$hub_sha" ] || { echo "FAIL: the restored signed copy is '$got', expected '$hub_sha'" >&2; exit 1; }
+echo "the hub restored straight from the envelope: every table's row count and the revision match, the signed copy byte for byte"
+
+# The hub's own loop and monitor: its check is pinged, Documenso's is not.
+loop=$(compose run -d --no-deps -e BACKUP_FIRST_DELAY=0 hub-backup)
+wait_ping /hub-check
+docker rm -f "$loop" >/dev/null
+[ "$(pings /drill-check)" -eq 1 ] || { echo "FAIL: the hub's backup pinged Documenso's check" >&2; exit 1; }
+[ "$(pings /hub-check/fail)" -eq 0 ] || { echo "FAIL: the hub's backup reported a failure it did not have" >&2; exit 1; }
+echo "the hub's backup pings its own check and nobody else's"
+
+printf '\nOK: both backups, their encryption, the monitors, restore and every refusal held\n'
