@@ -5,7 +5,8 @@
 #
 #   restore.sh <backup.tar.gz.cms> <private-key.pem> <target-dir>
 #
-# Needs only tar and openssl, on any machine. It refuses a target that is not empty, so
+# Needs only tar and openssl, on any machine: GNU tar, or the bsdtar of macOS (with Homebrew's
+# openssl there, docs/restore.md). It refuses a target that is not empty, so
 # it can never be pointed at a live data directory by a slip of the hand.
 set -euo pipefail
 
@@ -19,16 +20,26 @@ if [ -d "$target" ] && [ -n "$(ls -A "$target")" ]; then
   exit 1
 fi
 # umask 077, so a target this creates is 0700 and so is everything under it; a target
-# that already exists keeps the mode its owner gave it (see --no-overwrite-dir below).
+# that already exists keeps the mode its owner gave it (see the staging directory below).
 umask 077
 mkdir -p "$target"
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 openssl cms -decrypt -binary -inform DER -in "$backup" -inkey "$key" -out "$work/bundle.tar.gz"
-# `--no-overwrite-dir`: the bundle's `./` entry must not reset the mode of a target
-# directory that was made 0700 on purpose.
-tar --no-overwrite-dir -C "$target" -xzf "$work/bundle.tar.gz"
+# The bundle is unpacked into a staging directory inside the target, never into the target
+# itself: the bundle's `./` entry resets the mode of whatever directory tar extracts into,
+# and a target that was made 0700 on purpose must stay so. This replaces GNU tar's
+# `--no-overwrite-dir`, which bsdtar rejects. The staging directory is made under umask 077
+# and its contents move up by rename, so nothing is readable by others on the way.
+stage=$(mktemp -d "$target/.restore.XXXXXX")
+trap 'rm -rf "$work" "$stage"' EXIT
+tar -C "$stage" -xzf "$work/bundle.tar.gz"
+# Globs, not `find -exec mv \;`: that form exits 0 when a mv fails, `set -e` does not.
+shopt -s dotglob nullglob
+mv "$stage"/* "$target"/
+shopt -u dotglob nullglob
+rmdir "$stage"
 [ -s "$target/db.sqlite3" ] || { echo "restore: the bundle holds no database" >&2; exit 1; }
 cat "$target/MANIFEST"
 echo "restore: unpacked into $target"

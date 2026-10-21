@@ -265,6 +265,7 @@ step "4. restore into a new directory, a scratch server on it, the item back"
 mkdir -m 700 "$tmp/restored"
 "$project_dir/scripts/restore.sh" "$tmp/object.cms" "$tmp/backup.key" "$tmp/restored"
 [ "$(stat -c %a "$tmp/restored")" = 700 ] || { echo "FAIL: restore.sh changed the mode of the target directory" >&2; exit 1; }
+[ -z "$(find "$tmp/restored" -maxdepth 1 -name '.restore.*')" ] || { echo "FAIL: restore.sh left its staging directory in the target" >&2; exit 1; }
 # A target the script creates is 0700 as well, whatever the caller's umask.
 (umask 022 && "$project_dir/scripts/restore.sh" "$tmp/object.cms" "$tmp/backup.key" "$tmp/restored-new" >/dev/null)
 [ "$(stat -c %a "$tmp/restored-new")" = 700 ] || { echo "FAIL: restore.sh created its target with the caller's umask" >&2; exit 1; }
