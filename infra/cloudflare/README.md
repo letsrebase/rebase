@@ -22,14 +22,17 @@ terraform init
 terraform plan        # nothing to do is the expected answer
 ```
 
-`r2.tf` is not DNS: the private bucket of the backups, Vaultwarden's (REB-648) and, under
-the prefix `documenso/`, Documenso's database (REB-715), and the ninety-day expiry rule of
-each prefix. It needs the `letsrebase.com` token to carry *Account → Workers R2 Storage →
-Edit* as well as *Zone → DNS → Edit*, and the account id above. The S3 access key a backup
-uploads with is made in the dashboard (R2, Manage API tokens, Object Read and Write, that
-one bucket) and is a GitHub Environment secret, never a Terraform output. The expiry
-resource cannot be imported in provider 5.25.0, so a checkout without the state that made
-it plans to create it, which sets the same rules on the bucket again.
+`r2.tf` is not DNS: the private buckets of the backups, one per project so that a
+project's key pair reaches its own backups only. `rebase-vaultwarden-backup` holds
+Vaultwarden's (REB-648); `rebase-hub-backup` holds the hub's, Documenso's database under
+`documenso/` (REB-715) and the hub's own under `hub/` (REB-717), since REB-716. Each prefix
+has a ninety-day expiry rule. It needs the `letsrebase.com` token to carry *Account →
+Workers R2 Storage → Edit* as well as *Zone → DNS → Edit*, and the account id above. The
+S3 access key a backup uploads with is made in the dashboard (R2, Manage API tokens,
+Create Account API token, Object Read and Write, that one bucket) and is a GitHub
+Environment secret, never a Terraform output; the devbox's Terraform token cannot mint one.
+The expiry resource cannot be imported in provider 5.25.0, so a checkout without the state
+that made it plans to create it, which sets the same rules on the bucket again.
 
 A change is a change to a `.tf` file, a `plan` read twice, an `apply`, and the commit
 that ships the file. Never the panel first: a record changed by hand is drift, and the
