@@ -16,6 +16,7 @@ returns the same verdict, because nothing it touches changes between the two cal
 """
 
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from datetime import date
 from typing import Literal
 from uuid import UUID
@@ -235,12 +236,23 @@ def _propose_day_mappings(
     ]
 
 
-def review_content(
-    session: Session,
-    content: bytes,
-    aziende: Sequence[LegalEntity],
-    document_id: UUID,
-) -> list[ReviewedInvoiceRead]:
+@dataclass(frozen=True, slots=True)
+class ReviewedInvoice:
+    """One invoice's verdict before it is attached to anything that names its source:
+    `review_content` adds the `document_id` of an archived document, `InvoiceService.
+    review_upload` the name and hash of a file that was never archived. `invoice` is
+    `None` exactly for an `"unclaimed"` verdict."""
+
+    outcome: InvoiceReviewOutcome
+    invoice: ParsedInvoice | None = None
+    azienda_id: UUID | None = None
+    matched_customer_id: UUID | None = None
+    mappature_giorni: list[WorkUnitDayMappingProposal | None] | None = None
+
+
+def review_invoices(
+    session: Session, content: bytes, aziende: Sequence[LegalEntity]
+) -> list[ReviewedInvoice]:
     """The whole review step for one document's already-read bytes: `detect`,
     `parse`, `classify_parsed_invoice` per invoice against the space's active Italian
     aziende (REB-619), and -- only for an otherwise-`"ready"` one -- the customer
@@ -248,9 +260,9 @@ def review_content(
     """
     adapter = detect_adapter(content)
     if adapter is None:
-        return [ReviewedInvoiceRead(document_id=document_id, outcome="unclaimed")]
+        return [ReviewedInvoice(outcome="unclaimed")]
 
-    rows: list[ReviewedInvoiceRead] = []
+    rows: list[ReviewedInvoice] = []
     for invoice in adapter.parse(content):
         classification, azienda = classify_parsed_invoice(
             invoice, aziende, existing_for=register_lookup(session, invoice), content=content
@@ -265,8 +277,7 @@ def review_content(
             else:
                 mappature_giorni = _propose_day_mappings(session, invoice, matched_customer_id)
         rows.append(
-            ReviewedInvoiceRead(
-                document_id=document_id,
+            ReviewedInvoice(
                 outcome=outcome,
                 invoice=invoice,
                 azienda_id=azienda.id if azienda is not None else None,
@@ -275,3 +286,24 @@ def review_content(
             )
         )
     return rows
+
+
+def review_content(
+    session: Session,
+    content: bytes,
+    aziende: Sequence[LegalEntity],
+    document_id: UUID,
+) -> list[ReviewedInvoiceRead]:
+    """`review_invoices` for the bytes of an archived document, each verdict named by
+    that document's id."""
+    return [
+        ReviewedInvoiceRead(
+            document_id=document_id,
+            outcome=row.outcome,
+            invoice=row.invoice,
+            azienda_id=row.azienda_id,
+            matched_customer_id=row.matched_customer_id,
+            mappature_giorni=row.mappature_giorni,
+        )
+        for row in review_invoices(session, content, aziende)
+    ]

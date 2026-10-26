@@ -1440,6 +1440,56 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/invoices/import/files/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Review Import Files
+         * @description REB-758: `/import/review` for the page, which holds files and not `document_id`s.
+         *     The multipart field `file` is repeated, one per FatturaPA XML file or ZIP of them (a
+         *     ZIP is opened, one level deep).
+         *     Read-only and admin only, enforced by the service, and nothing is stored: a row
+         *     names its file and the file's `sha256`, which is the key of that file's decision
+         *     in `/import/files/confirm`.
+         */
+        post: operations["review_import_files_api_invoices_import_files_review_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/invoices/import/files/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Import Files
+         * @description REB-758: `/import/confirm` for the page. The same files as the review, sent again:
+         *     each is parsed and classified from its own bytes against the register as it is now,
+         *     never from the review, and written by the same code `/import/confirm` runs. A
+         *     single-invoice file's XML is archived as a document of the invoice's customer.
+         *     `decisioni` is the JSON `{"decisioni": {"<sha256>": {"create_customer": true}}}`: per
+         *     file, a `customer_id` to attach or `create_customer`, as on `/import/confirm`.
+         */
+        post: operations["confirm_import_files_api_invoices_import_files_confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/invoices/register/{anno}/gaps": {
         parameters: {
             query?: never;
@@ -3871,6 +3921,16 @@ export interface components {
              */
             raggruppa_per_mese: boolean;
         };
+        /** Body_confirm_import_files_api_invoices_import_files_confirm_post */
+        Body_confirm_import_files_api_invoices_import_files_confirm_post: {
+            /** File */
+            file: string[];
+            /**
+             * Decisioni
+             * @default {}
+             */
+            decisioni: string;
+        };
         /** Body_put_firma_api_aziende__azienda_id__firma_put */
         Body_put_firma_api_aziende__azienda_id__firma_put: {
             /** File */
@@ -3880,6 +3940,11 @@ export interface components {
         Body_put_logo_api_aziende__azienda_id__logo_put: {
             /** File */
             file: string;
+        };
+        /** Body_review_import_files_api_invoices_import_files_review_post */
+        Body_review_import_files_api_invoices_import_files_review_post: {
+            /** File */
+            file: string[];
         };
         /** Body_upload_version_api_documents__document_id__versions_post */
         Body_upload_version_api_documents__document_id__versions_post: {
@@ -9389,6 +9454,62 @@ export interface components {
             voci_senza_tariffa: number;
             /** Voci */
             voci: number;
+        };
+        /**
+         * UploadedInvoiceConfirmRead
+         * @description One row of the confirmation of an uploaded file, `ConfirmedInvoiceRead`'s fields
+         *     named by the file.
+         */
+        UploadedInvoiceConfirmRead: {
+            /** File */
+            file: string;
+            /** Sha256 */
+            sha256: string;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "imported" | "already_present" | "conflict" | "incoming_skipped" | "needs_customer_confirmation" | "unclaimed";
+            /** Azienda Id */
+            azienda_id?: string | null;
+            fattura?: components["schemas"]["InvoiceRead"] | null;
+            /** Buchi Non Dichiarati */
+            buchi_non_dichiarati?: number[] | null;
+        };
+        /** UploadedInvoiceConfirmResult */
+        UploadedInvoiceConfirmResult: {
+            /** Righe */
+            righe: components["schemas"]["UploadedInvoiceConfirmRead"][];
+        };
+        /**
+         * UploadedInvoiceReviewRead
+         * @description One row of the review of an uploaded file: `ReviewedInvoiceRead`'s own fields,
+         *     named by the file (and its SHA-256) instead of a `document_id`, since nothing was
+         *     archived. One per invoice the file parses into, or exactly one `"unclaimed"` for a
+         *     file no registered format recognises.
+         */
+        UploadedInvoiceReviewRead: {
+            /** File */
+            file: string;
+            /** Sha256 */
+            sha256: string;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "ready" | "needs_customer_confirmation" | "already_present" | "conflict" | "incoming_skipped" | "unclaimed";
+            invoice?: components["schemas"]["ParsedInvoice"] | null;
+            /** Azienda Id */
+            azienda_id?: string | null;
+            /** Matched Customer Id */
+            matched_customer_id?: string | null;
+            /** Mappature Giorni */
+            mappature_giorni?: (components["schemas"]["WorkUnitDayMappingProposal"] | null)[] | null;
+        };
+        /** UploadedInvoiceReviewResult */
+        UploadedInvoiceReviewResult: {
+            /** Righe */
+            righe: components["schemas"]["UploadedInvoiceReviewRead"][];
         };
         /** UserCreate */
         UserCreate: {
@@ -20979,6 +21100,248 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InvoiceConfirmResult"];
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    review_import_files_api_invoices_import_files_review_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_review_import_files_api_invoices_import_files_review_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadedInvoiceReviewResult"];
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_import_files_api_invoices_import_files_confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_confirm_import_files_api_invoices_import_files_confirm_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadedInvoiceConfirmResult"];
                 };
             };
             /** @description Permesso negato: l'actor non ha il ruolo richiesto. */

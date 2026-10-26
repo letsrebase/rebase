@@ -3,7 +3,7 @@ from typing import Annotated
 from urllib.parse import quote
 from uuid import UUID
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, File, Form, Query, UploadFile, status
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
@@ -11,6 +11,12 @@ from pigrocrm.core.activities.schemas import ActivityRead
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.invoices.import_confirm import InvoiceConfirmRequest, InvoiceConfirmResult
 from pigrocrm.core.invoices.import_review import InvoiceReviewRequest, InvoiceReviewResult
+from pigrocrm.core.invoices.import_upload import (
+    UPLOAD_MAX_TOTAL_BYTES,
+    UploadedInvoiceConfirmResult,
+    UploadedInvoiceReviewResult,
+    parse_decisions,
+)
 from pigrocrm.core.invoices.schemas import (
     MAX_LINES,
     ArtifactKind,
@@ -188,6 +194,56 @@ def confirm_import(
         create_customer=data.create_customer,
     )
     return InvoiceConfirmResult(righe=righe)
+
+
+def _uploaded(files: list[UploadFile]) -> list[tuple[str, bytes]]:
+    """The files of a multipart body as `(name, bytes)`. Each is read through the whole
+    request's ceiling plus one byte, so a body larger than the service will take is
+    refused by `expand_uploads` with its sentence instead of being held in memory first;
+    the service opens the ZIPs, after the admin check."""
+    return [
+        (upload.filename or "senza-nome", upload.file.read(UPLOAD_MAX_TOTAL_BYTES + 1))
+        for upload in files
+    ]
+
+
+@router.post("/import/files/review", response_model=UploadedInvoiceReviewResult)
+def review_import_files(
+    file: Annotated[list[UploadFile], File()],
+    session: SessionDep,
+    storage: StorageDep,
+    settings: SettingsDep,
+    actor: ActorDep,
+) -> UploadedInvoiceReviewResult:
+    """REB-758: `/import/review` for the page, which holds files and not `document_id`s.
+    The multipart field `file` is repeated, one per FatturaPA XML file or ZIP of them (a
+    ZIP is opened, one level deep).
+    Read-only and admin only, enforced by the service, and nothing is stored: a row
+    names its file and the file's `sha256`, which is the key of that file's decision
+    in `/import/files/confirm`."""
+    righe = _service(session, storage, settings).review_upload(_uploaded(file), actor)
+    return UploadedInvoiceReviewResult(righe=righe)
+
+
+@router.post("/import/files/confirm", response_model=UploadedInvoiceConfirmResult)
+def confirm_import_files(
+    file: Annotated[list[UploadFile], File()],
+    session: SessionDep,
+    storage: StorageDep,
+    settings: SettingsDep,
+    actor: ActorDep,
+    decisioni: Annotated[str, Form()] = "{}",
+) -> UploadedInvoiceConfirmResult:
+    """REB-758: `/import/confirm` for the page. The same files as the review, sent again:
+    each is parsed and classified from its own bytes against the register as it is now,
+    never from the review, and written by the same code `/import/confirm` runs. A
+    single-invoice file's XML is archived as a document of the invoice's customer.
+    `decisioni` is the JSON `{"decisioni": {"<sha256>": {"create_customer": true}}}`: per
+    file, a `customer_id` to attach or `create_customer`, as on `/import/confirm`."""
+    righe = _service(session, storage, settings).confirm_upload(
+        _uploaded(file), parse_decisions(decisioni), actor
+    )
+    return UploadedInvoiceConfirmResult(righe=righe)
 
 
 # The register is per azienda (REB-619): both routes take the azienda as a query

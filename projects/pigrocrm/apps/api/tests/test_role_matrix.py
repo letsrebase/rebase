@@ -416,6 +416,8 @@ ROWS: list[Row] = [
         admin_only=True,
         body={"document_id": "__FAKE__"},
     ),
+    Row("POST", "/api/invoices/import/files/review", admin_only=True, multipart=True),
+    Row("POST", "/api/invoices/import/files/confirm", admin_only=True, multipart=True),
     Row(
         "POST",
         "/api/invoices/register/{anno}/gaps",
