@@ -107,3 +107,44 @@ def test_a_key_of_a_type_that_does_not_exist_is_refused(collaborator_client: Tes
     )
 
     assert response.status_code == 422
+
+
+def _today(logged_in: TestClient) -> str:
+    from pigrocrm.core.db.clock import today_local
+
+    return today_local().isoformat()
+
+
+def test_the_reminders_of_a_person_are_listed_and_closing_one_changes_its_status(
+    logged_in: TestClient,
+) -> None:
+    me = logged_in.get("/api/auth/me").json()["id"]
+    created = logged_in.post(
+        "/api/activities",
+        json={"titolo": "Mandare il preventivo", "scadenza": _today(logged_in), "assegnata_a": me},
+    )
+    assert created.status_code == 201, created.text
+
+    listed = logged_in.get("/api/reminders")
+    assert listed.status_code == 200, listed.text
+    (reminder,) = listed.json()
+    assert reminder["type"] == "attivita_due"
+    assert reminder["severity"] == "warning"
+    assert reminder["title"] == "Attività in scadenza: Mandare il preventivo"
+    assert reminder["detail"] == "Scade oggi"
+    assert reminder["status"] == "open"
+    assert reminder["entity"] == "attivita" and reminder["entity_id"] == created.json()["id"]
+
+    logged_in.post(
+        "/api/reminders/acknowledge", json={"key": reminder["key"], "severity": "warning"}
+    )
+    again = logged_in.get("/api/reminders").json()
+    assert [item["status"] for item in again] == ["acknowledged"]
+
+    done = logged_in.post(f"/api/activities/{created.json()['id']}/complete")
+    assert done.status_code == 200, done.text
+    assert logged_in.get("/api/reminders").json() == [], "the cause is fixed, the reminder is gone"
+
+
+def test_nothing_is_listed_for_a_space_with_nothing_due(logged_in: TestClient) -> None:
+    assert logged_in.get("/api/reminders").json() == []

@@ -4,6 +4,7 @@ import json
 from uuid import uuid4
 
 from mcp import Client
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
@@ -93,3 +94,29 @@ async def test_an_agent_acknowledges_and_snoozes_for_its_person(mcp_session: Ses
 
     items = mine if isinstance(mine, list) else mine["result"]
     assert [item["key"] for item in items] == [key]
+
+
+async def test_an_agent_lists_the_reminders_of_its_person(mcp_session: Session) -> None:
+    from datetime import timedelta
+
+    from pigrocrm.core.attivita.models import Attivita
+    from pigrocrm.core.db.clock import today_local
+
+    server = _server_for(mcp_session, "admin")
+    me = mcp_session.scalars(select(User).order_by(User.created_at.desc())).first()
+    assert me is not None
+    mcp_session.add(
+        Attivita(
+            titolo="Sollecitare Rossi",
+            scadenza=today_local() - timedelta(days=2),
+            assegnata_a=me.id,
+        )
+    )
+    mcp_session.flush()
+
+    async with Client(server) as client:
+        listed = _payload(await client.call_tool("list_reminders", {}))
+
+    items = listed if isinstance(listed, list) else listed["result"]
+    assert [(item["type"], item["severity"]) for item in items] == [("attivita_overdue", "serious")]
+    assert items[0]["key"].startswith("attivita_overdue:")

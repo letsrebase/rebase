@@ -12,12 +12,14 @@ from typing import Any
 
 from mcp.server import MCPServer
 
+from pigrocrm.core.config import Settings
 from pigrocrm.core.reminders.preferences import ReminderPreferenceService
 from pigrocrm.core.reminders.schemas import (
     AcknowledgeRequest,
     ReminderPreferenceWrite,
     SnoozeRequest,
 )
+from pigrocrm.core.reminders.service import ReminderService
 from pigrocrm.core.reminders.state import ReminderStateService
 from pigrocrm_mcp.context import McpContext
 
@@ -30,7 +32,20 @@ def _state(context: McpContext) -> ReminderStateService:
     return ReminderStateService(context.session)
 
 
-def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> None:
+def register(
+    mcp: MCPServer, context: McpContext, guard: Callable[..., Any], settings: Settings
+) -> None:
+    @mcp.tool()
+    @guard
+    def list_reminders() -> list[dict[str, Any]]:
+        """I promemoria di chi chiede, ricalcolati adesso dai dati, i più gravi per primi.
+
+        Ogni voce dice `status` (`open`, `acknowledged`, `snoozed`), che cosa è
+        (`entity`, `entity_id`) e `key`, quello che serve a `acknowledge_reminder` e
+        `snooze_reminder`. Quando la causa si risolve, il promemoria sparisce da solo."""
+        reminders = ReminderService(context.session, settings).list(context.actor)
+        return [item.model_dump(mode="json") for item in reminders]
+
     @mcp.tool()
     @guard
     def list_reminder_types() -> list[dict[str, Any]]:

@@ -12,12 +12,14 @@ from pigrocrm.core.reminders.schemas import (
     ReminderPreferenceRead,
     ReminderPreferencesRead,
     ReminderPreferenceWrite,
+    ReminderRead,
     ReminderStateRead,
     ReminderTypeRead,
     SnoozeRequest,
 )
+from pigrocrm.core.reminders.service import ReminderService
 from pigrocrm.core.reminders.state import ReminderStateService
-from pigrocrm_api.deps import ActorDep, SessionDep
+from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 
 router = APIRouter(prefix="/api/reminders", tags=["reminders"], responses=PROBLEM_RESPONSES)
@@ -35,6 +37,16 @@ TypePath = Annotated[
         ),
     ),
 ]
+
+
+@router.get("", response_model=list[ReminderRead])
+def list_reminders(
+    session: SessionDep, actor: ActorDep, settings: SettingsDep
+) -> list[ReminderRead]:
+    """I promemoria di chi chiede, ricalcolati adesso dai dati: i più gravi per primi.
+    Quelli già chiusi o rimandati ci sono, con il loro `status`; sparisce solo ciò di cui
+    la causa è risolta."""
+    return ReminderService(session, settings).list(actor)
 
 
 @router.get("/types", response_model=list[ReminderTypeRead])

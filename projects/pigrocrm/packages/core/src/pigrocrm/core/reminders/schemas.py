@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 from datetime import date, datetime
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -123,6 +124,30 @@ class ReminderPreferencesRead(BaseModel):
     general: EffectiveGeneralSettings
 
 
+class ReminderRead(BaseModel):
+    """One reminder as one person sees it (spec §4: severity is resolved per recipient).
+
+    `status` says what this person has done about it: `open`, `acknowledged` (at this
+    severity or above) or `snoozed` (until `snoozed_until`); the client decides what to
+    show of each. `delivered_at` is when the pass last put it in this person's list, and
+    `null` for a reminder the pass has not seen yet.
+    """
+
+    key: str
+    type: str
+    label: str
+    severity: Severity
+    measure: float
+    title: str
+    detail: str
+    entity: str = Field(description="`attivita`, `deal` o `timer`: che cosa si apre")
+    entity_id: UUID
+    customer_id: UUID | None
+    status: Literal["open", "acknowledged", "snoozed"]
+    snoozed_until: date | None
+    delivered_at: datetime | None
+
+
 class AcknowledgeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -159,6 +184,7 @@ __all__ = [
     "QuietHours",
     "ReminderPreferenceRead",
     "ReminderPreferenceWrite",
+    "ReminderRead",
     "ReminderPreferencesRead",
     "ReminderStateRead",
     "ReminderTypeRead",
