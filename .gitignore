@@ -48,6 +48,9 @@ data/
 !projects/website/src/public/assets/*.png
 # The echo logo, drawn by shared/brand/tools/build-echo.mjs and committed (ORB-200).
 !shared/brand/echo/*.png
+# The icons an installed PigroCRM wears, drawn by shared/brand/tools/build-pwa-icons.mjs
+# and committed (REB-731).
+!shared/brand/pwa/*.png
 # The web vault's favicons, drawn by projects/vaultwarden/branding/build.mjs and committed (REB-688).
 !projects/vaultwarden/branding/images/**/*.png
 # A rendered contact sheet beside a design record, the evidence for its rows (REB-298).

@@ -6,6 +6,7 @@
   "description": "The palette, the typeface, the four-tile mark, the wordmark and the contrast maths, shared by every surface.",
   "scripts": {
     "build:echo": "node tools/build-echo.mjs",
+    "build:pwa-icons": "node tools/build-pwa-icons.mjs",
     "build:wordmark": "uv run tools/build-wordmark.py"
   },
   "exports": {
@@ -18,6 +19,7 @@
     "./wordmark-paper.svg": "./wordmark-paper.svg",
     "./lockup-paper.svg": "./lockup-paper.svg",
     "./echo/*": "./echo/*",
+    "./pwa/*": "./pwa/*",
     "./contrast": "./contrast.ts",
     "./package.json": "./package.json"
   },
@@ -31,6 +33,7 @@
     "wordmark-paper.svg",
     "lockup-paper.svg",
     "echo",
+    "pwa",
     "contrast.ts"
   ],
   "devDependencies": {
