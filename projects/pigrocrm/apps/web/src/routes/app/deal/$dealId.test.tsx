@@ -130,7 +130,7 @@ describe('DealDetail', () => {
               { id: 'lost', nome: 'Perso', posizione: 5, tipo: 'lost', code: 'lost', probabilita_default: 0 },
             ])
           // So does the timeline, which the Pipedrive-shaped page mounts in its right
-          // column («Attività recenti», 2026-09-09). Handed a page envelope it would
+          // column («Ultimi eventi», 2026-09-09). Handed a page envelope it would
           // render `{items: []}.map` and take the whole tree down with it, and every
           // `getByRole` below would then fail on an empty body -- a mock shape reported
           // as a missing button.

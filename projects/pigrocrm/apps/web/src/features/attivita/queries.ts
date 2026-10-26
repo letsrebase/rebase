@@ -1,10 +1,13 @@
+import { useQuery } from '@tanstack/react-query'
 import { useCallback, useMemo } from 'react'
 import { useCustomer } from '@/features/customers/queries'
 import { useDeal } from '@/features/deals/queries'
 import { useInvoice } from '@/features/invoices/queries'
 import { usePerson } from '@/features/people/queries'
 import { useUsers } from '@/features/settings/queries'
+import { api, unwrap } from '@/lib/api'
 import { useAuth, useIsAdmin } from '@/lib/auth'
+import type { Attivita } from '@/features/calendar/queries'
 import type { LinkKind, LinkValue } from './links'
 
 /**
@@ -78,4 +81,32 @@ export function useAssignees() {
   )
 
   return { options, nameOf, me: user?.id ?? null }
+}
+
+/** The filters of `GET /api/activities` a screen sends; every one is optional. */
+export interface AttivitaFilters {
+  stato?: Attivita['stato']
+  assegnata_a?: string
+  customer_id?: string
+  person_id?: string
+  deal_id?: string
+  invoice_id?: string
+  scade_entro?: string
+  senza_scadenza?: boolean
+  sort?: 'created_at' | 'scadenza'
+  dir?: 'asc' | 'desc'
+  limit?: number
+}
+
+/**
+ * One page of the attività list, under the `['attivita']` prefix every attività write
+ * invalidates (`invalidateAfterWrite`): a task created from the calendar shows on the
+ * record's tab and on the page without anybody refetching by hand.
+ */
+export function useAttivitaList(filters: AttivitaFilters, options: { enabled?: boolean } = {}) {
+  return useQuery({
+    enabled: options.enabled ?? true,
+    queryKey: ['attivita', 'list', filters] as const,
+    queryFn: () => unwrap(api.GET('/api/activities', { params: { query: filters } })),
+  })
 }

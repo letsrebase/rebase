@@ -4,6 +4,7 @@ import { useState, type ReactNode } from 'react'
 import { toast } from '@rebase/ui/sonner'
 import { renderFieldValue } from '@/components/DynamicFieldRenderer'
 import { EntityDetailLayout } from '@/components/EntityDetailLayout'
+import { EntityAttivita } from '@/features/attivita/EntityAttivita'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
@@ -194,6 +195,7 @@ export function CustomerDetail() {
           />
         }
         economics={<EconomicsTab customerId={customerId} />}
+        attivita={<EntityAttivita link={{ kind: 'customer', id: customerId }} />}
         emails={gmailConfigured ? <EmailTab entityType="customer" entityId={customerId} /> : undefined}
         actions={
           canWrite && (

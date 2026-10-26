@@ -55,6 +55,12 @@ interface EntityDetailLayoutProps {
    * person's customer and that customer's live deals (`gmail/links.py`).
    */
   emails?: ReactNode
+  /**
+   * The Attività tab's contents: what is still to be done about this record (REB-721), as
+   * opposed to the Timeline, which is what already happened to it. Optional like every
+   * slot above, and the same reasoning: an absent prop is no tab at all.
+   */
+  attivita?: ReactNode
   entityType: TimelineEntityType
   entityId: string
   /**
@@ -88,6 +94,7 @@ export function EntityDetailLayout({
   hours,
   economics,
   emails,
+  attivita,
   entityType,
   entityId,
   timelineLimit,
@@ -109,6 +116,9 @@ export function EntityDetailLayout({
             {invoices && <TabsTrigger value="fatture">Fatture</TabsTrigger>}
             {hours && <TabsTrigger value="ore">Ore</TabsTrigger>}
             {economics && <TabsTrigger value="economia">Economia</TabsTrigger>}
+            {/* Before the Email and the Timeline tabs: those two are a record of what
+                already happened, and this is what is still to be done. */}
+            {attivita && <TabsTrigger value="attivita">Attività</TabsTrigger>}
             {/* Immediately before Timeline: both are a record of what already happened,
                 and everything to the left of them is a thing the user maintains. */}
             {emails && <TabsTrigger value="email">Email</TabsTrigger>}
@@ -140,6 +150,11 @@ export function EntityDetailLayout({
         {economics && (
           <TabsContent value="economia" className="mt-6">
             {economics}
+          </TabsContent>
+        )}
+        {attivita && (
+          <TabsContent value="attivita" className="mt-6">
+            {attivita}
           </TabsContent>
         )}
         {emails && (

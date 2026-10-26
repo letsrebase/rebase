@@ -20,6 +20,14 @@ export const LINK_KIND_LABELS: Record<LinkKind, string> = {
   invoice: 'Fattura',
 }
 
+/** The query parameter and the body column that name each kind, as the API spells them. */
+export const LINK_COLUMN = {
+  customer: 'customer_id',
+  person: 'person_id',
+  deal: 'deal_id',
+  invoice: 'invoice_id',
+} as const satisfies Record<LinkKind, string>
+
 type LinkColumns = Pick<Attivita, 'customer_id' | 'person_id' | 'deal_id' | 'invoice_id'>
 
 /** The record an attività hangs from, or `null` for one that hangs from none. */
