@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { correspondentKeys } from '@/features/gmail/correspondents'
 import { useLegalEntityScope } from '@/lib/legalEntity'
 import { api, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
@@ -98,10 +99,15 @@ export function useUpdateCustomer(customerId: string) {
           body: body as unknown as CustomerUpdateBody,
         }),
       ),
-    onSuccess: () => {
+    onSuccess: (_updated, body) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.customer(customerId) })
       void queryClient.invalidateQueries({ queryKey: queryKeys.customers() })
       void queryClient.invalidateQueries({ queryKey: queryKeys.timeline('customer', customerId) })
+      // The addresses the mailbox found are for the domain read from these two fields
+      // (REB-766): a corrected website or email makes that answer the old domain's.
+      if ('sito_web' in body || 'email' in body) {
+        queryClient.removeQueries({ queryKey: correspondentKeys.customer(customerId) })
+      }
     },
   })
 }
