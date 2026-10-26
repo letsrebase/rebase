@@ -222,6 +222,30 @@ def test_a_period_that_cuts_a_line_takes_only_its_days_share_of_it(
     assert rate.tariffa_reale == Decimal("500.00")
 
 
+def test_an_hourly_card_does_not_price_a_day_so_the_day_counts_as_uncovered(
+    db_session: Session, local_storage: LocalFileStorage
+) -> None:
+    service = _invoice_service(db_session, local_storage)
+    contract = _contract(db_session)
+    card = _card(db_session, contract, "500.00")
+    _day(db_session, contract, date(ANNO, 3, 5))
+    invoice = assemble_unbilled_work_units_into_new_invoice(
+        db_session, local_storage, contract.id, ADMIN
+    )
+    service.issue(invoice.id, InvoiceIssue(data_emissione=date(ANNO, 3, 31)), ADMIN)
+    card.tipo = "orario"
+    card.unita = "ora"
+    db_session.flush()
+
+    analysis = AnalyticsService(db_session).days_analysis(
+        READER, date(ANNO, 3, 1), date(ANNO, 3, 31)
+    )
+
+    (rate,) = analysis.per_contratto
+    assert rate.tariffa_nominale is None
+    assert rate.giorni_senza_listino == Decimal("1.00")
+
+
 def test_a_day_written_off_as_unbillable_still_counts_as_recorded(db_session: Session) -> None:
     contract = _contract(db_session)
     written_off = _day(db_session, contract, date(ANNO, 3, 5))

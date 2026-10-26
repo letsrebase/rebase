@@ -282,7 +282,11 @@ def realised_rates(
             (
                 c
                 for c in cards[contract_id]
-                if c.valido_da <= giorno and (c.valido_a is None or giorno <= c.valido_a)
+                # Only a daily card prices a day: an hourly or a fixed-fee card has no
+                # per-day figure to set the realised rate against.
+                if c.tipo == "giornaliero"
+                and c.valido_da <= giorno
+                and (c.valido_a is None or giorno <= c.valido_a)
             ),
             None,
         )
