@@ -143,6 +143,40 @@ describe('CommandPalette', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 
+  it('finds an attività and opens it in its dialog over the Attività page', async () => {
+    const ATTIVITA_ID = '0192f3b2-8c1a-7c3d-9f4e-aaaaaaaaaaaa'
+    vi.mocked(api.GET).mockResolvedValue(
+      ok({
+        termine: 'proposte',
+        gruppi: [
+          {
+            entity: 'attivita',
+            totale: 1,
+            totale_e_un_minimo: false,
+            hits: [
+              {
+                entity: 'attivita',
+                id: ATTIVITA_ID,
+                etichetta: 'Preparare le proposte',
+                sottotitolo: '30/10/2026',
+                punteggio: '0.6000',
+                campo: 'titolo',
+              },
+            ],
+          },
+        ],
+      }),
+    )
+    renderPalette()
+    const user = await type('proposte')
+
+    expect(await screen.findByText('Attività · 1')).toBeInTheDocument()
+    await user.click(await screen.findByRole('option', { name: /Preparare le proposte/ }))
+
+    expect(navigate).toHaveBeenCalledWith({ to: '/app/activities', search: { apri: ATTIVITA_ID } })
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+
   it('states the real count and offers "vedi tutti" when the group is truncated', async () => {
     vi.mocked(api.GET).mockResolvedValue(ok(results({ totale: 42 })))
     renderPalette()

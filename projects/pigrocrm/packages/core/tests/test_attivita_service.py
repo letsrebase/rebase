@@ -318,6 +318,24 @@ def test_the_undated_ones_can_be_asked_for_explicitly(service: AttivitaService) 
     assert [item.titolo for item in page.items] == ["Senza data"]
 
 
+def test_the_archived_ones_are_their_own_list(service: AttivitaService) -> None:
+    """`archiviate` is the complement of the live list, never a union with it: a screen
+    that offers «ripristina» has to be able to find what it restores, and the live list
+    has to keep hiding it."""
+    kept = _create(service, titolo="Resta")
+    gone = _create(service, titolo="Per errore")
+    service.soft_delete(gone.id, ADMIN)
+
+    live = service.list(AttivitaListQuery(), ADMIN)
+    archived = service.list(AttivitaListQuery(archiviate=True), ADMIN)
+
+    assert [item.id for item in live.items] == [kept.id]
+    assert [item.id for item in archived.items] == [gone.id]
+
+    service.restore(gone.id, ADMIN)
+    assert service.list(AttivitaListQuery(archiviate=True), ADMIN).items == []
+
+
 def test_the_list_does_not_hide_what_was_completed(service: AttivitaService) -> None:
     """`stato` defaults to «every state»: a list that silently dropped the completed
     ones is a list somebody will read as «the work was never done»."""

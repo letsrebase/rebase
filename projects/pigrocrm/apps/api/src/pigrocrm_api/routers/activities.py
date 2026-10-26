@@ -40,6 +40,9 @@ def list_attivita(
     # Three states and not two: `None` is «both», which is what a caller who does not
     # care has to be able to say. See `AttivitaListQuery`.
     senza_scadenza: Annotated[bool | None, Query()] = None,
+    archiviate: Annotated[
+        bool, Query(description="Solo le archiviate (per ripristinarle); di default, le vive")
+    ] = False,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     # `str` and not `UUID` since slice 6: the cursor is opaque and carries the sort
     # value as well as the id.
@@ -59,6 +62,7 @@ def list_attivita(
         invoice_id=invoice_id,
         scade_entro=scade_entro,
         senza_scadenza=senza_scadenza,
+        archiviate=archiviate,
         limit=limit,
         cursor=cursor,
         sort=sort,

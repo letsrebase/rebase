@@ -8563,7 +8563,7 @@ export interface components {
              * Entity
              * @enum {string}
              */
-            entity: "customer" | "person" | "deal" | "document" | "invoice";
+            entity: "customer" | "person" | "deal" | "document" | "invoice" | "attivita";
             /** Hits */
             hits: components["schemas"]["SearchHit"][];
             /** Totale */
@@ -8577,7 +8577,7 @@ export interface components {
              * Entity
              * @enum {string}
              */
-            entity: "customer" | "person" | "deal" | "document" | "invoice";
+            entity: "customer" | "person" | "deal" | "document" | "invoice" | "attivita";
             /**
              * Id
              * Format: uuid
@@ -33987,6 +33987,8 @@ export interface operations {
                 invoice_id?: string | null;
                 scade_entro?: string | null;
                 senza_scadenza?: boolean | null;
+                /** @description Solo le archiviate (per ripristinarle); di default, le vive */
+                archiviate?: boolean;
                 limit?: number;
                 cursor?: string | null;
                 /** @description created_at | scadenza */

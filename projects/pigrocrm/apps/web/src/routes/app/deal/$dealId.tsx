@@ -4,6 +4,7 @@ import { useState, type ReactNode } from 'react'
 import { toast } from '@rebase/ui/sonner'
 import { renderFieldValue } from '@/components/DynamicFieldRenderer'
 import { EntityDetailLayout } from '@/components/EntityDetailLayout'
+import { EntityAttivita } from '@/features/attivita/EntityAttivita'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { RowActions } from '@/components/RowActions'
 import { Timeline } from '@/components/Timeline'
@@ -212,6 +213,7 @@ export function DealDetail() {
         invoices={<InvoicesTab owner={{ dealId }} />}
         hours={<TimeEntriesTab dealId={dealId} />}
         economics={<EconomicsTab dealId={dealId} />}
+        attivita={<EntityAttivita link={{ kind: 'deal', id: dealId }} />}
         emails={gmailConfigured ? <EmailTab entityType="deal" entityId={dealId} /> : undefined}
         actions={
           canWrite && (
@@ -343,7 +345,7 @@ export function DealDetail() {
                     column is the page. The tab still has the whole history. */}
                 <Card>
                   <CardContent className="pt-6">
-                    <h2 className="mb-3 font-semibold">Attività recenti</h2>
+                    <h2 className="mb-3 font-semibold">Ultimi eventi</h2>
                     <Timeline entityType="deal" entityId={dealId} limit={10} />
                   </CardContent>
                 </Card>

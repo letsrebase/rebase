@@ -87,8 +87,9 @@ def test_every_group_is_present_even_when_empty(db_session: Session) -> None:
         "deal",
         "document",
         "invoice",
+        "attivita",
     ]
-    # Every member of `SearchEntity`, not a list that happens to be five long: a sixth
+    # Every member of `SearchEntity`, not a list that happens to be six long: a seventh
     # entity declared and not searched would be the same defect again.
     assert {group.entity for group in results.gruppi} == set(get_args(SearchEntity))
     assert all(group.totale == 0 and group.hits == [] for group in results.gruppi)

@@ -18,18 +18,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@rebase/ui/select'
+import { AttivitaDialog } from '@/features/attivita/AttivitaDialog'
+import { AttivitaItem } from '@/features/attivita/AttivitaItem'
 import { useDeals } from '@/features/deals/queries'
 import { useLogTime } from '@/features/time/queries'
 import { toProblem } from '@/lib/api'
 import { useAuth, useCanWrite } from '@/lib/auth'
 import { formatIsoDateItalian } from '@/lib/dates'
 import { GIORNATA, MEZZA, normaliseHours } from './hours'
-import {
-  useCancelAttivita,
-  useCompleteAttivita,
-  useCreateAttivita,
-  type CalendarDay,
-} from './queries'
+import type { CalendarDay } from './queries'
 
 /**
  * One day, opened from a cell: what was worked, what falls due, and the two things that
@@ -65,11 +62,11 @@ export function DayPanel({
 
         <div className="space-y-5">
           <Worked data={data} />
-          <Due data={data} onProblem={setProblem} canWrite={canWrite} />
+          <Due data={data} />
           {canWrite && (
             <>
               <LogHours giorno={giorno} onProblem={setProblem} />
-              <NewCommitment giorno={giorno} onProblem={setProblem} />
+              <NewCommitment giorno={giorno} />
             </>
           )}
           {problem !== null && (
@@ -114,28 +111,10 @@ function Worked({ data }: { data: CalendarDay | undefined }) {
 
 /** The day's deadlines: commitments, which can be closed from here, and invoices, which
  *  cannot be touched from here at all. */
-function Due({
-  data,
-  onProblem,
-  canWrite,
-}: {
-  data: CalendarDay | undefined
-  onProblem: (message: string | null) => void
-  canWrite: boolean
-}) {
-  const complete = useCompleteAttivita()
-  const cancel = useCancelAttivita()
+function Due({ data }: { data: CalendarDay | undefined }) {
   const attivita = data?.attivita ?? []
   const fatture = data?.fatture ?? []
   if (attivita.length === 0 && fatture.length === 0) return null
-
-  function close(mutation: typeof complete, id: string, done: string) {
-    onProblem(null)
-    mutation.mutate(id, {
-      onSuccess: () => toast.success(done),
-      onError: (error) => onProblem(toProblem(error).detail),
-    })
-  }
 
   return (
     <section aria-labelledby="scadenze-del-giorno" className="space-y-2">
@@ -144,32 +123,7 @@ function Due({
       </h3>
       <ul className="space-y-2 text-sm">
         {attivita.map((item) => (
-          <li key={item.id} className="flex items-center justify-between gap-3">
-            <span className={item.stato === 'aperta' ? undefined : 'line-through opacity-60'}>
-              {item.titolo}
-            </span>
-            {canWrite && item.stato === 'aperta' && (
-              <span className="flex gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => close(complete, item.id, 'Fatto')}
-                >
-                  Fatto
-                </Button>
-                {/* «Annulla» is not a delete and not «fatto»: it records that the
-                    commitment stopped mattering, which is the answer to *why* six
-                    months later. */}
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => close(cancel, item.id, 'Annullata')}
-                >
-                  Annulla
-                </Button>
-              </span>
-            )}
-          </li>
+          <AttivitaItem key={item.id} attivita={item} />
         ))}
         {fatture.map((fattura) => (
           <li key={fattura.id} className="flex items-center justify-between gap-3">
@@ -320,54 +274,22 @@ function LogHours({
   )
 }
 
-function NewCommitment({
-  giorno,
-  onProblem,
-}: {
-  giorno: string
-  onProblem: (message: string | null) => void
-}) {
-  const create = useCreateAttivita()
-  const [titolo, setTitolo] = useState('')
-
-  function submit() {
-    const trimmed = titolo.trim()
-    if (trimmed === '') return
-    onProblem(null)
-    create.mutate(
-      // `custom_fields` is required by the generated schema (the field has a default
-      // server-side, which openapi-typescript reads as «always present»), and an empty
-      // object is what «this commitment has none» is.
-      { titolo: trimmed, scadenza: giorno, custom_fields: {} },
-      {
-        onSuccess: () => {
-          toast.success('Scadenza aggiunta')
-          setTitolo('')
-        },
-        onError: (error) => onProblem(toProblem(error).detail),
-      },
-    )
-  }
-
+/**
+ * «Nuova attività» for this day: the full dialog (notes, assignee, linked record), with the
+ * day prefilled as the deadline. It used to be a one-line title box that could write
+ * nothing else, which is what the dialog replaced (REB-719).
+ */
+function NewCommitment({ giorno }: { giorno: string }) {
+  const [open, setOpen] = useState(false)
   return (
     <section aria-labelledby="nuova-scadenza" className="space-y-2 border-t pt-4">
       <h3 id="nuova-scadenza" className="text-sm font-medium">
-        Nuova scadenza
+        Nuova attività
       </h3>
-      <div className="flex gap-2">
-        <Input
-          placeholder="Che cosa scade"
-          value={titolo}
-          onChange={(event) => setTitolo(event.target.value)}
-          aria-label="Titolo della scadenza"
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') submit()
-          }}
-        />
-        <Button size="sm" disabled={titolo.trim() === '' || create.isPending} onClick={submit}>
-          Aggiungi
-        </Button>
-      </div>
+      <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
+        Aggiungi un’attività per questo giorno
+      </Button>
+      <AttivitaDialog open={open} onOpenChange={setOpen} defaults={{ scadenza: giorno }} />
     </section>
   )
 }

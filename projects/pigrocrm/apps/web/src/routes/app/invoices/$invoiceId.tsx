@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Receipt } from 'lucide-react'
 import { EntityDetailLayout } from '@/components/EntityDetailLayout'
+import { EntityAttivita } from '@/features/attivita/EntityAttivita'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { StatusPill } from '@/components/StatusPill'
 import { Loader } from '@rebase/ui/loader'
@@ -190,6 +191,8 @@ export function InvoiceDetail() {
                 <InvoiceLinesEditor invoice={row} lines={lines.data ?? []} readOnly={readOnly} />
               )}
             </section>
+
+            <EntityAttivita link={{ kind: 'invoice', id: invoiceId }} />
           </div>
           <InvoicePdfPreview invoice={row} />
         </div>

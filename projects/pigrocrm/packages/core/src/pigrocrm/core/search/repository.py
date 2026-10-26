@@ -31,6 +31,7 @@ from uuid import UUID
 from sqlalchemy import ColumnElement, Select, func, literal, select
 from sqlalchemy.orm import Session
 
+from pigrocrm.core.attivita.models import Attivita
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document
@@ -80,7 +81,16 @@ DOCUMENT_FIELDS: tuple[ScoredField, ...] = (
 # equality path is `_invoices_by_number` below.
 INVOICE_FIELDS: tuple[ScoredField, ...] = (ScoredField("causale", Invoice.causale, WEIGHT_CAUSALE),)
 
-# The five models this repository searches all carry `PrimaryKeyMixin`, `TimestampMixin`
+# §10.9 of slice 7 and REB-723: the sixth branch. The title is what a person typed to name
+# the task and weighs like any identifying column; the notes are prose around it and weigh
+# like an invoice's `causale`, so a task whose *title* has the word is above one that only
+# mentions it.
+ATTIVITA_FIELDS: tuple[ScoredField, ...] = (
+    ScoredField("titolo", Attivita.titolo, WEIGHT_IDENTIFYING),
+    ScoredField("note", Attivita.note, WEIGHT_CAUSALE),
+)
+
+# The six models this repository searches all carry `PrimaryKeyMixin`, `TimestampMixin`
 # and `SoftDeleteMixin`, which is what lets the shared plumbing name `deleted_at`,
 # `updated_at` and `id` without a per-entity accessor. `Any` rather than a Protocol: the
 # alternative is a structural type that restates three mixins this package does not own.
@@ -327,6 +337,33 @@ class SearchRepository:
             totale=group.totale,
             totale_e_un_minimo=group.totale_e_un_minimo,
         )
+
+    def attivita(self, term: str, limit: int) -> SearchGroup:
+        """§10.9: an attività by its title and its notes, whatever state it is in.
+
+        Closed ones are found too, and say so in the subtitle: a search that hid what was
+        done would answer «did I ever do that» with «no». The subtitle is the state, or the
+        deadline for an open one (`gg/mm/aaaa`), which is what tells two tasks of the same
+        name apart on a palette row. There is no azienda clause: an attività has no azienda
+        of its own (the calendar keeps them whatever azienda is selected).
+        """
+        return self._group(
+            "attivita",
+            Attivita,
+            ATTIVITA_FIELDS,
+            term,
+            limit,
+            label=lambda row: row.titolo,
+            subtitle=self._attivita_subtitle,
+        )
+
+    @staticmethod
+    def _attivita_subtitle(row: Any) -> str | None:
+        if row.stato != "aperta":
+            return str(row.stato)
+        if row.scadenza is None:
+            return "senza scadenza"
+        return str(row.scadenza.strftime("%d/%m/%Y"))
 
     @staticmethod
     def _invoice_label(row: Any) -> str:

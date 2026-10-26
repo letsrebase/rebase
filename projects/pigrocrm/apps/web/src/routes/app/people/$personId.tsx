@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { toast } from '@rebase/ui/sonner'
 import { renderFieldValue } from '@/components/DynamicFieldRenderer'
 import { EntityDetailLayout } from '@/components/EntityDetailLayout'
+import { EntityAttivita } from '@/features/attivita/EntityAttivita'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { Button } from '@rebase/ui/button'
 import { Card, CardContent } from '@rebase/ui/card'
@@ -114,6 +115,7 @@ export function PersonDetail() {
         subtitle={person.ruolo ?? 'Persona'}
         entityType="person"
         entityId={personId}
+        attivita={<EntityAttivita link={{ kind: 'person', id: personId }} />}
         emails={gmailConfigured ? <EmailTab entityType="person" entityId={personId} /> : undefined}
         actions={
           canWrite && (
