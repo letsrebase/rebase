@@ -17,8 +17,8 @@ import { useSetContractState, type Contract, type ContractState } from './querie
  * gets it as a button, «Attiva»; every other move, from any state to any other, is in the
  * «Stato» menu. Each is one named act on the API (`POST /api/contracts/{id}/state`) and
  * one row in the contract's timeline, never a field an edit could flip by accident.
- * Ending a contract asks first: it is the move that stops a contract being offered
- * wherever work is recorded, and the dialog costs less than finding out later.
+ * Ending a contract asks first: it is the one move that reads as a decision about the
+ * engagement and not as bookkeeping, and the dialog costs less than finding out later.
  */
 export function ContractStateActions({ contract }: { contract: Contract }) {
   const canChange = useCan('set_contract_state')

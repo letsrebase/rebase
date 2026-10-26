@@ -109,7 +109,7 @@ export function toContractBody(
 ): ContractUpdateBody {
   const policy = expensePolicyBody({
     kind: values.spese_kind,
-    importo_tetto: values.spese_tetto.trim(),
+    importo_tetto: values.spese_tetto.trim().replace(',', '.'),
     richiede_preautorizzazione: values.spese_preautorizzazione,
   })
   const full: ContractUpdateBody = {
@@ -119,7 +119,7 @@ export function toContractBody(
     tipo_rinnovo: values.tipo_rinnovo,
     preavviso_rinnovo_giorni:
       values.tipo_rinnovo === 'nessuno' ? null : asInt(values.preavviso_rinnovo_giorni),
-    preavviso_disdetta_giorni: asInt(values.preavviso_disdetta_giorni) ?? undefined,
+    preavviso_disdetta_giorni: asInt(values.preavviso_disdetta_giorni),
     giorni_pagamento: values.pagamento_proprio ? asInt(values.giorni_pagamento) : null,
     pagamento_fine_mese: values.pagamento_proprio ? values.pagamento_fine_mese : null,
     cadenza_fatturazione: values.cadenza_fatturazione,
@@ -130,13 +130,17 @@ export function toContractBody(
     note: values.note.trim() === '' ? null : values.note,
   }
 
+  // Only the custom keys that moved: re-sending a value nobody touched would re-validate
+  // it against a definition that may have tightened since, and refuse an unrelated edit.
   const custom: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(values.custom)) {
     // A stored value whose definition is archived is omitted, so the service carries it
     // over untouched instead of refusing a key no active definition names.
     if (!isRenderedCustomKey(key)) continue
+    const before = initial?.custom[key]
+    if (initial !== undefined && JSON.stringify(value) === JSON.stringify(before)) continue
     if (!isBlank(value)) custom[key] = value
-    else if (!isBlank(initial?.custom[key])) custom[key] = null
+    else if (!isBlank(before)) custom[key] = null
   }
   full.custom_fields = custom
 

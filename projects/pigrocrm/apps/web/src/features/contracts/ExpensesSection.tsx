@@ -243,8 +243,9 @@ function ExpenseDialog({ open, onOpenChange, contractId, expense }: DialogProps)
  * contract, oldest first, each saying whether it can be rebilled and whether it already
  * went onto an invoice. One that is rebillable and not yet billed reads «Da fatturare»,
  * which is what the invoice assembly picks up. An expense already on an invoice has no
- * edit: its amount is on a document by now, and changing it here would leave the two
- * disagreeing.
+ * edit on this page: its amount is on a document by now, and changing it from here
+ * would leave the two disagreeing. That is this page's restraint and not a rule of the
+ * API, which still accepts the PATCH.
  */
 export function ExpensesSection({ contractId }: { contractId: string }) {
   const canWrite = useCan('create_contract_expense')

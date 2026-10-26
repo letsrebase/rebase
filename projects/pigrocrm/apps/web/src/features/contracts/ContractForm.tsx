@@ -110,6 +110,11 @@ export function ContractForm({ open, onOpenChange, customerId, contract, onSaved
   function submit() {
     const body = toContractBody(values, initial, isRenderedCustomKey)
     setProblem(null)
+    if (!isCreate && Object.keys(body).length === 0) {
+      // Nothing moved: no request, and no «modificato» row in the contract's history.
+      onOpenChange(false)
+      return
+    }
     if (isCreate) {
       if (customerId === undefined) return
       create.mutate(

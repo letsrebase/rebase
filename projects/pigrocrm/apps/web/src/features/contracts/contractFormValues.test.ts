@@ -109,3 +109,25 @@ describe('toContractBody', () => {
     expect(body).toEqual({ custom_fields: { referente: null } })
   })
 })
+
+describe('toContractBody review fixes', () => {
+  it('normalises a decimal comma in the cap', () => {
+    const initial = contractToFormValues(CONTRACT)
+    const body = toContractBody({ ...initial, spese_tetto: '600,50' }, initial, () => false)
+    expect(body).toEqual({
+      politica_spese: { kind: 'rimborsabile_con_tetto', richiede_preautorizzazione: false, importo_tetto: '600.50' },
+    })
+  })
+
+  it('sends an emptied disdetta notice as null so the API answers', () => {
+    const initial = contractToFormValues(CONTRACT)
+    expect(
+      toContractBody({ ...initial, preavviso_disdetta_giorni: '' }, initial, () => false),
+    ).toEqual({ preavviso_disdetta_giorni: null })
+  })
+
+  it('does not resend a custom value nobody touched', () => {
+    const initial = contractToFormValues({ ...CONTRACT, custom_fields: { referente: 'Rossi' } })
+    expect(toContractBody(initial, initial, (key) => key === 'referente')).toEqual({})
+  })
+})

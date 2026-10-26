@@ -187,10 +187,9 @@ def _day_rate_contract_for_customer(
     """The one contract, among `customer_id`'s, whose own rate card is a day-rate
     one on the invoice's own `data_emissione` -- mastro's `resolveActiveContractId`
     (`analyze/+server.ts:37-46`), translated onto a schema with no contract
-    lifecycle to read yet: `Contract.stato` carries no meaning today
-    (`ContractRepository.list_active`'s own docstring -- "every row today is
-    `bozza`", no transition endpoint exists), so "the one contract this invoice's
-    days could belong to" is read off pricing instead of a status nothing can set.
+    lifecycle to read yet: `Contract.stato` is written by `ContractService.set_state`
+    and read by nothing that decides here, so "the one contract this invoice's days
+    could belong to" is read off pricing instead of a status no rule consults.
     Zero or several candidates propose nothing, mirroring mastro's own reasoning
     exactly: the tax id already proved whose invoice this is, but nothing on the
     document says which of several concurrent engagements its days belong to.

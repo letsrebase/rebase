@@ -18,12 +18,19 @@ const KIND_LABELS: Record<string, string> = {
   deleted: 'Archiviato',
   restored: 'Ripristinato',
   stage_changed: 'Cambio stato',
+  state_changed: 'Cambio stato',
   // Slice 9's invoice import. Named here rather than left to `humanize`, which would
   // render the English "Imported" on an Italian timeline, and phrased as what happened
   // to the document -- it was issued elsewhere and registered here -- without naming the
   // tool it came out of: the provenance value is the CRM's own record, not copy (see
   // `invoices/models.py::Invoice.importata_da`).
   imported: 'Fattura importata',
+  // A contract's own history (REB-741..744): what each write on its page records.
+  rate_card_added: 'Tariffa aggiunta',
+  rate_card_updated: 'Tariffa modificata',
+  expense_added: 'Spesa registrata',
+  expense_updated: 'Spesa modificata',
+  renewal_assumption_set: 'Assunzione di rinnovo salvata',
 }
 
 /**

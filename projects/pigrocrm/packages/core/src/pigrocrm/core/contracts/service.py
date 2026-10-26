@@ -2,12 +2,14 @@ from datetime import date, timedelta
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.analytics.repository import AnalyticsRepository
+from pigrocrm.core.contract_expenses.models import ContractExpense
 from pigrocrm.core.contracts import projection
 from pigrocrm.core.contracts.dates import anniversary_year_bounds
 from pigrocrm.core.contracts.models import Contract, RateCard, RenewalAssumption
@@ -176,12 +178,39 @@ class ContractService:
         if data.custom_fields is not None:
             changes["custom_fields"] = self._update_custom_fields(contract, data.custom_fields)
 
+        if not changes:
+            # Nothing moved: no write, and no «updated» row in the timeline for it.
+            return ContractRead.model_validate(contract)
+
         for key, value in changes.items():
             setattr(contract, key, value)
         self.session.flush()
+        if "politica_spese" in changes:
+            self._reevaluate_unbilled_expenses(contract.id)
         self.activities.record(ENTITY, contract.id, "updated", actor, {"changed": sorted(changes)})
         self.session.commit()
         return ContractRead.model_validate(contract)
+
+    def _reevaluate_unbilled_expenses(self, contract_id: UUID) -> None:
+        """`contract_expenses.rimborsabile` is written by a trigger when an expense is
+        inserted or updated, from the contract's policy as it stands then. A policy
+        that changes afterwards would leave every existing expense with the verdict of
+        the old one, still «Da fatturare» and still picked up by the invoice assembly,
+        so the trigger is fired again, with a no-op update, on the contract's expenses
+        that are not on an invoice yet. One already on an invoice keeps the verdict it
+        was billed under."""
+        self.session.execute(
+            update(ContractExpense)
+            .where(
+                ContractExpense.contract_id == contract_id,
+                ContractExpense.invoice_line_id.is_(None),
+            )
+            .values(pre_autorizzata=ContractExpense.pre_autorizzata)
+            .execution_options(synchronize_session=False)
+        )
+        # The trigger wrote `rimborsabile` behind the ORM's back: anything already
+        # loaded in this session is stale.
+        self.session.expire_all()
 
     def set_state(self, contract_id: UUID, data: ContractStateChange, actor: Actor) -> ContractRead:
         """The one writer of `Contract.stato`. Any state to any other; the same state
@@ -204,7 +233,7 @@ class ContractService:
             contract.id,
             "state_changed",
             actor,
-            {"da": previous, "a": data.stato},
+            {"from": previous, "to": data.stato},
         )
         self.session.commit()
         return ContractRead.model_validate(contract)
@@ -321,9 +350,10 @@ class RateCardService:
         payload["contract_id"] = contract_id
 
         rate_card = RateCard(**payload)
+        closed: RateCard | None = None
         try:
             if close_previous:
-                self._close_cards_in_force(contract_id, rate_card.valido_da)
+                closed = self._close_card_in_force(contract_id, rate_card.valido_da)
             self.session.add(rate_card)
             self.session.flush()
         except IntegrityError as exc:
@@ -345,20 +375,35 @@ class RateCardService:
             contract_id,
             "rate_card_added",
             actor,
-            {"tipo": rate_card.tipo, "valido_da": str(rate_card.valido_da)},
+            {
+                "tipo": rate_card.tipo,
+                "valido_da": str(rate_card.valido_da),
+                # Why another card's end moved, when it did.
+                **(
+                    {
+                        "precedente_valido_da": str(closed.valido_da),
+                        "precedente_valido_a": str(closed.valido_a),
+                    }
+                    if closed is not None
+                    else {}
+                ),
+            },
         )
         self.session.commit()
         return RateCardRead.model_validate(rate_card)
 
-    def _close_cards_in_force(self, contract_id: UUID, start: date) -> None:
-        """Ends, the day before `start`, every card that began earlier and is still in
+    def _close_card_in_force(self, contract_id: UUID, start: date) -> RateCard | None:
+        """Ends, the day before `start`, the card that began earlier and is still in
         force on `start` -- the one a new rate from `start` replaces. The exclusion
-        constraint still judges the result: a card that began on or after `start` is
-        not touched here, so a genuine overlap is refused as ever."""
+        constraint allows at most one such card per contract. A card that began on or
+        after `start` is not touched, so a genuine overlap is refused as ever. Returns
+        the card it closed, so the timeline can say why its end moved."""
         for card in self.repo.list_for_contract(contract_id):
             if card.valido_da < start and (card.valido_a is None or card.valido_a >= start):
                 card.valido_a = start - timedelta(days=1)
-        self.session.flush()
+                self.session.flush()
+                return card
+        return None
 
     def update(
         self, contract_id: UUID, rate_card_id: UUID, data: RateCardUpdate, actor: Actor

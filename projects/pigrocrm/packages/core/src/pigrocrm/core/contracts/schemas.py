@@ -1,9 +1,9 @@
 from datetime import date, datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from pigrocrm.core.contracts.models import Contract
 from pigrocrm.core.db import CURSOR_MAX_LENGTH, SortDirection, SortSpec, SortWhitelist
@@ -31,6 +31,43 @@ IMPORTO_MAX_DIGITS = 12
 ORE_MINIME_MAX_DIGITS = 6
 FRAZIONE_MAX_DIGITS = 4
 DECIMAL_PLACES = 2
+
+EXPENSE_POLICY_KINDS: tuple[str, ...] = (
+    "non_rimborsabile",
+    "rimborsabile",
+    "rimborsabile_con_tetto",
+)
+
+
+def check_expense_policy(policy: dict[str, Any]) -> dict[str, Any]:
+    """The tagged shape `contract_expenses/triggers.py` reads: `kind` is one of three,
+    `importo_tetto` rides on the capped one only and is a non-negative decimal there,
+    `richiede_preautorizzazione` is a boolean when present. A document the trigger
+    cannot read would make every later expense write on the contract fail with a
+    `check_violation`, so a write that would store one is refused here."""
+    kind = policy.get("kind")
+    if kind not in EXPENSE_POLICY_KINDS:
+        raise ValueError(
+            f"politica_spese.kind deve essere uno fra {', '.join(EXPENSE_POLICY_KINDS)}"
+        )
+    cap = policy.get("importo_tetto")
+    if kind == "rimborsabile_con_tetto":
+        try:
+            valid = cap is not None and Decimal(str(cap)) >= 0
+        except InvalidOperation:
+            valid = False
+        if not valid:
+            raise ValueError(
+                "politica_spese.importo_tetto è obbligatorio per rimborsabile_con_tetto "
+                "e va scritto come importo, per esempio 500.00"
+            )
+    elif cap is not None:
+        raise ValueError("politica_spese.importo_tetto vale solo per rimborsabile_con_tetto")
+    pre = policy.get("richiede_preautorizzazione")
+    if pre is not None and not isinstance(pre, bool):
+        raise ValueError("politica_spese.richiede_preautorizzazione deve essere vero o falso")
+    return policy
+
 
 Frazione = Annotated[Decimal, Field(max_digits=FRAZIONE_MAX_DIGITS, decimal_places=DECIMAL_PLACES)]
 
@@ -98,6 +135,11 @@ class ContractUpdate(BaseModel):
     politica_spese: dict[str, Any] | None = None
     note: SafeStr | None = None
     custom_fields: dict[str, Any] | None = None
+
+    @field_validator("politica_spese")
+    @classmethod
+    def _expense_policy_is_readable(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
+        return None if value is None else check_expense_policy(value)
 
 
 class ContractStateChange(BaseModel):
