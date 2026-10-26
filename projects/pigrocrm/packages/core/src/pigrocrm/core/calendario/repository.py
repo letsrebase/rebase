@@ -6,17 +6,19 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from pigrocrm.core.contracts.models import Contract
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.money import round_hours
 from pigrocrm.core.timetracking.models import TimeEntry
+from pigrocrm.core.work_units.models import WorkUnit
 
 
 class CalendarRepository:
-    """The three reads a month needs, and nothing else.
+    """The four reads a month needs, and nothing else.
 
-    Its own repository rather than three methods added to three existing ones: the
+    Its own repository rather than four methods added to four existing ones: the
     grouping is by day, which is a question no other screen asks -- the week grid groups
     by day *and* week, the register by row, the invoice list by state.
     """
@@ -110,3 +112,31 @@ class CalendarRepository:
             .order_by(Invoice.data_scadenza, Invoice.numero)
         ).all()
         return [(row[0], row[1]) for row in rows]
+
+    def work_units_in_window(
+        self, da: date, a: date, *, azienda_id: UUID | None = None
+    ) -> list[tuple[WorkUnit, str, str]]:
+        """`(day, contract title, customer name)` for every contract day of the window that
+        still counts, oldest first.
+
+        `rifiutato` and `revocato` are left out: those two are exactly the outcomes that
+        free the date for a fresh day (`uq_work_units_contract_data_live`), so a cell that
+        drew them would show a date as taken that nothing holds. They stay in the register
+        (`WorkUnitService.list`). The customer is joined with no `deleted_at` filter, for
+        the reason `deal_labels` records. Through the contract for the azienda, the way
+        every contract read does (REB-623).
+        """
+        stmt = (
+            select(WorkUnit, Contract.titolo, Customer.ragione_sociale)
+            .join(Contract, Contract.id == WorkUnit.contract_id)
+            .join(Customer, Customer.id == Contract.customer_id)
+            .where(
+                WorkUnit.data >= da,
+                WorkUnit.data <= a,
+                WorkUnit.stato.not_in(("rifiutato", "revocato")),
+            )
+            .order_by(WorkUnit.data, Contract.titolo, WorkUnit.id)
+        )
+        if azienda_id is not None:
+            stmt = stmt.where(Contract.azienda_id == azienda_id)
+        return [(row[0], row[1], row[2]) for row in self.session.execute(stmt).all()]

@@ -48,6 +48,7 @@ from pigrocrm_mcp.tools import (
     people,
     proposals,
     timetracking,
+    work_units,
 )
 from pigrocrm_mcp.tools import dashboard as dashboard_tools
 from pigrocrm_mcp.tools import search as search_tools
@@ -1063,6 +1064,53 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         """Rifiuta una proposta: non crea nulla, scrive solo il proprio stato.
         `motivo` finisce nella timeline, non su un campo della proposta."""
         return proposals.reject(context, proposal_id, {"deciso_da": deciso_da, "motivo": motivo})
+
+    # ---- the day ledger, read only ------------------------------------------
+    #
+    # An agent reads days and proposes them; it never records or moves one. The four
+    # writes are refused to an agent credential, over REST as well
+    # (`AGENT_FORBIDDEN_ACTIONS`, `test_mcp_surface_coverage.py`).
+
+    @mcp.tool()
+    @guard
+    def get_work_unit(work_unit_id: str) -> dict[str, Any]:
+        """Legge una giornata di contratto: stato, contratto e cliente, l'approvazione su cui
+        poggia (con il titolo del documento che la prova), la cronologia dei passaggi di
+        stato con chi li ha fatti e perché, e le mosse che il ciclo di vita ammette da dove
+        si trova (`azioni`). `fuori_termine` dice se la data cade prima dell'inizio o dopo la
+        fine del contratto. Legge e non scrive: una giornata la registra una persona, un
+        agente la propone con `propose_day`."""
+        return work_units.get(context, work_unit_id)
+
+    @mcp.tool()
+    @guard
+    def list_work_units(
+        contract_id: str | None = None,
+        da: IsoDateStr = None,
+        a: IsoDateStr = None,
+        stato: str | None = None,
+        azienda_id: str | None = None,
+        limit: Annotated[
+            int | str,
+            WithJsonSchema({"type": "integer", "minimum": 1, "maximum": 500, "default": 200}),
+        ] = 200,
+    ) -> dict[str, Any]:
+        """Elenca le giornate di contratto, dalla più recente. Serve almeno un contratto
+        (`contract_id`) o una data (`da`, `a`, entrambe incluse, `AAAA-MM-GG`): il registro
+        intero non è una domanda che abbia senso. `stato` filtra su uno degli stati del
+        ciclo (`proposto`, `approvato`, `lavorato`, `lavorato_senza_approvazione`,
+        `fatturato`, `pagato`, `contestato`, `revocato`, `rifiutato`, `non_fatturabile`).
+        `troncato: true` dice che ce n'erano di più di `limit` e sono tornate le più
+        recenti. Ogni riga porta il titolo del contratto e il nome del cliente."""
+        return work_units.search(
+            context,
+            contract_id=contract_id,
+            da=da,
+            a=a,
+            stato=stato,
+            azienda_id=parse_legal_entity_id(azienda_id),
+            limit=cast(int, limit),
+        )
 
     # ---- shared ------------------------------------------------------------
 
@@ -2327,7 +2375,9 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         mese: str, tutti: bool = False, azienda_id: str | None = None
     ) -> dict[str, Any]:
         """Un mese in una sola lettura: le ore per giorno con il dettaglio per deal, le
-        attività che scadono, e le fatture emesse e non incassate che scadono.
+        attività che scadono, le giornate di contratto con il loro stato (una giornata
+        lavorata senza l'approvazione che il contratto richiede porta
+        `lavorato_senza_approvazione`) e le fatture emesse e non incassate che scadono.
 
         `mese` è `AAAA-MM`. Tornano **solo i giorni che hanno qualcosa**: un mese ha
         trentuno giorni e chi legge lo sa, mentre trentuno oggetti vuoti sarebbero rumore

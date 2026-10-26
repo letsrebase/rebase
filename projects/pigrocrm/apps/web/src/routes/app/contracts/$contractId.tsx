@@ -8,6 +8,7 @@ import { Button } from '@rebase/ui/button'
 import { Card, CardContent } from '@rebase/ui/card'
 import { Skeleton } from '@rebase/ui/skeleton'
 import { ContractForm } from '@/features/contracts/ContractForm'
+import { ContractDays } from '@/features/days/ContractDays'
 import { ContractStateActions } from '@/features/contracts/ContractStateActions'
 import { ExpensesSection } from '@/features/contracts/ExpensesSection'
 import {
@@ -149,6 +150,13 @@ export function ContractDetail() {
 
             <div className="lg:col-span-2">
               <RateCardsSection contractId={row.id} divisa={row.divisa} />
+            </div>
+            <div className="lg:col-span-2">
+              <ContractDays
+                contractId={row.id}
+                customerId={row.customer_id}
+                requiresPriorApproval={row.requires_prior_approval}
+              />
             </div>
             <div className="lg:col-span-2">
               <ExpensesSection contractId={row.id} divisa={row.divisa} />

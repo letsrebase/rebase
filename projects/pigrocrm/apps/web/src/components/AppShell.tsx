@@ -144,6 +144,8 @@ const GROUPS = [
     items: [
       { to: '/app/invoices', label: 'Fatture', icon: Receipt },
       { to: '/app/hours', label: 'Ore', icon: Clock },
+      // The contract days (REB-745): the register, and the page a day is recorded from.
+      { to: '/app/days', label: 'Giornate', icon: CalendarCheck },
     ],
   },
 ] as const

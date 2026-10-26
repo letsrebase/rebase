@@ -13,6 +13,8 @@ from pigrocrm_api.errors import (
 from pigrocrm_api.routers import (
     activities,
     analytics,
+    approval_requests,
+    approvals,
     auth,
     automations,
     calendar,
@@ -45,6 +47,7 @@ from pigrocrm_api.routers import (
     time_entries,
     tokens,
     users,
+    work_units,
 )
 from pigrocrm_api.tenancy import TenantPrefixMiddleware
 
@@ -121,6 +124,12 @@ def create_app() -> FastAPI:
         # REB-362: the review-before-write step -- a contract's first draft, or a
         # day's evidence -- accepted or rejected by a human.
         proposals,
+        # REB-745: the day ledger on screen -- record a day, read it, move it.
+        work_units,
+        # REB-747: record a client's approval and the days it covers.
+        approvals,
+        # REB-749: ask a client for prior approval of named days, from the contract.
+        approval_requests,
     ):
         app.include_router(module.router)
 

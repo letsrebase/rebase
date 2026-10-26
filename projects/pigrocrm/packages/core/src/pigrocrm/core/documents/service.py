@@ -540,6 +540,7 @@ class DocumentService:
         *,
         customer_id: UUID | None = None,
         deal_id: UUID | None = None,
+        contract_id: UUID | None = None,
         tipo: DocumentTipo,
         titolo: str,
         data: bytes,
@@ -604,7 +605,13 @@ class DocumentService:
         actor.require_write("import_document")
         self._check_upload(data, content_type)
         document = self._create_row(
-            DocumentCreate(customer_id=customer_id, deal_id=deal_id, tipo=tipo, titolo=titolo),
+            DocumentCreate(
+                customer_id=customer_id,
+                deal_id=deal_id,
+                contract_id=contract_id,
+                tipo=tipo,
+                titolo=titolo,
+            ),
             actor,
             # The record's own azienda when the caller names it (an imported invoice's
             # original PDF is the invoice's, whatever azienda its customer is in now).

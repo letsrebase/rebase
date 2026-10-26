@@ -20,6 +20,7 @@ import {
 } from '@rebase/ui/select'
 import { AttivitaDialog } from '@/features/attivita/AttivitaDialog'
 import { AttivitaItem } from '@/features/attivita/AttivitaItem'
+import { PanelDays } from '@/features/days/CalendarDays'
 import { useDeals } from '@/features/deals/queries'
 import { useLogTime } from '@/features/time/queries'
 import { toProblem } from '@/lib/api'
@@ -62,6 +63,7 @@ export function DayPanel({
 
         <div className="space-y-5">
           <Worked data={data} />
+          <PanelDays giorno={giorno} days={data?.giornate ?? []} />
           <Due data={data} />
           {canWrite && (
             <>
