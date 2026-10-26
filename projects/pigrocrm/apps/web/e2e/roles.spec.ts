@@ -12,7 +12,7 @@ import { login, loginAsAdmin, logout } from './helpers'
  * could never do that at all, which is exactly the mistake `routes/app/token.tsx`'s
  * own comment calls out.
  */
-test('a collaboratore is not offered Settings and cannot reach it by URL, but can reach their own tokens', async ({
+test('a collaboratore is offered only their own Settings groups and cannot reach the admin ones by URL, but can reach their own tokens', async ({
   page,
 }) => {
   const email = `collaboratore-${Date.now()}@pigro.it`
@@ -32,8 +32,14 @@ test('a collaboratore is not offered Settings and cannot reach it by URL, but ca
 
   await login(page, email, password)
 
-  // Not offered: AppShell's nav only renders the Impostazioni link `isAdmin &&`.
-  await expect(page.getByRole('link', { name: 'Impostazioni' })).not.toBeVisible()
+  // Offered, but only the groups this role can open (REB-771): Personale and
+  // Collegamenti, never the admin groups.
+  await page.getByRole('button', { name: 'Impostazioni' }).click()
+  await expect(page.getByRole('link', { name: 'Personale' })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Collegamenti' })).toBeVisible()
+  for (const name of ['Spazio e persone', 'Clienti e deal', 'Fatturazione e costi']) {
+    await expect(page.getByRole('link', { name })).not.toBeVisible()
+  }
 
   // Cannot reach it by typing the URL either -- SettingsLayout itself refuses,
   // in place, with no redirect (routes/app.tsx's own guard only checks "is

@@ -1,5 +1,5 @@
 /**
- * The tabs of the settings page, in the order they are shown.
+ * The sections of the settings page and the groups they belong to, in the order shown.
  *
  * Its own module because two places need the same list and neither can own it:
  * `SettingsLayout` renders them as tabs, and `AppShell` renders them as the sub-items of
@@ -14,26 +14,73 @@
  * the sidebar maps each `value` to a literal path of its own (`AppShell`'s
  * `SETTINGS_PATHS`), and adding a tab there is a compile error until the route exists.
  *
- * `profilo` first, and the one exception to "every tab here is admin-only": it is a
- * person's own preferences (`ProfilePanel`), not something `require_admin` gates
- * anywhere, and `SettingsLayout` exempts exactly this one value from the page's
- * otherwise-blanket admin gate so the weekly digest's opt-out link works for whoever
- * receives the mail (spec 2026-09-16 §3.6).
+ * The sections are grouped as the REB-770 brief says (option A, DECISIONS.md 2026-10-26):
+ * the sidebar lists the groups, the page's tab strip lists the sections of the current
+ * group, and the URL is always the section's (`/app/settings/<value>`), never the group.
+ *
+ * Two sections are the exception to "every section here is admin-only": `profile` is a
+ * person's own preferences (`ProfilePanel`), not something `require_admin` gates, and
+ * `SettingsLayout` lets any role open it so the weekly digest's opt-out link works for
+ * whoever receives the mail (spec 2026-09-16 §3.6); `drive` is open to a collaboratore
+ * (REB-457). `SETTINGS_TAB_MIN_ROLE` in `lib/permissions.ts` is the table that says which.
  */
-export const SETTINGS_TABS = [
-  { value: 'profile', label: 'Profilo' },
-  { value: 'space', label: 'Spazio' },
-  { value: 'fields', label: 'Campi' },
-  { value: 'pipeline', label: 'Pipeline' },
-  { value: 'template', label: 'Template' },
-  { value: 'aziende', label: 'Aziende' },
-  { value: 'users', label: 'Utenti' },
-  { value: 'cost-categories', label: 'Categorie costo' },
-  { value: 'rates', label: 'Tariffe' },
-  { value: 'periods', label: 'Periodi' },
-  { value: 'gmail', label: 'Gmail' },
-  { value: 'drive', label: 'Google Drive' },
-  { value: 'automations', label: 'Automazioni' },
+export const SETTINGS_GROUPS = [
+  {
+    id: 'personale',
+    label: 'Personale',
+    tabs: [{ value: 'profile', label: 'Profilo' }],
+  },
+  {
+    id: 'spazio',
+    label: 'Spazio e persone',
+    tabs: [
+      { value: 'space', label: 'Spazio' },
+      { value: 'users', label: 'Utenti' },
+    ],
+  },
+  {
+    id: 'clienti-deal',
+    label: 'Clienti e deal',
+    tabs: [
+      { value: 'fields', label: 'Campi' },
+      { value: 'pipeline', label: 'Pipeline' },
+      { value: 'template', label: 'Template' },
+    ],
+  },
+  {
+    id: 'fatturazione',
+    label: 'Fatturazione e costi',
+    tabs: [
+      { value: 'aziende', label: 'Aziende' },
+      { value: 'cost-categories', label: 'Categorie costo' },
+      { value: 'rates', label: 'Tariffe' },
+      { value: 'periods', label: 'Periodi' },
+    ],
+  },
+  {
+    id: 'collegamenti',
+    label: 'Collegamenti',
+    tabs: [
+      { value: 'gmail', label: 'Gmail' },
+      { value: 'drive', label: 'Google Drive' },
+    ],
+  },
+  {
+    id: 'promemoria',
+    label: 'Promemoria e automazioni',
+    tabs: [{ value: 'automations', label: 'Automazioni' }],
+  },
 ] as const
 
-export type SettingsTabValue = (typeof SETTINGS_TABS)[number]['value']
+export type SettingsGroup = (typeof SETTINGS_GROUPS)[number]
+
+/** Every section, flattened in group order: the list the permissions table is keyed by. */
+export const SETTINGS_TABS: ReadonlyArray<{ value: SettingsTabValue; label: string }> =
+  SETTINGS_GROUPS.flatMap((group) => [...group.tabs])
+
+export type SettingsTabValue = SettingsGroup['tabs'][number]['value']
+
+/** The group a section belongs to, or `undefined` for a path that is no section. */
+export function settingsGroupOf(value: string | undefined): SettingsGroup | undefined {
+  return SETTINGS_GROUPS.find((group) => group.tabs.some((tab) => tab.value === value))
+}

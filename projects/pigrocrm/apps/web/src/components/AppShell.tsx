@@ -33,7 +33,7 @@ import { BrandMark } from '@/components/BrandMark'
 import { readSidebarGroups, writeSidebarGroups } from '@/components/sidebarGroups'
 import { useOverdueCount } from '@/features/attivita/queries'
 import { CommandPalette } from '@/features/search/CommandPalette'
-import { SETTINGS_TABS, type SettingsTabValue } from '@/features/settings/tabs'
+import { SETTINGS_GROUPS, type SettingsTabValue } from '@/features/settings/tabs'
 import { ConnectAgentDialog } from '@/features/tokens/ConnectAgentDialog'
 import { useMediaQuery } from '@/hooks/use-media-query'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -58,7 +58,7 @@ import { api, toProblem, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
 import { useAuth, useIsAdmin } from '@/lib/auth'
 import { useLegalEntity } from '@/lib/legalEntity'
-import { canSeeSettingsTab } from '@/lib/permissions'
+import { canSeeSettingsTab, type Role } from '@/lib/permissions'
 import { writeRegisterHandoffEmail } from '@/lib/registerHandoff'
 import { roleLabel } from '@/lib/roles'
 import { tenantPrefix } from '@/lib/tenant'
@@ -91,8 +91,7 @@ type IdentitySpace = components['schemas']['IdentitySpace']
 
 // Token is a top-level entry, not one of the settings sub-items below: a personal access
 // token belongs to whoever creates it, any role (`PatService` scopes by `actor.id`, not
-// role), while the whole «Impostazioni» group is admin-only. Putting it inside that group
-// would mean a collaborator could never connect an agent to their own account.
+// role), so it is its own entry and not a section under «Impostazioni».
 const TOP_LEVEL = [
   { to: '/app', label: 'Home', icon: LayoutDashboard, exact: true },
   // The start page (ORB-180, REB-222): the Gmail door, the assistant and the first steps.
@@ -150,23 +149,6 @@ const GROUPS = [
 ] as const
 
 /**
- * «Impostazioni», whose sub-items are the settings tabs -- one per entry of the shared
- * `SETTINGS_TABS`, so the sidebar cannot drift from the page that renders them.
- *
- * Its own constant, separate from `GROUPS`, because it behaves differently in two ways:
- * this whole group is shown in the sidebar to an admin only (below, `groups = isAdmin ?
- * ...`), and in the collapsed rail it becomes a single icon link -- fourteen icons for
- * the tabs of one page would be a rail of settings and nothing else.
- *
- * Every service behind these tabs calls `actor.require_admin` on every write except
- * two: `profilo` (`ProfilePanel`) is a person's own preferences, and `SettingsLayout`
- * exempts that one tab from the page's own admin gate so a non-admin who opens it
- * directly -- from the weekly digest's opt-out link, spec 2026-09-16 §3.6 -- can reach
- * it even though this sidebar link stays admin-only, same as the rest of the group. And
- * `drive` is a collaboratore's own Drive credential (REB-457); they reach it, like the
- * profile, from the profile menu at the foot of the sidebar.
- */
-/**
  * One literal path per settings tab. `satisfies Record<SettingsTabValue, ...>` is what
  * makes this exhaustive: adding a tab to `SETTINGS_TABS` without a route here is a
  * compile error, which is the whole point of keeping the labels in one place and the
@@ -187,23 +169,46 @@ const SETTINGS_PATHS = {
   drive: '/app/settings/drive',
   automations: '/app/settings/automations',
 } as const satisfies Record<SettingsTabValue, string>
+/**
+ * «Impostazioni», whose sub-items are the six settings groups of the REB-770 brief (option
+ * A), built from the shared `SETTINGS_GROUPS` so the sidebar cannot drift from the page.
+ *
+ * Its own constant, separate from `GROUPS`, because in the collapsed rail it becomes a
+ * single icon link: one icon per section of one page would be a rail of settings and
+ * nothing else.
+ *
+ * Shown to every role (R2): each role sees only the groups holding a section it may open
+ * (`canSeeSettingsTab`), so a member has «Personale» alone and a collaboratore adds
+ * «Collegamenti» (their own Drive, REB-457). The weekly digest's opt-out link lands on
+ * Profilo for whoever got the mail (spec 2026-09-16 §3.6).
+ */
 const SETTINGS = {
   id: 'impostazioni',
   label: 'Impostazioni',
   icon: Settings,
   base: '/app/settings',
-  // The tab value travels with the item so the sidebar can filter through the same
-  // `canSeeSettingsTab` the settings page filters its tabs with (REB-294): one table,
-  // two readers, no private list on either side. The group itself stays admin-only
-  // (`isAdmin ? ...` below), so today every tab passes for the group's only reader;
-  // what the filter buys is that a tab whose visibility changes at the page changes
-  // here too, without a second decision.
-  items: SETTINGS_TABS.map((tab) => ({
-    to: SETTINGS_PATHS[tab.value],
-    label: tab.label,
-    tab: tab.value,
-  })),
+  // One sub-item per group of the brief (REB-770, option A), not per section: the page's
+  // tab strip lists the sections of the group it is on. Each group links to its first
+  // section this reader may open, read from the same `canSeeSettingsTab` the page
+  // filters its tabs with (REB-294), so sidebar and page read one table.
+  groups: SETTINGS_GROUPS,
 } as const
+
+/** The sub-items «Impostazioni» shows `role`: a group with a section it may open, linked to
+ *  that section, and `active` when the current path is any section of the group. */
+function settingsSubItems(role: Role, pathname: string) {
+  return SETTINGS.groups.flatMap((group) => {
+    const first = group.tabs.find((tab) => canSeeSettingsTab(role, tab.value))
+    if (first === undefined) return []
+    return [
+      {
+        to: SETTINGS_PATHS[first.value],
+        label: group.label,
+        active: group.tabs.some((tab) => isUnder(pathname, SETTINGS_PATHS[tab.value])),
+      },
+    ]
+  })
+}
 
 /**
  * Every path the sidebar links to, as a union of literals: that is what makes
@@ -342,12 +347,9 @@ export function AppShell({
 
   // The «Impostazioni» sub-items this reader may see (REB-294): the same
   // `canSeeSettingsTab` the settings page filters its own tabs with, so sidebar and
-  // page read one table and cannot drift. The group's own visibility stays the
-  // admin check below.
-  const settingsItems = SETTINGS.items.filter((item) =>
-    user === null ? false : canSeeSettingsTab(user.ruolo, item.tab),
-  )
-  const groups = isAdmin ? [...GROUPS, SETTINGS] : GROUPS
+  // page read one table and cannot drift. The group itself is shown to every role.
+  const settingsItems = user === null ? [] : settingsSubItems(user.ruolo, location.pathname)
+  const groups = [...GROUPS, SETTINGS]
   const activeGroup = groups.find((group) =>
     'base' in group
       ? isUnder(location.pathname, group.base)
@@ -621,11 +623,10 @@ export function AppShell({
               [
                 ...GROUPS.flatMap((group) => group.items.map((item) => leaf(item))),
                 ...TOP_LEVEL.slice(2).map((item) => leaf(item)),
-                // The first tab, under the group's own name: in the rail the label is the
-                // accessible name, and «Spazio» would say nothing about where it goes.
-                isAdmin
-                  ? leaf({ to: SETTINGS_PATHS.space, label: SETTINGS.label, icon: Settings })
-                  : null,
+                // The first section, under the group's own name: in the rail the label is the
+                // accessible name, and «Profilo» would say nothing about where it goes.
+                // Profilo is open to every role, so every role has this link.
+                leaf({ to: SETTINGS_PATHS.profile, label: SETTINGS.label, icon: Settings }),
               ]
             : [
                 ...GROUPS.map((group) => (
@@ -640,17 +641,15 @@ export function AppShell({
                   </NavGroup>
                 )),
                 ...TOP_LEVEL.slice(2).map((item) => leaf(item)),
-                isAdmin ? (
-                  <NavGroup
-                    key={SETTINGS.id}
-                    label={SETTINGS.label}
-                    icon={SETTINGS.icon}
-                    open={isOpen(SETTINGS.id)}
-                    onToggle={() => toggleGroup(SETTINGS.id)}
-                  >
-                    {settingsItems.map((item) => subItem(item))}
-                  </NavGroup>
-                ) : null,
+                <NavGroup
+                  key={SETTINGS.id}
+                  label={SETTINGS.label}
+                  icon={SETTINGS.icon}
+                  open={isOpen(SETTINGS.id)}
+                  onToggle={() => toggleGroup(SETTINGS.id)}
+                >
+                  {settingsItems.map((item) => subItem(item))}
+                </NavGroup>,
               ]}
         </nav>
 
@@ -714,11 +713,8 @@ export function AppShell({
                 <p className="truncate text-xs text-muted-foreground">{user?.email}</p>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              {/* «Profilo», for every role and with no gate on it: the sidebar's whole
-                  «Impostazioni» group is admin-only, so without this entry a
-                  collaborator had no way of reaching their own profile tab from inside
-                  the app at all -- the weekly report's opt-out link (spec 2026-09-16
-                  §3.6) was the only door to it. One menu item, above the admin's own
+              {/* «Profilo», for every role and with no gate on it: a shortcut to the same
+                  page as the sidebar's «Personale». One menu item, above the admin's own
                   entry, because it is the one thing here that belongs to the person
                   rather than to the space. */}
               <DropdownMenuItem asChild>
@@ -730,8 +726,8 @@ export function AppShell({
               {/* «Google Drive», for a collaboratore (REB-457): their Drive is their own
                   credential, as the profile is, and the Drive tab is where every consent
                   outcome lands. Read from the tab table, so a readonly person, whose
-                  consent the service refuses, is not offered it. An admin keeps it where
-                  it was, in the sidebar's «Impostazioni» group. */}
+                  consent the service refuses, is not offered it. An admin reaches it through
+                  the sidebar's «Collegamenti». */}
               {!isAdmin && user !== null && canSeeSettingsTab(user.ruolo, 'drive') && (
                 <DropdownMenuItem asChild>
                   <Link to={SETTINGS_PATHS.drive}>
@@ -860,7 +856,7 @@ function NavGroup({
 }
 
 /** A sub-item: label only. The indentation and the line say where it belongs. */
-function subItem({ to, label }: { to: LinkTo; label: string }) {
+function subItem({ to, label, active }: { to: LinkTo; label: string; active?: boolean }) {
   return (
     <li key={to}>
       <Link
@@ -869,6 +865,9 @@ function subItem({ to, label }: { to: LinkTo; label: string }) {
         // entry marked.
         activeOptions={{ includeSearch: false }}
         activeProps={{ 'aria-current': 'page' }}
+        // A sub-item that stands for several routes (a settings group) says itself when
+        // it is current: the link's own match covers only its first section.
+        {...(active ? { 'aria-current': 'page' as const, 'data-status': 'active' } : {})}
         className={cn(
           'relative block truncate px-3 py-1.5 text-sm transition-colors before:absolute before:left-0 before:top-1/2 before:size-1.5 before:-translate-y-1/2 before:bg-transparent before:content-[""]',
           QUIET,
