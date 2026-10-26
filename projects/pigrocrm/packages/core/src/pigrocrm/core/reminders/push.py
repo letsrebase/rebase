@@ -116,6 +116,11 @@ def resolves_publicly(endpoint: str) -> bool:
     if not host:
         return False
     try:
+        # An address literal is its own answer: nothing to resolve.
+        return ipaddress.ip_address(host).is_global
+    except ValueError:
+        pass
+    try:
         found = socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)
     except OSError:
         return False

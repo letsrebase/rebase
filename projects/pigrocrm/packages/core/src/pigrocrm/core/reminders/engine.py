@@ -206,6 +206,7 @@ class ReminderEngine:
         job: str | None = None,
         due: list[tuple[Reminder, DeliveryIdentity]] | None = None,
         sent: ChannelResult | None = None,
+        now: datetime | None = None,
     ) -> PassResult:
         """Writes what a pass writes and commits it: the in-app deliveries, what the other
         channels accepted (the ledger rows, the daily summary markers, the push
@@ -215,15 +216,18 @@ class ReminderEngine:
 
         `due` is the plan the channels were prepared from, when the caller made one: the
         pass writes exactly what it announced, and not what the ledger says a few seconds
-        and a network call later."""
+        and a network call later. `now` is the instant the pass is for, and what every
+        delivery is stamped with: a channel announces what reached the list after a browser
+        subscribed by comparing these times, so they are the pass's, not the wall clock's.
+        """
         ledger = ReminderLedger(self.session)
         if due is None:
             due = self.plan(evaluation, today=today)
         for reminder, identity in due:
-            ledger.record(identity, reminder.severity)
+            ledger.record(identity, reminder.severity, at=now)
         if sent is not None:
             for accepted in sent.accepted:
-                ledger.record(accepted.identity, accepted.severity)
+                ledger.record(accepted.identity, accepted.severity, at=now)
             for user_id, day in sent.summaries:
                 ledger.mark_summary_sent(user_id, day)
             if sent.gone_endpoints:

@@ -129,6 +129,15 @@ class PushSubscriptionWrite(BaseModel):
         return value
 
 
+class PushConfigRead(BaseModel):
+    """What the app needs to offer push: whether this installation can send it at all and
+    the key a browser subscribes with (`applicationServerKey`). No key, no push: the page
+    says so and the reminders go by the other channels."""
+
+    enabled: bool = Field(description="Questa installazione può mandare notifiche push")
+    public_key: str | None = Field(description="La chiave con cui il browser si iscrive")
+
+
 class PushSubscriptionRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

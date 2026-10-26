@@ -675,6 +675,17 @@ PUBLIC_ROUTES: dict[tuple[str, str], str] = {
         "clients hold no identity session, and calling it would rotate a token no test "
         "minted."
     ),
+    ("POST", "/api/push/subscribe"): (
+        "A person's own browser (REB-738, spec 2026-10-26 §6.1), open to every role like "
+        "their profile: the row is keyed by the caller's user id and carries nothing of "
+        "the space. It needs a real push subscription body (keys that decode, an endpoint "
+        "of a push service), which the sweep's `{}` bodies are not; `test_push_api.py` "
+        "walks it for every role."
+    ),
+    ("POST", "/api/push/unsubscribe"): (
+        "The same as subscribe, in reverse: it removes only the caller's own row. Any "
+        "role; `test_push_api.py` walks it."
+    ),
     ("POST", "/api/reminders/acknowledge"): (
         "A person's own bookkeeping (REB-732, spec 2026-10-26 §8.2), open to every role "
         "by design: a `readonly` member is reminded too and may say they have seen it. "

@@ -165,7 +165,9 @@ class ReminderRun:
             # The read transaction ends before the first network call.
             session.rollback()
             sent = self.dispatcher.send(prepared)
-            result = reminders.record_pass(evaluation, today=today, job=JOB, due=due, sent=sent)
+            result = reminders.record_pass(
+                evaluation, today=today, job=JOB, due=due, sent=sent, now=now
+            )
             return ReminderOutcome(
                 slug,
                 "eseguito",
