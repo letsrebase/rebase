@@ -33,6 +33,7 @@ failure carries the counters and Google's own status, which is all a caller can 
 
 import re
 import time
+from collections.abc import Iterator
 from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -417,17 +418,15 @@ class GmailSyncService:
         suffix = f"@{domain}"
         tally: dict[str, _Correspondent] = {}
         try:
-            # Gmail lists the newest first, so the cap keeps the conversations that say who
-            # at the domain is writing now.
-            thread_ids = self._relevant_threads((discovery_query(domain),), token)[
-                :DISCOVER_MAX_THREADS
-            ]
-            payloads = [
-                self.transport.json(
-                    "GET", thread_get_url(thread_id), token=token, what=_WHAT_THREAD
-                )
-                for thread_id in thread_ids
-            ]
+            # Gmail lists the newest first, so stopping at the cap keeps the conversations
+            # that say who at the domain is writing now, and stops paging the listing once
+            # it holds enough. The headers are read the way the proposals read them, two
+            # at a time and within `SUGGEST_READ_BUDGET_SECONDS`: a long-standing customer
+            # answers with the conversations read in time, not with a 504.
+            thread_ids = self._relevant_threads(
+                (discovery_query(domain),), token, limit=DISCOVER_MAX_THREADS
+            )
+            payloads = [payload for _, payload in self._read_headers(thread_ids, token)]
         except GoogleCallFailed as failed:
             # Gmail failing after every retry is the person's to retry, not a server error
             # (REB-766: a press on the customer's Email tab reaches this): the same
@@ -440,9 +439,9 @@ class GmailSyncService:
             for raw in payload.get("messages") or []:
                 if not isinstance(raw, dict):
                     continue
-                # Bodies are never decoded here: a name and an address are all this
-                # needs, and reading the text of mail nobody chose to store is not
-                # what discovery is for.
+                # Bodies are never read here: a name and an address are all this needs,
+                # and reading the text of mail nobody chose to store is not what
+                # discovery is for.
                 parsed = parse_message(raw, body_max_bytes=0, store_bodies=False)
                 report.messages_seen += 1
                 for address in participants(parsed):
@@ -748,25 +747,36 @@ class GmailSyncService:
             return account.sync_watermark
         return datetime.now(UTC) - timedelta(days=_FIRST_CYCLE_DAYS)
 
-    def _relevant_threads(self, queries: tuple[str, ...], token: str) -> list[str]:
+    def _relevant_threads(
+        self, queries: tuple[str, ...], token: str, *, limit: int | None = None
+    ) -> list[str]:
         """The thread ids the address filter found, deduplicated in order.
 
         Deduplicated because two addresses of the same customer routinely appear in one
         conversation, and fetching that thread twice would double the cost of the
         cycle for nothing.
+
+        With `limit`, the listing stops paging once it holds that many conversations
+        (the newest, Gmail's own order) and the list is cut to it.
         """
         thread_ids: list[str] = []
         seen: set[str] = set()
         for query in queries:
-            for entry in self._list_all(query, token):
-                thread_id = str(entry.get("threadId") or "")
-                if thread_id and thread_id not in seen:
-                    seen.add(thread_id)
-                    thread_ids.append(thread_id)
+            for page in self._list_pages(query, token):
+                for entry in page:
+                    thread_id = str(entry.get("threadId") or "")
+                    if thread_id and thread_id not in seen:
+                        seen.add(thread_id)
+                        thread_ids.append(thread_id)
+                if limit is not None and len(thread_ids) >= limit:
+                    return thread_ids[:limit]
         return thread_ids
 
     def _list_all(self, query: str, token: str) -> list[dict[str, object]]:
-        entries: list[dict[str, object]] = []
+        return [entry for page in self._list_pages(query, token) for entry in page]
+
+    def _list_pages(self, query: str, token: str) -> Iterator[list[dict[str, object]]]:
+        """One list per page of `messages.list`, fetched as the caller asks for the next."""
         page_token: str | None = None
         while True:
             payload = self.transport.json(
@@ -775,15 +785,13 @@ class GmailSyncService:
                 token=token,
                 what=_WHAT_LIST,
             )
-            entries.extend(
-                entry for entry in (payload.get("messages") or []) if isinstance(entry, dict)
-            )
+            yield [entry for entry in (payload.get("messages") or []) if isinstance(entry, dict)]
             next_token = payload.get("nextPageToken")
             # A page token that repeats itself would loop forever against a broken or
             # hostile server, so the loop advances only on a *new* one.
             page_token = str(next_token) if next_token and str(next_token) != page_token else None
             if page_token is None:
-                return entries
+                return
 
     def _store_thread(
         self,

@@ -134,7 +134,10 @@ describe('CustomerCorrespondents', () => {
   it('stops offering an address the book got in the meantime, and says why', async () => {
     vi.mocked(api.GET).mockResolvedValue(report())
     vi.mocked(api.POST).mockResolvedValue(
-      failed({ detail: 'customer: marco@acme.it è già in anagrafica', code: 'conflict' }, 409),
+      failed(
+        { detail: 'customer: marco@acme.it è già in anagrafica', code: 'conflict', indirizzo: 'marco@acme.it' },
+        409,
+      ),
     )
     renderIt()
     await userEvent.click(screen.getByRole('button', { name: ASK }))
@@ -148,6 +151,23 @@ describe('CustomerCorrespondents', () => {
         screen.queryByRole('button', { name: 'Aggiungi come persona: Marco Bianchi' }),
       ).toBeNull(),
     )
+  })
+
+  it('keeps offering an address when the refusal is not about that address', async () => {
+    vi.mocked(api.GET).mockResolvedValue(report())
+    vi.mocked(api.POST).mockResolvedValue(
+      failed({ detail: 'customer: il cliente non ha un dominio', code: 'conflict' }, 409),
+    )
+    renderIt()
+    await userEvent.click(screen.getByRole('button', { name: ASK }))
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Aggiungi come persona: Marco Bianchi' }),
+    )
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('non ha un dominio')))
+    expect(
+      screen.getByRole('button', { name: 'Aggiungi come persona: Marco Bianchi' }),
+    ).toBeInTheDocument()
   })
 
   it('offers a retry after a failed read', async () => {

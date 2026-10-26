@@ -6,10 +6,12 @@ import { queryKeys } from '@/lib/query'
 export type DiscoveryReport = components['schemas']['DiscoveryReport']
 export type DiscoveredCorrespondent = components['schemas']['DiscoveredCorrespondent']
 
-/** Under `gmail`, like every key of this feature, so a disconnect that clears the
- *  feature's cache clears what was found with it. */
+/** Under `gmail`, like every key of this feature; `useDisconnectGmail` removes this
+ *  prefix, so a disconnect never leaves the old mailbox's addresses on a customer. */
+export const correspondentsPrefix = ['gmail', 'correspondents'] as const
+
 export const correspondentKeys = {
-  customer: (customerId: string) => ['gmail', 'correspondents', customerId] as const,
+  customer: (customerId: string) => [...correspondentsPrefix, customerId] as const,
 }
 
 /**
@@ -39,9 +41,10 @@ export function useCustomerCorrespondents(customerId: string, enabled: boolean) 
 /** Files one found address as a person of the customer. The answer already in hand is
  *  marked rather than read again, which would ask Gmail about the whole domain a second
  *  time; the customer's people are stale afterwards, so the Persone card above shows
- *  the new one. A 409 means the address was filed since the read (a second tab, an
- *  import): the row is marked all the same, so it stops offering what the book already
- *  holds. */
+ *  the new one. The refusal that names the address (`indirizzo` in the problem
+ *  document) means it was filed since the read (a second tab, an import): the row is
+ *  marked all the same, so it stops offering what the book already holds. Any other
+ *  refusal, a customer whose domain was cleared since, leaves the row as it was. */
 export function useAddCorrespondent(customerId: string) {
   const queryClient = useQueryClient()
   function markFiled(indirizzo: string) {
@@ -67,7 +70,8 @@ export function useAddCorrespondent(customerId: string) {
       ),
     onSuccess: (_person, body) => markFiled(body.indirizzo),
     onError: (error, body) => {
-      if (toProblem(error).status === 409) markFiled(body.indirizzo)
+      const problem = toProblem(error)
+      if (problem.status === 409 && problem.indirizzo === body.indirizzo) markFiled(body.indirizzo)
     },
   })
 }
