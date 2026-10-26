@@ -96,6 +96,10 @@ HAND_MAINTAINED_INDEXES = {
     # with the fifth search branch. Same partial-GIN-over-an-operator-class shape as the
     # nine of 0021, and picked up automatically by `TRGM_INDEX_NAMES` below.
     "ix_invoices_causale_trgm",
+    # REB-723, migration 0052: the eleventh and twelfth, `attivita.titolo` and `.note`, added
+    # with the sixth search branch. Same shape, picked up by `TRGM_INDEX_NAMES` below.
+    "ix_attivita_titolo_trgm",
+    "ix_attivita_note_trgm",
     # REB-290, migration 0036. Functional (over `lower(email)`) and partial at once --
     # the two shapes autogenerate omits, stacked: a functional index it drops silently
     # re-opens the case-insensitive duplicate, a partial predicate it drops silently
@@ -440,10 +444,11 @@ def test_every_trigram_index_is_a_partial_gin_index_over_gin_trgm_ops(
         engine.dispose()
 
     indexes = {row.indexname: row.indexdef for row in rows}
-    # Ten -- nine from migration 0021 plus `invoices.causale` from 0024 -- and the count is
-    # asserted: a set comprehension that silently matched nothing would make every
-    # assertion below vacuous, and §8.3 names ten columns rather than "some".
-    assert len(TRGM_INDEX_NAMES) == 10
+    # Twelve -- nine from migration 0021, `invoices.causale` from 0024 and the two of
+    # `attivita` from 0052 -- and the count is asserted: a set comprehension that silently
+    # matched nothing would make every assertion below vacuous, and §8.3 names the columns
+    # rather than "some".
+    assert len(TRGM_INDEX_NAMES) == 12
     for name in sorted(TRGM_INDEX_NAMES):
         definition = indexes[name]
         assert "USING gin" in definition, f"{name} is not a GIN index: {definition}"
