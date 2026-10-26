@@ -360,10 +360,10 @@ class SearchRepository:
     @staticmethod
     def _attivita_subtitle(row: Any) -> str | None:
         if row.stato != "aperta":
-            return row.stato
+            return str(row.stato)
         if row.scadenza is None:
             return "senza scadenza"
-        return row.scadenza.strftime("%d/%m/%Y")
+        return str(row.scadenza.strftime("%d/%m/%Y"))
 
     @staticmethod
     def _invoice_label(row: Any) -> str:
