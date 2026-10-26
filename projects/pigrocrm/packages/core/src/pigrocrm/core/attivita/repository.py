@@ -1,7 +1,7 @@
 from datetime import date
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.attivita.models import Attivita
@@ -71,6 +71,50 @@ class AttivitaRepository:
                 .limit(limit)
             )
         )
+
+    def aperte_nella_finestra(
+        self,
+        *,
+        assegnata_a: UUID | None,
+        limit: int,
+        prima_del: date | None = None,
+        dal: date | None = None,
+        al: date | None = None,
+        senza_scadenza: bool = False,
+    ) -> tuple[int, list[Attivita]]:
+        """The open, live commitments in one window of dates, and how many there are in all.
+
+        One window per call and never a union: the Oggi panel (spec 2026-09-03 §5) is four
+        lists, and the digest asks for two of them, so each is one predicate over the same
+        base. `prima_del` is exclusive («due before that day»); `dal` and `al` are
+        inclusive; `senza_scadenza` is the undated, which no date predicate can ask for
+        because `NULL <= date` is not true. Only `aperta`: an overdue count that included a
+        completed commitment would say somebody is late for something they did.
+
+        The count is the window's own and is not capped by `limit`: the sidebar shows the
+        number, and a number that stopped at the page size would be a different fact.
+        """
+        base = [Attivita.deleted_at.is_(None), Attivita.stato == "aperta"]
+        if assegnata_a is not None:
+            base.append(Attivita.assegnata_a == assegnata_a)
+        if senza_scadenza:
+            base.append(Attivita.scadenza.is_(None))
+        if prima_del is not None:
+            base.append(Attivita.scadenza < prima_del)
+        if dal is not None:
+            base.append(Attivita.scadenza >= dal)
+        if al is not None:
+            base.append(Attivita.scadenza <= al)
+        totale = self.session.scalar(select(func.count()).select_from(Attivita).where(*base)) or 0
+        ordine = (
+            (Attivita.created_at.desc(), Attivita.id.desc())
+            if senza_scadenza
+            else (Attivita.scadenza, Attivita.created_at, Attivita.id)
+        )
+        righe = list(
+            self.session.scalars(select(Attivita).where(*base).order_by(*ordine).limit(limit))
+        )
+        return totale, righe
 
     def list(self, query: AttivitaListQuery) -> list[Attivita]:
         archived = (

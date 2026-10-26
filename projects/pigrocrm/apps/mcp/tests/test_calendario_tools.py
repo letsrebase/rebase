@@ -9,6 +9,7 @@ different operations, and an undated commitment never lands in a day.
 
 import calendar
 import json
+from datetime import timedelta
 from typing import Any
 from uuid import uuid4
 
@@ -42,6 +43,7 @@ async def test_the_slice_10_tools_are_registered(server) -> None:
         "archive_attivita",
         "restore_attivita",
         "list_attivita",
+        "get_attivita_oggi",
         "get_calendar_month",
     } <= names
 
@@ -172,3 +174,17 @@ async def test_the_month_is_read_and_never_written(server) -> None:
     schema = tools["get_calendar_month"].input_schema
     # `azienda_id` since REB-624 narrows the hours and the invoices; still no way to write.
     assert set(schema.get("properties", {})) == {"mese", "tutti", "azienda_id"}
+
+
+async def test_the_oggi_panel_is_one_read_in_four_sections(server) -> None:
+    ieri = (OGGI - timedelta(days=1)).isoformat()
+    async with Client(server) as client:
+        await client.call_tool("create_attivita", {"titolo": "In ritardo", "scadenza": ieri})
+        await client.call_tool("create_attivita", {"titolo": "Senza data"})
+        result = await client.call_tool("get_attivita_oggi", {})
+
+    panel = _payload(result)
+    assert panel["oggi"] == OGGI.isoformat()
+    assert [a["titolo"] for a in panel["in_ritardo"]["items"]] == ["In ritardo"]
+    assert panel["in_ritardo"]["totale"] == 1
+    assert [a["titolo"] for a in panel["senza_scadenza"]["items"]] == ["Senza data"]

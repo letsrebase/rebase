@@ -65,6 +65,12 @@ def restore(context: McpContext, attivita_id: str) -> dict[str, Any]:
     return result.model_dump(mode="json")
 
 
+def today(context: McpContext, assegnata_a: UUID | None, limit: int) -> dict[str, Any]:
+    """The Oggi panel: overdue, due today, the next seven days, and the undated."""
+    result = _attivita(context).oggi(context.actor, assegnata_a=assegnata_a, limit=limit)
+    return result.model_dump(mode="json")
+
+
 def month(
     context: McpContext, mese: str, tutti: bool, azienda_id: UUID | None = None
 ) -> dict[str, Any]:
