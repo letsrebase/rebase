@@ -7,6 +7,8 @@ from fastapi import APIRouter, Query, status
 from pigrocrm.core.attivita.schemas import (
     AttivitaCreate,
     AttivitaListQuery,
+    AttivitaOggi,
+    AttivitaOggiQuery,
     AttivitaPage,
     AttivitaRead,
     AttivitaStato,
@@ -69,6 +71,23 @@ def list_attivita(
         dir=dir,
     )
     return AttivitaService(session).list(query, actor)
+
+
+# Declared before `/{attivita_id}`: «oggi» is not a UUID, and the path parameter would
+# otherwise claim it and answer 422.
+@router.get("/oggi", response_model=AttivitaOggi)
+def oggi(
+    session: SessionDep,
+    actor: ActorDep,
+    assegnata_a: Annotated[
+        UUID | None,
+        Query(description="Solo le attività di questa persona; senza, di tutto lo spazio"),
+    ] = None,
+    limit: Annotated[int, Query(ge=1, le=200, description="Righe per sezione")] = 100,
+) -> AttivitaOggi:
+    return AttivitaService(session).oggi(
+        actor, AttivitaOggiQuery(assegnata_a=assegnata_a, limit=limit)
+    )
 
 
 @router.get("/{attivita_id}", response_model=AttivitaRead)

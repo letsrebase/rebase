@@ -779,6 +779,35 @@ def digest_mail(to: str, digest: WeeklyDigest, *, public_url: str) -> Mail:
     ]
     sezione("Da sistemare", righe_segnali)
 
+    # 8. Da fare: the recipient's own commitments, late first and then the coming seven days.
+    # The week's view only (REB-726): the daily summary of the reminders spec is another mail.
+    attivita = digest.attivita
+    righe_fare: list[tuple[str, str]] = []
+    for gruppo, totale, ritardo in (
+        (attivita.in_ritardo, attivita.in_ritardo_totale, True),
+        (attivita.in_settimana, attivita.in_settimana_totale, False),
+    ):
+        for riga in gruppo:
+            quando = giorno_breve(riga.scadenza)
+            if ritardo:
+                quando += f" — {_conta(riga.giorni_di_ritardo or 0, 'giorno', 'giorni')} di ritardo"
+            righe_fare.append(
+                _row(
+                    f"{riga.titolo} — {quando}",
+                    url=link(f"/app/activities?apri={riga.attivita_id}"),
+                    label="Apri",
+                )
+            )
+        if totale > len(gruppo):
+            altre = _conta(totale - len(gruppo), "altra", "altre")
+            piu = f"…e {altre} {'in ritardo' if ritardo else 'questa settimana'}"
+            righe_fare.append((piu, e(piu)))
+    if righe_fare:
+        righe_fare.append(
+            _row("Tutto quello che c'è da fare", url=link("/app/oggi"), label="Vai a Oggi")
+        )
+    sezione("Da fare", righe_fare)
+
     # Chiusura variabile: la settimana ferma offre l'assistente invece di una lista.
     if digest.settimana_ferma:
         ferma = (

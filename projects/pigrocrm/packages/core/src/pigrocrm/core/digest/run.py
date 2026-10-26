@@ -52,6 +52,7 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.attivita.models import Attivita
 from pigrocrm.core.auth.repository import UserRepository
 from pigrocrm.core.auth.scope import actor_for, scope_of
 from pigrocrm.core.config import Settings
@@ -116,7 +117,7 @@ class _DaRiferire:
 
 
 def sezioni_con_righe(digest: WeeklyDigest) -> int:
-    """How many of §3.1's seven sections have something in them.
+    """How many of §3.1's seven sections, and REB-726's eighth, have something in them.
 
     A *section* count, not a list count: «Da incassare» is two lists and one heading,
     «Da emettere» is three figures on two lines, and «In pipeline» is three lists. It is
@@ -129,6 +130,9 @@ def sezioni_con_righe(digest: WeeklyDigest) -> int:
     rather than a second opinion about them. «Da emettere» is the one worth spelling out:
     the mail prints a line for `vinti_da_fatturare` and a second for `ore_non_fatturate or
     valore_maturato`, so the section exists when any of the three is set.
+
+    «Da fare» (REB-726) is the eighth, and the only one set per recipient: on a report
+    straight out of `DigestService.build` it is empty, so the seven above are unchanged.
 
     `ore` is the one section tested for presence rather than for content, because
     `DigestService.build` has already collapsed a week of zero hours to `None` -- so
@@ -144,6 +148,7 @@ def sezioni_con_righe(digest: WeeklyDigest) -> int:
             digest.ore is not None,
             bool(digest.pipeline or digest.deal_mossi or digest.offerte_in_attesa),
             bool(digest.segnali),
+            not digest.attivita.vuota,
         ]
     )
 
@@ -316,10 +321,21 @@ class DigestRun:
         for ambito, gruppo in per_ambito.items():
             bind_scope(self.session, attore.model_copy(update={"aziende": ambito}))
             self.session.rollback()
-            digest = DigestService(self.session, self.settings).build(attore, settimana)
-            sezioni = max(sezioni, sezioni_con_righe(digest))
-            if not dry_run and self.sender is not None:
-                accettati.extend(self._spedisci(self.sender, digest, gruppo))
+            servizio = DigestService(self.session, self.settings)
+            digest = servizio.build(attore, settimana)
+            for user_id, indirizzo in gruppo:
+                # «Da fare» is the person's, so it is set on a copy per address; the rest
+                # of the report is shared by the scope's group.
+                suo = digest.model_copy(update={"attivita": servizio.attivita_di(user_id)})
+                sezioni = max(sezioni, sezioni_con_righe(suo))
+                # `send` answers `False` for a refusal rather than raising, so only the
+                # addresses the provider took are recorded, counted and reported.
+                if (
+                    not dry_run
+                    and self.sender is not None
+                    and self.sender.send(digest_mail(indirizzo, suo, public_url=self.public_url))
+                ):
+                    accettati.append((user_id, indirizzo))
         bind_scope(self.session, attore)
 
         if dry_run:
@@ -363,29 +379,6 @@ class DigestRun:
             _DaRiferire(tuple(accettati), sezioni),
         )
 
-    def _spedisci(
-        self,
-        sender: EmailSender,
-        digest: WeeklyDigest,
-        destinatari: list[tuple[UUID, str]],
-    ) -> list[tuple[UUID, str]]:
-        """The recipients the provider took, in the order it was given them.
-
-        `EmailSender.send` answers `False` rather than raising -- `ResendSender` returns it
-        for any non-2xx and for a connection that never opened -- so a run that ignored the
-        boolean would record, count and report addresses that were refused. Only what came
-        back `True` goes into `inviato_a`, into `destinatari` and to PostHog.
-
-        The sender is a parameter and not `self.sender`, so this method cannot be reached
-        without one: «no Resend key» is `_invia`'s answer, decided once and above, and not
-        a branch inside the loop that sends.
-        """
-        return [
-            (user_id, indirizzo)
-            for user_id, indirizzo in destinatari
-            if sender.send(digest_mail(indirizzo, digest, public_url=self.public_url))
-        ]
-
     # -- the reads, and the row -------------------------------------------------------
 
     def _senza_scrivere(self, esito: DigestOutcome) -> DigestOutcome:
@@ -402,11 +395,11 @@ class DigestRun:
     def _spazio_vuoto(self) -> bool:
         """§2: silence for a space with nothing in it.
 
-        Four existence probes rather than the built report's own `vuoto`, because this is
-        the question asked *before* building: a space that has never had a customer should
-        cost one bounded query per table on a Monday morning, not seven sections and a
-        snapshot. `LIMIT 1` on the primary key: the answer is whether there is a row, not
-        how many.
+        Four existence probes (and a fifth, for open attivita) rather than the built
+        report's own `vuoto`, because this is the question asked *before* building: a space
+        that has never had a customer should cost one bounded query per table on a Monday
+        morning, not seven sections and a snapshot. `LIMIT 1` on the primary key: the
+        answer is whether there is a row, not how many.
 
         `deleted_at IS NULL` on every one of them. All four carry `SoftDeleteMixin` and
         core applies no global filter, so without it a space whose customer and deal were
@@ -415,12 +408,26 @@ class DigestRun:
         registers themselves read under, so the probe and the report agree about what
         exists.
         """
-        return all(
+        vuoto = all(
             self.session.execute(
                 select(model.id).where(model.deleted_at.is_(None)).limit(1)
             ).first()
             is None
             for model in (Customer, Deal, Invoice, TimeEntry)
+        )
+        if not vuoto:
+            return False
+        # A fifth probe, and a different one: an open attivita needs none of the four
+        # records above (a to-do belongs to nobody's customer), so a space that holds
+        # only commitments still has a week to report in «Da fare» (REB-726). Only the
+        # open ones: a space whose every attivita is closed has nothing to say.
+        return (
+            self.session.execute(
+                select(Attivita.id)
+                .where(Attivita.deleted_at.is_(None), Attivita.stato == "aperta")
+                .limit(1)
+            ).first()
+            is None
         )
 
     def _riga_della_settimana(self, iso: str) -> UUID | None:

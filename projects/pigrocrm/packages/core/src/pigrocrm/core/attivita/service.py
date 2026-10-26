@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -10,9 +10,13 @@ from pigrocrm.core.attivita.models import Attivita
 from pigrocrm.core.attivita.repository import AttivitaRepository
 from pigrocrm.core.attivita.schemas import (
     ATTIVITA_SORTS,
+    GIORNI_PROSSIMI,
     RIFERIMENTI,
     AttivitaCreate,
+    AttivitaGruppo,
     AttivitaListQuery,
+    AttivitaOggi,
+    AttivitaOggiQuery,
     AttivitaPage,
     AttivitaRead,
     AttivitaUpdate,
@@ -270,6 +274,33 @@ class AttivitaService:
 
     def get(self, attivita_id: UUID, actor: Actor) -> AttivitaRead:
         return AttivitaRead.model_validate(self._require(attivita_id))
+
+    def oggi(self, actor: Actor, query: AttivitaOggiQuery) -> AttivitaOggi:
+        """The four sections of the Oggi panel, cut on the emitter's today.
+
+        `query.assegnata_a` narrows every section to one person's; `None` is the whole space.
+        The day is read once and every section is cut on it, so a request that straddles
+        midnight cannot list the same commitment under two headings.
+        """
+        giorno = today_local()
+
+        def gruppo(**finestra: Any) -> AttivitaGruppo:
+            totale, righe = self.repo.aperte_nella_finestra(
+                assegnata_a=query.assegnata_a, limit=query.limit, **finestra
+            )
+            return AttivitaGruppo(
+                totale=totale, items=[AttivitaRead.model_validate(riga) for riga in righe]
+            )
+
+        return AttivitaOggi(
+            oggi=giorno,
+            in_ritardo=gruppo(prima_del=giorno),
+            scadono_oggi=gruppo(dal=giorno, al=giorno),
+            prossimi_sette_giorni=gruppo(
+                dal=giorno + timedelta(days=1), al=giorno + timedelta(days=GIORNI_PROSSIMI)
+            ),
+            senza_scadenza=gruppo(senza_scadenza=True),
+        )
 
     # `list` stays the last method of this class -- the unconditional project rule: the
     # name is rebound in the class namespace, so any method defined after it whose

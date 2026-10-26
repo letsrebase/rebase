@@ -31,11 +31,16 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.repository import ActivityRepository
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.attivita.models import Attivita
+from pigrocrm.core.attivita.repository import AttivitaRepository
+from pigrocrm.core.attivita.schemas import GIORNI_PROSSIMI
 from pigrocrm.core.config import Settings
 from pigrocrm.core.dashboard.service import DashboardService
 from pigrocrm.core.db import current_week, month_bounds, today_local
 from pigrocrm.core.deals.repository import DealRepository
 from pigrocrm.core.digest.schemas import (
+    DigestAttivita,
+    DigestAttivitaRiga,
     DigestDealMove,
     DigestInvoice,
     DigestOffer,
@@ -59,6 +64,9 @@ from pigrocrm.core.timetracking.repository import TimeEntryRepository
 # overdue. So `build` subtracts the `scadute` by id below, and the overdue half wins --
 # it carries the days of delay, which is the fact somebody acts on.
 IN_SCADENZA_GIORNI = 7
+
+# How many commitment lines each list of «Da fare» carries; the rest is a count.
+_ATTIVITA_MOSTRATE = 10
 
 # How many stage changes are read *inside* the week's window. Two hundred is far more than
 # a freelancer's week and still one bounded query; a space that moved more than that in a
@@ -271,6 +279,48 @@ class DigestService:
                 # that reports three zeroes every week is a mail nobody opens.
                 if signal.conteggio > 0
             ],
+        )
+
+    def attivita_di(self, user_id: UUID) -> DigestAttivita:
+        """One person's week of commitments: their overdue ones and those due from today to
+        seven days on (REB-726).
+
+        Read from the same repository the Oggi panel reads, with the same windows, so the
+        mail and the page cannot disagree about what is late. `oggi` is the emitter's
+        day, like `scadute`'s, and the window closes at `oggi + 7` as the page's «prossimi
+        sette giorni» does. Assigned to `user_id` only: a commitment nobody has taken is
+        nobody's mail.
+        """
+        oggi = today_local(self.settings)
+        repo = AttivitaRepository(self.session)
+
+        def righe(rows: list[Attivita], *, ritardo: bool) -> list[DigestAttivitaRiga]:
+            # `scadenza` is never `None` here: both windows are date predicates.
+            return [
+                DigestAttivitaRiga(
+                    attivita_id=row.id,
+                    titolo=row.titolo,
+                    scadenza=row.scadenza,
+                    giorni_di_ritardo=(oggi - row.scadenza).days if ritardo else None,
+                )
+                for row in rows
+                if row.scadenza is not None
+            ]
+
+        totale_ritardo, in_ritardo = repo.aperte_nella_finestra(
+            assegnata_a=user_id, limit=_ATTIVITA_MOSTRATE, prima_del=oggi
+        )
+        totale_settimana, in_settimana = repo.aperte_nella_finestra(
+            assegnata_a=user_id,
+            limit=_ATTIVITA_MOSTRATE,
+            dal=oggi,
+            al=oggi + timedelta(days=GIORNI_PROSSIMI),
+        )
+        return DigestAttivita(
+            in_ritardo=righe(in_ritardo, ritardo=True),
+            in_ritardo_totale=totale_ritardo,
+            in_settimana=righe(in_settimana, ritardo=False),
+            in_settimana_totale=totale_settimana,
         )
 
     def _riga(

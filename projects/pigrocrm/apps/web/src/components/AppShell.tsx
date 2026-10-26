@@ -31,6 +31,7 @@ import {
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { BrandMark } from '@/components/BrandMark'
 import { readSidebarGroups, writeSidebarGroups } from '@/components/sidebarGroups'
+import { useOverdueCount } from '@/features/attivita/queries'
 import { CommandPalette } from '@/features/search/CommandPalette'
 import { SETTINGS_GROUPS, type SettingsTabValue } from '@/features/settings/tabs'
 import { ConnectAgentDialog } from '@/features/tokens/ConnectAgentDialog'
@@ -101,6 +102,10 @@ const TOP_LEVEL = [
   // group for the same reason Home is: a month of one's own days and deadlines is a
   // cross-cutting view, not a step of «Vendite» or of «Amministrazione».
   { to: '/app/calendar', label: 'Calendario', icon: CalendarDays, exact: false },
+  // What falls due today (REB-725): overdue, today, the next seven days and the undated,
+  // with the overdue count beside it. Between the calendar and the full list, since it is
+  // the one cut of the list a person opens first thing.
+  { to: '/app/oggi', label: 'Oggi', icon: CalendarCheck, exact: false },
   // Every to-do of the space, right under the calendar that draws the dated ones by day
   // (REB-722): the calendar answers «what falls on which day», this answers «what is
   // still open for me», and neither can answer the other's question.
@@ -418,6 +423,10 @@ export function AppShell({
     }
   }
 
+  // The one number of the product that asks for an action (slice 7 §5): how many of my
+  // attività are past their deadline, drawn beside «Oggi» and only when it is above zero.
+  const overdue = useOverdueCount()
+
   /** A leaf entry: an icon and a label expanded, an icon alone in the rail. */
   const leaf = ({
     to,
@@ -443,6 +452,17 @@ export function AppShell({
     >
       <Icon className="size-4 shrink-0" aria-hidden="true" />
       <span className={cn('truncate', rail && 'sr-only')}>{label}</span>
+      {to === '/app/oggi' && overdue !== undefined && (
+        <span
+          className={cn(
+            'bg-sidebar-primary px-1.5 text-xs font-medium text-sidebar-primary-foreground',
+            rail ? 'absolute top-1 right-1' : 'ml-auto',
+          )}
+        >
+          <span aria-hidden="true">{overdue}</span>
+          <span className="sr-only">{overdue} in ritardo</span>
+        </span>
+      )}
     </Link>
   )
 

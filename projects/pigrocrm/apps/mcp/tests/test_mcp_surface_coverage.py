@@ -634,6 +634,11 @@ _COPERTE_O_UMANE: dict[Method, str] = {
         "cruscotti, le fatture, le ore, la pipeline), e un agente che vuole la settimana "
         "la legge da li' invece di ricevere una pagina di prosa"
     ),
+    ("DigestService", "attivita_di"): (
+        "the Monday digest's «Da fare» section (REB-726): one person's overdue "
+        "activities and those due this week. An agent reads the same date windows "
+        "through `get_attivita_oggi` and `list_attivita`, without using email"
+    ),
     ("AnalyticsService", "economic_overview"): (
         "la scheda economica della dashboard porta con se' la stima fiscale calcolata su "
         "incassato e proiettato: valgono le ragioni di `get_fiscal_estimate`, che non e' "

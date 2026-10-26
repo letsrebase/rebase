@@ -117,6 +117,43 @@ class AttivitaPage(BaseModel):
     next_cursor: str | None
 
 
+# How far «prossimi sette giorni» reaches past today, inclusive (spec 2026-09-03 §5). Here
+# and not in the service so the weekly digest reads the same window without importing it.
+GIORNI_PROSSIMI = 7
+
+
+class AttivitaOggiQuery(BaseModel):
+    """What the Oggi panel can be asked: whose attività (everybody's when `None`) and how
+    many rows each section carries. Validated here and not only by the REST router, so an
+    agent's `limit` of 0 or of «molti» is a sentence and not a database error."""
+
+    assegnata_a: UUID | None = None
+    limit: int = Field(default=100, ge=1, le=200)
+
+
+class AttivitaGruppo(BaseModel):
+    """One section of the Oggi panel: the first `limit` rows and how many there are in all."""
+
+    totale: int
+    items: list[AttivitaRead]
+
+
+class AttivitaOggi(BaseModel):
+    """The four sections of «Oggi» (spec 2026-09-03 §5), in the order the page shows them.
+
+    `oggi` is the day the sections were cut on, the emitter's (`today_local`), so a client
+    in another zone sees the same four lists the server counted. Every section is open
+    commitments only; «prossimi sette giorni» opens the day after `oggi` and closes seven
+    days on, both inclusive.
+    """
+
+    oggi: date
+    in_ritardo: AttivitaGruppo
+    scadono_oggi: AttivitaGruppo
+    prossimi_sette_giorni: AttivitaGruppo
+    senza_scadenza: AttivitaGruppo
+
+
 # Residuo R9. Two keys and not three: `scadenza`, because a list of commitments is read
 # by date, and `created_at` as the default and the tiebreaker of last resort. `scadenza`
 # is nullable, so it is the spec for which `order_by` emits NULLS LAST in both

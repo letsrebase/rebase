@@ -7,7 +7,7 @@ the assembly itself is `packages/core/tests/test_calendario_service.py`.
 """
 
 import calendar
-from datetime import date
+from datetime import date, timedelta
 
 from fastapi.testclient import TestClient
 
@@ -281,3 +281,45 @@ def test_the_month_says_which_day_is_today(logged_in: TestClient) -> None:
     body = logged_in.get("/api/calendar", params={"mese": MESE}).json()
 
     assert date.fromisoformat(body["oggi"])
+
+
+# --- the Oggi panel (REB-725) ----------------------------------------------------------
+
+
+def test_oggi_is_not_read_as_an_attivita_id(logged_in: TestClient) -> None:
+    """`/api/activities/oggi` is declared before `/{attivita_id}`: a path parameter that
+    claimed the word would answer 422 for the page that needs it."""
+    response = logged_in.get("/api/activities/oggi")
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert set(body) == {
+        "oggi",
+        "in_ritardo",
+        "scadono_oggi",
+        "prossimi_sette_giorni",
+        "senza_scadenza",
+    }
+
+
+def test_an_overdue_attivita_leaves_the_panel_when_it_is_completed(
+    logged_in: TestClient,
+) -> None:
+    """The card's own sentence: due yesterday, it is under «in ritardo» and counted;
+    completed, it is gone from both."""
+    me = _me(logged_in)
+    ieri = (OGGI - timedelta(days=1)).isoformat()
+    created = logged_in.post(
+        "/api/activities", json={"titolo": "Sollecitare Rossi", "scadenza": ieri, "assegnata_a": me}
+    )
+    assert created.status_code == 201, created.text
+
+    before = logged_in.get("/api/activities/oggi", params={"assegnata_a": me}).json()
+    assert before["in_ritardo"]["totale"] == 1
+    assert [a["titolo"] for a in before["in_ritardo"]["items"]] == ["Sollecitare Rossi"]
+
+    done = logged_in.post(f"/api/activities/{created.json()['id']}/complete")
+    assert done.status_code == 200, done.text
+
+    after = logged_in.get("/api/activities/oggi", params={"assegnata_a": me}).json()
+    assert after["in_ritardo"] == {"totale": 0, "items": []}

@@ -29,10 +29,11 @@ from uuid import UUID
 
 import pytest
 from fakes.azienda_fixtures import committed_default_azienda, remove_azienda
-from sqlalchemy import Engine, delete, func, select
+from sqlalchemy import Engine, delete, func, select, update
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.models import Activity
+from pigrocrm.core.attivita.models import Attivita
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings
 from pigrocrm.core.customers.models import Customer
@@ -41,7 +42,7 @@ from pigrocrm.core.db.base import uuid7
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.digest.models import Digest
 from pigrocrm.core.digest.run import DigestOutcome, DigestRun, sezioni_con_righe
-from pigrocrm.core.digest.schemas import WeeklyDigest
+from pigrocrm.core.digest.schemas import DigestAttivita, DigestAttivitaRiga, WeeklyDigest
 from pigrocrm.core.digest.service import iso_week
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.invoices.models import Invoice
@@ -258,6 +259,7 @@ def _pulisci(factory: Any, iso: str, azienda_id: UUID | None = None) -> None:
         session.execute(delete(Deal).where(Deal.nome.like(f"{_PREFIX} %")))
         session.execute(delete(Customer).where(Customer.ragione_sociale.like(f"{_PREFIX} %")))
         session.execute(delete(PipelineStage).where(PipelineStage.nome.like(f"{_PREFIX} %")))
+        session.execute(delete(Attivita).where(Attivita.titolo.like(f"{_PREFIX} %")))
         session.execute(delete(User).where(User.nome.like(f"{_PREFIX} %")))
         remove_azienda(session, azienda_id)
         session.commit()
@@ -420,6 +422,16 @@ def test_the_two_halves_of_a_section_still_count_once() -> None:
     assert sezioni_con_righe(doppia) == 1
 
 
+def test_the_attivita_of_the_week_count_as_one_section() -> None:
+    riga = DigestAttivitaRiga(attivita_id=uuid7(), titolo="Telefonare", scadenza=date(2026, 9, 9))
+    con = _digest_vuoto(
+        attivita=DigestAttivita(in_settimana=[riga], in_settimana_totale=1),
+    )
+
+    assert sezioni_con_righe(con) == 1
+    assert con.vuoto is False
+
+
 def test_a_week_with_everything_lights_all_seven() -> None:
     pieno = _digest_vuoto(
         scadute=[_fattura()],
@@ -462,6 +474,121 @@ def test_the_report_goes_to_everyone_who_asked_for_it_and_to_nobody_else(
     riga = _riga(corpus.engine, corpus.iso)
     assert riga is not None
     assert riga.inviato_a == [corpus.titolare, corpus.collega]
+
+
+def test_each_recipient_gets_their_own_attivita_of_the_week(corpus: Corpus) -> None:
+    """REB-726: the digest lists an attività due this week that is assigned to the
+    recipient, and not one assigned to somebody else. The overdue come first, a
+    completed one is on neither list, and an undated one belongs to the Oggi page."""
+    oggi = today_local(SETTINGS)
+    ada, bruno = corpus.destinatari
+    factory = session_factory(corpus.engine)
+    with factory() as session:
+        session.add_all(
+            [
+                Attivita(
+                    titolo=f"{_PREFIX} Telefonare a Rossi",
+                    scadenza=oggi + timedelta(days=2),
+                    stato="aperta",
+                    origine="manuale",
+                    assegnata_a=ada,
+                    custom_fields={},
+                ),
+                Attivita(
+                    titolo=f"{_PREFIX} Preventivo in ritardo",
+                    scadenza=oggi - timedelta(days=3),
+                    stato="aperta",
+                    origine="manuale",
+                    assegnata_a=ada,
+                    custom_fields={},
+                ),
+                Attivita(
+                    titolo=f"{_PREFIX} Inviare il contratto a Bianchi",
+                    scadenza=oggi + timedelta(days=2),
+                    stato="aperta",
+                    origine="manuale",
+                    assegnata_a=bruno,
+                    custom_fields={},
+                ),
+                Attivita(
+                    titolo=f"{_PREFIX} Gia fatta",
+                    scadenza=oggi + timedelta(days=1),
+                    stato="completata",
+                    completata_il=oggi,
+                    origine="manuale",
+                    assegnata_a=ada,
+                    custom_fields={},
+                ),
+                Attivita(
+                    titolo=f"{_PREFIX} Senza data",
+                    scadenza=None,
+                    stato="aperta",
+                    origine="manuale",
+                    assegnata_a=ada,
+                    custom_fields={},
+                ),
+                Attivita(
+                    titolo=f"{_PREFIX} Fra due settimane",
+                    scadenza=oggi + timedelta(days=14),
+                    stato="aperta",
+                    origine="manuale",
+                    assegnata_a=ada,
+                    custom_fields={},
+                ),
+            ]
+        )
+        session.commit()
+
+    sender = RecordingSender()
+    _esegui(corpus.engine, settimana=corpus.settimana, titolare=corpus.titolare, sender=sender)
+    di_ada, di_bruno = sender.sent
+
+    assert "Telefonare a Rossi" in di_ada.text
+    assert "Inviare il contratto a Bianchi" not in di_ada.text
+    assert "Inviare il contratto a Bianchi" in di_bruno.text
+    assert "Telefonare a Rossi" not in di_bruno.text
+    assert "Preventivo in ritardo — " in di_ada.text and "3 giorni di ritardo" in di_ada.text
+    # Late before upcoming, and none of the three that do not belong in a week's view.
+    assert di_ada.text.index("Preventivo in ritardo") < di_ada.text.index("Telefonare a Rossi")
+    for fuori in ("Gia fatta", "Senza data", "Fra due settimane"):
+        assert fuori not in di_ada.text
+    assert f"{PUBLIC_URL}/app/oggi?da=digest" in di_ada.text
+    # A person with nothing assigned gets no section, not an empty heading.
+    assert "Da fare" in di_ada.text and "Da fare" in di_bruno.text
+
+
+def test_a_long_list_of_late_attivita_is_cut_and_says_how_many_more(corpus: Corpus) -> None:
+    """The mail never grows with the backlog: ten lines, then a count, then the link."""
+    oggi = today_local(SETTINGS)
+    ada = corpus.destinatari[0]
+    with session_factory(corpus.engine)() as session:
+        session.add_all(
+            Attivita(
+                titolo=f"{_PREFIX} Arretrato {n:02d}",
+                scadenza=oggi - timedelta(days=1 + n),
+                stato="aperta",
+                origine="manuale",
+                assegnata_a=ada,
+                custom_fields={},
+            )
+            for n in range(13)
+        )
+        session.commit()
+
+    sender = RecordingSender()
+    _esegui(corpus.engine, settimana=corpus.settimana, titolare=corpus.titolare, sender=sender)
+    di_ada = sender.sent[0]
+
+    assert di_ada.text.count("Arretrato") == 10
+    assert "…e 3 altre in ritardo" in di_ada.text
+    assert f"{PUBLIC_URL}/app/oggi?da=digest" in di_ada.text
+
+
+def test_a_recipient_with_nothing_assigned_has_no_da_fare_section(corpus: Corpus) -> None:
+    sender = RecordingSender()
+    _esegui(corpus.engine, settimana=corpus.settimana, titolare=corpus.titolare, sender=sender)
+
+    assert all("Da fare" not in mail.text for mail in sender.sent)
 
 
 def test_the_timeline_entry_carries_counts_and_never_a_figure(corpus: Corpus) -> None:
@@ -673,6 +800,62 @@ def test_forza_sends_again_and_moves_the_row_instead_of_writing_a_second(
 
 
 # --- the runs that write nothing ------------------------------------------------------
+
+
+def test_a_space_with_only_an_open_attivita_still_gets_its_da_fare(db_engine: Engine) -> None:
+    """An attivita needs no customer, deal, invoice or hour, so a space of nothing but
+    to-dos is not empty: its owner is mailed the week's «Da fare», and a space whose
+    only attivita is closed hears nothing (REB-726, Greptile on #635)."""
+    factory = session_factory(db_engine)
+    oggi = today_local(SETTINGS)
+    with factory() as session:
+        _require_empty(session)
+        titolare = User(
+            email=f"{_PREFIX.lower()}-solo-{uuid7()}@example.test",
+            password_hash="x",
+            nome=f"{_PREFIX} Solo",
+            ruolo="admin",
+        )
+        session.add(titolare)
+        session.flush()
+        indirizzo = titolare.email
+        session.add(
+            Attivita(
+                titolo=f"{_PREFIX} Chiamare Rossi",
+                scadenza=oggi - timedelta(days=1),
+                stato="aperta",
+                origine="manuale",
+                assegnata_a=titolare.id,
+                custom_fields={},
+            )
+        )
+        session.commit()
+    settimana = _settimana_scorsa()
+    sender = RecordingSender()
+    try:
+        esito = _esegui(db_engine, settimana=settimana, titolare=indirizzo, sender=sender)
+        assert esito == DigestOutcome(
+            slug=SLUG, esito="inviato", settimana=iso_week(settimana[0]), destinatari=1
+        )
+        assert "Chiamare Rossi" in sender.sent[0].text
+
+        with factory() as session:
+            session.execute(
+                update(Attivita)
+                .where(Attivita.titolo == f"{_PREFIX} Chiamare Rossi")
+                .values(stato="completata", completata_il=oggi)
+            )
+            # The first run's timeline entry goes with its row, before the row does:
+            # `_pulisci` finds an entry through the week's `digests` id.
+            session.execute(delete(Activity).where(Activity.entity_type == _ENTITA))
+            session.execute(delete(Digest).where(Digest.settimana == iso_week(settimana[0])))
+            session.commit()
+        chiuso = _esegui(
+            db_engine, settimana=settimana, titolare=indirizzo, sender=RecordingSender()
+        )
+        assert chiuso.esito == "vuoto"
+    finally:
+        _pulisci(factory, iso_week(settimana[0]))
 
 
 def test_an_empty_space_hears_nothing(db_engine: Engine) -> None:

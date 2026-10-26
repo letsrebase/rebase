@@ -6,7 +6,7 @@ nullable, and an undated activity is not late.** Everything downstream -- the ca
 that holds, so it is asserted from several sides rather than once.
 """
 
-from datetime import date
+from datetime import date, timedelta
 from uuid import UUID, uuid4
 
 import pytest
@@ -17,7 +17,12 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.attivita.models import Attivita
-from pigrocrm.core.attivita.schemas import AttivitaCreate, AttivitaListQuery, AttivitaUpdate
+from pigrocrm.core.attivita.schemas import (
+    AttivitaCreate,
+    AttivitaListQuery,
+    AttivitaOggiQuery,
+    AttivitaUpdate,
+)
 from pigrocrm.core.attivita.service import AttivitaService
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.customers.models import Customer
@@ -385,3 +390,89 @@ def test_the_timeline_records_what_happened_to_it(
     ).scalars()
 
     assert list(kinds) == ["created", "completata", "riaperta", "annullata"]
+
+
+# --- the Oggi panel (spec 2026-09-03 §5, REB-725) ---------------------------------------
+
+
+def _persona(db_session: Session, nome: str) -> UUID:
+    user = User(
+        email=f"{nome.lower()}-{uuid4()}@example.test",
+        password_hash="x",
+        nome=nome,
+        ruolo="collaboratore",
+    )
+    db_session.add(user)
+    db_session.flush()
+    return user.id
+
+
+def test_oggi_cuts_the_open_commitments_into_four_sections(
+    service: AttivitaService, db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Overdue is before today, «oggi» is today, the week opens tomorrow and closes at
+    today plus seven, and the undated stand apart. The boundary days are the ones a
+    off-by-one would move, so each side of each is asserted."""
+    congela(monkeypatch)
+    oggi = OGGI_IN_ITALIA
+    io = _persona(db_session, "Io")
+    altri = _persona(db_session, "Altri")
+
+    def titolo(giorni: int | None) -> str:
+        return "senza data" if giorni is None else f"giorno {giorni:+d}"
+
+    for giorni in (-1, 0, 1, 7, 8, None):
+        _create(
+            service,
+            titolo=titolo(giorni),
+            scadenza=None if giorni is None else oggi + timedelta(days=giorni),
+            assegnata_a=io,
+        )
+    _create(service, titolo="di un altro", scadenza=oggi - timedelta(days=2), assegnata_a=altri)
+
+    panel = service.oggi(ADMIN, AttivitaOggiQuery(assegnata_a=io))
+
+    assert panel.oggi == oggi
+    assert [a.titolo for a in panel.in_ritardo.items] == ["giorno -1"]
+    assert [a.titolo for a in panel.scadono_oggi.items] == ["giorno +0"]
+    assert [a.titolo for a in panel.prossimi_sette_giorni.items] == ["giorno +1", "giorno +7"]
+    assert [a.titolo for a in panel.senza_scadenza.items] == ["senza data"]
+
+
+def test_oggi_counts_only_open_commitments_and_reports_the_whole_total(
+    service: AttivitaService, db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Completing an overdue commitment takes it out of the count; and a section holds
+    `limit` rows while `totale` stays the real number, because the sidebar prints it."""
+    congela(monkeypatch)
+    oggi = OGGI_IN_ITALIA
+    io = _persona(db_session, "Io")
+    for n in range(3):
+        _create(service, titolo=f"ieri {n}", scadenza=oggi - timedelta(days=1), assegnata_a=io)
+
+    prima = service.oggi(ADMIN, AttivitaOggiQuery(assegnata_a=io, limit=2))
+    assert prima.in_ritardo.totale == 3
+    assert len(prima.in_ritardo.items) == 2
+
+    service.complete(prima.in_ritardo.items[0].id, ADMIN)
+    dopo = service.oggi(ADMIN, AttivitaOggiQuery(assegnata_a=io, limit=2))
+    assert dopo.in_ritardo.totale == 2
+
+
+def test_oggi_without_an_assignee_is_the_whole_space(
+    service: AttivitaService, db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    congela(monkeypatch)
+    oggi = OGGI_IN_ITALIA
+    _create(service, titolo="di nessuno", scadenza=oggi - timedelta(days=1))
+    _create(
+        service,
+        titolo="di qualcuno",
+        scadenza=oggi - timedelta(days=1),
+        assegnata_a=_persona(db_session, "Qualcuno"),
+    )
+
+    assert {a.titolo for a in service.oggi(ADMIN, AttivitaOggiQuery()).in_ritardo.items} >= {
+        "di nessuno",
+        "di qualcuno",
+    }

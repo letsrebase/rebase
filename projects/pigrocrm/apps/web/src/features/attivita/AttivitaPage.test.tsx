@@ -70,11 +70,11 @@ function serve(items: unknown[]) {
   }) as never)
 }
 
-function renderPage(openId?: string, onDismissOpen?: () => void) {
+function renderPage(openId?: string, onDismissOpen?: () => void, initialAssignee?: string) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={client}>
-      <AttivitaPage openId={openId} onDismissOpen={onDismissOpen} />
+      <AttivitaPage openId={openId} onDismissOpen={onDismissOpen} initialAssignee={initialAssignee} />
     </QueryClientProvider>,
   )
 }
@@ -122,6 +122,17 @@ describe('toFilters', () => {
 })
 
 describe('AttivitaPage', () => {
+  it('opens on everybody\'s when the Oggi page sends it there for «Di chiunque»', async () => {
+    serve([row({ id: '1', titolo: 'Preparare le proposte', scadenza: '2026-10-30' })])
+    renderPage(undefined, undefined, 'tutte')
+
+    expect(await screen.findByText('Preparare le proposte')).toBeInTheDocument()
+    expect(activityQueries()[0]).not.toHaveProperty('assegnata_a')
+    expect(screen.getByRole('combobox', { name: 'Filtra per assegnatario' })).toHaveTextContent(
+      'Di chiunque',
+    )
+  })
+
   it('opens on the open ones assigned to me, and says so in its controls', async () => {
     serve([row({ id: '1', titolo: 'Preparare le proposte', scadenza: '2026-10-30' })])
     renderPage()
