@@ -9,6 +9,7 @@ import { Card, CardContent } from '@rebase/ui/card'
 import { Skeleton } from '@rebase/ui/skeleton'
 import { ContractForm } from '@/features/contracts/ContractForm'
 import { ContractStateActions } from '@/features/contracts/ContractStateActions'
+import { ExpensesSection } from '@/features/contracts/ExpensesSection'
 import {
   EXPENSE_POLICY_LABELS,
   cadenceLabel,
@@ -146,6 +147,9 @@ export function ContractDetail() {
 
             <div className="lg:col-span-2">
               <RateCardsSection contractId={row.id} />
+            </div>
+            <div className="lg:col-span-2">
+              <ExpensesSection contractId={row.id} />
             </div>
           </div>
         }

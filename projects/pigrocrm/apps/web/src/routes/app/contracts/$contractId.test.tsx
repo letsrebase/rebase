@@ -104,6 +104,7 @@ describe('ContractDetail', () => {
     expect(screen.getByText('30 giorni fine mese')).toBeInTheDocument()
     expect(screen.getByText('Rimborsate fino a un tetto, tetto 500,00 €')).toBeInTheDocument()
     expect(await screen.findByRole('heading', { name: 'Tariffe' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Spese' })).toBeInTheDocument()
   })
 
   it('offers Attiva, Stato and Modifica to a writer', async () => {
