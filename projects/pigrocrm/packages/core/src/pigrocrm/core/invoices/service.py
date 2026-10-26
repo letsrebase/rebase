@@ -67,10 +67,11 @@ from pigrocrm.core.invoices.import_review import (
 )
 from pigrocrm.core.invoices.import_schemas import ParsedInvoiceParty
 from pigrocrm.core.invoices.import_upload import (
-    UploadedFileDecision,
     UploadedInvoiceConfirmRead,
     UploadedInvoiceReviewRead,
+    UploadedPartyDecision,
     expand_uploads,
+    party_key,
 )
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine, InvoiceRegisterGap
 from pigrocrm.core.invoices.naming import (
@@ -1277,8 +1278,8 @@ class InvoiceService:
                 actor,
                 stored_as=document_id,
                 origin=None,
-                customer_id=customer_id,
-                create_customer=create_customer,
+                decide=lambda _party: (customer_id, create_customer),
+                created_customers={},
             )
         ]
 
@@ -1290,7 +1291,9 @@ class InvoiceService:
         expand_uploads` opens them, after the admin check), and the verdicts are the same
         ones from the same `review_invoices`, named by file and SHA-256 instead of a
         `document_id`. Read-only, admin only, and nothing is stored: see `import_upload`
-        for why the page sends the files twice rather than staging them."""
+        for why the page sends the files twice rather than staging them. A file that looks
+        like a FatturaPA and does not parse is one `unclaimed` row with its `motivo`, not
+        a refusal of the files sent with it."""
         actor.require_admin(REVIEW_ACTION)
         aziende = self._importing_aziende()
         rows: list[UploadedInvoiceReviewRead] = []
@@ -1302,6 +1305,8 @@ class InvoiceService:
                         sha256=file.sha256,
                         outcome=row.outcome,
                         invoice=row.invoice,
+                        party_key=party_key(row.invoice.cliente) if row.invoice else None,
+                        motivo=row.note,
                         azienda_id=row.azienda_id,
                         matched_customer_id=row.matched_customer_id,
                         mappature_giorni=row.mappature_giorni,
@@ -1312,14 +1317,17 @@ class InvoiceService:
     def confirm_upload(
         self,
         files: Sequence[tuple[str, bytes]],
-        decisions: Mapping[str, UploadedFileDecision],
+        decisions: Mapping[str, UploadedPartyDecision],
         actor: Actor,
     ) -> list[UploadedInvoiceConfirmRead]:
         """`confirm_import` for files that were never archived (REB-758). Each file is
         read again from its own bytes, never from an earlier `review_upload`, and is
         written by the one `_confirm_content` `confirm_import` runs, so the register
         rules, the one-transaction-per-invoice commit and the `conflict` outcome for a
-        refused invoice are the same ones. `decisions` is keyed by the file's SHA-256.
+        refused invoice are the same ones. `decisions` is keyed by the counterparty's
+        `party_key`, and a customer created for one invoice is the customer of every
+        later invoice of that counterparty in this request, whether or not the register
+        could match it again by tax id.
 
         The one difference is where a single-invoice file's XML ends up. `confirm_import`
         points the invoice at the document it was handed; here there is none, so the
@@ -1329,23 +1337,32 @@ class InvoiceService:
         empty on a batch."""
         actor.require_admin(CONFIRM_ACTION)
         aziende = self._importing_aziende()
+
+        def decide(party: ParsedInvoiceParty) -> tuple[UUID | None, bool]:
+            decision = decisions.get(party_key(party))
+            if decision is None:
+                return None, False
+            return decision.customer_id, decision.create_customer
+
+        created_customers: dict[str, UUID] = {}
         rows: list[UploadedInvoiceConfirmRead] = []
         for file in expand_uploads(files):
-            decision = decisions.get(file.sha256, UploadedFileDecision())
             for row in self._confirm_content(
                 file.content,
                 aziende,
                 actor,
                 stored_as=None,
                 origin=file.name,
-                customer_id=decision.customer_id,
-                create_customer=decision.create_customer,
+                decide=decide,
+                created_customers=created_customers,
             ):
                 rows.append(
                     UploadedInvoiceConfirmRead(
                         file=file.name,
                         sha256=file.sha256,
                         outcome=row.outcome,
+                        party_key=row.party_key,
+                        motivo=row.note,
                         azienda_id=row.azienda_id,
                         fattura=row.fattura,
                         buchi_non_dichiarati=row.buchi_non_dichiarati,
@@ -1361,30 +1378,31 @@ class InvoiceService:
         *,
         stored_as: UUID | None,
         origin: str | None,
-        customer_id: UUID | None,
-        create_customer: bool,
+        decide: Callable[[ParsedInvoiceParty], tuple[UUID | None, bool]],
+        created_customers: dict[str, UUID],
     ) -> list[ConfirmedInvoice]:
         """The write both `confirm_import` and `confirm_upload` run, on one file's bytes
         (their docstrings carry the rules). `stored_as` is the document the bytes were
         read from, which a single-invoice file's row is pointed at; `None` means the
         bytes came in with the request, and `origin`, their file name, is recorded as
-        the provenance of the document archived for them."""
+        the provenance of the document archived for them. `decide` answers, for an
+        invoice's customer, the `customer_id` to attach and whether to create the
+        counterparty when none matches. `created_customers`, keyed by `party_key`, is
+        owned by the caller so it outlives one file."""
         adapter = detect_adapter(content)
         if adapter is None:
             return [ConfirmedInvoice(outcome="unclaimed")]
 
-        invoices = adapter.parse(content)
+        try:
+            invoices = adapter.parse(content)
+        except ValueError as exc:
+            return [ConfirmedInvoice(outcome="unclaimed", note=str(exc))]
         single_invoice_document = len(invoices) == 1
         digest = hashlib.sha256(content).hexdigest() if single_invoice_document else None
 
         rows: list[ConfirmedInvoice] = []
-        # Keyed on the parsed party itself, not a tax id string: `ParsedInvoiceParty`
-        # is frozen and hashes/compares by value, and every invoice from the same
-        # counterparty in one document parses to an identical party object, so this
-        # is exactly "the same new counterparty seen again in this batch" with no
-        # normalisation of its own to get wrong.
-        created_customers: dict[ParsedInvoiceParty, UUID] = {}
         for invoice in invoices:
+            party = party_key(invoice.cliente)
             classification, azienda = classify_parsed_invoice(
                 invoice,
                 aziende,
@@ -1392,10 +1410,12 @@ class InvoiceService:
                 content=content,
             )
             if classification == "incoming_skipped" or azienda is None:
-                rows.append(ConfirmedInvoice(outcome="incoming_skipped"))
+                rows.append(ConfirmedInvoice(outcome="incoming_skipped", party_key=party))
                 continue
             if classification == "conflict":
-                rows.append(ConfirmedInvoice(outcome="conflict", azienda_id=azienda.id))
+                rows.append(
+                    ConfirmedInvoice(outcome="conflict", azienda_id=azienda.id, party_key=party)
+                )
                 continue
             # `existing_for` derives its own comparison row from the same `natural_key`
             # this re-derives: a `None` key always routes here through "conflict" above
@@ -1410,10 +1430,14 @@ class InvoiceService:
                 fattura = self.get(existing.id, actor) if existing is not None else None
                 rows.append(
                     ConfirmedInvoice(
-                        outcome="already_present", azienda_id=azienda.id, fattura=fattura
+                        outcome="already_present",
+                        azienda_id=azienda.id,
+                        fattura=fattura,
+                        party_key=party,
                     )
                 )
                 continue
+            customer_id, create_customer = decide(invoice.cliente)
             resolved_customer_id = customer_id
             if resolved_customer_id is None:
                 resolved_customer_id = match_customer(self.session, invoice.cliente)
@@ -1425,7 +1449,7 @@ class InvoiceService:
             # only once `import_issued` for *this* invoice has actually committed.
             new_customer_id: UUID | None = None
             if resolved_customer_id is None and create_customer:
-                resolved_customer_id = created_customers.get(invoice.cliente)
+                resolved_customer_id = created_customers.get(party)
                 if resolved_customer_id is None:
                     # On the azienda the file landed on (§1.5), not the one the nation
                     # would propose: the customer was billed by this azienda already.
@@ -1439,7 +1463,11 @@ class InvoiceService:
                     new_customer_id = new_customer.id
             if resolved_customer_id is None:
                 rows.append(
-                    ConfirmedInvoice(outcome="needs_customer_confirmation", azienda_id=azienda.id)
+                    ConfirmedInvoice(
+                        outcome="needs_customer_confirmation",
+                        azienda_id=azienda.id,
+                        party_key=party,
+                    )
                 )
                 continue
             data = map_parsed_invoice_to_import(
@@ -1480,18 +1508,23 @@ class InvoiceService:
                 # iteration may have just inserted rolls back with it, and was never
                 # cached above, so the next invoice tries its own fresh insert instead of
                 # reusing a now-dangling id. The same goes for the XML archived just
-                # above for an upload: it was flushed, never committed.
+                # above for an upload: it was flushed, never committed. The bytes
+                # `import_bytes` already put in storage stay there, unreferenced: the
+                # accepted orphan its own docstring describes.
                 self.session.rollback()
-                rows.append(ConfirmedInvoice(outcome="conflict", azienda_id=azienda.id))
+                rows.append(
+                    ConfirmedInvoice(outcome="conflict", azienda_id=azienda.id, party_key=party)
+                )
                 continue
             if new_customer_id is not None:
-                created_customers[invoice.cliente] = new_customer_id
+                created_customers[party] = new_customer_id
             rows.append(
                 ConfirmedInvoice(
                     outcome="imported",
                     azienda_id=azienda.id,
                     fattura=fattura,
                     buchi_non_dichiarati=self.undeclared_gaps(anno, azienda.id),
+                    party_key=party,
                 )
             )
         return rows

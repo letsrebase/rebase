@@ -1,5 +1,5 @@
-"""REST surface of the import from bytes (REB-758): `POST /api/invoices/import/files/
-review` and `/import/files/confirm`. `test_role_matrix.py` owns the admin-only gate;
+"""REST surface of the import from bytes (REB-758): `POST /api/invoices/import/upload/
+review` and `/import/upload/confirm`. `test_role_matrix.py` owns the admin-only gate;
 this file proves what the invoices page relies on, through the real HTTP surface: the
 review reads and writes nothing, the confirm writes the register and files the XML, and
 a year of XML in one ZIP leaves no gap to declare."""
@@ -25,8 +25,8 @@ FORNITORE_PIVA = "01234567890"
 FORNITORE_CF = "BNCCHR85M41H501Z"
 CLIENTE_PIVA = "09876543210"
 
-REVIEW = "/api/invoices/import/files/review"
-CONFIRM = "/api/invoices/import/files/confirm"
+REVIEW = "/api/invoices/import/upload/review"
+CONFIRM = "/api/invoices/import/upload/confirm"
 
 
 def _fixture(name: str) -> bytes:
@@ -37,8 +37,8 @@ def _files(*files: tuple[str, bytes]) -> list[tuple[str, tuple[str, bytes, str]]
     return [("file", (name, content, "application/octet-stream")) for name, content in files]
 
 
-def _decisions(**by_sha: dict[str, Any]) -> dict[str, str]:
-    return {"decisioni": json.dumps({"decisioni": by_sha})}
+def _decisions(by_party: dict[str, dict[str, Any]]) -> dict[str, str]:
+    return {"decisioni": json.dumps({"clienti": by_party})}
 
 
 def _year(count: int) -> bytes:
@@ -149,13 +149,14 @@ def test_the_confirm_writes_the_register_and_serves_the_file_back(
     assert (document["customer_id"], document["tipo"]) == (customer["id"], "fattura_xml")
 
 
-def test_a_counterparty_nobody_filed_is_created_only_on_the_decision_for_its_file(
+def test_a_counterparty_nobody_filed_is_created_only_on_the_decision_for_its_customer(
     logged_in: TestClient,
     fiscal_profile: dict[str, Any],
     emitter: dict[str, Any],
 ) -> None:
     content = _fixture(CONSULENZA)
-    sha = hashlib.sha256(content).hexdigest()
+    review_row = logged_in.post(REVIEW, files=_files(("fattura.xml", content))).json()["righe"][0]
+    assert review_row["party_key"] == CLIENTE_PIVA
 
     withheld = logged_in.post(CONFIRM, files=_files(("fattura.xml", content)))
     assert withheld.json()["righe"][0]["outcome"] == "needs_customer_confirmation"
@@ -163,7 +164,7 @@ def test_a_counterparty_nobody_filed_is_created_only_on_the_decision_for_its_fil
     created = logged_in.post(
         CONFIRM,
         files=_files(("fattura.xml", content)),
-        data=_decisions(**{sha: {"create_customer": True}}),
+        data=_decisions({review_row["party_key"]: {"create_customer": True}}),
     )
     assert created.status_code == 200, created.text
     [row] = created.json()["righe"]
@@ -184,7 +185,7 @@ def test_a_year_of_xml_in_one_zip_imports_with_no_gap_to_declare(
     righe = reviewed.json()["righe"]
     assert len(righe) == 12
     assert {r["file"].split("/")[0] for r in righe} == {"fatture-2026.zip"}
-    decisions = _decisions(**{r["sha256"]: {"create_customer": True} for r in righe})
+    decisions = _decisions({r["party_key"]: {"create_customer": True} for r in righe})
 
     confirmed = logged_in.post(CONFIRM, files=_files(archive), data=decisions)
 
@@ -218,3 +219,35 @@ def test_decisions_that_are_not_json_are_a_422_not_a_crash(
     )
 
     assert response.status_code == 422, response.text
+
+
+def test_a_file_that_looks_like_a_fattura_and_does_not_parse_is_named_and_does_not_sink_the_rest(
+    logged_in: TestClient,
+    fiscal_profile: dict[str, Any],
+    emitter: dict[str, Any],
+    customer: dict[str, Any],
+) -> None:
+    broken = _fixture(CONSULENZA).replace(b"TD06", b"TD99")
+    files = _files(("rotta.xml", broken), ("buona.xml", _fixture(CONSULENZA)))
+
+    reviewed = logged_in.post(REVIEW, files=files)
+    assert reviewed.status_code == 200, reviewed.text
+    bad, good = reviewed.json()["righe"]
+    assert (bad["file"], bad["outcome"]) == ("rotta.xml", "unclaimed")
+    assert "TD99" in bad["motivo"]
+    assert good["outcome"] == "ready"
+
+    confirmed = logged_in.post(CONFIRM, files=files)
+    assert confirmed.status_code == 200, confirmed.text
+    bad, good = confirmed.json()["righe"]
+    assert (bad["outcome"], good["outcome"]) == ("unclaimed", "imported")
+
+
+def test_a_collaboratore_is_refused_before_the_body_is_looked_at(
+    collaborator_client: TestClient,
+) -> None:
+    response = collaborator_client.post(
+        CONFIRM, files=_files(("a.xml", b"<a/>")), data={"decisioni": "not json"}
+    )
+
+    assert response.status_code == 403, response.text

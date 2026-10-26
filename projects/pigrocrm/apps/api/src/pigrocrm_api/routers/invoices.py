@@ -39,7 +39,7 @@ from pigrocrm.core.invoices.schemas import (
     RegisterGapsDeclare,
     StatoPagamento,
 )
-from pigrocrm.core.invoices.service import InvoiceService
+from pigrocrm.core.invoices.service import CONFIRM_ACTION, REVIEW_ACTION, InvoiceService
 from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, StorageDep
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 
@@ -207,26 +207,28 @@ def _uploaded(files: list[UploadFile]) -> list[tuple[str, bytes]]:
     ]
 
 
-@router.post("/import/files/review", response_model=UploadedInvoiceReviewResult)
-def review_import_files(
+@router.post("/import/upload/review", response_model=UploadedInvoiceReviewResult)
+def review_import_upload(
     file: Annotated[list[UploadFile], File()],
     session: SessionDep,
     storage: StorageDep,
     settings: SettingsDep,
     actor: ActorDep,
 ) -> UploadedInvoiceReviewResult:
-    """REB-758: `/import/review` for the page, which holds files and not `document_id`s.
+    """REB-758: `/import/review` for the page, which holds bytes and not `document_id`s.
     The multipart field `file` is repeated, one per FatturaPA XML file or ZIP of them (a
-    ZIP is opened, one level deep).
-    Read-only and admin only, enforced by the service, and nothing is stored: a row
-    names its file and the file's `sha256`, which is the key of that file's decision
-    in `/import/files/confirm`."""
+    ZIP is opened, one level deep). Read-only and admin only, and nothing is stored: a
+    row names its file and the file's `sha256`, and its customer by a `party_key`, which
+    is the key of that customer's decision in `/import/upload/confirm`."""
+    # Before the body is read into memory: the service checks again, and this is the
+    # check a collaboratore meets first.
+    actor.require_admin(REVIEW_ACTION)
     righe = _service(session, storage, settings).review_upload(_uploaded(file), actor)
     return UploadedInvoiceReviewResult(righe=righe)
 
 
-@router.post("/import/files/confirm", response_model=UploadedInvoiceConfirmResult)
-def confirm_import_files(
+@router.post("/import/upload/confirm", response_model=UploadedInvoiceConfirmResult)
+def confirm_import_upload(
     file: Annotated[list[UploadFile], File()],
     session: SessionDep,
     storage: StorageDep,
@@ -234,12 +236,14 @@ def confirm_import_files(
     actor: ActorDep,
     decisioni: Annotated[str, Form()] = "{}",
 ) -> UploadedInvoiceConfirmResult:
-    """REB-758: `/import/confirm` for the page. The same files as the review, sent again:
-    each is parsed and classified from its own bytes against the register as it is now,
-    never from the review, and written by the same code `/import/confirm` runs. A
+    """REB-758: `/import/confirm` for the page. The same bytes as the review, sent again:
+    each file is parsed and classified from its own bytes against the register as it is
+    now, never from the review, and written by the same code `/import/confirm` runs. A
     single-invoice file's XML is archived as a document of the invoice's customer.
-    `decisioni` is the JSON `{"decisioni": {"<sha256>": {"create_customer": true}}}`: per
-    file, a `customer_id` to attach or `create_customer`, as on `/import/confirm`."""
+    `decisioni` is the JSON `{"clienti": {"<party_key>": {"create_customer": true}}}`:
+    per customer, a `customer_id` to attach or `create_customer`, as on
+    `/import/confirm`."""
+    actor.require_admin(CONFIRM_ACTION)
     righe = _service(session, storage, settings).confirm_upload(
         _uploaded(file), parse_decisions(decisioni), actor
     )

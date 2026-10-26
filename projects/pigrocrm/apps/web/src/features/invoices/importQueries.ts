@@ -13,8 +13,9 @@ import type { ConfirmRow, ImportDecisions, ReviewRow } from './importPlan'
  * hand: the browser appends the multipart boundary itself.
  *
  * Nothing is stored between the two calls. The review names every file by its SHA-256 and
- * the confirmation is sent the same files again, with the decisions keyed by that hash,
- * and re-reads them from their own bytes: it never trusts the review it follows.
+ * every invoice's customer by a `party_key`; the confirmation is sent the same files
+ * again, with the decisions keyed by that party, and re-reads them from their own bytes:
+ * it never trusts the review it follows.
  */
 
 type ReviewResult = components['schemas']['UploadedInvoiceReviewResult']
@@ -31,7 +32,7 @@ async function send<T>(path: string, files: readonly File[], fields: Record<stri
 }
 
 export async function reviewImportFiles(files: readonly File[]): Promise<ReviewRow[]> {
-  const result = await send<ReviewResult>('/api/invoices/import/files/review', files, {})
+  const result = await send<ReviewResult>('/api/invoices/import/upload/review', files, {})
   return result.righe
 }
 
@@ -39,8 +40,8 @@ export async function confirmImportFiles(
   files: readonly File[],
   decisions: ImportDecisions,
 ): Promise<ConfirmRow[]> {
-  const result = await send<ConfirmResult>('/api/invoices/import/files/confirm', files, {
-    decisioni: JSON.stringify({ decisioni: decisions }),
+  const result = await send<ConfirmResult>('/api/invoices/import/upload/confirm', files, {
+    decisioni: JSON.stringify(decisions),
   })
   return result.righe
 }

@@ -16,9 +16,11 @@ transaction as the invoice.
 
 This module is the part that needs no database: what an upload is (a file, or the
 entries of a ZIP), the bounds that keep a ZIP from being a bomb, and the shapes the two
-calls answer with. A file is named in the answer by its SHA-256, which is also the key
-of the one decision the page can make per file: two files with the same name in two
-folders are two files, and two copies of the same bytes are one decision.
+calls answer with. A file is named in the answer by its SHA-256 (two files with the same
+name in two folders are two files, and two copies of the same bytes are one), and the
+one decision the page makes, whether to create a new customer, is per counterparty, named
+by the `party_key` the review gives: the same customer holds for every invoice of it in
+every file and every batch, and a `lotto` that bills two customers is two decisions.
 """
 
 import hashlib
@@ -32,9 +34,10 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from pigrocrm.core.errors import ValidationFailed
+from pigrocrm.core.invoices.fatturapa import normalise_fiscal_id
 from pigrocrm.core.invoices.import_confirm import InvoiceConfirmOutcome
 from pigrocrm.core.invoices.import_review import InvoiceReviewOutcome
-from pigrocrm.core.invoices.import_schemas import ParsedInvoice
+from pigrocrm.core.invoices.import_schemas import ParsedInvoice, ParsedInvoiceParty
 from pigrocrm.core.invoices.schemas import InvoiceRead
 from pigrocrm.core.work_units.day_mapping import WorkUnitDayMappingProposal
 
@@ -166,11 +169,23 @@ def expand_uploads(files: Sequence[tuple[str, bytes]]) -> list[UploadedFile]:
     ]
 
 
+def party_key(party: ParsedInvoiceParty) -> str:
+    """What names a counterparty in a decision: its VAT number or tax code as the
+    register would store it (`normalise_fiscal_id`, the same cleaning `match_customer`
+    matches on, so `IT01234567890` and `01234567890` are one party), and for a party with
+    neither, which is a foreign one in practice, its name. The server defines the key and
+    the review hands it to the page: the page never computes one."""
+    normalised = normalise_fiscal_id(party.partita_iva) or normalise_fiscal_id(party.codice_fiscale)
+    return normalised if normalised is not None else f"nome:{party.ragione_sociale.casefold()}"
+
+
 class UploadedInvoiceReviewRead(BaseModel):
     """One row of the review of an uploaded file: `ReviewedInvoiceRead`'s own fields,
     named by the file (and its SHA-256) instead of a `document_id`, since nothing was
     archived. One per invoice the file parses into, or exactly one `"unclaimed"` for a
-    file no registered format recognises."""
+    file no registered format reads: `motivo` then says why when the file looked like a
+    FatturaPA and could not be read as one. `party_key` names the invoice's customer in
+    the decisions of the confirmation."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -178,6 +193,8 @@ class UploadedInvoiceReviewRead(BaseModel):
     sha256: str
     outcome: InvoiceReviewOutcome
     invoice: ParsedInvoice | None = None
+    party_key: str | None = None
+    motivo: str | None = None
     azienda_id: UUID | None = None
     matched_customer_id: UUID | None = None
     mappature_giorni: list[WorkUnitDayMappingProposal | None] | None = None
@@ -191,13 +208,16 @@ class UploadedInvoiceReviewResult(BaseModel):
 
 class UploadedInvoiceConfirmRead(BaseModel):
     """One row of the confirmation of an uploaded file, `ConfirmedInvoiceRead`'s fields
-    named by the file."""
+    named by the file, with the `party_key` of the invoice's customer and the `motivo`
+    of an unreadable file, as on the review row."""
 
     model_config = ConfigDict(extra="forbid")
 
     file: str
     sha256: str
     outcome: InvoiceConfirmOutcome
+    party_key: str | None = None
+    motivo: str | None = None
     azienda_id: UUID | None = None
     fattura: InvoiceRead | None = None
     buchi_non_dichiarati: list[int] | None = None
@@ -209,11 +229,11 @@ class UploadedInvoiceConfirmResult(BaseModel):
     righe: list[UploadedInvoiceConfirmRead]
 
 
-class UploadedFileDecision(BaseModel):
+class UploadedPartyDecision(BaseModel):
     """The two human decisions `InvoiceConfirmRequest` carries for one document, for one
-    file: which customer to attach, and whether to create the counterparty when none
-    matches. Absent, a file confirms with the automatic match alone, and an invoice
-    whose customer is unknown comes back `needs_customer_confirmation`, written nowhere."""
+    counterparty: which customer to attach, and whether to create the counterparty when
+    none matches. Absent, an invoice is written only when its customer matches on its
+    own, and otherwise comes back `needs_customer_confirmation`, written nowhere."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -222,14 +242,16 @@ class UploadedFileDecision(BaseModel):
 
 
 class UploadedInvoiceDecisions(BaseModel):
-    """`decisioni` keyed by the file's `sha256`, as the review named it."""
+    """`clienti`: one decision per counterparty, keyed by the `party_key` the review
+    named, so it holds for every invoice of that customer in every file of every batch
+    of the import, a `lotto` with several customers included."""
 
     model_config = ConfigDict(extra="forbid")
 
-    decisioni: dict[str, UploadedFileDecision] = Field(default_factory=dict)
+    clienti: dict[str, UploadedPartyDecision] = Field(default_factory=dict)
 
 
-def parse_decisions(raw: str) -> dict[str, UploadedFileDecision]:
+def parse_decisions(raw: str) -> dict[str, UploadedPartyDecision]:
     """The decisions field of the multipart body, a JSON object. A malformed one is a
     422 with a sentence, not a stack: it reaches here as a string."""
     try:
@@ -239,14 +261,6 @@ def parse_decisions(raw: str) -> dict[str, UploadedFileDecision]:
             ENTITY,
             "decisioni",
             "le decisioni non sono un JSON valido",
-            expected='{"decisioni": {"<sha256>": {"create_customer": true}}}',
+            expected='{"clienti": {"<party_key>": {"create_customer": true}}}',
         ) from exc
-    for key in parsed.decisioni:
-        if len(key) != 64 or any(c not in "0123456789abcdef" for c in key):
-            raise ValidationFailed(
-                ENTITY,
-                "decisioni",
-                f"{key!r} non e' l'SHA-256 di un file",
-                expected="64 cifre esadecimali minuscole",
-            )
-    return parsed.decisioni
+    return parsed.clienti

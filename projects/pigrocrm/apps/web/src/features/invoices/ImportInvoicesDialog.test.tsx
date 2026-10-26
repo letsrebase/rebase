@@ -14,8 +14,8 @@ import { ImportInvoicesButton } from './ImportInvoicesDialog'
 const mockAuth = vi.hoisted(() => ({ may: true }))
 vi.mock('@/lib/auth', () => ({ useCan: () => mockAuth.may }))
 
-const REVIEW = '/api/invoices/import/files/review'
-const CONFIRM = '/api/invoices/import/files/confirm'
+const REVIEW = '/api/invoices/import/upload/review'
+const CONFIRM = '/api/invoices/import/upload/confirm'
 
 const mockFetch = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>()
 
@@ -71,6 +71,7 @@ function reviewRow(file: string, outcome: ReviewRow['outcome'], numero = '2026/6
     sha256: `sha-${file}`,
     outcome,
     invoice: outcome === 'unclaimed' ? null : (invoice(numero) as never),
+    party_key: outcome === 'unclaimed' ? null : '09876543210',
   }
 }
 
@@ -178,7 +179,7 @@ describe('the import dialog', () => {
     const confirm = mockFetch.mock.calls.find(([url]) => url === CONFIRM)
     expect(formOf(confirm).getAll('file')).toHaveLength(1)
     expect(JSON.parse(formOf(confirm).get('decisioni') as string)).toEqual({
-      decisioni: { 'sha-a.xml': { create_customer: true } },
+      clienti: { '09876543210': { create_customer: true } },
     })
     expect(screen.getByText('Registro 2026:')).toBeInTheDocument()
     expect(screen.getByText('Importate')).toBeInTheDocument()
@@ -293,6 +294,80 @@ describe('the import dialog', () => {
     await waitFor(() => expect(screen.getAllByRole('button', { name: 'Chiudi' })).toHaveLength(2))
     expect(screen.getByText('25')).toBeInTheDocument()
     expect(screen.getByText(/mancano ancora i numeri 9/)).toBeInTheDocument()
+  })
+
+  it('attaches a customer the first batch created by id in the next one, not created twice', async () => {
+    const files = Array.from({ length: 30 }, (_, i) => xml(`f${String(i).padStart(2, '0')}.xml`))
+    mockFetch.mockImplementation((url, init) => {
+      const names = (init?.body as FormData).getAll('file').map((f) => (f as File).name)
+      if (url === REVIEW) {
+        return json({ righe: names.map((n) => reviewRow(n, 'needs_customer_confirmation', n)) })
+      }
+      return json({
+        righe: names.map((n) => ({
+          file: n,
+          sha256: `sha-${n}`,
+          outcome: 'imported',
+          party_key: '09876543210',
+          azienda_id: 'az-1',
+          fattura: { anno: 2026, numero: 1, customer_id: 'customer-1' },
+          buchi_non_dichiarati: [],
+        })),
+      })
+    })
+
+    const user = await openAndPick(files)
+    await user.click(await screen.findByRole('button', { name: 'Importa 30 fatture' }))
+
+    await screen.findByText(/non manca nessun numero/)
+    const decisions = mockFetch.mock.calls
+      .filter(([url]) => url === CONFIRM)
+      .map((call) => JSON.parse(formOf(call).get('decisioni') as string))
+    expect(decisions).toEqual([
+      { clienti: { '09876543210': { create_customer: true } } },
+      { clienti: { '09876543210': { customer_id: 'customer-1' } } },
+    ])
+  })
+
+  it('names the file of every invoice the register refused, and why a file did not read', async () => {
+    mockFetch.mockImplementation((url) =>
+      url === REVIEW
+        ? json({
+            righe: [
+              reviewRow('uno.xml', 'ready', '2026/1'),
+              { ...reviewRow('rotta.xml', 'unclaimed'), motivo: "unrecognised TipoDocumento: 'TD99'" },
+            ],
+          })
+        : json({
+            righe: [
+              { file: 'uno.xml', sha256: 'sha-uno.xml', outcome: 'conflict', azienda_id: 'az-1' },
+              { file: 'rotta.xml', sha256: 'sha-rotta.xml', outcome: 'unclaimed', motivo: 'TD99' },
+            ],
+          }),
+    )
+
+    const user = await openAndPick([xml('uno.xml'), xml('rotta.xml')])
+    expect(await screen.findByText(/non si legge: unrecognised TipoDocumento/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Importa 1 fattura' }))
+
+    const section = await screen.findByRole('region', { name: 'Da guardare' })
+    expect(within(section).getByText('uno.xml')).toBeInTheDocument()
+    expect(within(section).getByText(/rotta.xml/)).toBeInTheDocument()
+    expect(within(section).getByText(/Non riconosciute: TD99/)).toBeInTheDocument()
+  })
+
+  it('does not claim nothing was imported when the first batch fails', async () => {
+    mockFetch.mockImplementation((url) =>
+      url === REVIEW
+        ? json({ righe: [reviewRow('uno.xml', 'ready', '2026/1')] })
+        : json({ type: 'about:blank', title: 'Errore', status: 500, code: 'x', detail: 'Il server non risponde.' }, 500),
+    )
+
+    const user = await openAndPick([xml('uno.xml')])
+    await user.click(await screen.findByRole('button', { name: 'Importa 1 fattura' }))
+
+    expect(await screen.findByText(/L’importazione si è interrotta/)).toBeInTheDocument()
+    expect(screen.queryByText(/Nessuna fattura è stata importata/)).not.toBeInTheDocument()
   })
 
   it('is not offered to a role the service refuses', () => {

@@ -15,9 +15,11 @@ export type ParsedInvoice = components['schemas']['ParsedInvoice']
 export type ReviewOutcome = ReviewRow['outcome']
 export type ConfirmOutcome = ConfirmRow['outcome']
 
-/** What the confirmation takes for one file: the decision `UploadedFileDecision` names,
- *  keyed by the file's SHA-256. */
-export type ImportDecisions = Record<string, { create_customer: true }>
+/** What the confirmation takes: one decision per new customer, keyed by the `party_key`
+ *  the review named (`UploadedInvoiceDecisions`). */
+export interface ImportDecisions {
+  clienti: Record<string, { create_customer?: true; customer_id?: string }>
+}
 
 /** The words of each verdict. Typed on the API's own union, so a seventh outcome added
  *  there fails to compile here instead of rendering as nothing. */
@@ -97,24 +99,16 @@ export interface NewParty {
   invoices: number
 }
 
-/** The identifier the server matches on: the VAT number, the tax code otherwise. The
- *  key only has to tell two parties apart, never to equal what the server stores. */
-export function partyKey(invoice: ParsedInvoice): string {
-  const { partita_iva: vat, codice_fiscale: fiscal, ragione_sociale: name } = invoice.cliente
-  return vat ?? fiscal ?? name
-}
-
 export function newParties(rows: readonly ReviewRow[]): NewParty[] {
   const found = new Map<string, NewParty>()
   for (const row of rows) {
-    if (row.outcome !== 'needs_customer_confirmation' || !row.invoice) continue
-    const key = partyKey(row.invoice)
-    const party = found.get(key)
+    if (row.outcome !== 'needs_customer_confirmation' || !row.invoice || !row.party_key) continue
+    const party = found.get(row.party_key)
     if (party) party.invoices += 1
     else {
       const { cliente } = row.invoice
-      found.set(key, {
-        key,
+      found.set(row.party_key, {
+        key: row.party_key,
         name: cliente.ragione_sociale,
         taxId: cliente.partita_iva ?? cliente.codice_fiscale ?? '',
         invoices: 1,
@@ -130,9 +124,8 @@ export function willBeWritten(row: ReviewRow, declined: ReadonlySet<string>): bo
   if (row.outcome === 'ready') return true
   return (
     row.outcome === 'needs_customer_confirmation' &&
-    row.invoice !== null &&
-    row.invoice !== undefined &&
-    !declined.has(partyKey(row.invoice))
+    row.party_key != null &&
+    !declined.has(row.party_key)
   )
 }
 
@@ -140,20 +133,36 @@ export function countWrites(rows: readonly ReviewRow[], declined: ReadonlySet<st
   return rows.filter((row) => willBeWritten(row, declined)).length
 }
 
-/** The decisions to send: `create_customer` for the file of every new party left ticked.
- *  A file whose party was unticked gets none, and the server then answers it
- *  `needs_customer_confirmation` and writes nothing, which is what unticking means. */
+/** The decisions to send, one per new customer left ticked. A customer an earlier batch
+ *  already created is attached by id instead of created again, which is what keeps a
+ *  counterparty the register cannot match by tax id (a foreign one) at one customer
+ *  however many batches its invoices fall in. An unticked customer gets none, and the
+ *  server then answers its invoices `needs_customer_confirmation` and writes nothing,
+ *  which is what unticking means. */
 export function decisionsFor(
   rows: readonly ReviewRow[],
   declined: ReadonlySet<string>,
+  created: ReadonlyMap<string, string> = new Map(),
 ): ImportDecisions {
-  const decisions: ImportDecisions = {}
+  const clienti: ImportDecisions['clienti'] = {}
   for (const row of rows) {
-    if (row.outcome === 'needs_customer_confirmation' && willBeWritten(row, declined)) {
-      decisions[row.sha256] = { create_customer: true }
+    if (row.outcome !== 'needs_customer_confirmation' || !willBeWritten(row, declined)) continue
+    const key = row.party_key as string
+    const customerId = created.get(key)
+    clienti[key] = customerId === undefined ? { create_customer: true } : { customer_id: customerId }
+  }
+  return { clienti }
+}
+
+/** The customer each party's imported invoices went to, from a confirmation's rows. */
+export function customersOf(rows: readonly ConfirmRow[]): Map<string, string> {
+  const customers = new Map<string, string>()
+  for (const row of rows) {
+    if (row.outcome === 'imported' && row.party_key && row.fattura) {
+      customers.set(row.party_key, row.fattura.customer_id)
     }
   }
-  return decisions
+  return customers
 }
 
 /** One request's worth of files. The review and the write both go in these, one after

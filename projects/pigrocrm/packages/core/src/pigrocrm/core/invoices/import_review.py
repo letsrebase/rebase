@@ -241,13 +241,15 @@ class ReviewedInvoice:
     """One invoice's verdict before it is attached to anything that names its source:
     `review_content` adds the `document_id` of an archived document, `InvoiceService.
     review_upload` the name and hash of a file that was never archived. `invoice` is
-    `None` exactly for an `"unclaimed"` verdict."""
+    `None` exactly for an `"unclaimed"` verdict, and `note` then says why when the bytes
+    looked like a registered format and did not parse as one."""
 
     outcome: InvoiceReviewOutcome
     invoice: ParsedInvoice | None = None
     azienda_id: UUID | None = None
     matched_customer_id: UUID | None = None
     mappature_giorni: list[WorkUnitDayMappingProposal | None] | None = None
+    note: str | None = None
 
 
 def review_invoices(
@@ -262,8 +264,18 @@ def review_invoices(
     if adapter is None:
         return [ReviewedInvoice(outcome="unclaimed")]
 
+    # A document that passed `detect` and does not parse (an unknown TipoDocumento, no
+    # DatiRiepilogo, a decimal that is not one) is one file the person has to look at,
+    # not a reason to refuse everything sent with it: `"unclaimed"`, with the adapter's
+    # own sentence as the note. `ValueError` is what `InvoiceFormatAdapter.parse` says it
+    # raises, and `FatturaPaFormatError` is one.
+    try:
+        parsed = adapter.parse(content)
+    except ValueError as exc:
+        return [ReviewedInvoice(outcome="unclaimed", note=str(exc))]
+
     rows: list[ReviewedInvoice] = []
-    for invoice in adapter.parse(content):
+    for invoice in parsed:
         classification, azienda = classify_parsed_invoice(
             invoice, aziende, existing_for=register_lookup(session, invoice), content=content
         )

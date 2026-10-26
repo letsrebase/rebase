@@ -71,12 +71,15 @@ class ConfirmedInvoice:
     """One invoice's confirmation before it is attached to anything that names its
     source: `ConfirmedInvoiceRead` adds the `document_id` of an archived document,
     `UploadedInvoiceConfirmRead` the name and hash of an uploaded file. The fields mean
-    what they mean on `ConfirmedInvoiceRead`."""
+    what they mean on `ConfirmedInvoiceRead`; `party_key` names the invoice's customer in
+    an upload's decisions and `note` says why an `"unclaimed"` file did not parse."""
 
     outcome: InvoiceConfirmOutcome
     azienda_id: UUID | None = None
     fattura: InvoiceRead | None = None
     buchi_non_dichiarati: list[int] | None = None
+    party_key: str | None = None
+    note: str | None = None
 
 
 class ConfirmedInvoiceRead(BaseModel):

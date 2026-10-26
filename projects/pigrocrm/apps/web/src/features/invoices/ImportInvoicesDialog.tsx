@@ -33,9 +33,9 @@ import {
   countByOutcome,
   countConfirmed,
   countWrites,
+  customersOf,
   decisionsFor,
   newParties,
-  partyKey,
   REVIEW_OUTCOME_LABELS,
   REVIEW_OUTCOME_NOTES,
   REVIEW_OUTCOME_TONES,
@@ -136,18 +136,22 @@ function ImportInvoicesDialog({ onClose }: { onClose: () => void }) {
 
   async function confirm() {
     setProblem(null)
-    const decisions = decisionsFor(rows, declined)
     const toWrite = batches.filter((batch) =>
       batch.rows.some((row) => willBeWritten(row, declined)),
     )
     const collected: ConfirmRow[] = []
+    // The customer each party's invoices went to so far: a batch after the first attaches
+    // a party an earlier one created by id, instead of asking for it to be created again.
+    const created = new Map<string, string>()
     const total = toWrite.reduce((sum, batch) => sum + batch.files.length, 0)
     let done = 0
     setStage({ kind: 'confirming', done, total })
     try {
       for (const batch of toWrite) {
         if (!mounted.current) break
-        collected.push(...(await confirmImportFiles(batch.files, decisions)))
+        const result = await confirmImportFiles(batch.files, decisionsFor(batch.rows, declined, created))
+        collected.push(...result)
+        for (const [party, customerId] of customersOf(result)) created.set(party, customerId)
         done += batch.files.length
         setStage({ kind: 'confirming', done, total })
       }
@@ -159,11 +163,10 @@ function ImportInvoicesDialog({ onClose }: { onClose: () => void }) {
     }
     setConfirmed(collected)
     setStage({ kind: 'done' })
+    // Whatever happened, the register may have changed: the lists are stale either way.
+    invalidate()
     const imported = countConfirmed(collected).imported ?? 0
-    if (imported > 0) {
-      invalidate()
-      toast.success(plural(imported, 'fattura importata', 'fatture importate'))
-    }
+    if (imported > 0) toast.success(plural(imported, 'fattura importata', 'fatture importate'))
   }
 
   function chooseAgain() {
@@ -239,6 +242,7 @@ function ImportInvoicesDialog({ onClose }: { onClose: () => void }) {
         {stage.kind === 'done' ? (
           <ResultPanel
             rows={confirmed}
+            interrupted={problem !== null}
             aziendaName={(id) => (azienda.several ? azienda.byId(id)?.ragione_sociale : undefined)}
           />
         ) : null}
@@ -276,11 +280,7 @@ function Progress({ label, done, total }: { label: string; done: number; total: 
         {label}
       </p>
       <div
-        role="progressbar"
-        aria-label={label}
-        aria-valuemin={0}
-        aria-valuemax={total}
-        aria-valuenow={done}
+        aria-hidden
         className="h-1 w-full bg-muted"
       >
         <div
@@ -368,11 +368,13 @@ function ReviewTableRow({ row, declined }: { row: ReviewRow; declined: ReadonlyS
   const { invoice } = row
   const skipped =
     row.outcome === 'needs_customer_confirmation' &&
-    invoice != null &&
-    declined.has(partyKey(invoice))
+    row.party_key != null &&
+    declined.has(row.party_key ?? '')
   const note = skipped
     ? 'Il cliente non viene creato: questa fattura non viene importata.'
-    : REVIEW_OUTCOME_NOTES[row.outcome]
+    : row.outcome === 'unclaimed' && row.motivo
+      ? `Sembra una fattura FatturaPA ma non si legge: ${row.motivo}`
+      : REVIEW_OUTCOME_NOTES[row.outcome]
   return (
     <TableRow>
       <TableCell className="whitespace-nowrap">
@@ -407,16 +409,26 @@ function ReviewTableRow({ row, declined }: { row: ReviewRow; declined: ReadonlyS
   )
 }
 
+/** The outcomes of a confirmation a person has to follow up, with the file each came from. */
+const FOLLOW_UP: ConfirmRow['outcome'][] = [
+  'conflict',
+  'unclaimed',
+  'needs_customer_confirmation',
+]
+
 function ResultPanel({
   rows,
+  interrupted,
   aziendaName,
 }: {
   rows: ConfirmRow[]
+  interrupted: boolean
   aziendaName: (id: string | null) => string | undefined
 }) {
   const counts = countConfirmed(rows)
   const years = registerYears(rows)
   const outcomes = Object.keys(CONFIRM_OUTCOME_LABELS) as (keyof typeof CONFIRM_OUTCOME_LABELS)[]
+  const followUp = rows.filter((row) => FOLLOW_UP.includes(row.outcome))
   return (
     <div className="space-y-4" role="status">
       <ul className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
@@ -428,8 +440,31 @@ function ResultPanel({
               <span className="font-medium">{counts[outcome]}</span>
             </li>
           ))}
-        {rows.length === 0 ? <li>Nessuna fattura è stata importata.</li> : null}
+        {rows.length === 0 && !interrupted ? <li>Nessuna fattura è stata importata.</li> : null}
+        {interrupted ? (
+          <li>
+            L’importazione si è interrotta: quello che è già stato scritto resta nel registro.
+          </li>
+        ) : null}
       </ul>
+      {followUp.length > 0 ? (
+        <section aria-labelledby="import-follow-up" className="space-y-1 border p-3 text-sm">
+          <h3 id="import-follow-up" className="font-medium">
+            Da guardare
+          </h3>
+          <ul className="space-y-1">
+            {followUp.map((row, index) => (
+              <li key={`${row.sha256}-${index}`}>
+                <span className="font-medium">{row.file}</span>{' '}
+                <span className="text-muted-foreground">
+                  {CONFIRM_OUTCOME_LABELS[row.outcome]}
+                  {row.motivo ? `: ${row.motivo}` : ''}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
       {years.map((year) => {
         const name = aziendaName(year.aziendaId)
         const label = `Registro ${year.anno}${name ? ` di ${name}` : ''}`

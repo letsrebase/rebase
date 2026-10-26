@@ -35,7 +35,7 @@ from pigrocrm.core.documents.models import Document
 from pigrocrm.core.errors import PermissionDenied, ValidationFailed
 from pigrocrm.core.invoices import import_upload
 from pigrocrm.core.invoices.import_upload import (
-    UploadedFileDecision,
+    UploadedPartyDecision,
     expand_uploads,
     parse_decisions,
 )
@@ -141,7 +141,7 @@ def test_a_zip_bomb_is_refused_by_what_it_decompresses_to_not_by_what_it_says(
 ) -> None:
     monkeypatch.setattr(import_upload, "UPLOAD_MAX_FILE_BYTES", 1024)
     honest = _zip({"grande.xml": b"a" * 5000})
-    with pytest.raises(ValidationFailed, match="grande.xml"):
+    with pytest.raises(ValidationFailed, match="supera"):
         expand_uploads([("b.zip", honest)])
 
     # The directory is written by whoever made the archive: lower both copies of the
@@ -155,6 +155,14 @@ def test_a_zip_bomb_is_refused_by_what_it_decompresses_to_not_by_what_it_says(
         index += 4
     with pytest.raises(ValidationFailed, match="grande.xml"):
         expand_uploads([("b.zip", bytes(lying))])
+
+
+def test_the_total_of_a_zips_entries_counts_against_the_requests_ceiling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(import_upload, "UPLOAD_MAX_TOTAL_BYTES", 10)
+    with pytest.raises(ValidationFailed, match="in tutto"):
+        expand_uploads([("a.zip", _zip({"1.xml": b"123456", "2.xml": b"123456"}))])
 
 
 def test_the_number_of_files_and_the_total_size_are_bounded(
@@ -172,17 +180,15 @@ def test_the_number_of_files_and_the_total_size_are_bounded(
         expand_uploads([("a.xml", b"123456"), ("b.xml", b"123456")])
 
 
-def test_decisions_are_json_keyed_by_a_sha256_and_anything_else_is_a_sentence() -> None:
-    key = "a" * 64
+def test_decisions_are_json_keyed_by_party_and_anything_else_is_a_sentence() -> None:
+    parsed = parse_decisions(json.dumps({"clienti": {"09876543210": {"create_customer": True}}}))
 
-    parsed = parse_decisions(json.dumps({"decisioni": {key: {"create_customer": True}}}))
-
-    assert parsed == {key: UploadedFileDecision(create_customer=True)}
+    assert parsed == {"09876543210": UploadedPartyDecision(create_customer=True)}
     assert parse_decisions("{}") == {}
     for bad in (
         "not json",
         json.dumps({"decisioni": {"abc": {}}}),
-        json.dumps({"decisioni": {key: {"x": 1}}}),
+        json.dumps({"clienti": {"09876543210": {"x": 1}}}),
     ):
         with pytest.raises(ValidationFailed):
             parse_decisions(bad)
@@ -226,7 +232,7 @@ def test_a_review_tells_a_new_counterparty_from_an_invoice_already_on_the_regist
 
     service.confirm_upload(
         [("fattura.xml", content)],
-        {new.sha256: UploadedFileDecision(create_customer=True)},
+        {new.party_key or "": UploadedPartyDecision(create_customer=True)},
         ADMIN,
     )
     [again] = service.review_upload([("fattura.xml", content)], ADMIN)
@@ -303,12 +309,11 @@ def test_the_same_file_confirmed_twice_is_written_once_and_files_one_xml(
     assert (_invoice_count(db_session), _document_count(db_session)) == (invoices, documents)
 
 
-def test_a_new_counterparty_is_created_only_when_the_decision_for_its_file_says_so(
+def test_a_new_counterparty_is_created_only_when_the_decision_for_its_customer_says_so(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     service = _svc(db_session, local_storage)
     content = _fixture(CONSULENZA)
-    sha = hashlib.sha256(content).hexdigest()
     customers, documents = _customer_count(db_session), _document_count(db_session)
 
     [withheld] = service.confirm_upload([("fattura.xml", content)], {}, ADMIN)
@@ -317,23 +322,26 @@ def test_a_new_counterparty_is_created_only_when_the_decision_for_its_file_says_
     assert (_customer_count(db_session), _document_count(db_session)) == (customers, documents)
 
     [created] = service.confirm_upload(
-        [("fattura.xml", content)], {sha: UploadedFileDecision(create_customer=True)}, ADMIN
+        [("fattura.xml", content)],
+        {"09876543210": UploadedPartyDecision(create_customer=True)},
+        ADMIN,
     )
     assert created.outcome == "imported"
     assert _customer_count(db_session) == customers + 1
     assert created.fattura is not None and created.fattura.xml_document_id is not None
 
 
-def test_a_decision_names_the_customer_to_attach_by_the_files_own_hash(
+def test_a_decision_names_the_customer_to_attach_by_the_partys_tax_id(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     service = _svc(db_session, local_storage)
     chosen = _customer(db_session)
     content = _fixture(CONSULENZA)
-    sha = hashlib.sha256(content).hexdigest()
 
     [row] = service.confirm_upload(
-        [("fattura.xml", content)], {sha: UploadedFileDecision(customer_id=chosen.id)}, ADMIN
+        [("fattura.xml", content)],
+        {"09876543210": UploadedPartyDecision(customer_id=chosen.id)},
+        ADMIN,
     )
 
     assert row.fattura is not None and row.fattura.customer_id == chosen.id
@@ -343,11 +351,12 @@ def test_a_lotto_is_written_per_invoice_and_archives_no_xml(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     service = _svc(db_session, local_storage)
-    sha = hashlib.sha256(_fixture(LOTTO)).hexdigest()
     documents = _document_count(db_session)
 
     rows = service.confirm_upload(
-        [("lotto.xml", _fixture(LOTTO))], {sha: UploadedFileDecision(create_customer=True)}, ADMIN
+        [("lotto.xml", _fixture(LOTTO))],
+        {"09876543210": UploadedPartyDecision(create_customer=True)},
+        ADMIN,
     )
 
     assert [row.outcome for row in rows] == ["imported", "imported"]
@@ -363,7 +372,6 @@ def test_a_refused_invoice_leaves_neither_its_customer_nor_its_xml(
         InvoiceRegisterGap(anno=2026, numero=6, motivo="annullata prima della trasmissione")
     )
     content = _fixture(CONSULENZA)
-    sha = hashlib.sha256(content).hexdigest()
     invoices, documents, customers = (
         _invoice_count(db_session),
         _document_count(db_session),
@@ -371,7 +379,9 @@ def test_a_refused_invoice_leaves_neither_its_customer_nor_its_xml(
     )
 
     [row] = service.confirm_upload(
-        [("fattura.xml", content)], {sha: UploadedFileDecision(create_customer=True)}, ADMIN
+        [("fattura.xml", content)],
+        {"09876543210": UploadedPartyDecision(create_customer=True)},
+        ADMIN,
     )
 
     assert row.outcome == "conflict"
@@ -390,7 +400,7 @@ def test_a_year_of_xml_in_a_zip_fills_the_register_with_no_gap_declared_by_hand(
 
     reviewed = service.review_upload(archive, ADMIN)
     assert [row.outcome for row in reviewed] == ["needs_customer_confirmation"] * 24
-    decisions = {row.sha256: UploadedFileDecision(create_customer=True) for row in reviewed}
+    decisions = {"09876543210": UploadedPartyDecision(create_customer=True)}
 
     confirmed = service.confirm_upload(archive, decisions, ADMIN)
 
@@ -414,10 +424,54 @@ def test_a_year_with_a_missing_number_reports_the_gap_it_leaves(
     files = _year(5)
     del files["IT01234567890_00003.xml"]
     archive = [("fatture.zip", _zip(files))]
-    reviewed = service.review_upload(archive, ADMIN)
-    decisions = {row.sha256: UploadedFileDecision(create_customer=True) for row in reviewed}
+    decisions = {"09876543210": UploadedPartyDecision(create_customer=True)}
 
     confirmed = service.confirm_upload(archive, decisions, ADMIN)
 
     assert [row.outcome for row in confirmed] == ["imported"] * 4
     assert confirmed[-1].buchi_non_dichiarati == [3]
+
+
+def test_a_foreign_counterparty_with_no_italian_tax_id_is_created_once_across_the_request(
+    db_session: Session, local_storage: LocalFileStorage
+) -> None:
+    """`match_customer` cannot find a customer without an Italian VAT number or tax code, so
+    every file of a foreign customer would create a new one; the counterparty named by the
+    decision is created for the first and reused for the rest."""
+    service = _svc(db_session, local_storage)
+    italian = "<IdPaese>IT</IdPaese>\n          <IdCodice>09876543210</IdCodice>"
+    german = "<IdPaese>DE</IdPaese>\n          <IdCodice>123456789</IdCodice>"
+    files = {
+        name: content.decode().replace(italian, german).encode()
+        for name, content in _year(3).items()
+    }
+    archive = [("estero.zip", _zip(files))]
+    [first, *_] = service.review_upload(archive, ADMIN)
+    assert first.party_key == "nome:esempio servizi s.r.l."
+    customers = _customer_count(db_session)
+
+    confirmed = service.confirm_upload(
+        archive, {first.party_key or "": UploadedPartyDecision(create_customer=True)}, ADMIN
+    )
+
+    assert [row.outcome for row in confirmed] == ["imported"] * 3
+    assert len({row.fattura.customer_id for row in confirmed if row.fattura}) == 1
+    assert _customer_count(db_session) == customers + 1
+
+
+def test_a_file_that_looks_like_a_fattura_and_does_not_parse_is_unclaimed_with_its_reason(
+    db_session: Session, local_storage: LocalFileStorage
+) -> None:
+    service = _svc(db_session, local_storage)
+    broken = _fixture(CONSULENZA).replace(b"TD06", b"TD99")
+    files = [("rotta.xml", broken), ("buona.xml", _fixture(CONSULENZA))]
+
+    bad, good = service.review_upload(files, ADMIN)
+    assert (bad.outcome, good.outcome) == ("unclaimed", "needs_customer_confirmation")
+    assert bad.motivo is not None and "TD99" in bad.motivo
+
+    bad_confirmed, good_confirmed = service.confirm_upload(
+        files, {good.party_key or "": UploadedPartyDecision(create_customer=True)}, ADMIN
+    )
+    assert (bad_confirmed.outcome, good_confirmed.outcome) == ("unclaimed", "imported")
+    assert bad_confirmed.motivo is not None and "TD99" in bad_confirmed.motivo

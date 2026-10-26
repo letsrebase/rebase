@@ -1440,7 +1440,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/invoices/import/files/review": {
+    "/api/invoices/import/upload/review": {
         parameters: {
             query?: never;
             header?: never;
@@ -1450,22 +1450,21 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Review Import Files
-         * @description REB-758: `/import/review` for the page, which holds files and not `document_id`s.
+         * Review Import Upload
+         * @description REB-758: `/import/review` for the page, which holds bytes and not `document_id`s.
          *     The multipart field `file` is repeated, one per FatturaPA XML file or ZIP of them (a
-         *     ZIP is opened, one level deep).
-         *     Read-only and admin only, enforced by the service, and nothing is stored: a row
-         *     names its file and the file's `sha256`, which is the key of that file's decision
-         *     in `/import/files/confirm`.
+         *     ZIP is opened, one level deep). Read-only and admin only, and nothing is stored: a
+         *     row names its file and the file's `sha256`, and its customer by a `party_key`, which
+         *     is the key of that customer's decision in `/import/upload/confirm`.
          */
-        post: operations["review_import_files_api_invoices_import_files_review_post"];
+        post: operations["review_import_upload_api_invoices_import_upload_review_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/invoices/import/files/confirm": {
+    "/api/invoices/import/upload/confirm": {
         parameters: {
             query?: never;
             header?: never;
@@ -1475,15 +1474,16 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Confirm Import Files
-         * @description REB-758: `/import/confirm` for the page. The same files as the review, sent again:
-         *     each is parsed and classified from its own bytes against the register as it is now,
-         *     never from the review, and written by the same code `/import/confirm` runs. A
+         * Confirm Import Upload
+         * @description REB-758: `/import/confirm` for the page. The same bytes as the review, sent again:
+         *     each file is parsed and classified from its own bytes against the register as it is
+         *     now, never from the review, and written by the same code `/import/confirm` runs. A
          *     single-invoice file's XML is archived as a document of the invoice's customer.
-         *     `decisioni` is the JSON `{"decisioni": {"<sha256>": {"create_customer": true}}}`: per
-         *     file, a `customer_id` to attach or `create_customer`, as on `/import/confirm`.
+         *     `decisioni` is the JSON `{"clienti": {"<party_key>": {"create_customer": true}}}`:
+         *     per customer, a `customer_id` to attach or `create_customer`, as on
+         *     `/import/confirm`.
          */
-        post: operations["confirm_import_files_api_invoices_import_files_confirm_post"];
+        post: operations["confirm_import_upload_api_invoices_import_upload_confirm_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3921,8 +3921,8 @@ export interface components {
              */
             raggruppa_per_mese: boolean;
         };
-        /** Body_confirm_import_files_api_invoices_import_files_confirm_post */
-        Body_confirm_import_files_api_invoices_import_files_confirm_post: {
+        /** Body_confirm_import_upload_api_invoices_import_upload_confirm_post */
+        Body_confirm_import_upload_api_invoices_import_upload_confirm_post: {
             /** File */
             file: string[];
             /**
@@ -3941,8 +3941,8 @@ export interface components {
             /** File */
             file: string;
         };
-        /** Body_review_import_files_api_invoices_import_files_review_post */
-        Body_review_import_files_api_invoices_import_files_review_post: {
+        /** Body_review_import_upload_api_invoices_import_upload_review_post */
+        Body_review_import_upload_api_invoices_import_upload_review_post: {
             /** File */
             file: string[];
         };
@@ -9458,7 +9458,8 @@ export interface components {
         /**
          * UploadedInvoiceConfirmRead
          * @description One row of the confirmation of an uploaded file, `ConfirmedInvoiceRead`'s fields
-         *     named by the file.
+         *     named by the file, with the `party_key` of the invoice's customer and the `motivo`
+         *     of an unreadable file, as on the review row.
          */
         UploadedInvoiceConfirmRead: {
             /** File */
@@ -9470,6 +9471,10 @@ export interface components {
              * @enum {string}
              */
             outcome: "imported" | "already_present" | "conflict" | "incoming_skipped" | "needs_customer_confirmation" | "unclaimed";
+            /** Party Key */
+            party_key?: string | null;
+            /** Motivo */
+            motivo?: string | null;
             /** Azienda Id */
             azienda_id?: string | null;
             fattura?: components["schemas"]["InvoiceRead"] | null;
@@ -9486,7 +9491,9 @@ export interface components {
          * @description One row of the review of an uploaded file: `ReviewedInvoiceRead`'s own fields,
          *     named by the file (and its SHA-256) instead of a `document_id`, since nothing was
          *     archived. One per invoice the file parses into, or exactly one `"unclaimed"` for a
-         *     file no registered format recognises.
+         *     file no registered format reads: `motivo` then says why when the file looked like a
+         *     FatturaPA and could not be read as one. `party_key` names the invoice's customer in
+         *     the decisions of the confirmation.
          */
         UploadedInvoiceReviewRead: {
             /** File */
@@ -9499,6 +9506,10 @@ export interface components {
              */
             outcome: "ready" | "needs_customer_confirmation" | "already_present" | "conflict" | "incoming_skipped" | "unclaimed";
             invoice?: components["schemas"]["ParsedInvoice"] | null;
+            /** Party Key */
+            party_key?: string | null;
+            /** Motivo */
+            motivo?: string | null;
             /** Azienda Id */
             azienda_id?: string | null;
             /** Matched Customer Id */
@@ -21201,7 +21212,7 @@ export interface operations {
             };
         };
     };
-    review_import_files_api_invoices_import_files_review_post: {
+    review_import_upload_api_invoices_import_upload_review_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -21210,7 +21221,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "multipart/form-data": components["schemas"]["Body_review_import_files_api_invoices_import_files_review_post"];
+                "multipart/form-data": components["schemas"]["Body_review_import_upload_api_invoices_import_upload_review_post"];
             };
         };
         responses: {
@@ -21322,7 +21333,7 @@ export interface operations {
             };
         };
     };
-    confirm_import_files_api_invoices_import_files_confirm_post: {
+    confirm_import_upload_api_invoices_import_upload_confirm_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -21331,7 +21342,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "multipart/form-data": components["schemas"]["Body_confirm_import_files_api_invoices_import_files_confirm_post"];
+                "multipart/form-data": components["schemas"]["Body_confirm_import_upload_api_invoices_import_upload_confirm_post"];
             };
         };
         responses: {

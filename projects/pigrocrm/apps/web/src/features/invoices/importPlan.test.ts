@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest'
 import {
   batchFiles,
   countWrites,
+  customersOf,
   decisionsFor,
   newParties,
-  partyKey,
   registerYears,
   sortReviewRows,
   willBeWritten,
@@ -51,6 +51,7 @@ function row(outcome: ReviewOutcome, sha = 'a', overrides: Partial<ReviewRow> = 
     sha256: sha,
     outcome,
     invoice: outcome === 'unclaimed' ? null : invoice(),
+    party_key: outcome === 'unclaimed' ? null : '09876543210',
     ...overrides,
   }
 }
@@ -74,29 +75,21 @@ describe('the order of a review', () => {
 })
 
 describe('the new customers of a review', () => {
-  it('are one party for every invoice that names them, matched on the tax identifier', () => {
+  it('are one party for every invoice that names them, by the key the server gave', () => {
     const rows = [
       row('needs_customer_confirmation', '1'),
       row('needs_customer_confirmation', '2'),
       row('needs_customer_confirmation', '3', {
+        party_key: '11111111111',
         invoice: invoice({ ragione_sociale: 'Altro S.r.l.', partita_iva: 'IT11111111111' }),
       }),
       row('ready', '4'),
     ]
 
     expect(newParties(rows)).toEqual([
-      { key: 'IT09876543210', name: 'Esempio Servizi S.r.l.', taxId: 'IT09876543210', invoices: 2 },
-      { key: 'IT11111111111', name: 'Altro S.r.l.', taxId: 'IT11111111111', invoices: 1 },
+      { key: '09876543210', name: 'Esempio Servizi S.r.l.', taxId: 'IT09876543210', invoices: 2 },
+      { key: '11111111111', name: 'Altro S.r.l.', taxId: 'IT11111111111', invoices: 1 },
     ])
-  })
-
-  it('fall back to the tax code, then to the name, for a party with no VAT number', () => {
-    expect(partyKey(invoice({ partita_iva: null, codice_fiscale: 'RSSMRA80A01H501U' }))).toBe(
-      'RSSMRA80A01H501U',
-    )
-    expect(partyKey(invoice({ partita_iva: null, codice_fiscale: null }))).toBe(
-      'Esempio Servizi S.r.l.',
-    )
   })
 })
 
@@ -116,16 +109,47 @@ describe('what a confirmation would write', () => {
   })
 
   it('leaves out the invoices of a customer the person unticked', () => {
-    const declined = new Set(['IT09876543210'])
+    const declined = new Set(['09876543210'])
 
     expect(countWrites(rows, declined)).toBe(1)
     expect(willBeWritten(rows[1]!, declined)).toBe(false)
     expect(willBeWritten(rows[0]!, declined)).toBe(true)
   })
 
-  it('sends the decision to create the customer for a file only while its party is ticked', () => {
-    expect(decisionsFor(rows, NONE)).toEqual({ '2': { create_customer: true } })
-    expect(decisionsFor(rows, new Set(['IT09876543210']))).toEqual({})
+  it('sends one decision per new customer left ticked, and none for an unticked one', () => {
+    expect(decisionsFor(rows, NONE)).toEqual({ clienti: { '09876543210': { create_customer: true } } })
+    expect(decisionsFor(rows, new Set(['09876543210']))).toEqual({ clienti: {} })
+  })
+
+  it('attaches by id a customer an earlier batch already created, instead of creating it again', () => {
+    const created = new Map([['09876543210', 'customer-1']])
+
+    expect(decisionsFor(rows, NONE, created)).toEqual({
+      clienti: { '09876543210': { customer_id: 'customer-1' } },
+    })
+  })
+
+  it('names two customers of one file separately, so unticking one leaves the other', () => {
+    const two = [
+      row('needs_customer_confirmation', '1', { party_key: 'AAA' }),
+      row('needs_customer_confirmation', '1', { party_key: 'BBB' }),
+    ]
+
+    expect(decisionsFor(two, new Set(['AAA']))).toEqual({
+      clienti: { BBB: { create_customer: true } },
+    })
+    expect(countWrites(two, new Set(['AAA']))).toBe(1)
+  })
+})
+
+describe('the customers an import created', () => {
+  it('are read from the confirmed rows, per party', () => {
+    const rows = [
+      { file: 'a', sha256: 'a', outcome: 'imported', party_key: 'AAA', fattura: { customer_id: 'c1' } },
+      { file: 'b', sha256: 'b', outcome: 'conflict', party_key: 'BBB' },
+    ] as ConfirmRow[]
+
+    expect([...customersOf(rows)]).toEqual([['AAA', 'c1']])
   })
 })
 
