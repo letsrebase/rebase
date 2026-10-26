@@ -116,7 +116,7 @@ class _DaRiferire:
 
 
 def sezioni_con_righe(digest: WeeklyDigest) -> int:
-    """How many of §3.1's seven sections have something in them.
+    """How many of §3.1's seven sections, and REB-726's eighth, have something in them.
 
     A *section* count, not a list count: «Da incassare» is two lists and one heading,
     «Da emettere» is three figures on two lines, and «In pipeline» is three lists. It is
@@ -144,6 +144,7 @@ def sezioni_con_righe(digest: WeeklyDigest) -> int:
             digest.ore is not None,
             bool(digest.pipeline or digest.deal_mossi or digest.offerte_in_attesa),
             bool(digest.segnali),
+            not digest.attivita.vuota,
         ]
     )
 
@@ -316,10 +317,21 @@ class DigestRun:
         for ambito, gruppo in per_ambito.items():
             bind_scope(self.session, attore.model_copy(update={"aziende": ambito}))
             self.session.rollback()
-            digest = DigestService(self.session, self.settings).build(attore, settimana)
-            sezioni = max(sezioni, sezioni_con_righe(digest))
-            if not dry_run and self.sender is not None:
-                accettati.extend(self._spedisci(self.sender, digest, gruppo))
+            servizio = DigestService(self.session, self.settings)
+            digest = servizio.build(attore, settimana)
+            for user_id, indirizzo in gruppo:
+                # «Da fare» is the person's, so it is set on a copy per address; the rest
+                # of the report is shared by the scope's group.
+                suo = digest.model_copy(update={"attivita": servizio.attivita_di(user_id)})
+                sezioni = max(sezioni, sezioni_con_righe(suo))
+                # `send` answers `False` for a refusal rather than raising, so only the
+                # addresses the provider took are recorded, counted and reported.
+                if (
+                    not dry_run
+                    and self.sender is not None
+                    and self.sender.send(digest_mail(indirizzo, suo, public_url=self.public_url))
+                ):
+                    accettati.append((user_id, indirizzo))
         bind_scope(self.session, attore)
 
         if dry_run:
@@ -362,29 +374,6 @@ class DigestRun:
             DigestOutcome(slug, "inviato", iso, destinatari=len(accettati)),
             _DaRiferire(tuple(accettati), sezioni),
         )
-
-    def _spedisci(
-        self,
-        sender: EmailSender,
-        digest: WeeklyDigest,
-        destinatari: list[tuple[UUID, str]],
-    ) -> list[tuple[UUID, str]]:
-        """The recipients the provider took, in the order it was given them.
-
-        `EmailSender.send` answers `False` rather than raising -- `ResendSender` returns it
-        for any non-2xx and for a connection that never opened -- so a run that ignored the
-        boolean would record, count and report addresses that were refused. Only what came
-        back `True` goes into `inviato_a`, into `destinatari` and to PostHog.
-
-        The sender is a parameter and not `self.sender`, so this method cannot be reached
-        without one: «no Resend key» is `_invia`'s answer, decided once and above, and not
-        a branch inside the loop that sends.
-        """
-        return [
-            (user_id, indirizzo)
-            for user_id, indirizzo in destinatari
-            if sender.send(digest_mail(indirizzo, digest, public_url=self.public_url))
-        ]
 
     # -- the reads, and the row -------------------------------------------------------
 

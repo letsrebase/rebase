@@ -112,6 +112,43 @@ class DigestSignal(BaseModel):
     collegamento: str
 
 
+class DigestAttivitaRiga(BaseModel):
+    """One commitment line of «Da fare»: what it is, when it falls due, how late it is."""
+
+    attivita_id: UUID
+    titolo: str
+    scadenza: date
+    # Only the overdue fill this in, as `DigestInvoice.giorni_di_ritardo` does: `None` and
+    # not `0`, since a commitment due today is a fact about the day and not a delay.
+    giorni_di_ritardo: int | None = None
+
+
+class DigestAttivita(BaseModel):
+    """The recipient's own commitments of the week (REB-726): overdue, then the next seven
+    days, today included.
+
+    **Per recipient, not per scope.** Every other section is the space's (or the
+    scope's) and is built once; this one is the person's, so `DigestRun` fills it in on
+    a copy of the built report for each address. It is the week's view and nothing
+    more: the daily summary the reminders spec adds (2026-10-26 §6.2) is a different mail
+    about what has fallen due, and this section neither duplicates it nor reads its
+    ledger.
+
+    `*_totale` is how many there are; the lists are the first few, so a mail never
+    grows with the backlog. Open commitments only, and none without a date: an undated
+    to-do is on the Oggi page, not in a mail about the week.
+    """
+
+    in_ritardo: list[DigestAttivitaRiga] = Field(default_factory=list)
+    in_ritardo_totale: int = 0
+    in_settimana: list[DigestAttivitaRiga] = Field(default_factory=list)
+    in_settimana_totale: int = 0
+
+    @property
+    def vuota(self) -> bool:
+        return not self.in_ritardo_totale and not self.in_settimana_totale
+
+
 class WeeklyDigest(BaseModel):
     """The week, section by section, in the order §3.1 prints them.
 
@@ -160,6 +197,10 @@ class WeeklyDigest(BaseModel):
     # 7. Da sistemare.
     segnali: list[DigestSignal]
 
+    # 8. Da fare. The recipient's, so it is empty on a freshly built report and set per
+    # address by `DigestRun` (see `DigestAttivita`).
+    attivita: DigestAttivita = Field(default_factory=DigestAttivita)
+
     @property
     def settimana_ferma(self) -> bool:
         """Nothing was issued, collected, logged or moved.
@@ -195,6 +236,7 @@ class WeeklyDigest(BaseModel):
             and not self.deal_mossi
             and not self.offerte_in_attesa
             and not self.segnali
+            and self.attivita.vuota
             and self.ore is None
             and self.vinti_da_fatturare == 0
             and self.ore_non_fatturate == 0
