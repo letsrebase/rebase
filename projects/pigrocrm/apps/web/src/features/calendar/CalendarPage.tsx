@@ -1,11 +1,14 @@
-import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react'
+import { CalendarDays, ChevronLeft, ChevronRight, Plus } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { PageHeader } from '@/components/PageHeader'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { Button } from '@rebase/ui/button'
 import { Loader } from '@rebase/ui/loader'
 import { formatIsoDateItalian } from '@/lib/dates'
+import { useCanWrite } from '@/lib/auth'
 import { cn } from '@rebase/ui/cn'
+import { AttivitaDialog } from '@/features/attivita/AttivitaDialog'
+import { AttivitaItem } from '@/features/attivita/AttivitaItem'
 import { DayPanel } from './DayPanel'
 import { monthCells, monthLabel, monthOf, shiftMonth, WEEKDAY_LABELS } from './month'
 import { useCalendarMonth, type CalendarDay } from './queries'
@@ -35,6 +38,8 @@ export function CalendarPage({
 }) {
   const month = useCalendarMonth(mese)
   const [openDay, setOpenDay] = useState<string | null>(null)
+  const [creating, setCreating] = useState(false)
+  const canWrite = useCanWrite()
 
   const cells = useMemo(() => monthCells(mese), [mese])
   const byDay = useMemo(() => {
@@ -51,6 +56,12 @@ export function CalendarPage({
       description={monthLabel(mese)}
       actions={
         <>
+          {canWrite && (
+            <Button onClick={() => setCreating(true)}>
+              <Plus className="mr-2 size-4" />
+              Nuova attività
+            </Button>
+          )}
           <Button
             variant="outline"
             size="icon"
@@ -140,9 +151,9 @@ export function CalendarPage({
                 <h2 id="senza-scadenza" className="text-sm font-medium">
                   Senza scadenza
                 </h2>
-                <ul className="space-y-1 text-sm text-muted-foreground">
+                <ul className="space-y-2 text-sm">
                   {senzaScadenza.map((item) => (
-                    <li key={item.id}>{item.titolo}</li>
+                    <AttivitaItem key={item.id} attivita={item} />
                   ))}
                 </ul>
               </section>
@@ -158,6 +169,7 @@ export function CalendarPage({
           onClose={() => setOpenDay(null)}
         />
       )}
+      <AttivitaDialog open={creating} onOpenChange={setCreating} />
     </>
   )
 }

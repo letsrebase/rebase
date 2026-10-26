@@ -176,6 +176,9 @@ ROWS: list[Row] = [
             "unita": "mese",
         },
     ),
+    Row("PATCH", "/api/contracts/{contract_id}", body={"titolo": "Matrice 2"}),
+    Row("POST", "/api/contracts/{contract_id}/state", body={"stato": "attivo"}),
+    Row("PATCH", "/api/contracts/{contract_id}/rate-cards/{rate_card_id}", body={}),
     # --- contracts / expenses (REB-360): `require_write` (contract_expenses/service.py)
     Row(
         "POST",

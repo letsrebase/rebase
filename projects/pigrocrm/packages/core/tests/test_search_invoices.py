@@ -126,7 +126,7 @@ def _group(db_session: Session, term: str) -> SearchGroup:
     return next(group for group in results.gruppi if group.entity == "invoice")
 
 
-def test_the_invoice_group_is_always_present_and_last(
+def test_the_invoice_group_is_always_present_and_fifth(
     db_session: Session, invoices: Customer
 ) -> None:
     """A missing group and an empty group render identically in a palette (§8.6), and the
@@ -139,9 +139,12 @@ def test_the_invoice_group_is_always_present_and_last(
         "deal",
         "document",
         "invoice",
+        "attivita",
     ]
-    assert results.gruppi[-1].totale == 0
-    assert results.gruppi[-1].hits == []
+    # Fifth since Task C12, and since REB-723 no longer last: the attività branch follows it.
+    invoices_group = next(group for group in results.gruppi if group.entity == "invoice")
+    assert invoices_group.totale == 0
+    assert invoices_group.hits == []
 
 
 def test_the_causale_is_searchable_by_a_fragment(db_session: Session, invoices: Customer) -> None:

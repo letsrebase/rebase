@@ -49,6 +49,13 @@ export const queryKeys = {
   documentVersions: (id: string) => ['document-versions', id] as const,
   templates: () => ['templates'] as const,
   templateDescription: (id: string) => ['template-description', id] as const,
+  // The agent proposals the Proposte queue reviews (REB-750). `proposals` is the prefix a
+  // decision invalidates; the contract behind a day proposal has a key of its own because
+  // the page only needs its title, not the contracts feature's cache.
+  proposals: (stato?: string) => ['proposals', stato ?? 'all'] as const,
+  proposal: (id: string) => ['proposal', id] as const,
+  proposalTimeline: (id: string) => ['proposal-timeline', id] as const,
+  proposalContract: (id: string) => ['proposal-contract', id] as const,
   // The aziende of the space (REB-617): the list every selector and Impostazioni →
   // Aziende read; a single azienda is read from the list, so there is no per-id key.
   aziende: ['aziende'] as const,
@@ -120,4 +127,15 @@ export const queryKeys = {
   ) =>
     ['dashboard', kind, params] as const,
   automations: () => ['automations'] as const,
+  // A contract and everything the page hangs on it (REB-741..744). All under the
+  // 'contract' prefix except the customer's list, so one invalidation of
+  // `contract(id)` refreshes the row, its rate cards, expenses, assumption and figures.
+  contracts: (params?: unknown) => ['contracts', params ?? {}] as const,
+  contract: (id: string) => ['contract', id] as const,
+  contractRateCards: (id: string) => ['contract', id, 'rate-cards'] as const,
+  contractExpenses: (id: string) => ['contract', id, 'expenses'] as const,
+  contractAssumption: (id: string) => ['contract', id, 'assumption'] as const,
+  contractProjection: (id: string, params?: unknown) =>
+    ['contract', id, 'projection', params ?? {}] as const,
+  contractConcentration: (id: string) => ['contract', id, 'concentration'] as const,
 }

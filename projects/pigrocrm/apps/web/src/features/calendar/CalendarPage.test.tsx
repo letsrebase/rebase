@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
@@ -12,6 +12,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
 
 vi.mock('@/lib/auth', () => ({
   useCanWrite: () => true,
+  useIsAdmin: () => true,
   useAuth: () => ({
     user: { id: '33333333-3333-7333-8333-333333333333', ruolo: 'admin' },
     isLoading: false,
@@ -116,6 +117,7 @@ function routeGet(overrides: Record<string, () => ReturnType<typeof ok>> = {}) {
     if (response) return response()
     if (path === '/api/calendar') return ok(month)
     if (path === '/api/deals') return ok({ items: [deal], next_cursor: null })
+    if (path === '/api/users') return ok([])
     throw new Error(`unexpected GET ${path}`)
   }) as never)
 }
@@ -330,11 +332,12 @@ describe('CalendarPage', () => {
     await userEvent.click(screen.getByRole('button', { name: /^18\/09\/2026:/ }))
     await screen.findByRole('dialog')
 
-    await userEvent.type(
-      screen.getByRole('textbox', { name: 'Titolo della scadenza' }),
-      'Mandare il preventivo',
+    await userEvent.click(screen.getByRole('button', { name: /Aggiungi un’attività per questo giorno/ }))
+    await userEvent.type(await screen.findByLabelText('Titolo'), 'Mandare il preventivo')
+    const dialogs = screen.getAllByRole('dialog')
+    await userEvent.click(
+      within(dialogs[dialogs.length - 1] as HTMLElement).getByRole('button', { name: 'Aggiungi' }),
     )
-    await userEvent.click(screen.getByRole('button', { name: 'Aggiungi' }))
 
     await waitFor(() => expect(api.POST).toHaveBeenCalled())
     const [path, options] = vi.mocked(api.POST).mock.calls[0] as unknown as [

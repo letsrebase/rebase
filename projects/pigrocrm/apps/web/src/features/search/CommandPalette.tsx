@@ -89,6 +89,10 @@ export function CommandPalette({
         return void navigate({ to: '/app/documents/$documentId', params: { documentId: hit.id } })
       case 'invoice':
         return void navigate({ to: '/app/invoices/$invoiceId', params: { invoiceId: hit.id } })
+      // No page of its own: the attività opens in its dialog, over the Attività page
+      // (`?apri=`), which is where every other screen opens one from.
+      case 'attivita':
+        return void navigate({ to: '/app/activities', search: { apri: hit.id } })
     }
   }
 
@@ -117,6 +121,10 @@ export function CommandPalette({
       // question from the one the palette was asked.
       case 'invoice':
         return null
+      // An attività has no list of its own to filter by a term: the page has its own
+      // filters, not a free-text one, so «vedi tutti» would land on a different question.
+      case 'attivita':
+        return null
     }
   }
 
@@ -135,13 +143,13 @@ export function CommandPalette({
       open={open}
       onOpenChange={onOpenChange}
       title="Ricerca globale"
-      description="Cerca clienti, persone, deal e documenti"
+      description="Cerca clienti, persone, deal, documenti e attività"
     >
       <Command shouldFilter={false}>
         <CommandInput
           value={term}
           onValueChange={setTerm}
-          placeholder="Cerca clienti, persone, deal, documenti…"
+          placeholder="Cerca clienti, persone, deal, documenti, attività…"
           aria-label="Cerca in tutto il CRM"
         />
 

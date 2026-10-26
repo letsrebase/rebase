@@ -29,7 +29,7 @@ from pigrocrm.core.search.schemas import COUNT_CEILING
 # Five, and the order is fixed: a palette whose sections move between keystrokes
 # cannot be driven with the keyboard. `invoice` is last, added by Task C12 with the
 # branch that finally makes `SearchEntity`'s fifth member true.
-_ENTITIES = ["customer", "person", "deal", "document", "invoice"]
+_ENTITIES = ["customer", "person", "deal", "document", "invoice", "attivita"]
 
 
 def _search(client: TestClient, **params: Any) -> Any:

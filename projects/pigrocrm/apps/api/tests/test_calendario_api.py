@@ -210,6 +210,23 @@ def test_archiving_hides_it_from_the_list_and_from_the_month(logged_in: TestClie
     assert restored.json()["scadenza"] == PRIMO.isoformat()
 
 
+def test_the_archived_ones_are_listed_apart_so_they_can_be_restored(logged_in: TestClient) -> None:
+    attivita_id = logged_in.post("/api/activities", json={"titolo": "Creata per errore"}).json()[
+        "id"
+    ]
+    logged_in.delete(f"/api/activities/{attivita_id}")
+
+    assert logged_in.get("/api/activities").json()["items"] == []
+    archived = logged_in.get("/api/activities", params={"archiviate": "true"}).json()
+    assert [item["id"] for item in archived["items"]] == [attivita_id]
+
+    logged_in.post(f"/api/activities/{attivita_id}/restore")
+    assert logged_in.get("/api/activities", params={"archiviate": "true"}).json()["items"] == []
+    assert [item["id"] for item in logged_in.get("/api/activities").json()["items"]] == [
+        attivita_id
+    ]
+
+
 def test_a_collaborator_can_write_their_own_commitments(collaborator_client: TestClient) -> None:
     """Nothing here is admin-gated: a commitment is not a fiscal act, and the refusals
     that exist live in the service."""

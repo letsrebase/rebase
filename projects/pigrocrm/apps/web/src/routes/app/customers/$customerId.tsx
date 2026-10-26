@@ -4,6 +4,7 @@ import { useState, type ReactNode } from 'react'
 import { toast } from '@rebase/ui/sonner'
 import { renderFieldValue } from '@/components/DynamicFieldRenderer'
 import { EntityDetailLayout } from '@/components/EntityDetailLayout'
+import { EntityAttivita } from '@/features/attivita/EntityAttivita'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
@@ -22,6 +23,7 @@ import {
   type RelatedDeal,
   type RelatedPerson,
 } from '@/features/customers/queries'
+import { ContractsTab } from '@/features/contracts/ContractsTab'
 import { DocumentsTab } from '@/features/documents/DocumentsTab'
 import { EmailTab } from '@/features/gmail/EmailTab'
 import { useGmailConfigured } from '@/features/gmail/queries'
@@ -193,7 +195,9 @@ export function CustomerDetail() {
             actions={canWrite ? <NewProformaButton customerId={customerId} /> : undefined}
           />
         }
+        contracts={<ContractsTab customerId={customerId} />}
         economics={<EconomicsTab customerId={customerId} />}
+        attivita={<EntityAttivita link={{ kind: 'customer', id: customerId }} />}
         emails={gmailConfigured ? <EmailTab entityType="customer" entityId={customerId} /> : undefined}
         actions={
           canWrite && (

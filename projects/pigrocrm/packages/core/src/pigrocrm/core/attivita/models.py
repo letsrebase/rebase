@@ -117,6 +117,23 @@ class Attivita(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
             nullslast(desc(column("scadenza"))),
             desc(column("id")),
         ),
+        # The global search's sixth branch (REB-723, migration 0052): `titolo` and `note`
+        # by `ILIKE '%...%'`, which only a trigram index serves. Declared here as well as
+        # in the migration because `Base.metadata.create_all` builds the test schema.
+        Index(
+            "ix_attivita_titolo_trgm",
+            "titolo",
+            postgresql_using="gin",
+            postgresql_ops={"titolo": "gin_trgm_ops"},
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
+        Index(
+            "ix_attivita_note_trgm",
+            "note",
+            postgresql_using="gin",
+            postgresql_ops={"note": "gin_trgm_ops"},
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
     )
 
     titolo: Mapped[str] = mapped_column(String(200), nullable=False)

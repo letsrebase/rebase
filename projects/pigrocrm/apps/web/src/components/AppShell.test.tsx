@@ -326,7 +326,7 @@ describe('AppShell', () => {
   })
 
   it.each(['collaboratore', 'readonly'])(
-    'keeps the %s navigation surface intact: four top-level entries and both groups',
+    'keeps the %s navigation surface intact: five top-level entries and both groups',
     (ruolo) => {
       // REB-294 hid controls, never navigation a role may read -- the readonly person's
       // reading surface is unchanged. Asserted for both non-admin roles in one test
@@ -335,7 +335,7 @@ describe('AppShell', () => {
       mockAuth.ruolo = ruolo
       renderShell()
       const nav = sidebar()
-      for (const label of ['Home', 'Primi passi', 'Calendario', 'Token']) {
+      for (const label of ['Home', 'Primi passi', 'Calendario', 'Attività', 'Token']) {
         expect(nav.getByRole('link', { name: label })).toBeInTheDocument()
       }
       for (const label of ['Vendite', 'Amministrazione']) {
@@ -355,6 +355,26 @@ describe('AppShell', () => {
     mockAuth.ruolo = ruolo
     renderShell()
     expect(sidebar().getByRole('link', { name: 'Token' })).toBeInTheDocument()
+  })
+
+  /**
+   * The Proposte queue (REB-750) is every role's to read, like the pages of the groups
+   * above: deciding is gated at the buttons and the service, not at the menu. It is the
+   * last top-level entry, after Token, and opens `/app/proposals`.
+   */
+  it.each(['admin', 'collaboratore', 'readonly'])('shows Proposte to a %s, right after Token', (ruolo) => {
+    mockAuth.ruolo = ruolo
+    renderShell()
+    const links = sidebar().getAllByRole('link')
+    const names = links.map((link) => link.textContent)
+    expect(names.indexOf('Proposte')).toBe(names.indexOf('Token') + 1)
+    expect(links[names.indexOf('Proposte')]).toHaveAttribute('href', '/app/proposals')
+  })
+
+  it('keeps Proposte one click away in the collapsed icon rail', async () => {
+    renderShell()
+    await userEvent.click(screen.getByRole('button', { name: 'Comprimi il menu' }))
+    expect(sidebar().getByRole('link', { name: 'Proposte' })).toHaveAttribute('href', '/app/proposals')
   })
 
   it('collapses to an icon rail: no group headers, every section still one click away', async () => {

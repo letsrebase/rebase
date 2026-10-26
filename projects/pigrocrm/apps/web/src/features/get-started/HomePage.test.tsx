@@ -148,6 +148,27 @@ describe('the Home', () => {
     expect(screen.queryByRole('heading', { name: 'Completa lo spazio' })).toBeNull()
   })
 
+  it('tells whoever can decide that proposals wait, above the dashboard tab', async () => {
+    answers({
+      '/api/customers': ONE('c1'),
+      '/api/proposals': { items: [{ id: 'p1' }, { id: 'p2' }] },
+    })
+    renderHome()
+    expect(await screen.findByRole('heading', { name: '2 proposte da rivedere' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Rivedi le proposte/ })).toHaveAttribute('href', '/app/proposals')
+  })
+
+  it('says nothing of proposals to a readonly user, and does not even read them', async () => {
+    auth.user.ruolo = 'readonly'
+    answers({ '/api/customers': ONE('c1'), '/api/proposals': { items: [{ id: 'p1' }] } })
+    renderHome()
+    expect(await screen.findByTestId('dashboard')).toBeInTheDocument()
+    // The page has settled (the dashboard is drawn); a notice would have asked by now.
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(api.GET).not.toHaveBeenCalledWith('/api/proposals', expect.anything())
+    expect(screen.queryByRole('heading', { name: '1 proposta da rivedere' })).toBeNull()
+  })
+
   it('does not ask a collaboratore to complete the one step only an admin can do', async () => {
     auth.user.ruolo = 'collaboratore'
     answers({ '/api/customers': ONE('c1'), '/api/deals': ONE('d1'), '/api/documents': ONE('o1') })

@@ -33,6 +33,7 @@ from pigrocrm.core.work_units.schemas import (
 ProposalTargetType = Literal["contratto", "giornata"]
 ProposalTipoEstratto = Literal["citato", "trascritto"]
 ProposalStato = Literal["in_attesa", "accettata", "rifiutata"]
+ProposalOrdine = Literal["arrivo", "decisione"]
 
 CONFIDENZA_MAX_DIGITS = 3
 CONFIDENZA_DECIMAL_PLACES = 2
@@ -144,6 +145,10 @@ class ProposalListQuery(BaseModel):
     target_type: ProposalTargetType | None = None
     document_id: UUID | None = None
     contract_id: UUID | None = None
+    # `arrivo` is the review queue's own order (oldest first); `decisione` is the decided
+    # lists' (most recently decided first, the ones nobody has decided last), so a list
+    # cut at `limit` keeps the newest decisions and not the oldest.
+    ordine: ProposalOrdine = "arrivo"
     limit: int = Field(default=50, ge=1, le=200)
 
 

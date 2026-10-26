@@ -154,6 +154,9 @@ export function DataTable<T extends RowData>({
   // renders through, so a gap here is not local to a single screen.
   function handleRowKeyDown(event: KeyboardEvent<HTMLTableRowElement>, row: T) {
     if (!onRowClick) return
+    // Only the row's own key press: Enter on a button or a link inside a cell belongs to
+    // that control, and used to open the row instead of pressing it.
+    if (event.target !== event.currentTarget) return
     if (event.key !== 'Enter' && event.key !== ' ') return
     event.preventDefault()
     onRowClick(row)

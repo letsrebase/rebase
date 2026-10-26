@@ -28,8 +28,9 @@ class ProposalRepository:
     # later `-> list[...]` would raise `TypeError` at import time (the same
     # convention every other repository's own `list`/`list_for_contract` follows).
     def list(self, query: ProposalListQuery) -> list[Proposal]:
-        """Oldest first: a review queue is worked in the order proposals arrived,
-        not the order they were last touched."""
+        """Oldest first by default: a review queue is worked in the order proposals
+        arrived, not the order they were last touched. `ordine="decisione"` is the
+        decided lists' order, newest decision first."""
         stmt = select(Proposal)
         if query.stato:
             stmt = stmt.where(Proposal.stato == query.stato)
@@ -39,5 +40,13 @@ class ProposalRepository:
             stmt = stmt.where(Proposal.document_id == query.document_id)
         if query.contract_id:
             stmt = stmt.where(Proposal.contract_id == query.contract_id)
-        stmt = stmt.order_by(Proposal.created_at.asc(), Proposal.id.asc()).limit(query.limit)
+        if query.ordine == "decisione":
+            stmt = stmt.order_by(
+                Proposal.deciso_il.desc().nulls_last(),
+                Proposal.created_at.desc(),
+                Proposal.id.desc(),
+            )
+        else:
+            stmt = stmt.order_by(Proposal.created_at.asc(), Proposal.id.asc())
+        stmt = stmt.limit(query.limit)
         return list(self.session.execute(stmt).scalars())

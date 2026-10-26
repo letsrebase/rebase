@@ -31,6 +31,11 @@ interface EntityDetailLayoutProps {
    *  that opens onto an empty explanation of why it is empty. */
   invoices?: ReactNode
   /**
+   * The Contratti tab's contents: only a customer has contracts, so the tab exists only
+   * when a page passes it, for the reason given on `documents` above.
+   */
+  contracts?: ReactNode
+  /**
    * The Ore tab's contents. Optional because only a Deal has hours: an hour is
    * attached to a deal, always and only (`time_entries.deal_id` is required), so
    * neither a Customer nor a Person can have this tab. Absent means the tab is not
@@ -55,6 +60,12 @@ interface EntityDetailLayoutProps {
    * person's customer and that customer's live deals (`gmail/links.py`).
    */
   emails?: ReactNode
+  /**
+   * The Attività tab's contents: what is still to be done about this record (REB-721), as
+   * opposed to the Timeline, which is what already happened to it. Optional like every
+   * slot above, and the same reasoning: an absent prop is no tab at all.
+   */
+  attivita?: ReactNode
   entityType: TimelineEntityType
   entityId: string
   /**
@@ -85,9 +96,11 @@ export function EntityDetailLayout({
   links,
   documents,
   invoices,
+  contracts,
   hours,
   economics,
   emails,
+  attivita,
   entityType,
   entityId,
   timelineLimit,
@@ -107,8 +120,12 @@ export function EntityDetailLayout({
             <TabsTrigger value="panoramica">Panoramica</TabsTrigger>
             {documents && <TabsTrigger value="documenti">Documenti</TabsTrigger>}
             {invoices && <TabsTrigger value="fatture">Fatture</TabsTrigger>}
+            {contracts && <TabsTrigger value="contratti">Contratti</TabsTrigger>}
             {hours && <TabsTrigger value="ore">Ore</TabsTrigger>}
             {economics && <TabsTrigger value="economia">Economia</TabsTrigger>}
+            {/* Before the Email and the Timeline tabs: those two are a record of what
+                already happened, and this is what is still to be done. */}
+            {attivita && <TabsTrigger value="attivita">Attività</TabsTrigger>}
             {/* Immediately before Timeline: both are a record of what already happened,
                 and everything to the left of them is a thing the user maintains. */}
             {emails && <TabsTrigger value="email">Email</TabsTrigger>}
@@ -132,6 +149,11 @@ export function EntityDetailLayout({
             {invoices}
           </TabsContent>
         )}
+        {contracts && (
+          <TabsContent value="contratti" className="mt-6">
+            {contracts}
+          </TabsContent>
+        )}
         {hours && (
           <TabsContent value="ore" className="mt-6">
             {hours}
@@ -140,6 +162,11 @@ export function EntityDetailLayout({
         {economics && (
           <TabsContent value="economia" className="mt-6">
             {economics}
+          </TabsContent>
+        )}
+        {attivita && (
+          <TabsContent value="attivita" className="mt-6">
+            {attivita}
           </TabsContent>
         )}
         {emails && (

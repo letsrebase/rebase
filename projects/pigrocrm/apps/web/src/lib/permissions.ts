@@ -103,6 +103,15 @@ export const MIN_ROLE = {
   update_deal_rate: 'admin',
   close_period: 'admin',
   reopen_period: 'admin',
+  // Contratti: the page's own writes (REB-741..744). `require_write` in the services.
+  create_contract: 'collaboratore',
+  update_contract: 'collaboratore',
+  set_contract_state: 'collaboratore',
+  create_rate_card: 'collaboratore',
+  update_rate_card: 'collaboratore',
+  create_contract_expense: 'collaboratore',
+  update_contract_expense: 'collaboratore',
+  set_renewal_assumption: 'collaboratore',
   // The Email tab: the three presses on a draft the assistant prepared (REB-415). The
   // send and its verification are Italian strings, like the Gmail and Drive settings
   // below, because `gmail/send.py` builds its sentence around them.

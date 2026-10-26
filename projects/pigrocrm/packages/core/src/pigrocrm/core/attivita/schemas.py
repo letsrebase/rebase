@@ -101,6 +101,11 @@ class AttivitaListQuery(BaseModel):
     # And the explicit way to ask for exactly those: `True` for the ones without a date,
     # `False` for the ones with one, `None` for both.
     senza_scadenza: bool | None = None
+    # The archived ones, and only those: `False` (the default) is the live list and `True`
+    # its complement, so a screen that offers «ripristina» can find what it restores. Two
+    # lists and not a flag that mixes them, because an archived row in the live list is
+    # exactly the thing archiving is for hiding.
+    archiviate: bool = False
     limit: int = Field(default=50, ge=1, le=200)
     cursor: str | None = Field(default=None, max_length=CURSOR_MAX_LENGTH)
     sort: SafeStr | None = None

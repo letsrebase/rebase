@@ -3,10 +3,13 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query, status
 
+from pigrocrm.core.activities.schemas import ActivityRead
+from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.proposals.schemas import (
     ProposalAccept,
     ProposalCreate,
     ProposalListQuery,
+    ProposalOrdine,
     ProposalPage,
     ProposalRead,
     ProposalReject,
@@ -33,6 +36,7 @@ def list_proposals(
     target_type: ProposalTargetType | None = None,
     document_id: UUID | None = None,
     contract_id: UUID | None = None,
+    ordine: ProposalOrdine = "arrivo",
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> ProposalPage:
     query = ProposalListQuery(
@@ -40,6 +44,7 @@ def list_proposals(
         target_type=target_type,
         document_id=document_id,
         contract_id=contract_id,
+        ordine=ordine,
         limit=limit,
     )
     return ProposalService(session).list(query, actor)
@@ -65,3 +70,18 @@ def reject(
     proposal_id: UUID, data: ProposalReject, session: SessionDep, actor: ActorDep
 ) -> ProposalRead:
     return ProposalService(session).reject(proposal_id, data, actor)
+
+
+@router.get("/{proposal_id}/timeline", response_model=list[ActivityRead])
+def timeline(
+    proposal_id: UUID,
+    session: SessionDep,
+    actor: ActorDep,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+) -> list[ActivityRead]:
+    """La cronologia della proposta: depositata, poi accettata o rifiutata. Il motivo di
+    un rifiuto sta solo qui, nel payload della riga `rejected`."""
+    # A rejection's `motivo` has no column on `proposals` (see `ProposalReject`). The
+    # proposal is read first so an id that is not one answers 404, not an empty list.
+    ProposalService(session).get(proposal_id, actor)
+    return ActivityService(session).timeline("proposal", proposal_id, limit)

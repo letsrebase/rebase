@@ -165,6 +165,20 @@ describe('EntityDetailLayout', () => {
     expect(screen.getByText('conversazioni')).toBeInTheDocument()
   })
 
+  // Only a customer has contracts, so a person or a deal passing nothing gets no tab.
+  it('has no Contratti tab when contracts is not given', () => {
+    renderLayout()
+    expect(screen.queryByRole('tab', { name: 'Contratti' })).not.toBeInTheDocument()
+  })
+
+  it('shows a Contratti tab with its own contents after Fatture when contracts is given', async () => {
+    renderLayout({ invoices: <p>fatture</p>, contracts: <p>elenco contratti</p> })
+    const labels = screen.getAllByRole('tab').map((tab) => tab.textContent)
+    expect(labels.indexOf('Contratti')).toBe(labels.indexOf('Fatture') + 1)
+    await userEvent.click(screen.getByRole('tab', { name: 'Contratti' }))
+    expect(screen.getByText('elenco contratti')).toBeInTheDocument()
+  })
+
   /**
    * Every optional slot at once, which is what a Deal actually passes. Guards the two
    * ways this component has been changed before: a new tab added to `TabsList` but not
@@ -177,6 +191,7 @@ describe('EntityDetailLayout', () => {
       invoices: <p>fatture</p>,
       hours: <p>ore</p>,
       economics: <p>conto economico</p>,
+      attivita: <p>cose da fare</p>,
       emails: <p>conversazioni</p>,
     })
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
@@ -185,9 +200,16 @@ describe('EntityDetailLayout', () => {
       'Fatture',
       'Ore',
       'Economia',
+      'Attività',
       'Email',
       'Timeline',
       'Collegamenti',
     ])
+  })
+
+  it('shows an Attività tab, apart from the Timeline, when attivita is given', async () => {
+    renderLayout({ attivita: <p>cose da fare</p> })
+    await userEvent.click(screen.getByRole('tab', { name: 'Attività' }))
+    expect(screen.getByText('cose da fare')).toBeInTheDocument()
   })
 })
