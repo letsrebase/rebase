@@ -820,7 +820,11 @@ class DocumentService:
             Document(
                 customer_id=data.customer_id,
                 deal_id=data.deal_id,
-                azienda_id=self._azienda_of_owner(data.customer_id, data.deal_id, None),
+                azienda_id=(
+                    LegalEntityService(self.session).inherited(data.azienda_id, ENTITY)
+                    if data.azienda_id is not None
+                    else self._azienda_of_owner(data.customer_id, data.deal_id, None)
+                ),
                 tipo=template.tipo,
                 titolo=data.titolo,
                 stato="bozza" if template.tipo == "offerta" else None,

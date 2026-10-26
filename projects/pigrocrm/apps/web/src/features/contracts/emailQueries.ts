@@ -88,12 +88,27 @@ export function useEmailPreview(
  * draft is durable once written, so a send that fails (Gmail not connected, a revoked
  * grant) leaves a draft in the customer's Email tab to send from there, not a lost text.
  */
+/** What a draft says to its reader: recipients, subject, text and files, not its revision. */
+function reviewed(draft: {
+  to_addresses: string[]
+  subject: string
+  body_markdown: string
+  attachment_version_ids: string[]
+}): string {
+  return JSON.stringify([
+    draft.to_addresses,
+    draft.subject,
+    draft.body_markdown,
+    draft.attachment_version_ids,
+  ])
+}
+
 export function useSendContractEmail(contractId: string) {
   const queryClient = useQueryClient()
   // The draft of the last attempt, kept for as long as it was not sent: pressing «Invia»
   // again after a failed send sends that draft, not a second one with a second archived
   // register behind it.
-  const pending = useRef<{ key: string; id: string } | null>(null)
+  const pending = useRef<{ key: string; id: string; seen: string } | null>(null)
   return useMutation({
     mutationFn: async (variables: { templateId: string; invoiceId: string; to: string[] }) => {
       const key = [variables.templateId, variables.invoiceId, ...variables.to].join('|')
@@ -110,13 +125,26 @@ export function useSendContractEmail(contractId: string) {
           }),
         )
         draftId = created.id
-        pending.current = { key, id: created.id }
+        pending.current = { key, id: created.id, seen: reviewed(created) }
       }
       // Read again: the revision to send is the one the row holds now, which a failed
-      // attempt may have moved.
+      // attempt may have moved. But what leaves is what the dialog showed: a draft edited
+      // in the customer's Email tab since is no longer that, and is not sent from here.
       const draft = await unwrap(
         api.GET('/api/email-drafts/{draft_id}', { params: { path: { draft_id: draftId } } }),
       )
+      if (pending.current !== null && reviewed(draft) !== pending.current.seen) {
+        pending.current = null
+        // A problem document, so the banner shows the sentence and not a generic failure.
+        throw {
+          type: 'about:blank',
+          title: 'Bozza modificata',
+          status: 409,
+          code: 'draft_changed',
+          detail:
+            'La bozza è stata modificata dopo che l’hai vista: aprila dalla scheda Email del cliente per inviarla.',
+        }
+      }
       const sent = await unwrap(
         api.POST('/api/email-drafts/{draft_id}/send', {
           params: { path: { draft_id: draft.id } },

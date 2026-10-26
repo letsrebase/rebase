@@ -3,6 +3,7 @@ import { api, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
 import { downloadDocument } from '@/features/documents/queries'
 import { queryKeys } from '@/lib/query'
+import { tenantPrefix } from '@/lib/tenant'
 
 /** Wire shapes straight from the generated schema. `Decimal`s arrive as strings. */
 export type BillableDays = components['schemas']['BillableDays']
@@ -80,7 +81,9 @@ export function useContractRegister(
  *  session cookie travels with it and no token goes into a query string. */
 export function registerCsvUrl(contractId: string, period: { da: string; a: string }): string {
   const query = new URLSearchParams(period)
-  return `/api/contracts/${contractId}/register/csv?${query.toString()}`
+  // Under the space's own prefix: a link is not a fetch, so the client's base URL does not
+  // reach it, and `/api/...` from `/studio/app/...` would ask the root installation.
+  return `${tenantPrefix}/api/contracts/${contractId}/register/csv?${query.toString()}`
 }
 
 /** The PDF is an archived artefact, so it is two steps and not a link: render (which

@@ -88,5 +88,6 @@ def render_register_pdf(
     contract_id: UUID, session: SessionDep, actor: ActorDep, storage: StorageDep, da: Da, a: A
 ) -> DocumentRead:
     """Il registro come PDF, archiviato come documento del cliente: si scarica dal documento
-    e si allega alla fattura. Rigenerarlo crea una nuova versione, non una sovrascrittura."""
+    e si allega alla fattura. Ogni chiamata archivia un documento nuovo: non ne sovrascrive
+    mai uno precedente."""
     return ContractRegisterService(session, storage).render_pdf(contract_id, da, a, actor)

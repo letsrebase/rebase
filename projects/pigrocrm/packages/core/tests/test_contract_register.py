@@ -19,13 +19,13 @@ from pigrocrm.core.documents.models import Document
 from pigrocrm.core.emitter.schemas import LegalEntityUpsert
 from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import NotFound, ValidationFailed
+from pigrocrm.core.invoices.models import Invoice, InvoiceLine
 from pigrocrm.core.invoices.schemas import InvoiceIssue
 from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm.core.storage.local import LocalFileStorage
 from pigrocrm.core.work_units.invoicing import assemble_unbilled_work_units_into_new_invoice
 from pigrocrm.core.work_units.models import Approval, WorkUnit
 from pigrocrm.core.work_units.register import (
-    BILLED_STATI,
     REGISTER_TEMPLATE_NOME,
     ContractRegisterService,
 )
@@ -129,6 +129,25 @@ _WALK: dict[str, tuple[str, ...]] = {
 }
 
 
+def _bare_line(db_session: Session, contract: Contract) -> InvoiceLine:
+    """A line of a draft invoice of the contract's customer: what a billed day sits on."""
+    invoice = Invoice(customer_id=contract.customer_id, tipo="fattura", stato="bozza")
+    db_session.add(invoice)
+    db_session.flush()
+    line = InvoiceLine(
+        invoice_id=invoice.id,
+        numero_linea=1,
+        descrizione="Attività",
+        quantita=Decimal("1.000000"),
+        prezzo_unitario=Decimal("1.000000"),
+        prezzo_totale=Decimal("1.00"),
+        aliquota_iva=Decimal("22.00"),
+    )
+    db_session.add(line)
+    db_session.flush()
+    return line
+
+
 def _day(db_session: Session, contract: Contract, **overrides: object) -> WorkUnit:
     payload: dict[str, object] = {
         "contract_id": contract.id,
@@ -142,6 +161,8 @@ def _day(db_session: Session, contract: Contract, **overrides: object) -> WorkUn
     walk = _WALK.get(target, ())
     if walk:
         payload["stato"] = "lavorato"
+    if walk:
+        payload["invoice_line_id"] = _bare_line(db_session, contract).id
     day = WorkUnit(**payload)  # type: ignore[arg-type]
     db_session.add(day)
     db_session.flush()
@@ -177,7 +198,6 @@ def test_the_register_lists_the_billed_days_with_their_proof_and_leaves_the_rest
     assert voce.approvazione.canale == "email"
     assert register.totale_quantita == Decimal("1.00")
     assert register.senza_approvazione == 0
-    assert "fatturato" in BILLED_STATI and "lavorato" not in BILLED_STATI
 
 
 def test_a_day_with_no_approval_stays_on_the_register_and_is_counted(
@@ -389,3 +409,23 @@ def test_a_register_narrowed_to_an_invoice_leaves_out_the_days_billed_on_another
     assert [v.data for v in narrowed.voci] == [date(2026, 10, 7), date(2026, 10, 20)]
     assert narrowed.totale_quantita == Decimal("2.00")
     assert other.id != mine.id
+
+
+def test_a_disputed_day_with_no_invoice_is_not_billed_and_a_billed_one_stays_when_resolved(
+    db_session: Session,
+) -> None:
+    contract = _contract(db_session)
+    # `lavorato` to `contestato` is a legal move on a day nobody invoiced: not billed.
+    unbilled = _day(db_session, contract, data=date(2026, 10, 7))
+    unbilled.stato = "contestato"
+    # Billed, disputed and resolved back to `lavorato`: the line is still set, so it is
+    # still on the invoice.
+    billed = _day(db_session, contract, data=date(2026, 10, 8), stato="contestato")
+    billed.stato = "lavorato"
+    db_session.flush()
+
+    register = ContractRegisterService(db_session).build(
+        contract.id, date(2026, 10, 1), date(2026, 10, 31), ADMIN
+    )
+
+    assert [v.work_unit_id for v in register.voci] == [billed.id]

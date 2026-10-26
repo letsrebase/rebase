@@ -6,10 +6,12 @@ is the archived artefact attached to the invoice, the CSV is what the client's o
 tracking sheet takes in. Both read `ContractRegisterService.variables_for`, so the two
 cannot disagree about a row or a total.
 
-**Which days.** Those that were billed: `fatturato`, `contestato` (billed, then disputed:
-the register still names the approval that authorised it) and `pagato`. Mastro's own
-set, and for the same reason: it is "ever billed", which is what an invoice's total is
-checked against. A day not billed yet is not on it.
+**Which days.** Those on a line of an invoice, whatever state they have moved to since: a day
+billed and then disputed still names the approval that authorised it, and one a person moved
+back to `lavorato` is still on the invoice. Mastro decides by state (`invoiced`, `disputed`,
+`paid`); here the day graph lets a day enter `contestato` with no invoice and leave it with
+its line still set, so the state alone would add an unbilled day and drop a billed one. The
+link is what an invoice's total is checked against. A day on no line is not on it.
 
 **A day with no approval stays on it.** Mastro leaves such a day out (an INNER JOIN on
 the approval), because its register promises every row carries its approval reference. That
@@ -46,9 +48,6 @@ from pigrocrm.core.templates.repository import TemplateRepository
 from pigrocrm.core.work_units.models import Approval, WorkUnit
 
 ENTITY = "contract_register"
-
-# "Ever billed": see the module docstring.
-BILLED_STATI: tuple[str, ...] = ("fatturato", "contestato", "pagato")
 
 REGISTER_TEMPLATE_NOME = "Registro giornate"
 
@@ -165,7 +164,7 @@ class ContractRegisterService:
                 WorkUnit.contract_id == contract_id,
                 WorkUnit.data >= da,
                 WorkUnit.data <= a,
-                WorkUnit.stato.in_(BILLED_STATI),
+                WorkUnit.invoice_line_id.is_not(None),
             )
             .order_by(WorkUnit.data, WorkUnit.id)
         )
@@ -278,11 +277,12 @@ class ContractRegisterService:
         *,
         invoice_id: UUID | None = None,
     ) -> DocumentRead:
-        """Archived as a `document` on the contract's customer through the slice 2
-        pipeline unchanged, so it gets the versioning, the hash, the pluggable storage and
-        the timeline, and a regenerated register is a new version rather than an
-        overwrite -- the property that lets it be attached to an invoice and reproduced a
-        year later."""
+        """Archived as a `document` on the contract's customer through the slice 2 pipeline
+        unchanged, so it gets the hash, the pluggable storage and the timeline. Each call
+        archives a new document, dated and never overwriting an earlier one: the file
+        attached to an invoice stays reproducible a year later. (The pipeline has no way to
+        render a fresh version of an existing document from new variables, so the register
+        does not claim one.)"""
         actor.require_write("render_contract_register")
         if self.storage is None:
             raise ValidationFailed(
@@ -299,13 +299,15 @@ class ContractRegisterService:
                 customer_id=contract.customer_id,
                 deal_id=None,
                 variabili=self.variables_for(register),
+                # The contract's own azienda, not the customer's current one: a customer
+                # moved to another azienda keeps its contracts where they were.
+                azienda_id=contract.azienda_id,
             ),
             actor,
         )
 
 
 __all__ = [
-    "BILLED_STATI",
     "ContractRegister",
     "ContractRegisterService",
     "RegisterEntry",

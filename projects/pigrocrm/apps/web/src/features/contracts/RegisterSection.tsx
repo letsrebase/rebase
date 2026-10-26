@@ -26,8 +26,9 @@ import {
   type RegisterEntry,
 } from './billingQueries'
 
-/** The three states a day on the register can be in: billed, billed and disputed, paid. */
+/** The states a day on an invoice can be in now: billed, worked again after a dispute, disputed, paid. */
 const STATE_LABEL: Record<string, string> = {
+  lavorato: 'Lavorato',
   fatturato: 'Fatturato',
   contestato: 'Contestato',
   pagato: 'Pagato',

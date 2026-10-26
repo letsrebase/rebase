@@ -163,6 +163,9 @@ class DocumentFromTemplate(BaseModel):
     template_id: UUID
     customer_id: UUID | None = None
     deal_id: UUID | None = None
+    # The azienda the document speaks for when it is not its owner's: a contract's register
+    # signs as the contract's azienda, which a customer moved since no longer shares.
+    azienda_id: UUID | None = None
     titolo: SafeStr = Field(max_length=TITOLO_MAX_LENGTH)
     # The values for the template's declared variables. Free-form by nature -- the
     # template decides what it wants, and `render_template` rejects a missing required

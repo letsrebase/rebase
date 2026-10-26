@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.contracts.models import Contract
 from pigrocrm.core.customers.models import Customer
+from pigrocrm.core.invoices.models import Invoice, InvoiceLine
 from pigrocrm.core.work_units.models import WorkUnit
 
 
@@ -33,8 +34,23 @@ def _contract(mcp_session: Session) -> Contract:
 
 async def test_the_register_lists_the_billed_days_and_their_total(server, mcp_session) -> None:
     contract = _contract(mcp_session)
+    invoice = Invoice(customer_id=contract.customer_id, tipo="fattura", stato="bozza")
+    mcp_session.add(invoice)
+    mcp_session.flush()
+    line = InvoiceLine(
+        invoice_id=invoice.id,
+        numero_linea=1,
+        descrizione="Attività",
+        quantita=Decimal("1.000000"),
+        prezzo_unitario=Decimal("1.000000"),
+        prezzo_totale=Decimal("1.00"),
+        aliquota_iva=Decimal("22.00"),
+    )
+    mcp_session.add(line)
+    mcp_session.flush()
     billed = WorkUnit(
         contract_id=contract.id,
+        invoice_line_id=line.id,
         data=date(2026, 10, 7),
         quantita=Decimal("1.50"),
         descrizione="Giornata",

@@ -130,6 +130,26 @@ describe('DaysToInvoiceSection', () => {
     expect(screen.getByRole('button', { name: 'Crea la bozza di fattura' })).toBeDisabled()
   })
 
+  it('still offers the priced month when another month holds days with no rate card', async () => {
+    vi.mocked(api.GET).mockImplementation(
+      (() =>
+        ok(
+          days({
+            righe: [OCTOBER],
+            mesi: ['2026-10'],
+            imponibile: '750.00',
+            senza_tariffa: ['2026-11-03'],
+            fatturabile: false,
+          }),
+        )) as never,
+    )
+    renderSection()
+
+    // Without the picker the whole set is the only choice, and the missing November rate
+    // would block billing October too.
+    expect(await screen.findByRole('combobox', { name: 'Periodo' })).toBeInTheDocument()
+  })
+
   it('says how many days wait for an approval, and offers nothing when none is ready', async () => {
     vi.mocked(api.GET).mockImplementation(
       (() => ok(days({ righe: [], mesi: [], giornate: 0, imponibile: '0.00', senza_approvazione: 2, fatturabile: false }))) as never,

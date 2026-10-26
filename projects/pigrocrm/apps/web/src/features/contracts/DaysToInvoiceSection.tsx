@@ -73,7 +73,7 @@ export function DaysToInvoiceSection({ contractId, divisa }: { contractId: strin
               <p className="text-muted-foreground">Nessuna giornata pronta da fatturare.</p>
             ) : (
               <>
-                {months.length > 1 && (
+                {(months.length > 1 || (overview.data?.senza_tariffa.length ?? 0) > 0) && (
                   <div className="max-w-xs space-y-2">
                     <Label htmlFor="billable-period">Periodo</Label>
                     <Select value={selected} onValueChange={setMonth}>

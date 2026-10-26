@@ -36,6 +36,14 @@ const INVOICE = {
   totale: '1250.00',
   divisa: 'EUR',
 }
+const DRAFT = {
+  id: 'd1',
+  updated_at: '2026-10-26T11:00:00Z',
+  to_addresses: ['mario@acme.example'],
+  subject: 'Fattura 2026/12',
+  body_markdown: 'Gentile Acme',
+  attachment_version_ids: ['v1', 'v2'],
+}
 const PREVIEW = {
   subject: 'Fattura 2026/12',
   body: 'Gentile Acme S.r.l.,\n\nin allegato la fattura 2026/12.',
@@ -52,7 +60,7 @@ function mockGets(templates: unknown[]) {
   vi.mocked(api.GET).mockImplementation(((path: string) => {
     if (path === '/api/invoices') return ok({ items: [INVOICE], next_cursor: null })
     if (path === '/api/email-drafts/{draft_id}') {
-      return ok({ id: 'd1', updated_at: '2026-10-26T11:00:00Z' })
+      return ok(DRAFT)
     }
     if (path.endsWith('/email-template-variables')) {
       return ok([{ nome: 'cliente', etichetta: 'Cliente' }])
@@ -118,7 +126,7 @@ describe('ContractEmailSection', () => {
     mockGets([TEMPLATE])
     vi.mocked(api.POST).mockImplementation(((path: string) => {
       if (path.endsWith('/email/preview')) return ok(PREVIEW)
-      if (path.endsWith('/email/draft')) return ok({ id: 'd1', updated_at: '2026-10-26T11:00:00Z' })
+      if (path.endsWith('/email/draft')) return ok(DRAFT)
       return ok({ id: 'd1' })
     }) as never)
     renderSection()
@@ -150,7 +158,7 @@ describe('ContractEmailSection', () => {
     let sends = 0
     vi.mocked(api.POST).mockImplementation(((path: string) => {
       if (path.endsWith('/email/preview')) return ok(PREVIEW)
-      if (path.endsWith('/email/draft')) return ok({ id: 'd1', updated_at: '2026-10-26T11:00:00Z' })
+      if (path.endsWith('/email/draft')) return ok(DRAFT)
       sends += 1
       return sends === 1
         ? (Promise.resolve({
@@ -172,6 +180,31 @@ describe('ContractEmailSection', () => {
       .mocked(api.POST)
       .mock.calls.filter((call) => String(call[0]).endsWith('/email/draft'))
     expect(drafts).toHaveLength(1)
+  })
+
+  it('does not send a draft that was edited after the person read it', async () => {
+    mockGets([TEMPLATE])
+    let reads = 0
+    vi.mocked(api.GET).mockImplementation(((path: string) => {
+      if (path === '/api/invoices') return ok({ items: [INVOICE], next_cursor: null })
+      if (path === '/api/email-drafts/{draft_id}') {
+        reads += 1
+        return ok({ ...DRAFT, subject: 'Un altro oggetto' })
+      }
+      if (path.endsWith('/email-template-variables')) return ok([])
+      return ok([TEMPLATE])
+    }) as never)
+    vi.mocked(api.POST).mockImplementation(((path: string) =>
+      path.endsWith('/email/preview') ? ok(PREVIEW) : ok(DRAFT)) as never)
+    renderSection()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Invia fattura e registro' }))
+    await screen.findAllByText('Fattura 2026/12')
+    await userEvent.click(screen.getByRole('button', { name: 'Invia' }))
+
+    expect(await screen.findByText(/è stata modificata dopo che l’hai vista/)).toBeInTheDocument()
+    expect(reads).toBe(1)
+    expect(vi.mocked(api.POST).mock.calls.some((c) => String(c[0]).endsWith('/send'))).toBe(false)
   })
 
   it('says when the customer has no issued invoice', async () => {
