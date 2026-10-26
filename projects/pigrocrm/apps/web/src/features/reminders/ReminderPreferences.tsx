@@ -44,6 +44,8 @@ const RESET_LABELS: Record<Scope, string> = {
 /** «Secondo l'urgenza» is the built-in rule (`email_mode` null); a person who clears their
  *  own choice inherits the space's, which is what the same option says in that scope. */
 const AUTO = 'auto'
+/** A time as the API takes it: `HH:MM`, 24 hours. */
+const CLOCK = /^([01]\d|2[0-3]):[0-5]\d$/
 const EMAIL_MODES: { value: EmailMode | typeof AUTO; label: Record<Scope, string> }[] = [
   { value: 'immediate', label: { me: 'Subito', space: 'Subito' } },
   { value: 'summary', label: { me: 'Nel riepilogo', space: 'Nel riepilogo' } },
@@ -149,8 +151,22 @@ function GeneralBlock({ scope, data }: { scope: Scope; data: Preferences }) {
   const { quietHours, summaryHour } = resolveGeneral(scope, data)
   const quiet = quietHours.value
   const own = hasOwnRow(scope, data, null)
+  // What was typed in the two time boxes and not saved yet. The boxes save when they lose
+  // focus (or on Enter), like the thresholds do, and are never disabled while a save is in
+  // flight: a controlled value that waited for the refetch took the typed segment away.
+  const [draft, setDraft] = useState<{ start?: string; end?: string }>({})
+  const shown = { start: draft.start ?? quiet.start, end: draft.end ?? quiet.end }
   const changeQuiet = (change: Partial<typeof quiet>) =>
     row.save({ quiet_hours: { ...quiet, ...change } })
+  const commitTime = () => {
+    const valid = CLOCK.test(shown.start) && CLOCK.test(shown.end)
+    if (!valid || (shown.start === quiet.start && shown.end === quiet.end)) {
+      // An empty or half-typed box is not a time: go back to what the server holds.
+      setDraft({})
+      return
+    }
+    row.save({ quiet_hours: { ...quiet, start: shown.start, end: shown.end } }, () => setDraft({}))
+  }
   const id = `promemoria-${scope}-general`
 
   return (
@@ -183,18 +199,22 @@ function GeneralBlock({ scope, data }: { scope: Scope; data: Preferences }) {
               id={`${id}-dalle`}
               type="time"
               className="w-28"
-              value={quiet.start}
-              disabled={row.busy || !quiet.enabled}
-              onChange={(event) => event.target.value && changeQuiet({ start: event.target.value })}
+              value={shown.start}
+              disabled={!quiet.enabled}
+              onChange={(event) => setDraft((previous) => ({ ...previous, start: event.target.value }))}
+              onBlur={commitTime}
+              onKeyDown={(event) => event.key === 'Enter' && commitTime()}
             />
             <Label htmlFor={`${id}-alle`}>alle</Label>
             <Input
               id={`${id}-alle`}
               type="time"
               className="w-28"
-              value={quiet.end}
-              disabled={row.busy || !quiet.enabled}
-              onChange={(event) => event.target.value && changeQuiet({ end: event.target.value })}
+              value={shown.end}
+              disabled={!quiet.enabled}
+              onChange={(event) => setDraft((previous) => ({ ...previous, end: event.target.value }))}
+              onBlur={commitTime}
+              onKeyDown={(event) => event.key === 'Enter' && commitTime()}
             />
           </div>
           <div className="flex items-center gap-2">

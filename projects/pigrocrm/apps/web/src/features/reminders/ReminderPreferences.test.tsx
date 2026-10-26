@@ -1,4 +1,4 @@
-import { cleanup, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { api } from '@/lib/api'
@@ -435,6 +435,63 @@ describe('the reminder settings', () => {
       params: { path: { scope: 'space', type_key: 'general' } },
       body: { summary_hour: 9 },
     })
+  })
+
+  it('keeps what is typed in «Dalle» and «alle» and saves the whole window once, when the box loses focus', async () => {
+    fakeServer()
+    renderWithQuery(<ReminderPreferences scope="space" />)
+    const general = within(await screen.findByRole('region', { name: 'Ore di silenzio e riepilogo' }))
+    const from = general.getByLabelText('Dalle')
+    const to = general.getByLabelText('alle')
+
+    fireEvent.change(from, { target: { value: '21:30' } })
+    fireEvent.change(to, { target: { value: '07:15' } })
+    // Nothing is saved while the boxes are being edited, and what was typed stays.
+    expect(PATCH).not.toHaveBeenCalled()
+    expect(from).toHaveValue('21:30')
+
+    fireEvent.blur(to)
+    await waitFor(() => expect(PATCH).toHaveBeenCalledTimes(1))
+    expect(PATCH).toHaveBeenCalledWith('/api/reminders/preferences/{scope}/{type_key}', {
+      params: { path: { scope: 'space', type_key: 'general' } },
+      body: { quiet_hours: { enabled: true, start: '21:30', end: '07:15', weekend: true } },
+    })
+    // After the refetch the boxes show what the server now holds, which is what was typed.
+    await waitFor(() => expect(GET.mock.calls.filter(([path]) => path === '/api/reminders/preferences').length).toBeGreaterThan(1))
+    expect(general.getByLabelText('Dalle')).toHaveValue('21:30')
+    expect(general.getByLabelText('alle')).toHaveValue('07:15')
+  })
+
+  it('does not disable the time boxes while the save is in flight', async () => {
+    fakeServer()
+    renderWithQuery(<ReminderPreferences scope="space" />)
+    const general = within(await screen.findByRole('region', { name: 'Ore di silenzio e riepilogo' }))
+    // The TypeScript lib of this app predates `Promise.withResolvers`.
+    let resolve: (value: unknown) => void = () => {}
+    const promise = new Promise((done) => (resolve = done))
+    PATCH.mockImplementationOnce(() => promise)
+
+    fireEvent.change(general.getByLabelText('Dalle'), { target: { value: '22:00' } })
+    fireEvent.blur(general.getByLabelText('Dalle'))
+    await waitFor(() => expect(PATCH).toHaveBeenCalledTimes(1))
+
+    expect(general.getByLabelText('Dalle')).toBeEnabled()
+    expect(general.getByLabelText('alle')).toBeEnabled()
+    expect(general.getByLabelText('Dalle')).toHaveValue('22:00')
+    resolve(ok({}))
+  })
+
+  it('puts a cleared box back to the saved time without asking the API', async () => {
+    fakeServer()
+    renderWithQuery(<ReminderPreferences scope="space" />)
+    const general = within(await screen.findByRole('region', { name: 'Ore di silenzio e riepilogo' }))
+    const from = general.getByLabelText('Dalle')
+
+    fireEvent.change(from, { target: { value: '' } })
+    fireEvent.blur(from)
+
+    expect(PATCH).not.toHaveBeenCalled()
+    expect(from).toHaveValue('20:00')
   })
 })
 
