@@ -216,7 +216,10 @@ REMINDER_TYPES: Mapping[str, ReminderType] = {
         ReminderType(
             key="contract_expiring",
             label="Contratto in scadenza",
-            description="Un contratto attivo con una data di fine si avvicina alla sua scadenza.",
+            description=(
+                "Un contratto non chiuso con una data di fine si avvicina alla scadenza: "
+                "i giorni sono quelli che mancano alla data di fine."
+            ),
             subject="contract",
             direction="until",
             unit="days",
@@ -224,7 +227,7 @@ REMINDER_TYPES: Mapping[str, ReminderType] = {
         ),
         ReminderType(
             key="renewal_window_open",
-            label="Finestra di rinnovo aperta",
+            label="Termine di rinnovo vicino",
             description=(
                 "Il termine per rinnovare o dare disdetta si avvicina: i giorni mancano alla "
                 "chiusura della finestra. «Avviso» è quando la finestra si apre."
@@ -239,7 +242,8 @@ REMINDER_TYPES: Mapping[str, ReminderType] = {
             label="Giornate lavorate senza approvazione",
             description=(
                 "Una giornata è stata lavorata su un contratto che richiede l'approvazione "
-                "preventiva e non ne ha una: i giorni contano dalla giornata lavorata."
+                "preventiva e non ne ha una: i giorni sono quelli passati dalla giornata "
+                "lavorata. Le giornate già fatturate non contano."
             ),
             subject="work_unit",
             direction="since",
@@ -250,8 +254,8 @@ REMINDER_TYPES: Mapping[str, ReminderType] = {
             key="approval_unanswered",
             label="Approvazione senza risposta",
             description=(
-                "Una giornata proposta su un contratto che richiede l'approvazione aspetta "
-                "ancora la risposta del cliente."
+                "Una giornata proposta su un contratto che richiede l'approvazione non ha "
+                "ancora una risposta: i giorni sono quelli passati dalla proposta."
             ),
             subject="work_unit",
             direction="since",
@@ -262,8 +266,9 @@ REMINDER_TYPES: Mapping[str, ReminderType] = {
             key="approval_requirement_unmet",
             label="Approvazione non conforme",
             description=(
-                "Una giornata poggia su un'approvazione che non rispetta il contratto: "
-                "arrivata dopo la giornata, o data per un altro contratto."
+                "Una giornata poggia su un'approvazione che non rispetta il contratto, "
+                "arrivata dopo la giornata o data per un altro contratto: i giorni sono quelli "
+                "passati dalla giornata. Le giornate già fatturate non contano."
             ),
             subject="work_unit",
             direction="since",
@@ -273,7 +278,11 @@ REMINDER_TYPES: Mapping[str, ReminderType] = {
         ReminderType(
             key="work_unit_outside_term",
             label="Giornata fuori dal periodo del contratto",
-            description="Una giornata è registrata prima dell'inizio o dopo la fine del contratto.",
+            description=(
+                "Una giornata è registrata prima dell'inizio o dopo la fine del contratto: "
+                "i giorni sono quelli passati dalla giornata. Le giornate già fatturate non "
+                "contano."
+            ),
             subject="work_unit",
             direction="since",
             unit="days",

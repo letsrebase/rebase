@@ -23,8 +23,9 @@ approval clause (a coverage period, a scope, who may approve) was not ported, so
   Measure: days since the day. It reads the contract's current term on every pass, so
   correcting the term clears it.
 
-Only days that count are read: `rifiutato`, `revocato` and `non_fatturabile` are out of every
-type, and `approval_unanswered` reads `proposto` alone. The coverage reminder
+Only days that can still be fixed are read: `rifiutato`, `revocato`, `non_fatturabile`,
+`fatturato` and `pagato` are out of every type (the day is done), and `approval_unanswered`
+reads `proposto` alone. The coverage reminder
 (`approval_coverage_expiring`) has no data behind it and is not built.
 """
 
@@ -40,6 +41,7 @@ from pigrocrm.core.contracts.models import Contract
 from pigrocrm.core.mail import giorno_breve
 from pigrocrm.core.reminders.catalogue import REMINDER_TYPES
 from pigrocrm.core.reminders.detect import Detection, Detector, DetectorContext
+from pigrocrm.core.reminders.detectors.contracts import giorni
 from pigrocrm.core.reminders.detectors.links import LinkResolver
 from pigrocrm.core.work_units.models import Approval, WorkUnit
 
@@ -48,8 +50,9 @@ UNANSWERED = REMINDER_TYPES["approval_unanswered"]
 UNMET = REMINDER_TYPES["approval_requirement_unmet"]
 OUTSIDE_TERM = REMINDER_TYPES["work_unit_outside_term"]
 
-# Days that are not a day worked or promised: refused, withdrawn, or written off.
-_DEAD = ("rifiutato", "revocato", "non_fatturabile")
+# Days that are done: refused, withdrawn, written off, invoiced or paid. A reminder is for
+# what somebody can still fix, and a settled day is closed; none of the types reads them.
+_DONE = ("rifiutato", "revocato", "non_fatturabile", "fatturato", "pagato")
 
 
 def _requiring(ctx: DetectorContext) -> bool:
@@ -66,17 +69,13 @@ def _requiring(ctx: DetectorContext) -> bool:
     )
 
 
-def _days(count: int) -> str:
-    return "1 giorno" if count == 1 else f"{count} giorni"
-
-
 def _rows(
     ctx: DetectorContext, query: Select[WorkUnit, Contract], *, day_cutoff: date | None
 ) -> list[tuple[WorkUnit, Contract]]:
     """Days with their contract, the contract not archived, the day no later than
     `day_cutoff` when given (the loosest rung of the ladder, never fewer than the day)."""
     stmt = query.join(Contract, Contract.id == WorkUnit.contract_id).where(
-        Contract.deleted_at.is_(None), WorkUnit.stato.not_in(_DEAD)
+        Contract.deleted_at.is_(None), WorkUnit.stato.not_in(_DONE)
     )
     if day_cutoff is not None:
         stmt = stmt.where(WorkUnit.data <= day_cutoff)
@@ -148,7 +147,7 @@ def detect_worked_without_approval(ctx: DetectorContext) -> list[Detection]:
 
 
 def _ago(days: int) -> str:
-    return "oggi" if days == 0 else "ieri" if days == 1 else f"{days} giorni fa"
+    return "oggi" if days == 0 else "ieri" if days == 1 else f"{giorni(days)} fa"
 
 
 def _proposed_before(ctx: DetectorContext, bound: int) -> datetime:

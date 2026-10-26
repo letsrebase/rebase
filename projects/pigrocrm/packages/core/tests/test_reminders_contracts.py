@@ -23,6 +23,7 @@ from pigrocrm.core.contracts.models import Contract
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.emitter.models import LegalEntity
+from pigrocrm.core.reminders.catalogue import reminder_key
 from pigrocrm.core.reminders.engine import Evaluation, ReminderEngine
 from pigrocrm.core.reminders.preferences import ReminderPreferenceService
 from pigrocrm.core.reminders.schemas import ReminderPreferenceWrite
@@ -70,6 +71,7 @@ class World:
         tipo_rinnovo: str = "nessuno",
         preavviso: int | None = None,
         customer: Customer | None = None,
+        stato: str = "bozza",
     ) -> Contract:
         row = Contract(
             customer_id=(customer or self.customer).id,
@@ -83,6 +85,7 @@ class World:
             cadenza_fatturazione="mensile",
             politica_spese={"kind": "rimborsabile"},
             requires_prior_approval=requires,
+            stato=stato,
         )
         self.session.add(row)
         self.session.flush()
@@ -590,3 +593,84 @@ def test_a_type_the_space_switched_off_is_not_raised(world: World) -> None:
 
     assert "contract_expiring" not in evaluation.ran
     assert ("contract_expiring", contract.id) not in world.raised(evaluation)
+
+
+# -- what is over, and what is done ---------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("stato", "counts"),
+    [("bozza", True), ("attivo", True), ("terminato", False), ("scaduto", False)],
+)
+def test_a_terminated_or_lapsed_contract_is_neither_expiring_nor_renewing(
+    world: World, stato: str, counts: bool
+) -> None:
+    expiring = world.contract(fine=_ahead(20), stato=stato)
+    renewing = world.contract(
+        tipo_rinnovo="tacito", preavviso=10, fine=_ahead(15), inizio=_ago(400), stato=stato
+    )
+
+    assert (world.severity("contract_expiring", expiring.id) is not None) is counts
+    assert (world.severity("renewal_window_open", renewing.id) is not None) is counts
+
+
+def test_the_expiring_types_do_not_apply_when_every_contract_is_over(world: World) -> None:
+    world.contract(fine=_ahead(20), stato="terminato", tipo_rinnovo="tacito", preavviso=5)
+
+    evaluation = world.evaluate()
+
+    assert evaluation.ran.isdisjoint({"contract_expiring", "renewal_window_open"})
+
+
+def _settle(world: World, unit: WorkUnit, stato: str) -> None:
+    unit.stato = "fatturato"
+    world.session.flush()
+    if stato == "pagato":
+        unit.stato = "pagato"
+        world.session.flush()
+
+
+@pytest.mark.parametrize("stato", ["fatturato", "pagato"])
+def test_an_invoiced_or_paid_day_is_done_and_raises_nothing(world: World, stato: str) -> None:
+    contract = world.contract(requires=True, inizio=_ago(30), fine=_ago(10))
+    flagged = world.day(contract, _ago(5))
+    late = world.day(contract, _ago(6), approval_id=world.approval(contract, _ago(1)).id)
+    outside = world.day(contract, _ago(7), approval_id=world.approval(contract, _ago(9)).id)
+    assert world.severity("worked_without_approval", flagged.id) is not None
+    assert world.severity("approval_requirement_unmet", late.id) is not None
+    assert world.severity("work_unit_outside_term", outside.id) is not None
+
+    for unit in (flagged, late, outside):
+        _settle(world, unit, stato)
+
+    assert world.raised() == {}
+
+
+def test_a_day_proposed_and_then_settled_is_not_unanswered(world: World) -> None:
+    contract = world.contract(requires=True)
+    unit = _proposed(world, contract, 12)
+    unit.stato = "lavorato"  # no approval on a requiring contract: flagged, then billed
+    world.session.flush()
+    _settle(world, unit, "pagato")
+
+    assert world.severity("approval_unanswered", unit.id) is None
+
+
+# -- Italian ----------------------------------------------------------------------------------
+
+
+def test_one_day_is_never_written_as_one_days(world: World) -> None:
+    contract = world.contract(requires=True, fine=_ahead(1), tipo_rinnovo="tacito", preavviso=0)
+    unit = world.day(contract, _ago(1))
+    other = world.day(contract, _ago(2))
+
+    details = {r.key: r.detail for r in world.evaluate().reminders if r.user_id == world.carol.id}
+
+    assert details[reminder_key("contract_expiring", contract.id)].startswith("Finisce")
+    assert "fra 1 giorno" in details[reminder_key("contract_expiring", contract.id)]
+    assert "fra 1 giorno" in details[reminder_key("renewal_window_open", contract.id)]
+    assert details[reminder_key("worked_without_approval", unit.id)].startswith("Lavorata ieri")
+    assert details[reminder_key("worked_without_approval", other.id)].startswith(
+        "Lavorata 2 giorni fa"
+    )
+    assert not any("1 giorni" in detail for detail in details.values())

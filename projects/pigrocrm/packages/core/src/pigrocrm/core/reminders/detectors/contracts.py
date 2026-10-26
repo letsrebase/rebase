@@ -1,9 +1,10 @@
 """`contract_expiring` and `renewal_window_open` (spec 2026-10-26 §3.4, REB-768).
 
-A contract counts while it is not archived and has not ended (`fine` not before today). Its
-own `stato` is not read: nothing moves it off `bozza` yet (`ContractRepository.list_active`
-says so), so filtering on it would silence every contract. «Ended» is the only reading of
-«not active» the data can bear, and it is the one the card names.
+A contract counts while it is not archived, is not `terminato` or `scaduto`
+(`ContractService.set_state`; `bozza` and `attivo` both count, a draft with a date still
+ends) and has not ended (`fine` not before today): a contract somebody closed, or let lapse,
+is not «expiring» and its renewal is not a decision any more. The billing types read the
+same contracts differently and keep counting the terminated ones.
 
 **The two types are independent.** Mastro stepped one aside for the other once the renewal
 decision was due (#702); the spec lists two types with their own ladders and their own
@@ -11,10 +12,11 @@ switches, so each is raised on its own measure and a person who wants one calm t
 one off.
 
 **`renewal_window_open`'s window closes on `renewal_deadline`** (`contracts/dates.py`: the
-last day the renewal clause can still be exercised) and the measure is the days left before
-it, an `until` ladder like `contract_expiring`. The data does not say when the window
-*opens*, so it is not derived: the ladder's `warning` rung is the opening, a lead time in
-days before the deadline (30 by default), which the space and each person can move. A
+last day the renewal clause can still be exercised, `preavviso_rinnovo_giorni` before the
+end) and the measure is the days left before it, an `until` ladder like `contract_expiring`.
+The data does not say when the window *opens*, so it is not derived: the ladder's `warning`
+rung is a lead time, the days before the deadline from which the reminder starts (30 by
+default), which the space and each person can move. A
 contract with no renewal clause or no end date has no deadline and is not raised; one whose
 deadline has passed has no window left and is not either. `irrevocability_window_end` is
 about the notice a termination would serve, not a date to act by, and is not read.
@@ -39,14 +41,24 @@ EXPIRING = REMINDER_TYPES["contract_expiring"]
 RENEWAL = REMINDER_TYPES["renewal_window_open"]
 
 
+# A contract closed by hand or lapsed: nothing is left to expire or renew.
+_OVER = ("terminato", "scaduto")
+
+
 def _live() -> Select[Contract]:
-    return select(Contract).where(Contract.deleted_at.is_(None))
+    return select(Contract).where(Contract.deleted_at.is_(None), Contract.stato.not_in(_OVER))
 
 
 def _has_end_date(ctx: DetectorContext) -> bool:
     return bool(
         ctx.session.scalar(
-            select(exists().where(Contract.deleted_at.is_(None), Contract.fine.is_not(None)))
+            select(
+                exists().where(
+                    Contract.deleted_at.is_(None),
+                    Contract.stato.not_in(_OVER),
+                    Contract.fine.is_not(None),
+                )
+            )
         )
     )
 
@@ -57,6 +69,7 @@ def _has_renewal_clause(ctx: DetectorContext) -> bool:
             select(
                 exists().where(
                     Contract.deleted_at.is_(None),
+                    Contract.stato.not_in(_OVER),
                     Contract.fine.is_not(None),
                     Contract.tipo_rinnovo != "nessuno",
                 )
@@ -65,7 +78,8 @@ def _has_renewal_clause(ctx: DetectorContext) -> bool:
     )
 
 
-def _days(count: int) -> str:
+def giorni(count: int) -> str:
+    """`1 giorno`, `20 giorni`: the Italian plural, so no detail ever reads «1 giorni»."""
     return "1 giorno" if count == 1 else f"{count} giorni"
 
 
@@ -116,7 +130,7 @@ def detect_expiring(ctx: DetectorContext) -> list[Detection]:
     for contract in contracts:
         assert contract.fine is not None
         left = (contract.fine - ctx.today).days
-        when = "oggi" if left == 0 else f"fra {_days(left)}"
+        when = "oggi" if left == 0 else f"fra {giorni(left)}"
         found.append(
             _detection(
                 ctx,
@@ -164,7 +178,7 @@ def detect_renewal_window(ctx: DetectorContext) -> list[Detection]:
     for contract, deadline in pairs:
         assert contract.fine is not None
         left = (deadline - ctx.today).days
-        when = "oggi" if left == 0 else f"fra {_days(left)}"
+        when = "oggi" if left == 0 else f"fra {giorni(left)}"
         found.append(
             _detection(
                 ctx,
@@ -172,7 +186,7 @@ def detect_renewal_window(ctx: DetectorContext) -> list[Detection]:
                 contract,
                 type_key="renewal_window_open",
                 measure=left,
-                title=f"Finestra di rinnovo: {contract.titolo}",
+                title=f"Termine di rinnovo: {contract.titolo}",
                 detail=(
                     f"Il termine per il rinnovo è {giorno_breve(deadline)}, {when} "
                     f"(il contratto finisce {giorno_breve(contract.fine)})"
