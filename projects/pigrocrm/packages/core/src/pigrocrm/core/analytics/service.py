@@ -616,14 +616,17 @@ class AnalyticsService:
         azienda = LegalEntityService(self.session).require_single(azienda_id, entity=ENTITY)
         marcatori = known_charge_markers()
 
+        # The invoices first, then the lines of exactly those: an invoice issued between the
+        # two statements is in neither, so the register and the file always agree.
+        invoices = self.repo.year_invoices(anno, azienda.id)
         lines_by_invoice: dict[UUID, list[InvoiceLine]] = defaultdict(list)
-        for line in self.repo.year_lines(anno, azienda.id):
+        for line in self.repo.year_lines([invoice.id for invoice, _ in invoices]):
             lines_by_invoice[line.invoice_id].append(line)
 
         registro: list[YearRegisterRow] = []
         regimi: dict[tuple[str | None, str], tuple[int, Decimal]] = {}
         trattamenti: dict[tuple[Decimal, str | None, str | None], tuple[int, Decimal]] = {}
-        for invoice, customer in self.repo.year_invoices(anno, azienda.id):
+        for invoice, customer in invoices:
             assert invoice.numero is not None and invoice.data_emissione is not None  # noqa: S101
             snapshot = invoice.snapshot or {}
             # What the document printed, as frozen at issue. A customer who had no partita

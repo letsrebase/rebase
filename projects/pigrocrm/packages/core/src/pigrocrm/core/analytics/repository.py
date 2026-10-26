@@ -770,14 +770,18 @@ class AnalyticsRepository:
         ).all()
         return [(invoice, customer) for invoice, customer in rows]
 
-    def year_lines(self, anno: int, azienda_id: UUID) -> list[InvoiceLine]:
-        """The lines of `year_invoices`' invoices, by invoice number and line number."""
+    def year_lines(self, invoice_ids: list[UUID]) -> list[InvoiceLine]:
+        """The lines of the invoices `year_invoices` returned, by line number. Asked by id
+        rather than by year: the lines of an issued invoice never change, so reading them
+        for exactly the invoices the register lists keeps the two in step even when
+        another invoice is issued between the two statements."""
+        if not invoice_ids:
+            return []
         return list(
             self.session.scalars(
                 select(InvoiceLine)
-                .join(Invoice, Invoice.id == InvoiceLine.invoice_id)
-                .where(Invoice.anno == anno, *_revenue_filter(), *_invoice_azienda(azienda_id))
-                .order_by(Invoice.numero, InvoiceLine.numero_linea)
+                .where(InvoiceLine.invoice_id.in_(invoice_ids))
+                .order_by(InvoiceLine.invoice_id, InvoiceLine.numero_linea)
             )
         )
 

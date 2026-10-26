@@ -1,4 +1,4 @@
-import { useId, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import { RadioGroup } from 'radix-ui'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { StatusPill } from '@/components/StatusPill'
@@ -116,14 +116,22 @@ function DealPicker({
   aziendaId,
   selectedId,
   onSelect,
+  onCurrent,
 }: {
   id: string
   aziendaId?: string
   selectedId: string
-  onSelect: (deal: Deal | null) => void
+  onSelect: (id: string) => void
+  /** Told the deal as the list has it now, so that «Simula» sends the estimate the picker
+   *  shows and not the one it had when the deal was chosen. */
+  onCurrent: (deal: Deal | null) => void
 }) {
   const deals = useDeals(aziendaId ? { azienda_id: aziendaId } : {})
   const stages = useStages()
+  const current = deals.data?.items.find((deal) => deal.id === selectedId) ?? null
+  useEffect(() => {
+    onCurrent(current)
+  }, [onCurrent, current])
   if (deals.isError) return <QueryErrorBanner error={deals.error} />
   if (stages.isError) return <QueryErrorBanner error={stages.error} />
   if (deals.isPending || stages.isPending || !deals.data || !stages.data) {
@@ -143,7 +151,7 @@ function DealPicker({
     <div className="space-y-1">
       <Select
         value={selectedId}
-        onValueChange={(id) => onSelect(candidates.find((deal) => deal.id === id) ?? null)}
+        onValueChange={onSelect}
       >
         <SelectTrigger id={id} className="w-full" aria-label="Deal">
           <SelectValue placeholder="Scegli un deal" />
@@ -232,7 +240,11 @@ const SOURCES = [
  */
 function Simulator({ anno, aziendaId }: { anno: number; aziendaId?: string }) {
   const [source, setSource] = useState<SimulatorFields['source']>('importo')
-  const [deal, setDeal] = useState<Deal | null>(null)
+  const [dealId, setDealId] = useState('')
+  const latestDeal = useRef<Deal | null>(null)
+  const trackDeal = useCallback((current: Deal | null) => {
+    latestDeal.current = current
+  }, [])
   const [valore, setValore] = useState('')
   const [ore, setOre] = useState('')
   const [tariffa, setTariffa] = useState('')
@@ -255,7 +267,13 @@ function Simulator({ anno, aziendaId }: { anno: number; aziendaId?: string }) {
 
   function submit(event: FormEvent) {
     event.preventDefault()
-    const request = simulatorRequest({ source, valore, ore, tariffa, deal })
+    const request = simulatorRequest({
+      source,
+      valore,
+      ore,
+      tariffa,
+      deal: dealId === '' ? null : latestDeal.current,
+    })
     const year = yearOfIso(data)
     if (!request.ok || year === null) {
       setErrors({
@@ -304,8 +322,9 @@ function Simulator({ anno, aziendaId }: { anno: number; aziendaId?: string }) {
           <DealPicker
             id={`${uid}-deal`}
             aziendaId={aziendaId}
-            selectedId={deal?.id ?? ''}
-            onSelect={edit(setDeal)}
+            selectedId={dealId}
+            onSelect={edit(setDealId)}
+            onCurrent={trackDeal}
           />
           {errors.deal ? <FieldError>{errors.deal}</FieldError> : null}
         </div>
