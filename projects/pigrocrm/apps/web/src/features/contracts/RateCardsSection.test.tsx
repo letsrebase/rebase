@@ -44,7 +44,7 @@ function renderSection() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      <RateCardsSection contractId="c1" />
+      <RateCardsSection contractId="c1" divisa="EUR" />
     </QueryClientProvider>,
   )
 }

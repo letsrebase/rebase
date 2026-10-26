@@ -13,6 +13,7 @@ import { ExpensesSection } from '@/features/contracts/ExpensesSection'
 import {
   EXPENSE_POLICY_LABELS,
   cadenceLabel,
+  formatAmount,
   readExpensePolicy,
   renewalLabel,
   stateLabel,
@@ -22,7 +23,7 @@ import { RateCardsSection } from '@/features/contracts/RateCardsSection'
 import { RenewalSection } from '@/features/contracts/RenewalSection'
 import { useContract, type Contract } from '@/features/contracts/queries'
 import { useCustomer } from '@/features/customers/queries'
-import { formatDate, formatMoney } from '@/features/invoices/format'
+import { formatDate } from '@/features/invoices/format'
 import { toProblem } from '@/lib/api'
 import { useCan } from '@/lib/auth'
 
@@ -47,7 +48,7 @@ function expensePolicy(contract: Contract): string {
   if (policy === null) return JSON.stringify(contract.politica_spese)
   const parts: string[] = [EXPENSE_POLICY_LABELS[policy.kind]]
   if (policy.kind === 'rimborsabile_con_tetto' && policy.importo_tetto !== undefined) {
-    parts.push(`tetto ${formatMoney(policy.importo_tetto)}`)
+    parts.push(`tetto ${formatAmount(policy.importo_tetto, contract.divisa)}`)
   }
   if (policy.richiede_preautorizzazione === true) parts.push('autorizzazione preventiva')
   return parts.join(', ')
@@ -147,10 +148,10 @@ export function ContractDetail() {
             )}
 
             <div className="lg:col-span-2">
-              <RateCardsSection contractId={row.id} />
+              <RateCardsSection contractId={row.id} divisa={row.divisa} />
             </div>
             <div className="lg:col-span-2">
-              <ExpensesSection contractId={row.id} />
+              <ExpensesSection contractId={row.id} divisa={row.divisa} />
             </div>
             <div className="lg:col-span-2">
               <RenewalSection contract={row} />

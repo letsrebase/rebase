@@ -36,7 +36,7 @@ function renderSection() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      <ExpensesSection contractId="c1" />
+      <ExpensesSection contractId="c1" divisa="EUR" />
     </QueryClientProvider>,
   )
 }

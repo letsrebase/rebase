@@ -24,6 +24,7 @@ const CONTRACT = {
   id: 'c1',
   inizio: '2026-01-01',
   fine: '2026-12-31',
+  divisa: 'EUR',
 } as Contract
 
 const ASSUMPTION = {

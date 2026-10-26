@@ -81,8 +81,13 @@ const DRAWN_FIELDS = [
  * (`ContractStateActions`), one named act and one row in the timeline.
  */
 export function ContractForm({ open, onOpenChange, customerId, contract, onSaved }: Props) {
-  const initial = contract === undefined ? undefined : contractToFormValues(contract)
   const isCreate = contract === undefined
+  // The baseline an edit is compared with is the contract as the dialog opened on it: a
+  // background refresh that brings someone else's change must not make this save send
+  // the old values of fields this person never touched.
+  const [initial, setInitial] = useState<ContractFormValues | undefined>(
+    contract === undefined ? undefined : contractToFormValues(contract),
+  )
   const [values, setValues] = useState<ContractFormValues>(initial ?? defaultContractFormValues())
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
   const schema = useEntitySchema('contract')
@@ -96,7 +101,9 @@ export function ContractForm({ open, onOpenChange, customerId, contract, onSaved
   if (open !== wasOpen) {
     setWasOpen(open)
     if (open) {
-      setValues(initial ?? defaultContractFormValues())
+      const opened = contract === undefined ? undefined : contractToFormValues(contract)
+      setInitial(opened)
+      setValues(opened ?? defaultContractFormValues())
       setProblem(null)
     }
   }

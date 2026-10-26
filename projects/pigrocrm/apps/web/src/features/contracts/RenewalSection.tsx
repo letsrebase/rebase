@@ -6,10 +6,11 @@ import { Card, CardContent } from '@rebase/ui/card'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { Skeleton } from '@rebase/ui/skeleton'
-import { formatDate, formatMoney } from '@/features/invoices/format'
+import { formatDate } from '@/features/invoices/format'
 import { fieldErrorFrom, toProblem, type ProblemDetail } from '@/lib/api'
 import { useCan } from '@/lib/auth'
 import { toIsoDate } from '@/lib/dates'
+import { currencySign, formatAmount } from './labels'
 import {
   useContractConcentration,
   useContractProjection,
@@ -47,6 +48,7 @@ function Figure({ label, value, hint }: { label: string; value: string; hint?: s
 
 interface AssumptionFormProps {
   contractId: string
+  divisa: string
   assumption: RenewalAssumption | null
   canWrite: boolean
 }
@@ -54,7 +56,7 @@ interface AssumptionFormProps {
 /** The renewal assumption as the three facts it records. The fields are seeded from the
  *  stored row once per version of it (`key` on `updated_at` in the caller), so a save
  *  from another tab does not leave stale text in the boxes. */
-function AssumptionForm({ contractId, assumption, canWrite }: AssumptionFormProps) {
+function AssumptionForm({ contractId, divisa, assumption, canWrite }: AssumptionFormProps) {
   const [probabilita, setProbabilita] = useState(assumption?.probabilita.toString() ?? '')
   const [volume, setVolume] = useState(assumption === null ? '' : String(assumption.volume_atteso))
   const [orizzonte, setOrizzonte] = useState(assumption?.orizzonte_al ?? '')
@@ -103,7 +105,7 @@ function AssumptionForm({ contractId, assumption, canWrite }: AssumptionFormProp
         {errorOn('probabilita')}
       </div>
       <div className="space-y-2">
-        <Label htmlFor="renewal-volume">Volume atteso (€)</Label>
+        <Label htmlFor="renewal-volume">Volume atteso ({currencySign(divisa)})</Label>
         <Input
           id="renewal-volume"
           inputMode="decimal"
@@ -193,6 +195,7 @@ export function RenewalSection({ contract }: { contract: Contract }) {
               <AssumptionForm
                 key={assumption.data?.updated_at ?? 'none'}
                 contractId={contract.id}
+                divisa={contract.divisa}
                 assumption={assumption.data ?? null}
                 canWrite={canWrite}
               />
@@ -220,15 +223,15 @@ export function RenewalSection({ contract }: { contract: Contract }) {
                   <dl className="grid grid-cols-3 gap-4">
                     <Figure
                       label="Programmato"
-                      value={formatMoney(projection.data.programmato)}
+                      value={formatAmount(projection.data.programmato, contract.divisa)}
                       hint={
                         projection.data.finestra_irrevocabilita_fino_al === null
                           ? 'Contratto già concluso'
                           : `Oltre il ${formatDate(projection.data.finestra_irrevocabilita_fino_al)}`
                       }
                     />
-                    <Figure label="Da rinnovo" value={formatMoney(projection.data.da_rinnovo)} />
-                    <Figure label="Totale" value={formatMoney(projection.data.totale)} />
+                    <Figure label="Da rinnovo" value={formatAmount(projection.data.da_rinnovo, contract.divisa)} />
+                    <Figure label="Totale" value={formatAmount(projection.data.totale, contract.divisa)} />
                   </dl>
                 ) : null}
               </div>
@@ -249,7 +252,7 @@ export function RenewalSection({ contract }: { contract: Contract }) {
                     <Figure
                       label={`Anno dal ${formatDate(concentration.data.periodo_da)} al ${formatDate(concentration.data.periodo_a)}`}
                       value={share.format(concentration.data.quota)}
-                      hint={`${formatMoney(concentration.data.ricavi_cliente)} su ${formatMoney(concentration.data.ricavi_totali)} fatturati`}
+                      hint={`${formatAmount(concentration.data.ricavi_cliente, contract.divisa)} su ${formatAmount(concentration.data.ricavi_totali, contract.divisa)} fatturati`}
                     />
                   </dl>
                 ) : null}

@@ -1,3 +1,4 @@
+import { formatMoney } from '@/features/invoices/format'
 import type { StatusTone } from '@/components/StatusPill'
 import type { ContractExpense, ContractState, RateCardCreateBody } from './queries'
 
@@ -147,4 +148,15 @@ export function expenseStanding(expense: ContractExpense): {
   if (expense.invoice_line_id !== null) return { tone: 'ink', label: 'In fattura' }
   if (expense.rimborsabile) return { tone: 'gold', label: 'Da fatturare' }
   return { tone: 'muted', label: 'Non rimborsabile' }
+}
+
+/** An amount in the contract's own currency. `formatMoney` is euro-only, and nothing
+ *  here converts: another currency shows the API's decimal string and its code. */
+export function formatAmount(value: string, divisa: string): string {
+  return divisa === 'EUR' ? formatMoney(value) : `${value} ${divisa}`
+}
+
+/** What an amount field's label shows: the euro sign, or the contract's own code. */
+export function currencySign(divisa: string): string {
+  return divisa === 'EUR' ? '€' : divisa
 }

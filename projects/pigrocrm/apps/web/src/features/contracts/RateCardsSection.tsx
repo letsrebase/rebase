@@ -23,11 +23,11 @@ import {
   SelectValue,
 } from '@rebase/ui/select'
 import { Skeleton } from '@rebase/ui/skeleton'
-import { formatDate, formatMoney, formatQuantity } from '@/features/invoices/format'
+import { formatDate, formatQuantity } from '@/features/invoices/format'
 import { fieldErrorFrom, toProblem, type ProblemDetail } from '@/lib/api'
 import { useCan } from '@/lib/auth'
 import { toIsoDate } from '@/lib/dates'
-import { RATE_PERIODI, RATE_TIPI, RATE_UNITA } from './labels'
+import { RATE_PERIODI, RATE_TIPI, RATE_UNITA, currencySign, formatAmount } from './labels'
 import {
   useCreateRateCard,
   useRateCards,
@@ -134,12 +134,13 @@ interface DialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   contractId: string
+  divisa: string
   cards: RateCard[]
   /** The card being edited, or absent for a new one. */
   card?: RateCard
 }
 
-function RateCardDialog({ open, onOpenChange, contractId, cards, card }: DialogProps) {
+function RateCardDialog({ open, onOpenChange, contractId, divisa, cards, card }: DialogProps) {
   const isCreate = card === undefined
   const initial = card === undefined ? EMPTY_FORM : toFormValues(card)
   const [values, setValues] = useState<RateFormValues>(initial)
@@ -302,7 +303,7 @@ function RateCardDialog({ open, onOpenChange, contractId, cards, card }: DialogP
 
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label htmlFor="rate-importo">Importo (€)</Label>
+            <Label htmlFor="rate-importo">Importo ({currencySign(divisa)})</Label>
             <Input
               id="rate-importo"
               inputMode="decimal"
@@ -414,7 +415,7 @@ const STANDING_PILL = {
  * sentence the API gives; «chiudi il giorno prima» is the one way to replace a rate
  * without editing the old card by hand.
  */
-export function RateCardsSection({ contractId }: { contractId: string }) {
+export function RateCardsSection({ contractId, divisa }: { contractId: string; divisa: string }) {
   const canWrite = useCan('create_rate_card')
   const cards = useRateCards(contractId)
   const [dialog, setDialog] = useState<{ open: boolean; card?: RateCard }>({ open: false })
@@ -457,7 +458,7 @@ export function RateCardsSection({ contractId }: { contractId: string }) {
                     </p>
                   </div>
                   <span className="shrink-0 tabular-nums">
-                    {formatMoney(String(card.importo))} / {RATE_UNITA[card.unita as Unita] ?? card.unita}
+                    {formatAmount(String(card.importo), divisa)} / {RATE_UNITA[card.unita as Unita] ?? card.unita}
                   </span>
                   {canWrite && (
                     <Button
@@ -480,6 +481,7 @@ export function RateCardsSection({ contractId }: { contractId: string }) {
         open={dialog.open}
         onOpenChange={(open) => setDialog((previous) => ({ ...previous, open }))}
         contractId={contractId}
+        divisa={divisa}
         cards={cards.data ?? []}
         card={dialog.card}
       />

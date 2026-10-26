@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  formatAmount,
   expensePolicyBody,
   expenseStanding,
   nextStates,
@@ -62,5 +63,12 @@ describe('expenseStanding', () => {
 
   it('says an expense the policy does not rebill is not rebillable', () => {
     expect(expenseStanding({ ...base, rimborsabile: false }).label).toBe('Non rimborsabile')
+  })
+})
+
+describe('formatAmount', () => {
+  it('formats euros and shows any other currency as stated, never as euros', () => {
+    expect(formatAmount('400.00', 'EUR').replace(/\s/g, ' ')).toBe('400,00 €')
+    expect(formatAmount('400.00', 'USD')).toBe('400.00 USD')
   })
 })

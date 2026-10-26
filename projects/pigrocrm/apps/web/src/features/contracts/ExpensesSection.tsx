@@ -24,11 +24,11 @@ import {
 } from '@rebase/ui/select'
 import { Skeleton } from '@rebase/ui/skeleton'
 import { useCostCategories } from '@/features/costs/queries'
-import { formatDate, formatMoney } from '@/features/invoices/format'
+import { formatDate } from '@/features/invoices/format'
 import { fieldErrorFrom, toProblem, type ProblemDetail } from '@/lib/api'
 import { useCan } from '@/lib/auth'
 import { toIsoDate } from '@/lib/dates'
-import { expenseStanding } from './labels'
+import { expenseStanding, currencySign, formatAmount } from './labels'
 import {
   useContractExpenses,
   useCreateContractExpense,
@@ -72,10 +72,11 @@ interface DialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   contractId: string
+  divisa: string
   expense?: ContractExpense
 }
 
-function ExpenseDialog({ open, onOpenChange, contractId, expense }: DialogProps) {
+function ExpenseDialog({ open, onOpenChange, contractId, divisa, expense }: DialogProps) {
   const isCreate = expense === undefined
   const initial = expense === undefined ? emptyForm() : toFormValues(expense)
   const [values, setValues] = useState<ExpenseFormValues>(initial)
@@ -132,7 +133,20 @@ function ExpenseDialog({ open, onOpenChange, contractId, expense }: DialogProps)
     fieldError?.field === key ? (
       <p className="text-sm text-destructive">{fieldError.message}</p>
     ) : null
-  const elsewhere = problem !== null && fieldError === null ? problem.detail : null
+  // Whatever no control answers for (the model-level check that a pre-authorised expense
+  // names its reference reaches us as field `body`) is shown here, or saving would seem
+  // to do nothing.
+  const drawn =
+    fieldError !== null &&
+    [
+      'category_id',
+      'data',
+      'importo',
+      'descrizione',
+      'riferimento_autorizzazione',
+    ].includes(fieldError.field)
+  const elsewhere =
+    problem !== null && !drawn ? (fieldError === null ? problem.detail : fieldError.message) : null
   // Archived categories stay on the rows that already carry them but take nothing new.
   const choices = (categories.data ?? []).filter(
     (category) => !category.archiviata || category.id === values.category_id,
@@ -175,7 +189,7 @@ function ExpenseDialog({ open, onOpenChange, contractId, expense }: DialogProps)
             {errorOn('data')}
           </div>
           <div className="space-y-2">
-            <Label htmlFor="expense-importo">Importo (€)</Label>
+            <Label htmlFor="expense-importo">Importo ({currencySign(divisa)})</Label>
             <Input
               id="expense-importo"
               inputMode="decimal"
@@ -254,7 +268,7 @@ function ExpenseDialog({ open, onOpenChange, contractId, expense }: DialogProps)
  * would leave the two disagreeing. That is this page's restraint and not a rule of the
  * API, which still accepts the PATCH.
  */
-export function ExpensesSection({ contractId }: { contractId: string }) {
+export function ExpensesSection({ contractId, divisa }: { contractId: string; divisa: string }) {
   const canWrite = useCan('create_contract_expense')
   const expenses = useContractExpenses(contractId)
   const categories = useCostCategories(true)
@@ -300,7 +314,7 @@ export function ExpensesSection({ contractId }: { contractId: string }) {
                         : ''}
                     </p>
                   </div>
-                  <span className="shrink-0 tabular-nums">{formatMoney(String(expense.importo))}</span>
+                  <span className="shrink-0 tabular-nums">{formatAmount(String(expense.importo), divisa)}</span>
                   {canWrite && expense.invoice_line_id === null && (
                     <Button
                       size="icon"
@@ -322,6 +336,7 @@ export function ExpensesSection({ contractId }: { contractId: string }) {
         open={dialog.open}
         onOpenChange={(open) => setDialog((previous) => ({ ...previous, open }))}
         contractId={contractId}
+        divisa={divisa}
         expense={dialog.expense}
       />
     </Card>
