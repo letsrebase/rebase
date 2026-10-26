@@ -7,7 +7,15 @@ is a red test and not a silent type.
 """
 
 from pigrocrm.core.reminders.detect import Detector
-from pigrocrm.core.reminders.detectors import attivita, billing, billing_contracts, deals, timers
+from pigrocrm.core.reminders.detectors import (
+    attivita,
+    billing,
+    billing_contracts,
+    contracts,
+    days,
+    deals,
+    timers,
+)
 
 DETECTORS: tuple[Detector, ...] = (
     *attivita.DETECTORS,
@@ -15,4 +23,6 @@ DETECTORS: tuple[Detector, ...] = (
     *timers.DETECTORS,
     *billing.DETECTORS,
     *billing_contracts.DETECTORS,
+    *contracts.DETECTORS,
+    *days.DETECTORS,
 )

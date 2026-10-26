@@ -640,5 +640,11 @@ def test_the_catalogue_and_the_detectors_name_the_same_types() -> None:
         "fixed_fee_period_unbilled",
         "on_completion_unbilled",
         "invoice_days_unlinked",
+        "contract_expiring",
+        "renewal_window_open",
+        "worked_without_approval",
+        "approval_unanswered",
+        "approval_requirement_unmet",
+        "work_unit_outside_term",
     ]
     assert {detector.kind.key for detector in DETECTORS} == set(REMINDER_TYPES)
