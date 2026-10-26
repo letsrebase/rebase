@@ -2110,7 +2110,8 @@ export interface paths {
          * @description Quanto spazio resta prima di ciascuna soglia attiva del pacchetto fiscale
          *     configurato (REB-352 §1.4), sui ricavi incassati e reali dell'anno. Aperto a ogni
          *     ruolo, a differenza di `/fiscal`: è un ricavo, non la stima fiscale che protegge
-         *     solo `get_fiscal_estimate`.
+         *     solo `get_fiscal_estimate`. Le soglie sono quelle del regime forfettario: un'azienda
+         *     in un altro regime riceve `soglie` vuoto.
          */
         get: operations["ceiling_headroom_api_analytics_ceilings_get"];
         put?: never;
@@ -2136,6 +2137,51 @@ export interface paths {
          *     `tariffa_oraria`.
          */
         get: operations["simulate_ceiling_api_analytics_ceilings_simulate_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/analytics/year": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Year Overview
+         * @description L'anno di un'azienda come lo legge il commercialista (REB-757): i ricavi per
+         *     regime e per trattamento fiscale e il registro delle fatture emesse, con bollo e
+         *     rivalsa a parte. Lo stesso universo di `annual_revenue`: `totali.imponibile` è il
+         *     ricavo dell'anno. Aperto a ogni ruolo, come il registro.
+         */
+        get: operations["year_overview_api_analytics_year_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/analytics/year/csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Year Csv
+         * @description Il CSV dell'anno per il commercialista (REB-757): una riga per ogni riga di
+         *     fattura e poi il registro, con i due totali. UTF-8 con BOM, punto e virgola e
+         *     virgola decimale, il formato che Excel italiano apre senza conversioni.
+         */
+        get: operations["year_csv_api_analytics_year_csv_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4159,6 +4205,10 @@ export interface components {
             ricavi_attuali: string;
             /** Residuo Attuale */
             residuo_attuale: string;
+            /** Utilizzo Attuale */
+            utilizzo_attuale: number;
+            /** Utilizzo Simulato */
+            utilizzo_simulato: number;
             /** Ricavi Simulati */
             ricavi_simulati: string;
             /** Residuo Simulato */
@@ -4197,6 +4247,8 @@ export interface components {
             superata: boolean;
             /** Livello Allerta */
             livello_allerta: string | null;
+            /** Utilizzo */
+            utilizzo: number;
         };
         /** ClosedInPeriod */
         ClosedInPeriod: {
@@ -9540,6 +9592,133 @@ export interface components {
             importo_riga: string;
             /** Importi Coincidono */
             importi_coincidono: boolean;
+        };
+        /**
+         * YearOverview
+         * @description The year of one azienda as the accountant reads it: what was issued, under which
+         *     regime and tax treatment, with the stamp duty and the rivalsa kept apart.
+         *
+         *     Scoped by the register year (`Invoice.anno`), the same `fattura`/`emessa` universe
+         *     `annual_revenue` sums, so `totali.imponibile` is the revenue figure of the year and
+         *     the CSV's total is this one. `annullate` counts the invoices struck from the register
+         *     in the year: they keep their number and are listed in none of the figures.
+         */
+        YearOverview: {
+            /** Anno */
+            anno: number;
+            /**
+             * Azienda Id
+             * Format: uuid
+             */
+            azienda_id: string;
+            /** Azienda Nome */
+            azienda_nome: string;
+            totali: components["schemas"]["YearTotals"];
+            /** Regimi */
+            regimi: components["schemas"]["YearRegime"][];
+            /** Trattamenti */
+            trattamenti: components["schemas"]["YearTreatment"][];
+            /** Registro */
+            registro: components["schemas"]["YearRegisterRow"][];
+            /** Annullate */
+            annullate: number;
+        };
+        /**
+         * YearRegime
+         * @description Revenue of the year under one regime, read from what each invoice froze at issue
+         *     (`snapshot.fiscale`), never from today's profile: an azienda that changed regime in
+         *     the year has two rows, and each invoice is counted under the one it was issued in.
+         */
+        YearRegime: {
+            /** Codice Regime */
+            codice_regime: string | null;
+            /** Pack Id */
+            pack_id: string;
+            /** Fatture */
+            fatture: number;
+            /** Ricavi */
+            ricavi: string;
+        };
+        /**
+         * YearRegisterRow
+         * @description One issued invoice of the register. `ragione_sociale` and `partita_iva` are the
+         *     customer's as they were at issue (the snapshot), the way the document printed them.
+         */
+        YearRegisterRow: {
+            /**
+             * Invoice Id
+             * Format: uuid
+             */
+            invoice_id: string;
+            /** Anno */
+            anno: number;
+            /** Numero */
+            numero: number;
+            /**
+             * Data Emissione
+             * Format: date
+             */
+            data_emissione: string;
+            /**
+             * Customer Id
+             * Format: uuid
+             */
+            customer_id: string;
+            /** Ragione Sociale */
+            ragione_sociale: string;
+            /** Partita Iva */
+            partita_iva: string | null;
+            /** Tipo Documento */
+            tipo_documento: string;
+            /** Imponibile */
+            imponibile: string;
+            /** Rivalsa */
+            rivalsa: string;
+            /** Bollo */
+            bollo: string;
+            /** Totale */
+            totale: string;
+            /** Dichiarazione Bollo */
+            dichiarazione_bollo: string | null;
+            /** Stato Pagamento */
+            stato_pagamento: string;
+            /** Data Incasso */
+            data_incasso: string | null;
+        };
+        /**
+         * YearTotals
+         * @description The register of one azienda's year, summed. `imponibile` is `annual_revenue`'s
+         *     figure over the same invoices, and `rivalsa` is already inside it: the rivalsa line
+         *     is a line of the invoice like any other (REB-352 §2).
+         */
+        YearTotals: {
+            /** Fatture */
+            fatture: number;
+            /** Imponibile */
+            imponibile: string;
+            /** Rivalsa */
+            rivalsa: string;
+            /** Bollo */
+            bollo: string;
+            /** Totale */
+            totale: string;
+        };
+        /**
+         * YearTreatment
+         * @description Revenue of the year under one tax treatment: a rate, its `Natura` and the legal
+         *     reference printed beside it, exactly as the lines carry them.
+         */
+        YearTreatment: {
+            /** Aliquota Iva */
+            aliquota_iva: string;
+            /** Natura */
+            natura: string | null;
+            /** Riferimento Normativo */
+            riferimento_normativo: string | null;
+            /** Righe */
+            righe: number;
+            /** Ricavi */
+            ricavi: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -26905,6 +27084,248 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CeilingSimulation"];
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    year_overview_api_analytics_year_get: {
+        parameters: {
+            query: {
+                anno: number;
+                /** @description L'azienda per cui calcolare: obbligatoria quando lo spazio ne ha più di una (una risposta 422 nomina `azienda_id`), altrimenti è l'unica e si può omettere. */
+                azienda_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["YearOverview"];
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    year_csv_api_analytics_year_csv_get: {
+        parameters: {
+            query: {
+                anno: number;
+                /** @description L'azienda per cui calcolare: obbligatoria quando lo spazio ne ha più di una (una risposta 422 nomina `azienda_id`), altrimenti è l'unica e si può omettere. */
+                azienda_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Il CSV dell'anno */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/csv": unknown;
                 };
             };
             /** @description Permesso negato: l'actor non ha il ruolo richiesto. */

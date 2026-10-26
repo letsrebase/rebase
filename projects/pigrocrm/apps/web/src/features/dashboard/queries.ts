@@ -4,6 +4,7 @@ import { api, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
 import { useLegalEntity } from '@/lib/legalEntity'
 import { queryKeys } from '@/lib/query'
+import { tenantPrefix } from '@/lib/tenant'
 import type { Periodo } from './periodo'
 import type { CashBase } from './search'
 
@@ -16,6 +17,11 @@ export type PipelineStageSummary = components['schemas']['PipelineStageSummary']
 export type PendingOffer = components['schemas']['PendingOffer']
 export type ReceivablesDashboard = components['schemas']['ReceivablesDashboard']
 export type FasciaScadenza = components['schemas']['FasciaScadenza']
+export type CeilingHeadroom = components['schemas']['CeilingHeadroom']
+export type CeilingStatus = components['schemas']['CeilingStatusRead']
+export type CeilingSimulation = components['schemas']['CeilingSimulation']
+export type YearOverview = components['schemas']['YearOverview']
+export type YearRegisterRow = components['schemas']['YearRegisterRow']
 export type AutomationsDescription = components['schemas']['AutomationsDescription']
 export type AutomationConfigUpdate = components['schemas']['AutomationConfigUpdate']
 
@@ -107,6 +113,85 @@ export function useFiscalEstimate(anno: number, aziendaId?: string | null) {
     queryKey: queryKeys.fiscalEstimate(anno, azienda),
     queryFn: () => unwrap(api.GET('/api/analytics/fiscal', { params: { query } })),
   })
+}
+
+/**
+ * How much room is left under each of an azienda's ceilings in `anno` (REB-755). One
+ * azienda's, like the estimate: the one `aziendaId` names, or the sidebar's when the
+ * caller names none. `soglie` comes back empty for an azienda the forfettario's
+ * thresholds do not apply to, and the panel then draws nothing.
+ */
+export function useCeilingHeadroom(anno: number, aziendaId?: string | null) {
+  const { selected } = useLegalEntity()
+  const azienda = aziendaId === undefined ? selected : aziendaId
+  const query = azienda === null ? { anno } : { anno, azienda_id: azienda }
+  return useQuery({
+    queryKey: queryKeys.ceilings(anno, azienda),
+    queryFn: () => unwrap(api.GET('/api/analytics/ceilings', { params: { query } })),
+  })
+}
+
+/** What a person typed into the «ci sta?» simulator, already in the API's own spelling. */
+export type CeilingSimulationInput = {
+  valore_preventivato?: string
+  ore_preventivate?: string
+  tariffa_oraria?: string
+}
+
+/**
+ * The «ci sta?» answer for one estimate, asked only once the person presses «Simula»
+ * (`input` is `null` until then): a request per keystroke would answer questions nobody
+ * finished asking. Nothing is saved on the server, and the answer is as fresh as the
+ * revenue it adds to, so it is kept no longer than the screen shows it.
+ */
+export function useCeilingSimulation(
+  anno: number,
+  input: CeilingSimulationInput | null,
+  aziendaId?: string | null,
+) {
+  const { selected } = useLegalEntity()
+  const azienda = aziendaId === undefined ? selected : aziendaId
+  const params: Record<string, string> = {
+    anno: String(anno),
+    ...(azienda === null ? {} : { azienda_id: azienda }),
+    ...input,
+  }
+  return useQuery({
+    enabled: input !== null,
+    queryKey: queryKeys.ceilingSimulation(params),
+    queryFn: () =>
+      unwrap(
+        api.GET('/api/analytics/ceilings/simulate', {
+          params: { query: { ...input, anno, ...(azienda === null ? {} : { azienda_id: azienda }) } },
+        }),
+      ),
+    gcTime: 0,
+  })
+}
+
+/** One azienda's register for `anno` (REB-757): revenue by regime and tax treatment and
+ *  the issued invoices, with the stamp duty and the rivalsa apart. */
+export function useYearOverview(anno: number, aziendaId?: string | null) {
+  const { selected } = useLegalEntity()
+  const azienda = aziendaId === undefined ? selected : aziendaId
+  const query = azienda === null ? { anno } : { anno, azienda_id: azienda }
+  return useQuery({
+    queryKey: queryKeys.yearOverview(anno, azienda),
+    queryFn: () => unwrap(api.GET('/api/analytics/year', { params: { query } })),
+    staleTime: DASHBOARD_STALE_MS,
+  })
+}
+
+/**
+ * Where the year's CSV is downloaded from. A plain URL, not a fetch, like the timesheet's
+ * XLSX: the browser saves the file itself and the bytes never pass through JavaScript.
+ * Same-origin, so the session cookie travels with it, and the space's prefix is part of
+ * the path.
+ */
+export function yearCsvUrl(anno: number, aziendaId: string | null): string {
+  const query = new URLSearchParams({ anno: String(anno) })
+  if (aziendaId !== null) query.set('azienda_id', aziendaId)
+  return `${tenantPrefix}/api/analytics/year/csv?${query.toString()}`
 }
 
 export function useAutomations() {
