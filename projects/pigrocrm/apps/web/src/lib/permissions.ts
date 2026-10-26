@@ -99,6 +99,10 @@ export const MIN_ROLE = {
   // Registering an invoice issued elsewhere: the start page's invoice door (REB-224) is
   // the admin's, because the import its handoff asks the assistant for is.
   import_issued_invoice: 'admin',
+  // «Importa» on the Fatture page (REB-758): the review reads and the confirmation writes
+  // the register, both admin in the service, so the button asks for the write.
+  review_invoice_import: 'admin',
+  confirm_invoice_import: 'admin',
   update_user_rates: 'admin',
   update_deal_rate: 'admin',
   close_period: 'admin',

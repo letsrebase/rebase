@@ -1,0 +1,194 @@
+import { describe, expect, it } from 'vitest'
+import {
+  batchFiles,
+  countWrites,
+  decisionsFor,
+  newParties,
+  partyKey,
+  registerYears,
+  sortReviewRows,
+  willBeWritten,
+  type ConfirmRow,
+  type ParsedInvoice,
+  type ReviewOutcome,
+  type ReviewRow,
+} from './importPlan'
+
+function invoice(overrides: Partial<ParsedInvoice['cliente']> = {}): ParsedInvoice {
+  return {
+    numero: '2026/6',
+    data_emissione: '2026-03-15',
+    tipo_documento: 'fattura',
+    divisa: 'EUR',
+    fornitore: party({ ragione_sociale: 'Chiara Bianchi', partita_iva: 'IT01234567890' }),
+    cliente: party(overrides),
+    righe: [],
+    riepiloghi: [],
+    imponibile: '1000.00',
+    imposta: '0.00',
+    totale: '1000.00',
+    cassa_previdenziale: [],
+    termini_pagamento: [],
+    trasmissione: {} as ParsedInvoice['trasmissione'],
+  }
+}
+
+function party(overrides: Partial<ParsedInvoice['cliente']> = {}): ParsedInvoice['cliente'] {
+  return {
+    ragione_sociale: 'Esempio Servizi S.r.l.',
+    partita_iva: 'IT09876543210',
+    indirizzo: 'Piazza dei Modelli 4',
+    cap: '00187',
+    comune: 'Roma',
+    nazione: 'IT',
+    ...overrides,
+  }
+}
+
+function row(outcome: ReviewOutcome, sha = 'a', overrides: Partial<ReviewRow> = {}): ReviewRow {
+  return {
+    file: `${sha}.xml`,
+    sha256: sha,
+    outcome,
+    invoice: outcome === 'unclaimed' ? null : invoice(),
+    ...overrides,
+  }
+}
+
+const NONE = new Set<string>()
+
+describe('the order of a review', () => {
+  it('puts what needs a look first and keeps the file order inside each verdict', () => {
+    const sorted = sortReviewRows([
+      row('ready', '1'),
+      row('already_present', '2'),
+      row('ready', '3'),
+      row('conflict', '4'),
+      row('needs_customer_confirmation', '5'),
+      row('unclaimed', '6'),
+      row('incoming_skipped', '7'),
+    ])
+
+    expect(sorted.map((r) => r.sha256)).toEqual(['4', '6', '5', '7', '2', '1', '3'])
+  })
+})
+
+describe('the new customers of a review', () => {
+  it('are one party for every invoice that names them, matched on the tax identifier', () => {
+    const rows = [
+      row('needs_customer_confirmation', '1'),
+      row('needs_customer_confirmation', '2'),
+      row('needs_customer_confirmation', '3', {
+        invoice: invoice({ ragione_sociale: 'Altro S.r.l.', partita_iva: 'IT11111111111' }),
+      }),
+      row('ready', '4'),
+    ]
+
+    expect(newParties(rows)).toEqual([
+      { key: 'IT09876543210', name: 'Esempio Servizi S.r.l.', taxId: 'IT09876543210', invoices: 2 },
+      { key: 'IT11111111111', name: 'Altro S.r.l.', taxId: 'IT11111111111', invoices: 1 },
+    ])
+  })
+
+  it('fall back to the tax code, then to the name, for a party with no VAT number', () => {
+    expect(partyKey(invoice({ partita_iva: null, codice_fiscale: 'RSSMRA80A01H501U' }))).toBe(
+      'RSSMRA80A01H501U',
+    )
+    expect(partyKey(invoice({ partita_iva: null, codice_fiscale: null }))).toBe(
+      'Esempio Servizi S.r.l.',
+    )
+  })
+})
+
+describe('what a confirmation would write', () => {
+  const rows = [
+    row('ready', '1'),
+    row('needs_customer_confirmation', '2'),
+    row('already_present', '3'),
+    row('conflict', '4'),
+    row('incoming_skipped', '5'),
+    row('unclaimed', '6'),
+  ]
+
+  it('is the ready invoices and the new customers left ticked, and nothing else', () => {
+    expect(rows.filter((r) => willBeWritten(r, NONE)).map((r) => r.sha256)).toEqual(['1', '2'])
+    expect(countWrites(rows, NONE)).toBe(2)
+  })
+
+  it('leaves out the invoices of a customer the person unticked', () => {
+    const declined = new Set(['IT09876543210'])
+
+    expect(countWrites(rows, declined)).toBe(1)
+    expect(willBeWritten(rows[1]!, declined)).toBe(false)
+    expect(willBeWritten(rows[0]!, declined)).toBe(true)
+  })
+
+  it('sends the decision to create the customer for a file only while its party is ticked', () => {
+    expect(decisionsFor(rows, NONE)).toEqual({ '2': { create_customer: true } })
+    expect(decisionsFor(rows, new Set(['IT09876543210']))).toEqual({})
+  })
+})
+
+describe('the batches a year of files is cut into', () => {
+  const file = (name: string, size: number) => new File([new Uint8Array(size)], name)
+
+  it('holds at most the file count, in order', () => {
+    const files = Array.from({ length: 7 }, (_, i) => file(`${i}.xml`, 10))
+
+    expect(batchFiles(files, 3, 1000).map((b) => b.map((f) => f.name))).toEqual([
+      ['0.xml', '1.xml', '2.xml'],
+      ['3.xml', '4.xml', '5.xml'],
+      ['6.xml'],
+    ])
+  })
+
+  it('closes a batch before it passes the byte ceiling, and never splits one file', () => {
+    const files = [file('a.xml', 600), file('b.zip', 5000), file('c.xml', 300), file('d.xml', 300)]
+
+    expect(batchFiles(files, 25, 1000).map((b) => b.map((f) => f.name))).toEqual([
+      ['a.xml'],
+      ['b.zip'],
+      ['c.xml', 'd.xml'],
+    ])
+  })
+
+  it('is no batches for no files', () => {
+    expect(batchFiles([])).toEqual([])
+  })
+})
+
+describe('the register after an import', () => {
+  function imported(anno: number, numero: number, missing: number[], azienda = 'az-1'): ConfirmRow {
+    return {
+      file: `${numero}.xml`,
+      sha256: String(numero),
+      outcome: 'imported',
+      azienda_id: azienda,
+      fattura: { anno, numero } as ConfirmRow['fattura'],
+      buchi_non_dichiarati: missing,
+    }
+  }
+
+  it('is what the last invoice written into each year reports, oldest year first', () => {
+    const years = registerYears([
+      imported(2026, 1, [2, 3]),
+      imported(2025, 9, [1]),
+      imported(2026, 2, [3]),
+      { file: 'x', sha256: 'x', outcome: 'already_present', azienda_id: 'az-1' },
+    ])
+
+    expect(years).toEqual([
+      { aziendaId: 'az-1', anno: 2025, missing: [1] },
+      { aziendaId: 'az-1', anno: 2026, missing: [3] },
+    ])
+  })
+
+  it('keeps two aziende of the same year apart', () => {
+    const years = registerYears([imported(2026, 1, [], 'az-1'), imported(2026, 1, [4], 'az-2')])
+
+    expect(years.map((y) => [y.aziendaId, y.missing])).toEqual([
+      ['az-1', []],
+      ['az-2', [4]],
+    ])
+  })
+})
