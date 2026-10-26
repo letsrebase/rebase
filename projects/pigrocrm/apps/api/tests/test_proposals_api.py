@@ -178,6 +178,32 @@ def test_reject_a_proposal_creates_nothing(logged_in: TestClient) -> None:
     assert body["id_risultato"] is None
 
 
+def test_timeline_keeps_the_rejection_reason(logged_in: TestClient) -> None:
+    customer_id = _customer(logged_in)
+    contract_id = _contract(logged_in, customer_id)
+    document_id = _document(logged_in, contract_id=contract_id)
+    created = logged_in.post("/api/proposals", json=_giornata_body(document_id, contract_id))
+    proposal_id = created.json()["id"]
+    logged_in.post(
+        f"/api/proposals/{proposal_id}/reject",
+        json={"deciso_da": "Lorenzo Fiore", "motivo": "date sbagliate"},
+    )
+
+    response = logged_in.get(f"/api/proposals/{proposal_id}/timeline")
+    assert response.status_code == 200, response.text
+    rejected = [row for row in response.json() if row["kind"] == "rejected"]
+    assert len(rejected) == 1
+    assert rejected[0]["payload"] == {"deciso_da": "Lorenzo Fiore", "motivo": "date sbagliate"}
+    assert {row["kind"] for row in response.json()} == {"created", "rejected"}
+
+
+def test_timeline_of_an_unknown_proposal_is_a_404(logged_in: TestClient) -> None:
+    from uuid import uuid4
+
+    response = logged_in.get(f"/api/proposals/{uuid4()}/timeline")
+    assert response.status_code == 404
+
+
 def test_accept_of_an_already_decided_proposal_is_a_409(logged_in: TestClient) -> None:
     customer_id = _customer(logged_in)
     contract_id = _contract(logged_in, customer_id)
@@ -217,6 +243,36 @@ def test_list_filters_by_stato(logged_in: TestClient) -> None:
     ids = {item["id"] for item in response.json()["items"]}
     assert first["id"] in ids
     assert second["id"] not in ids
+
+
+def test_list_orders_decided_proposals_newest_decision_first(logged_in: TestClient) -> None:
+    customer_id = _customer(logged_in)
+    contract_id = _contract(logged_in, customer_id)
+    document_id = _document(logged_in, contract_id=contract_id)
+    ids = []
+    for day in ("2026-03-05", "2026-03-06", "2026-03-07"):
+        body = _giornata_body(document_id, contract_id, estratto=day)
+        body["campi_proposti"]["data"] = day
+        ids.append(logged_in.post("/api/proposals", json=body).json()["id"])
+    # The first and the last to arrive are decided, the last one most recently; the middle
+    # one is left waiting.
+    logged_in.post(f"/api/proposals/{ids[0]}/reject", json={"deciso_da": "Lorenzo"})
+    logged_in.post(f"/api/proposals/{ids[2]}/reject", json={"deciso_da": "Lorenzo"})
+
+    arrival = logged_in.get("/api/proposals", params={"stato": "rifiutata"})
+    assert [item["id"] for item in arrival.json()["items"]] == [ids[0], ids[2]]
+
+    decided = logged_in.get("/api/proposals", params={"stato": "rifiutata", "ordine": "decisione"})
+    assert decided.status_code == 200, decided.text
+    assert [item["id"] for item in decided.json()["items"]] == [ids[2], ids[0]]
+
+    capped = logged_in.get(
+        "/api/proposals", params={"stato": "rifiutata", "ordine": "decisione", "limit": 1}
+    )
+    assert [item["id"] for item in capped.json()["items"]] == [ids[2]]
+
+    unknown = logged_in.get("/api/proposals", params={"ordine": "a-caso"})
+    assert unknown.status_code == 422
 
 
 def test_get_of_an_unknown_proposal_is_a_404(logged_in: TestClient) -> None:

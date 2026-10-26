@@ -49,6 +49,13 @@ export const queryKeys = {
   documentVersions: (id: string) => ['document-versions', id] as const,
   templates: () => ['templates'] as const,
   templateDescription: (id: string) => ['template-description', id] as const,
+  // The agent proposals the Proposte queue reviews (REB-750). `proposals` is the prefix a
+  // decision invalidates; the contract behind a day proposal has a key of its own because
+  // the page only needs its title, not the contracts feature's cache.
+  proposals: (stato?: string) => ['proposals', stato ?? 'all'] as const,
+  proposal: (id: string) => ['proposal', id] as const,
+  proposalTimeline: (id: string) => ['proposal-timeline', id] as const,
+  proposalContract: (id: string) => ['proposal-contract', id] as const,
   // The aziende of the space (REB-617): the list every selector and Impostazioni →
   // Aziende read; a single azienda is read from the list, so there is no per-id key.
   aziende: ['aziende'] as const,

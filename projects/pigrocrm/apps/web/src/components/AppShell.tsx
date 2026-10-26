@@ -10,6 +10,7 @@ import {
   Clock,
   Handshake,
   HardDrive,
+  Inbox,
   KeyRound,
   LayoutDashboard,
   LogOut,
@@ -100,6 +101,9 @@ const TOP_LEVEL = [
   // cross-cutting view, not a step of «Vendite» or of «Amministrazione».
   { to: '/app/calendar', label: 'Calendario', icon: CalendarDays, exact: false },
   { to: '/app/token', label: 'Token', icon: KeyRound, exact: false },
+  // The agent proposals waiting for a decision (REB-750). Last, after Token, so it stays
+  // clear of the entries other cards add between Calendario and Token.
+  { to: '/app/proposals', label: 'Proposte', icon: Inbox, exact: false },
 ] as const
 
 /**

@@ -32,6 +32,7 @@ import { DashboardPage } from '@/features/dashboard/DashboardPage'
 import { ConsentOutcome } from '@/components/ConsentOutcome'
 import { messaggioEsito, riprovaEsito } from '@/features/gmail/esito'
 import type { DashboardSearch, HomeSearch } from '@/features/dashboard/search'
+import { PendingProposalsNotice } from '@/features/proposals/PendingProposalsNotice'
 import { useFirstSteps, type FirstStepsState } from './firstSteps'
 import { GetStartedPage } from './GetStartedPage'
 
@@ -66,6 +67,7 @@ export function HomePage({
             riprova={riprovaEsito(search.esito)}
             className="mb-6"
           />
+          <PendingProposalsNotice />
           {state.loading ? null : <CompleteSpaceCard state={state} canWrite={canWrite} />}
         </>
       }
