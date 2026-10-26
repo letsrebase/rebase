@@ -2112,6 +2112,19 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
 
     @mcp.tool()
     @guard
+    def get_year_overview(anno: Anno, azienda_id: str | None = None) -> dict[str, Any]:
+        """L'anno di un'azienda come lo legge il commercialista (REB-757): i ricavi per
+        regime (quello congelato su ogni fattura al momento dell'emissione) e per
+        trattamento fiscale, con il riferimento normativo verbatim, e il registro delle
+        fatture emesse con bollo e rivalsa INPS a parte. `totali.imponibile` è il ricavo
+        dell'anno, la stessa cifra di `annual_revenue`. Nessun `admin` richiesto: è il
+        registro. Di una sola azienda: senza `azienda_id` è l'unica dello spazio, con più
+        di una va indicata. Il CSV da dare al commercialista si scarica dall'app: uno
+        strumento MCP non restituisce file."""
+        return timetracking.get_year_overview(context, anno, parse_legal_entity_id(azienda_id))
+
+    @mcp.tool()
+    @guard
     def simulate_ceiling(
         anno: Anno,
         ore_preventivate: OptionalFactor = None,

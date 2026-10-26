@@ -806,3 +806,52 @@ def test_the_overview_in_tutte_sums_the_aziende_and_keeps_no_estimate(
     pnl = logged_in.get("/api/analytics/pnl", params={**PERIODO, "azienda_id": second})
     assert pnl.status_code == 200, pnl.text
     assert pnl.json()["azienda_id"] == second
+
+
+# --- the year of one azienda, and its CSV for the accountant (REB-757) -----------------
+
+
+def test_the_year_routes_answer_for_one_azienda_and_the_csv_is_a_spreadsheet_download(
+    logged_in: TestClient, api_session: Session, fiscal_profile: dict[str, Any]
+) -> None:
+    """The wire only: the register of the default azienda as JSON, then the same year as a
+    file whose headers an Italian-locale Excel opens (UTF-8 with BOM, an attachment with an
+    ASCII name). What the figures mean is proven in `test_year_overview.py`."""
+    default = logged_in.get("/api/aziende").json()[0]["id"]
+    _paid_invoice(api_session, default, 1, "1200.50")
+
+    year = logged_in.get("/api/analytics/year", params={"anno": ANNO})
+    assert year.status_code == 200, year.text
+    body = year.json()
+    assert body["azienda_id"] == default
+    assert body["totali"]["imponibile"] == "1200.50"
+    assert [row["numero"] for row in body["registro"]] == [1]
+
+    file = logged_in.get("/api/analytics/year/csv", params={"anno": ANNO})
+    assert file.status_code == 200, file.text
+    assert file.headers["content-type"] == "text/csv; charset=utf-8"
+    assert file.headers["content-disposition"].startswith(f'attachment; filename="registro-{ANNO}-')
+    assert file.content.startswith(b"\xef\xbb\xbf")
+    assert "1.200,50" in file.content.decode("utf-8")
+
+
+def test_the_year_routes_need_the_azienda_on_two_and_a_year_in_range(
+    logged_in: TestClient, fiscal_profile: dict[str, Any]
+) -> None:
+    default = logged_in.get("/api/aziende").json()[0]["id"]
+    assert logged_in.post("/api/aziende", json=LTD).status_code == 201
+    for path in ("/api/analytics/year", "/api/analytics/year/csv"):
+        refused = logged_in.get(path, params={"anno": ANNO})
+        assert refused.status_code == 422, (path, refused.text)
+        assert refused.json()["field"] == "azienda_id", path
+        named = logged_in.get(path, params={"anno": ANNO, "azienda_id": default})
+        assert named.status_code == 200, (path, named.text)
+        assert logged_in.get(path, params={"anno": 1999, "azienda_id": default}).status_code == 422
+
+
+def test_a_readonly_session_reads_the_year_like_it_reads_the_register(
+    logged_in: TestClient, fiscal_profile: dict[str, Any]
+) -> None:
+    reader = _second_actor(logged_in, "readonly")
+    assert reader.get("/api/analytics/year", params={"anno": ANNO}).status_code == 200
+    assert reader.get("/api/analytics/year/csv", params={"anno": ANNO}).status_code == 200

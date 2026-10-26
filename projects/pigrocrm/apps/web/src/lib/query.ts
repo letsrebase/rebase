@@ -113,6 +113,14 @@ export const queryKeys = {
   // «tutte» the economic tab holds one entry per azienda at once.
   fiscalEstimate: (anno: number, aziendaId: string | null = null) =>
     ['fiscal-estimate', anno, aziendaId] as const,
+  // The ceilings and the year register are one azienda's as well (REB-755, REB-757), and
+  // the simulation is keyed on everything typed: the same deal against another date is
+  // another answer.
+  ceilings: (anno: number, aziendaId: string | null = null) =>
+    ['ceilings', anno, aziendaId] as const,
+  ceilingSimulation: (params: Record<string, string>) => ['ceiling-simulation', params] as const,
+  yearOverview: (anno: number, aziendaId: string | null = null) =>
+    ['year-overview', anno, aziendaId] as const,
   // The term is part of the key so an in-flight response for "ross" cannot overwrite the
   // rendering of "rossi": TanStack Query discards the stale entry rather than the
   // component having to compare what came back with what was typed.

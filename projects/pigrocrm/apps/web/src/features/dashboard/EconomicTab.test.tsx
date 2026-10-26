@@ -31,19 +31,35 @@ function ok(data: unknown) {
 }
 
 /**
- * Two endpoints answer this screen since the «Stima fiscale» card moved into it:
+ * Three endpoints answer this screen since the «Stima fiscale» card moved into it:
  * `/api/analytics/overview` for the cards and the charts, `/api/analytics/fiscal` for
- * the card below them. Mocked by path rather than with one `mockResolvedValue`, because a
+ * the card below them and `/api/analytics/ceilings` for the room left under the
+ * forfettario's ceilings (REB-755), empty here unless a test says otherwise. Mocked by path rather than with one `mockResolvedValue`, because a
  * single answer for both would feed the panel a payload with no `avvertenza` and no year
  * -- green on an assertion about a card that never rendered what it renders in the app.
  */
-function byPath(panoramica: unknown, fiscale: unknown = FISCALE) {
+function byPath(panoramica: unknown, fiscale: unknown = FISCALE, soglie: unknown[] = []) {
   return (path: string) =>
-    Promise.resolve(path === '/api/analytics/fiscal' ? ok(fiscale) : ok(panoramica))
+    Promise.resolve(
+      path === '/api/analytics/fiscal'
+        ? ok(fiscale)
+        : path === '/api/analytics/ceilings'
+          ? ok({ anno: 2026, azienda_id: 'a1', pack_id: 'it-flat-rate', pack_version: '1', soglie })
+          : ok(panoramica),
+    )
 }
 
 function failed(error: unknown, status: number) {
   return { error, response: new Response(null, { status }) } as never
+}
+
+/** The ceilings no azienda here is held to: the panel under the figures draws nothing. */
+const NO_CEILINGS = {
+  anno: 2026,
+  azienda_id: 'a-1',
+  pack_id: 'it-flat-rate',
+  pack_version: '1',
+  soglie: [],
 }
 
 /** Typed as the wire shape so a field added to `CashMonth` fails here rather than
@@ -360,6 +376,43 @@ describe('EconomicTab', () => {
     })
   })
 
+  /** REB-755: the room left under the ceilings sits with the figures it bounds. */
+  it('shows the room left under the forfettario ceilings, between the figures and the concentration', async () => {
+    const soglia = {
+      id: 'soglia_ricavi',
+      etichetta: 'Soglia di ricavi e compensi del regime forfettario',
+      soglia: '85000.00',
+      conseguenza: 'esce_dall_anno_successivo',
+      ricavi: '20628.62',
+      residuo: '64371.38',
+      superata: false,
+      livello_allerta: null,
+      utilizzo: 0.2427,
+    }
+    vi.mocked(api.GET).mockImplementation(byPath(RESPONSE, FISCALE, [soglia]) as never)
+    renderTab()
+
+    const room = await screen.findByRole('group', { name: soglia.etichetta })
+    expect(within(room).getByText('restano 64.371,38 €')).toBeInTheDocument()
+    const concentration = screen.getByRole('heading', { name: 'Concentrazione clienti' })
+    expect(
+      room.compareDocumentPosition(concentration) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(api.GET).toHaveBeenCalledWith('/api/analytics/ceilings', {
+      params: { query: { anno: 2026 } },
+    })
+  })
+
+  it('draws no ceiling panel for an azienda the thresholds do not apply to', async () => {
+    vi.mocked(api.GET).mockImplementation(byPath(RESPONSE) as never)
+    renderTab()
+    await screen.findByRole('group', { name: 'Ricavi incassati' })
+
+    await waitFor(() => expect(api.GET).toHaveBeenCalledWith('/api/analytics/ceilings', expect.anything()))
+    expect(screen.queryByText(/soglie del forfettario/i)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Simula' })).not.toBeInTheDocument()
+  })
+
   it('draws the two monthly charts with a legend and a table view each', async () => {
     vi.mocked(api.GET).mockImplementation(byPath(RESPONSE) as never)
     renderTab()
@@ -495,6 +548,7 @@ function queriesSentTo(path: string): Record<string, unknown>[] {
 describe('EconomicTab, with several aziende', () => {
   it('in «tutte» asks the estimate once per azienda and names each share’s azienda', async () => {
     vi.mocked(api.GET).mockImplementation((path: string, init?: unknown) => {
+      if (path === '/api/analytics/ceilings') return Promise.resolve(ok(NO_CEILINGS))
       if (path === '/api/analytics/fiscal') {
         const query = (init as GetCall[1])?.params?.query ?? {}
         // The forfettario has an estimate; the foreign company has no profile at all.
@@ -548,7 +602,9 @@ describe('EconomicTab, with several aziende', () => {
   it('for a non-admin in «tutte» draws no card and no banner, only the note', async () => {
     vi.mocked(api.GET).mockImplementation((path: string) =>
       Promise.resolve(
-        path === '/api/analytics/fiscal'
+        path === '/api/analytics/ceilings'
+          ? ok(NO_CEILINGS)
+          : path === '/api/analytics/fiscal'
           ? failed({ code: 'permission_denied', detail: 'solo un admin' }, 403)
           : ok({
               ...RESPONSE,

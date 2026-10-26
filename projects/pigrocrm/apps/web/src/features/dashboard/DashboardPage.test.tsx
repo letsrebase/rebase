@@ -1,5 +1,5 @@
 /**
- * The three tabs and the period control, driven entirely by the search params.
+ * The four tabs and the period control, driven entirely by the search params.
  *
  * The component takes the search object and an `onSearchChange` callback rather than
  * reaching for the router itself, so the round trip the URL exists for is assertable:
@@ -89,11 +89,25 @@ const EMPTY_RECEIVABLES = {
   scadute_totale: 0,
 }
 
+const EMPTY_YEAR = {
+  anno: 2026,
+  azienda_id: 'a1',
+  azienda_nome: 'Studio Rossi',
+  totali: { fatture: 0, imponibile: '0.00', rivalsa: '0.00', bollo: '0.00', totale: '0.00' },
+  regimi: [],
+  trattamenti: [],
+  registro: [],
+  annullate: 0,
+}
+
 const BY_PATH: Record<string, unknown> = {
   '/api/dashboard/sales': EMPTY_DASHBOARD,
   '/api/dashboard/receivables': EMPTY_RECEIVABLES,
   '/api/analytics/overview': EMPTY_OVERVIEW,
   '/api/analytics/fiscal': EMPTY_ESTIMATE,
+  // No ceiling applies: the panel under the figures draws nothing (REB-755).
+  '/api/analytics/ceilings': { anno: 2026, azienda_id: 'a1', pack_id: 'it-flat-rate', pack_version: '1', soglie: [] },
+  '/api/analytics/year': EMPTY_YEAR,
 }
 
 const SEARCH: DashboardSearch = {
@@ -230,12 +244,20 @@ describe('DashboardPage, the page intestazione', () => {
   })
 })
 
-describe('DashboardPage, three tabs', () => {
-  it('offers the economic, commercial and scadenziario tabs, and marks the current one', () => {
+describe('DashboardPage, four tabs', () => {
+  it('offers the economic, commercial, scadenziario and anno tabs, and marks the current one', () => {
     renderPage({ ...SEARCH, tab: 'economica' })
     const tabs = screen.getAllByRole('tab').map((tab) => tab.textContent)
-    expect(tabs).toEqual(['Economica', 'Commerciale', 'Scadenziario'])
+    expect(tabs).toEqual(['Economica', 'Commerciale', 'Scadenziario', 'Anno'])
     expect(screen.getByRole('tab', { name: 'Economica' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  /** REB-757: the year tab reads the year the period names and nothing else. */
+  it('mounts the anno tab on the picker\'s year, with the picker', async () => {
+    renderPage({ ...SEARCH, tab: 'anno' })
+    expect(await screen.findByText(/nessuna fattura emessa nel 2026/i)).toBeInTheDocument()
+    expect(screen.getByLabelText('Dal')).toBeInTheDocument()
+    expect(api.GET).toHaveBeenCalledWith('/api/analytics/year', { params: { query: { anno: 2026 } } })
   })
 
   it('shows the period picker on the two tabs that have a period', () => {

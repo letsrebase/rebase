@@ -120,8 +120,13 @@ describe('validateDashboardSearch', () => {
     })
   })
 
-  it('offers the three tabs the dashboard has since REB-329', () => {
-    expect(DASHBOARD_TABS.map((tab) => tab.id)).toEqual(['economica', 'commerciale', 'scadenziario'])
+  it('offers the four tabs the dashboard has since REB-757', () => {
+    expect(DASHBOARD_TABS.map((tab) => tab.id)).toEqual([
+      'economica',
+      'commerciale',
+      'scadenziario',
+      'anno',
+    ])
   })
 
   it('falls back to the economic tab for a link that still names the retired operational one', () => {

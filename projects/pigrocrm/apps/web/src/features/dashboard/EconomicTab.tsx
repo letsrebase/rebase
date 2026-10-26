@@ -13,6 +13,7 @@ import {
   TableRow,
 } from '@rebase/ui/table'
 import { BigNumber } from './charts'
+import { CeilingPanel } from './CeilingPanel'
 import { FiscalPanel } from './FiscalPanel'
 import { money } from './format'
 import { Freshness } from './Freshness'
@@ -275,6 +276,23 @@ export function EconomicTab({
           </div>
         )}
       </div>
+
+      {/* The room left under the forfettario's ceilings and the «ci sta?» simulator
+          (REB-755), right under the figures they bound: the cards above say how much was
+          collected, this says how much more can be before the regime ends. It draws
+          nothing for an azienda those ceilings do not apply to. */}
+      {perAzienda ? (
+        aziende.map((azienda) => (
+          <CeilingPanel
+            key={azienda.id}
+            anno={anno}
+            aziendaId={azienda.id}
+            titolo={azienda.nome}
+          />
+        ))
+      ) : (
+        <CeilingPanel anno={anno} />
+      )}
 
       {/* Whole-practice, calendar-year concentration (§1.5, REB-370): each customer's
           own share of the year's *whole* invoiced revenue, never of the largest
