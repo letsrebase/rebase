@@ -585,3 +585,85 @@ def test_a_failed_binding_takes_the_draft_back_out_and_leaves_the_days_ready(
     ).all()
     assert live == []
     assert billable_days(db_session, contract.id).giornate == 1
+
+
+def test_a_usd_contract_is_refused_instead_of_billed_in_euros(
+    db_session: Session, local_storage: LocalFileStorage
+) -> None:
+    _install_fiscal_and_emitter_profiles(db_session)
+    contract = _contract(db_session)
+    contract.divisa = "USD"
+    db_session.flush()
+    _rate_card(db_session, contract)
+    day = _work_unit(db_session, contract)
+
+    preview = billable_days(db_session, contract.id)
+    assert preview.fatturabile is False and "USD" in (preview.motivo_blocco or "")
+    with pytest.raises(ValidationFailed):
+        assemble_unbilled_work_units_into_new_invoice(db_session, local_storage, contract.id, ADMIN)
+
+    db_session.refresh(day)
+    assert (day.stato, day.invoice_line_id) == ("lavorato", None)
+
+
+def test_the_draft_is_issued_under_the_contracts_azienda_not_the_customers_current_one(
+    db_session: Session, local_storage: LocalFileStorage
+) -> None:
+    from pigrocrm.core.emitter.repository import LegalEntityRepository
+    from pigrocrm.core.emitter.schemas import LegalEntityCreate
+    from pigrocrm.core.emitter.service import LegalEntityService
+    from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
+
+    _install_fiscal_and_emitter_profiles(db_session)
+    contract = _contract(db_session)
+    _rate_card(db_session, contract)
+    _work_unit(db_session, contract)
+    default = LegalEntityRepository(db_session).default()
+    assert default is not None
+    second = LegalEntityService(db_session).create(
+        LegalEntityCreate(
+            nome="rebase ltd",
+            ragione_sociale="Rebase Ltd",
+            partita_iva="GB123456789",
+            nazione="GB",
+            fiscal_profile=FiscalProfileUpsert(
+                pack_id="non-it", aliquota_iva_default=Decimal("20.00")
+            ),
+        ),
+        ADMIN,
+    )
+    contract.azienda_id = default.id
+    customer = db_session.get(Customer, contract.customer_id)
+    assert customer is not None
+    customer.azienda_id = second.id  # the customer moved after the contract was made
+    db_session.flush()
+
+    invoice = assemble_unbilled_work_units_into_new_invoice(
+        db_session, local_storage, contract.id, ADMIN
+    )
+
+    assert invoice.azienda_id == default.id
+
+
+def test_deleting_the_draft_also_gives_back_a_day_resolved_to_worked_with_its_line_still_set(
+    db_session: Session, local_storage: LocalFileStorage
+) -> None:
+    _install_fiscal_and_emitter_profiles(db_session)
+    contract = _contract(db_session)
+    _rate_card(db_session, contract)
+    day = _work_unit(db_session, contract)
+    invoice = assemble_unbilled_work_units_into_new_invoice(
+        db_session, local_storage, contract.id, ADMIN
+    )
+    # Disputed, then the dispute resolved: the graph's edge keeps the line.
+    day.stato = "contestato"
+    db_session.flush()
+    day.stato = "lavorato"
+    db_session.flush()
+    assert day.invoice_line_id is not None
+
+    InvoiceService(db_session, local_storage).soft_delete(invoice.id, ADMIN)
+
+    db_session.refresh(day)
+    assert (day.stato, day.invoice_line_id) == ("lavorato", None)
+    assert billable_days(db_session, contract.id).giornate == 1

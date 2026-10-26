@@ -458,13 +458,24 @@ class InvoiceService:
 
     # ---- writes ---------------------------------------------------------------
 
-    def create(self, data: InvoiceCreate, actor: Actor) -> InvoiceRead:
+    def create(
+        self, data: InvoiceCreate, actor: Actor, *, azienda_id: UUID | None = None
+    ) -> InvoiceRead:
         """A draft or a proforma. Neither has a number, which is why a failed creation
         cannot burn one -- not as a matter of care, but because there is nothing to
-        burn until `issue` runs."""
+        burn until `issue` runs.
+
+        `azienda_id` names the azienda the draft is issued under when it is not its
+        parent's: a contract's days are billed under the contract's own azienda, which a
+        customer moved since no longer shares. In-process only, never on `InvoiceCreate`,
+        so the REST surface keeps taking its azienda from the customer or the deal."""
         actor.require_write("create_invoice")
         customer = self._check_owner(data.customer_id, data.deal_id)
-        azienda_id = self._azienda_of_parent(customer, data.deal_id)
+        azienda_id = (
+            LegalEntityService(self.session).inherited(azienda_id, ENTITY)
+            if azienda_id is not None
+            else self._azienda_of_parent(customer, data.deal_id)
+        )
         _, profile = self._regime(azienda_id)
         self._check_competenza(data.competenza_da, data.competenza_a)
         ordine = checked_ordine(

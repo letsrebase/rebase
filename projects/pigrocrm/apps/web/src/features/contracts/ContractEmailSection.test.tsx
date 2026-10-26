@@ -41,7 +41,7 @@ const DRAFT = {
   updated_at: '2026-10-26T11:00:00Z',
   to_addresses: ['mario@acme.example'],
   subject: 'Fattura 2026/12',
-  body_markdown: 'Gentile Acme',
+  body_markdown: 'Gentile Acme S.r.l.,\n\nin allegato la fattura 2026/12.',
   attachment_version_ids: ['v1', 'v2'],
 }
 const PREVIEW = {
@@ -204,6 +204,22 @@ describe('ContractEmailSection', () => {
 
     expect(await screen.findByText(/è stata modificata dopo che l’hai vista/)).toBeInTheDocument()
     expect(reads).toBe(1)
+    expect(vi.mocked(api.POST).mock.calls.some((c) => String(c[0]).endsWith('/send'))).toBe(false)
+  })
+
+  it('does not send a draft whose text is not the one the preview showed', async () => {
+    mockGets([TEMPLATE])
+    vi.mocked(api.POST).mockImplementation(((path: string) =>
+      path.endsWith('/email/preview')
+        ? ok(PREVIEW)
+        : ok({ ...DRAFT, body_markdown: 'Un testo cambiato nel frattempo' })) as never)
+    renderSection()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Invia fattura e registro' }))
+    await screen.findAllByText('Fattura 2026/12')
+    await userEvent.click(screen.getByRole('button', { name: 'Invia' }))
+
+    expect(await screen.findByText(/Il modello è cambiato dopo che hai visto l’anteprima/)).toBeInTheDocument()
     expect(vi.mocked(api.POST).mock.calls.some((c) => String(c[0]).endsWith('/send'))).toBe(false)
   })
 

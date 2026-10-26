@@ -45,7 +45,7 @@ from pigrocrm.core.contracts.models import Contract, RateCard
 from pigrocrm.core.contracts.repository import RateCardRepository
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.invoices.models import InvoiceLine
-from pigrocrm.core.invoices.schemas import InvoiceCreate, InvoiceLineIn, InvoiceRead
+from pigrocrm.core.invoices.schemas import DIVISA, InvoiceCreate, InvoiceLineIn, InvoiceRead
 from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm.core.money import round_money
 from pigrocrm.core.storage.base import DocumentStorage
@@ -73,6 +73,18 @@ def _require_contract(session: Session, contract_id: UUID) -> Contract:
     if contract is None or contract.deleted_at is not None:
         raise NotFound("contract", contract_id)
     return contract
+
+
+def _currency_block(contract: Contract) -> str | None:
+    """Why this contract's days cannot become a draft, or `None`. Every invoice is issued in
+    euros (`invoices.schemas.DIVISA`) and nothing here converts: a draft of a USD contract
+    would carry 500 EUR where the page promised 500 USD."""
+    if contract.divisa == DIVISA:
+        return None
+    return (
+        f"il contratto è in {contract.divisa}: le fatture si emettono in {DIVISA} e qui non "
+        "si converte, quindi le giornate non si possono fatturare da qui"
+    )
 
 
 def _gather(
@@ -190,7 +202,8 @@ def billable_days(
         imponibile=sum((riga.importo for riga in righe), start=Decimal("0")),
         senza_tariffa=senza_tariffa,
         senza_approvazione=WorkUnitRepository(session).count_without_approval(contract_id),
-        fatturabile=bool(righe) and not senza_tariffa,
+        fatturabile=bool(righe) and not senza_tariffa and _currency_block(contract) is None,
+        motivo_blocco=_currency_block(contract),
     )
 
 
@@ -248,6 +261,9 @@ def assemble_unbilled_work_units_into_new_invoice(
     """
     actor.require_admin(BILL_ACTION)
     contract = _require_contract(session, contract_id)
+    blocked = _currency_block(contract)
+    if blocked is not None:
+        raise ValidationFailed(ENTITY, "divisa", blocked, expected=f"un contratto in {DIVISA}")
 
     righe, gruppi = unbilled_work_unit_lines(session, contract_id, da, a)
     if not righe:
@@ -261,7 +277,11 @@ def assemble_unbilled_work_units_into_new_invoice(
         )
 
     service = InvoiceService(session, storage)
-    invoice = service.create(InvoiceCreate(customer_id=contract.customer_id, righe=[]), actor)
+    invoice = service.create(
+        InvoiceCreate(customer_id=contract.customer_id, righe=[]),
+        actor,
+        azienda_id=contract.azienda_id,
+    )
     invoice = service.replace_lines(invoice.id, righe, actor)
 
     line_ids = list(

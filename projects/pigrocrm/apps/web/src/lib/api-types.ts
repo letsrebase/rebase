@@ -4708,6 +4708,11 @@ export interface components {
             /** Senza Approvazione */
             senza_approvazione: number;
             /**
+             * Motivo Blocco
+             * @description Perché la bozza non si può creare da qui, quando non è questione di tariffe
+             */
+            motivo_blocco?: string | null;
+            /**
              * Fatturabile
              * @description C'è almeno una riga e ogni giornata ha la sua tariffa
              */

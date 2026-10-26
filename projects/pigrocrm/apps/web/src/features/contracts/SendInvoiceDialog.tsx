@@ -43,11 +43,12 @@ export function SendInvoiceDialog({ contractId, customerId, templates, open, onO
   const to = recipients ?? preview.data?.to_suggeriti[0] ?? ''
 
   function submit() {
-    if (invoiceId === undefined || templateId === undefined) return
+    if (invoiceId === undefined || templateId === undefined || preview.data === undefined) return
     send.mutate(
       {
         templateId,
         invoiceId,
+        shown: { subject: preview.data.subject, body: preview.data.body },
         to: to
           .split(/[,;\s]+/)
           .map((address) => address.trim())

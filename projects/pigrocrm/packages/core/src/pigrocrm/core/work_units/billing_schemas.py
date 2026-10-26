@@ -43,6 +43,10 @@ class BillableDays(BaseModel):
     imponibile: Decimal
     senza_tariffa: list[date]
     senza_approvazione: int
+    motivo_blocco: str | None = Field(
+        default=None,
+        description="Perché la bozza non si può creare da qui, quando non è questione di tariffe",
+    )
     fatturabile: bool = Field(description="C'è almeno una riga e ogni giornata ha la sua tariffa")
 
 

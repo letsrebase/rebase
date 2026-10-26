@@ -45,7 +45,11 @@ export function useCreateEmailTemplate(contractId: string) {
           body,
         }),
       ),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: templatesKey(contractId) }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: templatesKey(contractId) })
+      // What a send would say depends on the template: a cached preview is now another text.
+      void queryClient.invalidateQueries({ queryKey: ['contract', contractId, 'email-preview'] })
+    },
   })
 }
 
@@ -59,7 +63,11 @@ export function useUpdateEmailTemplate(contractId: string, templateId: string) {
           body,
         }),
       ),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: templatesKey(contractId) }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: templatesKey(contractId) })
+      // What a send would say depends on the template: a cached preview is now another text.
+      void queryClient.invalidateQueries({ queryKey: ['contract', contractId, 'email-preview'] })
+    },
   })
 }
 
@@ -71,6 +79,7 @@ export function useEmailPreview(
 ) {
   return useQuery({
     enabled: templateId !== undefined && invoiceId !== undefined,
+    staleTime: 0,
     queryKey: ['contract', contractId, 'email-preview', templateId, invoiceId] as const,
     queryFn: () =>
       unwrap(
@@ -110,7 +119,13 @@ export function useSendContractEmail(contractId: string) {
   // register behind it.
   const pending = useRef<{ key: string; id: string; seen: string } | null>(null)
   return useMutation({
-    mutationFn: async (variables: { templateId: string; invoiceId: string; to: string[] }) => {
+    mutationFn: async (variables: {
+      templateId: string
+      invoiceId: string
+      to: string[]
+      /** The subject and text the dialog showed: what is sent must be what was read. */
+      shown: { subject: string; body: string }
+    }) => {
       const key = [variables.templateId, variables.invoiceId, ...variables.to].join('|')
       let draftId = pending.current?.key === key ? pending.current.id : undefined
       if (draftId === undefined) {
@@ -124,6 +139,18 @@ export function useSendContractEmail(contractId: string) {
             },
           }),
         )
+        if (created.subject !== variables.shown.subject || created.body_markdown !== variables.shown.body) {
+          // The template changed between the preview and the press (another tab): the draft
+          // is what it says now, not what the person read, and it is not sent from here.
+          throw {
+            type: 'about:blank',
+            title: 'Modello modificato',
+            status: 409,
+            code: 'template_changed',
+            detail:
+              'Il modello è cambiato dopo che hai visto l’anteprima: riapri la finestra e rileggi il testo. La bozza è nella scheda Email del cliente.',
+          }
+        }
         draftId = created.id
         pending.current = { key, id: created.id, seen: reviewed(created) }
       }

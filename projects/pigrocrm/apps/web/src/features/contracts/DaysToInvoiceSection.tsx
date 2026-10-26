@@ -126,6 +126,13 @@ export function DaysToInvoiceSection({ contractId, divisa }: { contractId: strin
               </p>
             )}
 
+            {ready.motivo_blocco !== null && ready.motivo_blocco !== undefined && (
+              <p role="alert" className="text-sm text-destructive">
+                {ready.motivo_blocco[0]?.toUpperCase()}
+                {ready.motivo_blocco.slice(1)}.
+              </p>
+            )}
+
             {ready.senza_approvazione > 0 && (
               <p className="text-sm text-muted-foreground">
                 {plural(ready.senza_approvazione, 'giornata lavorata', 'giornate lavorate')} senza

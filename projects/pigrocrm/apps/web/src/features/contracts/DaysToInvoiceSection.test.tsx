@@ -150,6 +150,16 @@ describe('DaysToInvoiceSection', () => {
     expect(await screen.findByRole('combobox', { name: 'Periodo' })).toBeInTheDocument()
   })
 
+  it('says why a contract in another currency cannot be billed from here', async () => {
+    vi.mocked(api.GET).mockImplementation(
+      (() => ok(days({ fatturabile: false, motivo_blocco: 'il contratto è in USD: le fatture si emettono in EUR' }))) as never,
+    )
+    renderSection()
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Il contratto è in USD')
+    expect(screen.getByRole('button', { name: 'Crea la bozza di fattura' })).toBeDisabled()
+  })
+
   it('says how many days wait for an approval, and offers nothing when none is ready', async () => {
     vi.mocked(api.GET).mockImplementation(
       (() => ok(days({ righe: [], mesi: [], giornate: 0, imponibile: '0.00', senza_approvazione: 2, fatturabile: false }))) as never,

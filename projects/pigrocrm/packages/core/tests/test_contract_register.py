@@ -429,3 +429,24 @@ def test_a_disputed_day_with_no_invoice_is_not_billed_and_a_billed_one_stays_whe
     )
 
     assert [v.work_unit_id for v in register.voci] == [billed.id]
+
+
+def test_the_first_render_survives_another_request_creating_the_layout_first(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two first requests both find no layout row; the loser's insert is refused by the
+    unique name and it reads the winner's instead of failing."""
+    from pigrocrm.core.templates.repository import TemplateRepository
+
+    service = ContractRegisterService(db_session)
+    winner = service._template()
+    real = TemplateRepository.get_by_nome
+    calls = {"n": 0}
+
+    def blind_the_first_look(self: TemplateRepository, nome: str):  # type: ignore[no-untyped-def]
+        calls["n"] += 1
+        return None if calls["n"] == 1 else real(self, nome)
+
+    monkeypatch.setattr(TemplateRepository, "get_by_nome", blind_the_first_look)
+
+    assert service._template().id == winner.id

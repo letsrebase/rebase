@@ -31,6 +31,7 @@ from uuid import UUID
 
 from pydantic import BaseModel
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
@@ -256,17 +257,25 @@ class ContractRegisterService:
         template = self.templates.get_by_nome(REGISTER_TEMPLATE_NOME)
         if template is not None:
             return template
-        return self.templates.add(
-            Template(
-                nome=REGISTER_TEMPLATE_NOME,
-                tipo="rapporto_ore",
-                corpo_markdown=(ASSETS_DIR / "template-day-register.md").read_text(
-                    encoding="utf-8"
-                ),
-                variabili_dichiarate=list(REGISTER_TEMPLATE_VARIABLES),
-                attivo=True,
-            )
-        )
+        try:
+            # A savepoint of its own: two first requests can both find no row, and the loser's
+            # insert is refused by the unique name. It rolls back to here and reads the winner's.
+            with self.session.begin_nested():
+                return self.templates.add(
+                    Template(
+                        nome=REGISTER_TEMPLATE_NOME,
+                        tipo="rapporto_ore",
+                        corpo_markdown=(ASSETS_DIR / "template-day-register.md").read_text(
+                            encoding="utf-8"
+                        ),
+                        variabili_dichiarate=list(REGISTER_TEMPLATE_VARIABLES),
+                        attivo=True,
+                    )
+                )
+        except IntegrityError:
+            existing = self.templates.get_by_nome(REGISTER_TEMPLATE_NOME)
+            assert existing is not None
+            return existing
 
     def render_pdf(
         self,

@@ -40,15 +40,21 @@ def count_days_billed_on(session: Session, invoice_id: UUID) -> int:
 
 
 def release_days_of_invoice(session: Session, invoice_id: UUID, actor: Actor, motivo: str) -> int:
-    """Every day still `fatturato` on a line of `invoice_id` goes back to `lavorato` with
-    no line, and how many that was. A day already `pagato` or `contestato` stays where it
-    is: money moved, or somebody is disputing it, and neither is this step's to undo.
+    """Every day on a line of `invoice_id` that is billed and not in dispute goes back to
+    `lavorato` with no line, and how many that was. That is a `fatturato` day, and a
+    `lavorato` one a dispute was resolved back to without clearing its line (the day graph
+    has the edge and nothing clears the link): both are on the invoice and billable again
+    once it is gone. A day `pagato` or still `contestato` stays where it is: money moved, or
+    somebody is disputing it, and neither is this step's to undo.
     Flushes; the caller commits with the rest of its own change."""
     days = list(
         session.scalars(
             select(WorkUnit)
             .join(InvoiceLine, InvoiceLine.id == WorkUnit.invoice_line_id)
-            .where(InvoiceLine.invoice_id == invoice_id, WorkUnit.stato == "fatturato")
+            .where(
+                InvoiceLine.invoice_id == invoice_id,
+                WorkUnit.stato.in_(("fatturato", "lavorato")),
+            )
             .order_by(WorkUnit.data, WorkUnit.id)
         )
     )
@@ -56,7 +62,8 @@ def release_days_of_invoice(session: Session, invoice_id: UUID, actor: Actor, mo
         return 0
     set_transition_context(session, actor, motivo)
     for day in days:
-        day.stato = "contestato"
+        if day.stato == "fatturato":
+            day.stato = "contestato"
     session.flush()
     for day in days:
         day.stato = "lavorato"
