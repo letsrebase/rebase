@@ -144,9 +144,12 @@ test.describe('il calendario', () => {
     await expect(row.getByRole('button', { name: 'Annulla' })).toBeVisible()
     await row.getByRole('button', { name: 'Fatto' }).click()
 
-    // Struck through and without its buttons, still there: the calendar does not hide
-    // what was done, or it would read as work that never happened.
+    // Struck through and without its closing buttons, still there: the calendar does not
+    // hide what was done, or it would read as work that never happened. «Modifica» stays,
+    // since a completed one can be reopened from its dialog (REB-720).
     await expect(dialog.getByText(titolo)).toBeVisible()
-    await expect(dialog.locator('li', { hasText: titolo }).getByRole('button')).toHaveCount(0)
+    const closed = dialog.locator('li', { hasText: titolo })
+    await expect(closed.getByRole('button')).toHaveCount(1)
+    await expect(closed.getByRole('button', { name: 'Modifica' })).toBeVisible()
   })
 })
