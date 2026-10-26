@@ -163,6 +163,7 @@ const GROUPS = [
  */
 const SETTINGS_PATHS = {
   profile: '/app/settings/profile',
+  notifications: '/app/settings/notifications',
   space: '/app/settings/space',
   fields: '/app/settings/fields',
   pipeline: '/app/settings/pipeline',
@@ -174,6 +175,7 @@ const SETTINGS_PATHS = {
   periods: '/app/settings/periods',
   gmail: '/app/settings/gmail',
   drive: '/app/settings/drive',
+  reminders: '/app/settings/reminders',
   automations: '/app/settings/automations',
 } as const satisfies Record<SettingsTabValue, string>
 /**
@@ -656,17 +658,11 @@ export function AppShell({
               // settings tabs are the exception -- one link to the page that owns them.
               [
                 ...GROUPS.flatMap((group) => group.items.map((item) => leaf(item))),
-                ...TOP_LEVEL.slice(2).map((item) => leaf(item)),
+                ...TOP_LEVEL.slice(2).map((item) => topLevel(item)),
                 // The first section, under the group's own name: in the rail the label is the
                 // accessible name, and «Profilo» would say nothing about where it goes.
                 // Profilo is open to every role, so every role has this link.
                 leaf({ to: SETTINGS_PATHS.profile, label: SETTINGS.label, icon: Settings }),
-                ...TOP_LEVEL.slice(2).map((item) => topLevel(item)),
-                // The first tab, under the group's own name: in the rail the label is the
-                // accessible name, and «Spazio» would say nothing about where it goes.
-                isAdmin
-                  ? leaf({ to: SETTINGS_PATHS.space, label: SETTINGS.label, icon: Settings })
-                  : null,
               ]
             : [
                 ...GROUPS.map((group) => (
@@ -680,7 +676,7 @@ export function AppShell({
                     {group.items.map((item) => subItem(item))}
                   </NavGroup>
                 )),
-                ...TOP_LEVEL.slice(2).map((item) => leaf(item)),
+                ...TOP_LEVEL.slice(2).map((item) => topLevel(item)),
                 <NavGroup
                   key={SETTINGS.id}
                   label={SETTINGS.label}
@@ -690,18 +686,6 @@ export function AppShell({
                 >
                   {settingsItems.map((item) => subItem(item))}
                 </NavGroup>,
-                ...TOP_LEVEL.slice(2).map((item) => topLevel(item)),
-                isAdmin ? (
-                  <NavGroup
-                    key={SETTINGS.id}
-                    label={SETTINGS.label}
-                    icon={SETTINGS.icon}
-                    open={isOpen(SETTINGS.id)}
-                    onToggle={() => toggleGroup(SETTINGS.id)}
-                  >
-                    {settingsItems.map((item) => subItem(item))}
-                  </NavGroup>
-                ) : null,
               ]}
         </nav>
 

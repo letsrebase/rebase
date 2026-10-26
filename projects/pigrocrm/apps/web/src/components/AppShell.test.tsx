@@ -353,7 +353,7 @@ describe('AppShell', () => {
       '/app/settings/fields',
       '/app/settings/aziende',
       '/app/settings/gmail',
-      '/app/settings/automations',
+      '/app/settings/reminders',
     ])
   })
 

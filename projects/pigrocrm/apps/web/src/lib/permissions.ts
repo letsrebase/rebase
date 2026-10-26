@@ -225,6 +225,7 @@ export const SETTINGS_TAB_MIN_ROLE: Record<
   'collaboratore' | 'admin' | null
 > = {
   profile: null,
+  notifications: null,
   space: 'admin',
   fields: 'admin',
   pipeline: 'admin',
@@ -236,6 +237,7 @@ export const SETTINGS_TAB_MIN_ROLE: Record<
   periods: 'admin',
   gmail: 'admin',
   drive: 'collaboratore',
+  reminders: 'admin',
   automations: 'admin',
 }
 

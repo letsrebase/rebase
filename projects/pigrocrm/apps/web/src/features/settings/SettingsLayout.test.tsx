@@ -73,11 +73,11 @@ describe('SettingsLayout (the /app/settings route guard)', () => {
     },
   )
 
-  it('shows a collaboratore on the profile tab the Personale group alone, Profilo', () => {
+  it('shows a collaboratore on the profile tab the Personale group alone, Profilo and Notifiche', () => {
     mockAuth.isAdmin = false
     mockLocation.pathname = '/app/settings/profile'
     render(<SettingsLayout />)
-    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['Profilo'])
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['Profilo', 'Notifiche'])
   })
 
   /**
@@ -102,12 +102,49 @@ describe('SettingsLayout (the /app/settings route guard)', () => {
     expect(screen.queryByRole('tab')).not.toBeInTheDocument()
   })
 
-  it('shows a readonly person on the profile tab no Drive tab', () => {
+  it('shows a readonly person on the profile tab Profilo and Notifiche, no Drive tab', () => {
     mockAuth.isAdmin = false
     mockAuth.readonly = true
     mockLocation.pathname = '/app/settings/profile'
     render(<SettingsLayout />)
-    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['Profilo'])
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['Profilo', 'Notifiche'])
+  })
+
+  /**
+   * REB-735: Notifiche is a person's own, every role's, like Profilo; Promemoria, the space's
+   * defaults, is an admin's, and a member who types its path meets the gate.
+   */
+  it.each([false, true])('opens Notifiche to a person whose readonly flag is %s, with no gate', (readonly) => {
+    mockAuth.isAdmin = false
+    mockAuth.readonly = readonly
+    mockLocation.pathname = '/app/settings/notifications'
+    render(<SettingsLayout />)
+    expect(screen.queryByText('Accesso riservato')).not.toBeInTheDocument()
+    expect(screen.getByTestId('outlet-content')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Notifiche' })).toHaveAttribute(
+      'href',
+      '/app/settings/notifications',
+    )
+  })
+
+  it('keeps Promemoria behind the gate for a member, and shows an admin it beside Automazioni', () => {
+    mockAuth.isAdmin = false
+    mockLocation.pathname = '/app/settings/reminders'
+    const { unmount } = render(<SettingsLayout />)
+    expect(screen.getByRole('heading', { name: 'Accesso riservato' })).toBeInTheDocument()
+    expect(screen.queryByTestId('outlet-content')).toBeNull()
+    unmount()
+
+    mockAuth.isAdmin = true
+    render(<SettingsLayout />)
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
+      'Promemoria',
+      'Automazioni',
+    ])
+    expect(screen.getByRole('tab', { name: 'Promemoria' })).toHaveAttribute(
+      'href',
+      '/app/settings/reminders',
+    )
   })
 
   it('shows an admin on the Drive tab the Collegamenti group, and no other group', () => {
