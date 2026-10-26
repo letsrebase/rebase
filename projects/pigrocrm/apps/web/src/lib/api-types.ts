@@ -3241,6 +3241,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/activities/oggi": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Oggi */
+        get: operations["oggi_api_activities_oggi_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/activities/{attivita_id}": {
         parameters: {
             query?: never;
@@ -3742,6 +3759,36 @@ export interface components {
             custom_fields: {
                 [key: string]: unknown;
             };
+        };
+        /**
+         * AttivitaGruppo
+         * @description One section of the Oggi panel: the first `limit` rows and how many there are in all.
+         */
+        AttivitaGruppo: {
+            /** Totale */
+            totale: number;
+            /** Items */
+            items: components["schemas"]["AttivitaRead"][];
+        };
+        /**
+         * AttivitaOggi
+         * @description The four sections of «Oggi» (spec 2026-09-03 §5), in the order the page shows them.
+         *
+         *     `oggi` is the day the sections were cut on, the emitter's (`today_local`), so a client
+         *     in another zone sees the same four lists the server counted. Every section is open
+         *     commitments only; «prossimi sette giorni» opens the day after `oggi` and closes seven
+         *     days on, both inclusive.
+         */
+        AttivitaOggi: {
+            /**
+             * Oggi
+             * Format: date
+             */
+            oggi: string;
+            in_ritardo: components["schemas"]["AttivitaGruppo"];
+            scadono_oggi: components["schemas"]["AttivitaGruppo"];
+            prossimi_sette_giorni: components["schemas"]["AttivitaGruppo"];
+            senza_scadenza: components["schemas"]["AttivitaGruppo"];
         };
         /** AttivitaPage */
         AttivitaPage: {
@@ -34686,6 +34733,128 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AttivitaRead"];
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    oggi_api_activities_oggi_get: {
+        parameters: {
+            query?: {
+                /** @description Solo le attività di questa persona; senza, di tutto lo spazio */
+                assegnata_a?: string | null;
+                /** @description Righe per sezione */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttivitaOggi"];
                 };
             };
             /** @description Permesso negato: l'actor non ha il ruolo richiesto. */

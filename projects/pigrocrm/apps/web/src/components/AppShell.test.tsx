@@ -58,9 +58,9 @@ vi.mock('@tanstack/react-router', () => ({
 // toast copy, only that clicking a copy button does not throw for want of a mock.
 vi.mock('@rebase/ui/sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 
-const mockAuth = vi.hoisted(() => ({ ruolo: 'admin' as string }))
+const mockAuth = vi.hoisted(() => ({ ruolo: 'admin' as string, id: undefined as string | undefined }))
 vi.mock('@/lib/auth', () => ({
-  useAuth: () => ({ user: { nome: 'Mario', email: 'm@example.com', ruolo: mockAuth.ruolo }, logout: vi.fn() }),
+  useAuth: () => ({ user: { id: mockAuth.id, nome: 'Mario', email: 'm@example.com', ruolo: mockAuth.ruolo }, logout: vi.fn() }),
   useIsAdmin: () => mockAuth.ruolo === 'admin',
 }))
 
@@ -134,6 +134,7 @@ function sidebar() {
 beforeEach(() => {
   setViewport(true)
   mockAuth.ruolo = 'admin'
+  mockAuth.id = undefined
   mockRoute.pathname = '/app/customers'
   mockRoute.search = ''
   localStorage.clear()
@@ -166,6 +167,38 @@ describe('AppShell', () => {
     for (const label of ['Vendite', 'Amministrazione', 'Impostazioni']) {
       expect(nav.getByRole('button', { name: label })).toBeInTheDocument()
     }
+  })
+
+  it('shows the overdue count beside «Oggi» (REB-725)', async () => {
+    mockAuth.id = 'u-1'
+    GET.mockImplementation(async (path: string) =>
+      path === '/api/activities/oggi'
+        ? { data: { in_ritardo: { totale: 3, items: [] } }, response: { status: 200 } }
+        : { data: [], response: { status: 200 } },
+    )
+    renderShell()
+
+    const oggi = sidebar().getByRole('link', { name: /Oggi/ })
+    expect(await within(oggi).findByLabelText('3 in ritardo')).toHaveTextContent('3')
+    // Asked for the signed-in user's own, a single row: the sidebar wants the number.
+    expect(GET).toHaveBeenCalledWith('/api/activities/oggi', {
+      params: { query: { assegnata_a: 'u-1', limit: 1 } },
+    })
+  })
+
+  it('draws no count beside «Oggi» when nothing is overdue', async () => {
+    mockAuth.id = 'u-1'
+    GET.mockImplementation(async (path: string) =>
+      path === '/api/activities/oggi'
+        ? { data: { in_ritardo: { totale: 0, items: [] } }, response: { status: 200 } }
+        : { data: [], response: { status: 200 } },
+    )
+    renderShell()
+
+    await waitFor(() =>
+      expect(GET).toHaveBeenCalledWith('/api/activities/oggi', expect.anything()),
+    )
+    expect(within(sidebar().getByRole('link', { name: 'Oggi' })).queryByLabelText(/in ritardo/)).toBeNull()
   })
 
   it('offers the global search in the sidebar, with the shortcut visible', () => {

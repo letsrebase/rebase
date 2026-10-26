@@ -8,6 +8,7 @@ import { useUsers } from '@/features/settings/queries'
 import { api, unwrap } from '@/lib/api'
 import { useAuth, useIsAdmin } from '@/lib/auth'
 import type { Attivita } from '@/features/calendar/queries'
+import type { components } from '@/lib/api-types'
 import type { LinkKind, LinkValue } from './links'
 
 /**
@@ -140,6 +141,38 @@ export function useAttivitaPages(filters: AttivitaFilters) {
     isFetchingMore: query.isFetchingNextPage,
     loadMore: () => void query.fetchNextPage(),
   }
+}
+
+export type AttivitaOggi = components['schemas']['AttivitaOggi']
+
+/**
+ * The four sections of the Oggi panel, cut by the server on the emitter's own «oggi» so
+ * the sidebar count and the page can never disagree with the digest about what is late.
+ * Under the `['attivita']` prefix every attività write invalidates: completing the last
+ * overdue one empties the section and the sidebar count in the same refetch.
+ *
+ * `assegnata_a` undefined is the whole space; `enabled` is how a caller waits for the
+ * session's user id before asking for «mine», rather than asking for everybody's first.
+ */
+export function useAttivitaOggi(
+  params: { assegnata_a?: string; limit?: number },
+  options: { enabled?: boolean } = {},
+) {
+  return useQuery({
+    enabled: options.enabled ?? true,
+    queryKey: ['attivita', 'oggi', params] as const,
+    queryFn: () => unwrap(api.GET('/api/activities/oggi', { params: { query: params } })),
+  })
+}
+
+/** How many open attività assigned to the signed-in user are past their deadline: the
+ *  number the sidebar shows next to «Oggi». `undefined` until it is known or when there
+ *  is nothing to count, so the badge is drawn only for a real figure. */
+export function useOverdueCount(): number | undefined {
+  const { user } = useAuth()
+  const query = useAttivitaOggi({ assegnata_a: user?.id, limit: 1 }, { enabled: Boolean(user?.id) })
+  const total = query.data?.in_ritardo.totale
+  return total ? total : undefined
 }
 
 /** One attività by id, for a screen that arrives holding only the id (the global search). */

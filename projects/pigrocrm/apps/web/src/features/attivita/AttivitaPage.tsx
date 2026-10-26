@@ -8,13 +8,6 @@ import { RowActions } from '@/components/RowActions'
 import { StatusPill, type StatusTone } from '@/components/StatusPill'
 import { Button } from '@rebase/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@rebase/ui/popover'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@rebase/ui/select'
 import { toast } from '@rebase/ui/sonner'
 import type { ColumnDef } from '@tanstack/react-table'
 import {
@@ -28,9 +21,10 @@ import {
 import { toProblem } from '@/lib/api'
 import { useCanWrite } from '@/lib/auth'
 import { formatIsoDateItalian } from '@/lib/dates'
+import { AssigneeSelect } from './AssigneeSelect'
 import { AttivitaDialog } from './AttivitaDialog'
 import { RecordLink } from './AttivitaMeta'
-import { EVERYONE, ME, toFilters, type Scadenza, type Stato } from './filters'
+import { ME, toFilters, type Scadenza, type Stato } from './filters'
 import { LINK_KIND_LABELS, linkOf, type LinkValue } from './links'
 import { useAssignees, useAttivita, useAttivitaPages, useRecordLabel } from './queries'
 import { RecordPicker } from './RecordPicker'
@@ -281,22 +275,7 @@ export function AttivitaPage({
               if (next === 'scadute') setStato('aperta')
             }}
           />
-          <Select value={assignee} onValueChange={setAssignee}>
-            <SelectTrigger className="w-52" aria-label="Filtra per assegnatario">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={EVERYONE}>Di chiunque</SelectItem>
-              <SelectItem value={ME}>Assegnate a me</SelectItem>
-              {assignees.options
-                .filter((person) => person.id !== assignees.me)
-                .map((person) => (
-                  <SelectItem key={person.id} value={person.id}>
-                    {person.nome}
-                  </SelectItem>
-                ))}
-            </SelectContent>
-          </Select>
+          <AssigneeSelect value={assignee} onChange={setAssignee} />
           <LinkFilter value={link} onChange={setLink} />
           <Button
             variant="outline"
