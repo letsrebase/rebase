@@ -40,6 +40,7 @@ import {
   REVIEW_OUTCOME_NOTES,
   REVIEW_OUTCOME_TONES,
   registerYears,
+  reviewedAsConfirmed,
   sortReviewRows,
   willBeWritten,
   type ConfirmRow,
@@ -139,7 +140,11 @@ function ImportInvoicesDialog({ onClose }: { onClose: () => void }) {
     const toWrite = batches.filter((batch) =>
       batch.rows.some((row) => willBeWritten(row, declined)),
     )
-    const collected: ConfirmRow[] = []
+    // The batches not sent keep their review in the result: their conflicts and unreadable
+    // files are still files the person has to look at.
+    const collected: ConfirmRow[] = batches
+      .filter((batch) => !toWrite.includes(batch))
+      .flatMap((batch) => reviewedAsConfirmed(batch.rows))
     // The customer each party's invoices went to so far: a batch after the first attaches
     // a party an earlier one created by id, instead of asking for it to be created again.
     const created = new Map<string, string>()

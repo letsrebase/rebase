@@ -34,7 +34,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from pigrocrm.core.errors import ValidationFailed
-from pigrocrm.core.invoices.fatturapa import normalise_fiscal_id
+from pigrocrm.core.invoices.fatturapa import normalise_fiscal_id, normalise_foreign_fiscal_id
 from pigrocrm.core.invoices.import_confirm import InvoiceConfirmOutcome
 from pigrocrm.core.invoices.import_review import InvoiceReviewOutcome
 from pigrocrm.core.invoices.import_schemas import ParsedInvoice, ParsedInvoiceParty
@@ -172,11 +172,21 @@ def expand_uploads(files: Sequence[tuple[str, bytes]]) -> list[UploadedFile]:
 def party_key(party: ParsedInvoiceParty) -> str:
     """What names a counterparty in a decision: its VAT number or tax code as the
     register would store it (`normalise_fiscal_id`, the same cleaning `match_customer`
-    matches on, so `IT01234567890` and `01234567890` are one party), and for a party with
-    neither, which is a foreign one in practice, its name. The server defines the key and
-    the review hands it to the page: the page never computes one."""
-    normalised = normalise_fiscal_id(party.partita_iva) or normalise_fiscal_id(party.codice_fiscale)
-    return normalised if normalised is not None else f"nome:{party.ragione_sociale.casefold()}"
+    matches on, so `IT01234567890` and `01234567890` are one party). A party the register
+    cannot match by tax id, which is a foreign one in practice, is named by its
+    identifier with the country as the document states it (`estero:DE123456789`), so two
+    foreign customers with one name stay two, and only a party with no identifier at all
+    falls back to its name. The server defines the key and the review hands it to the
+    page: the page never computes one."""
+    italian = normalise_fiscal_id(party.partita_iva) or normalise_fiscal_id(party.codice_fiscale)
+    if italian is not None:
+        return italian
+    foreign = normalise_foreign_fiscal_id(party.partita_iva) or normalise_foreign_fiscal_id(
+        party.codice_fiscale
+    )
+    if foreign is not None:
+        return f"estero:{foreign}"
+    return f"nome:{party.ragione_sociale.casefold()}"
 
 
 class UploadedInvoiceReviewRead(BaseModel):

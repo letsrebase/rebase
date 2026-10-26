@@ -370,6 +370,34 @@ describe('the import dialog', () => {
     expect(screen.queryByText(/Nessuna fattura è stata importata/)).not.toBeInTheDocument()
   })
 
+  it('keeps the conflicts of a batch it did not send again in the list of what needs a look', async () => {
+    const files = Array.from({ length: 30 }, (_, i) => xml(`f${String(i).padStart(2, '0')}.xml`))
+    mockFetch.mockImplementation((url, init) => {
+      const names = (init?.body as FormData).getAll('file').map((f) => (f as File).name)
+      if (url === REVIEW) {
+        return json({ righe: names.map((n) => reviewRow(n, n < 'f25' ? 'conflict' : 'ready', n)) })
+      }
+      return json({
+        righe: names.map((n) => ({
+          file: n,
+          sha256: `sha-${n}`,
+          outcome: 'imported',
+          azienda_id: 'az-1',
+          fattura: { anno: 2026, numero: 1, customer_id: 'customer-1' },
+          buchi_non_dichiarati: [],
+        })),
+      })
+    })
+
+    const user = await openAndPick(files)
+    await user.click(await screen.findByRole('button', { name: 'Importa 5 fatture' }))
+
+    const section = await screen.findByRole('region', { name: 'Da guardare' })
+    expect(within(section).getAllByRole('listitem')).toHaveLength(25)
+    expect(within(section).getByText('f00.xml')).toBeInTheDocument()
+    expect(mockFetch.mock.calls.filter(([url]) => url === CONFIRM)).toHaveLength(1)
+  })
+
   it('is not offered to a role the service refuses', () => {
     mockAuth.may = false
     render(

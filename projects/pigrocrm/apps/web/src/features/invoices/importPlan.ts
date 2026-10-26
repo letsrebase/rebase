@@ -165,6 +165,27 @@ export function customersOf(rows: readonly ConfirmRow[]): Map<string, string> {
   return customers
 }
 
+/** The review rows of a batch that holds nothing to write, as rows of the result. Such a
+ *  batch is not sent again, and its conflicts, unreadable files and received invoices
+ *  must still reach the list of what needs a look: the result would otherwise report only
+ *  the batches that were written. A `ready` row cannot be in one and is left out. */
+export function reviewedAsConfirmed(rows: readonly ReviewRow[]): ConfirmRow[] {
+  return rows.flatMap((row) =>
+    row.outcome === 'ready'
+      ? []
+      : [
+          {
+            file: row.file,
+            sha256: row.sha256,
+            outcome: row.outcome,
+            party_key: row.party_key,
+            motivo: row.motivo,
+            azienda_id: row.azienda_id,
+          },
+        ],
+  )
+}
+
 /** One request's worth of files. The review and the write both go in these, one after
  *  the other: a request is read and written invoice by invoice on the server, and a
  *  year in one body would sit behind a single spinner with no way to say how far along

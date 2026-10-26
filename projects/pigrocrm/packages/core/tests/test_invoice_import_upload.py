@@ -447,7 +447,7 @@ def test_a_foreign_counterparty_with_no_italian_tax_id_is_created_once_across_th
     }
     archive = [("estero.zip", _zip(files))]
     [first, *_] = service.review_upload(archive, ADMIN)
-    assert first.party_key == "nome:esempio servizi s.r.l."
+    assert first.party_key == "estero:DE123456789"
     customers = _customer_count(db_session)
 
     confirmed = service.confirm_upload(
@@ -457,6 +457,38 @@ def test_a_foreign_counterparty_with_no_italian_tax_id_is_created_once_across_th
     assert [row.outcome for row in confirmed] == ["imported"] * 3
     assert len({row.fattura.customer_id for row in confirmed if row.fattura}) == 1
     assert _customer_count(db_session) == customers + 1
+
+
+def test_two_foreign_customers_with_one_name_and_different_vat_numbers_stay_two(
+    db_session: Session, local_storage: LocalFileStorage
+) -> None:
+    service = _svc(db_session, local_storage)
+    italian = "<IdPaese>IT</IdPaese>\n          <IdCodice>09876543210</IdCodice>"
+    files = [
+        (
+            f"{vat}.xml",
+            content.decode()
+            .replace(italian, f"<IdPaese>DE</IdPaese>\n          <IdCodice>{vat}</IdCodice>")
+            .encode(),
+        )
+        for vat, content in zip(("123456789", "987654321"), _year(2).values(), strict=True)
+    ]
+    first, second = service.review_upload(files, ADMIN)
+    assert (first.party_key, second.party_key) == ("estero:DE123456789", "estero:DE987654321")
+    customers = _customer_count(db_session)
+
+    confirmed = service.confirm_upload(
+        files,
+        {
+            first.party_key or "": UploadedPartyDecision(create_customer=True),
+            second.party_key or "": UploadedPartyDecision(create_customer=True),
+        },
+        ADMIN,
+    )
+
+    assert [row.outcome for row in confirmed] == ["imported"] * 2
+    assert len({row.fattura.customer_id for row in confirmed if row.fattura}) == 2
+    assert _customer_count(db_session) == customers + 2
 
 
 def test_a_file_that_looks_like_a_fattura_and_does_not_parse_is_unclaimed_with_its_reason(
