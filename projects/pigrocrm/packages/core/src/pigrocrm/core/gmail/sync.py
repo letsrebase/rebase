@@ -99,6 +99,11 @@ SUGGEST_MAX_MONTHS = 24
 # proposals are read while somebody waits on the Home, so the most recent ones stand
 # for the period; a customer who wrote once, long ago, is not the one to import first.
 SUGGEST_MAX_THREADS = 200
+# The most recent conversations one discovery of a customer's domain reads, each one Gmail
+# call. The Email tab asks while somebody waits, under the 60 seconds nginx gives an `/api`
+# request: a long-standing customer's older conversations are left out rather than the
+# whole read answering 504.
+DISCOVER_MAX_THREADS = 200
 # Header reads in flight at once. This bounds concurrency, not rate: Gmail allows a user
 # 250 quota units a second and a `threads.get` costs 10, and two reads of about a tenth
 # of a second each stay near 200. `GmailTransport` retries a 429 with backoff anyway.
@@ -411,11 +416,27 @@ class GmailSyncService:
         mailbox = account.email_address.strip().lower()
         suffix = f"@{domain}"
         tally: dict[str, _Correspondent] = {}
-        for thread_id in self._relevant_threads((discovery_query(domain),), token):
+        try:
+            # Gmail lists the newest first, so the cap keeps the conversations that say who
+            # at the domain is writing now.
+            thread_ids = self._relevant_threads((discovery_query(domain),), token)[
+                :DISCOVER_MAX_THREADS
+            ]
+            payloads = [
+                self.transport.json(
+                    "GET", thread_get_url(thread_id), token=token, what=_WHAT_THREAD
+                )
+                for thread_id in thread_ids
+            ]
+        except GoogleCallFailed as failed:
+            # Gmail failing after every retry is the person's to retry, not a server error
+            # (REB-766: a press on the customer's Email tab reaches this): the same
+            # `GmailUnavailable` the proposals answer.
+            raise GmailUnavailable(
+                "la ricerca dei corrispondenti", failed.failure.status
+            ) from failed
+        for payload in payloads:
             report.threads_scanned += 1
-            payload = self.transport.json(
-                "GET", thread_get_url(thread_id), token=token, what=_WHAT_THREAD
-            )
             for raw in payload.get("messages") or []:
                 if not isinstance(raw, dict):
                     continue

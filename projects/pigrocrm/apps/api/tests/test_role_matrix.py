@@ -313,6 +313,11 @@ ROWS: list[Row] = [
     Row("DELETE", "/api/customers/{customer_id}"),
     Row("PATCH", "/api/customers/{customer_id}", body={}),
     Row("POST", "/api/customers/{customer_id}/restore"),
+    Row(
+        "POST",
+        "/api/customers/{customer_id}/people-from-mail",
+        body={"indirizzo": "marco@acme.it", "nome": "Marco"},
+    ),
     Row("POST", "/api/deals", body={"nome": "matrice-deal", "customer_id": "__CUST__"}),
     Row("DELETE", "/api/deals/{deal_id}"),
     Row("PATCH", "/api/deals/{deal_id}", body={}),
@@ -442,6 +447,8 @@ ROWS: list[Row] = [
     # A GET, and gated all the same: the proposals spend the owner's Gmail quota, as
     # discovery does (REB-223), so a readonly person is refused like on `sync`.
     Row("GET", "/api/gmail/customer-suggestions", google=True),
+    # The same for one customer's domain (REB-766).
+    Row("GET", "/api/gmail/customers/{customer_id}/correspondents", google=True),
     Row("GET", "/api/gmail/oauth/start", google=True),
     Row(
         "GET",

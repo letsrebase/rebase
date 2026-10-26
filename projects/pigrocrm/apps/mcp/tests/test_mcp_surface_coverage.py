@@ -651,6 +651,12 @@ _COPERTE_O_UMANE: dict[Method, str] = {
         "stesse persone con `create_customer` e `create_person`, e il confine della "
         "transazione e' quello della lista di caselle, che un agente non ha"
     ),
+    ("CustomerService", "add_person_from_mail"): (
+        "mette sulla scheda cliente un indirizzo trovato dall'elenco di chi ha scritto dal "
+        "dominio del cliente (REB-766): un agente trova gli stessi indirizzi con "
+        "`discover_gmail_correspondents` e li registra con `create_person`; qui c'e' solo "
+        "il pulsante che evita di ricopiare nome e indirizzo"
+    ),
     ("DigestService", "build"): (
         "compone il resoconto settimanale che `pigrocrm digest` manda per mail il lunedi' "
         "(REB-221): ogni numero che contiene e' gia' un tool o una resource (i tre "

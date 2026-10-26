@@ -12,9 +12,11 @@ from pigrocrm.core.customers.schemas import (
     CustomerRead,
     CustomersFromSuggestions,
     CustomerUpdate,
+    PersonFromSuggestion,
 )
 from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.db import CURSOR_MAX_LENGTH, SortDirection
+from pigrocrm.core.people.schemas import PersonRead
 from pigrocrm.core.validation import SafeStr
 from pigrocrm_api.deps import ActorDep, SessionDep
 from pigrocrm_api.errors import PROBLEM_RESPONSES
@@ -38,6 +40,21 @@ def create_from_suggestions(
     data: CustomersFromSuggestions, session: SessionDep, actor: ActorDep
 ) -> list[CustomerRead]:
     return CustomerService(session).create_from_suggestions(data, actor)
+
+
+# One address the mailbox found at this customer's domain (`GET
+# /api/gmail/customers/{id}/correspondents`), put on the customer as a person (REB-766).
+# It reaches no Gmail: the address comes from the body, checked against the customer's
+# own domain.
+@router.post(
+    "/{customer_id}/people-from-mail",
+    response_model=PersonRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def add_person_from_mail(
+    customer_id: UUID, data: PersonFromSuggestion, session: SessionDep, actor: ActorDep
+) -> PersonRead:
+    return CustomerService(session).add_person_from_mail(customer_id, data, actor)
 
 
 @router.get("", response_model=CustomerPage)

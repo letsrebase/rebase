@@ -19,6 +19,7 @@ from pigrocrm.core.customers.schemas import (
     CustomerRead,
     CustomersFromSuggestions,
     CustomerUpdate,
+    PersonFromSuggestion,
 )
 from pigrocrm.core.db import encode_cursor
 from pigrocrm.core.emitter.service import LegalEntityService
@@ -28,7 +29,12 @@ from pigrocrm.core.fields.service import FieldDefinitionService
 from pigrocrm.core.fields.validator import validate_custom_fields
 from pigrocrm.core.gmail.query import customer_domain
 from pigrocrm.core.gmail.roster import AddressRoster
-from pigrocrm.core.people.schemas import COGNOME_MAX_LENGTH, NOME_MAX_LENGTH, PersonCreate
+from pigrocrm.core.people.schemas import (
+    COGNOME_MAX_LENGTH,
+    NOME_MAX_LENGTH,
+    PersonCreate,
+    PersonRead,
+)
 from pigrocrm.core.people.service import PersonService
 from pigrocrm.core.schemas import reject_cleared_columns, supplied_changes
 
@@ -336,6 +342,58 @@ class CustomerService:
             raise
         self.session.commit()
         return [CustomerRead.model_validate(customer) for customer in created]
+
+    def add_person_from_mail(
+        self, customer_id: UUID, data: PersonFromSuggestion, actor: Actor
+    ) -> PersonRead:
+        """One address the connected mailbox found at this customer's domain
+        (`GmailSyncService.discover`, REB-766), put on the customer as a person.
+
+        The name is read the way the proposals read it (`_person_name`), so the same
+        header gives the same person whichever list it was ticked in. Only an address at
+        the customer's own domain is accepted, the one the discovery was scoped to, and
+        one the address book already holds is refused rather than filed twice. Nothing
+        is asked of Gmail: the discovery's answer is not re-read, as with
+        `create_from_suggestions`.
+        """
+        actor.require_write("create_person")
+        # Before the address book is read: two presses of the same address, a double click
+        # or two tabs, then run one after the other, and the second finds the person the
+        # first committed instead of filing it twice (the lock `create_from_suggestions`
+        # takes, so an import of the same address waits here too).
+        self.repo.lock_imports()
+        customer = self.repo.get(customer_id)
+        if customer is None:
+            raise NotFound(ENTITY, customer_id)
+        domain = customer_domain(sito_web=customer.sito_web, email=customer.email)
+        if domain is None:
+            raise Conflict(
+                ENTITY,
+                f"il cliente {customer_id} non ha un dominio: indica il sito web o "
+                "un'email aziendale (non webmail) sulla scheda cliente",
+            )
+        address = data.indirizzo.strip().lower()
+        if not address.endswith(f"@{domain}"):
+            raise ValidationFailed(
+                ENTITY,
+                "indirizzo",
+                f"{address} non è un indirizzo di {domain}",
+                expected=f"nome@{domain}",
+            )
+        if address in set(AddressRoster(self.session).known_addresses()):
+            raise Conflict(ENTITY, f"{address} è già in anagrafica", indirizzo=address)
+        persons = PersonService(self.session)
+        nome, cognome = _person_name(data.nome, address)
+        try:
+            person = persons._insert(
+                PersonCreate(nome=nome, cognome=cognome, email=address, customer_id=customer.id),
+                actor,
+            )
+        except DomainError:
+            self.session.rollback()
+            raise
+        self.session.commit()
+        return persons._read(person)
 
     def update(self, customer_id: UUID, data: CustomerUpdate, actor: Actor) -> CustomerRead:
         actor.require_write("update_customer")
