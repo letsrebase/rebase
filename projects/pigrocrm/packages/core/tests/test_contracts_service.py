@@ -12,7 +12,10 @@ from pigrocrm.core.contracts.schemas import (
     ContractCreate,
     ContractListQuery,
     ContractProjectionQuery,
+    ContractStateChange,
+    ContractUpdate,
     RateCardCreate,
+    RateCardUpdate,
     RenewalAssumptionUpsert,
 )
 from pigrocrm.core.contracts.service import (
@@ -23,6 +26,8 @@ from pigrocrm.core.contracts.service import (
 )
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
+from pigrocrm.core.fields.schemas import FieldDefinitionCreate
+from pigrocrm.core.fields.service import FieldDefinitionService
 from pigrocrm.core.invoices.models import Invoice
 
 ADMIN = Actor(id=None, type="system", role="admin")
@@ -493,3 +498,270 @@ def test_the_projected_figure_is_independent_of_cash_overviews_own_proiettato(
 
     overview = AnalyticsService(db_session).cash_overview(2026, ADMIN)
     assert overview.proiettato == Decimal("0.00")
+
+
+# ---- REB-741: editing a contract and moving it through its states ------------------
+
+
+def test_update_changes_only_the_fields_it_names(db_session: Session) -> None:
+    customer = _customer(db_session)
+    service = ContractService(db_session)
+    created = service.create(_create_payload(customer.id), ADMIN)
+
+    updated = service.update(created.id, ContractUpdate(preavviso_disdetta_giorni=60), ADMIN)
+
+    assert updated.preavviso_disdetta_giorni == 60
+    assert updated.titolo == created.titolo
+    assert updated.cadenza_fatturazione == created.cadenza_fatturazione
+
+
+def test_update_can_clear_the_end_date_and_the_payment_terms_together(
+    db_session: Session,
+) -> None:
+    customer = _customer(db_session)
+    service = ContractService(db_session)
+    created = service.create(
+        _create_payload(
+            customer.id,
+            fine=date(2026, 12, 31),
+            giorni_pagamento=30,
+            pagamento_fine_mese=True,
+        ),
+        ADMIN,
+    )
+
+    updated = service.update(
+        created.id,
+        ContractUpdate(fine=None, giorni_pagamento=None, pagamento_fine_mese=None),
+        ADMIN,
+    )
+
+    assert updated.fine is None
+    assert updated.giorni_pagamento is None
+    assert updated.pagamento_fine_mese is None
+
+
+def test_update_refuses_half_set_payment_terms_on_the_merged_row(db_session: Session) -> None:
+    customer = _customer(db_session)
+    service = ContractService(db_session)
+    created = service.create(_create_payload(customer.id), ADMIN)
+
+    with pytest.raises(ValidationFailed) as excinfo:
+        service.update(created.id, ContractUpdate(giorni_pagamento=30), ADMIN)
+    assert excinfo.value.details["field"] == "giorni_pagamento"
+
+
+def test_update_refuses_a_renewal_type_without_its_notice(db_session: Session) -> None:
+    customer = _customer(db_session)
+    service = ContractService(db_session)
+    created = service.create(_create_payload(customer.id), ADMIN)
+
+    with pytest.raises(ValidationFailed) as excinfo:
+        service.update(created.id, ContractUpdate(tipo_rinnovo="tacito"), ADMIN)
+    assert excinfo.value.details["field"] == "preavviso_rinnovo_giorni"
+
+    updated = service.update(
+        created.id,
+        ContractUpdate(tipo_rinnovo="tacito", preavviso_rinnovo_giorni=45),
+        ADMIN,
+    )
+    assert updated.tipo_rinnovo == "tacito"
+
+
+def test_update_refuses_an_end_before_the_start_and_a_cleared_required_field(
+    db_session: Session,
+) -> None:
+    customer = _customer(db_session)
+    service = ContractService(db_session)
+    created = service.create(_create_payload(customer.id), ADMIN)
+
+    with pytest.raises(ValidationFailed) as ended:
+        service.update(created.id, ContractUpdate(fine=date(2025, 12, 31)), ADMIN)
+    assert ended.value.details["field"] == "fine"
+
+    with pytest.raises(ValidationFailed) as cleared:
+        service.update(created.id, ContractUpdate(titolo=None), ADMIN)
+    assert cleared.value.details["field"] == "titolo"
+
+
+def test_update_merges_custom_fields_and_removes_a_key_supplied_as_null(
+    db_session: Session,
+) -> None:
+    customer = _customer(db_session)
+    fields = FieldDefinitionService(db_session)
+    for key in ("referente", "codice_po"):
+        fields.create(
+            FieldDefinitionCreate(
+                entity_type="contract", key=key, label=key.capitalize(), field_type="text"
+            ),
+            ADMIN,
+        )
+    service = ContractService(db_session)
+    created = service.create(
+        _create_payload(customer.id, custom_fields={"referente": "Rossi", "codice_po": "PO-1"}),
+        ADMIN,
+    )
+
+    updated = service.update(
+        created.id, ContractUpdate(custom_fields={"codice_po": None, "referente": "Bianchi"}), ADMIN
+    )
+
+    assert updated.custom_fields == {"referente": "Bianchi"}
+
+
+def test_update_of_an_unknown_contract_is_not_found(db_session: Session) -> None:
+    with pytest.raises(NotFound):
+        ContractService(db_session).update(uuid4(), ContractUpdate(titolo="x"), ADMIN)
+
+
+def test_set_state_moves_a_contract_out_of_bozza_and_records_it(db_session: Session) -> None:
+    customer = _customer(db_session)
+    service = ContractService(db_session)
+    created = service.create(_create_payload(customer.id), ADMIN)
+
+    active = service.set_state(created.id, ContractStateChange(stato="attivo"), ADMIN)
+    assert active.stato == "attivo"
+    assert service.get(created.id, ADMIN).stato == "attivo"
+
+    closed = service.set_state(created.id, ContractStateChange(stato="terminato"), ADMIN)
+    assert closed.stato == "terminato"
+
+
+def test_set_state_refuses_the_state_the_contract_already_has(db_session: Session) -> None:
+    customer = _customer(db_session)
+    service = ContractService(db_session)
+    created = service.create(_create_payload(customer.id), ADMIN)
+
+    with pytest.raises(Conflict):
+        service.set_state(created.id, ContractStateChange(stato="bozza"), ADMIN)
+
+
+def test_contract_state_rejects_a_value_outside_the_four() -> None:
+    import pydantic
+
+    with pytest.raises(pydantic.ValidationError):
+        ContractStateChange(stato="sospeso")  # type: ignore[arg-type]
+
+
+# ---- REB-742: editing a rate card and closing the one a new rate replaces ----------
+
+
+def test_a_new_rate_can_close_the_open_one_the_day_before_in_the_same_call(
+    db_session: Session,
+) -> None:
+    customer = _customer(db_session)
+    contract = ContractService(db_session).create(_create_payload(customer.id), ADMIN)
+    rate_cards = RateCardService(db_session)
+    first = rate_cards.create(contract.id, _rate_card_payload(valido_da=date(2026, 1, 1)), ADMIN)
+    assert first.valido_a is None
+
+    second = rate_cards.create(
+        contract.id,
+        _rate_card_payload(valido_da=date(2027, 1, 1), importo=Decimal("1200.00")),
+        ADMIN,
+        close_previous=True,
+    )
+
+    cards = rate_cards.list_for_contract(contract.id, ADMIN)
+    assert [(c.id, c.valido_a) for c in cards] == [
+        (first.id, date(2026, 12, 31)),
+        (second.id, None),
+    ]
+
+
+def test_without_chiudi_precedente_the_overlap_is_still_refused_and_nothing_moves(
+    db_session: Session,
+) -> None:
+    customer = _customer(db_session)
+    contract = ContractService(db_session).create(_create_payload(customer.id), ADMIN)
+    rate_cards = RateCardService(db_session)
+    rate_cards.create(contract.id, _rate_card_payload(valido_da=date(2026, 1, 1)), ADMIN)
+
+    with pytest.raises(Conflict):
+        rate_cards.create(contract.id, _rate_card_payload(valido_da=date(2027, 1, 1)), ADMIN)
+
+    assert [c.valido_a for c in rate_cards.list_for_contract(contract.id, ADMIN)] == [None]
+
+
+def test_closing_the_previous_rate_never_touches_a_card_that_starts_later(
+    db_session: Session,
+) -> None:
+    customer = _customer(db_session)
+    contract = ContractService(db_session).create(_create_payload(customer.id), ADMIN)
+    rate_cards = RateCardService(db_session)
+    rate_cards.create(
+        contract.id,
+        _rate_card_payload(valido_da=date(2026, 6, 1), valido_a=date(2026, 12, 31)),
+        ADMIN,
+    )
+
+    with pytest.raises(Conflict):
+        rate_cards.create(
+            contract.id,
+            _rate_card_payload(valido_da=date(2026, 1, 1)),
+            ADMIN,
+            close_previous=True,
+        )
+
+
+def test_a_rate_card_can_be_edited_and_its_validity_reopened(db_session: Session) -> None:
+    customer = _customer(db_session)
+    contract = ContractService(db_session).create(_create_payload(customer.id), ADMIN)
+    rate_cards = RateCardService(db_session)
+    card = rate_cards.create(
+        contract.id,
+        _rate_card_payload(valido_da=date(2026, 1, 1), valido_a=date(2026, 6, 30)),
+        ADMIN,
+    )
+
+    edited = rate_cards.update(
+        contract.id, card.id, RateCardUpdate(importo=Decimal("1500.00"), valido_a=None), ADMIN
+    )
+
+    assert edited.importo == Decimal("1500.00")
+    assert edited.valido_a is None
+
+
+def test_a_rate_card_edit_that_overlaps_another_is_a_clean_conflict(db_session: Session) -> None:
+    customer = _customer(db_session)
+    contract = ContractService(db_session).create(_create_payload(customer.id), ADMIN)
+    rate_cards = RateCardService(db_session)
+    first = rate_cards.create(
+        contract.id,
+        _rate_card_payload(valido_da=date(2026, 1, 1), valido_a=date(2026, 6, 30)),
+        ADMIN,
+    )
+    rate_cards.create(contract.id, _rate_card_payload(valido_da=date(2026, 7, 1)), ADMIN)
+
+    with pytest.raises(Conflict):
+        rate_cards.update(contract.id, first.id, RateCardUpdate(valido_a=date(2026, 8, 31)), ADMIN)
+
+    # The session survives the refusal and the stored card is unchanged.
+    assert rate_cards.list_for_contract(contract.id, ADMIN)[0].valido_a == date(2026, 6, 30)
+
+
+def test_a_rate_card_edit_checks_the_merged_shape(db_session: Session) -> None:
+    customer = _customer(db_session)
+    contract = ContractService(db_session).create(_create_payload(customer.id), ADMIN)
+    rate_cards = RateCardService(db_session)
+    card = rate_cards.create(contract.id, _rate_card_payload(), ADMIN)
+
+    with pytest.raises(ValidationFailed) as hours:
+        rate_cards.update(contract.id, card.id, RateCardUpdate(ore_minime=Decimal("4.00")), ADMIN)
+    assert hours.value.details["field"] == "ore_minime"
+
+    with pytest.raises(ValidationFailed) as order:
+        rate_cards.update(contract.id, card.id, RateCardUpdate(valido_a=date(2025, 12, 31)), ADMIN)
+    assert order.value.details["field"] == "valido_a"
+
+
+def test_a_rate_card_of_another_contract_is_not_found(db_session: Session) -> None:
+    customer = _customer(db_session)
+    contracts = ContractService(db_session)
+    one = contracts.create(_create_payload(customer.id), ADMIN)
+    other = contracts.create(_create_payload(customer.id, titolo="Altro"), ADMIN)
+    rate_cards = RateCardService(db_session)
+    card = rate_cards.create(one.id, _rate_card_payload(), ADMIN)
+
+    with pytest.raises(NotFound):
+        rate_cards.update(other.id, card.id, RateCardUpdate(importo=Decimal("1.00")), ADMIN)

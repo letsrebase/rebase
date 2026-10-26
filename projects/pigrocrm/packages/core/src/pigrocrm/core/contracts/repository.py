@@ -24,11 +24,9 @@ class ContractRepository:
         """Every non-deleted contract, unpaginated -- read by REB-352 §1.6's cash
         calendar overlay, which needs every contract's own dates, and by REB-352
         §1.5's concentration cap indirectly through `get`. A contract's own `stato`
-        stays out of this filter: no state-transition endpoint exists yet
-        (`ContractCreate`'s own docstring), so every row today is `bozza` and a
-        `stato` filter would either show nothing or exclude nothing -- an assumption
-        this method refuses to invent ahead of the transition that would give it
-        meaning. Never enough contracts in one practice to need keyset pagination,
+        stays out of this filter: a contract that is not `attivo` still has dates the
+        calendar overlay reads, and which states count is that overlay's decision, not
+        this list's. Never enough contracts in one practice to need keyset pagination,
         the same reasoning `RateCardRepository.list_for_contract` gives.
         """
         stmt = select(Contract).where(Contract.deleted_at.is_(None))

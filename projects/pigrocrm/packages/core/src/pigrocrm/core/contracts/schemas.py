@@ -19,6 +19,7 @@ CADENZA_FATTURAZIONE_MAX_LENGTH = 20
 DIVISA_MAX_LENGTH = 3
 
 RenewalType = Literal["nessuno", "esplicito", "opzione_controparte", "tacito"]
+ContractState = Literal["bozza", "attivo", "terminato", "scaduto"]
 RateCardTipo = Literal["ricorrente_fisso", "giornaliero", "orario", "una_tantum"]
 RateCardUnita = Literal["ora", "giorno", "mese", "anno", "forfait"]
 RateCardPeriodo = Literal["mensile", "trimestrale", "annuale", "una_tantum"]
@@ -37,8 +38,8 @@ Frazione = Annotated[Decimal, Field(max_digits=FRAZIONE_MAX_DIGITS, decimal_plac
 class ContractCreate(BaseModel):
     """`contratto_precedente_id` and `stato` are deliberately absent: the renewal
     chain is left unset by this spike (spec §3's own note), and a new contract
-    always starts life as `bozza` -- there is no state-transition endpoint yet for
-    either to reach through."""
+    always starts life as `bozza` -- `ContractService.set_state` is what moves it
+    on."""
 
     customer_id: UUID
     titolo: SafeStr = Field(max_length=TITOLO_MAX_LENGTH)
@@ -68,6 +69,46 @@ class ContractCreate(BaseModel):
         if self.fine is not None and self.fine < self.inizio:
             raise ValueError("fine non può precedere inizio")
         return self
+
+
+class ContractUpdate(BaseModel):
+    """A partial patch of everything `ContractCreate` writes except the customer, which
+    a contract never changes. `stato` is absent: it moves through `ContractStateChange`
+    only, one named act (`set_state`) instead of a field any edit could flip. The checks
+    that span fields (payment terms together, a renewal notice for every renewal type,
+    `fine` not before `inizio`) run against the *merged* row in
+    `ContractService.update`, since one call may touch either field of a pair alone."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    titolo: SafeStr | None = Field(default=None, max_length=TITOLO_MAX_LENGTH)
+    inizio: date | None = None
+    fine: date | None = None
+    tipo_rinnovo: RenewalType | None = None
+    preavviso_rinnovo_giorni: int | None = Field(default=None, ge=0)
+    preavviso_disdetta_giorni: int | None = Field(default=None, ge=0)
+    giorni_pagamento: int | None = Field(default=None, ge=0)
+    pagamento_fine_mese: bool | None = None
+    cadenza_fatturazione: SafeStr | None = Field(
+        default=None, max_length=CADENZA_FATTURAZIONE_MAX_LENGTH
+    )
+    divisa: SafeStr | None = Field(default=None, max_length=DIVISA_MAX_LENGTH)
+    requires_prior_approval: bool | None = None
+    applies_social_charge: bool | None = None
+    politica_spese: dict[str, Any] | None = None
+    note: SafeStr | None = None
+    custom_fields: dict[str, Any] | None = None
+
+
+class ContractStateChange(BaseModel):
+    """The one way a contract's `stato` changes. Any state to any other, never to the
+    state it already has: mastro's own editor offers the whole select, and a contract
+    whose term passed stays `attivo` until somebody says otherwise (nothing here runs
+    on a timer)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    stato: ContractState
 
 
 class ContractRead(BaseModel):
@@ -152,6 +193,28 @@ class RateCardCreate(BaseModel):
         if self.valido_a is not None and self.valido_a < self.valido_da:
             raise ValueError("valido_a non può precedere valido_da")
         return self
+
+
+class RateCardUpdate(BaseModel):
+    """A partial patch of a rate card. The conditional shape (`ore_minime` only for
+    `orario`, `periodo_erogazione` only for `ricorrente_fisso`) and the validity order
+    are checked against the *merged* row by `RateCardService.update`; the overlap is
+    the database's, as on create."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    valido_da: date | None = None
+    valido_a: date | None = None
+    tipo: RateCardTipo | None = None
+    importo: Decimal | None = Field(
+        default=None, max_digits=IMPORTO_MAX_DIGITS, decimal_places=DECIMAL_PLACES
+    )
+    unita: RateCardUnita | None = None
+    frazioni_ammesse: list[Frazione] | None = None
+    ore_minime: Decimal | None = Field(
+        default=None, max_digits=ORE_MINIME_MAX_DIGITS, decimal_places=DECIMAL_PLACES
+    )
+    periodo_erogazione: RateCardPeriodo | None = None
 
 
 class RateCardRead(BaseModel):
