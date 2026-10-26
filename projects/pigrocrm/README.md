@@ -177,6 +177,21 @@ destinatario`, or `saltato (Type)` on `stderr`. `0 8` assumes the host's clock i
 on Europe/Rome — check with `timedatectl` before pasting the line, or the report lands at
 the wrong hour. The runbook below now covers both jobs.
 
+And one for the reminder pass (REB-736), every fifteen minutes, on production and on the
+preview, each with its own `DEPLOY_PATH` and its own log:
+
+```
+*/15 * * * * cd /opt/pigrocrm/projects/pigrocrm && docker compose --env-file ../../.env exec -T api uv run --no-sync pigrocrm reminders >> /var/log/pigrocrm-reminders.log 2>&1
+*/15 * * * * cd /opt/pigrocrm-preview/projects/pigrocrm && docker compose --env-file ../../.env exec -T api uv run --no-sync pigrocrm reminders >> /var/log/pigrocrm-preview-reminders.log 2>&1
+```
+
+It walks the root installation and every space, puts each reminder in the lists of the
+people it is for and ends the ones whose cause is gone, and prints one line of counters per
+space. Unlike the digest it exits `1` when any line went to `stderr`, which is what lets the
+runbook's healthchecks.io ping stop when a space could not be walked.
+[`docs/superpowers/notes/2026-10-26-reminders-cron-runbook.md`](docs/superpowers/notes/2026-10-26-reminders-cron-runbook.md)
+has the line with the ping, the log's sentences and the lock.
+
 The runbook — the table of error sentences, what to do about each one and how they relate
 to the expiry of the Google consent — is
 [`docs/superpowers/notes/2026-09-09-gmail-cron-runbook.md`](docs/superpowers/notes/2026-09-09-gmail-cron-runbook.md).

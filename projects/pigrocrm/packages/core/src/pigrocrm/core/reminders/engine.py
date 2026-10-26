@@ -32,7 +32,7 @@ from pigrocrm.core.reminders.catalogue import reminder_key, severity_for
 from pigrocrm.core.reminders.detect import DetectorContext, Reminder
 from pigrocrm.core.reminders.detectors import DETECTORS
 from pigrocrm.core.reminders.directory import Directory
-from pigrocrm.core.reminders.ledger import ReminderLedger
+from pigrocrm.core.reminders.ledger import DeliveryIdentity, ReminderLedger
 from pigrocrm.core.reminders.preferences import ReminderSettings
 from pigrocrm.core.reminders.state import states_for
 
@@ -117,15 +117,17 @@ class ReminderEngine:
                     )
         return Evaluation(tuple(reminders), frozenset(ran), frozenset(raised))
 
-    def record_pass(self, evaluation: Evaluation, *, today: date | None = None) -> PassResult:
-        """Writes what a pass writes and commits it: the in-app deliveries, then the end
-        of every occurrence that cleared. One transaction, so a pass that fails halfway
-        leaves the ledger as it found it."""
+    def plan(
+        self, evaluation: Evaluation, *, today: date | None = None
+    ) -> list[tuple[Reminder, DeliveryIdentity]]:
+        """What this pass would put in people's lists: every reminder the person has not
+        dealt with and the ledger does not cover yet. Reads only, which is what makes a
+        rehearsal and the real pass one decision (spec §9.4)."""
         today = today if today is not None else today_local(self.settings)
         ledger = ReminderLedger(self.session)
         delivered = ledger.delivered({reminder.key for reminder in evaluation.reminders})
         states = states_for(self.session, {reminder.user_id for reminder in evaluation.reminders})
-        new = 0
+        due: list[tuple[Reminder, DeliveryIdentity]] = []
         for reminder in evaluation.reminders:
             state = states.get((reminder.user_id, reminder.key))
             if state is not None and state.covers(reminder.severity, today):
@@ -133,8 +135,21 @@ class ReminderEngine:
             identity = (reminder.key, reminder.user_id, IN_APP, "immediate", reminder.period)
             if ledger.covered(delivered, identity, reminder.severity):
                 continue
+            due.append((reminder, identity))
+        return due
+
+    def record_pass(
+        self, evaluation: Evaluation, *, today: date | None = None, job: str | None = None
+    ) -> PassResult:
+        """Writes what a pass writes and commits it: the in-app deliveries, then the end
+        of every occurrence that cleared, then the job clock when `job` names one. One
+        transaction, so a pass that fails halfway leaves the ledger as it found it."""
+        ledger = ReminderLedger(self.session)
+        due = self.plan(evaluation, today=today)
+        for reminder, identity in due:
             ledger.record(identity, reminder.severity)
-            new += 1
         ended = ledger.forget_unraised(evaluation.ran, evaluation.raised)
+        if job is not None:
+            ledger.touch_job(job)
         self.session.commit()
-        return PassResult(raised=len(evaluation.reminders), delivered=new, ended=ended)
+        return PassResult(raised=len(evaluation.reminders), delivered=len(due), ended=ended)
