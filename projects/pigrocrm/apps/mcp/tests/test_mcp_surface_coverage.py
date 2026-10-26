@@ -635,9 +635,9 @@ _COPERTE_O_UMANE: dict[Method, str] = {
         "la legge da li' invece di ricevere una pagina di prosa"
     ),
     ("DigestService", "attivita_di"): (
-        "la sezione «Da fare» del resoconto del lunedi' (REB-726): le attivita' di una "
-        "persona, scadute e della settimana. Un agente le legge con `get_attivita_oggi` "
-        "e `list_attivita`, dalle stesse finestre di date, senza passare dalla mail"
+        "the Monday digest's «Da fare» section (REB-726): one person's overdue "
+        "activities and those due this week. An agent reads the same date windows "
+        "through `get_attivita_oggi` and `list_attivita`, without using email"
     ),
     ("AnalyticsService", "economic_overview"): (
         "la scheda economica della dashboard porta con se' la stima fiscale calcolata su "
