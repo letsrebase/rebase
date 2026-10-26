@@ -14,8 +14,10 @@ const ME = '33333333-3333-7333-8333-333333333333'
 const COLLEAGUE = '44444444-4444-7444-8444-444444444444'
 const DEAL = 'aaaaaaaa-aaaa-7aaa-8aaa-aaaaaaaaaaaa'
 
+const role = vi.hoisted(() => ({ canWrite: true }))
+
 vi.mock('@/lib/auth', () => ({
-  useCanWrite: () => true,
+  useCanWrite: () => role.canWrite,
   useIsAdmin: () => true,
   useAuth: () => ({ user: { id: ME, nome: 'Lorenzo', ruolo: 'admin' }, isLoading: false }),
 }))
@@ -55,6 +57,7 @@ const search = {
 }
 
 beforeEach(() => {
+  role.canWrite = true
   vi.mocked(api.GET).mockReset()
   vi.mocked(api.POST).mockReset()
   vi.mocked(api.GET).mockImplementation(((path: string) => {
@@ -239,5 +242,20 @@ describe('AttivitaDialog on an existing attività', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Ripristina' }))
     await waitFor(() => expect(api.POST).toHaveBeenCalled())
     expect(vi.mocked(api.POST).mock.calls[0]?.[0]).toBe('/api/activities/{attivita_id}/restore')
+  })
+})
+
+describe('AttivitaDialog for a reader', () => {
+  it('opens to read: every field disabled and nothing that writes', () => {
+    role.canWrite = false
+    renderDialog({ attivita: existing })
+
+    expect(screen.getByLabelText('Titolo')).toBeDisabled()
+    expect(screen.getByLabelText('Scadenza')).toBeDisabled()
+    for (const name of ['Salva', 'Archivia', 'Riapri', 'Ripristina']) {
+      expect(screen.queryByRole('button', { name })).not.toBeInTheDocument()
+    }
+    // The primitive's own «X» and the footer's: both close it.
+    expect(screen.getAllByRole('button', { name: 'Chiudi' })).toHaveLength(2)
   })
 })

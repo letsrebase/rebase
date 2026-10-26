@@ -29,6 +29,7 @@ import {
   type AttivitaUpdateBody as UpdateBody,
 } from '@/features/calendar/queries'
 import { toProblem } from '@/lib/api'
+import { useCanWrite } from '@/lib/auth'
 import { linkColumns, linkOf, sameLink, type LinkValue } from './links'
 import { useAssignees } from './queries'
 import { RecordPicker } from './RecordPicker'
@@ -109,6 +110,7 @@ function AttivitaForm({
   const archive = useArchiveAttivita()
   const restore = useRestoreAttivita()
   const assignees = useAssignees()
+  const readOnly = !useCanWrite()
 
   const initialLink = attivita ? linkOf(attivita) : (defaults.link ?? null)
   const [titolo, setTitolo] = useState(attivita?.titolo ?? '')
@@ -203,6 +205,9 @@ function AttivitaForm({
         submit()
       }}
     >
+      {/* A reader opens the same dialog, to read: every field is disabled and the buttons
+          that write are not drawn (a search hit must open for anybody who can search). */}
+      <fieldset disabled={readOnly} className="min-w-0 space-y-4">
       <div className="space-y-1">
         <Label htmlFor="attivita-titolo">Titolo</Label>
         <Input
@@ -267,7 +272,7 @@ function AttivitaForm({
         <Label htmlFor="attivita-collegamento">Collegata a</Label>
         <RecordPicker id="attivita-collegamento" value={link} onChange={setLink} />
       </div>
-
+      </fieldset>
       {problem !== null && (
         <p role="alert" className="text-sm text-destructive">
           {problem}
@@ -276,7 +281,7 @@ function AttivitaForm({
 
       <DialogFooter className="sm:justify-between">
         <div className="flex gap-2">
-          {attivita && archived && (
+          {attivita && archived && !readOnly && (
             <Button
               type="button"
               variant="outline"
@@ -286,7 +291,7 @@ function AttivitaForm({
               Ripristina
             </Button>
           )}
-          {attivita && !archived && attivita.stato !== 'aperta' && (
+          {attivita && !archived && !readOnly && attivita.stato !== 'aperta' && (
             <Button
               type="button"
               variant="outline"
@@ -296,7 +301,7 @@ function AttivitaForm({
               Riapri
             </Button>
           )}
-          {attivita && !archived && (
+          {attivita && !archived && !readOnly && (
             <Button
               type="button"
               variant="destructive"
@@ -309,9 +314,9 @@ function AttivitaForm({
         </div>
         <div className="flex gap-2">
           <Button type="button" variant="outline" onClick={onClose}>
-            Annulla
+            {readOnly ? 'Chiudi' : 'Annulla'}
           </Button>
-          {!archived && (
+          {!archived && !readOnly && (
             <Button type="submit" disabled={trimmed === '' || busy}>
               {attivita ? 'Salva' : 'Aggiungi'}
             </Button>

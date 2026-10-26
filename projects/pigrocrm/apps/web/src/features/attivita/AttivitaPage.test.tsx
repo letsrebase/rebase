@@ -153,6 +153,18 @@ describe('AttivitaPage', () => {
     expect(vi.mocked(api.POST).mock.calls[0]?.[0]).toBe('/api/activities/{attivita_id}/complete')
   })
 
+  it('ends «scadute» when another state is chosen, and «scadute» chooses «aperte»', async () => {
+    serve([])
+    renderPage()
+    await userEvent.click(screen.getByRole('button', { name: 'Completate' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Scadute' }))
+    expect(screen.getByRole('button', { name: 'Aperte' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Completate' })).toHaveAttribute('aria-pressed', 'false')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Annullate' }))
+    expect(screen.getByRole('button', { name: 'Scadute' })).toHaveAttribute('aria-pressed', 'false')
+  })
+
   it('lists the archived ones on their own and offers to restore, never to archive', async () => {
     serve([row({ id: '9', titolo: 'Creata per errore' })])
     renderPage()

@@ -264,14 +264,22 @@ export function AttivitaPage({
             allLabel="Tutti gli stati"
             options={STATO_OPTIONS}
             value={stato}
-            onChange={setStato}
+            onChange={(next) => {
+              setStato(next)
+              // «Scadute» is open ones only: another state ends it, so the chips never
+              // say one thing while the list shows another.
+              if (next !== 'aperta' && scadenza === 'scadute') setScadenza(null)
+            }}
           />
           <FilterChips
             label="Scadenza"
             allLabel="Qualsiasi scadenza"
             options={SCADENZA_OPTIONS}
             value={scadenza}
-            onChange={setScadenza}
+            onChange={(next) => {
+              setScadenza(next)
+              if (next === 'scadute') setStato('aperta')
+            }}
           />
           <Select value={assignee} onValueChange={setAssignee}>
             <SelectTrigger className="w-52" aria-label="Filtra per assegnatario">
@@ -314,8 +322,7 @@ export function AttivitaPage({
           isLoading={list.isLoading}
           isError={list.isError}
           error={list.error}
-          // A reader has no edit form to open: its buttons would only answer 403.
-          onRowClick={canWrite ? setEditing : undefined}
+          onRowClick={setEditing}
           emptyMessage={
             archiviate
               ? 'Nessuna attività archiviata con questi filtri.'
@@ -332,7 +339,7 @@ export function AttivitaPage({
       </div>
 
       <AttivitaDialog open={creating} onOpenChange={setCreating} />
-      {canWrite && openId !== undefined && fromSearch.data && (
+      {openId !== undefined && fromSearch.data && (
         <AttivitaDialog
           open
           onOpenChange={(open) => !open && onDismissOpen?.()}
