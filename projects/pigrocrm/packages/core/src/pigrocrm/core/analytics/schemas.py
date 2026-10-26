@@ -358,6 +358,9 @@ class CeilingStatusRead(BaseModel):
     residuo: Decimal = Field(max_digits=12, decimal_places=2)
     superata: bool
     livello_allerta: str | None
+    # `ricavi / soglia`: `0.7125` is 71.25% of the ceiling used, above `1` once crossed.
+    # Sent so a progress bar is drawn from a figure the server computed.
+    utilizzo: float
 
 
 class CeilingHeadroom(BaseModel):
@@ -409,6 +412,9 @@ class CeilingSimulationResult(BaseModel):
     conseguenza: CeilingConsequence
     ricavi_attuali: Decimal = Field(max_digits=12, decimal_places=2)
     residuo_attuale: Decimal = Field(max_digits=12, decimal_places=2)
+    # `CeilingStatusRead.utilizzo`, before and after the synthetic addition.
+    utilizzo_attuale: float
+    utilizzo_simulato: float
     ricavi_simulati: Decimal = Field(max_digits=12, decimal_places=2)
     residuo_simulato: Decimal = Field(max_digits=12, decimal_places=2)
     rientra: bool
@@ -422,6 +428,82 @@ class CeilingSimulation(BaseModel):
     pack_version: str
     aggiunta_sintetica: Decimal = Field(max_digits=12, decimal_places=2)
     soglie: list[CeilingSimulationResult]
+
+
+class YearTotals(BaseModel):
+    """The register of one azienda's year, summed. `imponibile` is `annual_revenue`'s
+    figure over the same invoices, and `rivalsa` is already inside it: the rivalsa line
+    is a line of the invoice like any other (REB-352 §2)."""
+
+    fatture: int
+    imponibile: Decimal = Field(max_digits=12, decimal_places=2)
+    rivalsa: Decimal = Field(max_digits=12, decimal_places=2)
+    bollo: Decimal = Field(max_digits=12, decimal_places=2)
+    totale: Decimal = Field(max_digits=12, decimal_places=2)
+
+
+class YearRegime(BaseModel):
+    """Revenue of the year under one regime, read from what each invoice froze at issue
+    (`snapshot.fiscale`), never from today's profile: an azienda that changed regime in
+    the year has two rows, and each invoice is counted under the one it was issued in."""
+
+    codice_regime: str | None
+    pack_id: str
+    fatture: int
+    ricavi: Decimal = Field(max_digits=12, decimal_places=2)
+
+
+class YearTreatment(BaseModel):
+    """Revenue of the year under one tax treatment: a rate, its `Natura` and the legal
+    reference printed beside it, exactly as the lines carry them."""
+
+    aliquota_iva: Decimal = Field(max_digits=5, decimal_places=2)
+    natura: str | None
+    riferimento_normativo: str | None
+    righe: int
+    ricavi: Decimal = Field(max_digits=12, decimal_places=2)
+
+
+class YearRegisterRow(BaseModel):
+    """One issued invoice of the register. `ragione_sociale` and `partita_iva` are the
+    customer's as they were at issue (the snapshot), the way the document printed them."""
+
+    invoice_id: UUID
+    anno: int
+    numero: int
+    data_emissione: date
+    customer_id: UUID
+    ragione_sociale: str
+    partita_iva: str | None
+    tipo_documento: str
+    imponibile: Decimal = Field(max_digits=12, decimal_places=2)
+    rivalsa: Decimal = Field(max_digits=12, decimal_places=2)
+    bollo: Decimal = Field(max_digits=12, decimal_places=2)
+    totale: Decimal = Field(max_digits=12, decimal_places=2)
+    # The sentence the invoice itself prints for its stamp duty, or `None` without one.
+    dichiarazione_bollo: str | None
+    stato_pagamento: str
+    data_incasso: date | None
+
+
+class YearOverview(BaseModel):
+    """The year of one azienda as the accountant reads it: what was issued, under which
+    regime and tax treatment, with the stamp duty and the rivalsa kept apart.
+
+    Scoped by the register year (`Invoice.anno`), the same `fattura`/`emessa` universe
+    `annual_revenue` sums, so `totali.imponibile` is the revenue figure of the year and
+    the CSV's total is this one. `annullate` counts the invoices struck from the register
+    in the year: they keep their number and are listed in none of the figures.
+    """
+
+    anno: int
+    azienda_id: UUID
+    azienda_nome: str
+    totali: YearTotals
+    regimi: list[YearRegime]
+    trattamenti: list[YearTreatment]
+    registro: list[YearRegisterRow]
+    annullate: int
 
 
 class RevenueByCustomer(BaseModel):

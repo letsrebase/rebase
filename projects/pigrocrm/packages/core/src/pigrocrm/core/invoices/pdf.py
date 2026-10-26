@@ -116,6 +116,17 @@ def format_euro(value: Decimal) -> str:
     return grouped.replace(",", "\x00").replace(".", ",").replace("\x00", ".") + " €"
 
 
+def dichiarazione_bollo_virtuale(bollo: Decimal) -> str | None:
+    """The sentence an invoice prints for its stamp duty, or `None` when it owes none.
+    One definition, because the year register shows the same words the document does."""
+    if bollo <= Decimal("0.00"):
+        return None
+    return (
+        f"Imposta di bollo di {format_euro(bollo)} assolta in modo virtuale a carico "
+        "dell'emittente."
+    )
+
+
 def format_data(value: date) -> str:
     """`dd-mm-yyyy`, the inherited register's own spelling, on every date the document
     prints: emission, deadline, and the accrual period."""
@@ -211,13 +222,7 @@ def build_scope(export: InvoiceForExport, *, riferimento: str | None) -> dict[st
         CODICE_DESTINATARIO_FALLBACK if (cliente.get("pec") or "").strip() else _EMPTY
     )
     cliente_indirizzo = indirizzo_display(cliente)
-    bollo = export.bollo > Decimal("0.00")
-    dichiarazione_bollo = (
-        f"Imposta di bollo di {format_euro(export.bollo)} assolta in modo virtuale a carico "
-        "dell'emittente."
-        if bollo
-        else _EMPTY
-    )
+    dichiarazione_bollo = dichiarazione_bollo_virtuale(export.bollo) or _EMPTY
     proforma = riferimento is not None
     codice_regime = (fiscale.get("codice_regime") or "").strip()
     codice_pagamento = (fiscale.get("modalita_pagamento") or "").strip()

@@ -7,9 +7,10 @@ import { EconomicTab } from './EconomicTab'
 import { PeriodPicker } from './PeriodPicker'
 import { ReceivablesTab } from './ReceivablesTab'
 import { DASHBOARD_TABS, type DashboardSearch } from './search'
+import { YearTab } from './YearTab'
 
 /**
- * Three tabs and a period, all of it driven by the URL.
+ * Four tabs and a period, all of it driven by the URL.
  *
  * The search object comes in as a prop and every change goes back out through
  * `onSearchChange` rather than into local state, so the route can push it into the URL and
@@ -70,6 +71,7 @@ export function DashboardPage({
             explaining their absence would be the untrue thing on the page. */}
         {tab === 'commerciale' && <CommercialTab periodo={{ da, a }} />}
         {tab === 'scadenziario' && <ReceivablesTab />}
+        {tab === 'anno' && <YearTab periodo={{ da, a }} />}
         {tab === 'economica' && (
           <EconomicTab
             periodo={{ da, a }}

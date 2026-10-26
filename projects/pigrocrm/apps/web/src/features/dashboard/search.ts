@@ -21,6 +21,9 @@ export const DASHBOARD_TABS = [
   // Slice 8 part A (REB-329): when the money already invoiced arrives. The one tab with
   // no period, so the picker is hidden on it -- see `DashboardPage`.
   { id: 'scadenziario', label: 'Scadenziario' },
+  // REB-757: the year as the accountant reads it, and the CSV of it. The period picker
+  // names the year, as it does on Economica.
+  { id: 'anno', label: 'Anno' },
 ] as const
 
 export type TabId = (typeof DASHBOARD_TABS)[number]['id']

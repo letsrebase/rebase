@@ -204,8 +204,9 @@ def list_cost_categories(context: McpContext, include_archived: bool) -> dict[st
 
 
 # ---- analytics ------------------------------------------------------------------
-# Six reads, and only six -- REB-373 added the fifth and sixth (ceiling headroom and
-# its simulator), the reason the comment now says "six" rather than "four": a count
+# Seven reads, and only seven -- REB-373 added the fifth and sixth (ceiling headroom and
+# its simulator) and REB-757 the seventh (the year register), the reason the comment
+# now says "seven" rather than "four": a count
 # that is never updated is worse than no count. `bind_time_to_invoice` and
 # `get_fiscal_estimate` are absent by decision, not by omission -- see
 # `tools/__init__.py`'s own block comment for the two (different) reasons, and
@@ -268,5 +269,18 @@ def simulate_ceiling(
     return (
         AnalyticsService(context.session)
         .simulate_ceiling(_ANNO.validate_python(anno), query, context.actor, azienda_id)
+        .model_dump(mode="json")
+    )
+
+
+def get_year_overview(
+    context: McpContext, anno: int | str, azienda_id: UUID | None = None
+) -> dict[str, Any]:
+    """The year of one azienda as the accountant reads it (REB-757): revenue by regime
+    and tax treatment, and the register of issued invoices with the stamp duty and the
+    rivalsa apart. The file is the web app's: an MCP tool returns no bytes."""
+    return (
+        AnalyticsService(context.session)
+        .year_overview(_ANNO.validate_python(anno), context.actor, azienda_id)
         .model_dump(mode="json")
     )

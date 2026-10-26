@@ -286,6 +286,11 @@ function useInvoiceInvalidation() {
     // `invoicesList` is a distinct key (see `lib/query.ts`), so a new or changed
     // invoice needs its own invalidation to reach `InvoicesList`/`InvoicesTab`.
     void queryClient.invalidateQueries({ queryKey: ['invoices-list'] })
+    // The year's register and the room under the ceilings read the same invoices (REB-755,
+    // REB-757): issuing, annulling or collecting one moves both, and their cache would
+    // otherwise keep the old figures while the CSV, read fresh, shows the new ones.
+    void queryClient.invalidateQueries({ queryKey: ['year-overview'] })
+    void queryClient.invalidateQueries({ queryKey: ['ceilings'] })
     if (invoiceId !== undefined) {
       void queryClient.invalidateQueries({ queryKey: queryKeys.invoice(invoiceId) })
       void queryClient.invalidateQueries({ queryKey: queryKeys.invoiceLines(invoiceId) })

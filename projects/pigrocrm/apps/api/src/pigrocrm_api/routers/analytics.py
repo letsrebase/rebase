@@ -12,6 +12,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Query
+from fastapi.responses import Response
 
 from pigrocrm.core.analytics.schemas import (
     BudgetPage,
@@ -26,6 +27,7 @@ from pigrocrm.core.analytics.schemas import (
     PeriodPnlQuery,
     RevenueBase,
     UnbilledBacklog,
+    YearOverview,
 )
 from pigrocrm.core.analytics.service import AnalyticsService
 from pigrocrm_api.deps import ActorDep, SessionDep
@@ -174,7 +176,8 @@ def ceiling_headroom(
     """Quanto spazio resta prima di ciascuna soglia attiva del pacchetto fiscale
     configurato (REB-352 §1.4), sui ricavi incassati e reali dell'anno. Aperto a ogni
     ruolo, a differenza di `/fiscal`: è un ricavo, non la stima fiscale che protegge
-    solo `get_fiscal_estimate`."""
+    solo `get_fiscal_estimate`. Le soglie sono quelle del regime forfettario: un'azienda
+    in un altro regime riceve `soglie` vuoto."""
     return AnalyticsService(session).ceiling_headroom(anno, actor, azienda_id)
 
 
@@ -201,4 +204,40 @@ def simulate_ceiling(
         ),
         actor,
         azienda_id,
+    )
+
+
+@router.get("/year", response_model=YearOverview)
+def year_overview(
+    session: SessionDep,
+    actor: ActorDep,
+    anno: Annotated[int, Query(ge=2000, le=2200)],
+    azienda_id: LegalEntityRequired = None,
+) -> YearOverview:
+    """L'anno di un'azienda come lo legge il commercialista (REB-757): i ricavi per
+    regime e per trattamento fiscale e il registro delle fatture emesse, con bollo e
+    rivalsa a parte. Lo stesso universo di `annual_revenue`: `totali.imponibile` è il
+    ricavo dell'anno. Aperto a ogni ruolo, come il registro."""
+    return AnalyticsService(session).year_overview(anno, actor, azienda_id)
+
+
+@router.get(
+    "/year/csv",
+    response_class=Response,
+    responses={200: {"content": {"text/csv": {}}, "description": "Il CSV dell'anno"}},
+)
+def year_csv(
+    session: SessionDep,
+    actor: ActorDep,
+    anno: Annotated[int, Query(ge=2000, le=2200)],
+    azienda_id: LegalEntityRequired = None,
+) -> Response:
+    """Il CSV dell'anno per il commercialista (REB-757): una riga per ogni riga di
+    fattura e poi il registro, con i due totali. UTF-8 con BOM, punto e virgola e
+    virgola decimale, il formato che Excel italiano apre senza conversioni."""
+    filename, content = AnalyticsService(session).build_year_csv(anno, actor, azienda_id)
+    return Response(
+        content=content,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

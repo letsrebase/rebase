@@ -96,6 +96,34 @@ function EmptyChart({ caption }: { caption: string }) {
   )
 }
 
+/**
+ * One horizontal bar, as a CSS width: the track and its fill, decoration over a figure
+ * the caller prints as text. Both ends square since the squared system: the fill grows
+ * from the baseline, and the edge that moves is the only shape left to read. Shared by
+ * `BarRows` and by the ceilings' own rows, so both draw a ratio the same way.
+ */
+export function Meter({
+  ratio,
+  tone = 1,
+  color,
+}: {
+  /** 0..1, computed by the server. Clamped here, never derived here. */
+  ratio: number
+  tone?: number
+  color?: string
+}) {
+  return (
+    <div className="h-2 min-w-24 flex-1 bg-muted">
+      <div
+        data-testid="bar-fill"
+        aria-hidden="true"
+        className="h-2"
+        style={{ width: widthPercent(ratio), backgroundColor: color ?? toneColor(tone) }}
+      />
+    </div>
+  )
+}
+
 export type BarRow = {
   label: string
   value: string
@@ -144,19 +172,7 @@ export function BarRows({ caption, rows }: { caption: string; rows: BarRow[] }) 
               </th>
               <td className="py-1">
                 <div className="flex items-center gap-2">
-                  <div className="h-2 min-w-24 flex-1 bg-muted">
-                    {/* Both ends square since the squared system: the fill grows from the
-                        baseline, and the edge that moves is the only shape left to read. */}
-                    <div
-                      data-testid="bar-fill"
-                      aria-hidden="true"
-                      className="h-2"
-                      style={{
-                        width: widthPercent(row.ratio),
-                        backgroundColor: row.color ?? toneColor(row.tone),
-                      }}
-                    />
-                  </div>
+                  <Meter ratio={row.ratio} tone={row.tone} color={row.color} />
                   <span className="shrink-0 tabular-nums">{row.value}</span>
                 </div>
               </td>
