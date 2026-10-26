@@ -39,6 +39,9 @@ export function AttivitaItem({
   const cancel = useCancelAttivita()
   const [editing, setEditing] = useState(false)
   const open = attivita.stato === 'aperta'
+  // One closure at a time: «Fatto» then «Annulla» in quick succession would race two writes
+  // on the same row, and the second would answer with the first one's state.
+  const pending = complete.isPending || cancel.isPending
 
   function close(mutation: typeof complete, done: string) {
     mutation.mutate(attivita.id, {
@@ -62,10 +65,10 @@ export function AttivitaItem({
         <span className="flex shrink-0 gap-2">
           {open && (
             <>
-              <Button size="sm" variant="outline" onClick={() => close(complete, 'Fatto')}>
+              <Button size="sm" variant="outline" disabled={pending} onClick={() => close(complete, 'Fatto')}>
                 Fatto
               </Button>
-              <Button size="sm" variant="outline" onClick={() => close(cancel, 'Annullata')}>
+              <Button size="sm" variant="outline" disabled={pending} onClick={() => close(cancel, 'Annullata')}>
                 Annulla
               </Button>
             </>
