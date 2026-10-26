@@ -180,6 +180,8 @@ function useInvalidateDays() {
     void queryClient.invalidateQueries({ queryKey: ['work-units'] })
     void queryClient.invalidateQueries({ queryKey: ['work-unit'] })
     void queryClient.invalidateQueries({ queryKey: ['calendario'] })
+    // The dashboard's «Giornate» tab reads the same ledger (REB-756).
+    void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
   }
 }
 

@@ -564,6 +564,77 @@ class BindTimeRequest(BaseModel):
     raggruppa_per_mese: bool = True
 
 
+class DaysStateShare(BaseModel):
+    """One state's days in one month. `quota` is a share of the tallest month's total in
+    [0, 1], computed here so the browser draws a bar and never adds a figure."""
+
+    stato: str
+    giorni: Decimal = Field(max_digits=10, decimal_places=2)
+    quota: float
+
+
+class DaysMonth(BaseModel):
+    """One calendar month of the days analysis.
+
+    `registrati` is the days that really happened (worked, worked without approval,
+    invoiced, paid, disputed, written off); `media_precedente` is the mean of the three
+    months before this one, a quiet month counting as zero. `completo` is false for a
+    month that has not yet ended. `senza_approvazione` is the days (by quantity, so a half day
+    is a half) that slipped into «lavorato senza approvazione» in the month, by the moment
+    of the transition, so a day since regularised still counts: it is history, not a figure
+    about the present.
+    """
+
+    mese: str
+    completo: bool
+    per_stato: list[DaysStateShare]
+    totale: Decimal = Field(max_digits=10, decimal_places=2)
+    quota_totale: float
+    registrati: Decimal = Field(max_digits=10, decimal_places=2)
+    quota_registrati: float
+    media_precedente: Decimal = Field(max_digits=10, decimal_places=2)
+    senza_approvazione: Decimal = Field(max_digits=10, decimal_places=2)
+    quota_senza_approvazione: float
+
+
+class DaysRate(BaseModel):
+    """The realised day rate of one customer or one contract against the rate card.
+
+    `tariffa_reale` is what the invoice lines billed over the days they bill, `None` when
+    nothing was invoiced. `tariffa_nominale` is the rate card's own price over the days a
+    card covers, `None` when no billed day is covered; `giorni_senza_listino` are the days
+    no card covered, reported on their own and never priced at zero.
+    """
+
+    id: UUID
+    etichetta: str
+    giorni_fatturati: Decimal = Field(max_digits=10, decimal_places=2)
+    importo_fatturato: Decimal = Field(max_digits=12, decimal_places=2)
+    tariffa_reale: Decimal | None = Field(default=None, max_digits=12, decimal_places=2)
+    giorni_senza_listino: Decimal = Field(max_digits=10, decimal_places=2)
+    tariffa_nominale: Decimal | None = Field(default=None, max_digits=12, decimal_places=2)
+
+
+class DaysAnalysis(BaseModel):
+    """The days of a period: by month and state, the realised rate, and the trend of days
+    worked without the approval the contract asks for. The period is echoed back, rounded
+    out to whole months for the monthly figures; the rate reads the exact `da`..`a`."""
+
+    da: date
+    a: date
+    azienda_id: UUID | None
+    oggi: date
+    mesi: list[DaysMonth]
+    ultimo_mese_completo: str | None
+    giorni_nel_periodo: Decimal = Field(max_digits=10, decimal_places=2)
+    giorni_fatturati: Decimal = Field(max_digits=10, decimal_places=2)
+    tariffa_reale: Decimal | None = Field(default=None, max_digits=12, decimal_places=2)
+    per_cliente: list[DaysRate]
+    per_contratto: list[DaysRate]
+    senza_approvazione_nel_periodo: Decimal = Field(max_digits=10, decimal_places=2)
+    senza_approvazione_sempre: Decimal = Field(max_digits=10, decimal_places=2)
+
+
 __all__ = [
     "BindTimeRequest",
     "BudgetPage",

@@ -2170,6 +2170,20 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
 
     @mcp.tool()
     @guard
+    def get_days_analysis(
+        da: str | None = None, a: str | None = None, azienda_id: str | None = None
+    ) -> dict[str, Any]:
+        """Le giornate di un periodo (REB-756): per mese e per stato, la tariffa reale
+        (fatturato su giornate fatturate) contro il listino, per cliente e per contratto,
+        e quante giornate sono finite in «lavorato senza approvazione» mese per mese,
+        anche se poi regolarizzate. Il periodo `da`/`a` (YYYY-MM-DD) va dato intero o
+        omesso, e allora è il mese corrente; le cifre mensili sono mesi interi, la
+        tariffa legge le date esatte. Senza `azienda_id` sono tutte le aziende. Nessun
+        `admin` richiesto: sono le giornate."""
+        return timetracking.get_days_analysis(context, da, a, parse_legal_entity_id(azienda_id))
+
+    @mcp.tool()
+    @guard
     def get_year_overview(anno: Anno, azienda_id: str | None = None) -> dict[str, Any]:
         """L'anno di un'azienda come lo legge il commercialista (REB-757): i ricavi per
         regime (quello congelato su ogni fattura al momento dell'emissione) e per

@@ -21,8 +21,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.clock import oggi_in_italia
+from pigrocrm.core.contracts.models import Contract
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.invoices.models import Invoice
+from pigrocrm.core.work_units.models import WorkUnit
 
 # Never a literal year: `_check_issue_date` refuses a `data_emissione` outside the
 # current year, so a hard-coded 2026 would be a suite that starts failing on the first
@@ -855,3 +857,61 @@ def test_a_readonly_session_reads_the_year_like_it_reads_the_register(
     reader = _second_actor(logged_in, "readonly")
     assert reader.get("/api/analytics/year", params={"anno": ANNO}).status_code == 200
     assert reader.get("/api/analytics/year/csv", params={"anno": ANNO}).status_code == 200
+
+
+# --- the days of a period (REB-756) ------------------------------------------------------
+
+
+def test_the_days_route_answers_by_month_and_state_and_takes_one_azienda(
+    logged_in: TestClient, api_session: Session
+) -> None:
+    """The wire only: a recorded day lands in its month and state, the period is both
+    bounds or neither, and another azienda's filter leaves the figure out. What the
+    figures mean is proven in `test_days_analysis.py`."""
+    default = logged_in.get("/api/aziende").json()[0]["id"]
+    customer = Customer(ragione_sociale="Acme S.r.l.")
+    api_session.add(customer)
+    api_session.flush()
+    contract = Contract(
+        customer_id=customer.id,
+        titolo="Consulenza",
+        inizio=OGGI.replace(month=1, day=1),
+        tipo_rinnovo="nessuno",
+        preavviso_disdetta_giorni=30,
+        cadenza_fatturazione="mensile",
+        politica_spese={"kind": "non_rimborsabile"},
+    )
+    api_session.add(contract)
+    api_session.flush()
+    api_session.add(
+        WorkUnit(
+            contract_id=contract.id,
+            data=OGGI,
+            quantita=Decimal("1.00"),
+            descrizione="Giornata di consulenza",
+            stato="lavorato",
+        )
+    )
+    api_session.commit()
+
+    month = logged_in.get("/api/analytics/days")
+    assert month.status_code == 200, month.text
+    body = month.json()
+    assert [m["mese"] for m in body["mesi"]] == [OGGI.strftime("%Y-%m")]
+    assert body["giorni_nel_periodo"] == "1.00"
+    lavorato = next(s for s in body["mesi"][0]["per_stato"] if s["stato"] == "lavorato")
+    assert lavorato["giorni"] == "1.00"
+
+    year = logged_in.get("/api/analytics/days", params={"da": DA, "a": A, "azienda_id": default})
+    assert year.status_code == 200, year.text
+    assert len(year.json()["mesi"]) == 12
+    assert year.json()["azienda_id"] == default
+
+    other = logged_in.post("/api/aziende", json=LTD)
+    assert other.status_code == 201, other.text
+    elsewhere = logged_in.get("/api/analytics/days", params={"azienda_id": other.json()["id"]})
+    assert elsewhere.json()["giorni_nel_periodo"] == "0.00"
+
+    half = logged_in.get("/api/analytics/days", params={"da": DA})
+    assert half.status_code == 422
+    assert half.json()["field"] == "a"

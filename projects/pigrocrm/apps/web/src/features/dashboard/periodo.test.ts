@@ -120,12 +120,13 @@ describe('validateDashboardSearch', () => {
     })
   })
 
-  it('offers the four tabs the dashboard has since REB-757', () => {
+  it('offers the five tabs the dashboard has since REB-756', () => {
     expect(DASHBOARD_TABS.map((tab) => tab.id)).toEqual([
       'economica',
       'commerciale',
       'scadenziario',
       'anno',
+      'giornate',
     ])
   })
 

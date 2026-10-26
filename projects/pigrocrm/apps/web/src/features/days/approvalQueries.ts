@@ -39,6 +39,7 @@ export function useRecordApproval() {
       void queryClient.invalidateQueries({ queryKey: ['work-units'] })
       void queryClient.invalidateQueries({ queryKey: ['work-unit'] })
       void queryClient.invalidateQueries({ queryKey: ['calendario'] })
+      void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
       void queryClient.invalidateQueries({ queryKey: ['documents'] })
     },
   })
