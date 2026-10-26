@@ -144,6 +144,22 @@ re-evaluates the environment against the default group selection — which inclu
 `dev` — decides the image's venv is out of date, and downloads mypy and ruff into a
 running production container on every start. That happened once, live.
 
+**The installable app is five files that must agree, and a worker that keeps nothing a person
+is shown (REB-731).** `apps/web/pwa/plugin.ts` emits `manifest.webmanifest` and the icons
+(drawn from `shared/brand` by `build:pwa-icons`) and, after the main build, builds `sw/index.ts`
+into `sw.js` with the offline page's files baked in as its precache; `offline.html` is a second
+Vite entry, so it renders with no API and no session. A space is its own installed app: the SPA
+links `/<slug>/app/manifest.webmanifest` and registers `/<slug>/app/sw.js` with scope
+`/<slug>/app` (`src/pwa/`), and `spa.conf` serves the three files under every slug, with
+`Service-Worker-Allowed` for the worker, which is what lets it take that scope. **The scope has
+no trailing slash on purpose:** the router's home is `/<slug>/app?tab=...`, and `/<slug>/app/`
+would leave it outside the app. The worker never stores a document or an API response and never
+touches a request that is not a page load or one of its own files (`sw/policy.ts`); do not add a
+runtime cache to it without a decision in `docs/design/DECISIONS.md`. Push (REB-738) plugs in as
+its own file under `sw/`. `vite preview` serves the worker too and sets the same header
+(`vite.config.ts`); the dev server never registers one, so `pnpm dev` shows none of this: test
+it on `pnpm --filter web build` plus `vite preview` or the compose stack.
+
 **An MCP error reaches the assistant only in the type its surface passes on.** On
 `mcp` 2.2 a tool keeps the text of a `ToolError` (an `is_error` result), and a resource
 or a prompt keeps the text and the code of an `MCPError` (a JSON-RPC error); anything else

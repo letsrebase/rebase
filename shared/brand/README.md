@@ -16,6 +16,8 @@ surface.
 | `tools/build-wordmark.py` | How the four SVGs were drawn, and the only way to redraw them | Nobody at build time: run it by hand when the face changes |
 | `echo/` | The echo logo: «rebase» solid under three outlined copies of itself, six colourways as PNG, and the default again at document size | Covers, slides, social pictures, the signing site's branding and the contract PDFs' title block; nothing yet at header size |
 | `tools/build-echo.mjs` | How the seven PNGs were drawn, and the only way to redraw them | Nobody at build time: `pnpm --filter @rebase/brand build:echo` |
+| `pwa/` | The mark on the Paper ground as the icons an installed PigroCRM wears: 192 and 512 for `any`, 192 and 512 for `maskable` (mark inside the launcher's safe zone), and the 180px iOS touch icon | The CRM's build, which emits them beside its web manifest (REB-731) |
+| `tools/build-pwa-icons.mjs` | How the five PNGs were drawn, and the only way to redraw them | Nobody at build time: `pnpm --filter @rebase/brand build:pwa-icons` |
 | `print/` | The business card, the stickers and the temporary tattoo, as HTML in millimetres with a render script each (`print/README.md`) | Nobody at build time: run by hand for the print shop |
 
 ## Why a package rather than a file in one of the projects

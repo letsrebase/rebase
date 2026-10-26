@@ -6,6 +6,7 @@ import { defineConfig, type Connect, type Plugin } from 'vite'
 import { configDefaults } from 'vitest/config'
 
 import { redirectToBase } from './src/lib/devBaseRedirect'
+import { pwa } from './pwa/plugin'
 
 // Dev and preview servers only: the bare base (`/app`, `/app?tab=…`) gets `index.html`
 // through a redirect to `/app/`, as nginx already does in production, instead of Vite's
@@ -54,8 +55,21 @@ export default defineConfig({
     react(),
     tailwindcss(),
     devBaseRedirect,
+    // The manifest, the icons and `sw.js`: see pwa/plugin.ts (REB-731).
+    pwa(),
   ],
   resolve: { alias: { '@': path.resolve(__dirname, './src') } },
+  build: {
+    // Two pages: the application, and the offline page the service worker answers a
+    // page load with when there is no network (REB-731). The second is its own entry
+    // rather than a route because it must run with no API, no router and no session.
+    rollupOptions: { input: { index: 'index.html', offline: 'offline.html' } },
+  },
+  // `vite preview` serves the production build the e2e suite runs against (REB-659), and
+  // it is the only server besides nginx that serves `sw.js`. The worker takes the scope
+  // `/app`, a level above the directory it is fetched from, which a browser refuses
+  // unless the response says so; nginx sends the same header (deploy/nginx/spa.conf).
+  preview: { headers: { 'Service-Worker-Allowed': '/app' } },
   server: {
     port: 5173,
     // The browser talks to the same origin in dev and in production, so cookies
