@@ -14,6 +14,7 @@ from pigrocrm.core.calendario.schemas import (
     CalendarDay,
     CalendarMonth,
     DayDealHours,
+    DayWorkUnit,
     DueInvoice,
 )
 from pigrocrm.core.db import today_local
@@ -43,7 +44,8 @@ def month_bounds(mese: str) -> tuple[date, date]:
 
 
 class CalendarService:
-    """One month of the calendar, assembled from three reads.
+    """One month of the calendar, assembled from four reads: the hours, the activities,
+    the invoices falling due and the contract days (REB-748).
 
     In `packages/core` and not in the router, because it is the same reading the web app
     and the agent both want: putting it in an adapter would mean either the agent does
@@ -63,7 +65,7 @@ class CalendarService:
         user_id: UUID | None = None,
         azienda_id: UUID | None = None,
     ) -> CalendarMonth:
-        """Every day of `mese` that has hours, activities or an invoice falling due.
+        """Every day of `mese` that has hours, activities, a contract day or an invoice falling due.
 
         `user_id` scopes the hours to one person. The default is `actor.id`, which is
         what «my calendar» means and what every caller wants; passing `None` explicitly
@@ -123,6 +125,20 @@ class CalendarService:
                     data_scadenza=scadenza,
                     # `<`, like `_overdue_predicate`: due today is due today.
                     in_ritardo=scadenza < oggi,
+                )
+            )
+
+        for work_unit, contract_titolo, customer_nome in self.repo.work_units_in_window(
+            da, a, azienda_id=azienda_id
+        ):
+            giorno(work_unit.data).giornate.append(
+                DayWorkUnit(
+                    id=work_unit.id,
+                    contract_id=work_unit.contract_id,
+                    contract_titolo=contract_titolo,
+                    customer_nome=customer_nome,
+                    quantita=work_unit.quantita,
+                    stato=work_unit.stato,
                 )
             )
 

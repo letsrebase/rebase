@@ -9,6 +9,8 @@ import { useCanWrite } from '@/lib/auth'
 import { cn } from '@rebase/ui/cn'
 import { AttivitaDialog } from '@/features/attivita/AttivitaDialog'
 import { AttivitaItem } from '@/features/attivita/AttivitaItem'
+import { CellDays } from '@/features/days/CalendarDays'
+import { cellDaysLabel } from '@/features/days/labels'
 import { DayPanel } from './DayPanel'
 import { monthCells, monthLabel, monthOf, shiftMonth, WEEKDAY_LABELS } from './month'
 import { useCalendarMonth, type CalendarDay } from './queries'
@@ -195,6 +197,7 @@ function DayCell({
 }) {
   const attivita = data?.attivita ?? []
   const fatture = data?.fatture ?? []
+  const giornate = data?.giornate ?? []
   const aperte = attivita.filter((item) => item.stato === 'aperta').length
   const chiuse = attivita.length - aperte
 
@@ -207,7 +210,7 @@ function DayCell({
       // label of «1: …» named two cells -- unusable for a screen reader and ambiguous
       // for a test. `aria-current` is what marks today to a reader; the pill marks it
       // to an eye.
-      aria-label={`${formatIsoDateItalian(iso)}: ${data ? `${data.ore} ore` : 'niente'}`}
+      aria-label={`${formatIsoDateItalian(iso)}: ${data ? `${data.ore} ore` : 'niente'}${cellDaysLabel(giornate)}`}
       aria-current={isToday ? 'date' : undefined}
       className={cn(
         'flex min-h-24 flex-col gap-1 bg-background p-2 text-left align-top transition-colors hover:bg-muted/50',
@@ -238,6 +241,7 @@ function DayCell({
           {fatture.length === 1 ? '1 fattura' : `${fatture.length} fatture`}
         </span>
       )}
+      <CellDays days={giornate} />
     </button>
   )
 }

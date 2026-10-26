@@ -222,6 +222,53 @@ ROWS: list[Row] = [
     ),
     Row("POST", "/api/proposals/{proposal_id}/accept", body={"deciso_da": "Matrice"}),
     Row("POST", "/api/proposals/{proposal_id}/reject", body={"deciso_da": "Matrice"}),
+    # --- the day ledger (REB-745): `require_write` (work_units/service.py) ----------
+    Row(
+        "POST",
+        "/api/work-units",
+        body={
+            "contract_id": "__FAKE__",
+            "data": "2026-01-01",
+            "quantita": "1.00",
+            "descrizione": "Matrice",
+            "stato": "lavorato",
+        },
+    ),
+    Row(
+        "POST",
+        "/api/contracts/{contract_id}/approval-request",
+        body={
+            "days": [{"data": "2026-01-05", "quantita": "1.00", "descrizione": "Matrice"}],
+            "to_addresses": ["cliente@example.it"],
+            "oggetto": "Matrice",
+            "corpo": "Matrice",
+        },
+    ),
+    # The preview is a render of the request, written and not stored: a read, like a template's.
+    Row(
+        "POST",
+        "/api/contracts/{contract_id}/approval-request/preview",
+        expect="open",
+        body={"days": [{"data": "2026-01-05", "quantita": "1.00", "descrizione": "Matrice"}]},
+    ),
+    Row(
+        "POST",
+        "/api/approvals",
+        body={
+            "contract_id": "__FAKE__",
+            "canale": "email",
+            "mittente": "cliente@example.it",
+            "ricevuto_il": "2026-01-01T09:00:00Z",
+            "estratto": "Matrice",
+            "document_id": "__FAKE__",
+            "work_unit_ids": ["__FAKE__"],
+        },
+    ),
+    Row(
+        "POST",
+        "/api/work-units/{work_unit_id}/transitions",
+        body={"stato": "contestato", "motivo": "Matrice"},
+    ),
     # --- customers / people / deals: `require_write` on every plain write ------------
     Row("POST", "/api/customers", body={"ragione_sociale": "Matrice Due Srl"}),
     # The ticked Gmail proposals (REB-223): `require_write`, like one «Nuovo cliente».

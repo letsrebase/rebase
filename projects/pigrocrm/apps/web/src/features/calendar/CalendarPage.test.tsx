@@ -363,6 +363,49 @@ describe('CalendarPage', () => {
     expect(vi.mocked(api.POST).mock.calls[0]?.[0]).toBe('/api/activities/{attivita_id}/complete')
   })
 
+  it('draws a day worked without approval on its date, in words, and opens it from the panel (REB-748)', async () => {
+    const worked = {
+      id: 'day-1',
+      contract_id: 'c1',
+      contract_titolo: 'Consulenza architetturale',
+      customer_nome: 'Acme S.r.l.',
+      quantita: '0.50',
+      stato: 'lavorato_senza_approvazione',
+    }
+    routeGet({
+      '/api/calendar': () =>
+        ok({
+          ...month,
+          giorni: [
+            ...month.giorni,
+            {
+              giorno: '2026-09-22',
+              ore: '0.00',
+              per_deal: [],
+              attivita: [],
+              fatture: [],
+              giornate: [worked, { ...worked, id: 'day-2', stato: 'approvato', quantita: '1.00' }],
+            },
+          ],
+        }),
+    })
+    renderPage()
+    await screen.findByRole('grid')
+
+    // The cell says it in its own name, and on its face: one flagged, one not.
+    const cell = screen.getByRole('button', { name: /^22\/09\/2026:/ })
+    expect(cell.getAttribute('aria-label')).toContain('2 giornate, 1 senza approvazione')
+    expect(screen.getAllByText('senza approvazione')).toHaveLength(1)
+    // An empty date has no such line.
+    expect(screen.getByRole('button', { name: '14/09/2026: 8.00 ore' }).textContent).not.toContain('senza approvazione')
+
+    await userEvent.click(cell)
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getAllByText(/Consulenza architetturale/)).toHaveLength(2)
+    expect(within(dialog).getByText('Lavorata senza approvazione')).toBeInTheDocument()
+    expect(within(dialog).getByText('Approvata')).toBeInTheDocument()
+  })
+
   it('says so when the month could not be read, instead of drawing an empty one', async () => {
     // An empty grid for a failed request would claim a month in which nothing happened,
     // which is exactly the claim this screen exists to make.

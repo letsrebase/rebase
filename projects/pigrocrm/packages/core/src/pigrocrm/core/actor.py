@@ -141,6 +141,21 @@ AGENT_FORBIDDEN_ACTIONS: frozenset[str] = frozenset(
         "impostare le cartelle Drive",
         "collegare Google Drive",
         "scollegare Google Drive",
+        # REB-745..747: the day ledger's four writes, which the web app now reaches over
+        # REST. An agent proposes a day and a person confirms it (spec 2026-09-23 §0,
+        # invariant 3: `propose_day`, `accept_proposal`), and `accept_proposal` writes the
+        # approval and the day itself, not through these. Without these four a token handed
+        # to an agent could record a day, move it through its lifecycle or attach evidence
+        # to it with one `curl`, the same hole the fiscal acts above were closed against.
+        # No tool exists for any of them and none will (`test_mcp_surface_coverage.py`).
+        "create_work_unit",
+        "transition_work_unit",
+        "link_approval",
+        "create_approval",
+        # REB-749: asking a client for approval records the named days as proposed and files
+        # the request as a draft under the person's own address. No tool, for the reason above
+        # and because an agent never prepares mail on the owner's behalf for a client.
+        "request_approval",
     }
 )
 

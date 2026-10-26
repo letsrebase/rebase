@@ -3708,6 +3708,145 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/work-units": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Work Units
+         * @description Le giornate, dalla più recente. Serve almeno un contratto o una data (`da`, `a`):
+         *     il registro intero di uno spazio non è una domanda che una schermata faccia.
+         */
+        get: operations["list_work_units_api_work_units_get"];
+        put?: never;
+        /**
+         * Create
+         * @description Registra una giornata. Una giornata `lavorato` su un contratto che richiede
+         *     l'approvazione preventiva, senza approvazione, nasce `lavorato_senza_approvazione`: il
+         *     trigger la segna invece di rifiutarla. Chiusa a ogni credenziale di tipo agente: un
+         *     agente propone (`propose_day`), una persona conferma. Si registra una giornata `proposto` o
+         *     `lavorato`: `approvato` lo scrive `POST /api/approvals`, con la prova.
+         */
+        post: operations["create_api_work_units_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/work-units/{work_unit_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get */
+        get: operations["get_api_work_units__work_unit_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/work-units/{work_unit_id}/transitions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Transition
+         * @description Sposta una giornata lungo il suo ciclo di vita, con una mossa che la sua pagina offrirebbe
+         *     (`azioni` di `GET /api/work-units/{id}`): `approvato` lo scrive la registrazione di
+         *     un'approvazione e `fatturato` la fattura, quindi qui rispondono 409 come ogni passaggio
+         *     che il ciclo di vita non ammette.
+         */
+        post: operations["transition_api_work_units__work_unit_id__transitions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/approvals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record
+         * @description Registra l'approvazione di un cliente e le giornate che copre, in una transazione:
+         *     la prova (un documento già archiviato, o un messaggio di posta già sincronizzato che
+         *     il servizio archivia come documento del contratto), l'approvazione, e il passaggio di
+         *     ogni giornata (`proposto` diventa `approvato`, `lavorato_senza_approvazione` torna
+         *     `lavorato`). Immutabile: una correzione è una nuova approvazione. Chiusa a ogni
+         *     credenziale di tipo agente: un agente propone una giornata (`propose_day`), una persona
+         *     registra l'approvazione.
+         */
+        post: operations["record_api_approvals_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/contracts/{contract_id}/approval-request/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview
+         * @description Il testo che la richiesta di approvazione porterebbe, per le date indicate: oggetto
+         *     e corpo, scritti e non salvati. Una lettura.
+         */
+        post: operations["preview_api_contracts__contract_id__approval_request_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/contracts/{contract_id}/approval-request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Prepare
+         * @description Registra le giornate chieste come `proposto` e salva il messaggio come bozza del
+         *     cliente, in una transazione. Non invia: l'invio è `POST /api/email-drafts/{id}/send`,
+         *     che una persona preme dopo aver letto la bozza. Una data in cui il contratto ha già
+         *     una giornata risponde 409. Chiusa a ogni credenziale di tipo agente.
+         */
+        post: operations["prepare_api_contracts__contract_id__approval_request_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -3766,6 +3905,159 @@ export interface components {
              * Format: date-time
              */
             occurred_at: string;
+        };
+        /**
+         * ApprovalDetail
+         * @description An approval with the title of the archived original it interprets, so the day's
+         *     page can name the evidence without a second read per document.
+         */
+        ApprovalDetail: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Contract Id
+             * Format: uuid
+             */
+            contract_id: string;
+            /** Canale */
+            canale: string;
+            /** Mittente */
+            mittente: string;
+            /**
+             * Ricevuto Il
+             * Format: date-time
+             */
+            ricevuto_il: string;
+            /** Message Id */
+            message_id: string | null;
+            /**
+             * Document Id
+             * Format: uuid
+             */
+            document_id: string;
+            /** Estratto */
+            estratto: string;
+            /** Origine */
+            origine: {
+                [key: string]: unknown;
+            };
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Documento Titolo */
+            documento_titolo?: string | null;
+        };
+        /**
+         * ApprovalRecord
+         * @description A client's approval as a person records it (REB-747): who sent it, when, the
+         *     sentence that approves, the proof it rests on, and the days it covers.
+         *
+         *     The proof is exactly one of an archived document (a file or pasted text uploaded to the
+         *     contract first) or a message already synced from the client's mailbox, which the
+         *     service files as a document of the contract by itself. Both shapes end as the
+         *     `approvals.document_id` the table requires. `work_unit_ids` are the days the approval
+         *     names, and recording moves each of them: a proposed day becomes approved, a day worked
+         *     without approval is recovered to worked. `origine` is always `manuale` here: an
+         *     agent's path is `accept_proposal`.
+         */
+        ApprovalRecord: {
+            /**
+             * Contract Id
+             * Format: uuid
+             */
+            contract_id: string;
+            /**
+             * Canale
+             * @enum {string}
+             */
+            canale: "email" | "posta_certificata" | "raccomandata" | "corriere" | "altro";
+            /** Mittente */
+            mittente: string;
+            /**
+             * Ricevuto Il
+             * Format: date-time
+             */
+            ricevuto_il: string;
+            /** Estratto */
+            estratto: string;
+            /** Document Id */
+            document_id?: string | null;
+            /** Gmail Message Id */
+            gmail_message_id?: string | null;
+            /** Work Unit Ids */
+            work_unit_ids: string[];
+        };
+        /**
+         * ApprovalRecorded
+         * @description What recording answers: the approval, and each day it covers as it is now.
+         */
+        ApprovalRecorded: {
+            approval: components["schemas"]["ApprovalDetail"];
+            /** Work Units */
+            work_units: components["schemas"]["WorkUnitRead"][];
+        };
+        /** ApprovalRequestCompose */
+        ApprovalRequestCompose: {
+            /** Days */
+            days: components["schemas"]["ApprovalRequestDay"][];
+        };
+        /**
+         * ApprovalRequestDay
+         * @description One date the request names: how much of it and what the work is. The part of the
+         *     day is the two a day names individually can be (`1` or `0.5`), as in mastro.
+         */
+        ApprovalRequestDay: {
+            /**
+             * Data
+             * Format: date
+             */
+            data: string;
+            /** Quantita */
+            quantita: number | string;
+            /** Descrizione */
+            descrizione: string;
+        };
+        /**
+         * ApprovalRequestMessage
+         * @description The subject and body the request would carry: what the person previews and edits.
+         */
+        ApprovalRequestMessage: {
+            /** Oggetto */
+            oggetto: string;
+            /** Corpo */
+            corpo: string;
+        };
+        /** ApprovalRequestPrepare */
+        ApprovalRequestPrepare: {
+            /** Days */
+            days: components["schemas"]["ApprovalRequestDay"][];
+            /** To Addresses */
+            to_addresses: string[];
+            /** Cc Addresses */
+            cc_addresses?: string[];
+            /** Oggetto */
+            oggetto: string;
+            /** Corpo */
+            corpo: string;
+        };
+        /**
+         * ApprovalRequestPrepared
+         * @description The days now proposed and the draft that asks for them, ready to send.
+         */
+        ApprovalRequestPrepared: {
+            draft: components["schemas"]["EmailDraftRead"];
+            /** Work Units */
+            work_units: components["schemas"]["WorkUnitRead"][];
         };
         /** AttivitaCreate */
         AttivitaCreate: {
@@ -4053,6 +4345,8 @@ export interface components {
             attivita?: components["schemas"]["AttivitaRead"][];
             /** Fatture */
             fatture?: components["schemas"]["DueInvoice"][];
+            /** Giornate */
+            giornate?: components["schemas"]["DayWorkUnit"][];
         };
         /**
          * CalendarMonth
@@ -5196,6 +5490,33 @@ export interface components {
             giorno: string;
             /** Ore */
             ore: string;
+        };
+        /**
+         * DayWorkUnit
+         * @description One contract day on the calendar: which contract, how much of a day, and the state
+         *     a cell marks it with. `stato` is the ledger's own word (`lavorato_senza_approvazione`
+         *     among them), so the cell can say a day was worked without the approval its contract
+         *     requires rather than drawing it like any other.
+         */
+        DayWorkUnit: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Contract Id
+             * Format: uuid
+             */
+            contract_id: string;
+            /** Contract Titolo */
+            contract_titolo: string;
+            /** Customer Nome */
+            customer_nome: string;
+            /** Quantita */
+            quantita: string;
+            /** Stato */
+            stato: string;
         };
         /** DealCreate */
         DealCreate: {
@@ -9709,6 +10030,262 @@ export interface components {
             importo_riga: string;
             /** Importi Coincidono */
             importi_coincidono: boolean;
+        };
+        /**
+         * WorkUnitDetail
+         * @description One day as its page shows it: the contract it belongs to, the approval it rests
+         *     on, its log in the order it happened, and the moves the state machine allows from
+         *     where it is.
+         *
+         *     `azioni` is computed here from `WORK_UNIT_TRANSITIONS` so the browser never carries a
+         *     copy of the graph. It leaves out the two edges that are not a person's click: `fatturato`
+         *     is what an invoice does to a day, and `approvato` is what recording an approval does.
+         *     The database refuses every edge outside the graph regardless of this list.
+         */
+        WorkUnitDetail: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Contract Id
+             * Format: uuid
+             */
+            contract_id: string;
+            /**
+             * Data
+             * Format: date
+             */
+            data: string;
+            /** Quantita */
+            quantita: string;
+            /** Descrizione */
+            descrizione: string;
+            /** Stato */
+            stato: string;
+            /** Approval Id */
+            approval_id: string | null;
+            /** Invoice Line Id */
+            invoice_line_id: string | null;
+            /** Note */
+            note: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Contract Titolo */
+            contract_titolo: string;
+            /**
+             * Customer Id
+             * Format: uuid
+             */
+            customer_id: string;
+            /** Customer Nome */
+            customer_nome: string;
+            /** Requires Prior Approval */
+            requires_prior_approval: boolean;
+            /**
+             * Contratto Inizio
+             * Format: date
+             */
+            contratto_inizio: string;
+            /** Contratto Fine */
+            contratto_fine: string | null;
+            /** Fuori Termine */
+            fuori_termine: ("prima_dell_inizio" | "dopo_la_fine") | null;
+            approval: components["schemas"]["ApprovalDetail"] | null;
+            /** Transizioni */
+            transizioni: components["schemas"]["WorkUnitTransitionRead"][];
+            /** Azioni */
+            azioni: ("proposto" | "approvato" | "lavorato" | "lavorato_senza_approvazione" | "fatturato" | "pagato" | "contestato" | "revocato" | "rifiutato" | "non_fatturabile")[];
+        };
+        /** WorkUnitList */
+        WorkUnitList: {
+            /** Items */
+            items: components["schemas"]["WorkUnitRow"][];
+            /**
+             * Troncato
+             * @default false
+             */
+            troncato: boolean;
+        };
+        /** WorkUnitRead */
+        WorkUnitRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Contract Id
+             * Format: uuid
+             */
+            contract_id: string;
+            /**
+             * Data
+             * Format: date
+             */
+            data: string;
+            /** Quantita */
+            quantita: string;
+            /** Descrizione */
+            descrizione: string;
+            /** Stato */
+            stato: string;
+            /** Approval Id */
+            approval_id: string | null;
+            /** Invoice Line Id */
+            invoice_line_id: string | null;
+            /** Note */
+            note: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * WorkUnitRecord
+         * @description What a person records over REST (REB-745): a day proposed or worked, and nothing the
+         *     ledger decides for itself. Narrower than `WorkUnitCreate` on purpose: `approvato` needs an
+         *     approval and is what `POST /api/approvals` writes, and an `approval_id` named by the
+         *     caller could point at another contract's evidence. The proposal-accept path keeps the
+         *     full `WorkUnitCreate`.
+         */
+        WorkUnitRecord: {
+            /**
+             * Contract Id
+             * Format: uuid
+             */
+            contract_id: string;
+            /**
+             * Data
+             * Format: date
+             */
+            data: string;
+            /** Quantita */
+            quantita: number | string;
+            /** Descrizione */
+            descrizione: string;
+            /**
+             * Stato
+             * @default lavorato
+             * @enum {string}
+             */
+            stato: "proposto" | "lavorato";
+            /** Note */
+            note?: string | null;
+        };
+        /**
+         * WorkUnitRow
+         * @description A day with the labels a list or a calendar cell prints: the contract's title and
+         *     the customer's name, resolved by the same read so a month of days costs one query and
+         *     not one per row. A soft-deleted customer still answers with its name: archiving a
+         *     client did not unhappen the work.
+         */
+        WorkUnitRow: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Contract Id
+             * Format: uuid
+             */
+            contract_id: string;
+            /**
+             * Data
+             * Format: date
+             */
+            data: string;
+            /** Quantita */
+            quantita: string;
+            /** Descrizione */
+            descrizione: string;
+            /** Stato */
+            stato: string;
+            /** Approval Id */
+            approval_id: string | null;
+            /** Invoice Line Id */
+            invoice_line_id: string | null;
+            /** Note */
+            note: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Contract Titolo */
+            contract_titolo: string;
+            /**
+             * Customer Id
+             * Format: uuid
+             */
+            customer_id: string;
+            /** Customer Nome */
+            customer_nome: string;
+        };
+        /**
+         * WorkUnitTransitionIn
+         * @description What a caller supplies to move a day -- everything else (`stato_precedente`,
+         *     `attore`, the row itself) is the trigger's own to write.
+         */
+        WorkUnitTransitionIn: {
+            /**
+             * Stato
+             * @enum {string}
+             */
+            stato: "proposto" | "approvato" | "lavorato" | "lavorato_senza_approvazione" | "fatturato" | "pagato" | "contestato" | "revocato" | "rifiutato" | "non_fatturabile";
+            /** Motivo */
+            motivo: string;
+        };
+        /** WorkUnitTransitionRead */
+        WorkUnitTransitionRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Work Unit Id
+             * Format: uuid
+             */
+            work_unit_id: string;
+            /** Stato Precedente */
+            stato_precedente: string | null;
+            /** Stato Nuovo */
+            stato_nuovo: string;
+            /** Attore */
+            attore: {
+                [key: string]: unknown;
+            };
+            /** Motivo */
+            motivo: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Seq */
+            seq: number;
         };
         /**
          * YearOverview
@@ -30557,6 +31134,8 @@ export interface operations {
                 entity_type: "customer" | "person" | "deal";
                 entity_id: string;
                 limit?: number;
+                /** @description `conversazioni`: per conversazione, come la pagina di un cliente; `recenti`: dal più recente, perché il limite tagli i più vecchi */
+                ordine?: "conversazioni" | "recenti";
             };
             header?: never;
             path?: never;
@@ -38703,6 +39282,863 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ActivityRead"][];
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_work_units_api_work_units_get: {
+        parameters: {
+            query?: {
+                contract_id?: string | null;
+                /** @description Solo i contratti di questa azienda; omesso, tutte */
+                azienda_id?: string | null;
+                /** @description Dal giorno, YYYY-MM-DD, incluso */
+                da?: string | null;
+                /** @description Al giorno, YYYY-MM-DD, incluso */
+                a?: string | null;
+                stato?: ("proposto" | "approvato" | "lavorato" | "lavorato_senza_approvazione" | "fatturato" | "pagato" | "contestato" | "revocato" | "rifiutato" | "non_fatturabile") | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkUnitList"];
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_api_work_units_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkUnitRecord"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkUnitRead"];
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_api_work_units__work_unit_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                work_unit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkUnitDetail"];
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    transition_api_work_units__work_unit_id__transitions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                work_unit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkUnitTransitionIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkUnitDetail"];
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    record_api_approvals_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApprovalRecord"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApprovalRecorded"];
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_api_contracts__contract_id__approval_request_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                contract_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApprovalRequestCompose"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApprovalRequestMessage"];
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    prepare_api_contracts__contract_id__approval_request_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                contract_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApprovalRequestPrepare"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApprovalRequestPrepared"];
                 };
             };
             /** @description Permesso negato: l'actor non ha il ruolo richiesto. */

@@ -159,7 +159,7 @@ export function useCreateFromTemplate(owner: DocumentOwner) {
  * installation. No `Content-Type` is set by hand, because the browser must append its
  * own multipart boundary.
  */
-async function putVersion(documentId: string, file: File): Promise<DocumentVersion> {
+export async function putVersion(documentId: string, file: File): Promise<DocumentVersion> {
   const body = new FormData()
   body.append('file', file)
   const response = await fetchWithRefresh(`/api/documents/${documentId}/versions`, {

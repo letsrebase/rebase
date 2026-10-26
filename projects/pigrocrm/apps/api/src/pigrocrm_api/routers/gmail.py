@@ -305,6 +305,15 @@ def read_messages(
     entity_type: Annotated[Literal["customer", "person", "deal"], Query()],
     entity_id: Annotated[UUID, Query()],
     limit: Annotated[int, Query(ge=1, le=200)] = 100,
+    ordine: Annotated[
+        Literal["conversazioni", "recenti"],
+        Query(
+            description=(
+                "`conversazioni`: per conversazione, come la pagina di un cliente; "
+                "`recenti`: dal più recente, perché il limite tagli i più vecchi"
+            )
+        ),
+    ] = "conversazioni",
 ) -> list[GmailMessageRead]:
     """Reads only what is already in the CRM. There is no parameter here that reaches
     Gmail, by design (spec 8.2): the correspondence on a customer page comes from the
@@ -317,5 +326,7 @@ def read_messages(
     "wrong question".
     """
     del actor  # authentication is the dependency's job; reading here is not role-gated
-    rows = GmailRepository(session).messages_for_entity(entity_type, entity_id, limit=limit)
+    rows = GmailRepository(session).messages_for_entity(
+        entity_type, entity_id, limit=limit, newest_first=ordine == "recenti"
+    )
     return [GmailMessageRead.model_validate(row) for row in rows]
