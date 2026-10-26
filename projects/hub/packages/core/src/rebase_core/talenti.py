@@ -48,7 +48,13 @@ from rebase_core.models import (
 )
 from rebase_core.pagination import SortSpec, decode_cursor, encode_cursor, keyset_predicate
 from rebase_core.schemas import TalentoList, TalentoOrigine, TalentoRead
-from rebase_core.search import any_element_matches, escape_like, matches_any, similarity_score
+from rebase_core.search import (
+    any_element_matches,
+    escape_like,
+    matches_any,
+    similarity_score,
+    string_field_matches,
+)
 
 LIST_LIMIT_DEFAULT = 100
 LIST_LIMIT_MAX = 500
@@ -139,34 +145,36 @@ def _card_read(row: Freelancer, user: User, card: object) -> TalentoRead:
 
 def _names_skill(term: str) -> ColumnElement[bool]:
     """Whether the row's freelancer names `term`, case-insensitively: in their own
-    position, or in the role, a skill or the summary of their anonymous card. A card that
-    is not a JSON object answers NULL on every path, which matches nothing.
+    position, or in the role, a skill or the summary of their anonymous card. Only a
+    JSON string on the card can match, the values `_card_read` keeps, so a match on the
+    role, the skills or the place is always one the row shows; a card that is not a
+    JSON object matches nothing.
 
     The card is read through an alias: the listing joins `freelancer_cards` itself, and
     a subquery on the same table would correlate to that join and lose its own FROM."""
-    pattern = f"%{escape_like(term)}%"
     scheda = aliased(FreelancerCard)
     on_the_card = exists(
         select(scheda.freelancer_id).where(
             scheda.freelancer_id == Freelancer.id,
             or_(
-                scheda.card["ruolo"].astext.ilike(pattern, escape="\\"),
-                scheda.card["sintesi"].astext.ilike(pattern, escape="\\"),
+                string_field_matches(scheda.card["ruolo"], term),
+                string_field_matches(scheda.card["sintesi"], term),
                 any_element_matches(scheda.card["competenze"], term),
             ),
         )
     )
-    return or_(Freelancer.posizione.ilike(pattern, escape="\\"), on_the_card)
+    return or_(matches_any((Freelancer.posizione,), term), on_the_card)
 
 
 def _lives_in(place: str) -> ColumnElement[bool]:
     """Whether the row's anonymous card places the freelancer in `place`, as a part of
-    its `luogo` («Monza» finds «Monza e Brianza»); aliased as `_names_skill` says."""
+    its `luogo` («Monza» finds «Monza e Brianza»), a JSON string as `_names_skill` reads
+    one, through an alias for the same reason."""
     scheda = aliased(FreelancerCard)
     return exists(
         select(scheda.freelancer_id).where(
             scheda.freelancer_id == Freelancer.id,
-            scheda.card["luogo"].astext.ilike(f"%{escape_like(place)}%", escape="\\"),
+            string_field_matches(scheda.card["luogo"], place),
         )
     )
 

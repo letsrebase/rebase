@@ -434,6 +434,7 @@ def test_competenze_keeps_the_cards_that_name_every_term(clean: Session) -> None
     not_a_list = _apply(clean, "eva@studio.it", nome="Eva")
     an_array = _apply(clean, "gina@studio.it", nome="Gina")
     a_string = _apply(clean, "hugo@studio.it", nome="Hugo")
+    objects_inside = _apply(clean, "ivo@studio.it", nome="Ivo")
     _apply(clean, "dario@studio.it", nome="Dario", posizione="SQL Server DBA")
     _signup(clean, "lead@studio.it")
     _with_card(clean, both_skills, {"competenze": ["SQL Server", "React"]})
@@ -447,6 +448,12 @@ def test_competenze_keeps_the_cards_that_name_every_term(clean: Session) -> None
     _with_card(clean, not_a_list, {"competenze": "SQL Server, React"})
     _with_card(clean, an_array, ["SQL Server", "React"])
     _with_card(clean, a_string, "SQL Server React")
+    # Values `_card_read` drops never match either, so a match is one the row shows.
+    _with_card(
+        clean,
+        objects_inside,
+        {"ruolo": {"nome": "SQL Server"}, "competenze": [{"nome": "SQL Server"}, "React"]},
+    )
 
     talenti = TalentiService(clean)
     matching = {"ada@studio.it", "bruno@studio.it", "fabio@studio.it"}
@@ -466,7 +473,7 @@ def test_competenze_keeps_the_cards_that_name_every_term(clean: Session) -> None
     assert sorted(walked) == sorted(matching)
 
     # A blank term narrows nothing, and `%` is a character, not a wildcard.
-    assert talenti.list_recent(competenze=["  "]).totale == 9
+    assert talenti.list_recent(competenze=["  "]).totale == 10
     assert talenti.list_recent(competenze=["%"]).totale == 0
 
 
@@ -474,11 +481,13 @@ def test_luogo_matches_part_of_the_card_place(clean: Session) -> None:
     monza = _apply(clean, "ada@studio.it")
     rome = _apply(clean, "bruno@studio.it", nome="Bruno")
     an_array = _apply(clean, "cara@studio.it", nome="Cara")
+    an_object = _apply(clean, "eva@studio.it", nome="Eva")
     _apply(clean, "dario@studio.it", nome="Dario")
     _signup(clean, "lead@studio.it")
     _with_card(clean, monza, {"luogo": "Monza e Brianza"})
     _with_card(clean, rome, {"luogo": "Roma"})
     _with_card(clean, an_array, ["Monza"])
+    _with_card(clean, an_object, {"luogo": {"nota": "Monza"}})
 
     talenti = TalentiService(clean)
     found = talenti.list_recent(luogo="monza")
