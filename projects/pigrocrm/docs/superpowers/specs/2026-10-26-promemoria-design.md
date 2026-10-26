@@ -325,7 +325,13 @@ then record, so two passes awake at the same instant could both send and the los
 insert would fail. What closes that window is the per-space lock of § 9.2, so that the
 failure that can remain is a duplicate message after a crash between the send and the
 write, never a missing one. The loser of such an insert rolls back only its own row and
-carries on with the next user. A delivery covers its severity rank and below: the check is «a row exists with a rank at
+carries on with the next user.
+
+The rank is not part of the key, so an escalation is an **upsert**, not a second row: after
+a successful send the write is `INSERT ... ON CONFLICT (key, user, channel, mode, period)
+DO UPDATE` keeping the highest rank delivered (`GREATEST`) and the new delivery time. A
+reminder delivered at `serious` and escalated to `critical` the same day is sent once more
+and its row then reads rank 3, so the next pass finds it covered. A delivery covers its severity rank and below: the check is «a row exists with a rank at
 or above this severity, for the same period», so a reminder delivered at `serious` is not
 sent again at `serious`, is sent again when it climbs to `critical`, and a threshold edit
 that lowers a severity does not resend. `attivita_overdue` is delivered once a day, as
