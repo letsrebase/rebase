@@ -236,6 +236,36 @@ ROWS: list[Row] = [
     ),
     Row(
         "POST",
+        "/api/contracts/{contract_id}/approval-request",
+        body={
+            "days": [{"data": "2026-01-05", "quantita": "1.00", "descrizione": "Matrice"}],
+            "to_addresses": ["cliente@example.it"],
+            "oggetto": "Matrice",
+            "corpo": "Matrice",
+        },
+    ),
+    # The preview is a render of the request, written and not stored: a read, like a template's.
+    Row(
+        "POST",
+        "/api/contracts/{contract_id}/approval-request/preview",
+        expect="open",
+        body={"days": [{"data": "2026-01-05", "quantita": "1.00", "descrizione": "Matrice"}]},
+    ),
+    Row(
+        "POST",
+        "/api/approvals",
+        body={
+            "contract_id": "__FAKE__",
+            "canale": "email",
+            "mittente": "cliente@example.it",
+            "ricevuto_il": "2026-01-01T09:00:00Z",
+            "estratto": "Matrice",
+            "document_id": "__FAKE__",
+            "work_unit_ids": ["__FAKE__"],
+        },
+    ),
+    Row(
+        "POST",
         "/api/work-units/{work_unit_id}/transitions",
         body={"stato": "contestato", "motivo": "Matrice"},
     ),

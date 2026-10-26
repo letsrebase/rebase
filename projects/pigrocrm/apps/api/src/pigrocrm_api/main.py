@@ -13,6 +13,8 @@ from pigrocrm_api.errors import (
 from pigrocrm_api.routers import (
     activities,
     analytics,
+    approval_requests,
+    approvals,
     auth,
     automations,
     calendar,
@@ -124,6 +126,10 @@ def create_app() -> FastAPI:
         proposals,
         # REB-745: the day ledger on screen -- record a day, read it, move it.
         work_units,
+        # REB-747: record a client's approval and the days it covers.
+        approvals,
+        # REB-749: ask a client for prior approval of named days, from the contract.
+        approval_requests,
     ):
         app.include_router(module.router)
 

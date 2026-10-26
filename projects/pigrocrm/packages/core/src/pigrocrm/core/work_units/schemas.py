@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from pigrocrm.core.validation import SafeStr
 
@@ -191,3 +191,46 @@ class WorkUnitDetail(WorkUnitRow):
     approval: ApprovalDetail | None
     transizioni: list[WorkUnitTransitionRead]
     azioni: list[WorkUnitStato]
+
+
+APPROVAL_DAYS_MAX = 100
+
+
+class ApprovalRecord(BaseModel):
+    """A client's approval as a person records it (REB-747): who sent it, when, the
+    sentence that approves, the proof it rests on, and the days it covers.
+
+    The proof is exactly one of an archived document (a file or pasted text uploaded to the
+    contract first) or a message already synced from the client's mailbox, which the
+    service files as a document of the contract by itself. Both shapes end as the
+    `approvals.document_id` the table requires. `work_unit_ids` are the days the approval
+    names, and recording moves each of them: a proposed day becomes approved, a day worked
+    without approval is recovered to worked. `origine` is always `manuale` here: an
+    agent's path is `accept_proposal`.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    contract_id: UUID
+    canale: ApprovalCanale
+    mittente: SafeStr = Field(min_length=1)
+    ricevuto_il: datetime
+    estratto: SafeStr = Field(min_length=1)
+    document_id: UUID | None = None
+    gmail_message_id: UUID | None = None
+    work_unit_ids: list[UUID] = Field(min_length=1, max_length=APPROVAL_DAYS_MAX)
+
+    @model_validator(mode="after")
+    def _one_proof(self) -> "ApprovalRecord":
+        if (self.document_id is None) == (self.gmail_message_id is None):
+            raise ValueError("indica una sola prova: un documento oppure un messaggio di posta")
+        if len(set(self.work_unit_ids)) != len(self.work_unit_ids):
+            raise ValueError("una giornata e' indicata due volte")
+        return self
+
+
+class ApprovalRecorded(BaseModel):
+    """What recording answers: the approval, and each day it covers as it is now."""
+
+    approval: ApprovalDetail
+    work_units: list[WorkUnitRead]

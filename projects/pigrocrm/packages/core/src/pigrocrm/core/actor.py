@@ -152,6 +152,10 @@ AGENT_FORBIDDEN_ACTIONS: frozenset[str] = frozenset(
         "transition_work_unit",
         "link_approval",
         "create_approval",
+        # REB-749: asking a client for approval records the named days as proposed and files
+        # the request as a draft under the person's own address. No tool, for the reason above
+        # and because an agent never prepares mail on the owner's behalf for a client.
+        "request_approval",
     }
 )
 

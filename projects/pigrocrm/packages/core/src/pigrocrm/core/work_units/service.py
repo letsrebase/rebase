@@ -20,7 +20,12 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.contracts.repository import ContractRepository
+from pigrocrm.core.documents.models import Document
+from pigrocrm.core.documents.schemas import TITOLO_MAX_LENGTH
+from pigrocrm.core.documents.service import DocumentService
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
+from pigrocrm.core.gmail.repository import GmailRepository
+from pigrocrm.core.storage.base import DocumentStorage
 from pigrocrm.core.work_units.models import (
     WORK_UNIT_ENTRY_STATI,
     WORK_UNIT_TRANSITIONS,
@@ -36,6 +41,8 @@ from pigrocrm.core.work_units.schemas import (
     ApprovalCreate,
     ApprovalDetail,
     ApprovalRead,
+    ApprovalRecord,
+    ApprovalRecorded,
     TermViolation,
     WorkUnitCreate,
     WorkUnitDetail,
@@ -58,6 +65,10 @@ LIVE_DAY_INDEX = "uq_work_units_contract_data_live"
 # invoice does to a day (`invoicing.py`), and `approvato` is what recording an approval
 # does, with its proof. Offering either as a plain button would let a day be marked
 # approved or billed with no evidence and no invoice behind it.
+# The states a recorded approval can still use: a proposed day becomes approved, a day worked
+# without the approval its contract requires is recovered to worked.
+APPROVABLE_STATI: frozenset[str] = frozenset({"proposto", "lavorato_senza_approvazione"})
+
 NOT_A_MANUAL_ACTION: frozenset[str] = frozenset({"approvato", "fatturato"})
 
 
@@ -118,8 +129,19 @@ class WorkUnitService:
             raise NotFound(WORK_UNIT_ENTITY, work_unit_id)
         return WorkUnitRead.model_validate(work_unit)
 
-    def create(self, data: WorkUnitCreate, actor: Actor, motivo: str = "creazione") -> WorkUnitRead:
-        """`WorkUnitCreate.stato`'s own `Literal` admits every state; this is the
+    def create(
+        self,
+        data: WorkUnitCreate,
+        actor: Actor,
+        motivo: str = "creazione",
+        *,
+        commit: bool = True,
+    ) -> WorkUnitRead:
+        """`commit=False` leaves the transaction to a caller that writes more than the day
+        and needs the writes to stand or fall together (`ApprovalRequestService.prepare`);
+        the row is flushed and refreshed either way.
+
+        `WorkUnitCreate.stato`'s own `Literal` admits every state; this is the
         narrower check against `WORK_UNIT_ENTRY_STATI` -- a `ValidationFailed` here
         instead of the trigger's own `IntegrityError`, for the one case a schema can
         catch without a round trip to Postgres. The trigger enforces the identical
@@ -167,7 +189,8 @@ class WorkUnitService:
         # is the entire point of the Done-when ("a day ... lands in
         # 'lavorato_senza_approvazione' automatically").
         self.session.refresh(work_unit)
-        self.session.commit()
+        if commit:
+            self.session.commit()
         return WorkUnitRead.model_validate(work_unit)
 
     def transition(
@@ -309,8 +332,9 @@ def _term_violation(giorno: date, inizio: date, fine: date | None) -> TermViolat
 
 
 class ApprovalService:
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, storage: DocumentStorage | None = None) -> None:
         self.session = session
+        self.storage = storage
         self.repo = ApprovalRepository(session)
 
     def get(self, approval_id: UUID) -> ApprovalRead:
@@ -335,6 +359,136 @@ class ApprovalService:
         )
         self.session.commit()
         return ApprovalRead.model_validate(approval)
+
+    def record(self, data: ApprovalRecord, actor: Actor) -> ApprovalRecorded:
+        """A person records a client's approval and the days it covers, in one transaction
+        (REB-747): the proof is filed (or checked), the approval is written, and each named
+        day moves, so an approval is never left covering nothing and a day is never left
+        approved by an approval that is not there.
+
+        A day moves according to where it is: `proposto` becomes `approvato` with the
+        approval linked in the same write, `lavorato_senza_approvazione` has the approval
+        linked and the trigger recovers it to `lavorato` (spec §5). Any other state refuses
+        the whole recording with the days named: an approval is immutable evidence, and one
+        recorded against a day that cannot use it is a correction nobody can make.
+        """
+        actor.require_write("create_approval")
+        contract = ContractRepository(self.session).get(data.contract_id)
+        if contract is None:
+            raise NotFound("contract", data.contract_id)
+        days = self._days_to_approve(data)
+        document = self._proof(data, contract.customer_id, actor)
+
+        approval = self.repo.add(
+            Approval(
+                contract_id=data.contract_id,
+                canale=data.canale,
+                mittente=data.mittente,
+                ricevuto_il=data.ricevuto_il,
+                message_id=self._message_header(data),
+                document_id=document.id,
+                estratto=data.estratto,
+                origine={"kind": "manuale"},
+            )
+        )
+        set_transition_context(
+            self.session,
+            actor,
+            f"Approvazione di {data.mittente} del {data.ricevuto_il.date().isoformat()}",
+        )
+        for day in days:
+            day.approval_id = approval.id
+            if day.stato == "proposto":
+                day.stato = "approvato"
+        self.session.flush()
+        for day in days:
+            self.session.refresh(day)
+        self.session.refresh(approval)
+        detail = ApprovalDetail.model_validate(
+            {
+                **ApprovalRead.model_validate(approval).model_dump(),
+                "documento_titolo": document.titolo,
+            }
+        )
+        recorded = [WorkUnitRead.model_validate(day) for day in days]
+        self.session.commit()
+        return ApprovalRecorded(approval=detail, work_units=recorded)
+
+    def _days_to_approve(self, data: ApprovalRecord) -> list[WorkUnit]:
+        repo = WorkUnitRepository(self.session)
+        days: list[WorkUnit] = []
+        refused: list[str] = []
+        for day_id in data.work_unit_ids:
+            day = repo.get(day_id)
+            if day is None or day.contract_id != data.contract_id:
+                raise NotFound(WORK_UNIT_ENTITY, day_id)
+            if day.stato not in APPROVABLE_STATI or day.approval_id is not None:
+                refused.append(f"{day.data.isoformat()} ({day.stato})")
+            days.append(day)
+        if refused:
+            raise Conflict(
+                APPROVAL_ENTITY,
+                "queste giornate non possono ricevere un'approvazione: " + ", ".join(refused),
+                giornate=refused,
+            )
+        return days
+
+    def _proof(self, data: ApprovalRecord, customer_id: UUID, actor: Actor) -> Document:
+        if data.document_id is not None:
+            document = self.session.get(Document, data.document_id)
+            if document is None or document.deleted_at is not None:
+                raise NotFound("document", data.document_id)
+            if document.contract_id != data.contract_id and document.customer_id != customer_id:
+                raise ValidationFailed(
+                    APPROVAL_ENTITY,
+                    "document_id",
+                    "il documento non e' di questo contratto ne' del suo cliente",
+                    expected="un documento del contratto o del cliente",
+                )
+            return document
+        if self.storage is None:  # pragma: no cover - the API always passes one
+            raise ValidationFailed(APPROVAL_ENTITY, "gmail_message_id", "archivio non disponibile")
+        message_id = data.gmail_message_id
+        if message_id is None:  # pragma: no cover - `ApprovalRecord` takes exactly one proof
+            raise ValidationFailed(APPROVAL_ENTITY, "document_id", "manca la prova")
+        message = GmailRepository(self.session).message(message_id)
+        if message is None:
+            raise NotFound("gmail_message", message_id)
+        if not message.body_text.strip():
+            raise ValidationFailed(
+                APPROVAL_ENTITY,
+                "gmail_message_id",
+                "il corpo del messaggio non e' archiviato: carica il messaggio come file",
+                expected="un messaggio con il testo sincronizzato",
+            )
+        titolo = f"Email di {message.from_address}: {message.subject}"[:TITOLO_MAX_LENGTH]
+        text = (
+            f"Da: {message.from_address}\n"
+            f"A: {', '.join(message.to_addresses)}\n"
+            f"Data: {message.internal_date.isoformat()}\n"
+            f"Oggetto: {message.subject}\n\n"
+            f"{message.body_text}\n"
+        )
+        filed = DocumentService(self.session, self.storage).import_bytes(
+            contract_id=data.contract_id,
+            tipo="documento",
+            titolo=titolo,
+            data=text.encode("utf-8"),
+            content_type="text/plain",
+            actor=actor,
+            origine={"gmail_message_id": str(message.id), "message_id": message.message_id_header},
+            commit=False,
+        )
+        document = self.session.get(Document, filed.id)
+        if document is None:  # pragma: no cover - flushed by `import_bytes` a line above
+            raise NotFound("document", filed.id)
+        return document
+
+    def _message_header(self, data: ApprovalRecord) -> str | None:
+        if data.gmail_message_id is None:
+            return None
+        message = GmailRepository(self.session).message(data.gmail_message_id)
+        return message.message_id_header or None if message is not None else None
 
 
 __all__ = [

@@ -765,6 +765,22 @@ _COPERTE_O_UMANE: dict[Method, str] = {
         "own atomic write would let an agent recover a flagged day, or attach "
         "evidence to one, with no proposal behind it"
     ),
+    ("ApprovalService", "record"): (
+        "records a client's approval and moves the days it names in one write: "
+        "exactly the evidence an agent must not manufacture (invariant 3). A person "
+        "records it from the contract page over `POST /api/approvals`, refused to any "
+        "agent credential there too (REB-747); an agent's path is `propose_day`"
+    ),
+    ("ApprovalRequestService", "compose"): (
+        "writes the request for a client's approval, which only a person sends; "
+        "an agent proposes a day (`propose_day`) and never prepares mail to a client "
+        "(REB-749)"
+    ),
+    ("ApprovalRequestService", "prepare"): (
+        "records named days as proposed and files a draft to the client in one write: "
+        "refused to any agent credential (`request_approval`), and the send is "
+        "`POST /api/email-drafts/{id}/send`, which has no tool either (REB-749)"
+    ),
     ("ApprovalService", "create"): (
         "recording an approval detached from the day it evidences is exactly what "
         "`accept_proposal`'s 'giornata' branch already does atomically with the "

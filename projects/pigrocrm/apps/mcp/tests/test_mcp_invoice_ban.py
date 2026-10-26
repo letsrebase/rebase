@@ -160,10 +160,10 @@ FORBIDDEN = (
 #
 # Enumerated here, and this is why the equality above is a union rather than a plain
 # `==`: the two lists still have to be one list, but "in `AGENT_FORBIDDEN_ACTIONS` and
-# not in `FORBIDDEN`" now has exactly seven admissible answers, written down with their
-# justification instead of left as slack in the assertion. An eighth added to the ban
+# not in `FORBIDDEN`" now has exactly eight admissible answers, written down with their
+# justification instead of left as slack in the assertion. A ninth added to the ban
 # list without a tool -- or one of these growing a tool and staying here -- fails. The last
-# four are the day ledger's writes (REB-745): a person's acts, reached by the web app over
+# five are the day ledger's writes (REB-745, REB-749): a person's acts, reached by the web app over
 # REST, which an agent token could reach too without the ban.
 #
 # Spelled as the action strings the services pass to `require_write`, which for a
@@ -175,13 +175,15 @@ REST_ONLY_FORBIDDEN = frozenset(
         "impostare le cartelle Drive",
         "collegare Google Drive",
         "scollegare Google Drive",
-        # REB-745..747: the day ledger's four writes. They have no tool and never will
+        # REB-745..747: the day ledger's five writes. They have no tool and never will
         # (`test_mcp_surface_coverage.py`, `_COPERTE_O_UMANE`): an agent proposes, a person
         # confirms, and the web app reaches these over REST, which a token could too.
         "create_work_unit",
         "transition_work_unit",
         "link_approval",
         "create_approval",
+        # REB-749: the request for approval, prepared from the contract page.
+        "request_approval",
     }
 )
 
@@ -627,10 +629,10 @@ def test_the_structural_ban_has_a_second_line_on_the_credential_itself() -> None
     `REST_ONLY_FORBIDDEN` is the union's other term, and it is what keeps this a
     statement rather than a loose fit: the ban list is keyed on the *operation*, so it
     can legitimately hold one this package offers no tool for -- Drive's three
-    configuration operations and the day ledger's four writes, reachable only over REST
-    and only by a person. Those seven are enumerated there with their justification, so
-    "banned but toolless" has seven named answers instead of being slack in this
-    assertion. An eighth, or one of these growing a tool and staying in that set, fails
+    configuration operations and the day ledger's five writes, reachable only over REST
+    and only by a person. Those eight are enumerated there with their justification, so
+    "banned but toolless" has eight named answers instead of being slack in this
+    assertion. A ninth, or one of these growing a tool and staying in that set, fails
     here.
     """
     from pigrocrm.core.actor import AGENT_FORBIDDEN_ACTIONS

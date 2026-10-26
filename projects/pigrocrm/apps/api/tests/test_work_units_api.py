@@ -228,3 +228,187 @@ def test_an_agent_token_cannot_record_or_move_a_day(
     assert agent.get(f"/api/work-units/{day['id']}").status_code == 200
     unchanged = logged_in.get(f"/api/work-units/{day['id']}").json()
     assert unchanged["stato"] == "lavorato"
+
+
+# --- recording an approval (REB-747) -------------------------------------------------------
+
+
+def _document(client: TestClient, contract_id: str) -> str:
+    response = client.post(
+        "/api/documents",
+        json={"contract_id": contract_id, "tipo": "documento", "titolo": "Mail di conferma"},
+    )
+    assert response.status_code == 201, response.text
+    return str(response.json()["id"])
+
+
+def _approval_body(contract_id: str, document_id: str, days: list[str]) -> dict[str, Any]:
+    return {
+        "contract_id": contract_id,
+        "canale": "email",
+        "mittente": "giulia@cliente.example",
+        "ricevuto_il": "2026-03-01T09:00:00Z",
+        "estratto": "Confermo le giornate del 2 e del 3 marzo.",
+        "document_id": document_id,
+        "work_unit_ids": days,
+    }
+
+
+def test_an_approval_moves_the_days_it_names_and_the_page_shows_what_it_rests_on(
+    logged_in: TestClient,
+) -> None:
+    contract_id = _contract(logged_in, requires_prior_approval=True)
+    proposed = _record(logged_in, contract_id, "2026-03-02", stato="proposto")
+    flagged = _record(logged_in, contract_id, "2026-03-03")
+    assert flagged["stato"] == "lavorato_senza_approvazione"
+    document_id = _document(logged_in, contract_id)
+
+    response = logged_in.post(
+        "/api/approvals",
+        json=_approval_body(contract_id, document_id, [proposed["id"], flagged["id"]]),
+    )
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert {day["id"]: day["stato"] for day in body["work_units"]} == {
+        proposed["id"]: "approvato",
+        flagged["id"]: "lavorato",
+    }
+    assert body["approval"]["documento_titolo"] == "Mail di conferma"
+    page = logged_in.get(f"/api/work-units/{flagged['id']}").json()
+    assert page["approval"]["id"] == body["approval"]["id"]
+    assert page["approval"]["mittente"] == "giulia@cliente.example"
+
+
+def test_an_approval_over_a_day_that_cannot_use_it_is_a_409_and_changes_nothing(
+    logged_in: TestClient,
+) -> None:
+    contract_id = _contract(logged_in)
+    fine = _record(logged_in, contract_id, "2026-03-02", stato="proposto")
+    paid_for = _record(logged_in, contract_id, "2026-03-03", stato="approvato")
+    document_id = _document(logged_in, contract_id)
+
+    response = logged_in.post(
+        "/api/approvals",
+        json=_approval_body(contract_id, document_id, [fine["id"], paid_for["id"]]),
+    )
+
+    assert response.status_code == 409, response.text
+    assert logged_in.get(f"/api/work-units/{fine['id']}").json()["stato"] == "proposto"
+
+
+def test_an_approval_with_two_proofs_or_none_is_a_422(logged_in: TestClient) -> None:
+    contract_id = _contract(logged_in)
+    day = _record(logged_in, contract_id, "2026-03-02", stato="proposto")
+    body = _approval_body(contract_id, _document(logged_in, contract_id), [day["id"]])
+    neither = {k: v for k, v in body.items() if k != "document_id"}
+
+    assert logged_in.post("/api/approvals", json=neither).status_code == 422
+
+
+def test_an_agent_token_cannot_record_an_approval(
+    logged_in: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    contract_id = _contract(logged_in)
+    day = _record(logged_in, contract_id, "2026-03-02", stato="proposto")
+    body = _approval_body(contract_id, _document(logged_in, contract_id), [day["id"]])
+    agent = _agent_client(logged_in, monkeypatch)
+
+    response = agent.post("/api/approvals", json=body)
+
+    assert response.status_code == 403, response.text
+    assert response.json()["code"] == "agent_forbidden"
+    assert logged_in.get(f"/api/work-units/{day['id']}").json()["stato"] == "proposto"
+
+
+# --- asking a client for approval (REB-749) ------------------------------------------------
+
+
+def _request_body(*dates: str, to: str = "amministrazione@acme.example") -> dict[str, Any]:
+    return {
+        "days": [
+            {"data": giorno, "quantita": "1.00", "descrizione": "Workshop con il cliente"}
+            for giorno in dates
+        ],
+        "to_addresses": [to],
+        "oggetto": "Richiesta di approvazione delle giornate: Consulenza",
+        "corpo": "Buongiorno, le chiedo l'approvazione.",
+    }
+
+
+def test_the_preview_writes_the_request_and_stores_nothing(logged_in: TestClient) -> None:
+    contract_id = _contract(logged_in, requires_prior_approval=True)
+
+    response = logged_in.post(
+        f"/api/contracts/{contract_id}/approval-request/preview",
+        json={"days": _request_body("2026-11-04", "2026-11-02")["days"]},
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["oggetto"] == "Richiesta di approvazione delle giornate: Consulenza"
+    assert "- lunedì 2 novembre 2026: giornata intera, Workshop con il cliente" in body["corpo"]
+    assert (
+        logged_in.get("/api/work-units", params={"contract_id": contract_id}).json()["items"] == []
+    )
+
+
+def test_preparing_a_request_proposes_the_days_and_files_the_draft_without_sending(
+    logged_in: TestClient,
+) -> None:
+    contract_id = _contract(logged_in, requires_prior_approval=True)
+
+    response = logged_in.post(
+        f"/api/contracts/{contract_id}/approval-request",
+        json=_request_body("2026-11-02", "2026-11-03", "2026-11-04"),
+    )
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert [day["stato"] for day in body["work_units"]] == ["proposto"] * 3
+    assert body["draft"]["send_state"] == "bozza"
+    assert body["draft"]["to_addresses"] == ["amministrazione@acme.example"]
+    days = logged_in.get("/api/work-units", params={"contract_id": contract_id}).json()["items"]
+    assert sorted(day["data"] for day in days) == ["2026-11-02", "2026-11-03", "2026-11-04"]
+
+
+def test_a_request_for_a_date_already_held_is_a_409_and_records_nothing(
+    logged_in: TestClient,
+) -> None:
+    contract_id = _contract(logged_in, requires_prior_approval=True)
+    _record(logged_in, contract_id, "2026-11-03")
+
+    response = logged_in.post(
+        f"/api/contracts/{contract_id}/approval-request",
+        json=_request_body("2026-11-02", "2026-11-03"),
+    )
+
+    assert response.status_code == 409, response.text
+    days = logged_in.get("/api/work-units", params={"contract_id": contract_id}).json()["items"]
+    assert [day["data"] for day in days] == ["2026-11-03"]
+
+
+def test_a_request_with_no_recipient_is_a_422(logged_in: TestClient) -> None:
+    contract_id = _contract(logged_in, requires_prior_approval=True)
+    body = {**_request_body("2026-11-02"), "to_addresses": []}
+
+    response = logged_in.post(f"/api/contracts/{contract_id}/approval-request", json=body)
+
+    assert response.status_code == 422, response.text
+
+
+def test_an_agent_token_cannot_prepare_a_request(
+    logged_in: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    contract_id = _contract(logged_in, requires_prior_approval=True)
+    agent = _agent_client(logged_in, monkeypatch)
+
+    response = agent.post(
+        f"/api/contracts/{contract_id}/approval-request", json=_request_body("2026-11-02")
+    )
+
+    assert response.status_code == 403, response.text
+    assert response.json()["code"] == "agent_forbidden"
+    assert (
+        logged_in.get("/api/work-units", params={"contract_id": contract_id}).json()["items"] == []
+    )
