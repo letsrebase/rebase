@@ -39,6 +39,14 @@ from pigrocrm.core.invoices.models import (  # noqa: F401
 from pigrocrm.core.people.models import Person  # noqa: F401
 from pigrocrm.core.pipeline.models import PipelineStage  # noqa: F401
 from pigrocrm.core.proposals.models import Proposal  # noqa: F401
+from pigrocrm.core.reminders.models import (  # noqa: F401
+    ReminderAck,
+    ReminderDelivery,
+    ReminderJobRun,
+    ReminderPreference,
+    ReminderSnooze,
+    ReminderSummaryRun,
+)
 from pigrocrm.core.space_settings.models import SpaceSetting  # noqa: F401
 from pigrocrm.core.templates.models import Template  # noqa: F401
 from pigrocrm.core.timetracking.models import (  # noqa: F401

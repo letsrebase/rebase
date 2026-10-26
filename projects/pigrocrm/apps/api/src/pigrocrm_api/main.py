@@ -39,6 +39,7 @@ from pigrocrm_api.routers import (
     period_locks,
     pipeline,
     proposals,
+    reminders,
     schema,
     search,
     space_settings,
@@ -130,6 +131,8 @@ def create_app() -> FastAPI:
         approvals,
         # REB-749: ask a client for prior approval of named days, from the contract.
         approval_requests,
+        # REB-732: what the CRM raises on its own, and what a person does about it.
+        reminders,
     ):
         app.include_router(module.router)
 

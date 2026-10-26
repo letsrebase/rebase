@@ -148,21 +148,30 @@ describe('the settings tab visibility', () => {
     }
   })
 
-  it('shows a collaboratore the profile and their own Drive, and nothing else', () => {
+  it('shows a collaboratore the profile, the notifications and their own Drive, and nothing else', () => {
     // REB-457: the Drive credential is per CRM user and the service lets any writer
     // connect it, so a collaboratore gets the tab where the consent lands.
     for (const tab of SETTINGS_TABS) {
       expect(canSeeSettingsTab('collaboratore', tab.value)).toBe(
-        tab.value === 'profile' || tab.value === 'drive',
+        tab.value === 'profile' || tab.value === 'notifications' || tab.value === 'drive',
       )
     }
   })
 
-  it('shows a readonly person exactly the profile tab', () => {
+  it('shows a readonly person exactly the profile and the notifications', () => {
     // A readonly person cannot start a Drive consent (`require_write`), so the Drive
     // tab would only offer controls the server refuses.
     for (const tab of SETTINGS_TABS) {
-      expect(canSeeSettingsTab('readonly', tab.value)).toBe(tab.value === 'profile')
+      expect(canSeeSettingsTab('readonly', tab.value)).toBe(
+        tab.value === 'profile' || tab.value === 'notifications',
+      )
+    }
+  })
+
+  it("keeps the space's reminder defaults to an admin: a member never sees «Promemoria»", () => {
+    expect(SETTINGS_TAB_MIN_ROLE.reminders).toBe('admin')
+    for (const role of ['collaboratore', 'readonly'] as const) {
+      expect(canSeeSettingsTab(role, 'reminders')).toBe(false)
     }
   })
 

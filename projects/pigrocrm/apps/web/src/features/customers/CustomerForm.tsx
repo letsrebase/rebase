@@ -52,7 +52,18 @@ const NATIVE_FIELD_KEYS = NATIVE_FIELDS.map((field) => field.key)
 // `azienda_id` is seeded and sent like a native column but drawn by its own picker below
 // `DynamicForm`, the way the cost form draws `category_id`: the value is an id, and a
 // `select` field would submit the option's label (REB-626).
-const SEEDED_KEYS = [...NATIVE_FIELD_KEYS, 'azienda_id']
+// `owner_id` (REB-773) is the same kind of key: an id drawn by its own picker, only for the
+// admin who may change it.
+const SEEDED_KEYS = [...NATIVE_FIELD_KEYS, 'azienda_id', 'owner_id']
+
+/** What the owner picker's «nessuno» option submits as: a `Select` item cannot hold `null`. */
+const NO_OWNER = '__nessuno'
+
+/** The people an admin may hand a customer to (REB-773), as the detail page draws them. */
+export interface OwnerOption {
+  id: string
+  nome: string
+}
 
 /**
  * The form's state, kept in the two namespaces the API itself uses -- native columns
@@ -131,6 +142,9 @@ interface Props {
   busy?: boolean
   onSubmit: (values: Record<string, unknown>) => void
   title: string
+  /** The owner picker's people. Given only to someone who may change the owner (an
+   *  admin, REB-773): without it no control is drawn and no `owner_id` is sent. */
+  owners?: OwnerOption[]
 }
 
 export function CustomerForm({
@@ -142,6 +156,7 @@ export function CustomerForm({
   busy,
   onSubmit,
   title,
+  owners,
 }: Props) {
   const [values, setValues] = useState<CustomerFormValues>(initial ?? DEFAULT_CREATE_VALUES)
   const isCreate = initial === undefined
@@ -173,8 +188,10 @@ export function CustomerForm({
   // out of the flattened values: a tenant's custom field of the same name would
   // otherwise display the chosen azienda's id as if it were its own value (Greptile,
   // PR #509).
-  const { azienda_id: _pickedElsewhere, ...nativeForForm } = values.native
+  const { azienda_id: _pickedElsewhere, owner_id: _ownerElsewhere, ...nativeForForm } = values.native
   void _pickedElsewhere
+  void _ownerElsewhere
+  const chosenOwner = values.native.owner_id as string | null | undefined
 
   // This component stays mounted across opens -- only `Dialog`'s own visibility
   // toggles (see the list/detail routes: `open={open}` on an always-rendered
@@ -222,7 +239,7 @@ export function CustomerForm({
     for (const [key, value] of Object.entries(values.native)) {
       // Decided below from what the picker shows, not from the seeded value: re-sending
       // an unchanged id would be refused the day that azienda is deactivated.
-      if (key === 'azienda_id') continue
+      if (key === 'azienda_id' || key === 'owner_id') continue
       if (!isBlank(value)) {
         // A number control hands back its text (`DynamicFieldRenderer` reads
         // `event.target.value`); the column is an integer and `CustomerUpdate` is typed
@@ -280,6 +297,12 @@ export function CustomerForm({
       if (!isCreate && !isBlank(chosenAzienda) && chosenAzienda !== initial?.native.azienda_id) {
         native.azienda_id = chosenAzienda
       }
+    }
+
+    // Only what the admin changed: re-sending an unchanged owner would be refused the
+    // day that person is deactivated.
+    if (owners !== undefined && chosenOwner !== undefined && chosenOwner !== initial?.native.owner_id) {
+      native.owner_id = chosenOwner
     }
 
     onSubmit({ ...native, custom_fields: custom })
@@ -362,6 +385,38 @@ export function CustomerForm({
                 Proposta dalla nazione del cliente: la fattura questa azienda, salvo tua scelta.
               </p>
             ) : null}
+          </div>
+        ) : null}
+
+        {owners !== undefined ? (
+          <div className="space-y-2">
+            <Label htmlFor="customer-owner">Responsabile</Label>
+            {/* Straight into `native`, like the azienda picker: a tenant's custom field
+                may well be named `owner_id`. */}
+            <Select
+              value={chosenOwner ?? NO_OWNER}
+              onValueChange={(value) =>
+                setValues((previous) => ({
+                  ...previous,
+                  native: { ...previous.native, owner_id: value === NO_OWNER ? null : value },
+                }))
+              }
+            >
+              <SelectTrigger id="customer-owner" className="w-full">
+                <SelectValue placeholder="Seleziona…" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_OWNER}>Nessuno</SelectItem>
+                {owners.map((person) => (
+                  <SelectItem key={person.id} value={person.id}>
+                    {person.nome}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-sm text-muted-foreground">
+              Chi riceve i promemoria su fatture e contratti di questo cliente.
+            </p>
           </div>
         ) : null}
 

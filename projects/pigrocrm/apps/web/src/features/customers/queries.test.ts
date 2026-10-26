@@ -23,6 +23,7 @@ function cellValue(column: ReturnType<typeof buildCustomerColumns>[number], cust
 const BASE_CUSTOMER: Customer = {
   id: 'c1',
   azienda_id: 'a-1',
+  owner_id: null,
   ragione_sociale: 'ACME Srl',
   partita_iva: null,
   codice_fiscale: null,

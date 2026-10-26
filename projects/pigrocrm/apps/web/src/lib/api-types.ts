@@ -3887,6 +3887,157 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/reminders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Reminders
+         * @description I promemoria di chi chiede, ricalcolati adesso dai dati: i più gravi per primi.
+         *     Quelli già chiusi o rimandati ci sono, con il loro `status`; sparisce solo ciò di cui
+         *     la causa è risolta.
+         */
+        get: operations["list_reminders_api_reminders_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/reminders/types": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Types
+         * @description I tipi di promemoria di questo spazio, con le soglie predefinite.
+         */
+        get: operations["list_types_api_reminders_types_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/reminders/preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Preferences
+         * @description I valori dello spazio, i tuoi, e quello che ne risulta per te: la tua scelta, poi
+         *     il valore dello spazio, poi quello predefinito.
+         */
+        get: operations["read_preferences_api_reminders_preferences_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/reminders/preferences/{scope}/{type_key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Reset Preference
+         * @description La strada di ritorno al valore predefinito: cancella la tua scelta (o quella dello
+         *     spazio), così una modifica successiva del predefinito ti raggiunge ancora.
+         */
+        delete: operations["reset_preference_api_reminders_preferences__scope___type_key__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Write Preference
+         * @description Imposta i campi indicati; un campo `null` torna al valore che eredita. Risponde
+         *     `null` quando non resta niente da sovrascrivere e la riga è sparita.
+         */
+        patch: operations["write_preference_api_reminders_preferences__scope___type_key__patch"];
+        trace?: never;
+    };
+    "/api/reminders/state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My State
+         * @description Quello che hai chiuso o rimandato.
+         */
+        get: operations["my_state_api_reminders_state_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/reminders/acknowledge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Acknowledge
+         * @description Segna un promemoria come visto, alla gravità che hai visto. Vale per te e non lo
+         *     nasconde agli altri; torna a comparire se sale di gravità.
+         */
+        post: operations["acknowledge_api_reminders_acknowledge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/reminders/snooze": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Snooze
+         * @description Rimanda un promemoria a domani, al prossimo lunedì, fra una settimana o fra un
+         *     mese. Vale per te; torna a comparire se sale di gravità.
+         */
+        post: operations["snooze_api_reminders_snooze_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -3915,6 +4066,20 @@ export interface components {
              * @default true
              */
             ok: boolean;
+        };
+        /** AcknowledgeRequest */
+        AcknowledgeRequest: {
+            /**
+             * Key
+             * @description `tipo:identificativo`, come lo restituisce l'elenco
+             */
+            key: string;
+            /**
+             * Severity
+             * @description La gravità che hai visto
+             * @enum {string}
+             */
+            severity: "warning" | "serious" | "critical";
         };
         /** ActivityRead */
         ActivityRead: {
@@ -5367,6 +5532,8 @@ export interface components {
             nazione: string;
             /** Azienda Id */
             azienda_id?: string | null;
+            /** Owner Id */
+            owner_id?: string | null;
             /** Email */
             email?: string | null;
             /** Telefono */
@@ -5424,6 +5591,8 @@ export interface components {
              * Format: uuid
              */
             azienda_id: string;
+            /** Owner Id */
+            owner_id: string | null;
             /** Ragione Sociale */
             ragione_sociale: string;
             /** Partita Iva */
@@ -5497,6 +5666,8 @@ export interface components {
             nazione?: string | null;
             /** Azienda Id */
             azienda_id?: string | null;
+            /** Owner Id */
+            owner_id?: string | null;
             /** Email */
             email?: string | null;
             /** Telefono */
@@ -6269,6 +6440,37 @@ export interface components {
             netto_effettivo?: string | null;
             /** Netto Proiettato */
             netto_proiettato?: string | null;
+        };
+        /** EffectiveGeneralSettings */
+        EffectiveGeneralSettings: {
+            quiet_hours: components["schemas"]["QuietHours"];
+            /** Summary Hour */
+            summary_hour: number;
+        };
+        /**
+         * EffectiveReminderSettings
+         * @description What applies to the person asking, after the override, the space's default and the
+         *     built-in default, in that order. `email_mode` is `null` while the default rule stands:
+         *     urgent at once, the rest in the daily summary.
+         */
+        EffectiveReminderSettings: {
+            /** Type */
+            type: string;
+            /** Enabled */
+            enabled: boolean;
+            /** Channels */
+            channels: ("in_app" | "push" | "slack" | "email")[];
+            /** Ladder */
+            ladder: {
+                [key: string]: number;
+            };
+            /**
+             * Urgent From
+             * @enum {string}
+             */
+            urgent_from: "warning" | "serious" | "critical";
+            /** Email Mode */
+            email_mode: ("immediate" | "summary") | null;
         };
         /**
          * EmailDraftAttachment
@@ -8896,6 +9098,37 @@ export interface components {
             /** Motivo */
             motivo?: string | null;
         };
+        /**
+         * QuietHours
+         * @description The window that holds push, Slack and email, urgent email included, and never the
+         *     in-app list (spec §6.3). The default is 20:00 to 08:00 and the whole weekend, in the
+         *     installation's zone.
+         */
+        QuietHours: {
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Start
+             * @description Inizio, HH:MM
+             * @default 20:00
+             */
+            start: string;
+            /**
+             * End
+             * @description Fine, HH:MM
+             * @default 08:00
+             */
+            end: string;
+            /**
+             * Weekend
+             * @description Sabato e domenica interi
+             * @default true
+             */
+            weekend: boolean;
+        };
         /** RateCardCreate */
         RateCardCreate: {
             /**
@@ -9119,6 +9352,184 @@ export interface components {
         RegisterGapsDeclare: {
             /** Buchi */
             buchi: components["schemas"]["RegisterGapIn"][];
+        };
+        /** ReminderPreferenceRead */
+        ReminderPreferenceRead: {
+            /**
+             * Scope
+             * @enum {string}
+             */
+            scope: "space" | "me";
+            /** Type */
+            type: string | null;
+            /** Enabled */
+            enabled: boolean | null;
+            /** Channels */
+            channels: string[] | null;
+            /** Ladder */
+            ladder: {
+                [key: string]: number;
+            } | null;
+            /** Urgent From */
+            urgent_from: string | null;
+            /** Email Mode */
+            email_mode: string | null;
+            quiet_hours: components["schemas"]["QuietHours"] | null;
+            /** Summary Hour */
+            summary_hour: number | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * ReminderPreferenceWrite
+         * @description The settings of one layer, as a partial update: a field left out is not touched
+         *     and a field sent as `null` goes back to inheriting (spec §7, the way back to the
+         *     default). Per-type fields and the two that belong to no type cannot be mixed.
+         */
+        ReminderPreferenceWrite: {
+            /**
+             * Enabled
+             * @description Il tipo è attivo
+             */
+            enabled?: boolean | null;
+            /**
+             * Channels
+             * @description I canali oltre all'app, che è sempre attiva
+             */
+            channels?: ("in_app" | "push" | "slack" | "email")[] | null;
+            /**
+             * Ladder
+             * @description Le soglie, in giorni, ore, minuti o percentuale secondo il tipo
+             */
+            ladder?: {
+                [key: string]: number;
+            } | null;
+            /**
+             * Urgent From
+             * @description Da quale gravità è urgente
+             */
+            urgent_from?: ("warning" | "serious" | "critical") | null;
+            /**
+             * Email Mode
+             * @description `immediate` o `summary`; assente, decide l'urgenza
+             */
+            email_mode?: ("immediate" | "summary") | null;
+            quiet_hours?: components["schemas"]["QuietHours"] | null;
+            /** Summary Hour */
+            summary_hour?: number | null;
+        };
+        /** ReminderPreferencesRead */
+        ReminderPreferencesRead: {
+            /** Types */
+            types: components["schemas"]["ReminderTypeRead"][];
+            /** Space */
+            space: components["schemas"]["ReminderPreferenceRead"][];
+            /** Mine */
+            mine: components["schemas"]["ReminderPreferenceRead"][];
+            /** Effective */
+            effective: components["schemas"]["EffectiveReminderSettings"][];
+            general: components["schemas"]["EffectiveGeneralSettings"];
+        };
+        /**
+         * ReminderRead
+         * @description One reminder as one person sees it (spec §4: severity is resolved per recipient).
+         *
+         *     `status` says what this person has done about it: `open`, `acknowledged` (at this
+         *     severity or above) or `snoozed` (until `snoozed_until`); the client decides what to
+         *     show of each. `delivered_at` is when the pass last put it in this person's list, and
+         *     `null` for a reminder the pass has not seen yet.
+         */
+        ReminderRead: {
+            /** Key */
+            key: string;
+            /** Type */
+            type: string;
+            /** Label */
+            label: string;
+            /**
+             * Severity
+             * @enum {string}
+             */
+            severity: "warning" | "serious" | "critical";
+            /** Measure */
+            measure: number;
+            /** Title */
+            title: string;
+            /** Detail */
+            detail: string;
+            /**
+             * Entity
+             * @description Che cosa si apre: `attivita`, `deal`, `timer`, `invoice`, `proforma`, `contract`, `proposal`, `fiscal`, o un elemento dello spazio senza pagina
+             */
+            entity: string;
+            /**
+             * Entity Id
+             * Format: uuid
+             */
+            entity_id: string;
+            /** Customer Id */
+            customer_id: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "open" | "acknowledged" | "snoozed";
+            /** Snoozed Until */
+            snoozed_until: string | null;
+            /** Delivered At */
+            delivered_at: string | null;
+        };
+        /**
+         * ReminderStateRead
+         * @description What one person has done about one reminder.
+         */
+        ReminderStateRead: {
+            /** Key */
+            key: string;
+            /** Acknowledged Severity */
+            acknowledged_severity: ("warning" | "serious" | "critical") | null;
+            /** Snoozed Severity */
+            snoozed_severity: ("warning" | "serious" | "critical") | null;
+            /** Snoozed Until */
+            snoozed_until: string | null;
+        };
+        /** ReminderTypeRead */
+        ReminderTypeRead: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Description */
+            description: string;
+            /** Subject */
+            subject: string;
+            /**
+             * Audience
+             * @enum {string}
+             */
+            audience: "subject" | "admins";
+            /**
+             * Direction
+             * @enum {string}
+             */
+            direction: "since" | "until";
+            /**
+             * Unit
+             * @enum {string}
+             */
+            unit: "days" | "hours" | "minutes" | "percent";
+            /**
+             * Ladder
+             * @description Le soglie predefinite del tipo
+             */
+            ladder: {
+                [key: string]: number;
+            };
+            /** Daily */
+            daily: boolean;
         };
         /** RenewalAssumptionRead */
         RenewalAssumptionRead: {
@@ -9369,6 +9780,22 @@ export interface components {
             conteggio: number;
             /** Collegamento */
             collegamento: string | null;
+        };
+        /** SnoozeRequest */
+        SnoozeRequest: {
+            /** Key */
+            key: string;
+            /**
+             * Severity
+             * @enum {string}
+             */
+            severity: "warning" | "serious" | "critical";
+            /**
+             * Until
+             * @description `tomorrow`, `next_monday`, `in_a_week` o `in_a_month`; mai una data libera
+             * @enum {string}
+             */
+            until: "tomorrow" | "next_monday" | "in_a_week" | "in_a_month";
         };
         /** SollecitiPage */
         SollecitiPage: {
@@ -40573,6 +41000,962 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApprovalRequestPrepared"];
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_reminders_api_reminders_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReminderRead"][];
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_types_api_reminders_types_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReminderTypeRead"][];
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_preferences_api_reminders_preferences_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReminderPreferencesRead"];
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reset_preference_api_reminders_preferences__scope___type_key__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `space`: i valori predefiniti dello spazio (amministratori); `me`: i tuoi */
+                scope: "space" | "me";
+                /** @description Un tipo di promemoria, o `general` per le ore di silenzio e l'ora del riepilogo */
+                type_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    write_preference_api_reminders_preferences__scope___type_key__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `space`: i valori predefiniti dello spazio (amministratori); `me`: i tuoi */
+                scope: "space" | "me";
+                /** @description Un tipo di promemoria, o `general` per le ore di silenzio e l'ora del riepilogo */
+                type_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReminderPreferenceWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReminderPreferenceRead"] | null;
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    my_state_api_reminders_state_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReminderStateRead"][];
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    acknowledge_api_reminders_acknowledge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcknowledgeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReminderStateRead"];
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    snooze_api_reminders_snooze_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SnoozeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReminderStateRead"];
                 };
             };
             /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
