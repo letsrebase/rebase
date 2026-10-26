@@ -23,6 +23,9 @@ export function monthBounds(month: string): { da: string; a: string } {
 export function useBillableDays(contractId: string, period: { da?: string; a?: string } = {}) {
   return useQuery({
     queryKey: queryKeys.contractBillableDays(contractId, period),
+    // Always asked again on mount: the days are billed and the invoice numbered on other
+    // pages, and a cached answer would read «Bozza» for an invoice issued a minute ago.
+    staleTime: 0,
     queryFn: () =>
       unwrap(
         api.GET('/api/contracts/{contract_id}/billable-days', {
@@ -58,6 +61,7 @@ export function useInvoiceDays(contractId: string) {
 export function useContractRegister(contractId: string, period: { da: string; a: string }) {
   return useQuery({
     queryKey: queryKeys.contractRegister(contractId, period),
+    staleTime: 0,
     queryFn: () =>
       unwrap(
         api.GET('/api/contracts/{contract_id}/register', {

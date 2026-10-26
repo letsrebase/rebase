@@ -26,6 +26,13 @@ import {
   type RegisterEntry,
 } from './billingQueries'
 
+/** The three states a day on the register can be in: billed, billed and disputed, paid. */
+const STATE_LABEL: Record<string, string> = {
+  fatturato: 'Fatturato',
+  contestato: 'Contestato',
+  pagato: 'Pagato',
+}
+
 /** What the proof cell says on screen: the channel and who sent it. The files carry the
  *  whole reference (day and message id); a table cell has no room for it, and the page is
  *  not the document. */
@@ -112,6 +119,7 @@ export function RegisterSection({ contractId }: { contractId: string }) {
                   <TableHead>Data</TableHead>
                   <TableHead className="text-right">Quantità</TableHead>
                   <TableHead>Descrizione</TableHead>
+                  <TableHead>Stato</TableHead>
                   <TableHead>Fattura</TableHead>
                   <TableHead>Approvazione</TableHead>
                 </TableRow>
@@ -122,6 +130,7 @@ export function RegisterSection({ contractId }: { contractId: string }) {
                     <TableCell>{formatDate(entry.data)}</TableCell>
                     <TableCell className="text-right tabular-nums">{entry.quantita}</TableCell>
                     <TableCell>{entry.descrizione}</TableCell>
+                    <TableCell>{STATE_LABEL[entry.stato] ?? entry.stato}</TableCell>
                     <TableCell>{entry.numero_fattura ?? 'Bozza'}</TableCell>
                     <TableCell>{proof(entry)}</TableCell>
                   </TableRow>

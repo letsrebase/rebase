@@ -85,6 +85,7 @@ describe('RegisterSection', () => {
         params: { path: { contract_id: 'c1' }, query: { da: '2026-10-01', a: '2026-10-31' } },
       }),
     )
+    expect(screen.getAllByText('Fatturato')).toHaveLength(2)
     expect(screen.getByText('2026/12')).toBeInTheDocument()
     expect(screen.getByText('Bozza')).toBeInTheDocument()
     expect(screen.getByText('email · mario@cliente.example')).toBeInTheDocument()
