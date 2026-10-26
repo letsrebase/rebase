@@ -140,7 +140,12 @@ class ReminderRead(BaseModel):
     measure: float
     title: str
     detail: str
-    entity: str = Field(description="`attivita`, `deal` o `timer`: che cosa si apre")
+    entity: str = Field(
+        description=(
+            "Che cosa si apre: `attivita`, `deal`, `timer`, `invoice`, `proforma`, `contract`, "
+            "`proposal`, `fiscal`, o un elemento dello spazio senza pagina"
+        )
+    )
     entity_id: UUID
     customer_id: UUID | None
     status: Literal["open", "acknowledged", "snoozed"]
