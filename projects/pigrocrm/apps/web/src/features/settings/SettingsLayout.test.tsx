@@ -68,20 +68,16 @@ describe('SettingsLayout (the /app/settings route guard)', () => {
         'href',
         '/app/settings/drive',
       )
-      expect(screen.getByRole('tab', { name: 'Profilo' })).toBeInTheDocument()
-      expect(screen.queryByRole('tab', { name: 'Gmail' })).not.toBeInTheDocument()
-      expect(screen.queryByRole('tab', { name: 'Utenti' })).not.toBeInTheDocument()
+      // The strip is the group's: Collegamenti holds Drive and, for an admin, Gmail.
+      expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['Google Drive'])
     },
   )
 
-  it('shows a collaboratore on the profile tab the Drive tab beside it', () => {
+  it('shows a collaboratore on the profile tab the Personale group alone, Profilo', () => {
     mockAuth.isAdmin = false
     mockLocation.pathname = '/app/settings/profile'
     render(<SettingsLayout />)
-    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
-      'Profilo',
-      'Google Drive',
-    ])
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['Profilo'])
   })
 
   /**
@@ -114,15 +110,17 @@ describe('SettingsLayout (the /app/settings route guard)', () => {
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['Profilo'])
   })
 
-  it('shows an admin the Drive tab as before, with every other tab', () => {
+  it('shows an admin on the Drive tab the Collegamenti group, and no other group', () => {
     mockAuth.isAdmin = true
     mockLocation.pathname = '/app/settings/drive'
     mockLocation.search = { esito: 'collegato' }
     render(<SettingsLayout />)
     expect(screen.getByTestId('outlet-content')).toBeInTheDocument()
     expect(screen.queryByRole('status')).toBeNull()
-    expect(screen.getAllByRole('tab')).toHaveLength(13)
-    expect(screen.getByRole('tab', { name: 'Google Drive' })).toBeInTheDocument()
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
+      'Gmail',
+      'Google Drive',
+    ])
   })
 
   it('reads no outcome on another tab, nor on the Drive tab without one', () => {
@@ -151,10 +149,12 @@ describe('SettingsLayout (the /app/settings route guard)', () => {
   it('renders the tabs and the active child route for an admin', () => {
     mockAuth.isAdmin = true
     render(<SettingsLayout />)
-    expect(screen.getByRole('tab', { name: 'Campi' })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'Pipeline' })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'Utenti' })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'Profilo' })).toBeInTheDocument()
+    // Clienti e deal, the group of /app/settings/fields: nothing of the other groups.
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
+      'Campi',
+      'Pipeline',
+      'Template',
+    ])
     expect(screen.getByTestId('outlet-content')).toBeInTheDocument()
   })
 
@@ -165,6 +165,7 @@ describe('SettingsLayout (the /app/settings route guard)', () => {
    */
   it('offers the time-tracking settings tabs to an admin', () => {
     mockAuth.isAdmin = true
+    mockLocation.pathname = '/app/settings/rates'
     render(<SettingsLayout />)
     expect(screen.getByRole('tab', { name: 'Categorie costo' })).toHaveAttribute(
       'href',
@@ -188,6 +189,7 @@ describe('SettingsLayout (the /app/settings route guard)', () => {
    */
   it('offers the automations settings tab to an admin', () => {
     mockAuth.isAdmin = true
+    mockLocation.pathname = '/app/settings/automations'
     render(<SettingsLayout />)
     expect(screen.getByRole('tab', { name: 'Automazioni' })).toHaveAttribute(
       'href',
