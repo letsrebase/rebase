@@ -165,8 +165,9 @@ function Registro({ overview }: { overview: YearOverview }) {
  * invoices' own words, printed as stored: rewording them here would put on a page the
  * accountant reads a sentence no document ever carried.
  *
- * `quiet` is «tutte» with several aziende, where the tab draws one block per azienda:
- * an azienda with nothing issued then adds no empty table of its own.
+ * `quiet` is «tutte» with several aziende, where the tab draws one block per azienda: one
+ * the API has no register for (404) draws nothing, and one with nothing issued says so
+ * under its own name, so the tab is never blank.
  */
 export function YearPanel({
   anno,
@@ -195,7 +196,6 @@ export function YearPanel({
     )
   }
   const overview = query.data
-  if (quiet && overview.registro.length === 0) return null
   // The azienda the file is of: the block's own, else the one the sidebar selected. The
   // server resolves the only azienda of a one-azienda space by itself, so nothing is sent.
   const csvAzienda = aziendaId ?? selected

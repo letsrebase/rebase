@@ -1,8 +1,9 @@
-import { useState, type FormEvent } from 'react'
+import { useId, useState, type FormEvent } from 'react'
 import { RadioGroup } from 'radix-ui'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { StatusPill } from '@/components/StatusPill'
 import { useDeals, useStages, type Deal } from '@/features/deals/queries'
+import { useLegalEntity } from '@/lib/legalEntity'
 import { toProblem } from '@/lib/api'
 import { Button } from '@rebase/ui/button'
 import { Card, CardContent } from '@rebase/ui/card'
@@ -111,10 +112,12 @@ function estimateOf(deal: Deal): string {
  * (or about to be invoiced) and a lost one will never be, so neither is a «what if».
  */
 function DealPicker({
+  id,
   aziendaId,
   selectedId,
   onSelect,
 }: {
+  id: string
   aziendaId?: string
   selectedId: string
   onSelect: (deal: Deal | null) => void
@@ -141,7 +144,7 @@ function DealPicker({
         value={selectedId}
         onValueChange={(id) => onSelect(candidates.find((deal) => deal.id === id) ?? null)}
       >
-        <SelectTrigger id="ceiling-deal" className="w-full" aria-label="Deal">
+        <SelectTrigger id={id} className="w-full" aria-label="Deal">
           <SelectValue placeholder="Scegli un deal" />
         </SelectTrigger>
         <SelectContent>
@@ -165,7 +168,7 @@ function Verdict({ simulation }: { simulation: CeilingSimulation }) {
   if (simulation.soglie.length === 0) return null
   const fits = simulation.soglie.every((ceiling) => ceiling.rientra)
   return (
-    <div className="space-y-2 border-t pt-4" aria-live="polite">
+    <div className="space-y-2 border-t pt-4">
       <p className="text-base font-semibold">
         {fits ? 'Ci sta.' : 'Non ci sta.'}{' '}
         <span className="font-normal">
@@ -233,6 +236,7 @@ function Simulator({ anno, aziendaId }: { anno: number; aziendaId?: string }) {
   const [ore, setOre] = useState('')
   const [tariffa, setTariffa] = useState('')
   const [data, setData] = useState(`${anno}-12-31`)
+  const uid = useId()
   const [asked, setAsked] = useState<{
     anno: number
     input: NonNullable<Parameters<typeof useCeilingSimulation>[1]>
@@ -240,6 +244,13 @@ function Simulator({ anno, aziendaId }: { anno: number; aziendaId?: string }) {
   const [errors, setErrors] = useState<Record<string, string>>({})
 
   const simulation = useCeilingSimulation(asked?.anno ?? anno, asked?.input ?? null, aziendaId)
+
+  // A verdict answers the inputs it was asked with: the moment one of them changes it is
+  // no longer an answer to what is on screen, so it goes until «Simula» is pressed again.
+  const edit = <T,>(set: (value: T) => void) => (value: T) => {
+    set(value)
+    setAsked(null)
+  }
 
   function submit(event: FormEvent) {
     event.preventDefault()
@@ -272,6 +283,7 @@ function Simulator({ anno, aziendaId }: { anno: number; aziendaId?: string }) {
         onValueChange={(next) => {
           setSource(next as SimulatorFields['source'])
           setErrors({})
+          setAsked(null)
         }}
         aria-label="Da dove viene la stima"
         className="flex items-center gap-1"
@@ -287,44 +299,49 @@ function Simulator({ anno, aziendaId }: { anno: number; aziendaId?: string }) {
 
       {source === 'deal' ? (
         <div className="space-y-2">
-          <Label htmlFor="ceiling-deal">Deal</Label>
-          <DealPicker aziendaId={aziendaId} selectedId={deal?.id ?? ''} onSelect={setDeal} />
+          <Label htmlFor={`${uid}-deal`}>Deal</Label>
+          <DealPicker
+            id={`${uid}-deal`}
+            aziendaId={aziendaId}
+            selectedId={deal?.id ?? ''}
+            onSelect={edit(setDeal)}
+          />
           {errors.deal ? <FieldError>{errors.deal}</FieldError> : null}
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-3">
           <div className="space-y-2">
-            <Label htmlFor="ceiling-valore">Importo</Label>
+            <Label htmlFor={`${uid}-valore`}>Importo</Label>
             <Input
-              id="ceiling-valore"
+              id={`${uid}-valore`}
               inputMode="decimal"
               placeholder="12.000,00"
               value={valore}
-              onChange={(event) => setValore(event.target.value)}
+              onChange={(event) => edit(setValore)(event.target.value)}
               aria-invalid={errors.valore ? true : undefined}
             />
             {errors.valore ? <FieldError>{errors.valore}</FieldError> : null}
           </div>
           <div className="space-y-2">
-            <Label htmlFor="ceiling-ore">oppure Ore</Label>
+            <Label htmlFor={`${uid}-ore`}>oppure Ore</Label>
             <Input
-              id="ceiling-ore"
+              id={`${uid}-ore`}
               inputMode="decimal"
               placeholder="100"
               value={ore}
-              onChange={(event) => setOre(event.target.value)}
+              onChange={(event) => edit(setOre)(event.target.value)}
               aria-invalid={errors.ore ? true : undefined}
             />
             {errors.ore ? <FieldError>{errors.ore}</FieldError> : null}
           </div>
           <div className="space-y-2">
-            <Label htmlFor="ceiling-tariffa">per Tariffa oraria</Label>
+            <Label htmlFor={`${uid}-tariffa`}>per Tariffa oraria</Label>
             <Input
-              id="ceiling-tariffa"
+              id={`${uid}-tariffa`}
               inputMode="decimal"
               placeholder="80,00"
               value={tariffa}
-              onChange={(event) => setTariffa(event.target.value)}
+              onChange={(event) => edit(setTariffa)(event.target.value)}
               aria-invalid={errors.tariffa ? true : undefined}
             />
             {errors.tariffa ? <FieldError>{errors.tariffa}</FieldError> : null}
@@ -339,15 +356,16 @@ function Simulator({ anno, aziendaId }: { anno: number; aziendaId?: string }) {
 
       <div className="flex flex-wrap items-end gap-3">
         <div className="space-y-2">
-          <Label htmlFor="ceiling-data">Incasso previsto il</Label>
+          <Label htmlFor={`${uid}-data`}>Incasso previsto il</Label>
           <Input
-            id="ceiling-data"
+            id={`${uid}-data`}
             type="date"
             value={data}
-            onChange={(event) => setData(event.target.value)}
+            onChange={(event) => edit(setData)(event.target.value)}
             className="w-44"
             aria-invalid={errors.data ? true : undefined}
           />
+          <p className="text-xs text-muted-foreground">Conta l’anno solare dell’incasso.</p>
           {errors.data ? <FieldError>{errors.data}</FieldError> : null}
         </div>
         <Button type="submit" disabled={simulation.isFetching}>
@@ -355,9 +373,15 @@ function Simulator({ anno, aziendaId }: { anno: number; aziendaId?: string }) {
         </Button>
       </div>
 
-      {simulation.isError ? <QueryErrorBanner error={simulation.error} /> : null}
-      {simulation.isFetching && !simulation.data ? <Skeleton className="h-24 w-full" /> : null}
-      {simulation.data && asked !== null ? <Verdict simulation={simulation.data} /> : null}
+      {/* Always in the page, so a screen reader that has registered it announces what lands
+          in it; a live region that appears already full is read by nobody. */}
+      <div role="status" aria-live="polite">
+        {simulation.isError && asked !== null ? <QueryErrorBanner error={simulation.error} /> : null}
+        {simulation.isFetching && asked !== null && !simulation.data ? (
+          <Skeleton className="h-24 w-full" />
+        ) : null}
+        {simulation.data && asked !== null ? <Verdict simulation={simulation.data} /> : null}
+      </div>
     </form>
   )
 }
@@ -377,9 +401,8 @@ function FieldError({ children }: { children: string }) {
  * nothing at all, not an empty box that says it has nothing.
  *
  * Beside the estimate, one azienda's and read from its own `anno`, which is the year the
- * dashboard's period names. In «tutte» the tab draws one panel per azienda and sets
- * `quiet`, so an azienda without a profile (the estimate card says so once) or without
- * ceilings adds no sentence of its own.
+ * dashboard's period names. In «tutte» the tab draws one panel per azienda, and one without
+ * a profile (the estimate card says so once) or without ceilings draws nothing.
  */
 export function CeilingPanel({
   anno,
@@ -393,6 +416,11 @@ export function CeilingPanel({
   titolo?: string
 }) {
   const headroom = useCeilingHeadroom(anno, aziendaId)
+  // The azienda the figures are of: the block's own, else the sidebar's. It keys the
+  // simulator, so switching the sidebar starts the form over instead of asking the new
+  // azienda a question typed for the old one.
+  const { selected } = useLegalEntity()
+  const azienda = aziendaId ?? selected
 
   if (headroom.isError) {
     // No profile (404): the estimate card above already says so, in the place that owns
@@ -423,7 +451,7 @@ export function CeilingPanel({
         </div>
         {/* Keyed on the year so a new period starts the form over: a date typed for 2026
             means nothing against 2027's room. */}
-        <Simulator key={`${anno}:${aziendaId ?? ''}`} anno={anno} aziendaId={aziendaId} />
+        <Simulator key={`${anno}:${azienda ?? ''}`} anno={anno} aziendaId={aziendaId} />
       </CardContent>
     </Card>
   )

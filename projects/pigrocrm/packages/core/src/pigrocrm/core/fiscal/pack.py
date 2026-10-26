@@ -217,6 +217,14 @@ def resolve_pack(pack_id: str, pack_version: str) -> FiscalPack:
         raise KeyError(f"unknown fiscal pack {pack_id!r} version {pack_version!r}") from None
 
 
+def known_charge_markers() -> frozenset[str]:
+    """The `descrizione_riga` of every statutory charge any shipped pack declares. What a
+    register reads to tell a charge's line from a fee's, whatever pack the azienda is on
+    today: an invoice keeps the lines it was issued with after the profile moves to
+    another pack."""
+    return frozenset(charge.descrizione_riga for pack in _PACKS.values() for charge in pack.charges)
+
+
 __all__ = [
     "IT_FLAT_RATE_PACK",
     "NON_IT_PACK",
@@ -230,5 +238,6 @@ __all__ = [
     "CeilingConsequence",
     "FiscalPack",
     "StatutoryCharge",
+    "known_charge_markers",
     "resolve_pack",
 ]

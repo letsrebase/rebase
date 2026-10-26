@@ -225,6 +225,28 @@ describe('YearTab', () => {
     expect(screen.getByText('Rossi Ltd')).toBeInTheDocument()
   })
 
+  it('names an azienda with nothing issued instead of leaving the tab blank in «Tutte»', async () => {
+    const aziende = [
+      { id: 'a1', nome: 'Studio Rossi' },
+      { id: 'a2', nome: 'Rossi Ltd' },
+    ] as LegalEntityValue['aziende']
+    vi.mocked(api.GET).mockImplementation(() =>
+      ok(
+        overview({
+          totali: { fatture: 0, imponibile: '0.00', rivalsa: '0.00', bollo: '0.00', totale: '0.00' },
+          regimi: [],
+          trattamenti: [],
+          registro: [],
+        }),
+      ),
+    )
+    renderTab({ ...ONE, aziende, several: true, selected: null })
+
+    await waitFor(() => expect(screen.getAllByText('Nessuna fattura emessa nel 2026.')).toHaveLength(2))
+    expect(screen.getByText('Studio Rossi')).toBeInTheDocument()
+    expect(screen.getByText('Rossi Ltd')).toBeInTheDocument()
+  })
+
   it('names the azienda the sidebar selected in the file it offers', async () => {
     vi.mocked(api.GET).mockImplementation(() => ok(overview()))
     renderTab({ ...ONE, several: true, selected: 'a2' })

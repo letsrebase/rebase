@@ -271,7 +271,29 @@ def test_a_cell_a_spreadsheet_would_run_as_a_formula_is_defused(
 
     text = content.decode("utf-8")
     assert "'=HYPERLINK" in text and "'+cmd" in text
-    assert not any(cell.startswith(("=", "+")) for row in _rows(content) for cell in row)
+    # Only the number and the partita IVA are written as formulas, `="..."`, by us.
+    assert not any(
+        cell.startswith(("=", "+")) and not cell.startswith('="')
+        for row in _rows(content)
+        for cell in row
+    )
+
+
+def test_the_number_and_the_partita_iva_are_text_cells_a_spreadsheet_cannot_reinterpret(
+    db_session: Session, service: InvoiceService
+) -> None:
+    """`2026/1` is January 2026 to an Italian-locale Excel and `01234567890` loses its
+    zero as a number: both are written as `="..."`, which both Excel and LibreOffice read
+    as the text. The csv module reads the cell back as the formula, which is the proof the
+    quoting is the RFC's own."""
+    _issue(service, _customer(db_session), ("Consulenza", "100.00"))
+
+    _, content = AnalyticsService(db_session).build_year_csv(ANNO, READER)
+
+    rows = _rows(content)
+    line = next(r for r in rows if r and r[0] == f'="{ANNO}/1"')
+    assert line[3] == '="01234567890"'
+    assert f'"=""{ANNO}/1"""'.encode() in content
 
 
 def test_the_filename_is_the_year_and_the_azienda_reduced_to_ascii(

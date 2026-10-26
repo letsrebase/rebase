@@ -289,6 +289,28 @@ describe('CeilingPanel, «ci sta?»', () => {
     ).toBeInTheDocument()
   })
 
+  it('drops a verdict the moment one of the inputs it answered changes', async () => {
+    const user = await open()
+
+    await user.type(screen.getByLabelText('Importo'), '20000')
+    await user.click(screen.getByRole('button', { name: 'Simula' }))
+    expect(await screen.findByText('Ci sta.')).toBeInTheDocument()
+
+    await user.type(screen.getByLabelText('Importo'), '0')
+    expect(screen.queryByText('Ci sta.')).not.toBeInTheDocument()
+    expect(screen.queryByText('Rientra')).not.toBeInTheDocument()
+  })
+
+  it('keeps the verdict in a live region that is in the page before it has one', async () => {
+    const user = await open()
+
+    const status = screen.getByRole('status')
+    expect(status).toBeEmptyDOMElement()
+    await user.type(screen.getByLabelText('Importo'), '20000')
+    await user.click(screen.getByRole('button', { name: 'Simula' }))
+    expect(await within(status).findByText('Ci sta.')).toBeInTheDocument()
+  })
+
   it('sends hours and a rate when there is no amount', async () => {
     const user = await open()
 
@@ -406,5 +428,26 @@ describe('CeilingPanel, simulating a deal', () => {
 
     expect(await screen.findByText('Scegli un deal.')).toBeInTheDocument()
     expect(api.GET).not.toHaveBeenCalledWith('/api/analytics/ceilings/simulate', expect.anything())
+  })
+})
+
+describe('CeilingPanel, one per azienda in «Tutte»', () => {
+  it('gives each simulator its own field ids, so a label reaches its own input', async () => {
+    route({ '/api/analytics/ceilings': () => ok(headroom()) })
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={client}>
+        <CeilingPanel anno={2026} aziendaId="a1" titolo="Studio Rossi" />
+        <CeilingPanel anno={2026} aziendaId="a2" titolo="Rossi Ltd" />
+      </QueryClientProvider>,
+    )
+    await screen.findByText('Soglie del forfettario 2026 · Rossi Ltd')
+    const user = userEvent.setup()
+
+    const importi = screen.getAllByLabelText('Importo')
+    expect(importi).toHaveLength(2)
+    expect(importi[0]!.id).not.toBe(importi[1]!.id)
+    await user.click(screen.getAllByText('Importo')[1]!)
+    expect(importi[1]).toHaveFocus()
   })
 })

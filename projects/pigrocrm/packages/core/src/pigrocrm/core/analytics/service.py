@@ -53,7 +53,12 @@ from pigrocrm.core.fiscal.ceiling import (
     evaluate_pack,
     taxable_ricavi,
 )
-from pigrocrm.core.fiscal.pack import IT_FLAT_RATE_PACK, FiscalPack, resolve_pack
+from pigrocrm.core.fiscal.pack import (
+    PACK_IT_FLAT_RATE,
+    FiscalPack,
+    known_charge_markers,
+    resolve_pack,
+)
 from pigrocrm.core.fiscal.regime import FORFETTARIO, resolve_regime
 from pigrocrm.core.fiscal.schemas import FiscalProfileRead
 from pigrocrm.core.fiscal.service import FiscalProfileService
@@ -588,8 +593,9 @@ class AnalyticsService:
         Open to every role, like the register itself, and one azienda's always: a register
         is numbered per azienda, so `azienda_id` resolves to the only azienda when the
         caller names none and is required, by name, when the space has several. The
-        rivalsa is read off the lines the pack tags as its own charge
-        (`StatutoryCharge.descrizione_riga`), the marker `taxable_ricavi` already uses.
+        rivalsa is read off the lines any pack tags as its own charge
+        (`StatutoryCharge.descrizione_riga`, the marker `taxable_ricavi` uses), whatever pack
+        the azienda is on today: an invoice keeps the lines it was issued with.
         """
         return self._year(anno, actor, azienda_id)[0]
 
@@ -608,14 +614,7 @@ class AnalyticsService:
         self, anno: int, actor: Actor, azienda_id: UUID | None
     ) -> tuple[YearOverview, dict[UUID, list[InvoiceLine]]]:
         azienda = LegalEntityService(self.session).require_single(azienda_id, entity=ENTITY)
-        # A year read needs no profile: an azienda that only imported its history has
-        # invoices and none, and the Italian pack's charges are then the ones it carries.
-        try:
-            profile = FiscalProfileService(self.session).get(actor, azienda.id)
-            pack = resolve_pack(profile.pack_id, profile.pack_version)
-        except NotFound:
-            pack = IT_FLAT_RATE_PACK
-        marcatori = {charge.descrizione_riga for charge in pack.charges}
+        marcatori = known_charge_markers()
 
         lines_by_invoice: dict[UUID, list[InvoiceLine]] = defaultdict(list)
         for line in self.repo.year_lines(anno, azienda.id):
@@ -653,7 +652,7 @@ class AnalyticsService:
                     data_incasso=invoice.data_incasso,
                 )
             )
-            regime = (fiscale.get("codice_regime"), fiscale.get("pack_id") or pack.id)
+            regime = (fiscale.get("codice_regime"), fiscale.get("pack_id") or PACK_IT_FLAT_RATE)
             count, total = regimi.get(regime, (0, ZERO_MONEY))
             regimi[regime] = (count + 1, total + invoice.imponibile)
             for line in lines_by_invoice[invoice.id]:

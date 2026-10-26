@@ -12,6 +12,9 @@ and the stamp duty apart and the declaration the document carries). Each ends in
 row, and the two totals are the same figure: `Σ lines = Σ imponibile`, which is what
 `YearOverview.totali.imponibile` says and what the page shows.
 
+The invoice number and the partita IVA are written as text cells (`_identifier`): left
+bare, an Italian Excel reads `2026/1` as a date and drops the leading zero of a partita IVA.
+
 Pure functions over what `AnalyticsService` already read: no query here, so the file and
 the page cannot read a different year.
 """
@@ -76,6 +79,19 @@ def _text(value: str | None) -> str:
     return f'"{value.replace(chr(34), chr(34) * 2)}"' if NEEDS_QUOTING.search(value) else value
 
 
+def _identifier(value: str | None) -> str:
+    """A code a spreadsheet must keep as the text it is: `="01234567890"`, which Excel and
+    LibreOffice read as the string and not as a number. An Italian partita IVA often starts
+    with a zero that a numeric cell drops, and `2026/1` is a date (January 2026) to an
+    Italian-locale Excel. Only for what is made of letters, digits and `/.-`; anything
+    else is free text and goes through `_text`, whose formula guard it needs."""
+    if not value:
+        return ""
+    if re.fullmatch(r"[A-Za-z0-9/.\-]+", value):
+        return f'"=""{value}"""'
+    return _text(value)
+
+
 def _amount(value: Decimal) -> str:
     """`1.234,56`: thousands with a point, two decimals with a comma. Decimal all the way,
     never a float, so a cent is never lost on the way to the file."""
@@ -113,7 +129,7 @@ def render_year_csv(overview: YearOverview, lines: dict[UUID, list[InvoiceLine]]
     out.append(_row([_text(column) for column in LINE_COLUMNS]))
     total_lines = Decimal("0.00")
     for invoice in overview.registro:
-        numero = f"{invoice.anno}/{invoice.numero}"
+        numero = _identifier(f"{invoice.anno}/{invoice.numero}")
         for line in lines.get(invoice.invoice_id, []):
             total_lines += line.prezzo_totale
             out.append(
@@ -122,7 +138,7 @@ def render_year_csv(overview: YearOverview, lines: dict[UUID, list[InvoiceLine]]
                         numero,
                         invoice.data_emissione.isoformat(),
                         _text(invoice.ragione_sociale),
-                        _text(invoice.partita_iva),
+                        _identifier(invoice.partita_iva),
                         invoice.tipo_documento,
                         str(line.numero_linea),
                         _text(line.descrizione),
@@ -149,10 +165,10 @@ def render_year_csv(overview: YearOverview, lines: dict[UUID, list[InvoiceLine]]
         out.append(
             _row(
                 [
-                    f"{invoice.anno}/{invoice.numero}",
+                    _identifier(f"{invoice.anno}/{invoice.numero}"),
                     invoice.data_emissione.isoformat(),
                     _text(invoice.ragione_sociale),
-                    _text(invoice.partita_iva),
+                    _identifier(invoice.partita_iva),
                     invoice.tipo_documento,
                     _amount(invoice.imponibile),
                     _amount(invoice.rivalsa),
