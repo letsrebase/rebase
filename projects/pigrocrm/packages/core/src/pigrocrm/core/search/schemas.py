@@ -31,7 +31,7 @@ PER_CLASS_LIMIT = 5
 # with `LIMIT 201`: exact when exactness matters, cheap when it does not, never a lie.
 COUNT_CEILING = 200
 
-SearchEntity = Literal["customer", "person", "deal", "document", "invoice"]
+SearchEntity = Literal["customer", "person", "deal", "document", "invoice", "attivita"]
 
 
 class SearchQuery(BaseModel):

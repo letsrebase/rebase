@@ -64,5 +64,9 @@ class SearchService:
                 # an invoice number answered "nothing found" when it had never been looked
                 # for.
                 self.repo.invoices(term, limit, azienda),
+                # Sixth and last (REB-723): what is still to be done about all of the
+                # above. It takes no azienda: an attività has none of its own, the same
+                # reason the calendar keeps them whatever azienda is selected.
+                self.repo.attivita(term, limit),
             ],
         )

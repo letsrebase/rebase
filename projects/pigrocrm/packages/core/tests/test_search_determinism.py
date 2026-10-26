@@ -107,7 +107,7 @@ _ACCESS_PATHS = (
     ("no bitmap scan", "off", "on", "off"),
 )
 
-_FIXED_GROUP_ORDER = ["customer", "person", "deal", "document", "invoice"]
+_FIXED_GROUP_ORDER = ["customer", "person", "deal", "document", "invoice", "attivita"]
 
 
 def _set_access_path(session: Session, seqscan: str, indexscan: str, bitmapscan: str) -> None:
