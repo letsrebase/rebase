@@ -3921,16 +3921,6 @@ export interface components {
              */
             raggruppa_per_mese: boolean;
         };
-        /** Body_confirm_import_upload_api_invoices_import_upload_confirm_post */
-        Body_confirm_import_upload_api_invoices_import_upload_confirm_post: {
-            /** File */
-            file: string[];
-            /**
-             * Decisioni
-             * @default {}
-             */
-            decisioni: string;
-        };
         /** Body_put_firma_api_aziende__azienda_id__firma_put */
         Body_put_firma_api_aziende__azienda_id__firma_put: {
             /** File */
@@ -3940,11 +3930,6 @@ export interface components {
         Body_put_logo_api_aziende__azienda_id__logo_put: {
             /** File */
             file: string;
-        };
-        /** Body_review_import_upload_api_invoices_import_upload_review_post */
-        Body_review_import_upload_api_invoices_import_upload_review_post: {
-            /** File */
-            file: string[];
         };
         /** Body_upload_version_api_documents__document_id__versions_post */
         Body_upload_version_api_documents__document_id__versions_post: {
@@ -21221,7 +21206,12 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "multipart/form-data": components["schemas"]["Body_review_import_upload_api_invoices_import_upload_review_post"];
+                "multipart/form-data": {
+                    /** @description FatturaPA XML files or ZIPs of them, one part each. */
+                    file: string[];
+                    /** @description On the confirmation: `{"clienti": {"<party_key>": {"create_customer": true}}}`. */
+                    decisioni?: string;
+                };
             };
         };
         responses: {
@@ -21342,7 +21332,12 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "multipart/form-data": components["schemas"]["Body_confirm_import_upload_api_invoices_import_upload_confirm_post"];
+                "multipart/form-data": {
+                    /** @description FatturaPA XML files or ZIPs of them, one part each. */
+                    file: string[];
+                    /** @description On the confirmation: `{"clienti": {"<party_key>": {"create_customer": true}}}`. */
+                    decisioni?: string;
+                };
             };
         };
         responses: {
