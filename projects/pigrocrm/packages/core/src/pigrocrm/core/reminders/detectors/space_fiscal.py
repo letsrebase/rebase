@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import weakref
 from decimal import Decimal
+from uuid import uuid5
 
 from sqlalchemy import select
 
@@ -201,7 +202,9 @@ def detect_overrun(ctx: DetectorContext) -> list[Detection]:
         found.append(
             Detection(
                 type="year_end_overrun_projected",
-                subject_id=azienda.id,
+                # One occurrence per azienda and year: next year's projection is a new
+                # one, and nothing acknowledged this year may silence it.
+                subject_id=uuid5(azienda.id, str(anno)),
                 measure=float(percent),
                 recipients=recipients,
                 title=f"A fine anno oltre la soglia del forfettario: {azienda.nome}",

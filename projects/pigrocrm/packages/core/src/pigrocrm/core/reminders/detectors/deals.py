@@ -36,11 +36,13 @@ STALE = REMINDER_TYPES["deal_stale"]
 _NEVER = date(1970, 1, 1)
 
 
-def _open_deals() -> Select[Deal, str, UUID | None]:
+def _open_deals() -> Select[Deal, str | None, UUID | None]:
     return (
         select(Deal, Customer.ragione_sociale, Customer.owner_id)
         .join(PipelineStage, PipelineStage.id == Deal.pipeline_stage_id)
-        .join(Customer, Customer.id == Deal.customer_id)
+        # Outer: a deal stays readable when its customer is not, which happens once a
+        # customer moves to another azienda and the deal's owner is scoped to the old one.
+        .outerjoin(Customer, Customer.id == Deal.customer_id)
         .where(PipelineStage.tipo == "open", Deal.deleted_at.is_(None))
     )
 
@@ -48,7 +50,7 @@ def _open_deals() -> Select[Deal, str, UUID | None]:
 def _detection(
     ctx: DetectorContext,
     deal: Deal,
-    customer_name: str,
+    customer_name: str | None,
     customer_owner: UUID | None,
     *,
     type_key: str,
@@ -62,7 +64,7 @@ def _detection(
         measure=float(measure),
         recipients=ctx.directory.recipients((deal.owner_id, customer_owner), deal.azienda_id),
         title=title,
-        detail=f"{detail} · {customer_name}",
+        detail=f"{detail} · {customer_name}" if customer_name else detail,
         entity="deal",
         entity_id=deal.id,
         azienda_id=deal.azienda_id,

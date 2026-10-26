@@ -337,6 +337,19 @@ def test_the_year_end_projection_climbs_at_105_and_120_percent(
     )
 
 
+def test_the_projected_overrun_of_next_year_is_a_new_occurrence(space: Space) -> None:
+    space.revenue("90000.00", paid=False)
+    space.revenue("90000.00", anno=2027, paid=False)
+
+    this_year = space.evaluate(date(2026, 12, 20), datetime(2026, 12, 20, 12, tzinfo=UTC))
+    next_year = space.evaluate(date(2027, 1, 5), datetime(2027, 1, 5, 12, tzinfo=UTC))
+
+    keys_2026 = {r.key for r in this_year.reminders if r.type == "year_end_overrun_projected"}
+    keys_2027 = {r.key for r in next_year.reminders if r.type == "year_end_overrun_projected"}
+    assert keys_2026 and keys_2027
+    assert keys_2026.isdisjoint(keys_2027), "an acknowledgement of one year never covers the next"
+
+
 def test_the_projection_is_the_cash_overviews_and_counts_drafts_and_proformas(
     space: Space,
 ) -> None:

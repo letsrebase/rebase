@@ -165,7 +165,15 @@ function GeneralBlock({ scope, data }: { scope: Scope; data: Preferences }) {
       setDraft({})
       return
     }
-    row.save({ quiet_hours: { ...quiet, start: shown.start, end: shown.end } }, () => setDraft({}))
+    const sent = { start: shown.start, end: shown.end }
+    // Clear only what was sent and is still what is in the box: a box edited while the
+    // save was in flight keeps what was typed after it.
+    row.save({ quiet_hours: { ...quiet, ...sent } }, () =>
+      setDraft((current) => ({
+        start: current.start === sent.start ? undefined : current.start,
+        end: current.end === sent.end ? undefined : current.end,
+      })),
+    )
   }
   const id = `promemoria-${scope}-general`
 

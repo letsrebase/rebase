@@ -481,6 +481,27 @@ describe('the reminder settings', () => {
     resolve(ok({}))
   })
 
+  it('keeps what is typed in the other box while a save is in flight', async () => {
+    fakeServer()
+    renderWithQuery(<ReminderPreferences scope="space" />)
+    const general = within(await screen.findByRole('region', { name: 'Ore di silenzio e riepilogo' }))
+    let resolve: (value: unknown) => void = () => {}
+    const promise = new Promise((done) => (resolve = done))
+    PATCH.mockImplementationOnce(() => promise)
+
+    fireEvent.change(general.getByLabelText('Dalle'), { target: { value: '22:00' } })
+    fireEvent.blur(general.getByLabelText('Dalle'))
+    await waitFor(() => expect(PATCH).toHaveBeenCalledTimes(1))
+    // Typed after the first save started, before its answer.
+    fireEvent.change(general.getByLabelText('alle'), { target: { value: '06:45' } })
+    resolve(ok({}))
+
+    await waitFor(() =>
+      expect(GET.mock.calls.filter(([path]) => path === '/api/reminders/preferences').length).toBeGreaterThan(1),
+    )
+    expect(general.getByLabelText('alle')).toHaveValue('06:45')
+  })
+
   it('puts a cleared box back to the saved time without asking the API', async () => {
     fakeServer()
     renderWithQuery(<ReminderPreferences scope="space" />)

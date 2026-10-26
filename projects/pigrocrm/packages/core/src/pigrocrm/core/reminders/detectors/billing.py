@@ -39,7 +39,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, Date, cast, exists, func, select
+from sqlalchemy import ColumnElement, Date, and_, cast, exists, func, or_, select
 
 from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.deals.models import Deal
@@ -258,6 +258,11 @@ def detect_hours_unbilled(ctx: DetectorContext) -> list[Detection]:
         .where(InvoiceLine.id == TimeEntry.invoice_line_id, *_issued())
         .exists()
     )
+    # An entry whose line this session cannot see at all is not unbilled either: an import
+    # may bind a deal's hours to an invoice of another azienda, and «no issued invoice
+    # found» under the row policies must not read as «not yet invoiced» (the same guard as
+    # `AnalyticsRepository.unbilled_backlog`).
+    visible_line = select(InvoiceLine.id).where(InvoiceLine.id == TimeEntry.invoice_line_id)
     oldest = func.min(TimeEntry.data)
     rows = ctx.session.execute(
         select(Deal, oldest, func.sum(TimeEntry.ore), func.count(TimeEntry.id))
@@ -266,7 +271,7 @@ def detect_hours_unbilled(ctx: DetectorContext) -> list[Detection]:
             TimeEntry.deleted_at.is_(None),
             TimeEntry.fatturabile.is_(True),
             Deal.deleted_at.is_(None),
-            ~on_issued,
+            or_(TimeEntry.invoice_line_id.is_(None), and_(visible_line.exists(), ~on_issued)),
         )
         .group_by(Deal.id)
         .having(oldest <= cutoff)
