@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && tsc --noEmit",
+    "build": "vite build && tsc --noEmit && tsc --noEmit -p tsconfig.sw.json",
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",

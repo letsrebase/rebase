@@ -405,6 +405,16 @@
                 machine.succeed("curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' http://localhost/ | grep -Fx '302 http://localhost/app/'")
                 # A space's own prefix reaches the same shell and the same API.
                 machine.succeed("curl -fsS http://localhost/studiorossi/app/ | grep -F '/app/assets/'")
+                # The installable app (REB-731): the worker with the header that lets it
+                # take its scope, the manifest and the offline page, at the root and
+                # under a space, and never the SPA shell in their place.
+                machine.succeed("curl -fsSI http://localhost/app/sw.js | grep -i '^service-worker-allowed: /app'")
+                machine.succeed("curl -fsSI http://localhost/studiorossi/app/sw.js | grep -i '^service-worker-allowed: /studiorossi/app'")
+                machine.succeed("curl -fsSI http://localhost/studiorossi/app/sw.js | grep -i '^cache-control: no-cache'")
+                machine.succeed("curl -fsS http://localhost/studiorossi/app/manifest.webmanifest | grep -F 'start_url'")
+                machine.succeed("curl -fsS http://localhost/app/manifest.webmanifest | grep -F 'start_url'")
+                machine.succeed("curl -fsS http://localhost/studiorossi/app/offline.html | grep -F 'Sei offline'")
+                machine.succeed("curl -fsSI http://localhost/studiorossi/app/offline.html | grep -i '^x-frame-options: DENY'")
                 machine.succeed("curl -fsS http://localhost/studiorossi/health | grep -F '\"status\":\"ok\"'")
                 # The API answers behind /api/: an unauthenticated request is refused
                 # by the application, not by nginx.
@@ -814,6 +824,20 @@
               # and `/<slug>/mcp` reach the API or the MCP server with the full path,
               # whose middleware strips the prefix.
               slug = "[a-z0-9][a-z0-9-]{1,30}[a-z0-9]";
+              # The headers of the three files a space is installed from (spa.conf,
+              # REB-731): revalidated before every use. nginx drops every inherited
+              # `add_header` from a location that declares one of its own, and here this
+              # nginx is the edge, so the origin-wide set of `rebase-nginx-headers`
+              # (above) is repeated beside it: the offline page is a document, and the
+              # worker replays it for any page of the space, a magic link's included.
+              pwaHeaders = ''
+                add_header Cache-Control "no-cache" always;
+                add_header X-Content-Type-Options nosniff always;
+                add_header Referrer-Policy strict-origin always;
+                add_header X-Frame-Options DENY always;
+                add_header Content-Security-Policy "frame-ancestors 'none';" always;
+                add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+              '';
               # The compose file's `x-api-environment`: one block, both services.
               environment = {
                 PIGROCRM_STORAGE_LOCAL_ROOT = cfg.documentsDir;
@@ -1013,6 +1037,37 @@
                           "= /app".return = "302 /app/";
                           "= /login".return = "302 /app/login";
                           "^~ /app/".tryFiles = "$uri /app/index.html";
+                          # The installable app (REB-731; spa.conf has the reasons): the
+                          # worker, the manifest and the offline page at the root and
+                          # under every slug, never the SPA shell. The worker's header is
+                          # what lets it take the scope `/app` without a trailing slash.
+                          "= /app/sw.js" = {
+                            tryFiles = "/app/sw.js =404";
+                            extraConfig = ''add_header Service-Worker-Allowed "/app" always;'' + pwaHeaders;
+                          };
+                          "= /app/manifest.webmanifest" = {
+                            tryFiles = "/app/manifest.webmanifest =404";
+                            extraConfig = "default_type application/manifest+json;\n" + pwaHeaders;
+                          };
+                          "= /app/offline.html" = {
+                            tryFiles = "/app/offline.html =404";
+                            extraConfig = pwaHeaders;
+                          };
+                          "~ \"^(/${slug})/app/sw\\.js$\"" = {
+                            priority = 900;
+                            tryFiles = "/app/sw.js =404";
+                            extraConfig = ''add_header Service-Worker-Allowed "$1/app" always;'' + pwaHeaders;
+                          };
+                          "~ \"^/${slug}/app/manifest\\.webmanifest$\"" = {
+                            priority = 900;
+                            tryFiles = "/app/manifest.webmanifest =404";
+                            extraConfig = "default_type application/manifest+json;\n" + pwaHeaders;
+                          };
+                          "~ \"^/${slug}/app/offline\\.html$\"" = {
+                            priority = 900;
+                            tryFiles = "/app/offline.html =404";
+                            extraConfig = pwaHeaders;
+                          };
                           # The magic link lands on /app/verify?t=<token> (spa.conf):
                           # the shell, served from inside this location so `access_log
                           # off` holds and the token never reaches the log; the old

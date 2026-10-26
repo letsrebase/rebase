@@ -20,5 +20,5 @@
     "types": ["node", "vitest/globals", "@testing-library/jest-dom", "vite/client"],
     "paths": { "@/*": ["./src/*"] }
   },
-  "include": ["src", "e2e"]
+  "include": ["src", "e2e", "pwa"]
 }

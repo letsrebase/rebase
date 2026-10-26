@@ -10,6 +10,7 @@ import { LegalEntityProvider } from './lib/legalEntity'
 import { stripEntraToken } from './lib/entra-token'
 import { queryClient } from './lib/query'
 import { tenantPrefix } from './lib/tenant'
+import { startPwa } from './pwa/register'
 import { routeTree } from './routeTree.gen'
 import './styles/tokens.css'
 
@@ -36,6 +37,16 @@ stripEntraToken()
 // amount or a customer's name.
 initAnalytics({ maskText: true })
 api.use(analyticsMiddleware())
+
+// The manifest and the service worker of this space, in the production build only
+// (src/pwa/register.ts).
+startPwa({
+  production: import.meta.env.PROD,
+  pathname: window.location.pathname,
+  prefix: tenantPrefix,
+  document,
+  serviceWorker: navigator.serviceWorker,
+})
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

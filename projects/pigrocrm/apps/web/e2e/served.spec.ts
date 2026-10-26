@@ -60,4 +60,57 @@ test.describe('the served stack', () => {
     expect(response.status()).toBe(200)
     expect(await response.json()).toEqual({ status: 'ok' })
   })
+
+  test.describe('the installable app is served at the root and under every space (REB-731)', () => {
+    // The manifest and the worker are fetched from the space's own path, which is what
+    // makes each space its own app: the general `/<slug>/app/` block answers anything
+    // else with the SPA shell, which a browser rejects as a worker.
+    for (const prefix of ['', '/studio', '/un-altro-spazio']) {
+      test(`${prefix || '(root)'}/app/ answers the manifest, the worker and the offline page`, async ({
+        page,
+      }) => {
+        const manifest = await page.request.get(`${prefix}/app/manifest.webmanifest`)
+        expect(manifest.status()).toBe(200)
+        expect(manifest.headers()['content-type']).toContain('application/manifest+json')
+        expect(manifest.headers()['cache-control']).toBe('no-cache')
+        expect((await manifest.json()).scope).toBe('../app')
+
+        const worker = await page.request.get(`${prefix}/app/sw.js`)
+        expect(worker.status()).toBe(200)
+        expect(worker.headers()['content-type']).toContain('javascript')
+        expect(worker.headers()['cache-control']).toBe('no-cache')
+        expect(worker.headers()['x-content-type-options']).toBe('nosniff')
+        expect(worker.headers()['service-worker-allowed']).toBe(`${prefix}/app`)
+
+        const offline = await page.request.get(`${prefix}/app/offline.html`)
+        expect(offline.status()).toBe(200)
+        expect(offline.headers()['cache-control']).toBe('no-cache')
+        expect(await offline.text()).toContain('Sei offline')
+      })
+    }
+
+    test('an installed space is its own app: its worker is scoped to it, and works offline', async ({
+      page,
+      context,
+    }) => {
+      await page.goto('/studio/app/')
+      await page.evaluate(() => navigator.serviceWorker.ready)
+      // Asked for by URL: after the first render the router has moved the page to
+      // `/studio/app?tab=...`, which is what the scope must contain.
+      const scope = await page.evaluate(
+        async () => (await navigator.serviceWorker.getRegistration('/studio/app?tab=economica'))?.scope,
+      )
+      expect(scope).toMatch(/\/studio\/app$/)
+      const other = await page.evaluate(
+        async () => (await navigator.serviceWorker.getRegistration('/un-altro-spazio/app/'))?.scope,
+      )
+      expect(other).toBeUndefined()
+
+      await page.reload()
+      await context.setOffline(true)
+      // The router's home, with no slash after `app`: the page every session returns to.
+      await page.goto('/studio/app?tab=economica', { waitUntil: 'load' }).catch(() => {})
+      await expect(page.getByRole('heading', { level: 1, name: 'Sei offline' })).toBeVisible()
+    })
+  })
 })
