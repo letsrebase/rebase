@@ -19,6 +19,7 @@ rendered guidance instead of a raw pydantic dump (see `tools/__init__.py`'s own 
 `WithJsonSchema` and `_guard`).
 """
 
+from datetime import date
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -282,5 +283,25 @@ def get_year_overview(
     return (
         AnalyticsService(context.session)
         .year_overview(_ANNO.validate_python(anno), context.actor, azienda_id)
+        .model_dump(mode="json")
+    )
+
+
+_DATE: TypeAdapter[date | None] = TypeAdapter(date | None)
+
+
+def get_days_analysis(
+    context: McpContext,
+    da: str | None = None,
+    a: str | None = None,
+    azienda_id: UUID | None = None,
+) -> dict[str, Any]:
+    """The days of a period by month and state, the realised day rate and the trend of
+    days worked without approval (REB-756)."""
+    return (
+        AnalyticsService(context.session)
+        .days_analysis(
+            context.actor, _DATE.validate_python(da), _DATE.validate_python(a), azienda_id
+        )
         .model_dump(mode="json")
     )

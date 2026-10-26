@@ -11,6 +11,7 @@ from sqlalchemy import (
     Text,
     column,
     desc,
+    func,
     nullslast,
     text,
 )
@@ -100,6 +101,27 @@ class Attivita(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
             "stato",
             "scadenza",
             postgresql_where=text("deleted_at IS NULL"),
+        ),
+        # Slice 7 §6.1, REB-727: a rule never has two open attivita on one subject, and
+        # the database is what says so, not a SELECT before the INSERT. The subject is
+        # the one reference an attivita carries (`ck_attivita_un_solo_riferimento` allows
+        # one at most), so `coalesce` over the four columns is that reference whichever
+        # column holds it, and the index needs no `NULLS NOT DISTINCT`: four nullable
+        # columns in one unique key would let every row through, a NULL being distinct
+        # from a NULL. An attivita with no reference at all has no subject to repeat on
+        # and is out of the index. Closing it (done or cancelled) or archiving it takes
+        # it out, and the rule may open the next one on a later pass.
+        Index(
+            "uq_attivita_regola_aperta",
+            "regola",
+            func.coalesce(
+                column("customer_id"),
+                column("person_id"),
+                column("deal_id"),
+                column("invoice_id"),
+            ),
+            unique=True,
+            postgresql_where=text("regola IS NOT NULL AND stato = 'aperta' AND deleted_at IS NULL"),
         ),
         Index("ix_attivita_custom_fields", "custom_fields", postgresql_using="gin"),
         # Residuo R9: one `(column, id)` B-tree per admitted sort key -- see

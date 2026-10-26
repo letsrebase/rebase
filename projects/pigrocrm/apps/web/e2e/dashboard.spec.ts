@@ -267,7 +267,7 @@ test.describe('il ciclo completo — metà umana', () => {
     }).toPass()
   })
 
-  test('the three tabs are reachable and the period is in the URL', async ({ page }) => {
+  test('the tabs are reachable and the period is in the URL', async ({ page }) => {
     await loginAsAdmin(page)
     await ensureSpaceHasWork(page)
     const { da, a } = currentMonth()
@@ -290,9 +290,14 @@ test.describe('il ciclo completo — metà umana', () => {
     expect(condiviso).toContain(`&a=${a}`)
     await page.goto(condiviso.replace('/app?', '/app/?'))
     await expect(page.getByRole('group', { name: 'Ricavi incassati' })).toBeVisible()
-    // Four tabs since the Anno joined them (REB-757, after the Scadenziario of REB-329);
-    // the operational one left the page on 2026-09-08.
-    await expect(page.getByRole('tab')).toHaveCount(4)
+    // Five tabs since the Giornate joined them (REB-756, after the Anno of REB-757 and the
+    // Scadenziario of REB-329); the operational one left the page on 2026-09-08.
+    await expect(page.getByRole('tab')).toHaveCount(5)
+
+    // The days analysis opens from its own URL and reads the same period.
+    await page.goto(`/app/?tab=giornate&da=${da}&a=${a}`)
+    await expect(page.getByRole('group', { name: 'Giornate nel periodo' })).toBeVisible()
+    await expect(page.getByRole('group', { name: 'Tariffa reale al giorno' })).toBeVisible()
 
     await page.goto('/app/?tab=commerciale')
     await expect(page.getByText('Pipeline per stato')).toBeVisible()

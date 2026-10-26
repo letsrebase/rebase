@@ -719,6 +719,10 @@ def test_the_automation_config_is_readable_by_a_readonly_actor(
     assert set(response.json()) == {
         "a1_offerta_accettata_vince_deal",
         "a2_offerta_inviata_avanza_deal",
+        "a3_offerta_inviata_richiama",
+        "a4_deal_fermo",
+        "a4_deal_fermo_giorni",
+        "a5_fattura_scaduta",
     }
 
 
@@ -753,20 +757,44 @@ def test_an_admin_switches_a_rule_off_and_it_stays_off(logged_in: TestClient) ->
     assert logged_in.get("/api/automation-config").json() == {
         "a1_offerta_accettata_vince_deal": False,
         "a2_offerta_inviata_avanza_deal": True,
+        "a3_offerta_inviata_richiama": True,
+        "a4_deal_fermo": True,
+        "a4_deal_fermo_giorni": 30,
+        "a5_fattura_scaduta": True,
     }
+
+
+def test_an_admin_switches_a_daily_rule_off_and_sets_its_threshold(logged_in: TestClient) -> None:
+    allowed = logged_in.put(
+        "/api/automation-config", json={"a4_deal_fermo": False, "a4_deal_fermo_giorni": 14}
+    )
+    assert allowed.status_code == 200, allowed.text
+    body = logged_in.get("/api/automation-config").json()
+    assert body["a4_deal_fermo"] is False and body["a4_deal_fermo_giorni"] == 14
+    assert body["a3_offerta_inviata_richiama"] is True and body["a5_fattura_scaduta"] is True
+    # The column's own bounds are the request's: a 422 naming the field, not a 500.
+    assert (
+        logged_in.put("/api/automation-config", json={"a4_deal_fermo_giorni": 0}).status_code == 422
+    )
 
 
 def test_an_unknown_field_on_the_config_is_refused(logged_in: TestClient) -> None:
     """`extra="forbid"`: a typo in a field name must not silently do nothing. The only
     thing a misspelled key can do on a settings form is report success for a change that
     was not made."""
-    response = logged_in.put("/api/automation-config", json={"a3_qualcosa": True})
+    response = logged_in.put("/api/automation-config", json={"a9_qualcosa": True})
     assert response.status_code == 422
 
 
-def test_the_description_names_both_rules_with_their_state(logged_in: TestClient) -> None:
+def test_the_description_names_every_rule_with_their_state(logged_in: TestClient) -> None:
     body = logged_in.get("/api/automations").json()
-    assert [rule["codice"] for rule in body["regole"]] == ["A1", "A2"]
+    assert [rule["codice"] for rule in body["regole"]] == [
+        "A1",
+        "A2",
+        "offerta_inviata_richiama",
+        "deal_fermo",
+        "fattura_scaduta",
+    ]
     assert all(rule["descrizione"] for rule in body["regole"])
     assert body["configurazione"]["a1_offerta_accettata_vince_deal"] is True
 

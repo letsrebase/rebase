@@ -20,6 +20,9 @@ export type FasciaScadenza = components['schemas']['FasciaScadenza']
 export type CeilingHeadroom = components['schemas']['CeilingHeadroom']
 export type CeilingStatus = components['schemas']['CeilingStatusRead']
 export type CeilingSimulation = components['schemas']['CeilingSimulation']
+export type DaysAnalysis = components['schemas']['DaysAnalysis']
+export type DaysMonth = components['schemas']['DaysMonth']
+export type DaysRate = components['schemas']['DaysRate']
 export type YearOverview = components['schemas']['YearOverview']
 export type YearRegisterRow = components['schemas']['YearRegisterRow']
 export type AutomationsDescription = components['schemas']['AutomationsDescription']
@@ -58,6 +61,17 @@ export function useEconomicDashboard(periodo: Periodo) {
   return useQuery({
     queryKey: queryKeys.dashboard('economica', params),
     queryFn: () => unwrap(api.GET('/api/dashboard/economic', { params: { query: params } })),
+    staleTime: DASHBOARD_STALE_MS,
+  })
+}
+
+/** The days of the period (REB-756): by month and state, the realised rate and the trend of
+ *  days worked without approval. Every figure comes computed; the period is both dates. */
+export function useDaysAnalysis(periodo: Periodo) {
+  const params = { ...periodo, ...useLegalEntityParam() }
+  return useQuery({
+    queryKey: queryKeys.dashboard('giornate', params),
+    queryFn: () => unwrap(api.GET('/api/analytics/days', { params: { query: params } })),
     staleTime: DASHBOARD_STALE_MS,
   })
 }
@@ -209,14 +223,16 @@ export function useUpdateAutomationConfig() {
   const client = useQueryClient()
   return useMutation({
     mutationFn: (body: AutomationConfigUpdate) => unwrap(api.PUT('/api/automation-config', { body })),
-    onSuccess: () => {
-      void client.invalidateQueries({ queryKey: queryKeys.automations() })
+    onSuccess: async () => {
       // The commercial dashboard's signal count reflects whether A1 has been firing, so a
       // configuration change is a reason to re-read it. By the `['dashboard']` prefix
       // rather than an exact key: a mutation cannot know which period the user is looking
       // at, and the prefix covers every cached period and every tab.
       void client.invalidateQueries({ queryKey: ['dashboard'] })
       toast.success('Configurazione aggiornata')
+      // Awaited, last: a caller's own `onSuccess` runs once the description is fresh, so a
+      // box that held a typed number can let go of it without flashing the old one.
+      await client.invalidateQueries({ queryKey: queryKeys.automations() })
     },
     // No `onError` that copies the failure into component state: the panel renders it from
     // this mutation's own `error`, so a later success clears it by construction. An error

@@ -220,3 +220,19 @@ async def test_get_year_overview_reads_the_register_of_the_year(
     assert body["anno"] == OGGI.year
     assert body["registro"] == []
     assert body["totali"]["imponibile"] == "0.00"
+
+
+async def test_get_days_analysis_defaults_to_the_current_month(server) -> None:
+    async with Client(server) as client:
+        result = await client.call_tool("get_days_analysis", {})
+    body = result.structured_content
+    assert [m["mese"] for m in body["mesi"]] == [OGGI.strftime("%Y-%m")]
+    assert body["giorni_nel_periodo"] == "0.00"
+    assert body["tariffa_reale"] is None
+
+
+async def test_get_days_analysis_with_half_a_period_is_guidance_not_a_dump(server) -> None:
+    async with Client(server) as client:
+        result = await client.call_tool("get_days_analysis", {"da": DA})
+    assert result.is_error
+    assert "errors.pydantic.dev" not in result.content[0].text

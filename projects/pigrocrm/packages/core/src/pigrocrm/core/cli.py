@@ -17,6 +17,7 @@ from pigrocrm.core.auth.repository import UserRepository
 from pigrocrm.core.auth.schemas import UserCreate
 from pigrocrm.core.auth.scope import actor_for
 from pigrocrm.core.auth.service import UserService
+from pigrocrm.core.automations.daily import AutomationPass, PassReport
 from pigrocrm.core.config import Settings, get_settings
 from pigrocrm.core.db import create_engine_from_settings, session_factory
 from pigrocrm.core.db.scope import bind_scope
@@ -634,6 +635,97 @@ def _stampa_promemoria(outcome: ReminderOutcome, *, dry_run: bool) -> None:
     )
 
 
+def automations(*, slug: str | None, data: date | None, dry_run: bool) -> int:
+    """`pigrocrm automations`: the daily pass of the rules that open attivita (REB-727,
+    slice 7 §6), over the root installation and every space in the registry, for cron.
+
+    One line per space and one per rule, counters only, in the digest's and the reminder
+    pass's shape: the root is the first line and `--slug root` visits it alone, every other
+    name is a registry space in the order the spaces were created, and the crontab line does
+    not change when one is added. An exception in a space is one line on `stderr` (the slug
+    and the exception's *name*, never its message, which may quote a customer) and the run
+    goes on; **the exit status is 1 when any line went to `stderr`**, so a host that pings a
+    dead-man's switch after `&&` stops pinging when a space could not be walked.
+
+    **This command migrates nothing**, like the digest: a space behind the image answers
+    `saltato (ProgrammingError)` until the API's boot command migrates it (ORB-189).
+
+    **One decision.** `AutomationPass.run` decides; `--dry-run` runs it and rolls back, so
+    the counters of a rehearsal are the real ones, and `--data` evaluates another day and
+    only with `--dry-run`: a real pass for another day would open attivita due on days that
+    are not today.
+    """
+    from sqlalchemy import create_engine, select
+
+    from pigrocrm.core.db.clock import today_local
+    from pigrocrm.core.tenants import Tenant, ensure_tenants_database
+    from pigrocrm.core.tenants.database import tenant_database_url
+
+    settings = get_settings()
+    if data is not None and data != today_local(settings) and not dry_run:
+        print("--data cambia il giorno: si usa solo con --dry-run", file=sys.stderr)
+        return 2
+    failed = False
+    root_only = slug == ROOT_LABEL
+    spaces: list[tuple[str, str | URL]] = []
+    if slug is None or root_only:
+        spaces.append((ROOT_LABEL, settings.database_url))
+    registry_read = False
+    if not root_only:
+        try:
+            registry = ensure_tenants_database(settings)
+            try:
+                with session_factory(registry)() as session:
+                    spaces.extend(
+                        (row.slug, tenant_database_url(settings, row.db_name))
+                        for row in session.scalars(select(Tenant).order_by(Tenant.created_at)).all()
+                        if slug is None or row.slug == slug
+                    )
+                registry_read = True
+            finally:
+                registry.dispose()
+        except Exception as exc:  # noqa: BLE001 - a cron line, never a traceback
+            # The type and never the text: a psycopg error can carry the URL, password
+            # included, and this line is appended to a file on the host. Not a `return`:
+            # the root is not in the registry, and its pass still runs.
+            print(f"registro degli spazi non raggiungibile ({type(exc).__name__})", file=sys.stderr)
+            failed = True
+    if not spaces:
+        if slug is not None and registry_read:
+            print(f"{slug}: non nel registro", file=sys.stderr)
+            return 1
+        return 1 if failed else 0
+
+    for space_slug, database_url in spaces:
+        engine = create_engine(database_url, future=True)
+        try:
+            with session_factory(engine)() as space:
+                report = AutomationPass(space, settings).run(today=data, dry_run=dry_run)
+        except Exception as exc:  # noqa: BLE001 - one space must not stop the others
+            print(f"{space_slug}: saltato ({type(exc).__name__})", file=sys.stderr)
+            failed = True
+            continue
+        finally:
+            engine.dispose()
+        _stampa_automazioni(space_slug, report, dry_run=dry_run)
+    return 1 if failed else 0
+
+
+def _stampa_automazioni(slug: str, report: PassReport, *, dry_run: bool) -> None:
+    """One line per rule, counters only. `(prova)` on a rehearsal, for the reason the
+    digest's has it: a log where the rehearsal and the real pass read identically cannot
+    answer whether the pass ran. A rule that is switched off says so rather than printing
+    zeros, which would read as «looked, found nothing»."""
+    suffix = " (prova)" if dry_run else ""
+    for rule in report.rules:
+        if rule.disattivata:
+            print(f"{slug}: {rule.regola} disattivata")
+        else:
+            print(
+                f"{slug}: {rule.regola} aperte {rule.aperte}, già aperte {rule.gia_aperte}{suffix}"
+            )
+
+
 def gmail_sync(email: str | None) -> int:
     """`pigrocrm gmail-sync [--email casella@dove.it]`: one cycle per connected mailbox of
     the root installation and of every space in the registry, for cron.
@@ -999,6 +1091,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Prova: dice cosa metterebbe nelle liste e non scrive niente",
     )
 
+    automazioni = sub.add_parser(
+        "automations",
+        help="Apre le attività delle regole che scattano col tempo, in ogni spazio (per cron)",
+    )
+    automazioni.add_argument("--slug", help="Un solo spazio, invece di tutto il registro")
+    automazioni.add_argument(
+        "--data",
+        type=date.fromisoformat,
+        metavar="YYYY-MM-DD",
+        help="Valuta un altro giorno, invece di oggi (solo con --dry-run)",
+    )
+    automazioni.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Prova: dice cosa aprirebbe e non scrive niente",
+    )
+
     args = parser.parse_args(argv)
     if args.command == "createadmin":
         return createadmin(args.email, args.nome)
@@ -1016,6 +1125,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return digest(slug=args.slug, data=args.data, forza=args.forza, dry_run=args.dry_run)
     if args.command == "reminders":
         return reminders(slug=args.slug, data=args.data, dry_run=args.dry_run)
+    if args.command == "automations":
+        return automations(slug=args.slug, data=args.data, dry_run=args.dry_run)
     return 1
 
 

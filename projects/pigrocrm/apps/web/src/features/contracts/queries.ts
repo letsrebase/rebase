@@ -125,6 +125,8 @@ export function useRateCards(contractId: string) {
 function invalidateRates(client: QueryClient, contractId: string) {
   void client.invalidateQueries({ queryKey: queryKeys.contractRateCards(contractId) })
   void client.invalidateQueries({ queryKey: ['contract', contractId, 'projection'] })
+  // The days analysis sets the realised rate against the card in force (REB-756).
+  void client.invalidateQueries({ queryKey: ['dashboard'] })
   void client.invalidateQueries({ queryKey: queryKeys.timeline('contract', contractId) })
 }
 
