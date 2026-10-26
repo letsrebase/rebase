@@ -2,6 +2,7 @@ from datetime import date
 from typing import Any
 from uuid import UUID
 
+from pigrocrm.core.contract_emails.service import ContractEmailService
 from pigrocrm.core.contracts.schemas import (
     ContractCreate,
     ContractListQuery,
@@ -18,7 +19,6 @@ from pigrocrm.core.contracts.service import (
     RateCardService,
     RenewalAssumptionService,
 )
-from pigrocrm.core.contract_emails.service import ContractEmailService
 from pigrocrm.core.work_units.register import ContractRegisterService
 from pigrocrm_mcp.context import McpContext
 

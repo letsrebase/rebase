@@ -9,7 +9,7 @@ from typing import Any
 from uuid import UUID
 
 import pytest
-from aziende_helpers import azienda_url
+from contract_billing_helpers import create_contract, set_up_fiscal
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
@@ -17,72 +17,9 @@ from pigrocrm.core.work_units.models import WorkUnit
 
 
 @pytest.fixture
-def fiscal_setup(logged_in: TestClient) -> None:
-    assert (
-        logged_in.put(
-            azienda_url(logged_in),
-            json={
-                "ragione_sociale": "Studio Rossi",
-                "partita_iva": "01234567890",
-                "codice_fiscale": "HMCRFT00A01H501K",
-                "indirizzo": "Via Vittorio Veneto 12",
-                "cap": "20124",
-                "comune": "Milano",
-                "provincia": "MI",
-                "nazione": "IT",
-                "email": "mario@example.com",
-            },
-        ).status_code
-        == 200
-    )
-    assert (
-        logged_in.put(
-            azienda_url(logged_in, "/fiscal-profile"), json={"codice_regime": "RF19"}
-        ).status_code
-        == 200
-    )
-
-
-@pytest.fixture
-def contract(logged_in: TestClient, fiscal_setup: None) -> dict[str, Any]:
-    customer = logged_in.post(
-        "/api/customers",
-        json={
-            "ragione_sociale": "Acme S.r.l.",
-            "partita_iva": "12345678901",
-            "codice_sdi": "ABCDEFG",
-            "indirizzo": "Corso Italia 5",
-            "cap": "00100",
-            "comune": "Roma",
-            "provincia": "RM",
-            "nazione": "IT",
-        },
-    )
-    assert customer.status_code == 201, customer.text
-    created = logged_in.post(
-        "/api/contracts",
-        json={
-            "customer_id": customer.json()["id"],
-            "titolo": "Consulenza CTO",
-            "inizio": "2026-01-01",
-            "tipo_rinnovo": "nessuno",
-            "preavviso_disdetta_giorni": 30,
-            "cadenza_fatturazione": "mensile",
-            "politica_spese": {"kind": "non_rimborsabile"},
-        },
-    )
-    assert created.status_code == 201, created.text
-    card = logged_in.post(
-        f"/api/contracts/{created.json()['id']}/rate-cards",
-        json={
-            "valido_da": "2026-01-01",
-            "tipo": "giornaliero",
-            "importo": "500.00",
-            "unita": "giorno",
-        },
-    )
-    assert card.status_code == 201, card.text
-    return created.json()
+def contract(logged_in: TestClient) -> dict[str, Any]:
+    set_up_fiscal(logged_in)
+    return create_contract(logged_in)
 
 
 def _day(api_session: Session, contract: dict[str, Any], day: date, quantita: str = "1.00") -> UUID:

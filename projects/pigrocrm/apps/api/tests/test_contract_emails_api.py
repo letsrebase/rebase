@@ -7,11 +7,18 @@ from typing import Any
 from uuid import UUID
 
 import pytest
+from contract_billing_helpers import create_contract, set_up_fiscal
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.work_units.models import WorkUnit
-from test_contract_billing_api import contract, fiscal_setup  # noqa: F401  (fixtures)
+
+
+@pytest.fixture
+def contract(logged_in: TestClient) -> dict[str, Any]:
+    set_up_fiscal(logged_in)
+    return create_contract(logged_in)
+
 
 BODY = "Gentile {{cliente}}, fattura {{numero_fattura}} di {{importo}}, registro {{periodo}}."
 
