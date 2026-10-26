@@ -23,8 +23,9 @@ same thing twice are decided here rather than left to happen:
 
 * `fattura_scaduta` and the reminder `invoice_overdue` have the same cause (an issued, unpaid
   invoice past its due date, strictly) and the reminder already climbs its own ladder. The
-  attivita is the to-do the reminder points at, so the attivita reminders
-  (`attivita_due`, `attivita_overdue`) skip the ones this rule opened.
+  attivita is the to-do the reminder points at, so the reminder engine does not raise
+  `attivita_due` or `attivita_overdue` for what this rule opened to a person who is already
+  told of the invoice by `invoice_overdue`; to anybody else it is the only notice.
 * `deal_fermo` and the reminder `deal_stale` measure different things: the reminder is the
   absence of any mail, attivita or hours for 21 days, the rule is a deal that has not changed
   stage. The attivita this rule opens is itself an attivita created on the deal, so it
@@ -71,6 +72,7 @@ from pigrocrm.core.automations.schemas import (
 from pigrocrm.core.config import Settings, get_settings
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import today_local
+from pigrocrm.core.db.scope import bind_scope
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.invoices.models import Invoice
@@ -143,6 +145,11 @@ class AutomationPass:
         savepoint and rolls that back, which is what makes the rehearsal's counters the real
         ones and leaves nothing behind, the configuration row's first creation included."""
         day = today if today is not None else today_local(self.settings)
+        # The pass sees the whole space, like the reminder pass and the digest: the
+        # application role reads through row-level policies that treat a session with no
+        # scope as one that may see nothing, and a pass that saw nothing would print zeros
+        # and exit 0 (REB-634). Who is told what is the reminders' business, not this one's.
+        bind_scope(self.session, Actor.system())
         if not dry_run:
             return self._run_all(day, dry_run=False)
         rehearsal = self.session.begin_nested()

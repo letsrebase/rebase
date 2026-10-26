@@ -100,7 +100,7 @@ function DaysThreshold({
 }: {
   value: number
   disabled: boolean
-  onCommit: (days: number) => void
+  onCommit: (days: number, settled: () => void) => void
 }) {
   const [draft, setDraft] = useState<string | null>(null)
   const days = draft === null ? null : Number(draft)
@@ -119,11 +119,18 @@ function DaysThreshold({
         value={draft ?? String(value)}
         onChange={(event) => setDraft(event.target.value)}
         onBlur={() => {
-          if (draft !== null && valid && days !== value) onCommit(days)
-          setDraft(null)
+          // A valid change is sent and the typed number stays until the answer is in, so
+          // the box never shows the old value in between; anything else is dropped.
+          if (draft !== null && valid && days !== value) onCommit(days, () => setDraft(null))
+          else if (valid || draft === '') setDraft(null)
         }}
         className="w-20"
       />
+      {draft !== null && !valid && (
+        <span role="status" className="text-destructive">
+          Da {DEAL_FERMO_MIN_DAYS} a {DEAL_FERMO_MAX_DAYS} giorni
+        </span>
+      )}
     </label>
   )
 }
@@ -175,7 +182,9 @@ export function AutomationsPanel() {
                   <DaysThreshold
                     value={data.configurazione.a4_deal_fermo_giorni}
                     disabled={update.isPending}
-                    onCommit={(days) => update.mutate({ a4_deal_fermo_giorni: days })}
+                    onCommit={(days, settled) =>
+                      update.mutate({ a4_deal_fermo_giorni: days }, { onSettled: settled })
+                    }
                   />
                 )}
               </div>

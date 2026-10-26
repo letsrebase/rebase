@@ -174,8 +174,8 @@ stessa regola di R5 che lo slice 6B ha applicato a se stesso: la configurazione 
 > page's «scaduto». Each is assigned to the deal's owner, else the customer's. The index of
 > §6.1 is over `(regola, coalesce(customer_id, person_id, deal_id, invoice_id))` and not over
 > the four columns: a NULL is distinct from a NULL, so four nullable columns in one key would
-> admit every duplicate. The attività reminders skip what `fattura_scaduta` opened, because
-> `invoice_overdue` already raises that cause.
+> admit every duplicate. A person already told of the invoice by the reminder `invoice_overdue` is not told of
+> what `fattura_scaduta` opened as well.
 
 ### 6.1 L'idempotenza, che è la parte difficile
 

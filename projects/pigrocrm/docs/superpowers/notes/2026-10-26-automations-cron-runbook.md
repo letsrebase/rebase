@@ -37,8 +37,8 @@ gets its own line and its own log:
 working day starts»: what counts as today is read from `PIGROCRM_TIMEZONE` (`db/clock.py`),
 never from cron's clock, so the host's time zone changes when the attività appear and never
 which ones. On a host in UTC `0 6` is 07:00 or 08:00 in Rome. Running it twice a day, or by
-hand, is harmless: a second pass opens nothing for a subject that already has its attività
-(§4).
+hand, opens nothing for a subject that already has its open attività (§4); it does open a new
+one for a subject whose attività somebody completed or cancelled in between.
 
 **The command migrates nothing**, like the digest and for the same reason (ORB-189): a space
 whose schema is behind the image answers `saltato (ProgrammingError)` until the API restarts
@@ -60,7 +60,7 @@ PIGROCRM_AUTOMATIONS_PING_URL=<the check's ping URL, as healthchecks.io shows it
 ## 2. Trying it, before waiting for tomorrow
 
 `--dry-run` runs the real pass inside a savepoint and rolls it back: the counters are the
-ones a real run would print, nothing is written, and every line carries `(prova)`:
+ones a real run would print, nothing is written, and every counter line carries `(prova)` (a `disattivata` line says no more than it always does):
 
 ```
 cd /opt/pigrocrm/projects/pigrocrm && docker compose --env-file ../../.env exec -T api uv run --no-sync pigrocrm automations --dry-run; echo "uscita: $?"
@@ -118,8 +118,10 @@ A reminder (`pigrocrm reminders`) is a notice about a cause, recomputed on every
 attività is a to-do with a state. Where they would say the same thing twice:
 
 - `fattura_scaduta` and the reminder `invoice_overdue` have one cause. The reminder keeps
-  climbing its own ladder, and the attività reminders (`attivita_due`, `attivita_overdue`)
-  skip the attività this rule opened.
+  climbing its own ladder, and a person already told of the invoice by that reminder is not
+  told of the attività this rule opened by `attivita_due` or `attivita_overdue`. A person who
+  switched `invoice_overdue` off, or is not one of its recipients, keeps the attività's
+  reminders: for them it is the only notice.
 - `deal_fermo` and the reminder `deal_stale` measure different things (no mail, attività or
   hours on the deal, against no change of stage). The attività this rule opens is itself an
   attività created on the deal, so it restarts the reminder's clock.

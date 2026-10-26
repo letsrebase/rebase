@@ -18,9 +18,9 @@ digest is not read: it writes a row only
 when mail actually left (`digest/run.py`, «nothing is recorded that did not happen»), so the
 absence of one is a quiet week or a provider that is not configured as often as it is a late
 cron, and an alert that is wrong in a space that has nothing to report would teach admins to
-ignore it. The automations' daily pass (`pigrocrm automations`) does not record a heartbeat either, so
-`job_late` does not watch it; the host's dead-man's switch does (its runbook). The other two
-automations run inside the request that triggers them (`automations/runner.py`).
+ignore it. The automations' daily pass (`pigrocrm automations`) records no heartbeat either,
+so `job_late` does not watch it; the host's dead-man's switch does (its runbook). The other
+two automations run inside the request that triggers them (`automations/runner.py`).
 """
 
 from __future__ import annotations

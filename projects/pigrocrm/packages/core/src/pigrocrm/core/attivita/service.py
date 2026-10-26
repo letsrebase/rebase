@@ -2,6 +2,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
@@ -114,6 +115,28 @@ class AttivitaService:
             raise NotFound(ENTITY, attivita_id)
         return row
 
+    def _flush_or_conflict(self, attivita_id: UUID) -> None:
+        """Flush, answering the automation index as a `Conflict` and not a 500.
+
+        `uq_attivita_regola_aperta` allows one open attivita per automation rule and
+        subject, and the daily pass opens a new one as soon as the old one is closed. So
+        reopening, restoring or re-linking an old one can collide with it, and that is a
+        sentence for the person («chiudi o annulla l'altra»), not a database error."""
+        try:
+            self.session.flush()
+        except IntegrityError as exc:
+            self.session.rollback()
+            if getattr(getattr(exc.orig, "diag", None), "constraint_name", None) != (
+                "uq_attivita_regola_aperta"
+            ):
+                raise
+            raise Conflict(
+                ENTITY,
+                "esiste già un'attività aperta della stessa regola per lo stesso soggetto: "
+                "chiudi o annulla quella prima",
+                attivita_id=str(attivita_id),
+            ) from exc
+
     # ---- writes -----------------------------------------------------------------------
 
     def create(self, data: AttivitaCreate, actor: Actor) -> AttivitaRead:
@@ -181,6 +204,7 @@ class AttivitaService:
 
         for field, value in changes.items():
             setattr(row, field, value)
+        self._flush_or_conflict(row.id)
         if changes:
             self.activities.record(ENTITY, row.id, "updated", actor, {"campi": sorted(changes)})
         self.session.commit()
@@ -245,6 +269,7 @@ class AttivitaService:
             return AttivitaRead.model_validate(row)
         row.stato = "aperta"
         row.completata_il = None
+        self._flush_or_conflict(row.id)
         self.activities.record(ENTITY, row.id, "riaperta", actor)
         self.session.commit()
         return AttivitaRead.model_validate(row)
@@ -267,6 +292,7 @@ class AttivitaService:
         # carries, for the same reason.
         was_deleted = row.deleted_at is not None
         row.deleted_at = None
+        self._flush_or_conflict(row.id)
         if was_deleted:
             self.activities.record(ENTITY, row.id, "restored", actor)
         self.session.commit()

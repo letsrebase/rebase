@@ -11,10 +11,11 @@ needs rows another connection can see, so it commits its own and removes them af
 
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
 from threading import Barrier
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy import Engine, delete, select
@@ -39,6 +40,7 @@ from pigrocrm.core.automations.schemas import (
     AttivitaRule,
     AutomationConfigUpdate,
 )
+from pigrocrm.core.config import get_settings
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory, today_local
 from pigrocrm.core.deals.models import Deal
@@ -50,6 +52,13 @@ ADMIN = Actor(id=None, type="user", role="admin")
 
 
 # -- fixtures: made-up data ------------------------------------------------------------
+
+
+def _local_noon(days_ago: int) -> datetime:
+    """Noon of the emitter's day `days_ago` days back. Not `now() - N days`: that is the
+    day in UTC for an hour or two a night, and these tests count whole days."""
+    day = today_local() - timedelta(days=days_ago)
+    return datetime.combine(day, time(12, 0), tzinfo=ZoneInfo(get_settings().timezone))
 
 
 def _customer(session: Session, nome: str = "Acme S.r.l.") -> Customer:
@@ -104,7 +113,7 @@ def _deal(
     session.add(deal)
     session.flush()
     if created_days_ago:
-        deal.created_at = datetime.now(UTC) - timedelta(days=created_days_ago)
+        deal.created_at = _local_noon(created_days_ago)
         session.flush()
     return deal
 
@@ -286,7 +295,7 @@ def test_a_recent_stage_change_resets_the_clock_and_a_closed_deal_is_never_stall
             kind="stage_changed",
             actor_type="user",
             payload={},
-            occurred_at=datetime.now(UTC) - timedelta(days=2),
+            occurred_at=_local_noon(2),
         )
     )
     _deal(db_session, customer, _stage(db_session, "won"), nome="Vinto", created_days_ago=90)
@@ -479,6 +488,24 @@ def test_the_index_refuses_a_second_open_attivita_of_one_rule_and_subject(
         add("fattura_scaduta")
 
 
+def test_reopening_an_old_attivita_next_to_the_one_the_pass_opened_is_a_conflict(
+    db_session: Session,
+) -> None:
+    """The index that keeps the pass to one open attivita also stops a person bringing a
+    second one back: a sentence (409 at the API), never a database error."""
+    from pigrocrm.core.errors import Conflict
+
+    _invoice(db_session, _customer(db_session))
+    _run(db_session)
+    (first,) = _rows(db_session, "fattura_scaduta")
+    service = AttivitaService(db_session)
+    service.complete(first.id, ADMIN)
+    _run(db_session)
+
+    with pytest.raises(Conflict, match="chiudi o annulla"):
+        service.reopen(first.id, ADMIN)
+
+
 # -- the race --------------------------------------------------------------------------
 
 
@@ -504,6 +531,30 @@ def committed_overdue_invoice(db_engine: Engine) -> Iterator[UUID]:
             session.execute(delete(Customer).where(Customer.id == customer_id))
             session.execute(delete(AutomationConfig))
             session.commit()
+
+
+def test_the_pass_sees_the_space_through_the_application_role(
+    db_engine: Engine, committed_overdue_invoice: UUID
+) -> None:
+    """Under the role the API and the cron connect as, a session with no scope reads nothing
+    (row-level policies, REB-634): the pass binds the whole-space scope itself. The suite's
+    own user is a superuser, which is never subject to a policy, so every other test here
+    would pass on a pass that bound nothing."""
+    from sqlalchemy import create_engine
+
+    from pigrocrm.core.db.role import ensure_application_role
+
+    app_url = db_engine.url.set(username="pigrocrm_app_test", password="pigrocrm_app_test")
+    assert ensure_application_role(db_engine.url, app_url) is True
+    app = create_engine(app_url, future=True)
+    try:
+        with session_factory(app)() as session:
+            report = AutomationPass(session).run()
+        assert _report(report, "fattura_scaduta") == (False, 1, 0)
+        with session_factory(app)() as session:
+            assert _report(AutomationPass(session).run(), "fattura_scaduta") == (False, 0, 1)
+    finally:
+        app.dispose()
 
 
 def test_two_passes_at_the_same_instant_open_one_attivita(

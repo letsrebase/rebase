@@ -14,10 +14,9 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from sqlalchemy import Select, or_, select
+from sqlalchemy import Select, select
 
 from pigrocrm.core.attivita.models import Attivita
-from pigrocrm.core.automations.schemas import REGOLA_COPERTA_DA_PROMEMORIA
 from pigrocrm.core.mail import giorno_breve
 from pigrocrm.core.reminders.catalogue import REMINDER_TYPES
 from pigrocrm.core.reminders.detect import Detection, Detector, DetectorContext
@@ -87,9 +86,6 @@ def _open_dated() -> Select[Attivita]:
         Attivita.stato == "aperta",
         Attivita.deleted_at.is_(None),
         Attivita.scadenza.is_not(None),
-        # What the daily pass opened for a late invoice is the to-do of `invoice_overdue`,
-        # which already raises that cause and climbs its own ladder: not announced twice.
-        or_(Attivita.regola.is_(None), Attivita.regola != REGOLA_COPERTA_DA_PROMEMORIA),
     )
 
 

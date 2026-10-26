@@ -24,8 +24,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from pigrocrm.core.attivita.models import Attivita
+from pigrocrm.core.automations.schemas import REGOLA_COPERTA_DA_PROMEMORIA
 from pigrocrm.core.config import Settings
 from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.reminders.catalogue import reminder_key, severity_for
@@ -37,6 +40,8 @@ from pigrocrm.core.reminders.preferences import ReminderSettings
 from pigrocrm.core.reminders.state import states_for
 
 IN_APP = "in_app"
+
+_ATTIVITA_TYPES = frozenset({"attivita_due", "attivita_overdue"})
 
 
 @dataclass(frozen=True)
@@ -112,7 +117,43 @@ class ReminderEngine:
                             period=today if kind.daily else None,
                         )
                     )
+        reminders = self._without_what_a_reminder_already_says(reminders)
+        raised = {reminder.key for reminder in reminders}
         return Evaluation(tuple(reminders), frozenset(ran), frozenset(raised))
+
+    def _without_what_a_reminder_already_says(self, reminders: list[Reminder]) -> list[Reminder]:
+        """Drops, for one person, the attività reminder of what `fattura_scaduta` opened
+        when that person is already told of the same invoice by `invoice_overdue`.
+
+        The two share a cause: the pass opens the attività the day the invoice is late and
+        the reminder climbs its own ladder from the same day, so announcing both says it
+        twice. Per person and not per space, because `invoice_overdue` can be switched off
+        or its first rung raised for one person: for them the attività is the only notice
+        and keeps its own reminders. Nothing is stored and nothing is hidden from the
+        Attività page, only the second announcement is not raised."""
+        told = {(r.user_id, r.entity_id) for r in reminders if r.type == "invoice_overdue"}
+        candidates = {r.entity_id for r in reminders if r.type in _ATTIVITA_TYPES}
+        if not told or not candidates:
+            return reminders
+        covered = {
+            attivita_id: invoice_id
+            for attivita_id, invoice_id in self.session.execute(
+                select(Attivita.id, Attivita.invoice_id).where(
+                    Attivita.id.in_(candidates),
+                    Attivita.regola == REGOLA_COPERTA_DA_PROMEMORIA,
+                    Attivita.invoice_id.is_not(None),
+                )
+            )
+        }
+        return [
+            r
+            for r in reminders
+            if not (
+                r.type in _ATTIVITA_TYPES
+                and r.entity_id in covered
+                and (r.user_id, covered[r.entity_id]) in told
+            )
+        ]
 
     def plan(
         self, evaluation: Evaluation, *, today: date | None = None

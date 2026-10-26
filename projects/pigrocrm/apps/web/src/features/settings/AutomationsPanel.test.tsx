@@ -154,6 +154,8 @@ describe('AutomationsPanel', () => {
   })
 
   it('sends the threshold when the box loses focus, and only when it is a valid change', async () => {
+    // An answer still on its way, to see what the box shows meanwhile.
+    vi.mocked(api.PUT).mockReturnValue(new Promise(() => {}))
     renderPanel()
     const days = await screen.findByRole('spinbutton', { name: /giorni di un deal fermo/i })
     expect(days).toHaveValue(30)
@@ -166,6 +168,8 @@ describe('AutomationsPanel', () => {
     expect(api.PUT).toHaveBeenCalledWith('/api/automation-config', {
       body: { a4_deal_fermo_giorni: 14 },
     })
+    // The typed number stays until the answer is in: no flash of the old value.
+    expect(days).toHaveValue(14)
   })
 
   it('does not send a threshold that is unchanged or outside 1 to 365', async () => {
@@ -182,8 +186,9 @@ describe('AutomationsPanel', () => {
     await userEvent.tab()
 
     expect(api.PUT).not.toHaveBeenCalled()
-    // And the box is back on the server's value rather than on what was refused.
-    expect(days).toHaveValue(30)
+    // The refusal says why and the box keeps what was typed so it can be corrected.
+    expect(screen.getByRole('status')).toHaveTextContent('Da 1 a 365 giorni')
+    expect(days).toHaveValue(366)
   })
 
   it('labels an attività the pass opened and shows its title', async () => {
