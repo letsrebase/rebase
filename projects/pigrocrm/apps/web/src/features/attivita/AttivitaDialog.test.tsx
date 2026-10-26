@@ -44,8 +44,8 @@ const search = {
         {
           entity: 'deal',
           id: DEAL,
-          etichetta: 'FloreMoria sito',
-          sottotitolo: 'FloreMoria',
+          etichetta: 'Acme sito',
+          sottotitolo: 'Acme',
           punteggio: '1.0000',
           campo: 'nome',
         },
@@ -64,7 +64,7 @@ beforeEach(() => {
     if (path === '/api/users') return ok(users)
     if (path === '/api/search') return ok(search)
     if (path === '/api/deals/{deal_id}')
-      return ok({ id: DEAL, nome: 'FloreMoria sito', customer_id: null })
+      return ok({ id: DEAL, nome: 'Acme sito', customer_id: null })
     throw new Error(`unexpected GET ${path}`)
   }) as never)
   vi.mocked(api.POST).mockImplementation((() => ok({ id: 'new' })) as never)
@@ -99,8 +99,8 @@ describe('AttivitaDialog', () => {
     // An inactive account is never offered: the service would refuse it anyway.
     expect(screen.queryByRole('option', { name: 'Ex collega' })).not.toBeInTheDocument()
     await userEvent.click(await screen.findByRole('option', { name: 'Ivan' }))
-    await userEvent.type(screen.getByPlaceholderText(/Cerca un cliente/), 'Flore')
-    await userEvent.click(await screen.findByRole('button', { name: /FloreMoria sito/ }))
+    await userEvent.type(screen.getByPlaceholderText(/Cerca un cliente/), 'Acme')
+    await userEvent.click(await screen.findByRole('button', { name: /Acme sito/ }))
     await userEvent.click(screen.getByRole('button', { name: 'Aggiungi' }))
 
     await waitFor(() => expect(api.POST).toHaveBeenCalled())
@@ -124,7 +124,7 @@ describe('AttivitaDialog', () => {
     renderDialog({ defaults: { scadenza: '2026-10-30', link: { kind: 'deal', id: DEAL } } })
 
     expect(screen.getByLabelText('Scadenza')).toHaveValue('2026-10-30')
-    expect(await screen.findByText(/FloreMoria sito/)).toBeInTheDocument()
+    expect(await screen.findByText(/Acme sito/)).toBeInTheDocument()
 
     await userEvent.type(screen.getByLabelText('Titolo'), 'Preparare le proposte')
     await userEvent.click(screen.getByRole('button', { name: 'Aggiungi' }))

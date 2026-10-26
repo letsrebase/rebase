@@ -96,7 +96,7 @@ describe('EntityAttivita', () => {
     vi.mocked(api.GET).mockImplementation(((path: string) => {
       if (path === '/api/activities') return ok({ items: [], next_cursor: null })
       if (path === '/api/users') return ok([])
-      if (path === '/api/deals/{deal_id}') return ok({ id: DEAL, nome: 'FloreMoria sito' })
+      if (path === '/api/deals/{deal_id}') return ok({ id: DEAL, nome: 'Acme sito' })
       throw new Error(`unexpected GET ${path}`)
     }) as never)
     vi.mocked(api.POST).mockImplementation((() => ok(row({}))) as never)
