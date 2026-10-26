@@ -1,7 +1,7 @@
 """contract_email_templates: the saved text a contract's invoice and register go out with
 
-Revision ID: 0053
-Revises: 0052
+Revision ID: 0055
+Revises: 0054
 
 REB-753. One table, keyed on a contract, with the row-level policy every table that reaches
 an azienda carries (spec 2026-10-03 §4): the contract's own visibility, with the «tutte»
@@ -14,8 +14,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "0053"
-down_revision: str | Sequence[str] | None = "0052"
+revision: str = "0055"
+down_revision: str | Sequence[str] | None = "0054"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
