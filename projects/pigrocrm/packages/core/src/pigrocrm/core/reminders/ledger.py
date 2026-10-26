@@ -26,6 +26,7 @@ resumes where it was.
 from __future__ import annotations
 
 from collections.abc import Collection
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from uuid import UUID
 
@@ -46,19 +47,34 @@ from pigrocrm.core.reminders.models import (
 DeliveryIdentity = tuple[str, UUID, str, str, date | None]
 
 
+@dataclass(frozen=True)
+class DeliveryRecord:
+    """What the ledger holds for one identity: the highest rank delivered and when."""
+
+    rank: int
+    at: datetime
+
+
 class ReminderLedger:
     def __init__(self, session: Session) -> None:
         self.session = session
 
-    def delivered(self, keys: Collection[str]) -> dict[DeliveryIdentity, int]:
-        """The rank delivered for each identity of these keys, read once per pass."""
+    def deliveries(self, keys: Collection[str]) -> dict[DeliveryIdentity, DeliveryRecord]:
+        """The rank delivered and the time, for each identity of these keys, read once
+        per pass."""
         if not keys:
             return {}
         rows = self.session.scalars(select(ReminderDelivery).where(ReminderDelivery.key.in_(keys)))
         return {
-            (row.key, row.user_id, row.channel, row.mode, row.period): row.severity_rank
+            (row.key, row.user_id, row.channel, row.mode, row.period): DeliveryRecord(
+                row.severity_rank, row.delivered_at
+            )
             for row in rows
         }
+
+    def delivered(self, keys: Collection[str]) -> dict[DeliveryIdentity, int]:
+        """The rank delivered for each identity of these keys, read once per pass."""
+        return {identity: record.rank for identity, record in self.deliveries(keys).items()}
 
     @staticmethod
     def covered(
@@ -133,6 +149,14 @@ class ReminderLedger:
                 )
             )
             is not None
+        )
+
+    def summaries_sent(self, day: date) -> set[UUID]:
+        """Every user whose summary for `day` already went, read once per pass."""
+        return set(
+            self.session.scalars(
+                select(ReminderSummaryRun.user_id).where(ReminderSummaryRun.day == day)
+            )
         )
 
     def mark_summary_sent(self, user_id: UUID, day: date) -> None:

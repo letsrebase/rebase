@@ -21,10 +21,11 @@ or the host's (`db/clock.py`), and a snooze compares dates in that zone.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.attivita.models import Attivita
@@ -35,11 +36,11 @@ from pigrocrm.core.reminders.catalogue import reminder_key, severity_for
 from pigrocrm.core.reminders.detect import DetectorContext, Reminder
 from pigrocrm.core.reminders.detectors import DETECTORS
 from pigrocrm.core.reminders.directory import Directory
+from pigrocrm.core.reminders.dispatch import IN_APP, ChannelResult
 from pigrocrm.core.reminders.ledger import DeliveryIdentity, ReminderLedger
 from pigrocrm.core.reminders.preferences import ReminderSettings
+from pigrocrm.core.reminders.push_subscriptions import PushSubscription
 from pigrocrm.core.reminders.state import states_for
-
-IN_APP = "in_app"
 
 _ATTIVITA_TYPES = frozenset({"attivita_due", "attivita_overdue"})
 
@@ -57,11 +58,13 @@ class Evaluation:
 @dataclass(frozen=True)
 class PassResult:
     """What a pass did, in counters: reminders raised, those newly put in a person's list,
-    and the occurrences it ended."""
+    the occurrences it ended, and the messages the other channels sent (`sent`, by
+    channel)."""
 
     raised: int
     delivered: int
     ended: int
+    sent: Mapping[str, int] = field(default_factory=dict)
 
 
 class ReminderEngine:
@@ -157,21 +160,38 @@ class ReminderEngine:
             )
         ]
 
-    def plan(
+    def open_reminders(
         self, evaluation: Evaluation, *, today: date | None = None
-    ) -> list[tuple[Reminder, DeliveryIdentity]]:
-        """What this pass would put in people's lists: every reminder the person has not
-        dealt with and the ledger does not cover yet. Reads only, which is what makes a
-        rehearsal and the real pass one decision (spec §9.4)."""
+    ) -> list[Reminder]:
+        """The reminders each person has not dealt with: everything raised minus what they
+        acknowledged, or snoozed, at that severity or above. What every channel is
+        offered, the in-app list included. Reads only."""
         today = today if today is not None else today_local(self.settings)
-        ledger = ReminderLedger(self.session)
-        delivered = ledger.delivered({reminder.key for reminder in evaluation.reminders})
         states = states_for(self.session, {reminder.user_id for reminder in evaluation.reminders})
-        due: list[tuple[Reminder, DeliveryIdentity]] = []
+        open_: list[Reminder] = []
         for reminder in evaluation.reminders:
             state = states.get((reminder.user_id, reminder.key))
             if state is not None and state.covers(reminder.severity, today):
                 continue
+            open_.append(reminder)
+        return open_
+
+    def plan(
+        self,
+        evaluation: Evaluation,
+        *,
+        today: date | None = None,
+        open_reminders: list[Reminder] | None = None,
+    ) -> list[tuple[Reminder, DeliveryIdentity]]:
+        """What this pass would put in people's lists: every reminder the person has not
+        dealt with and the ledger does not cover yet. Reads only, which is what makes a
+        rehearsal and the real pass one decision (spec §9.4)."""
+        if open_reminders is None:
+            open_reminders = self.open_reminders(evaluation, today=today)
+        ledger = ReminderLedger(self.session)
+        delivered = ledger.delivered({reminder.key for reminder in evaluation.reminders})
+        due: list[tuple[Reminder, DeliveryIdentity]] = []
+        for reminder in open_reminders:
             identity = (reminder.key, reminder.user_id, IN_APP, "immediate", reminder.period)
             if ledger.covered(delivered, identity, reminder.severity):
                 continue
@@ -179,17 +199,46 @@ class ReminderEngine:
         return due
 
     def record_pass(
-        self, evaluation: Evaluation, *, today: date | None = None, job: str | None = None
+        self,
+        evaluation: Evaluation,
+        *,
+        today: date | None = None,
+        job: str | None = None,
+        due: list[tuple[Reminder, DeliveryIdentity]] | None = None,
+        sent: ChannelResult | None = None,
     ) -> PassResult:
-        """Writes what a pass writes and commits it: the in-app deliveries, then the end
-        of every occurrence that cleared, then the job clock when `job` names one. One
-        transaction, so a pass that fails halfway leaves the ledger as it found it."""
+        """Writes what a pass writes and commits it: the in-app deliveries, what the other
+        channels accepted (the ledger rows, the daily summary markers, the push
+        subscriptions the service reported gone), then the end of every occurrence that
+        cleared, then the job clock when `job` names one. One transaction, so a pass that
+        fails halfway leaves the ledger as it found it.
+
+        `due` is the plan the channels were prepared from, when the caller made one: the
+        pass writes exactly what it announced, and not what the ledger says a few seconds
+        and a network call later."""
         ledger = ReminderLedger(self.session)
-        due = self.plan(evaluation, today=today)
+        if due is None:
+            due = self.plan(evaluation, today=today)
         for reminder, identity in due:
             ledger.record(identity, reminder.severity)
+        if sent is not None:
+            for accepted in sent.accepted:
+                ledger.record(accepted.identity, accepted.severity)
+            for user_id, day in sent.summaries:
+                ledger.mark_summary_sent(user_id, day)
+            if sent.gone_endpoints:
+                self.session.execute(
+                    delete(PushSubscription).where(
+                        PushSubscription.endpoint.in_(sent.gone_endpoints)
+                    )
+                )
         ended = ledger.forget_unraised(evaluation.ran, evaluation.raised)
         if job is not None:
             ledger.touch_job(job)
         self.session.commit()
-        return PassResult(raised=len(evaluation.reminders), delivered=len(due), ended=ended)
+        return PassResult(
+            raised=len(evaluation.reminders),
+            delivered=len(due),
+            ended=ended,
+            sent=dict(sent.sent) if sent is not None else {},
+        )
