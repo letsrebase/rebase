@@ -1,4 +1,5 @@
 import { linkOptions, type LinkProps } from '@tanstack/react-router'
+import { defaultDashboardSearch } from '@/features/dashboard/search'
 import type { Reminder } from './fields'
 
 /**
@@ -9,10 +10,11 @@ import type { Reminder } from './fields'
  * `linkOptions` is what keeps a row honest: its `to` and `params` are checked against the
  * generated route tree, so a renamed route fails to compile here and not as a dead link.
  *
- * Left out on purpose, because there is no page to open today: `contract` and
- * `work_unit` (no contract page exists yet) and the space-wide kinds that name no record
- * (`connection`, `job`, `fiscal`). A reminder whose `entity` is not in the table, or is
- * one of those, is shown with no link rather than with a guessed one.
+ * A day worked has no page of its own, so its reminder names the contract it belongs to.
+ * Left out on purpose, because there is no record to open: the space-wide kinds
+ * (`google_connection`, `job`, `period`). `fiscal` opens the home, where the year's
+ * ceilings are. A reminder whose `entity` is not in the table is shown with no link
+ * rather than with a guessed one.
  */
 const RECORD_LINKS: Record<string, (id: string) => LinkProps> = {
   // An attività has no page of its own: the list opens it in a dialog (`?apri=`).
@@ -25,6 +27,10 @@ const RECORD_LINKS: Record<string, (id: string) => LinkProps> = {
     linkOptions({ to: '/app/invoices/$invoiceId', params: { invoiceId: id } }),
   proforma: (id: string) =>
     linkOptions({ to: '/app/invoices/$invoiceId', params: { invoiceId: id } }),
+  contract: (id: string) =>
+    linkOptions({ to: '/app/contracts/$contractId', params: { contractId: id } }),
+  fiscal: () =>
+    linkOptions({ to: '/app', search: { ...defaultDashboardSearch(), tab: 'anno' } }),
   proposal: (id: string) =>
     linkOptions({ to: '/app/proposals/$proposalId', params: { proposalId: id } }),
   // The timer is the caller's own and lives in the hours page, which has no id to open.

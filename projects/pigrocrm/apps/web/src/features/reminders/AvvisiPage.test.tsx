@@ -133,10 +133,10 @@ describe('the Avvisi page', () => {
   it('shows a reminder about an unknown kind of record, with no link', async () => {
     fakeReminders([
       reminder({
-        key: 'contract_expiring:c1',
-        label: 'Contratto in scadenza',
+        key: 'job_late:reminders',
+        label: 'Lavoro in ritardo',
         title: 'Manutenzione Acme 2026',
-        entity: 'contract',
+        entity: 'job',
         severity: 'warning',
       }),
     ])

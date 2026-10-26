@@ -111,8 +111,9 @@ def _detect(
                 ),
                 title=f"{title}: {contract.titolo}, {giorno_breve(unit.data)}",
                 detail=f"{detail(unit, contract)}{customer}",
-                entity="work_unit",
-                entity_id=unit.id,
+                # The day has no page of its own: the reminder opens its contract.
+                entity="contract",
+                entity_id=contract.id,
                 azienda_id=contract.azienda_id,
                 customer_id=contract.customer_id,
             )

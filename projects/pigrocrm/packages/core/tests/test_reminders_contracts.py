@@ -397,9 +397,9 @@ def test_linking_an_approval_or_revoking_the_day_clears_it(world: World) -> None
     assert world.severity("worked_without_approval", revoked.id) is None
 
 
-def test_a_day_worked_without_approval_names_the_day_the_web_opens(world: World) -> None:
+def test_a_day_worked_without_approval_opens_its_contract(world: World) -> None:
     contract = world.contract(requires=True)
-    unit = world.day(contract, _ago(1))
+    world.day(contract, _ago(1))
 
     [reminder] = [
         r
@@ -407,7 +407,7 @@ def test_a_day_worked_without_approval_names_the_day_the_web_opens(world: World)
         if r.type == "worked_without_approval" and r.user_id == world.carol.id
     ]
 
-    assert (reminder.entity, reminder.entity_id) == ("work_unit", unit.id)
+    assert (reminder.entity, reminder.entity_id) == ("contract", contract.id)
     assert reminder.title.startswith("Giornata senza approvazione: Consulenza")
     assert reminder.detail.startswith("Lavorata ieri")
 

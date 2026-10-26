@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { defaultDashboardSearch } from '@/features/dashboard/search'
 import { handledLine, subjectOf } from './fields'
 import { recordLink } from './links'
 import { CRITICAL, reminder } from './testing'
@@ -12,13 +13,15 @@ describe('recordLink', () => {
     ['customer', { to: '/app/customers/$customerId', params: { customerId: ID } }],
     ['invoice', { to: '/app/invoices/$invoiceId', params: { invoiceId: ID } }],
     ['proforma', { to: '/app/invoices/$invoiceId', params: { invoiceId: ID } }],
+    ['contract', { to: '/app/contracts/$contractId', params: { contractId: ID } }],
+    ['fiscal', { to: '/app', search: { ...defaultDashboardSearch(), tab: 'anno' } }],
     ['proposal', { to: '/app/proposals/$proposalId', params: { proposalId: ID } }],
     ['timer', { to: '/app/hours' }],
   ])('opens a %s where the app has its page', (entity, expected) => {
     expect(recordLink({ entity, entity_id: ID })).toEqual(expected)
   })
 
-  it.each(['contract', 'work_unit', 'connection', 'job', 'fiscal', 'something_new', '', 'constructor', 'toString'])(
+  it.each(['work_unit', 'google_connection', 'period', 'job', 'something_new', '', 'constructor', 'toString'])(
     'gives no link for the kind «%s», which has no page to open',
     (entity) => {
       expect(recordLink({ entity, entity_id: ID })).toBeNull()
