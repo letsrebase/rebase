@@ -18,6 +18,8 @@ vi.mock('@/lib/auth', () => ({
 
 vi.mock('@rebase/ui/sonner', () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.fn() } }))
 
+type Query = Record<string, unknown>
+
 const DEAL = 'aaaaaaaa-aaaa-7aaa-8aaa-aaaaaaaaaaaa'
 
 function row(over: Record<string, unknown>) {
@@ -62,15 +64,16 @@ beforeEach(() => {
 
 describe('EntityAttivita', () => {
   it('asks only for this record, lists open ones before closed ones', async () => {
-    vi.mocked(api.GET).mockImplementation(((path: string) => {
-      if (path === '/api/activities')
-        return ok({
-          items: [
-            row({ id: '1', titolo: 'Fatta ieri', stato: 'completata', completata_il: '2026-10-25' }),
-            row({ id: '2', titolo: 'Preparare le proposte', scadenza: '2026-10-30' }),
-          ],
-          next_cursor: null,
-        })
+    vi.mocked(api.GET).mockImplementation(((path: string, options: { params: { query: Query } }) => {
+      if (path === '/api/activities') {
+        // Open and closed are asked for separately, so each answer holds only its own.
+        const stato = options.params.query.stato
+        const items = [
+          row({ id: '1', titolo: 'Fatta ieri', stato: 'completata', completata_il: '2026-10-25' }),
+          row({ id: '2', titolo: 'Preparare le proposte', scadenza: '2026-10-30' }),
+        ].filter((item) => item.stato === stato)
+        return ok({ items, next_cursor: null })
+      }
       if (path === '/api/users') return ok([])
       throw new Error(`unexpected GET ${path}`)
     }) as never)

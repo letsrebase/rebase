@@ -44,6 +44,9 @@ export function useCalendarMonth(mese: string) {
 function invalidateAfterWrite(queryClient: ReturnType<typeof useQueryClient>) {
   void queryClient.invalidateQueries({ queryKey: ['calendario'] })
   void queryClient.invalidateQueries({ queryKey: ['attivita'] })
+  // The palette caches a term for ten seconds and now finds attività: a task archived or
+  // renamed a moment ago must not be offered under its old state.
+  void queryClient.invalidateQueries({ queryKey: ['search'] })
 }
 
 export function useCreateAttivita() {

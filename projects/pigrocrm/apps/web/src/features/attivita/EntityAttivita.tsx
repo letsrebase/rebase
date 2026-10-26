@@ -25,11 +25,16 @@ import { useAttivitaList } from './queries'
 export function EntityAttivita({ link }: { link: LinkValue }) {
   const canWrite = useCanWrite()
   const [creating, setCreating] = useState(false)
-  const list = useAttivitaList({ [LINK_COLUMN[link.kind]]: link.id, sort: 'scadenza', limit: 200 })
+  // Open and closed are asked for separately: one list of everything, cut at 200, could
+  // fill with closed history and leave out what is still to be done.
+  const column = { [LINK_COLUMN[link.kind]]: link.id }
+  const list = useAttivitaList({ ...column, stato: 'aperta', sort: 'scadenza', limit: 200 })
+  const completed = useAttivitaList({ ...column, stato: 'completata', sort: 'scadenza', dir: 'desc', limit: 50 })
+  const cancelled = useAttivitaList({ ...column, stato: 'annullata', sort: 'scadenza', dir: 'desc', limit: 50 })
 
-  const items = list.data?.items ?? []
-  const open = items.filter((item) => item.stato === 'aperta')
-  const closed = items.filter((item) => item.stato !== 'aperta')
+  const open = list.data?.items ?? []
+  const closed = [...(completed.data?.items ?? []), ...(cancelled.data?.items ?? [])]
+  const items = [...open, ...closed]
 
   return (
     <section aria-labelledby="attivita-del-record" className="space-y-4">
@@ -45,9 +50,9 @@ export function EntityAttivita({ link }: { link: LinkValue }) {
         )}
       </div>
 
-      {list.isError ? (
-        <QueryErrorBanner error={list.error} />
-      ) : list.isPending ? (
+      {list.isError || completed.isError || cancelled.isError ? (
+        <QueryErrorBanner error={list.error ?? completed.error ?? cancelled.error} />
+      ) : list.isPending || completed.isPending || cancelled.isPending ? (
         <Skeleton className="h-12 w-full" />
       ) : items.length === 0 ? (
         <p className="text-sm text-muted-foreground">Nessuna attività collegata.</p>
@@ -68,9 +73,11 @@ export function EntityAttivita({ link }: { link: LinkValue }) {
               </ul>
             </div>
           )}
-          {list.data.next_cursor !== null && (
+          {(list.data?.next_cursor != null ||
+            completed.data?.next_cursor != null ||
+            cancelled.data?.next_cursor != null) && (
             <p className="text-sm text-muted-foreground">
-              Sono mostrate le prime {items.length}: le altre sono nella pagina Attività.
+              Non sono mostrate tutte: le altre sono nella pagina Attività.
             </p>
           )}
         </>
