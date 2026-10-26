@@ -42,14 +42,20 @@ function byThread(messages: GmailMessageRead[]): [string, GmailMessageRead[]][] 
 export function EmailTab({
   entityType,
   entityId,
+  domainSource,
 }: {
   entityType: GmailEntityType
   entityId: string
+  /** A customer's website and email as the page holds them, which is where the domain
+   *  «Chi ha scritto» asks about is read from. */
+  domainSource?: string
 }) {
   return (
     <div className="space-y-6">
       <PendingDrafts entityType={entityType} entityId={entityId} />
-      {entityType === 'customer' ? <CustomerCorrespondents customerId={entityId} /> : null}
+      {entityType === 'customer' ? (
+        <CustomerCorrespondents customerId={entityId} domainSource={domainSource ?? ''} />
+      ) : null}
       <Correspondence entityType={entityType} entityId={entityId} />
     </div>
   )

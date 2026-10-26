@@ -20,13 +20,21 @@ function messages(count: number): string {
   return count === 1 ? '1 messaggio' : `${count} messaggi`
 }
 
-export function CustomerCorrespondents({ customerId }: { customerId: string }) {
+export function CustomerCorrespondents({
+  customerId,
+  domainSource,
+}: {
+  customerId: string
+  domainSource: string
+}) {
   const mayDiscover = useCan('discover_gmail_correspondents')
   const mayAdd = useCan('create_person')
-  // Which customer the press was for, not a bare flag: the page can show another customer
-  // without remounting this, and the read must wait for a press about that one.
+  // What the press was for, not a bare flag: the page can show another customer without
+  // remounting this, and a saved website or email changes the domain asked about. Either
+  // way the read waits for a new press.
+  const pressed = `${customerId}|${domainSource}`
   const [askedFor, setAskedFor] = useState<string | null>(null)
-  const asked = askedFor === customerId
+  const asked = askedFor === pressed
   const found = useCustomerCorrespondents(customerId, asked)
   const adding = useAddCorrespondent(customerId)
 
@@ -52,7 +60,7 @@ export function CustomerCorrespondents({ customerId }: { customerId: string }) {
             Cerco nella casella collegata gli indirizzi del dominio di questo cliente con cui
             hai scambiato posta, per aggiungerli come persone.
           </p>
-          <Button variant="outline" onClick={() => setAskedFor(customerId)}>
+          <Button variant="outline" onClick={() => setAskedFor(pressed)}>
             Cerca chi ha scritto dal dominio del cliente
           </Button>
         </div>

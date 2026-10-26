@@ -58,21 +58,19 @@ function found() {
   ]
 }
 
-function renderIt(customerId = CUSTOMER_ID) {
+function renderIt(customerId = CUSTOMER_ID, domainSource = 'acme.it|') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  const view = render(
+  const tree = (id: string, source: string) => (
     <QueryClientProvider client={client}>
-      <CustomerCorrespondents customerId={customerId} />
-    </QueryClientProvider>,
+      <CustomerCorrespondents customerId={id} domainSource={source} />
+    </QueryClientProvider>
   )
+  const view = render(tree(customerId, domainSource))
   return {
     ...view,
-    showCustomer: (next: string) =>
-      view.rerender(
-        <QueryClientProvider client={client}>
-          <CustomerCorrespondents customerId={next} />
-        </QueryClientProvider>,
-      ),
+    client,
+    showCustomer: (next: string) => view.rerender(tree(next, domainSource)),
+    saveDomain: (next: string) => view.rerender(tree(customerId, next)),
   }
 }
 
@@ -96,6 +94,19 @@ describe('CustomerCorrespondents', () => {
     expect(api.GET).toHaveBeenCalledTimes(1)
 
     showCustomer('00000000-0000-7000-8000-000000000002')
+
+    expect(screen.getByRole('button', { name: ASK })).toBeInTheDocument()
+    expect(api.GET).toHaveBeenCalledTimes(1)
+  })
+
+  it('asks nothing again once the website or email was saved, until pressed', async () => {
+    vi.mocked(api.GET).mockResolvedValue(report())
+    const { saveDomain, client } = renderIt()
+    await userEvent.click(screen.getByRole('button', { name: ASK }))
+    await screen.findByRole('list', { name: 'Indirizzi di acme.it nella casella' })
+
+    client.removeQueries({ queryKey: ['gmail', 'correspondents'] })
+    saveDomain('acme.com|')
 
     expect(screen.getByRole('button', { name: ASK })).toBeInTheDocument()
     expect(api.GET).toHaveBeenCalledTimes(1)
