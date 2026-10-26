@@ -169,6 +169,8 @@ def test_discovery_answers_who_at_the_domain_wrote_or_was_written_to(db_session:
     marco = found["marco@example.com"]
     assert marco.nome == "Marco Bianchi"
     assert marco.messaggi == 2
+    # Two messages in one conversation: the page counts conversations, so this is one.
+    assert marco.conversazioni == 1
     assert marco.ultimo_messaggio == datetime.fromtimestamp(
         fake.messages["m2"].internal_date_ms / 1000, tz=UTC
     )

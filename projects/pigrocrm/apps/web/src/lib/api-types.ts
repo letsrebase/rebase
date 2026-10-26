@@ -6708,6 +6708,8 @@ export interface components {
             nome: string;
             /** Messaggi */
             messaggi: number;
+            /** Conversazioni */
+            conversazioni: number;
             /** Ultimo Messaggio */
             ultimo_messaggio: string | null;
             /** Gia In Anagrafica */

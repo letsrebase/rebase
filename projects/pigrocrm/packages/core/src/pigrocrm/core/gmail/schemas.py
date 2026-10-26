@@ -153,6 +153,9 @@ class DiscoveredCorrespondent(BaseModel):
     # The display name the headers gave, or "" when they never did.
     nome: str
     messaggi: int
+    # In how many conversations the address took part, which is what a person reads off
+    # a customer's page; `messaggi` stays the tally the order of the list follows.
+    conversazioni: int
     ultimo_messaggio: datetime | None
     gia_in_anagrafica: bool
 

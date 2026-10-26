@@ -120,7 +120,7 @@ def test_the_addresses_at_the_customers_domain_come_with_their_counts(
     body = response.json()
     assert body["dominio"] == "acme.it"
     assert [
-        (c["indirizzo"], c["nome"], c["messaggi"], c["gia_in_anagrafica"])
+        (c["indirizzo"], c["nome"], c["conversazioni"], c["gia_in_anagrafica"])
         for c in body["corrispondenti"]
     ] == [
         ("marco@acme.it", "Marco Bianchi", 2, False),

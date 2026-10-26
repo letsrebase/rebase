@@ -16,8 +16,8 @@ import { useCan } from '@/lib/auth'
 import { formatInstant } from './instants'
 import { useAddCorrespondent, useCustomerCorrespondents } from './correspondents'
 
-function messages(count: number): string {
-  return count === 1 ? '1 messaggio' : `${count} messaggi`
+function conversations(count: number): string {
+  return count === 1 ? '1 conversazione' : `${count} conversazioni`
 }
 
 export function CustomerCorrespondents({
@@ -96,9 +96,9 @@ export function CustomerCorrespondents({
                   </span>
                 </p>
                 <p className="text-muted-foreground text-xs">
-                  {messages(person.messaggi)}
+                  {conversations(person.conversazioni)}
                   {person.ultimo_messaggio
-                    ? `, l’ultimo il ${formatInstant(person.ultimo_messaggio)}`
+                    ? `, l’ultimo messaggio il ${formatInstant(person.ultimo_messaggio)}`
                     : ''}
                 </p>
               </div>

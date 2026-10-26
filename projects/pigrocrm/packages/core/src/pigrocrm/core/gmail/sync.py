@@ -130,6 +130,7 @@ class _Correspondent:
     """A running tally for one address while discovery reads threads."""
 
     count: int = 0
+    threads: set[str] = field(default_factory=set)
     last: datetime | None = None
     name: str = ""
 
@@ -426,7 +427,7 @@ class GmailSyncService:
             thread_ids = self._relevant_threads(
                 (discovery_query(domain),), token, limit=DISCOVER_MAX_THREADS
             )
-            payloads = [payload for _, payload in self._read_headers(thread_ids, token)]
+            payloads = self._read_headers(thread_ids, token)
         except GoogleCallFailed as failed:
             # Gmail failing after every retry is the person's to retry, not a server error
             # (REB-766: a press on the customer's Email tab reaches this): the same
@@ -434,7 +435,7 @@ class GmailSyncService:
             raise GmailUnavailable(
                 "la ricerca dei corrispondenti", failed.failure.status
             ) from failed
-        for payload in payloads:
+        for thread_id, payload in payloads:
             report.threads_scanned += 1
             for raw in payload.get("messages") or []:
                 if not isinstance(raw, dict):
@@ -449,6 +450,7 @@ class GmailSyncService:
                         continue
                     entry = tally.setdefault(address, _Correspondent())
                     entry.count += 1
+                    entry.threads.add(thread_id)
                     if entry.last is None or parsed.internal_date > entry.last:
                         entry.last = parsed.internal_date
                     if not entry.name:
@@ -459,6 +461,7 @@ class GmailSyncService:
                 indirizzo=address,
                 nome=entry.name,
                 messaggi=entry.count,
+                conversazioni=len(entry.threads),
                 ultimo_messaggio=entry.last,
                 gia_in_anagrafica=address in known,
             )

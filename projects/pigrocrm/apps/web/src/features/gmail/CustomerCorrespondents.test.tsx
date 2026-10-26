@@ -45,6 +45,7 @@ function found() {
       indirizzo: 'marco@acme.it',
       nome: 'Marco Bianchi',
       messaggi: 3,
+      conversazioni: 2,
       ultimo_messaggio: '2026-10-18T10:00:00Z',
       gia_in_anagrafica: false,
     },
@@ -52,6 +53,7 @@ function found() {
       indirizzo: 'sara@acme.it',
       nome: '',
       messaggi: 1,
+      conversazioni: 1,
       ultimo_messaggio: '2026-09-01T10:00:00Z',
       gia_in_anagrafica: true,
     },
@@ -122,9 +124,9 @@ describe('CustomerCorrespondents', () => {
     expect(rows).toHaveLength(2)
     expect(rows[0]).toHaveTextContent('Marco Bianchi')
     expect(rows[0]).toHaveTextContent('marco@acme.it')
-    expect(rows[0]).toHaveTextContent('3 messaggi')
-    expect(rows[0]).toHaveTextContent('l’ultimo il')
-    expect(rows[1]).toHaveTextContent('1 messaggio')
+    expect(rows[0]).toHaveTextContent('2 conversazioni')
+    expect(rows[0]).toHaveTextContent('l’ultimo messaggio il')
+    expect(rows[1]).toHaveTextContent('1 conversazione')
     expect(rows[1]).toHaveTextContent('già in anagrafica')
     expect(within(rows[1]!).queryByRole('button')).toBeNull()
     expect(api.GET).toHaveBeenCalledWith('/api/gmail/customers/{customer_id}/correspondents', {
