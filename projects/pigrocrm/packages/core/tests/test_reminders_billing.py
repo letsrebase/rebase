@@ -812,6 +812,82 @@ def test_on_completion_is_told_to_the_customers_owner(world: World) -> None:
     assert world.raised("on_completion_unbilled") == {contract.id: ("warning", {world.carol.id})}
 
 
+def _one_off(world: World, contract: Contract, **fields: Any) -> RateCard:
+    return world.fee(contract, tipo="una_tantum", periodo_erogazione=None, **fields)
+
+
+def test_an_ended_contract_with_a_one_off_fee_and_no_days_is_raised_until_it_is_invoiced(
+    world: World,
+) -> None:
+    contract = world.contract("a_consuntivo", fine=_ago(10))
+    _one_off(world, contract)
+
+    evaluation = world.evaluate()
+
+    assert world.raised("on_completion_unbilled", evaluation=evaluation) == {
+        contract.id: ("warning", {world.carol.id})
+    }
+    reminder = next(r for r in evaluation.reminders if r.type == "on_completion_unbilled")
+    assert reminder.measure == 10.0 and "compenso a completamento" in reminder.detail
+    assert "di lavoro" not in reminder.detail
+
+
+def test_a_one_off_fee_is_covered_by_an_invoice_dated_on_or_after_the_end(world: World) -> None:
+    contract = world.contract("a_consuntivo", fine=_ago(10))
+    _one_off(world, contract)
+    before = world.invoice(data_emissione=_ago(11))
+    assert set(world.raised("on_completion_unbilled")) == {contract.id}
+
+    before.data_emissione = _ago(10)
+
+    assert world.raised("on_completion_unbilled") == {}
+
+
+def test_a_one_off_fee_not_in_force_at_the_end_or_on_a_running_contract_is_not_raised(
+    world: World,
+) -> None:
+    lapsed = world.contract("a_consuntivo", fine=_ago(10))
+    _one_off(world, lapsed, valido_a=_ago(11))
+    running = world.contract("a_consuntivo", fine=TODAY + timedelta(days=3))
+    _one_off(world, running)
+    monthly = world.contract("mensile", fine=_ago(10))
+    _one_off(world, monthly)
+
+    assert world.raised("on_completion_unbilled") == {}
+
+
+def test_a_contract_with_days_and_a_fee_is_raised_once_and_the_text_names_both(
+    world: World,
+) -> None:
+    contract = world.contract("a_consuntivo", fine=_ago(40))
+    _one_off(world, contract)
+    world.day(contract, date(2026, 2, 3))
+    world.day(contract, date(2026, 2, 4), quantita=Decimal("0.50"))
+
+    evaluation = world.evaluate()
+
+    assert world.raised("on_completion_unbilled", evaluation=evaluation) == {
+        contract.id: ("serious", {world.carol.id})
+    }
+    details = [r.detail for r in evaluation.reminders if r.type == "on_completion_unbilled"]
+    assert len(details) == 1
+    assert "1,5 giornate di lavoro" in details[0] and "compenso a completamento" in details[0]
+
+
+def test_days_alone_still_raise_and_a_covering_invoice_does_not_hide_unbilled_days(
+    world: World,
+) -> None:
+    contract = world.contract("a_consuntivo", fine=_ago(10))
+    _one_off(world, contract)
+    world.day(contract, date(2026, 2, 3))
+    world.invoice(data_emissione=_ago(5))
+
+    reminder = next(r for r in world.evaluate().reminders if r.type == "on_completion_unbilled")
+
+    assert "1 giornata di lavoro" in reminder.detail
+    assert "compenso" not in reminder.detail, "the fee is covered, the day is not"
+
+
 def test_a_space_without_a_completion_contract_does_not_run_on_completion(world: World) -> None:
     world.contract("mensile")
 

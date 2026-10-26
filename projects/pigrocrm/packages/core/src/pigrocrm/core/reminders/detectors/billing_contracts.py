@@ -27,9 +27,12 @@ invoices» means the customer's: an issued fattura of the contract's customer.
   and `critical`. The subject is the contract **and** that period (a uuid5 of both), stable
   until the period is covered; the entity the web opens is the contract.
 - `on_completion_unbilled`: a contract billing on completion whose `fine` has passed with
-  days unbilled; the measure is the days since `fine`. A contract with no `fine` has not
-  completed, and Mastro's «aged open-ended» branch is not ported: the spec counts from the
-  completion date.
+  something unbilled: worked days on no invoice line, and/or a one-off fee, an `una_tantum`
+  rate card in force on `fine`, that the customer has no issued invoice dated on or after
+  `fine` for (the fixed fee's covering rule). One reminder per contract whichever applies,
+  counted from `fine`, and the text names what is unbilled. A contract with no `fine` has
+  not completed, and Mastro's «aged open-ended» branch is not ported: the spec counts from
+  the completion date.
 - `invoice_days_unlinked`: an issued, still unpaid fattura of the last 90 days
   (`UNLINKED_LOOKBACK_DAYS`) none of whose lines carries a day, for a
   customer whose contract still has unbilled days no later than its issue date (an invoice
@@ -45,7 +48,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 from uuid import UUID, uuid5
 
-from sqlalchemy import ColumnElement, exists, func, select
+from sqlalchemy import ColumnElement, exists, func, or_, select
 
 from pigrocrm.core.contracts.models import Contract, RateCard
 from pigrocrm.core.contracts.projection import RECURRING_FEE_TIPO
@@ -70,6 +73,8 @@ UNLINKED = REMINDER_TYPES["invoice_days_unlinked"]
 # The months of a period, by the words a contract's cadence uses for it.
 _PERIOD_MONTHS = {"mensile": 1, "trimestrale": 3, "annuale": 12}
 _BILLABLE_DAY = "lavorato"
+# The rate card of a fee billed once, on completion (`contracts/models.py` `RATE_CARD_TIPI`).
+ONE_OFF_FEE_TIPO = "una_tantum"
 # A contract's cadence as the periodic words read it, in SQL so each detector loads only its own.
 _PERIODIC = func.lower(func.trim(Contract.cadenza_fatturazione)).in_(tuple(_PERIOD_MONTHS))
 
@@ -218,6 +223,24 @@ def _next_period_end(months: int, end: date) -> date:
     return period_end(months, end + timedelta(days=1))
 
 
+def _latest_invoice_by_customer(ctx: DetectorContext) -> dict[UUID, date]:
+    """The date of each customer's most recent issued fattura."""
+    return {
+        customer_id: issued
+        for customer_id, issued in ctx.session.execute(
+            select(Invoice.customer_id, func.max(Invoice.data_emissione))
+            .where(
+                Invoice.deleted_at.is_(None),
+                Invoice.tipo == "fattura",
+                Invoice.stato == "emessa",
+                Invoice.data_emissione.is_not(None),
+            )
+            .group_by(Invoice.customer_id)
+        )
+        if issued is not None
+    }
+
+
 def _oldest_uncovered(
     months: int, first_day: date, last_closed: date, contract: Contract, cards: list[RateCard]
 ) -> tuple[date, date] | None:
@@ -260,20 +283,7 @@ def detect_fixed_fee(ctx: DetectorContext) -> list[Detection]:
             )
         ):
             cards[card.contract_id].append(card)
-    latest: dict[UUID, date] = {
-        customer_id: issued
-        for customer_id, issued in ctx.session.execute(
-            select(Invoice.customer_id, func.max(Invoice.data_emissione))
-            .where(
-                Invoice.deleted_at.is_(None),
-                Invoice.tipo == "fattura",
-                Invoice.stato == "emessa",
-                Invoice.data_emissione.is_not(None),
-            )
-            .group_by(Invoice.customer_id)
-        )
-        if issued is not None
-    }
+    latest = _latest_invoice_by_customer(ctx)
     resolver = LinkResolver(ctx.session)
     resolver.preload(customers=(contract.customer_id for contract in contracts.values()))
     found: list[Detection] = []
@@ -315,20 +325,46 @@ def detect_fixed_fee(ctx: DetectorContext) -> list[Detection]:
 
 def detect_on_completion(ctx: DetectorContext) -> list[Detection]:
     """Contracts billed on completion, ended at least `bound` days ago (never fewer than
-    one), with days still unbilled."""
+    one), with something still unbilled: worked days on no invoice line, and/or a one-off
+    fee (an `una_tantum` rate card in force on the contract's `fine`) that no issued
+    invoice of the customer dated on or after `fine` covers. A contract with both is
+    raised once, counted from `fine` either way, and the text names both."""
     ended = (~_PERIODIC, Contract.fine.is_not(None), Contract.fine < ctx.today)
-    contracts = _live_contracts(ctx, *ended, _has_unbilled_days())
+    has_fee = exists().where(RateCard.contract_id == Contract.id, RateCard.tipo == ONE_OFF_FEE_TIPO)
+    contracts = _live_contracts(ctx, *ended, or_(_has_unbilled_days(), has_fee))
     unbilled = _unbilled_by_contract(ctx, *ended)
+    cards: dict[UUID, list[RateCard]] = defaultdict(list)
+    if contracts:
+        for card in ctx.session.scalars(
+            select(RateCard).where(
+                RateCard.contract_id.in_(list(contracts)), RateCard.tipo == ONE_OFF_FEE_TIPO
+            )
+        ):
+            cards[card.contract_id].append(card)
+    latest = _latest_invoice_by_customer(ctx)
     resolver = LinkResolver(ctx.session)
     resolver.preload(customers=(contract.customer_id for contract in contracts.values()))
     found: list[Detection] = []
-    for contract_id, days in unbilled.items():
-        contract = contracts[contract_id]
+    for contract in contracts.values():
         assert contract.fine is not None
         late = (ctx.today - contract.fine).days
         if late < max(ctx.bound(ON_COMPLETION), 1):
             continue
-        total = sum((quantity for _, quantity in days), start=Decimal(0))
+        fine = contract.fine
+        covered = latest.get(contract.customer_id)
+        fee_unbilled = (covered is None or covered < fine) and any(
+            card.valido_da <= fine and (card.valido_a is None or card.valido_a >= fine)
+            for card in cards.get(contract.id, ())
+        )
+        days = unbilled.get(contract.id, [])
+        if not days and not fee_unbilled:
+            continue
+        what: list[str] = []
+        if days:
+            total = sum((quantity for _, quantity in days), start=Decimal(0))
+            what.append(f"{giornate(total)} di lavoro non sono ancora in una fattura")
+        if fee_unbilled:
+            what.append("il compenso a completamento non è stato fatturato")
         recipients, customer = _recipients(ctx, resolver, contract)
         found.append(
             Detection(
@@ -338,8 +374,8 @@ def detect_on_completion(ctx: DetectorContext) -> list[Detection]:
                 recipients=recipients,
                 title=f"Contratto concluso da fatturare: {contract.titolo}",
                 detail=(
-                    f"Concluso {giorno_breve(contract.fine)} ({giorni_fa(late)}), "
-                    f"{giornate(total)} di lavoro non sono ancora in una fattura{customer}"
+                    f"Concluso {giorno_breve(fine)} ({giorni_fa(late)}): "
+                    f"{' e '.join(what)}{customer}"
                 ),
                 entity="contract",
                 entity_id=contract.id,
