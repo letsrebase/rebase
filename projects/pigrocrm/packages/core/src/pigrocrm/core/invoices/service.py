@@ -13,6 +13,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import NAMESPACE_URL, UUID, uuid5
 
+from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -1470,10 +1471,13 @@ class InvoiceService:
                     )
                 )
                 continue
-            data = map_parsed_invoice_to_import(
-                invoice, anno=anno, numero=numero, customer_id=resolved_customer_id
-            )
             try:
+                # Inside the guard: `InvoiceImport` has bounds a parsed document can exceed
+                # (200 lines, a width), and its refusal is this invoice's `conflict`, with
+                # the rollback of a customer inserted for it, not a failure of the request.
+                data = map_parsed_invoice_to_import(
+                    invoice, anno=anno, numero=numero, customer_id=resolved_customer_id
+                )
                 xml_document_id = stored_as
                 if single_invoice_document and stored_as is None:
                     # `commit=False`: the document belongs to this invoice's transaction,
@@ -1498,7 +1502,7 @@ class InvoiceService:
                     xml_hash_sha256=digest if single_invoice_document else None,
                     importata_da="fatturapa",
                 )
-            except (Conflict, ValidationFailed):
+            except (Conflict, ValidationFailed, PydanticValidationError):
                 # `import_issued` itself already rolled back on the paths that flushed
                 # anything (its own `except IntegrityError`/`except Exception` around the
                 # commit); the four register-rule checks above its lock raise before any

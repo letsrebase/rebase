@@ -507,3 +507,29 @@ def test_a_file_that_looks_like_a_fattura_and_does_not_parse_is_unclaimed_with_i
     )
     assert (bad_confirmed.outcome, good_confirmed.outcome) == ("unclaimed", "imported")
     assert bad_confirmed.motivo is not None and "TD99" in bad_confirmed.motivo
+
+
+def test_an_invoice_the_register_schema_refuses_is_a_conflict_and_does_not_stop_the_request(
+    db_session: Session, local_storage: LocalFileStorage
+) -> None:
+    """201 lines pass the parser and review, and `InvoiceImport` allows 200: the invoice is
+    refused as a `conflict` row instead of a 500, and nothing is left behind for it."""
+    service = _svc(db_session, local_storage)
+    base = _fixture(CONSULENZA).decode()
+    start = base.index("<DettaglioLinee>")
+    end = base.index("</DettaglioLinee>") + len("</DettaglioLinee>")
+    many = base[:start] + base[start:end] * 201 + base[end:]
+    # The long one last: `rollback()` in this fixture's savepoint also takes back the azienda
+    # `_svc` created, so a file after it could not be classified, which production's
+    # committed azienda never suffers.
+    files = [("normale.xml", _year(2)["IT01234567890_00002.xml"]), ("lunga.xml", many.encode())]
+    create = {"09876543210": UploadedPartyDecision(create_customer=True)}
+    customers = _customer_count(db_session)
+
+    normal, long = service.confirm_upload(files, create, ADMIN)
+
+    assert (normal.outcome, long.outcome) == ("imported", "conflict")
+    assert long.fattura is None and normal.fattura is not None
+    # The customer the long invoice would have shared is the one the first file created:
+    # nothing extra was left behind by the refused one.
+    assert _customer_count(db_session) == customers + 1
