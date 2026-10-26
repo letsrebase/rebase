@@ -141,3 +141,16 @@ export function useAttivitaPages(filters: AttivitaFilters) {
     loadMore: () => void query.fetchNextPage(),
   }
 }
+
+/** One attività by id, for a screen that arrives holding only the id (the global search). */
+export function useAttivita(id: string | undefined) {
+  return useQuery({
+    // An absent id must never produce a request (residuo B1).
+    enabled: id !== undefined && id !== '',
+    queryKey: ['attivita', 'one', id] as const,
+    queryFn: () =>
+      unwrap(
+        api.GET('/api/activities/{attivita_id}', { params: { path: { attivita_id: id ?? '' } } }),
+      ),
+  })
+}

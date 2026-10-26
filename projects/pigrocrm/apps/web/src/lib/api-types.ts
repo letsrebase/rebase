@@ -8542,7 +8542,7 @@ export interface components {
              * Entity
              * @enum {string}
              */
-            entity: "customer" | "person" | "deal" | "document" | "invoice";
+            entity: "customer" | "person" | "deal" | "document" | "invoice" | "attivita";
             /** Hits */
             hits: components["schemas"]["SearchHit"][];
             /** Totale */
@@ -8556,7 +8556,7 @@ export interface components {
              * Entity
              * @enum {string}
              */
-            entity: "customer" | "person" | "deal" | "document" | "invoice";
+            entity: "customer" | "person" | "deal" | "document" | "invoice" | "attivita";
             /**
              * Id
              * Format: uuid

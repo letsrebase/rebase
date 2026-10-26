@@ -70,11 +70,11 @@ function serve(items: unknown[]) {
   }) as never)
 }
 
-function renderPage() {
+function renderPage(openId?: string) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={client}>
-      <AttivitaPage />
+      <AttivitaPage openId={openId} />
     </QueryClientProvider>,
   )
 }
@@ -166,5 +166,24 @@ describe('AttivitaPage', () => {
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Ripristina' }))
     await waitFor(() => expect(api.POST).toHaveBeenCalled())
     expect(vi.mocked(api.POST).mock.calls[0]?.[0]).toBe('/api/activities/{attivita_id}/restore')
+  })
+
+  it('opens the attività the global search sent it for, even when no filter shows it', async () => {
+    const found = row({ id: 'found', titolo: 'Da cercare', stato: 'completata', assegnata_a: null })
+    vi.mocked(api.GET).mockImplementation(((path: string) => {
+      if (path === '/api/activities') return ok({ items: [], next_cursor: null })
+      if (path === '/api/activities/{attivita_id}') return ok(found)
+      if (path === '/api/users') return ok([])
+      throw new Error(`unexpected GET ${path}`)
+    }) as never)
+    renderPage('found')
+
+    const dialog = await screen.findByRole('dialog', { name: 'Modifica attività' })
+    expect(within(dialog).getByLabelText('Titolo')).toHaveValue('Da cercare')
+    // Closed, so the dialog offers the way back to open.
+    expect(within(dialog).getByRole('button', { name: 'Riapri' })).toBeInTheDocument()
+
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Annulla' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   })
 })

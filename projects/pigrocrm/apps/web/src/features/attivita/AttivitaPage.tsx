@@ -31,7 +31,7 @@ import { AttivitaDialog } from './AttivitaDialog'
 import { RecordLink } from './AttivitaMeta'
 import { EVERYONE, ME, toFilters, type Scadenza, type Stato } from './filters'
 import { LINK_KIND_LABELS, linkOf, type LinkValue } from './links'
-import { useAssignees, useAttivitaPages, useRecordLabel } from './queries'
+import { useAssignees, useAttivita, useAttivitaPages, useRecordLabel } from './queries'
 import { RecordPicker } from './RecordPicker'
 
 const STATO_LABELS: Record<Stato, string> = {
@@ -109,7 +109,7 @@ function LinkFilter({
  * so working through a list is not a dialog per item; the archived ones are one chip
  * away, with «Ripristina» as the way back.
  */
-export function AttivitaPage() {
+export function AttivitaPage({ openId }: { openId?: string }) {
   const canWrite = useCanWrite()
   const assignees = useAssignees()
   const [stato, setStato] = useState<Stato | null>('aperta')
@@ -119,6 +119,11 @@ export function AttivitaPage() {
   const [archiviate, setArchiviate] = useState(false)
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState<Attivita | null>(null)
+  // Arrived from the global search with `?apri=<id>`: that row opens in its dialog. Read by
+  // id and not looked up in the table, because the filters the page opens with (open, mine)
+  // may well not include the very row somebody searched for.
+  const [dismissed, setDismissed] = useState<string | null>(null)
+  const fromSearch = useAttivita(openId)
 
   const filters = useMemo(
     () => toFilters({ stato, scadenza, assignee, meId: assignees.me, link, archiviate }),
@@ -311,6 +316,13 @@ export function AttivitaPage() {
       </div>
 
       <AttivitaDialog open={creating} onOpenChange={setCreating} />
+      {openId !== undefined && openId !== dismissed && fromSearch.data && (
+        <AttivitaDialog
+          open
+          onOpenChange={(open) => !open && setDismissed(openId)}
+          attivita={fromSearch.data}
+        />
+      )}
       {editing && (
         <AttivitaDialog
           open
