@@ -1,16 +1,24 @@
 import logging
-from typing import Annotated
+from typing import Annotated, Any
 from urllib.parse import quote
 from uuid import UUID
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Query, Request, status
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
+from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from pigrocrm.core.activities.schemas import ActivityRead
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.invoices.import_confirm import InvoiceConfirmRequest, InvoiceConfirmResult
 from pigrocrm.core.invoices.import_review import InvoiceReviewRequest, InvoiceReviewResult
+from pigrocrm.core.invoices.import_upload import (
+    UPLOAD_MAX_TOTAL_BYTES,
+    UploadedInvoiceConfirmResult,
+    UploadedInvoiceReviewResult,
+    parse_decisions,
+)
 from pigrocrm.core.invoices.schemas import (
     MAX_LINES,
     ArtifactKind,
@@ -33,7 +41,7 @@ from pigrocrm.core.invoices.schemas import (
     RegisterGapsDeclare,
     StatoPagamento,
 )
-from pigrocrm.core.invoices.service import InvoiceService
+from pigrocrm.core.invoices.service import CONFIRM_ACTION, REVIEW_ACTION, InvoiceService
 from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, StorageDep
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 
@@ -188,6 +196,108 @@ def confirm_import(
         create_customer=data.create_customer,
     )
     return InvoiceConfirmResult(righe=righe)
+
+
+# The two upload routes read the multipart body themselves (`await request.form()`), after
+# the admin check, instead of declaring `File()`/`Form()` parameters: FastAPI parses a
+# declared body before it calls the handler, and Starlette spools every file part to disk
+# while it does, so a collaboratore would have had up to the proxy's limit written to disk
+# before a 403. The schema is stated by hand for the OpenAPI document and the docs page.
+_UPLOAD_BODY: dict[str, Any] = {
+    "required": True,
+    "content": {
+        "multipart/form-data": {
+            "schema": {
+                "type": "object",
+                "required": ["file"],
+                "properties": {
+                    "file": {
+                        "type": "array",
+                        "items": {"type": "string", "format": "binary"},
+                        "description": "FatturaPA XML files or ZIPs of them, one part each.",
+                    },
+                    "decisioni": {
+                        "type": "string",
+                        "description": (
+                            'On the confirmation: `{"clienti": {"<party_key>": '
+                            '{"create_customer": true}}}`.'
+                        ),
+                    },
+                },
+            }
+        }
+    },
+}
+
+
+async def _uploaded(request: Request) -> tuple[list[tuple[str, bytes]], str]:
+    """The files of the multipart body as `(name, bytes)`, and the `decisioni` field. Each
+    file is read through the whole request's ceiling plus one byte, so a body larger than
+    the service will take is refused by `expand_uploads` with its sentence instead of being
+    held in memory first; the service opens the ZIPs, after the admin check."""
+    form = await request.form()
+    files = [
+        (part.filename or "senza-nome", await part.read(UPLOAD_MAX_TOTAL_BYTES + 1))
+        for part in form.getlist("file")
+        if isinstance(part, StarletteUploadFile)
+    ]
+    decisioni = form.get("decisioni")
+    return files, decisioni if isinstance(decisioni, str) else "{}"
+
+
+@router.post(
+    "/import/upload/review",
+    response_model=UploadedInvoiceReviewResult,
+    openapi_extra={"requestBody": _UPLOAD_BODY},
+)
+async def review_import_upload(
+    request: Request,
+    session: SessionDep,
+    storage: StorageDep,
+    settings: SettingsDep,
+    actor: ActorDep,
+) -> UploadedInvoiceReviewResult:
+    """REB-758: `/import/review` for the page, which holds bytes and not `document_id`s.
+    The multipart field `file` is repeated, one per FatturaPA XML file or ZIP of them (a
+    ZIP is opened, one level deep). Read-only and admin only, and nothing is stored: a
+    row names its file and the file's `sha256`, and its customer by a `party_key`, which
+    is the key of that customer's decision in `/import/upload/confirm`."""
+    actor.require_admin(REVIEW_ACTION)
+    files, _ = await _uploaded(request)
+    righe = await run_in_threadpool(
+        _service(session, storage, settings).review_upload, files, actor
+    )
+    return UploadedInvoiceReviewResult(righe=righe)
+
+
+@router.post(
+    "/import/upload/confirm",
+    response_model=UploadedInvoiceConfirmResult,
+    openapi_extra={"requestBody": _UPLOAD_BODY},
+)
+async def confirm_import_upload(
+    request: Request,
+    session: SessionDep,
+    storage: StorageDep,
+    settings: SettingsDep,
+    actor: ActorDep,
+) -> UploadedInvoiceConfirmResult:
+    """REB-758: `/import/confirm` for the page. The same bytes as the review, sent again:
+    each file is parsed and classified from its own bytes against the register as it is
+    now, never from the review, and written by the same code `/import/confirm` runs. A
+    single-invoice file's XML is archived as a document of the invoice's customer.
+    `decisioni` is the JSON `{"clienti": {"<party_key>": {"create_customer": true}}}`:
+    per customer, a `customer_id` to attach or `create_customer`, as on
+    `/import/confirm`."""
+    actor.require_admin(CONFIRM_ACTION)
+    files, decisioni = await _uploaded(request)
+    righe = await run_in_threadpool(
+        _service(session, storage, settings).confirm_upload,
+        files,
+        parse_decisions(decisioni),
+        actor,
+    )
+    return UploadedInvoiceConfirmResult(righe=righe)
 
 
 # The register is per azienda (REB-619): both routes take the azienda as a query

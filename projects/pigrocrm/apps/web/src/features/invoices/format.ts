@@ -1,7 +1,7 @@
 import { decimalStringFromScaled, MONEY_SCALE, scaledFromDecimalString } from '@/lib/decimal'
 import type { Invoice, InvoiceLine } from './queries'
 
-const EMPTY = '—'
+export const EMPTY = '—'
 
 // `useGrouping: 'always'` is mandatory: the default withholds the thousands separator
 // below five integer digits, so 1500.00 would print as "1500,00 €".

@@ -39,6 +39,7 @@ invoice list's own badge (`InvoiceStateBadge.tsx`) needs the distinction to
 say so honestly without a hand-declared row ever being able to fake it.
 """
 
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Literal
 from uuid import UUID
@@ -63,6 +64,22 @@ by `"imported"`: by the time `confirm_invoice_import` returns, an invoice that
 classified `"ready"` either has been written -- `"imported"` -- or the call
 refused to write it, reported under one of the other five outcomes, unchanged
 from `review_invoice_import`'s own vocabulary."""
+
+
+@dataclass(frozen=True, slots=True)
+class ConfirmedInvoice:
+    """One invoice's confirmation before it is attached to anything that names its
+    source: `ConfirmedInvoiceRead` adds the `document_id` of an archived document,
+    `UploadedInvoiceConfirmRead` the name and hash of an uploaded file. The fields mean
+    what they mean on `ConfirmedInvoiceRead`; `party_key` names the invoice's customer in
+    an upload's decisions and `note` says why an `"unclaimed"` file did not parse."""
+
+    outcome: InvoiceConfirmOutcome
+    azienda_id: UUID | None = None
+    fattura: InvoiceRead | None = None
+    buchi_non_dichiarati: list[int] | None = None
+    party_key: str | None = None
+    note: str | None = None
 
 
 class ConfirmedInvoiceRead(BaseModel):
