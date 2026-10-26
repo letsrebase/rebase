@@ -756,5 +756,42 @@ class AnalyticsRepository:
         ).one()
         return round_money(Decimal(row[0])), round_money(Decimal(row[1]))
 
+    def year_invoices(self, anno: int, azienda_id: UUID) -> list[tuple[Invoice, Customer]]:
+        """Every invoice of the year's register, in register order: `anno`, one azienda,
+        and `_revenue_filter`'s definition of an invoice that is revenue, so the list and
+        `annual_revenue` can never read a different universe."""
+        rows = self.session.execute(
+            select(Invoice, Customer)
+            .join(Customer, Customer.id == Invoice.customer_id)
+            .where(Invoice.anno == anno, *_revenue_filter(), *_invoice_azienda(azienda_id))
+            .order_by(Invoice.numero)
+        ).all()
+        return [(invoice, customer) for invoice, customer in rows]
+
+    def year_lines(self, anno: int, azienda_id: UUID) -> list[InvoiceLine]:
+        """The lines of `year_invoices`' invoices, by invoice number and line number."""
+        return list(
+            self.session.scalars(
+                select(InvoiceLine)
+                .join(Invoice, Invoice.id == InvoiceLine.invoice_id)
+                .where(Invoice.anno == anno, *_revenue_filter(), *_invoice_azienda(azienda_id))
+                .order_by(Invoice.numero, InvoiceLine.numero_linea)
+            )
+        )
+
+    def year_annulled(self, anno: int, azienda_id: UUID) -> int:
+        """How many invoices the year's register struck through: numbered, then annulled."""
+        return int(
+            self.session.execute(
+                select(func.count(Invoice.id)).where(
+                    Invoice.anno == anno,
+                    Invoice.tipo == "fattura",
+                    Invoice.stato == "annullata",
+                    Invoice.deleted_at.is_(None),
+                    *_invoice_azienda(azienda_id),
+                )
+            ).scalar_one()
+        )
+
 
 __all__ = ["AnalyticsRepository"]

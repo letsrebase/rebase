@@ -208,3 +208,15 @@ async def test_simulate_ceiling_without_any_estimate_is_guidance_not_a_dump(
         result = await client.call_tool("simulate_ceiling", {"anno": OGGI.year})
     assert result.is_error
     assert "errors.pydantic.dev" not in result.content[0].text
+
+
+async def test_get_year_overview_reads_the_register_of_the_year(
+    server, mcp_session: Session
+) -> None:
+    _configure_profile(mcp_session)
+    async with Client(server) as client:
+        result = await client.call_tool("get_year_overview", {"anno": OGGI.year})
+    body = result.structured_content
+    assert body["anno"] == OGGI.year
+    assert body["registro"] == []
+    assert body["totali"]["imponibile"] == "0.00"

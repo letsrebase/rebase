@@ -103,6 +103,46 @@ def test_headroom_reports_room_remaining_before_each_active_ceiling(db_session: 
     assert fuoriuscita.residuo == Decimal("40000.00")
 
 
+def test_headroom_states_how_much_of_each_ceiling_is_used(db_session: Session) -> None:
+    """`utilizzo` is `ricavi / soglia`, computed here so a progress bar is drawn from a
+    figure the server produced: 60,000 of 85,000 is 0.7059, of 100,000 is 0.6."""
+    _configure_profile(db_session)
+    _paid_invoice(db_session, numero=1, anno=ANNO, imponibile=Decimal("60000.00"))
+
+    headroom = AnalyticsService(db_session).ceiling_headroom(ANNO, READER)
+
+    by_id = {s.id: s.utilizzo for s in headroom.soglie}
+    assert by_id == {"soglia_ricavi": 0.7059, "soglia_fuoriuscita_immediata": 0.6}
+
+
+def test_an_ordinary_regime_azienda_has_no_forfettario_ceiling(db_session: Session) -> None:
+    """The 85,000 and 100,000 euro thresholds belong to the forfettario. An `RF01`
+    azienda is still on the Italian pack (the only one with a name), and used to be told
+    how much room it had left under a ceiling it is not subject to: now `soglie` is
+    empty, for the room and for the simulator alike, and nothing is raised."""
+    FiscalProfileService(db_session).upsert(
+        FiscalProfileUpsert(
+            codice_regime="RF01",
+            aliquota_iva_default=Decimal("22.00"),
+            natura_default=None,
+            riferimento_normativo=None,
+        ),
+        ADMIN,
+    )
+    _paid_invoice(db_session, numero=1, anno=ANNO, imponibile=Decimal("90000.00"))
+
+    service = AnalyticsService(db_session)
+    headroom = service.ceiling_headroom(ANNO, READER)
+    simulation = service.simulate_ceiling(
+        ANNO, CeilingSimulationQuery(valore_preventivato=Decimal("20000.00")), READER
+    )
+
+    assert headroom.soglie == []
+    assert headroom.pack_id == IT_FLAT_RATE_PACK.id
+    assert simulation.soglie == []
+    assert simulation.aggiunta_sintetica == Decimal("20000.00")
+
+
 def test_headroom_marks_a_crossed_ceiling(db_session: Session) -> None:
     _configure_profile(db_session)
     _paid_invoice(db_session, numero=1, anno=ANNO, imponibile=Decimal("120000.00"))
@@ -151,6 +191,7 @@ def test_simulate_adds_the_deals_own_value_estimate_directly(db_session: Session
     assert ricavi_soglia.residuo_attuale == Decimal("25000.00")
     assert ricavi_soglia.ricavi_simulati == Decimal("80000.00")
     assert ricavi_soglia.residuo_simulato == Decimal("5000.00")
+    assert (ricavi_soglia.utilizzo_attuale, ricavi_soglia.utilizzo_simulato) == (0.7059, 0.9412)
     assert ricavi_soglia.rientra is True
 
 

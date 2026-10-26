@@ -566,6 +566,7 @@ _CONFIGURAZIONE: dict[Method, str] = {
 #    2 §7): an agent that could pull a PDF or an XLSX down a tool channel would be moving
 #    the artefact out of the storage layer that versions and audits it.
 _BYTE: dict[Method, str] = {
+    ("AnalyticsService", "build_year_csv"): "l'MCP restituisce URL, mai byte",
     ("DocumentService", "download"): "l'MCP restituisce URL, mai byte",
     ("InvoiceService", "download"): "l'MCP restituisce URL, mai byte",
     ("TimeReportService", "build_xlsx"): "l'MCP restituisce URL, mai byte",

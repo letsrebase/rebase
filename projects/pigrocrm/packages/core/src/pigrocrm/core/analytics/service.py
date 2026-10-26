@@ -1,4 +1,5 @@
 from collections import defaultdict
+from dataclasses import replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from uuid import UUID
@@ -32,7 +33,13 @@ from pigrocrm.core.analytics.schemas import (
     PnlTotals,
     RevenueByCustomer,
     UnbilledBacklog,
+    YearOverview,
+    YearRegime,
+    YearRegisterRow,
+    YearTotals,
+    YearTreatment,
 )
+from pigrocrm.core.analytics.year_csv import render_year_csv, year_csv_filename
 from pigrocrm.core.config import get_settings
 from pigrocrm.core.contracts.dates import irrevocability_window_end, renewal_deadline
 from pigrocrm.core.contracts.repository import ContractRepository
@@ -46,9 +53,12 @@ from pigrocrm.core.fiscal.ceiling import (
     evaluate_pack,
     taxable_ricavi,
 )
-from pigrocrm.core.fiscal.pack import resolve_pack
+from pigrocrm.core.fiscal.pack import IT_FLAT_RATE_PACK, FiscalPack, resolve_pack
+from pigrocrm.core.fiscal.regime import FORFETTARIO, resolve_regime
+from pigrocrm.core.fiscal.schemas import FiscalProfileRead
 from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
+from pigrocrm.core.invoices.pdf import dichiarazione_bollo_virtuale
 from pigrocrm.core.invoices.schemas import InvoiceCreate, InvoiceLineIn, InvoiceRead
 from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm.core.money import (
@@ -132,6 +142,30 @@ def _group_order(key: tuple[Decimal, tuple[int, int] | None]) -> tuple[int, int,
     return (anno, numero_mese, tariffa)
 
 
+def _ceiling_usage(ricavi: Decimal, soglia: Decimal) -> float:
+    """How much of `soglia` is used, as a ratio (`1.0` is the ceiling itself, above it
+    once crossed): the one number a progress bar needs, computed here because the
+    browser adds and divides nothing (§6). Four places, as `RevenueByCustomer.quota`."""
+    return round(float(ricavi / soglia), 4)
+
+
+def _applicable_pack(profile: FiscalProfileRead) -> FiscalPack:
+    """The pack whose ceilings an azienda is held to: its own on the forfettario, and
+    none on any other regime.
+
+    The 85,000 and 100,000 euro thresholds are a fact about the forfettario (l. 190/2014,
+    commi 54 and 71). `FiscalProfile.pack_id` names the Italian pack for the ordinary
+    regime too, because that is the only pack there is; read through it, an `RF01`
+    azienda was told how much room it had left under a ceiling it is not subject to.
+    Until REB-760 gives the ordinary regime a pack of its own, the regime decides here,
+    and the pack is returned without its ceilings so nothing downstream has to know.
+    """
+    pack = resolve_pack(profile.pack_id, profile.pack_version)
+    if resolve_regime(profile.codice_regime, profile.pack_id) is FORFETTARIO:
+        return pack
+    return replace(pack, ceilings=())
+
+
 def _ceiling_status_read(status: CeilingStatus) -> CeilingStatusRead:
     return CeilingStatusRead(
         id=status.ceiling.id,
@@ -142,6 +176,7 @@ def _ceiling_status_read(status: CeilingStatus) -> CeilingStatusRead:
         residuo=status.residuo,
         superata=status.superata,
         livello_allerta=status.livello_allerta,
+        utilizzo=_ceiling_usage(status.ricavi, status.ceiling.soglia),
     )
 
 
@@ -481,7 +516,7 @@ class AnalyticsService:
         """
         azienda = LegalEntityService(self.session).require_single(azienda_id, entity=ENTITY)
         profile = FiscalProfileService(self.session).get(actor, azienda.id)
-        pack = resolve_pack(profile.pack_id, profile.pack_version)
+        pack = _applicable_pack(profile)
         return CeilingHeadroom(
             anno=anno,
             azienda_id=azienda.id,
@@ -511,7 +546,7 @@ class AnalyticsService:
         """
         azienda = LegalEntityService(self.session).require_single(azienda_id, entity=ENTITY)
         profile = FiscalProfileService(self.session).get(actor, azienda.id)
-        pack = resolve_pack(profile.pack_id, profile.pack_version)
+        pack = _applicable_pack(profile)
         aggiunta = _synthetic_addition(query)
         risultati: list[CeilingSimulationResult] = []
         for prima in evaluate_pack(pack, self.session, anno, azienda.id):
@@ -524,6 +559,8 @@ class AnalyticsService:
                     conseguenza=prima.ceiling.conseguenza,
                     ricavi_attuali=prima.ricavi,
                     residuo_attuale=prima.residuo,
+                    utilizzo_attuale=_ceiling_usage(prima.ricavi, prima.ceiling.soglia),
+                    utilizzo_simulato=_ceiling_usage(dopo.ricavi, dopo.ceiling.soglia),
                     ricavi_simulati=dopo.ricavi,
                     residuo_simulato=dopo.residuo,
                     rientra=not dopo.superata,
@@ -538,6 +575,126 @@ class AnalyticsService:
             aggiunta_sintetica=aggiunta,
             soglie=risultati,
         )
+
+    def year_overview(
+        self, anno: int, actor: Actor, azienda_id: UUID | None = None
+    ) -> YearOverview:
+        """REB-757: the year of one azienda as an accountant reads it, from the register
+        alone: what was issued, under which regime and tax treatment, with the stamp duty
+        and the rivalsa apart. A read of the same invoices `annual_revenue` sums
+        (`Invoice.anno`, `fattura`, `emessa`), so `totali.imponibile` is that figure and
+        the CSV of the year (`year_csv.render_year_csv`) totals to it.
+
+        Open to every role, like the register itself, and one azienda's always: a register
+        is numbered per azienda, so `azienda_id` resolves to the only azienda when the
+        caller names none and is required, by name, when the space has several. The
+        rivalsa is read off the lines the pack tags as its own charge
+        (`StatutoryCharge.descrizione_riga`), the marker `taxable_ricavi` already uses.
+        """
+        return self._year(anno, actor, azienda_id)[0]
+
+    def build_year_csv(
+        self, anno: int, actor: Actor, azienda_id: UUID | None = None
+    ) -> tuple[str, bytes]:
+        """REB-757: the year of one azienda as the file an accountant opens in a
+        spreadsheet, `(filename, content)`: one row per invoice line, then the register,
+        each with its total (`year_csv.render_year_csv`). The same invoices, in the same
+        order, as `year_overview`, so the file's total is the page's."""
+        overview, lines = self._year(anno, actor, azienda_id)
+        content = render_year_csv(overview, lines)
+        return year_csv_filename(overview), content.encode("utf-8")
+
+    def _year(
+        self, anno: int, actor: Actor, azienda_id: UUID | None
+    ) -> tuple[YearOverview, dict[UUID, list[InvoiceLine]]]:
+        azienda = LegalEntityService(self.session).require_single(azienda_id, entity=ENTITY)
+        # A year read needs no profile: an azienda that only imported its history has
+        # invoices and none, and the Italian pack's charges are then the ones it carries.
+        try:
+            profile = FiscalProfileService(self.session).get(actor, azienda.id)
+            pack = resolve_pack(profile.pack_id, profile.pack_version)
+        except NotFound:
+            pack = IT_FLAT_RATE_PACK
+        marcatori = {charge.descrizione_riga for charge in pack.charges}
+
+        lines_by_invoice: dict[UUID, list[InvoiceLine]] = defaultdict(list)
+        for line in self.repo.year_lines(anno, azienda.id):
+            lines_by_invoice[line.invoice_id].append(line)
+
+        registro: list[YearRegisterRow] = []
+        regimi: dict[tuple[str | None, str], tuple[int, Decimal]] = {}
+        trattamenti: dict[tuple[Decimal, str | None, str | None], tuple[int, Decimal]] = {}
+        for invoice, customer in self.repo.year_invoices(anno, azienda.id):
+            assert invoice.numero is not None and invoice.data_emissione is not None  # noqa: S101
+            snapshot = invoice.snapshot or {}
+            cliente = snapshot.get("cliente") or {}
+            fiscale = snapshot.get("fiscale") or {}
+            rivalsa = sum_money(
+                line.prezzo_totale
+                for line in lines_by_invoice[invoice.id]
+                if line.descrizione in marcatori
+            )
+            registro.append(
+                YearRegisterRow(
+                    invoice_id=invoice.id,
+                    anno=anno,
+                    numero=invoice.numero,
+                    data_emissione=invoice.data_emissione,
+                    customer_id=customer.id,
+                    ragione_sociale=cliente.get("ragione_sociale") or customer.ragione_sociale,
+                    partita_iva=cliente.get("partita_iva") or customer.partita_iva,
+                    tipo_documento=invoice.tipo_documento,
+                    imponibile=invoice.imponibile,
+                    rivalsa=rivalsa,
+                    bollo=invoice.bollo,
+                    totale=invoice.totale,
+                    dichiarazione_bollo=dichiarazione_bollo_virtuale(invoice.bollo),
+                    stato_pagamento=invoice.stato_pagamento,
+                    data_incasso=invoice.data_incasso,
+                )
+            )
+            regime = (fiscale.get("codice_regime"), fiscale.get("pack_id") or pack.id)
+            count, total = regimi.get(regime, (0, ZERO_MONEY))
+            regimi[regime] = (count + 1, total + invoice.imponibile)
+            for line in lines_by_invoice[invoice.id]:
+                key = (line.aliquota_iva, line.natura, line.riferimento_normativo)
+                count, total = trattamenti.get(key, (0, ZERO_MONEY))
+                trattamenti[key] = (count + 1, total + line.prezzo_totale)
+
+        overview = YearOverview(
+            anno=anno,
+            azienda_id=azienda.id,
+            azienda_nome=azienda.nome,
+            totali=YearTotals(
+                fatture=len(registro),
+                imponibile=sum_money(row.imponibile for row in registro),
+                rivalsa=sum_money(row.rivalsa for row in registro),
+                bollo=sum_money(row.bollo for row in registro),
+                totale=sum_money(row.totale for row in registro),
+            ),
+            regimi=[
+                YearRegime(codice_regime=codice, pack_id=pack, fatture=count, ricavi=total)
+                for (codice, pack), (count, total) in sorted(
+                    regimi.items(), key=lambda item: (item[0][0] or "", item[0][1])
+                )
+            ],
+            trattamenti=[
+                YearTreatment(
+                    aliquota_iva=aliquota,
+                    natura=natura,
+                    riferimento_normativo=riferimento,
+                    righe=count,
+                    ricavi=total,
+                )
+                for (aliquota, natura, riferimento), (count, total) in sorted(
+                    trattamenti.items(),
+                    key=lambda item: (item[0][0], item[0][1] or "", item[0][2] or ""),
+                )
+            ],
+            registro=registro,
+            annullate=self.repo.year_annulled(anno, azienda.id),
+        )
+        return overview, lines_by_invoice
 
     def _contract_date_markers(
         self, anno: int, azienda_id: UUID | None = None
