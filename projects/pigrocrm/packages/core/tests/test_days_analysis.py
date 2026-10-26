@@ -347,6 +347,23 @@ def test_a_day_that_slipped_without_approval_is_counted_in_the_month_of_the_slip
     assert _stack(analysis.mesi[0], "lavorato_senza_approvazione") == Decimal("0.50")
 
 
+def test_a_day_that_slips_twice_counts_once(db_session: Session) -> None:
+    today = today_local()
+    contract = _contract(db_session, requires_prior_approval=True)
+    slipped = _day(db_session, contract, date(today.year, today.month, 1), "lavorato", "0.50")
+    slipped.stato = "contestato"
+    db_session.flush()
+    slipped.stato = "lavorato"  # no approval linked: the database flags it again
+    db_session.flush()
+    db_session.refresh(slipped)
+    assert slipped.stato == "lavorato_senza_approvazione"
+
+    analysis = AnalyticsService(db_session).days_analysis(READER)
+
+    assert analysis.senza_approvazione_nel_periodo == Decimal("0.50")
+    assert analysis.senza_approvazione_sempre == Decimal("0.50")
+
+
 def test_one_bound_without_the_other_and_a_backwards_period_are_refused_by_name(
     db_session: Session,
 ) -> None:
@@ -360,5 +377,8 @@ def test_one_bound_without_the_other_and_a_backwards_period_are_refused_by_name(
     with pytest.raises(ValidationFailed) as too_long:
         service.days_analysis(READER, date(2016, 1, 1), date(2026, 1, 31))
     assert too_long.value.details["field"] == "a"
+    with pytest.raises(ValidationFailed) as too_early:
+        service.days_analysis(READER, date(1, 1, 1), date(1, 1, 31))
+    assert too_early.value.details["field"] == "da"
     # Exactly ten years is the largest period admitted.
     assert len(service.days_analysis(READER, date(2016, 2, 1), date(2026, 1, 31)).mesi) == 120

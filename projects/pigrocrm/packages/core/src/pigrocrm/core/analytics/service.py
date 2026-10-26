@@ -85,6 +85,9 @@ from pigrocrm.core.timetracking.service import TimeEntryService, billed_entry_id
 
 ENTITY = "analytics"
 MAX_DAYS_MONTHS = 120
+# The same floor the year routes have, and a lookback of three months before `da` that
+# `date` can always represent.
+MIN_DAYS_YEAR = 2000
 
 
 def _months_between(da: date, a: date) -> list[tuple[int, int]]:
@@ -636,6 +639,13 @@ class AnalyticsService:
                 "da",
                 "la data iniziale è successiva a quella finale",
                 expected=f"da <= {a.isoformat()}",
+            )
+        if da.year < MIN_DAYS_YEAR:
+            raise ValidationFailed(
+                "periodo",
+                "da",
+                f"il periodo non può cominciare prima del {MIN_DAYS_YEAR}",
+                expected=f"da >= {MIN_DAYS_YEAR}-01-01",
             )
         if len(months_between(da, a)) > MAX_DAYS_MONTHS:
             raise ValidationFailed(

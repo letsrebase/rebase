@@ -121,12 +121,23 @@ def monthly_figures(
     for key, stato, total in session.execute(stmt).all():
         per_month[key][stato] = Decimal(total)
 
-    slipped_at = func.to_char(func.timezone(timezone, WorkUnitTransition.created_at), "YYYY-MM")
+    # The first slip of each day, and only that: a day that was contested and worked again
+    # without approval slipped twice, and one day is one day.
+    first_slip = (
+        select(
+            WorkUnitTransition.work_unit_id.label("work_unit_id"),
+            func.min(WorkUnitTransition.created_at).label("at"),
+        )
+        .where(WorkUnitTransition.stato_nuovo == "lavorato_senza_approvazione")
+        .group_by(WorkUnitTransition.work_unit_id)
+        .subquery()
+    )
+    slipped_at = func.to_char(func.timezone(timezone, first_slip.c.at), "YYYY-MM")
     risk_stmt = (
         select(slipped_at, func.sum(WorkUnit.quantita))
-        .join(WorkUnit, WorkUnit.id == WorkUnitTransition.work_unit_id)
+        .select_from(first_slip)
+        .join(WorkUnit, WorkUnit.id == first_slip.c.work_unit_id)
         .join(Contract, Contract.id == WorkUnit.contract_id)
-        .where(WorkUnitTransition.stato_nuovo == "lavorato_senza_approvazione")
         .group_by(slipped_at)
     )
     if azienda_id is not None:
