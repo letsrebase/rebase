@@ -398,8 +398,8 @@ class DigestRun:
         Four existence probes (and a fifth, for open attivita) rather than the built
         report's own `vuoto`, because this is the question asked *before* building: a space
         that has never had a customer should cost one bounded query per table on a Monday
-        morning, not seven sections and a snapshot. `LIMIT 1` on the primary key: the answer is whether there is a row, not
-        how many.
+        morning, not seven sections and a snapshot. `LIMIT 1` on the primary key: the
+        answer is whether there is a row, not how many.
 
         `deleted_at IS NULL` on every one of them. All four carry `SoftDeleteMixin` and
         core applies no global filter, so without it a space whose customer and deal were
