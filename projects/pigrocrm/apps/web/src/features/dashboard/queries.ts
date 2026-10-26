@@ -148,11 +148,15 @@ export function useCeilingSimulation(
   anno: number,
   input: CeilingSimulationInput | null,
   aziendaId?: string | null,
+  /** Which press of «Simula» this is: part of the key, so pressing it again with the same
+   *  inputs asks the server again instead of showing the answer already held. */
+  attempt = 0,
 ) {
   const { selected } = useLegalEntity()
   const azienda = aziendaId === undefined ? selected : aziendaId
   const params: Record<string, string> = {
     anno: String(anno),
+    attempt: String(attempt),
     ...(azienda === null ? {} : { azienda_id: azienda }),
     ...input,
   }

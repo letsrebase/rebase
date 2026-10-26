@@ -289,6 +289,23 @@ describe('CeilingPanel, «ci sta?»', () => {
     ).toBeInTheDocument()
   })
 
+  it('asks the server again when «Simula» is pressed again with the same inputs', async () => {
+    const user = await open()
+
+    await user.type(screen.getByLabelText('Importo'), '20000')
+    await user.click(screen.getByRole('button', { name: 'Simula' }))
+    await screen.findByText('Ci sta.')
+    await user.click(screen.getByRole('button', { name: 'Simula' }))
+
+    await waitFor(() =>
+      expect(
+        vi
+          .mocked(api.GET)
+          .mock.calls.filter((call) => (call as unknown[])[0] === '/api/analytics/ceilings/simulate'),
+      ).toHaveLength(2),
+    )
+  })
+
   it('drops a verdict the moment one of the inputs it answered changes', async () => {
     const user = await open()
 

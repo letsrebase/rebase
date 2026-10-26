@@ -241,6 +241,7 @@ const SOURCES = [
 function Simulator({ anno, aziendaId }: { anno: number; aziendaId?: string }) {
   const [source, setSource] = useState<SimulatorFields['source']>('importo')
   const [dealId, setDealId] = useState('')
+  const attempts = useRef(0)
   const latestDeal = useRef<Deal | null>(null)
   const trackDeal = useCallback((current: Deal | null) => {
     latestDeal.current = current
@@ -253,10 +254,16 @@ function Simulator({ anno, aziendaId }: { anno: number; aziendaId?: string }) {
   const [asked, setAsked] = useState<{
     anno: number
     input: NonNullable<Parameters<typeof useCeilingSimulation>[1]>
+    attempt: number
   } | null>(null)
   const [errors, setErrors] = useState<Record<string, string>>({})
 
-  const simulation = useCeilingSimulation(asked?.anno ?? anno, asked?.input ?? null, aziendaId)
+  const simulation = useCeilingSimulation(
+    asked?.anno ?? anno,
+    asked?.input ?? null,
+    aziendaId,
+    asked?.attempt,
+  )
 
   // A verdict answers the inputs it was asked with: the moment one of them changes it is
   // no longer an answer to what is on screen, so it goes until «Simula» is pressed again.
@@ -284,7 +291,8 @@ function Simulator({ anno, aziendaId }: { anno: number; aziendaId?: string }) {
       return
     }
     setErrors({})
-    setAsked({ anno: year, input: request.input })
+    attempts.current += 1
+    setAsked({ anno: year, input: request.input, attempt: attempts.current })
   }
 
   return (
