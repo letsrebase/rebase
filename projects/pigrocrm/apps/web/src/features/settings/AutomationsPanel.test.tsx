@@ -31,6 +31,10 @@ const DESCRIPTION = {
   configurazione: {
     a1_offerta_accettata_vince_deal: true,
     a2_offerta_inviata_avanza_deal: false,
+    a3_offerta_inviata_richiama: true,
+    a4_deal_fermo: true,
+    a4_deal_fermo_giorni: 30,
+    a5_fattura_scaduta: false,
   },
   regole: [
     {
@@ -43,6 +47,24 @@ const DESCRIPTION = {
       codice: 'A2',
       titolo: 'Offerta inviata → il deal avanza',
       descrizione: 'Mai indietro.',
+      attiva: false,
+    },
+    {
+      codice: 'offerta_inviata_richiama',
+      titolo: 'Offerta senza risposta → un’attività per richiamare',
+      descrizione: 'Apre «Richiamare».',
+      attiva: true,
+    },
+    {
+      codice: 'deal_fermo',
+      titolo: 'Deal fermo → un’attività per riprenderlo',
+      descrizione: 'Apre «Il deal è fermo».',
+      attiva: true,
+    },
+    {
+      codice: 'fattura_scaduta',
+      titolo: 'Fattura scaduta → un’attività per sollecitare',
+      descrizione: 'Apre «Sollecitare».',
       attiva: false,
     },
   ],
@@ -83,7 +105,7 @@ beforeEach(() => {
 })
 
 describe('AutomationsPanel', () => {
-  it('lists both rules with their switch reflecting the server state', async () => {
+  it('lists every rule with their switch reflecting the server state', async () => {
     renderPanel()
     const a1 = await screen.findByRole('switch', { name: /offerta accettata/i })
     const a2 = screen.getByRole('switch', { name: /offerta inviata/i })
@@ -110,6 +132,79 @@ describe('AutomationsPanel', () => {
     expect(api.PUT).toHaveBeenCalledWith('/api/automation-config', {
       body: { a2_offerta_inviata_avanza_deal: true },
     })
+  })
+
+  it('switches each rule of the daily pass through its own field', async () => {
+    renderPanel()
+    await userEvent.click(await screen.findByRole('switch', { name: /offerta senza risposta/i }))
+    expect(api.PUT).toHaveBeenLastCalledWith('/api/automation-config', {
+      body: { a3_offerta_inviata_richiama: false },
+    })
+    await userEvent.click(screen.getByRole('switch', { name: /deal fermo/i }))
+    expect(api.PUT).toHaveBeenLastCalledWith('/api/automation-config', {
+      body: { a4_deal_fermo: false },
+    })
+    // `false` on the server renders off, and switching it on sends `true`.
+    const fattura = screen.getByRole('switch', { name: /fattura scaduta/i })
+    expect(fattura).not.toBeChecked()
+    await userEvent.click(fattura)
+    expect(api.PUT).toHaveBeenLastCalledWith('/api/automation-config', {
+      body: { a5_fattura_scaduta: true },
+    })
+  })
+
+  it('sends the threshold when the box loses focus, and only when it is a valid change', async () => {
+    renderPanel()
+    const days = await screen.findByRole('spinbutton', { name: /giorni di un deal fermo/i })
+    expect(days).toHaveValue(30)
+
+    await userEvent.clear(days)
+    await userEvent.type(days, '14')
+    // Typing sends nothing: a refetch mid-edit would overwrite a half-typed number.
+    expect(api.PUT).not.toHaveBeenCalled()
+    await userEvent.tab()
+    expect(api.PUT).toHaveBeenCalledWith('/api/automation-config', {
+      body: { a4_deal_fermo_giorni: 14 },
+    })
+  })
+
+  it('does not send a threshold that is unchanged or outside 1 to 365', async () => {
+    renderPanel()
+    const days = await screen.findByRole('spinbutton', { name: /giorni di un deal fermo/i })
+
+    await userEvent.click(days)
+    await userEvent.tab()
+    await userEvent.clear(days)
+    await userEvent.type(days, '0')
+    await userEvent.tab()
+    await userEvent.clear(days)
+    await userEvent.type(days, '366')
+    await userEvent.tab()
+
+    expect(api.PUT).not.toHaveBeenCalled()
+    // And the box is back on the server's value rather than on what was refused.
+    expect(days).toHaveValue(30)
+  })
+
+  it('labels an attività the pass opened and shows its title', async () => {
+    vi.mocked(api.GET).mockResolvedValue(
+      ok({
+        ...DESCRIPTION,
+        esecuzioni: [
+          {
+            kind: 'automazione.attivita_aperta',
+            occurred_at: '2026-03-12T09:00:00Z',
+            deal_id: null,
+            regola: 'fattura_scaduta',
+            motivo: null,
+            payload: { titolo: 'Sollecitare Acme S.r.l. per 2026/12' },
+          },
+        ],
+      }),
+    )
+    renderPanel()
+    expect(await screen.findByText('Attività aperta')).toBeInTheDocument()
+    expect(screen.getByText(/Sollecitare Acme S\.r\.l\. per 2026\/12/)).toBeInTheDocument()
   })
 
   it('shows a non-execution with its reason in plain Italian', async () => {
