@@ -127,4 +127,15 @@ export const queryKeys = {
   ) =>
     ['dashboard', kind, params] as const,
   automations: () => ['automations'] as const,
+  // A contract and everything the page hangs on it (REB-741..744). All under the
+  // 'contract' prefix except the customer's list, so one invalidation of
+  // `contract(id)` refreshes the row, its rate cards, expenses, assumption and figures.
+  contracts: (params?: unknown) => ['contracts', params ?? {}] as const,
+  contract: (id: string) => ['contract', id] as const,
+  contractRateCards: (id: string) => ['contract', id, 'rate-cards'] as const,
+  contractExpenses: (id: string) => ['contract', id, 'expenses'] as const,
+  contractAssumption: (id: string) => ['contract', id, 'assumption'] as const,
+  contractProjection: (id: string, params?: unknown) =>
+    ['contract', id, 'projection', params ?? {}] as const,
+  contractConcentration: (id: string) => ['contract', id, 'concentration'] as const,
 }

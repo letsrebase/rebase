@@ -10,7 +10,12 @@ from pydantic import WithJsonSchema
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.analytics.schemas import BudgetQuery, CeilingSimulationQuery, PeriodPnlQuery
 from pigrocrm.core.contract_expenses.schemas import ContractExpenseUpdate
-from pigrocrm.core.contracts.schemas import ContractListQuery, ContractProjectionQuery
+from pigrocrm.core.contracts.schemas import (
+    ContractListQuery,
+    ContractProjectionQuery,
+    ContractUpdate,
+    RateCardUpdate,
+)
 from pigrocrm.core.customers.schemas import CustomerListQuery, CustomerUpdate
 from pigrocrm.core.dashboard.schemas import PeriodoQuery
 from pigrocrm.core.db import SortDirection
@@ -72,6 +77,8 @@ from pigrocrm_mcp.tools.invoices import parse_legal_entity_id
 CustomerChanges = Annotated[dict[str, Any], WithJsonSchema(CustomerUpdate.model_json_schema())]
 PersonChanges = Annotated[dict[str, Any], WithJsonSchema(PersonUpdate.model_json_schema())]
 DealChanges = Annotated[dict[str, Any], WithJsonSchema(DealUpdate.model_json_schema())]
+ContractChanges = Annotated[dict[str, Any], WithJsonSchema(ContractUpdate.model_json_schema())]
+RateCardChanges = Annotated[dict[str, Any], WithJsonSchema(RateCardUpdate.model_json_schema())]
 ContractExpenseChanges = Annotated[
     dict[str, Any], WithJsonSchema(ContractExpenseUpdate.model_json_schema())
 ]
@@ -644,6 +651,25 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
 
     @mcp.tool()
     @guard
+    def update_contract(contract_id: str, changes: ContractChanges) -> dict[str, Any]:
+        """Aggiorna un contratto. `changes` contiene solo i campi da modificare; un
+        campo svuotabile (`fine`, `giorni_pagamento`, `note`) si svuota con `null`.
+        `giorni_pagamento` e `pagamento_fine_mese` vanno impostati insieme, o nessuno
+        dei due; `preavviso_rinnovo_giorni` è obbligatorio per ogni `tipo_rinnovo`
+        diverso da `nessuno`. Lo stato non è tra i campi: lo cambia `set_contract_state`.
+        """
+        return contracts.update(context, contract_id, changes)
+
+    @mcp.tool()
+    @guard
+    def set_contract_state(contract_id: str, stato: str) -> dict[str, Any]:
+        """Cambia lo stato di un contratto: `bozza`, `attivo`, `terminato` o `scaduto`.
+        Da qualunque stato a qualunque altro; lo stesso stato due volte viene
+        rifiutato."""
+        return contracts.set_state(context, contract_id, stato)
+
+    @mcp.tool()
+    @guard
     def search_contracts(
         customer_id: str | None = None,
         stato: str | None = None,
@@ -683,11 +709,14 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         frazioni_ammesse: list[float] | None = None,
         ore_minime: OptionalMoney = None,
         periodo_erogazione: str | None = None,
+        chiudi_precedente: bool = False,
     ) -> dict[str, Any]:
         """Crea una scheda tariffaria per un contratto. `valido_da`/`valido_a` in
         formato YYYY-MM-DD; `valido_a` assente è la scheda corrente, aperta. Un
         periodo che si sovrappone a una scheda già esistente sullo stesso contratto
-        viene rifiutato dal database. `ore_minime` è significativo solo per
+        viene rifiutato dal database, a meno che `chiudi_precedente` sia vero: allora
+        la scheda in vigore a `valido_da` si chiude il giorno prima, nella stessa
+        operazione. `ore_minime` è significativo solo per
         `tipo = 'orario'`, `periodo_erogazione` solo per `tipo = 'ricorrente_fisso'`.
         """
         payload: dict[str, Any] = {
@@ -705,7 +734,17 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         # of falling back to it.
         if frazioni_ammesse is not None:
             payload["frazioni_ammesse"] = frazioni_ammesse
-        return contracts.create_rate_card(context, contract_id, payload)
+        return contracts.create_rate_card(context, contract_id, payload, chiudi_precedente)
+
+    @mcp.tool()
+    @guard
+    def update_rate_card(
+        contract_id: str, rate_card_id: str, changes: RateCardChanges
+    ) -> dict[str, Any]:
+        """Aggiorna una scheda tariffaria. `changes` contiene solo i campi da
+        modificare; `valido_a` si svuota con `null` e riapre la scheda. Un periodo che
+        si sovrappone a un'altra scheda dello stesso contratto viene rifiutato."""
+        return contracts.update_rate_card(context, contract_id, rate_card_id, changes)
 
     @mcp.tool()
     @guard

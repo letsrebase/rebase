@@ -6,7 +6,10 @@ from pigrocrm.core.contracts.schemas import (
     ContractCreate,
     ContractListQuery,
     ContractProjectionQuery,
+    ContractStateChange,
+    ContractUpdate,
     RateCardCreate,
+    RateCardUpdate,
     RenewalAssumptionUpsert,
 )
 from pigrocrm.core.contracts.service import (
@@ -34,6 +37,24 @@ def get(context: McpContext, contract_id: str) -> dict[str, Any]:
     )
 
 
+def update(context: McpContext, contract_id: str, data: dict[str, Any]) -> dict[str, Any]:
+    return (
+        ContractService(context.session)
+        .update(UUID(contract_id), ContractUpdate(**data), context.actor)
+        .model_dump(mode="json")
+    )
+
+
+def set_state(context: McpContext, contract_id: str, stato: str) -> dict[str, Any]:
+    return (
+        ContractService(context.session)
+        .set_state(
+            UUID(contract_id), ContractStateChange.model_validate({"stato": stato}), context.actor
+        )
+        .model_dump(mode="json")
+    )
+
+
 def concentration_cap(
     context: McpContext, contract_id: str, as_of: date | None, soglia: float | None
 ) -> dict[str, Any]:
@@ -52,10 +73,24 @@ def search(context: McpContext, query: ContractListQuery) -> dict[str, Any]:
     }
 
 
-def create_rate_card(context: McpContext, contract_id: str, data: dict[str, Any]) -> dict[str, Any]:
+def create_rate_card(
+    context: McpContext, contract_id: str, data: dict[str, Any], close_previous: bool
+) -> dict[str, Any]:
     return (
         RateCardService(context.session)
-        .create(UUID(contract_id), RateCardCreate(**data), context.actor)
+        .create(
+            UUID(contract_id), RateCardCreate(**data), context.actor, close_previous=close_previous
+        )
+        .model_dump(mode="json")
+    )
+
+
+def update_rate_card(
+    context: McpContext, contract_id: str, rate_card_id: str, data: dict[str, Any]
+) -> dict[str, Any]:
+    return (
+        RateCardService(context.session)
+        .update(UUID(contract_id), UUID(rate_card_id), RateCardUpdate(**data), context.actor)
         .model_dump(mode="json")
     )
 

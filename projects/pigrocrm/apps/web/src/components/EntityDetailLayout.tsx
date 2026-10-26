@@ -31,6 +31,11 @@ interface EntityDetailLayoutProps {
    *  that opens onto an empty explanation of why it is empty. */
   invoices?: ReactNode
   /**
+   * The Contratti tab's contents: only a customer has contracts, so the tab exists only
+   * when a page passes it, for the reason given on `documents` above.
+   */
+  contracts?: ReactNode
+  /**
    * The Ore tab's contents. Optional because only a Deal has hours: an hour is
    * attached to a deal, always and only (`time_entries.deal_id` is required), so
    * neither a Customer nor a Person can have this tab. Absent means the tab is not
@@ -91,6 +96,7 @@ export function EntityDetailLayout({
   links,
   documents,
   invoices,
+  contracts,
   hours,
   economics,
   emails,
@@ -114,6 +120,7 @@ export function EntityDetailLayout({
             <TabsTrigger value="panoramica">Panoramica</TabsTrigger>
             {documents && <TabsTrigger value="documenti">Documenti</TabsTrigger>}
             {invoices && <TabsTrigger value="fatture">Fatture</TabsTrigger>}
+            {contracts && <TabsTrigger value="contratti">Contratti</TabsTrigger>}
             {hours && <TabsTrigger value="ore">Ore</TabsTrigger>}
             {economics && <TabsTrigger value="economia">Economia</TabsTrigger>}
             {/* Before the Email and the Timeline tabs: those two are a record of what
@@ -140,6 +147,11 @@ export function EntityDetailLayout({
         {invoices && (
           <TabsContent value="fatture" className="mt-6">
             {invoices}
+          </TabsContent>
+        )}
+        {contracts && (
+          <TabsContent value="contratti" className="mt-6">
+            {contracts}
           </TabsContent>
         )}
         {hours && (

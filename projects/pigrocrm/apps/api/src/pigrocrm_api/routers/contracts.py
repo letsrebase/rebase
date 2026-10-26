@@ -4,6 +4,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query, status
 
+from pigrocrm.core.activities.schemas import ActivityRead
+from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.contracts.schemas import (
     ContractConcentrationCap,
     ContractCreate,
@@ -12,8 +14,11 @@ from pigrocrm.core.contracts.schemas import (
     ContractProjectionQuery,
     ContractProjectionRead,
     ContractRead,
+    ContractStateChange,
+    ContractUpdate,
     RateCardCreate,
     RateCardRead,
+    RateCardUpdate,
     RenewalAssumptionRead,
     RenewalAssumptionUpsert,
 )
@@ -67,6 +72,31 @@ def get(contract_id: UUID, session: SessionDep, actor: ActorDep) -> ContractRead
     return ContractService(session).get(contract_id, actor)
 
 
+@router.patch("/{contract_id}", response_model=ContractRead)
+def update(
+    contract_id: UUID, data: ContractUpdate, session: SessionDep, actor: ActorDep
+) -> ContractRead:
+    return ContractService(session).update(contract_id, data, actor)
+
+
+@router.post("/{contract_id}/state", response_model=ContractRead)
+def set_state(
+    contract_id: UUID, data: ContractStateChange, session: SessionDep, actor: ActorDep
+) -> ContractRead:
+    return ContractService(session).set_state(contract_id, data, actor)
+
+
+@router.get("/{contract_id}/timeline", response_model=list[ActivityRead])
+def timeline(
+    contract_id: UUID,
+    session: SessionDep,
+    actor: ActorDep,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+) -> list[ActivityRead]:
+    ContractService(session).get(contract_id, actor)
+    return ActivityService(session).timeline("contract", contract_id, limit)
+
+
 @router.get("/{contract_id}/concentration", response_model=ContractConcentrationCap)
 def concentration_cap(
     contract_id: UUID,
@@ -84,9 +114,32 @@ def concentration_cap(
     status_code=status.HTTP_201_CREATED,
 )
 def create_rate_card(
-    contract_id: UUID, data: RateCardCreate, session: SessionDep, actor: ActorDep
+    contract_id: UUID,
+    data: RateCardCreate,
+    session: SessionDep,
+    actor: ActorDep,
+    chiudi_precedente: Annotated[
+        bool,
+        Query(
+            description="Chiude il giorno prima la scheda in vigore alla data di inizio "
+            "di questa, invece di rifiutare la sovrapposizione"
+        ),
+    ] = False,
 ) -> RateCardRead:
-    return RateCardService(session).create(contract_id, data, actor)
+    return RateCardService(session).create(
+        contract_id, data, actor, close_previous=chiudi_precedente
+    )
+
+
+@router.patch("/{contract_id}/rate-cards/{rate_card_id}", response_model=RateCardRead)
+def update_rate_card(
+    contract_id: UUID,
+    rate_card_id: UUID,
+    data: RateCardUpdate,
+    session: SessionDep,
+    actor: ActorDep,
+) -> RateCardRead:
+    return RateCardService(session).update(contract_id, rate_card_id, data, actor)
 
 
 @router.get("/{contract_id}/rate-cards", response_model=list[RateCardRead])
