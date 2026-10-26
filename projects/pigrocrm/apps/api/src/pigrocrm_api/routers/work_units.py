@@ -65,8 +65,8 @@ def transition(
 ) -> WorkUnitDetail:
     """Sposta una giornata lungo il suo ciclo di vita, con una mossa che la sua pagina offrirebbe
     (`azioni` di `GET /api/work-units/{id}`): `approvato` lo scrive la registrazione di
-    un'approvazione e `fatturato` la fattura, quindi qui rispondono 409 come ogni arco che il
-    grafo non ammette (`work_unit_enforce_state_machine`)."""
+    un'approvazione e `fatturato` la fattura, quindi qui rispondono 409 come ogni passaggio
+    che il ciclo di vita non ammette."""
     service = WorkUnitService(session)
     service.move(work_unit_id, data.stato, actor, data.motivo)
     return service.detail(work_unit_id, actor)

@@ -88,6 +88,11 @@ test.describe('le giornate di contratto', () => {
       data: { contract_id: contractId, tipo: 'documento', titolo: 'Mail di conferma' },
     })
     expect(proof.status(), await proof.text()).toBe(201)
+    const proofId = ((await proof.json()) as { id: string }).id
+    const version = await page.request.post(`/api/documents/${proofId}/versions`, {
+      multipart: { file: { name: 'conferma.txt', mimeType: 'text/plain', buffer: Buffer.from('Confermo.') } },
+    })
+    expect(version.status(), await version.text()).toBe(201)
     const approval = await page.request.post('/api/approvals', {
       data: {
         contract_id: contractId,
@@ -95,7 +100,7 @@ test.describe('le giornate di contratto', () => {
         mittente: 'giulia@cliente.example',
         ricevuto_il: new Date().toISOString(),
         estratto: 'Confermo.',
-        document_id: ((await proof.json()) as { id: string }).id,
+        document_id: proofId,
         work_unit_ids: [dayId],
       },
     })

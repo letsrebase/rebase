@@ -28,7 +28,7 @@ import {
 } from './approvals'
 import { useCustomerMessages, useFileProof, useRecordApproval } from './approvalQueries'
 import { quantitaLabel, statoLabel } from './labels'
-import { useDayContractOptions, useWorkUnits } from './queries'
+import { useApprovalCandidates, useDayContractOptions } from './queries'
 
 type ProofKind = 'messaggio' | 'file' | 'testo'
 
@@ -82,8 +82,8 @@ export function ApprovalForm({
 
   const options = contracts.data ?? []
   const contract = options.find((candidate) => candidate.id === contractId)
-  const candidates = useWorkUnits({ contractId }, { enabled: contractId !== '' })
-  const days = (candidates.data?.items ?? []).filter(canReceiveApproval)
+  const candidates = useApprovalCandidates(contractId, initialDayIds)
+  const days = candidates.days.filter(canReceiveApproval)
   const messages = useCustomerMessages(contract?.customer_id, gmail)
   const inbound = (messages.data ?? []).filter((message) => message.direction === 'inbound')
   const chosenMessage = inbound.find((message) => message.id === messageId)

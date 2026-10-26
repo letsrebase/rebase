@@ -43,19 +43,17 @@ const MESSAGE = {
 }
 
 function serving(messages: unknown[] = [MESSAGE]) {
-  vi.mocked(api.GET).mockImplementation(((path: string) => {
+  vi.mocked(api.GET).mockImplementation(((path: string, init: unknown) => {
     if (path === '/api/contracts') return Promise.resolve(ok({ items: [contract({ customer_id: CUSTOMER_ID })], next_cursor: null }))
     if (path === '/api/work-units') {
-      return Promise.resolve(
-        ok({
-          items: [
-            row({ id: 'd1', data: '2026-03-02', stato: 'proposto', descrizione: 'Workshop' }),
-            row({ id: 'd2', data: '2026-03-03', stato: 'lavorato_senza_approvazione', descrizione: 'Review' }),
-            row({ id: 'd3', data: '2026-03-04', stato: 'lavorato', descrizione: 'Già a posto' }),
-          ],
-          troncato: false,
-        }),
-      )
+      const all = [
+        row({ id: 'd1', data: '2026-03-02', stato: 'proposto', descrizione: 'Workshop' }),
+        row({ id: 'd2', data: '2026-03-03', stato: 'lavorato_senza_approvazione', descrizione: 'Review' }),
+        row({ id: 'd3', data: '2026-03-04', stato: 'lavorato', descrizione: 'Già a posto' }),
+      ]
+      // The API filters by state: the form asks for the two states that can use an approval.
+      const wanted = (init as { params: { query: { stato?: string } } }).params.query.stato
+      return Promise.resolve(ok({ items: all.filter((day) => wanted === undefined || day.stato === wanted), troncato: false }))
     }
     if (path === '/api/gmail/messages') return Promise.resolve(ok(messages))
     return Promise.resolve(ok(undefined))
@@ -110,9 +108,11 @@ describe('recording an approval', () => {
         mittente: 'giulia@cliente.example',
         estratto: 'confermo le giornate del 2 e del 3 marzo.',
         gmail_message_id: 'msg-1',
-        work_unit_ids: ['d1', 'd2'],
       },
     })
+    // The days it covers, in the order the list shows them (newest first): the API takes a set.
+    const posted = (vi.mocked(api.POST).mock.calls[0]?.[1] as unknown as { body: { work_unit_ids: string[] } }).body
+    expect([...posted.work_unit_ids].sort()).toEqual(['d1', 'd2'])
     await waitFor(() => expect(navigate).toHaveBeenCalledWith({ to: '/app/days', search: { contract: CONTRACT_ID } }))
   })
 

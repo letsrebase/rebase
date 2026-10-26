@@ -76,6 +76,11 @@ async def test_the_two_reads_are_registered_and_no_write_is(server) -> None:
         for name in names
         if "work_unit" in name and name not in {"get_work_unit", "list_work_units"}
     }
+    # And no tool carries the name of any operation an agent credential is refused: the ban
+    # list is keyed on the operation, and a tool of the same name would make it a lie.
+    from test_mcp_invoice_ban import REST_ONLY_FORBIDDEN
+
+    assert not names & REST_ONLY_FORBIDDEN
 
 
 async def test_an_agent_reads_a_contracts_days_and_one_days_history(

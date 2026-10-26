@@ -189,7 +189,7 @@ def test_an_unknown_contract_is_not_found_and_an_agent_is_refused(db_session: Se
         _service(db_session).prepare(contract.id, _prepare(_day(date(2026, 11, 2))), AGENT)
 
 
-def test_a_draft_without_a_recipient_is_refused_before_any_day_is_written(
+def test_a_draft_that_cannot_be_filed_takes_its_proposed_days_with_it(
     db_session: Session,
 ) -> None:
     contract = _contract(db_session)
@@ -198,7 +198,8 @@ def test_a_draft_without_a_recipient_is_refused_before_any_day_is_written(
             days=[_day(date(2026, 11, 2))], to_addresses=[], oggetto="x", corpo="y"
         )
     with pytest.raises(ValidationFailed):
-        # The model accepts an empty-looking address list only through the service's own check.
+        # `model_construct` skips the model's own bound; the draft service refuses the empty
+        # list after the days are flushed, and `prepare` rolls them back.
         _service(db_session).prepare(
             contract.id,
             ApprovalRequestPrepare.model_construct(
@@ -210,6 +211,8 @@ def test_a_draft_without_a_recipient_is_refused_before_any_day_is_written(
             ),
             WRITER,
         )
+
+    assert db_session.scalars(select(WorkUnit)).all() == []
 
 
 def test_the_prepared_request_leaves_from_the_owners_mailbox_and_the_days_stay_proposed(

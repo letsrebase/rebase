@@ -151,9 +151,4 @@ export const queryKeys = {
   // days' states as well.
   workUnits: (params?: unknown) => ['work-units', params ?? {}] as const,
   workUnit: (id: string) => ['work-unit', id] as const,
-  // The contracts a day can be recorded against, and one contract's rate cards, read for
-  // the rate the form shows. Their own keys, so this feature never reads the contracts
-  // feature's cache.
-  dayContracts: ['day-contracts'] as const,
-  dayRateCards: (contractId: string) => ['day-rate-cards', contractId] as const,
 }

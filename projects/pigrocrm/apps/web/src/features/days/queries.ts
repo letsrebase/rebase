@@ -1,8 +1,9 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, unwrap } from '@/lib/api'
 import { useLegalEntity } from '@/lib/legalEntity'
 import { queryKeys } from '@/lib/query'
-import type { WorkUnitCreateBody, WorkUnitStato } from './labels'
+import type { Contract } from '@/features/contracts/queries'
+import type { WorkUnitCreateBody, WorkUnitRow, WorkUnitStato } from './labels'
 
 export interface DaysListParams {
   contractId?: string
@@ -54,20 +55,33 @@ export function useWorkUnit(workUnitId: string) {
 
 /**
  * The contracts a day can be recorded against: the ones that have not ended, in the
- * sidebar's azienda. A contract in `bozza` is offered too, because that is the state every
- * contract is born in and the ledger does not wait for it to be activated.
+ * sidebar's azienda, every page of them (a long history of ended contracts must not push a
+ * live one off the first page and out of the picker). A contract in `bozza` is offered too,
+ * because that is the state every contract is born in and the ledger does not wait for it to
+ * be activated.
+ *
+ * Under the contracts feature's own `['contracts']` prefix, so a contract written anywhere
+ * (its terms, its state, its approval flag) refreshes what the day form believes about it.
  */
 export function useDayContracts() {
   const { selected } = useLegalEntity()
   return useQuery({
-    queryKey: [...queryKeys.dayContracts, selected],
+    queryKey: queryKeys.contracts({ for: 'days', azienda: selected }),
     queryFn: async () => {
-      const page = await unwrap(
-        api.GET('/api/contracts', {
-          params: { query: { azienda_id: selected ?? undefined, limit: 200, sort: 'titolo' } },
-        }),
-      )
-      return page.items.filter((contract) => contract.stato !== 'terminato' && contract.stato !== 'scaduto')
+      const items: Contract[] = []
+      let cursor: string | undefined
+      do {
+        const page = await unwrap(
+          api.GET('/api/contracts', {
+            params: {
+              query: { azienda_id: selected ?? undefined, limit: 200, sort: 'titolo', cursor },
+            },
+          }),
+        )
+        items.push(...page.items)
+        cursor = page.next_cursor ?? undefined
+      } while (cursor !== undefined)
+      return items.filter((contract) => contract.stato !== 'terminato' && contract.stato !== 'scaduto')
     },
   })
 }
@@ -76,7 +90,8 @@ export function useDayContracts() {
  * `useDayContracts`, plus the contract the page was opened for when it is not among them:
  * a link from a day's page to an ended contract must open with that contract chosen and not
  * a blank select, and the list rightly leaves ended contracts out of what a new day can be
- * recorded on. Reads the one contract only when the list is in and does not hold it.
+ * recorded on. Reads the one contract only when the list is in and does not hold it, under the
+ * contracts feature's own key for it.
  */
 export function useDayContractOptions(selectedId: string | undefined) {
   const list = useDayContracts()
@@ -84,7 +99,7 @@ export function useDayContractOptions(selectedId: string | undefined) {
     selectedId !== undefined && list.isSuccess && !list.data.some((contract) => contract.id === selectedId)
   const extra = useQuery({
     enabled: missing,
-    queryKey: ['day-contract', selectedId ?? ''],
+    queryKey: queryKeys.contract(selectedId ?? ''),
     queryFn: () =>
       unwrap(
         api.GET('/api/contracts/{contract_id}', {
@@ -98,10 +113,12 @@ export function useDayContractOptions(selectedId: string | undefined) {
   }
 }
 
+/** One contract's rate cards, under the contracts feature's key so a rate written on its page
+ *  is what the form shows next. */
 export function useDayRateCards(contractId: string) {
   return useQuery({
     enabled: contractId !== '',
-    queryKey: queryKeys.dayRateCards(contractId),
+    queryKey: queryKeys.contractRateCards(contractId),
     queryFn: () =>
       unwrap(
         api.GET('/api/contracts/{contract_id}/rate-cards', {
@@ -109,6 +126,45 @@ export function useDayRateCards(contractId: string) {
         }),
       ),
   })
+}
+
+/**
+ * The days of a contract that can still use an approval, for the approval form: the proposed
+ * ones and the ones worked without approval, each asked for by state so a long ledger of
+ * approved and billed days cannot push them out of the newest two hundred, plus the days the
+ * form was opened for (read by id when they are not in those lists: a day older than the
+ * lists reach must stay reachable from its own page).
+ */
+export function useApprovalCandidates(contractId: string, openedFor: readonly string[]) {
+  const proposed = useWorkUnits({ contractId, stato: 'proposto' }, { enabled: contractId !== '' })
+  const flagged = useWorkUnits(
+    { contractId, stato: 'lavorato_senza_approvazione' },
+    { enabled: contractId !== '' },
+  )
+  const listed = new Set([...(proposed.data?.items ?? []), ...(flagged.data?.items ?? [])].map((day) => day.id))
+  const missing = contractId === '' || !proposed.isSuccess || !flagged.isSuccess ? [] : openedFor.filter((id) => !listed.has(id))
+  const extra = useQueries({
+    queries: missing.map((id) => ({
+      queryKey: queryKeys.workUnit(id),
+      queryFn: () =>
+        unwrap(api.GET('/api/work-units/{work_unit_id}', { params: { path: { work_unit_id: id } } })),
+    })),
+  })
+  const byId = new Map<string, WorkUnitRow>()
+  for (const day of [
+    ...(proposed.data?.items ?? []),
+    ...(flagged.data?.items ?? []),
+    ...extra.flatMap((query) => (query.data && query.data.contract_id === contractId ? [query.data] : [])),
+  ]) {
+    byId.set(day.id, day)
+  }
+  const days = [...byId.values()].sort((a, b) => b.data.localeCompare(a.data))
+  return {
+    days,
+    isPending: proposed.isPending || flagged.isPending,
+    isError: proposed.isError || flagged.isError,
+    error: proposed.error ?? flagged.error,
+  }
 }
 
 /**

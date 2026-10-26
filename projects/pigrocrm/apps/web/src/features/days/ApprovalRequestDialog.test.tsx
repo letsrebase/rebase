@@ -45,10 +45,13 @@ function serving() {
 }
 
 function posts(sent: Record<string, unknown> | 'refused' = { ...DRAFT, send_state: 'inviato' }) {
-  vi.mocked(api.POST).mockImplementation(((path: string) => {
+  vi.mocked(api.POST).mockImplementation(((path: string, init: unknown) => {
     if (path === '/api/contracts/{contract_id}/approval-request/preview') return Promise.resolve(ok(MESSAGE))
     if (path === '/api/contracts/{contract_id}/approval-request') {
-      return Promise.resolve(ok({ draft: DRAFT, work_units: [row({ id: 'p1', stato: 'proposto' }), row({ id: 'p2', stato: 'proposto' })] }))
+      // The draft holds what was prepared: its words are the person's, as reviewed.
+      const body = (init as { body: { oggetto: string; corpo: string; to_addresses: string[] } }).body
+      draftNow = { ...DRAFT, subject: body.oggetto, body_markdown: body.corpo, to_addresses: body.to_addresses }
+      return Promise.resolve(ok({ draft: draftNow, work_units: [row({ id: 'p1', stato: 'proposto' }), row({ id: 'p2', stato: 'proposto' })] }))
     }
     if (path === '/api/email-drafts/{draft_id}/send') {
       if (sent === 'refused') {
@@ -138,10 +141,10 @@ describe('asking a client for approval', () => {
   it('keeps the draft and the days when the send is refused, and sends it again on the revision it read', async () => {
     // The refusal moved the draft: its revision is not the one that was prepared.
     posts('refused')
-    const REFUSED = { ...DRAFT, send_state: 'fallito', last_error: 'Gmail ha rifiutato la richiesta', updated_at: '2026-10-26T10:05:00.654321Z' }
+    const REFUSED_PATCH = { send_state: 'fallito', last_error: 'Gmail ha rifiutato la richiesta', updated_at: '2026-10-26T10:05:00.654321Z' }
     const original = vi.mocked(api.POST).getMockImplementation()
     vi.mocked(api.POST).mockImplementation(((path: string, init: unknown) => {
-      if (path === '/api/email-drafts/{draft_id}/send') draftNow = REFUSED
+      if (path === '/api/email-drafts/{draft_id}/send') draftNow = { ...draftNow, ...REFUSED_PATCH }
       return (original as (p: string, i: unknown) => Promise<unknown>)(path, init)
     }) as never)
     const user = userEvent.setup()
@@ -159,15 +162,32 @@ describe('asking a client for approval', () => {
     const sends = (vi.mocked(api.POST).mock.calls as unknown as [string, unknown][]).filter(
       ([path]) => path === '/api/email-drafts/{draft_id}/send',
     )
-    expect(sends[1]?.[1]).toMatchObject({ body: { updated_at: REFUSED.updated_at } })
+    expect(sends[1]?.[1]).toMatchObject({ body: { updated_at: REFUSED_PATCH.updated_at } })
+  })
+
+  it('does not arm a retry with a draft that was edited elsewhere after it was read here', async () => {
+    posts('refused')
+    const original = vi.mocked(api.POST).getMockImplementation()
+    vi.mocked(api.POST).mockImplementation(((path: string, init: unknown) => {
+      if (path === '/api/email-drafts/{draft_id}/send') {
+        // Another tab edited the draft and the send was refused as `draft_changed`.
+        draftNow = { ...draftNow, send_state: 'bozza', body_markdown: 'Testo cambiato altrove', updated_at: '2026-10-26T11:00:00Z' }
+      }
+      return (original as (p: string, i: unknown) => Promise<unknown>)(path, init)
+    }) as never)
+    const user = userEvent.setup()
+    open()
+    await toTheText(user)
+    await user.click(screen.getByRole('button', { name: 'Invia la richiesta' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/modificata altrove/)
+    expect(screen.queryByRole('button', { name: 'Riprova l’invio' })).not.toBeInTheDocument()
   })
 
   it('does not offer a retry for an outcome nobody knows', async () => {
     posts('refused')
-    draftNow = { ...DRAFT, send_state: 'incerto' }
     const original = vi.mocked(api.POST).getMockImplementation()
     vi.mocked(api.POST).mockImplementation(((path: string, init: unknown) => {
-      if (path === '/api/email-drafts/{draft_id}/send') draftNow = { ...DRAFT, send_state: 'incerto' }
+      if (path === '/api/email-drafts/{draft_id}/send') draftNow = { ...draftNow, send_state: 'incerto' }
       return (original as (p: string, i: unknown) => Promise<unknown>)(path, init)
     }) as never)
     const user = userEvent.setup()

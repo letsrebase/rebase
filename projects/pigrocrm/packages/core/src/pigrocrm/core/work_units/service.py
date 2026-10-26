@@ -473,6 +473,13 @@ class ApprovalService:
                     "il documento non e' di questo contratto ne' del suo cliente",
                     expected="un documento del contratto o del cliente",
                 )
+            if document.versione_corrente < 1:
+                raise ValidationFailed(
+                    APPROVAL_ENTITY,
+                    "document_id",
+                    "il documento non ha ancora un file archiviato: carica la prova prima",
+                    expected="un documento con almeno una versione",
+                )
             return document
         if self.storage is None:  # pragma: no cover - the API always passes one
             raise ValidationFailed(APPROVAL_ENTITY, "gmail_message_id", "archivio non disponibile")
@@ -496,7 +503,10 @@ class ApprovalService:
                 "il corpo del messaggio non e' archiviato: carica il messaggio come file",
                 expected="un messaggio con il testo sincronizzato",
             )
-        titolo = f"Email di {message.from_address}: {message.subject}"[:TITOLO_MAX_LENGTH]
+        # A header can carry a NUL, which `SafeStr` refuses in a title; a title is cut to its width.
+        titolo = f"Email di {message.from_address}: {message.subject}".replace("\x00", "")[
+            :TITOLO_MAX_LENGTH
+        ]
         text = (
             f"Da: {message.from_address}\n"
             f"A: {', '.join(message.to_addresses)}\n"

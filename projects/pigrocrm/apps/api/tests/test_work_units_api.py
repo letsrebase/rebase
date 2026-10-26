@@ -101,14 +101,25 @@ def test_a_second_day_on_the_same_date_is_a_409(logged_in: TestClient) -> None:
     assert response.status_code == 409, response.text
 
 
-def _approved_day(client: TestClient, contract_id: str, giorno: str) -> dict[str, Any]:
-    """A day an approval covers, the only way over REST to have an approved one."""
-    day = _record(client, contract_id, giorno, stato="proposto")
+def _filed_document(client: TestClient, contract_id: str) -> Any:
+    """A document of the contract with its one archived file: what a proof is."""
     document = client.post(
         "/api/documents",
         json={"contract_id": contract_id, "tipo": "documento", "titolo": "Mail di conferma"},
     )
     assert document.status_code == 201, document.text
+    version = client.post(
+        f"/api/documents/{document.json()['id']}/versions",
+        files={"file": ("conferma.txt", b"Confermo le giornate.", "text/plain")},
+    )
+    assert version.status_code == 201, version.text
+    return document
+
+
+def _approved_day(client: TestClient, contract_id: str, giorno: str) -> dict[str, Any]:
+    """A day an approval covers, the only way over REST to have an approved one."""
+    day = _record(client, contract_id, giorno, stato="proposto")
+    document = _filed_document(client, contract_id)
     recorded = client.post(
         "/api/approvals",
         json={
@@ -307,12 +318,7 @@ def test_an_agent_token_cannot_record_or_move_a_day(
 
 
 def _document(client: TestClient, contract_id: str) -> str:
-    response = client.post(
-        "/api/documents",
-        json={"contract_id": contract_id, "tipo": "documento", "titolo": "Mail di conferma"},
-    )
-    assert response.status_code == 201, response.text
-    return str(response.json()["id"])
+    return str(_filed_document(client, contract_id).json()["id"])
 
 
 def _approval_body(contract_id: str, document_id: str, days: list[str]) -> dict[str, Any]:
@@ -370,6 +376,24 @@ def test_an_approval_over_a_day_that_cannot_use_it_is_a_409_and_changes_nothing(
 
     assert response.status_code == 409, response.text
     assert logged_in.get(f"/api/work-units/{fine['id']}").json()["stato"] == "proposto"
+
+
+def test_an_approval_on_a_document_with_no_file_is_a_422_and_changes_nothing(
+    logged_in: TestClient,
+) -> None:
+    contract_id = _contract(logged_in)
+    day = _record(logged_in, contract_id, "2026-03-02", stato="proposto")
+    empty = logged_in.post(
+        "/api/documents",
+        json={"contract_id": contract_id, "tipo": "documento", "titolo": "Senza file"},
+    ).json()["id"]
+
+    response = logged_in.post(
+        "/api/approvals", json=_approval_body(contract_id, empty, [day["id"]])
+    )
+
+    assert response.status_code == 422, response.text
+    assert logged_in.get(f"/api/work-units/{day['id']}").json()["stato"] == "proposto"
 
 
 def test_an_approval_with_two_proofs_or_none_is_a_422(logged_in: TestClient) -> None:

@@ -19,8 +19,14 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.contracts.models import Contract
 from pigrocrm.core.customers.models import Customer
-from pigrocrm.core.documents.models import Document
-from pigrocrm.core.errors import AgentForbidden, Conflict, NotFound, ValidationFailed
+from pigrocrm.core.documents.models import Document, DocumentVersion
+from pigrocrm.core.errors import (
+    AgentForbidden,
+    Conflict,
+    NotFound,
+    PermissionDenied,
+    ValidationFailed,
+)
 from pigrocrm.core.gmail.models import GmailMessage, GmailMessageLink
 from pigrocrm.core.storage.local import LocalFileStorage
 from pigrocrm.core.work_units.models import Approval
@@ -68,10 +74,28 @@ def _day(session: Session, contract: Contract, giorno: date, stato: str) -> UUID
     )
 
 
-def _document(session: Session, contract: Contract) -> Document:
-    document = Document(contract_id=contract.id, tipo="documento", titolo="Mail di conferma")
+def _document(session: Session, contract: Contract, *, filed: bool = True) -> Document:
+    """A document of the contract; `filed` gives it the one version an archived original has."""
+    document = Document(
+        contract_id=contract.id,
+        tipo="documento",
+        titolo="Mail di conferma",
+        versione_corrente=1 if filed else 0,
+    )
     session.add(document)
     session.flush()
+    if filed:
+        session.add(
+            DocumentVersion(
+                document_id=document.id,
+                numero=1,
+                storage_key=f"test/{document.id}",
+                content_type="text/plain",
+                dimensione=1,
+                hash_sha256="0" * 64,
+            )
+        )
+        session.flush()
     return document
 
 
@@ -141,6 +165,18 @@ def test_a_day_of_another_contract_is_not_found(db_session: Session) -> None:
         ApprovalService(db_session).record(
             _record(contract, [foreign], document_id=document.id), WRITER
         )
+
+
+def test_a_document_with_no_archived_file_cannot_be_the_proof(db_session: Session) -> None:
+    contract = _contract(db_session)
+    day = _day(db_session, contract, date(2026, 3, 2), "proposto")
+    empty = _document(db_session, contract, filed=False)
+
+    with pytest.raises(ValidationFailed, match="non ha ancora un file"):
+        ApprovalService(db_session).record(_record(contract, [day], document_id=empty.id), WRITER)
+
+    assert WorkUnitService(db_session).get(day).stato == "proposto"
+    assert db_session.scalars(select(Approval)).all() == []
 
 
 def test_a_document_of_another_customer_is_refused(db_session: Session) -> None:
@@ -301,5 +337,5 @@ def test_an_agent_credential_and_a_reader_cannot_record_an_approval(
 
     with pytest.raises(AgentForbidden):
         ApprovalService(db_session).record(body, AGENT)
-    with pytest.raises(Exception, match="permission_denied|requires"):
+    with pytest.raises(PermissionDenied):
         ApprovalService(db_session).record(body, READER)

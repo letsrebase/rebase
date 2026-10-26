@@ -97,6 +97,9 @@ export function ApprovalRequestDialog({
   // retry names the one it read after the failure and never the one it prepared.
   const [draft, setDraft] = useState<{ id: string; updated_at: string } | null>(null)
   const [outcome, setOutcome] = useState<'sent' | 'retry' | 'unknown' | null>(null)
+  // What the person read when they pressed Invia, to compare with what the draft holds after a
+  // refusal: a retry may send only text this dialog showed.
+  const [reviewed, setReviewed] = useState<{ to: string; subject: string; body: string } | null>(null)
   const [sendFailure, setSendFailure] = useState<string | null>(null)
 
   const recipients = to ?? customer.data?.email ?? ''
@@ -109,6 +112,7 @@ export function ApprovalRequestDialog({
     setTo(null)
     setPrepared(null)
     setDraft(null)
+    setReviewed(null)
     setOutcome(null)
     setSendFailure(null)
     preview.reset()
@@ -143,7 +147,10 @@ export function ApprovalRequestDialog({
    * read), `incerto` and `in_invio` cannot, because asking Gmail is the only way to know and
    * a second send is the only way to mail the client twice.
    */
-  async function deliver(target: { id: string; updated_at: string }) {
+  async function deliver(
+    target: { id: string; updated_at: string },
+    shown: { to: string; subject: string; body: string },
+  ) {
     setSendFailure(null)
     setOutcome(null)
     // The days are recorded and the draft exists whatever happens next, so the outcome, good
@@ -163,6 +170,17 @@ export function ApprovalRequestDialog({
       if (read.send_state === 'inviato') {
         toast.success('Richiesta inviata')
         setOutcome('sent')
+      } else if (
+        read.to_addresses.join(',') !== shown.to ||
+        read.subject !== shown.subject ||
+        read.body_markdown !== shown.body
+      ) {
+        // The draft was edited somewhere else after it was read here: arming a retry with its
+        // new revision would send words this dialog never showed.
+        setOutcome('unknown')
+        setSendFailure(
+          'La bozza è stata modificata altrove e non è partita. Aprila dall’Email del cliente, rileggila e inviala da lì.',
+        )
       } else if (read.send_state === 'incerto' || read.send_state === 'in_invio') {
         setOutcome('unknown')
         setSendFailure(
@@ -191,7 +209,13 @@ export function ApprovalRequestDialog({
       })
       setPrepared(result)
       setDraft({ id: result.draft.id, updated_at: result.draft.updated_at })
-      if (gmail) await deliver(result.draft)
+      const shown = {
+        to: splitAddresses(recipients).join(','),
+        subject: oggetto.trim(),
+        body: corpo,
+      }
+      setReviewed(shown)
+      if (gmail) await deliver(result.draft, shown)
       else setStep('done')
     } catch {
       // Shown below from the mutation's own error: nothing was recorded.
@@ -322,8 +346,8 @@ export function ApprovalRequestDialog({
                 {sendFailure}
               </p>
             ) : null}
-            {outcome === 'retry' && draft !== null ? (
-              <Button type="button" onClick={() => void deliver(draft)} disabled={send.isPending}>
+            {outcome === 'retry' && draft !== null && reviewed !== null ? (
+              <Button type="button" onClick={() => void deliver(draft, reviewed)} disabled={send.isPending}>
                 {send.isPending ? <Loader className="mr-2 size-4" /> : null}
                 Riprova l’invio
               </Button>
