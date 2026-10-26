@@ -1,7 +1,7 @@
 import { Link, Outlet, useRouterState } from '@tanstack/react-router'
 import { Settings, ShieldAlert } from 'lucide-react'
 import { defaultDashboardSearch } from '@/features/dashboard/search'
-import { SETTINGS_TABS } from '@/features/settings/tabs'
+import { SETTINGS_GROUPS, SETTINGS_TABS, settingsGroupOf } from '@/features/settings/tabs'
 import { PageHeader } from '@/components/PageHeader'
 import { Button } from '@rebase/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@rebase/ui/tabs'
@@ -116,16 +116,16 @@ export function SettingsLayout() {
   // nothing else: every other tab's services gate their writes on `require_admin`,
   // which is what `canSeeSettingsTab` encodes. The same function filters the sidebar's
   // «Impostazioni» sub-items and the profile menu's own entries, so none can drift.
-  const tabs = SETTINGS_TABS.filter(
-    (tab) => user !== null && canSeeSettingsTab(user.ruolo, tab.value),
-  )
-  const active =
-    tabs.find((tab) => tab.value === current?.value)?.value ?? (isAdmin ? 'fields' : 'profile')
+  // REB-771: the strip is cut to the entries of the group the page is on (the sidebar
+  // lists the groups), and a path that is no section falls back to Profilo's group.
+  const group = settingsGroupOf(current?.value) ?? SETTINGS_GROUPS[0]
+  const tabs = group.tabs.filter((tab) => user !== null && canSeeSettingsTab(user.ruolo, tab.value))
+  const active = current?.value ?? 'profile'
 
   // `Tabs` wraps the header rather than sitting under it: the underline tabs of §4 are
   // *part* of the page's intestazione (`PageHeader`'s own `tabs` slot draws them and
   // closes them with the rule), and Radix needs the list inside its own root.
-  // `SETTINGS_TABS` stays the single source -- `AppShell` renders the same array as the
+  // `SETTINGS_GROUPS` stays the single source -- `AppShell` renders the same groups as the
   // sidebar's sub-items, so the two cannot drift.
   return (
     <Tabs value={active}>

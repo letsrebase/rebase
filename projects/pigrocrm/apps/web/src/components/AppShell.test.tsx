@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
-import { SETTINGS_TABS } from '@/features/settings/tabs'
+import { SETTINGS_GROUPS } from '@/features/settings/tabs'
 import { readAndClearRegisterHandoffEmail } from '@/lib/registerHandoff'
 import { LegalEntityContext, type LegalEntityRecord, type LegalEntityValue } from '@/lib/legalEntity'
 import { AppShell } from './AppShell'
@@ -23,12 +23,16 @@ vi.mock('@tanstack/react-router', () => ({
     className,
     activeProps,
     activeOptions,
+    'aria-current': ariaCurrent,
+    'data-status': dataStatus,
   }: {
     children: React.ReactNode
     to: string
     className?: string
     activeProps?: Record<string, unknown>
     activeOptions?: { exact?: boolean; includeSearch?: boolean }
+    'aria-current'?: 'page'
+    'data-status'?: string
   }) => {
     // `activeOptions.exact` is honoured, because the shell relies on it: without it "/app"
     // is a prefix of every other route and Home would be the current page everywhere.
@@ -41,7 +45,13 @@ vi.mock('@tanstack/react-router', () => ({
     const search = activeOptions?.includeSearch === false || mockRoute.search === ''
     const active = path && search
     return (
-      <a href={to} className={className} {...(active ? activeProps : {})}>
+      <a
+        href={to}
+        className={className}
+        aria-current={ariaCurrent}
+        data-status={dataStatus}
+        {...(active ? activeProps : {})}
+      >
         {children}
       </a>
     )
@@ -292,18 +302,26 @@ describe('AppShell', () => {
     )
   })
 
-  it('lists one sub-item per settings tab, in the same order', async () => {
-    // Against the shared `SETTINGS_TABS` and not against a handful of labels typed out
-    // here: a tab added to the settings page and forgotten in the sidebar is exactly the
-    // drift this list exists to prevent.
+  it('lists one sub-item per settings group, each linking to its first section', async () => {
+    // Against the shared `SETTINGS_GROUPS` and not against labels typed out here: a group
+    // added to the settings page and forgotten in the sidebar is exactly the drift this
+    // list exists to prevent.
     renderShell()
     await userEvent.click(sidebar().getByRole('button', { name: 'Impostazioni' }))
     const subItems = sidebar()
       .getAllByRole('link')
       .filter((link) => link.getAttribute('href')?.startsWith('/app/settings/'))
     expect(subItems.map((link) => link.textContent)).toEqual(
-      SETTINGS_TABS.map((tab) => tab.label),
+      SETTINGS_GROUPS.map((group) => group.label),
     )
+    expect(subItems.map((link) => link.getAttribute('href'))).toEqual([
+      '/app/settings/profile',
+      '/app/settings/space',
+      '/app/settings/fields',
+      '/app/settings/aziende',
+      '/app/settings/gmail',
+      '/app/settings/automations',
+    ])
   })
 
   it('opens Impostazioni when the current route is one of its tabs', () => {
@@ -314,16 +332,40 @@ describe('AppShell', () => {
       'aria-expanded',
       'true',
     )
-    expect(nav.getByRole('link', { name: 'Tariffe' })).toHaveAttribute('aria-current', 'page')
+    const current = nav.getByRole('link', { name: 'Fatturazione e costi' })
+    expect(current).toHaveAttribute('aria-current', 'page')
+    expect(current).toHaveAttribute('data-status', 'active')
+    expect(nav.getByRole('link', { name: 'Personale' })).not.toHaveAttribute('aria-current')
   })
 
-  it.each(['collaboratore', 'readonly'])('hides Impostazioni from a %s', (ruolo) => {
-    // The group button itself is gone, not merely closed: a non-admin who cannot open
-    // any settings tab should not see a control that would only fail on click.
-    mockAuth.ruolo = ruolo
+  it.each([
+    ['collaboratore', ['Personale', 'Collegamenti'], ['/app/settings/profile', '/app/settings/drive']],
+    ['readonly', ['Personale'], ['/app/settings/profile']],
+  ])('shows a %s only the Impostazioni groups it can open', async (ruolo, labels, hrefs) => {
+    // The group is there for every role (REB-771); each role sees only the groups with a
+    // section it may open, so no link would fail on click.
+    mockAuth.ruolo = ruolo as string
     renderShell()
-    expect(sidebar().queryByRole('button', { name: 'Impostazioni' })).not.toBeInTheDocument()
+    await userEvent.click(sidebar().getByRole('button', { name: 'Impostazioni' }))
+    const subItems = sidebar()
+      .getAllByRole('link')
+      .filter((link) => link.getAttribute('href')?.startsWith('/app/settings/'))
+    expect(subItems.map((link) => link.textContent)).toEqual(labels)
+    expect(subItems.map((link) => link.getAttribute('href'))).toEqual(hrefs)
   })
+
+  it.each(['admin', 'collaboratore', 'readonly'])(
+    'links the collapsed rail\'s Impostazioni icon to Profilo for a %s',
+    async (ruolo) => {
+      mockAuth.ruolo = ruolo
+      renderShell()
+      await userEvent.click(screen.getByRole('button', { name: 'Comprimi il menu' }))
+      expect(sidebar().getByRole('link', { name: 'Impostazioni' })).toHaveAttribute(
+        'href',
+        '/app/settings/profile',
+      )
+    },
+  )
 
   it.each(['collaboratore', 'readonly'])(
     'keeps the %s navigation surface intact: five top-level entries and both groups',
@@ -477,8 +519,8 @@ describe('AppShell', () => {
   })
 
   /**
-   * The whole «Impostazioni» group is admin-only in the sidebar, and the profile tab is
-   * inside it -- so for a non-admin this menu entry is the only way to their own profile
+   * The profile tab is inside «Impostazioni», whose «Personale» entry is the same page;
+   * this menu entry is the shortest way to their own profile
    * from inside the app, and the weekly report's opt-out link (spec 2026-09-16 §3.6) was
    * the only way to it from outside. Checked for both non-admin roles, as «Token» is:
    * "collaboratore" and "readonly" are two different guards.
