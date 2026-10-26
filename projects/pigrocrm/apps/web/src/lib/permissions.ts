@@ -75,6 +75,8 @@ export const MIN_ROLE = {
   create_cost: 'collaboratore',
   update_cost: 'collaboratore',
   delete_cost: 'collaboratore',
+  create_work_unit: 'collaboratore',
+  transition_work_unit: 'collaboratore',
   create_attivita: 'collaboratore',
   update_attivita: 'collaboratore',
   complete_attivita: 'collaboratore',

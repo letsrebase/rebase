@@ -146,4 +146,14 @@ export const queryKeys = {
   contractProjection: (id: string, params?: unknown) =>
     ['contract', id, 'projection', params ?? {}] as const,
   contractConcentration: (id: string) => ['contract', id, 'concentration'] as const,
+  // The contract days (REB-745): `workUnits` is the prefix every day write invalidates, and
+  // the calendar's month is under its own `['calendario']` prefix because it carries the
+  // days' states as well.
+  workUnits: (params?: unknown) => ['work-units', params ?? {}] as const,
+  workUnit: (id: string) => ['work-unit', id] as const,
+  // The contracts a day can be recorded against, and one contract's rate cards, read for
+  // the rate the form shows. Their own keys, so this feature never reads the contracts
+  // feature's cache.
+  dayContracts: ['day-contracts'] as const,
+  dayRateCards: (contractId: string) => ['day-rate-cards', contractId] as const,
 }
