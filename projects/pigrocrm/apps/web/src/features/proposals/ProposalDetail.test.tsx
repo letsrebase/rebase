@@ -275,6 +275,19 @@ describe('a proposal already decided', () => {
     expect(screen.getByRole('region', { name: 'Esito' })).toHaveTextContent('Rifiutata da Lorenzo Fiore')
   })
 
+  it('says so when the reason of a rejection could not be read, instead of showing none', async () => {
+    vi.mocked(api.GET).mockImplementation(((path: string) =>
+      Promise.resolve(
+        path === '/api/proposals/{proposal_id}'
+          ? ok(proposal({ stato: 'rifiutata', deciso_da: 'Lorenzo Fiore', deciso_il: '2026-10-25T10:00:00Z' }))
+          : refused(500, { title: 'x', status: 500, detail: 'Il database non risponde.', code: 'internal', instance: '/' }),
+      )) as never)
+    renderWithQuery(<ProposalDetail proposalId="p1" />)
+    expect(await screen.findByText(/Non è stato possibile leggere il motivo del rifiuto/)).toHaveTextContent(
+      'Il database non risponde.',
+    )
+  })
+
   it('says nothing about a reason when a rejection had none', async () => {
     serving(proposal({ stato: 'rifiutata', deciso_da: 'Lorenzo Fiore', deciso_il: '2026-10-25T10:00:00Z' }), [
       { id: 'a2', kind: 'rejected', payload: { deciso_da: 'Lorenzo Fiore', motivo: null } },

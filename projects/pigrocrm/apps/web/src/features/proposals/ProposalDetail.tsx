@@ -294,6 +294,12 @@ function Outcome({ proposal, customerId }: { proposal: Proposal; customerId: str
             </Link>
           ) : null}
         </p>
+      ) : timeline.isError ? (
+        // The reason is the one thing this box cannot say without the timeline: a failed
+        // read must not look like a rejection that had none.
+        <p className="text-destructive">
+          Non è stato possibile leggere il motivo del rifiuto. {toProblem(timeline.error).detail}
+        </p>
       ) : typeof motivo === 'string' && motivo !== '' ? (
         <p>
           <span className="text-muted-foreground">Motivo: </span>

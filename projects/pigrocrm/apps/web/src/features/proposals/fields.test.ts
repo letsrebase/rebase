@@ -127,6 +127,26 @@ describe('describeProposal, a contract', () => {
     })
   })
 
+  it('reads the whole numbers and flags a REST caller sent as strings', () => {
+    const asStrings = describeProposal(
+      waiting('contratto', {
+        ...CONTRACT,
+        contract: {
+          ...CONTRACT.contract,
+          giorni_pagamento: '30',
+          pagamento_fine_mese: 'true',
+          preavviso_disdetta_giorni: '60',
+          requires_prior_approval: 'true',
+        },
+      }),
+    )
+    expect(rowsOf(asStrings, 'Contratto')).toMatchObject({
+      Pagamento: '30 giorni data fattura fine mese',
+      'Preavviso di disdetta': '60 giorni',
+      'Approvazione preventiva': 'Sì',
+    })
+  })
+
   it('speaks of one day of notice in the singular', () => {
     const one = describeProposal(
       waiting('contratto', { ...CONTRACT, contract: { ...CONTRACT.contract, preavviso_disdetta_giorni: 1 } }),

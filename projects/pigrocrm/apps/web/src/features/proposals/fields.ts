@@ -174,11 +174,24 @@ function rows(...candidates: (FieldRow | null)[]): FieldRow[] {
 }
 
 function yesNo(value: unknown): string | null {
+  if (value === 'true') return 'Sì'
+  if (value === 'false') return 'No'
   return typeof value === 'boolean' ? (value ? 'Sì' : 'No') : null
 }
 
+/**
+ * A whole number as the digits it was written in. The REST door validates `campi_proposti`
+ * when it is filed but stores the JSON it was sent, so `30` and `"30"` (and `true` and
+ * `"true"`) are both real and mean the same thing; MCP sends the typed one.
+ */
+function wholeNumber(value: unknown): string | null {
+  if (typeof value === 'number' && Number.isInteger(value)) return String(value)
+  return typeof value === 'string' && /^\d+$/.test(value) ? value : null
+}
+
 function days(value: unknown): string | null {
-  return typeof value === 'number' ? `${value} ${value === 1 ? 'giorno' : 'giorni'}` : null
+  const count = wholeNumber(value)
+  return count === null ? null : `${count} ${count === '1' ? 'giorno' : 'giorni'}`
 }
 
 /** «1 giorno», «0,5 giorni»: the singular is the quantity written exactly «1». */
@@ -225,10 +238,11 @@ function contractGroups(fields: Record<string, unknown>): { title: string; group
   const currency = text(contract.divisa) ?? 'EUR'
   // `giorni_pagamento` null is the contract inheriting the customer's own term, which is a
   // fact worth saying and not a blank to hide.
+  const paymentDays = wholeNumber(contract.giorni_pagamento)
   const payment =
-    typeof contract.giorni_pagamento === 'number'
-      ? `${contract.giorni_pagamento} giorni data fattura${contract.pagamento_fine_mese === true ? ' fine mese' : ''}`
-      : 'Come da condizioni del cliente'
+    paymentDays === null
+      ? 'Come da condizioni del cliente'
+      : `${paymentDays} giorni data fattura${contract.pagamento_fine_mese === true || contract.pagamento_fine_mese === 'true' ? ' fine mese' : ''}`
   const period = [isoDate(contract.inizio), isoDate(contract.fine) ?? 'a tempo indeterminato']
   const unit = text(rate.unita)
   // A flat fee is not «per forfait»: the other units are, and read «/ mese».
