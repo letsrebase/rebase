@@ -18,6 +18,7 @@ Not a `*Service`: it is a read that returns bytes, like the year's CSV, and an M
 no bytes. A person downloads it from the day's page.
 """
 
+import hashlib
 import io
 import re
 import zipfile
@@ -31,11 +32,11 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.documents.service import DocumentService
-from pigrocrm.core.errors import NotFound
+from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
 from pigrocrm.core.money import round_money
 from pigrocrm.core.storage.base import DocumentStorage
-from pigrocrm.core.work_units.models import WorkUnit
+from pigrocrm.core.work_units.models import Approval, WorkUnit
 from pigrocrm.core.work_units.schemas import WorkUnitDetail
 from pigrocrm.core.work_units.service import WorkUnitService
 
@@ -43,6 +44,10 @@ MAX_ENTRY_NAME_LENGTH = 200
 # What a ZIP entry's timestamp can hold, fixed: the bundle of a day is the same bytes however
 # often it is downloaded, which is what lets a person compare two copies by hash.
 ENTRY_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
+# The days a register of the month counts: committed, worked or billed. A proposal, a day
+# worked without the approval its contract asks for and a day written off are not in a
+# total a client will cross-check; they are listed, marked, and left out of the sum.
+COUNTED = ("approvato", "lavorato", "contestato", "fatturato", "pagato")
 NEVER_HAPPENED = ("rifiutato", "revocato")
 
 
@@ -89,6 +94,16 @@ def _approval_reference(detail: WorkUnitDetail) -> list[str]:
     return lines
 
 
+def _proof_label(session: Session, unit: WorkUnit) -> str:
+    """The approval a day rests on, as a person reads it: channel, sender, date."""
+    if unit.approval_id is None:
+        return "senza approvazione"
+    approval = session.get(Approval, unit.approval_id)
+    if approval is None:
+        return "approvazione non leggibile"
+    return f"approvazione {approval.canale} di {approval.mittente}, {approval.ricevuto_il.date()}"
+
+
 def _register_lines(session: Session, detail: WorkUnitDetail) -> tuple[str, str, list[str]]:
     """The contract's days in the month of the day, the window a register of approvals is read
     in, each with the state it is in and the approval it rests on."""
@@ -107,11 +122,14 @@ def _register_lines(session: Session, detail: WorkUnitDetail) -> tuple[str, str,
     lines: list[str] = []
     total = Decimal("0.00")
     for unit in rows:
-        total += unit.quantita
+        if unit.stato in COUNTED:
+            total += unit.quantita
         mark = " <- questa giornata" if unit.id == detail.id else ""
-        proof = f"approvazione {unit.approval_id}" if unit.approval_id else "senza approvazione"
+        proof = _proof_label(session, unit)
         lines.append(f"{unit.data.isoformat()}  {unit.quantita}  {unit.stato}  ({proof}){mark}")
-    lines.append(f"Totale giornate del mese: {total}")
+    lines.append(
+        f"Totale giornate del mese: {total} (approvate, lavorate, contestate, fatturate, pagate)"
+    )
     end = date.fromordinal(last.toordinal() - 1)
     return first.isoformat(), end.isoformat(), lines
 
@@ -184,12 +202,13 @@ def build_dispute_bundle(
             content, _, filename = DocumentService(session, storage).download(
                 approval.document_id, None, actor
             )
-        except NotFound:
+        except (NotFound, Conflict, ValidationFailed):
             source_line = f"Il file originale di «{title}» non è leggibile dall'archivio."
         else:
             entry = safe_entry_name(filename, f"document-{approval.document_id}")
             files[f"source/{entry}"] = content
-            source_line = f"source/{entry}: «{title}»"
+            digest = hashlib.sha256(content).hexdigest()
+            source_line = f"source/{entry}: «{title}», versione corrente, SHA-256 {digest}"
     files = {"summary.txt": render_summary(session, detail, source_line).encode(), **files}
 
     buffer = io.BytesIO()

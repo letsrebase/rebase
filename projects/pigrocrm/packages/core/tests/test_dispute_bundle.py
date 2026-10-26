@@ -7,6 +7,7 @@ the day's log, the month's register and the invoice line; every name in the arch
 for any filesystem; and the same day gives the same bytes twice.
 """
 
+import hashlib
 import io
 import zipfile
 from datetime import UTC, date, datetime
@@ -21,7 +22,7 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.contracts.models import Contract, RateCard
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.models import Document, DocumentVersion
-from pigrocrm.core.errors import NotFound
+from pigrocrm.core.errors import Conflict, NotFound
 from pigrocrm.core.invoices.schemas import InvoiceIssue
 from pigrocrm.core.storage.local import LocalFileStorage
 from pigrocrm.core.work_units.dispute_bundle import build_dispute_bundle, safe_entry_name
@@ -161,6 +162,7 @@ def test_the_bundle_holds_the_summary_and_the_original_email_byte_for_byte(
     assert 'Estratto: "Confermo le giornate di marzo."' in summary
     assert "Ricevuta il: 2026-03-01T09:00:00" in summary
     assert f"{source}: «Mail di conferma di Giulia»" in summary
+    assert f"SHA-256 {hashlib.sha256(EMAIL).hexdigest()}" in summary
 
 
 def test_the_summary_carries_the_log_the_months_register_and_marks_the_day(
@@ -182,8 +184,14 @@ def test_the_summary_carries_the_log_the_months_register_and_marks_the_day(
     assert "Registro del contratto, da 2026-03-01 a 2026-03-31" in summary
     assert "2026-03-02  1.00  contestato  (senza approvazione) <- questa giornata" in summary
     assert "2026-03-03  1.00  lavorato" in summary
+    proposed = _day(db_session, contract, date(2026, 3, 9), "proposto")
+    assert proposed.stato == "proposto"
+    _, content = build_dispute_bundle(db_session, local_storage, contested.id, READER)
+    summary = _open(content).read("summary.txt").decode()
+    # Listed, but a proposal is not in the total.
+    assert "2026-03-09  1.00  proposto" in summary
     assert "2026-04-01" not in summary and "2026-03-04" not in summary
-    assert "Totale giornate del mese: 2.00" in summary
+    assert "Totale giornate del mese: 2.00 (" in summary
     assert "-> lavorato" in summary and "lavorato -> contestato" in summary
 
 
@@ -212,6 +220,25 @@ def test_an_original_the_archive_cannot_read_is_said_so_not_left_out(
     db_session.query(DocumentVersion).filter_by(document_id=document.id).update({"numero": 2})
     document.versione_corrente = 1
     db_session.flush()
+
+    _, content = build_dispute_bundle(db_session, local_storage, proposed.id, READER)
+
+    archive = _open(content)
+    assert archive.namelist() == ["summary.txt"]
+    assert "non è leggibile dall'archivio" in archive.read("summary.txt").decode()
+
+
+def test_a_storage_that_refuses_the_file_is_said_so_in_the_summary(
+    db_session: Session, local_storage: LocalFileStorage, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    contract = _contract(db_session)
+    proposed = _day(db_session, contract, date(2026, 3, 2), "proposto")
+    _approve(db_session, local_storage, contract, [proposed])
+
+    def refuse(*_: object, **__: object) -> bytes:
+        raise Conflict("document", "l'archivio non risponde")
+
+    monkeypatch.setattr(local_storage, "get", refuse)
 
     _, content = build_dispute_bundle(db_session, local_storage, proposed.id, READER)
 
