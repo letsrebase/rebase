@@ -308,6 +308,7 @@ class AutomationPass:
         ).all()
         found: list[_Candidate] = []
         for titolo, stato_dal, deal_id, customer_id, cliente, owner_id in rows:
+            assert stato_dal is not None  # the query asked for dated ones only
             field, subject = (
                 ("deal_id", deal_id) if deal_id is not None else ("customer_id", customer_id)
             )

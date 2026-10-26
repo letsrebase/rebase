@@ -183,7 +183,7 @@ export function AutomationsPanel() {
                     value={data.configurazione.a4_deal_fermo_giorni}
                     disabled={update.isPending}
                     onCommit={(days, settled) =>
-                      update.mutate({ a4_deal_fermo_giorni: days }, { onSettled: settled })
+                      update.mutate({ a4_deal_fermo_giorni: days }, { onSuccess: settled })
                     }
                   />
                 )}

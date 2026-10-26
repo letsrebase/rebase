@@ -130,13 +130,13 @@ RULE_DESCRIPTIONS: dict[AutomationRuleCode, tuple[str, str]] = {
     "offerta_inviata_richiama": (
         "Offerta senza risposta → un'attività per richiamare",
         "Una volta al giorno: per ogni offerta inviata da almeno sette giorni e ancora in "
-        "attesa (non oltre trenta: dopo, richiamare non è più il seguito dell'invio), apre "
+        "attesa (fino a trentasette: dopo, richiamare non è più il seguito dell'invio), apre "
         "«Richiamare {cliente} sull'offerta {titolo}», con scadenza sette giorni dopo "
         "l'invio, al titolare del deal. Una sola finché è aperta.",
     ),
     "deal_fermo": (
         "Deal fermo → un'attività per riprenderlo",
-        "Una volta al giorno: per ogni deal aperto che resta nello stesso stato da più "
+        "Una volta al giorno: per ogni deal aperto che resta nello stesso stato da almeno i "
         "giorni della soglia sotto, apre «Il deal {nome} è fermo da {n} giorni», con "
         "scadenza oggi, al titolare del deal. Una sola finché è aperta.",
     ),

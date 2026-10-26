@@ -117,8 +117,10 @@ class ReminderEngine:
                             period=today if kind.daily else None,
                         )
                     )
+        # `raised` keeps what was detected, covered or not: a person's acknowledge or snooze
+        # of an attivita must survive the day its reminder is not raised for them, and ends
+        # only when the cause is gone (`forget_unraised`).
         reminders = self._without_what_a_reminder_already_says(reminders)
-        raised = {reminder.key for reminder in reminders}
         return Evaluation(tuple(reminders), frozenset(ran), frozenset(raised))
 
     def _without_what_a_reminder_already_says(self, reminders: list[Reminder]) -> list[Reminder]:

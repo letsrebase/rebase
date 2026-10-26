@@ -250,9 +250,13 @@ def test_what_the_pass_opened_for_a_late_invoice_is_not_announced_twice_to_one_p
     )
     manual = world.attivita(TODAY, assegnata_a=world.alice.id, invoice_id=invoice.id)
 
-    raised = world.raised(world.evaluate())
+    evaluation = world.evaluate()
+    raised = world.raised(evaluation)
 
     assert ("invoice_overdue", invoice.id) in raised
+    # Still detected for everybody, so a person's acknowledge or snooze of it is not forgotten
+    # on the day it is not raised for them.
+    assert reminder_key("attivita_due", covered.id) in evaluation.raised
     # The customer's owner hears of the invoice already; the assignee does not.
     assert raised[("attivita_due", covered.id)] == {world.alice.id}
     assert world.carol.id in raised[("attivita_due", manual.id)]
