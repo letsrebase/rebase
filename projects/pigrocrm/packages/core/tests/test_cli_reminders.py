@@ -31,7 +31,7 @@ from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings
 from pigrocrm.core.db import session_factory, today_local
 from pigrocrm.core.db.sidecar import create_database_if_missing, drop_database
-from pigrocrm.core.reminders.run import REMINDERS_LOCK_NAMESPACE, ReminderRun
+from pigrocrm.core.reminders.run import REMINDERS_LOCK_NAMESPACE, ReminderOutcome, ReminderRun
 from pigrocrm.core.reminders.service import ReminderService
 from pigrocrm.core.tenants import TenantService, TenantSignup, ensure_tenants_database
 from pigrocrm.core.tenants.database import tenant_database_name, tenant_database_url
@@ -355,3 +355,40 @@ def test_the_reminder_arguments_reject_a_date_that_is_not_one() -> None:
         cli.main(["reminders", "--data", "domani"])
 
     assert raised.value.code == 2
+
+
+# -- what the other channels sent, and the key pair ------------------------------------------
+
+
+def test_the_line_tells_what_the_other_channels_sent_only_when_they_sent(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cli._stampa_promemoria(
+        ReminderOutcome("acme", "eseguito", raised=3, delivered=2), dry_run=False
+    )
+    cli._stampa_promemoria(
+        ReminderOutcome("acme", "eseguito", raised=3, delivered=2, pushes=2, emails=1),
+        dry_run=False,
+    )
+    cli._stampa_promemoria(
+        ReminderOutcome("acme", "eseguito", raised=3, delivered=2, emails=1), dry_run=True
+    )
+
+    assert capsys.readouterr().out.splitlines() == [
+        "acme: promemoria 3, nuovi 2, chiusi 0",
+        "acme: promemoria 3, nuovi 2, chiusi 0, push 2, email 1",
+        "acme: promemoria 3, nuovi 2, chiusi 0, email 1 (prova)",
+    ]
+
+
+def test_vapid_keys_prints_a_private_key_the_application_can_use(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from pigrocrm.core.reminders.push import vapid_public_key
+
+    assert cli.main(["vapid-keys"]) == 0
+
+    private_line, public_line = capsys.readouterr().out.splitlines()
+    assert private_line.startswith("PIGROCRM_VAPID_PRIVATE_KEY=")
+    private = private_line.split("=", 1)[1]
+    assert public_line.endswith(vapid_public_key(private)), "the public key printed is its own"
