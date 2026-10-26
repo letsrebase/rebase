@@ -513,3 +513,40 @@ def test_an_agent_token_cannot_prepare_a_request(
     assert (
         logged_in.get("/api/work-units", params={"contract_id": contract_id}).json()["items"] == []
     )
+
+
+# --- the dispute bundle of a contested day (REB-759) -------------------------------------
+
+
+def test_the_dispute_bundle_is_a_zip_download_with_the_summary_and_the_original(
+    logged_in: TestClient,
+) -> None:
+    """The wire only: a ZIP attachment with an ASCII name, `summary.txt` first and the
+    archived original under `source/`, byte for byte. What the summary says is proven in
+    `test_dispute_bundle.py`."""
+    import io
+    import zipfile
+
+    contract_id = _contract(logged_in)
+    day = _approved_day(logged_in, contract_id, "2026-03-02")
+
+    response = logged_in.get(f"/api/work-units/{day['id']}/dispute-bundle")
+
+    assert response.status_code == 200, response.text
+    assert response.headers["content-type"] == "application/zip"
+    disposition = response.headers["content-disposition"]
+    assert (
+        disposition == f'attachment; filename="fascicolo-giornata-2026-03-02-{day["id"][:8]}.zip"'
+    )
+    archive = zipfile.ZipFile(io.BytesIO(response.content))
+    names = archive.namelist()
+    assert names[0] == "summary.txt"
+    (source,) = [n for n in names if n.startswith("source/")]
+    assert archive.read(source) == b"Confermo le giornate."
+    assert 'Estratto: "Confermo."' in archive.read("summary.txt").decode()
+
+
+def test_the_dispute_bundle_of_an_unknown_day_is_a_404(logged_in: TestClient) -> None:
+    response = logged_in.get("/api/work-units/00000000-0000-0000-0000-000000000000/dispute-bundle")
+
+    assert response.status_code == 404, response.text

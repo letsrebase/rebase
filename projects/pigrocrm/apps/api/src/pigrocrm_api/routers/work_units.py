@@ -3,7 +3,9 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Query, status
+from fastapi.responses import Response
 
+from pigrocrm.core.work_units.dispute_bundle import build_dispute_bundle
 from pigrocrm.core.work_units.schemas import (
     LIST_LIMIT_DEFAULT,
     LIST_LIMIT_MAX,
@@ -17,7 +19,7 @@ from pigrocrm.core.work_units.schemas import (
     WorkUnitTransitionIn,
 )
 from pigrocrm.core.work_units.service import WorkUnitService
-from pigrocrm_api.deps import ActorDep, SessionDep
+from pigrocrm_api.deps import ActorDep, SessionDep, StorageDep
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 
 router = APIRouter(prefix="/api/work-units", tags=["giornate"], responses=PROBLEM_RESPONSES)
@@ -52,6 +54,28 @@ def list_work_units(
         contract_id=contract_id, azienda_id=azienda_id, da=da, a=a, stato=stato, limit=limit
     )
     return WorkUnitService(session).list(query, actor)
+
+
+@router.get(
+    "/{work_unit_id}/dispute-bundle",
+    response_class=Response,
+    responses={
+        200: {"content": {"application/zip": {}}, "description": "Il fascicolo della giornata"}
+    },
+)
+def dispute_bundle(
+    work_unit_id: UUID, session: SessionDep, actor: ActorDep, storage: StorageDep
+) -> Response:
+    """Il fascicolo di una giornata contestata (REB-759): un archivio ZIP con `summary.txt`
+    (la giornata, l'approvazione e l'estratto, lo storico, il registro del mese, la riga di
+    fattura) e, sotto `source/`, l'originale archiviato su cui poggia l'approvazione, byte
+    per byte. Aperto a ogni ruolo, come la pagina della giornata."""
+    filename, content = build_dispute_bundle(session, storage, work_unit_id, actor)
+    return Response(
+        content=content,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/{work_unit_id}", response_model=WorkUnitDetail)

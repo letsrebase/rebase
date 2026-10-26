@@ -2,6 +2,7 @@ import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/rea
 import { api, unwrap } from '@/lib/api'
 import { useLegalEntity } from '@/lib/legalEntity'
 import { queryKeys } from '@/lib/query'
+import { tenantPrefix } from '@/lib/tenant'
 import type { Contract } from '@/features/contracts/queries'
 import type { WorkUnitCreateBody, WorkUnitRow, WorkUnitStato } from './labels'
 
@@ -209,4 +210,14 @@ export function useMoveDay(workUnitId: string) {
     // A 409 means the day moved under this page (another tab, a trigger): read it again.
     onError: () => void queryClient.invalidateQueries({ queryKey: queryKeys.workUnit(workUnitId) }),
   })
+}
+
+/**
+ * Where the dispute bundle of a day is downloaded from (REB-759). A plain URL, not a fetch,
+ * like the year's CSV: the browser saves the ZIP itself and the bytes never pass through
+ * JavaScript. Same-origin, so the session cookie travels with it, and the space's prefix is
+ * part of the path.
+ */
+export function disputeBundleUrl(workUnitId: string): string {
+  return `${tenantPrefix}/api/work-units/${encodeURIComponent(workUnitId)}/dispute-bundle`
 }

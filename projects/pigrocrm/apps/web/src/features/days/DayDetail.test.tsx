@@ -192,4 +192,16 @@ describe('a day’s page', () => {
     renderWithQuery(<DayDetail workUnitId={DAY_ID} />)
     expect(await screen.findByText('Giornata non trovata.')).toBeInTheDocument()
   })
+
+  it('offers the dispute bundle of the day, to a reader as well as to a writer', async () => {
+    auth.ruolo = 'readonly'
+    serving(detail({ stato: 'contestato', azioni: [] }))
+    renderWithQuery(<DayDetail workUnitId={DAY_ID} />)
+
+    const link = await screen.findByRole('link', { name: 'Scarica il fascicolo' })
+    expect(link).toHaveAttribute('href', `/api/work-units/${DAY_ID}/dispute-bundle`)
+    expect(
+      screen.getByRole('heading', { name: 'Fascicolo per la contestazione' }),
+    ).toBeInTheDocument()
+  })
 })
