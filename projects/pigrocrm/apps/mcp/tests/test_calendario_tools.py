@@ -188,3 +188,13 @@ async def test_the_oggi_panel_is_one_read_in_four_sections(server) -> None:
     assert [a["titolo"] for a in panel["in_ritardo"]["items"]] == ["In ritardo"]
     assert panel["in_ritardo"]["totale"] == 1
     assert [a["titolo"] for a in panel["senza_scadenza"]["items"]] == ["Senza data"]
+
+
+async def test_a_bad_oggi_limit_is_guidance_and_not_a_database_error(server) -> None:
+    async with Client(server) as client:
+        zero = await client.call_tool("get_attivita_oggi", {"limit": 0})
+        molti = await client.call_tool("get_attivita_oggi", {"limit": "molti"})
+
+    for result in (zero, molti):
+        assert result.is_error
+        assert "errors.pydantic.dev" not in result.content[0].text

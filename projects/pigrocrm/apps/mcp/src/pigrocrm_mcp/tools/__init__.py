@@ -2307,7 +2307,7 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
     @mcp.tool()
     @guard
     def get_attivita_oggi(
-        assegnata_a: str | None = None, limit: BoundedLimit = 100
+        assegnata_a: str | None = None, limit: BoundedLimit = 50
     ) -> dict[str, Any]:
         """Cosa scade oggi, in quattro sezioni: `in_ritardo` (scadenza prima di oggi),
         `scadono_oggi`, `prossimi_sette_giorni` (da domani a oggi più sette) e
@@ -2317,7 +2317,8 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         `oggi` è il giorno di chi emette, non quello del server. Senza `assegnata_a`
         risponde per tutto lo spazio; per «le mie» passa l'id di chi possiede il token."""
         return calendar_tools.today(
-            context, UUID(assegnata_a) if assegnata_a else None, cast(int, limit)
+            context,
+            {"assegnata_a": UUID(assegnata_a) if assegnata_a else None, "limit": limit},
         )
 
     @mcp.tool()

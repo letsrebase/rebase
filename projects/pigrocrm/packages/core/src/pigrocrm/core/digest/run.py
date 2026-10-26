@@ -130,6 +130,9 @@ def sezioni_con_righe(digest: WeeklyDigest) -> int:
     the mail prints a line for `vinti_da_fatturare` and a second for `ore_non_fatturate or
     valore_maturato`, so the section exists when any of the three is set.
 
+    «Da fare» (REB-726) is the eighth, and the only one set per recipient: on a report
+    straight out of `DigestService.build` it is empty, so the seven above are unchanged.
+
     `ore` is the one section tested for presence rather than for content, because
     `DigestService.build` has already collapsed a week of zero hours to `None` -- so
     `is not None` is the whole question, and `ore.ore_totali` would be a second, weaker

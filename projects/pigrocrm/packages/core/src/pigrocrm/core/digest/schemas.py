@@ -150,7 +150,8 @@ class DigestAttivita(BaseModel):
 
 
 class WeeklyDigest(BaseModel):
-    """The week, section by section, in the order §3.1 prints them.
+    """The week, section by section, in the order §3.1 prints them, and «da fare» (REB-726)
+    after them: the one section that is a person's and not the space's.
 
     The field order *is* the mail's order: «da incassare», «da emettere», «emesse»,
     «incassate», «le ore», «in pipeline», «da sistemare». A renderer that walks this model

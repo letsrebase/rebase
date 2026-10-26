@@ -122,6 +122,15 @@ class AttivitaPage(BaseModel):
 GIORNI_PROSSIMI = 7
 
 
+class AttivitaOggiQuery(BaseModel):
+    """What the Oggi panel can be asked: whose attività (everybody's when `None`) and how
+    many rows each section carries. Validated here and not only by the REST router, so an
+    agent's `limit` of 0 or of «molti» is a sentence and not a database error."""
+
+    assegnata_a: UUID | None = None
+    limit: int = Field(default=100, ge=1, le=200)
+
+
 class AttivitaGruppo(BaseModel):
     """One section of the Oggi panel: the first `limit` rows and how many there are in all."""
 

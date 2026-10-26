@@ -45,13 +45,14 @@ function Sezione({
   tone?: 'danger'
   foldable?: boolean
 }) {
+  // An <h2> in both shapes, so heading navigation finds the folding section too.
   const heading = (
-    <span className="flex items-baseline gap-2">
+    <h2 id={id} className="flex items-baseline gap-2 text-base font-semibold">
       <span className={tone === 'danger' && gruppo.totale > 0 ? 'text-destructive' : undefined}>
         {titolo}
       </span>
       <span className="text-sm font-normal text-muted-foreground">{gruppo.totale}</span>
-    </span>
+    </h2>
   )
   const body =
     gruppo.items.length === 0 ? (
@@ -78,10 +79,7 @@ function Sezione({
   if (foldable) {
     return (
       <details open className="group space-y-3">
-        <summary
-          id={id}
-          className="flex cursor-pointer list-none items-center gap-2 text-base font-semibold [&::-webkit-details-marker]:hidden"
-        >
+        <summary className="flex cursor-pointer list-none items-center gap-2 [&::-webkit-details-marker]:hidden">
           <ChevronDown
             className="size-4 shrink-0 -rotate-90 transition-transform group-open:rotate-0"
             aria-hidden="true"
@@ -94,9 +92,7 @@ function Sezione({
   }
   return (
     <section aria-labelledby={id} className="space-y-3">
-      <h2 id={id} className="text-base font-semibold">
-        {heading}
-      </h2>
+      {heading}
       {body}
     </section>
   )

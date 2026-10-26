@@ -178,8 +178,8 @@ describe('AppShell', () => {
     )
     renderShell()
 
-    const oggi = sidebar().getByRole('link', { name: /Oggi/ })
-    expect(await within(oggi).findByLabelText('3 in ritardo')).toHaveTextContent('3')
+    const oggi = await sidebar().findByRole('link', { name: /^Oggi\s*3 in ritardo$/ })
+    expect(oggi).toBeInTheDocument()
     // Asked for the signed-in user's own, a single row: the sidebar wants the number.
     expect(GET).toHaveBeenCalledWith('/api/activities/oggi', {
       params: { query: { assegnata_a: 'u-1', limit: 1 } },
@@ -198,7 +198,7 @@ describe('AppShell', () => {
     await waitFor(() =>
       expect(GET).toHaveBeenCalledWith('/api/activities/oggi', expect.anything()),
     )
-    expect(within(sidebar().getByRole('link', { name: 'Oggi' })).queryByLabelText(/in ritardo/)).toBeNull()
+    expect(sidebar().getByRole('link', { name: 'Oggi' })).toBeInTheDocument()
   })
 
   it('offers the global search in the sidebar, with the shortcut visible', () => {

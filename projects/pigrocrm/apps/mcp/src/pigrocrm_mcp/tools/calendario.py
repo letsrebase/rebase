@@ -16,7 +16,12 @@ separate lists.
 from typing import Any
 from uuid import UUID
 
-from pigrocrm.core.attivita.schemas import AttivitaCreate, AttivitaListQuery, AttivitaUpdate
+from pigrocrm.core.attivita.schemas import (
+    AttivitaCreate,
+    AttivitaListQuery,
+    AttivitaOggiQuery,
+    AttivitaUpdate,
+)
 from pigrocrm.core.attivita.service import AttivitaService
 from pigrocrm.core.calendario.service import CalendarService
 from pigrocrm_mcp.context import McpContext
@@ -65,9 +70,9 @@ def restore(context: McpContext, attivita_id: str) -> dict[str, Any]:
     return result.model_dump(mode="json")
 
 
-def today(context: McpContext, assegnata_a: UUID | None, limit: int) -> dict[str, Any]:
+def today(context: McpContext, query: dict[str, Any]) -> dict[str, Any]:
     """The Oggi panel: overdue, due today, the next seven days, and the undated."""
-    result = _attivita(context).oggi(context.actor, assegnata_a=assegnata_a, limit=limit)
+    result = _attivita(context).oggi(context.actor, AttivitaOggiQuery(**query))
     return result.model_dump(mode="json")
 
 

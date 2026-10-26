@@ -15,13 +15,12 @@ test.describe('Oggi', () => {
   }) => {
     await loginAsAdmin(page)
     const me = String((await (await page.request.get('/api/auth/me')).json()).id)
-    const ieri = new Date()
-    ieri.setDate(ieri.getDate() - 1)
-    const scadenza = [
-      ieri.getFullYear(),
-      String(ieri.getMonth() + 1).padStart(2, '0'),
-      String(ieri.getDate()).padStart(2, '0'),
-    ].join('-')
+    // «Yesterday» is the server's: the panel cuts on the emitter's day, which is not the
+    // runner's around midnight.
+    const oggi = String((await (await page.request.get('/api/activities/oggi')).json()).oggi)
+    const ieri = new Date(`${oggi}T12:00:00Z`)
+    ieri.setUTCDate(ieri.getUTCDate() - 1)
+    const scadenza = ieri.toISOString().slice(0, 10)
     const titolo = `Sollecitare Acme ${Date.now()}`
     const created = await page.request.post('/api/activities', {
       data: { titolo, scadenza, assegnata_a: me },
@@ -34,7 +33,7 @@ test.describe('Oggi', () => {
       .locator('xpath=ancestor::section')
     await expect(inRitardo.getByText(titolo)).toBeVisible()
 
-    const badge = page.getByRole('link', { name: /Oggi/ }).getByLabel(/in ritardo/)
+    const badge = page.getByRole('link', { name: /^Oggi\s*\d+ in ritardo$/ }).locator('span[aria-hidden]')
     await expect(badge).toBeVisible()
     const before = Number(((await badge.textContent()) ?? '').trim())
 

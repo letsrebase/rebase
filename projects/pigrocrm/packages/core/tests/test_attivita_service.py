@@ -17,7 +17,12 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.attivita.models import Attivita
-from pigrocrm.core.attivita.schemas import AttivitaCreate, AttivitaListQuery, AttivitaUpdate
+from pigrocrm.core.attivita.schemas import (
+    AttivitaCreate,
+    AttivitaListQuery,
+    AttivitaOggiQuery,
+    AttivitaUpdate,
+)
 from pigrocrm.core.attivita.service import AttivitaService
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.customers.models import Customer
@@ -425,7 +430,7 @@ def test_oggi_cuts_the_open_commitments_into_four_sections(
         )
     _create(service, titolo="di un altro", scadenza=oggi - timedelta(days=2), assegnata_a=altri)
 
-    panel = service.oggi(ADMIN, assegnata_a=io)
+    panel = service.oggi(ADMIN, AttivitaOggiQuery(assegnata_a=io))
 
     assert panel.oggi == oggi
     assert [a.titolo for a in panel.in_ritardo.items] == ["giorno -1"]
@@ -445,12 +450,12 @@ def test_oggi_counts_only_open_commitments_and_reports_the_whole_total(
     for n in range(3):
         _create(service, titolo=f"ieri {n}", scadenza=oggi - timedelta(days=1), assegnata_a=io)
 
-    prima = service.oggi(ADMIN, assegnata_a=io, limit=2)
+    prima = service.oggi(ADMIN, AttivitaOggiQuery(assegnata_a=io, limit=2))
     assert prima.in_ritardo.totale == 3
     assert len(prima.in_ritardo.items) == 2
 
     service.complete(prima.in_ritardo.items[0].id, ADMIN)
-    dopo = service.oggi(ADMIN, assegnata_a=io, limit=2)
+    dopo = service.oggi(ADMIN, AttivitaOggiQuery(assegnata_a=io, limit=2))
     assert dopo.in_ritardo.totale == 2
 
 
@@ -467,7 +472,7 @@ def test_oggi_without_an_assignee_is_the_whole_space(
         assegnata_a=_persona(db_session, "Qualcuno"),
     )
 
-    assert {a.titolo for a in service.oggi(ADMIN).in_ritardo.items} >= {
+    assert {a.titolo for a in service.oggi(ADMIN, AttivitaOggiQuery()).in_ritardo.items} >= {
         "di nessuno",
         "di qualcuno",
     }

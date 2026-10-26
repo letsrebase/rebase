@@ -42,7 +42,7 @@ from pigrocrm.core.db.base import uuid7
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.digest.models import Digest
 from pigrocrm.core.digest.run import DigestOutcome, DigestRun, sezioni_con_righe
-from pigrocrm.core.digest.schemas import WeeklyDigest
+from pigrocrm.core.digest.schemas import DigestAttivita, DigestAttivitaRiga, WeeklyDigest
 from pigrocrm.core.digest.service import iso_week
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.invoices.models import Invoice
@@ -422,6 +422,16 @@ def test_the_two_halves_of_a_section_still_count_once() -> None:
     assert sezioni_con_righe(doppia) == 1
 
 
+def test_the_attivita_of_the_week_count_as_one_section() -> None:
+    riga = DigestAttivitaRiga(attivita_id=uuid7(), titolo="Telefonare", scadenza=date(2026, 9, 9))
+    con = _digest_vuoto(
+        attivita=DigestAttivita(in_settimana=[riga], in_settimana_totale=1),
+    )
+
+    assert sezioni_con_righe(con) == 1
+    assert con.vuoto is False
+
+
 def test_a_week_with_everything_lights_all_seven() -> None:
     pieno = _digest_vuoto(
         scadute=[_fattura()],
@@ -545,6 +555,33 @@ def test_each_recipient_gets_their_own_attivita_of_the_week(corpus: Corpus) -> N
     assert f"{PUBLIC_URL}/app/oggi?da=digest" in di_ada.text
     # A person with nothing assigned gets no section, not an empty heading.
     assert "Da fare" in di_ada.text and "Da fare" in di_bruno.text
+
+
+def test_a_long_list_of_late_attivita_is_cut_and_says_how_many_more(corpus: Corpus) -> None:
+    """The mail never grows with the backlog: ten lines, then a count, then the link."""
+    oggi = today_local(SETTINGS)
+    ada = corpus.destinatari[0]
+    with session_factory(corpus.engine)() as session:
+        session.add_all(
+            Attivita(
+                titolo=f"{_PREFIX} Arretrato {n:02d}",
+                scadenza=oggi - timedelta(days=1 + n),
+                stato="aperta",
+                origine="manuale",
+                assegnata_a=ada,
+                custom_fields={},
+            )
+            for n in range(13)
+        )
+        session.commit()
+
+    sender = RecordingSender()
+    _esegui(corpus.engine, settimana=corpus.settimana, titolare=corpus.titolare, sender=sender)
+    di_ada = sender.sent[0]
+
+    assert di_ada.text.count("Arretrato") == 10
+    assert "…e 3 altre in ritardo" in di_ada.text
+    assert f"{PUBLIC_URL}/app/oggi?da=digest" in di_ada.text
 
 
 def test_a_recipient_with_nothing_assigned_has_no_da_fare_section(corpus: Corpus) -> None:

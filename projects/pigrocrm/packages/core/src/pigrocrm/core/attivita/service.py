@@ -16,6 +16,7 @@ from pigrocrm.core.attivita.schemas import (
     AttivitaGruppo,
     AttivitaListQuery,
     AttivitaOggi,
+    AttivitaOggiQuery,
     AttivitaPage,
     AttivitaRead,
     AttivitaUpdate,
@@ -274,12 +275,10 @@ class AttivitaService:
     def get(self, attivita_id: UUID, actor: Actor) -> AttivitaRead:
         return AttivitaRead.model_validate(self._require(attivita_id))
 
-    def oggi(
-        self, actor: Actor, *, assegnata_a: UUID | None = None, limit: int = 100
-    ) -> AttivitaOggi:
+    def oggi(self, actor: Actor, query: AttivitaOggiQuery) -> AttivitaOggi:
         """The four sections of the Oggi panel, cut on the emitter's today.
 
-        `assegnata_a` narrows every section to one person's; `None` is the whole space.
+        `query.assegnata_a` narrows every section to one person's; `None` is the whole space.
         The day is read once and every section is cut on it, so a request that straddles
         midnight cannot list the same commitment under two headings.
         """
@@ -287,7 +286,7 @@ class AttivitaService:
 
         def gruppo(**finestra: Any) -> AttivitaGruppo:
             totale, righe = self.repo.aperte_nella_finestra(
-                assegnata_a=assegnata_a, limit=limit, **finestra
+                assegnata_a=query.assegnata_a, limit=query.limit, **finestra
             )
             return AttivitaGruppo(
                 totale=totale, items=[AttivitaRead.model_validate(riga) for riga in righe]

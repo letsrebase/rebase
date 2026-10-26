@@ -450,13 +450,13 @@ export function AppShell({
       <span className={cn('truncate', rail && 'sr-only')}>{label}</span>
       {to === '/app/oggi' && overdue !== undefined && (
         <span
-          aria-label={`${overdue} in ritardo`}
           className={cn(
             'bg-sidebar-primary px-1.5 text-xs font-medium text-sidebar-primary-foreground',
             rail ? 'absolute top-1 right-1' : 'ml-auto',
           )}
         >
-          {overdue}
+          <span aria-hidden="true">{overdue}</span>
+          <span className="sr-only">{overdue} in ritardo</span>
         </span>
       )}
     </Link>

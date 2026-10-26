@@ -113,9 +113,9 @@ describe('OggiPage', () => {
       'In ritardo1',
       'Oggi1',
       'Prossimi sette giorni1',
+      // The fourth folds, and is still a heading for a screen reader.
+      'Senza scadenza1',
     ])
-    // The fourth is a folding `<summary>`, not an <h2>: it is last in the document.
-    expect(screen.getByText('Senza scadenza')).toBeInTheDocument()
 
     const late = screen.getByRole('heading', { name: /In ritardo/ }).closest('section')!
     expect(within(late).getByText('Sollecitare Rossi')).toBeInTheDocument()
