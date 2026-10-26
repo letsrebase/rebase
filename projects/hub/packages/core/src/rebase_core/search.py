@@ -21,7 +21,7 @@ outranks one that merely contains it somewhere in the middle.
 from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import ColumnElement, func, or_
+from sqlalchemy import ColumnElement, case, func, or_, select
 
 # Bounded for the same reason every free-text field in this package is: an unbounded
 # term reaching `ILIKE` and `similarity()` on every row is a denial of service with
@@ -60,3 +60,15 @@ def similarity_score(columns: Sequence[Any], term: str) -> ColumnElement[float]:
     smaller than every real one only once every argument is `coalesce`d, so that is
     done per column before `greatest` sees them."""
     return func.greatest(*(func.coalesce(func.similarity(column, term), 0.0) for column in columns))
+
+
+def any_element_matches(array: Any, term: str) -> ColumnElement[bool]:
+    """Whether any text element of the JSONB `array` contains `term`, case-insensitively,
+    `%` and `_` taken for themselves. Only an array is expanded:
+    `jsonb_array_elements_text` raises on a string or an object, which a card written by
+    hand may hold, so the guard is inside the call, not beside it in an `AND`, since SQL
+    does not promise the order it runs in. A NULL `array` has no element, so no match."""
+    only_an_array = case((func.jsonb_typeof(array) == "array", array))
+    elements = func.jsonb_array_elements_text(only_an_array).table_valued("value")
+    pattern = f"%{escape_like(term)}%"
+    return select(elements.c.value).where(elements.c.value.ilike(pattern, escape="\\")).exists()

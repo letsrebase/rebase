@@ -214,6 +214,23 @@ def _search_term(value: str | None) -> str | None:
     return value
 
 
+# A request names a handful of skills; more than this many terms is a list nobody
+# matches, and each term is one more `EXISTS` on every card.
+SKILL_TERMS_MAX = 10
+
+
+def _skill_terms(values: list[str] | None) -> list[str] | None:
+    """`competenze` bounded like `q`: at most `SKILL_TERMS_MAX` terms, each within
+    `SEARCH_MAX_LENGTH`."""
+    if values is None:
+        return None
+    if len(values) > SKILL_TERMS_MAX:
+        raise ToolError(f"competenze: al massimo {SKILL_TERMS_MAX} termini")
+    for value in values:
+        _search_term(value)
+    return values
+
+
 def _supplied_text(raw: str) -> str | None:
     """A tool parameter's own contract for `override_freelancer`/`override_company`:
     the caller already checked `is not None` before calling this, so an empty string
@@ -344,26 +361,39 @@ def build_server(
         con_accessi: bool | None = None,
         creato_da: str | None = None,
         creato_a: str | None = None,
+        competenze: list[str] | None = None,
+        luogo: str | None = None,
     ) -> dict[str, Any]:
         """I talenti come li vede la schermata «Talenti» dell'area admin: le schede
         freelance e le iscrizioni senza scheda in un'unica lista, `stato` `lead` per
         le seconde, ognuna con id, nome, cognome, email, LinkedIn, stato, origine e
-        data. Dal più recente, o dal più pertinente quando `q` restringe. L'`id` di
-        una riga va a `get_talento`, che per un lead risponde la riga stessa; la
-        scheda di un lead si crea con `create_freelancer_from_signup`.
-        `q` cerca nome, cognome, email e posizione; `posizione` filtra per ruolo,
-        `remoto` per disponibilità (remoto/ibrido/in_sede), `tariffa_min` e
-        `tariffa_max` per tariffa a giornata (stringa, «500», «450.50» o all'italiana
-        «1.500», «1.234,50»); `origine` per canale della riga (form/wizard/admin), `utm_source` per
-        campagna, `has_cv` per le schede con o senza CV, `con_accessi` per chi è
-        entrato almeno una volta nella sua area, `creato_da` e `creato_a` per data di
-        creazione (ISO 8601, anche solo `AAAA-MM-GG`). I filtri che una riga nuda non
-        ha (posizione, remoto, tariffa, origine, `has_cv=true`) escludono i lead.
-        `per_stato` conta con ogni filtro tranne `stato`, `totale` con tutti.
-        `next_cursor` è il cursore opaco della pagina successiva, `None` all'ultima:
-        ripassalo in `cursor` insieme agli stessi parametri, un cursore nato con
-        un'altra `q` è rifiutato. Solo lettura."""
+        data. Una scheda porta anche tariffa, modalità, `posizione` e, dalla scheda
+        anonima di Claude, `ruolo`, `seniority`, `anni`, `competenze` e `luogo`: per
+        valutare chi fa al caso di una richiesta basta questa lista, senza aprire i
+        profili uno a uno. Dal più recente, o dal più pertinente quando `q` restringe.
+        L'`id` di una riga va a `get_talento`, che per un lead risponde la riga stessa;
+        la scheda di un lead si crea con `create_freelancer_from_signup`.
+        `q` cerca nome, cognome, email e posizione; `competenze` tiene le schede che
+        nominano ogni termine dato (per esempio `["SQL Server", "React"]`) nella
+        posizione o nel ruolo, nelle competenze o nella sintesi della scheda anonima;
+        `luogo` filtra per il luogo della scheda anonima (`"Milano"`); `posizione`
+        filtra per ruolo, `remoto` per disponibilità (remoto/ibrido/in_sede),
+        `tariffa_min` e `tariffa_max` per tariffa a giornata (stringa, «500», «450.50»
+        o all'italiana «1.500», «1.234,50»); `origine` per canale della riga
+        (form/wizard/admin), `utm_source` per campagna, `has_cv` per le schede con o
+        senza CV, `con_accessi` per chi è entrato almeno una volta nella sua area,
+        `creato_da` e `creato_a` per data di creazione (ISO 8601, anche solo
+        `AAAA-MM-GG`). Chi non ha ancora una scheda anonima non ha un luogo, quindi
+        `luogo` non lo trova; `competenze` lo cerca comunque nella sua posizione. I
+        filtri che una riga nuda non ha
+        (posizione, competenze, luogo, remoto, tariffa, origine, `has_cv=true`)
+        escludono i lead. `per_stato` conta con ogni filtro tranne `stato`, `totale` con
+        tutti. `next_cursor` è il cursore opaco della pagina successiva, `None`
+        all'ultima: ripassalo in `cursor` insieme agli stessi parametri, un cursore
+        nato con un'altra `q` è rifiutato. Solo lettura."""
         term = _search_term(q)
+        skills = _skill_terms(competenze)
+        place = _search_term(luogo)
         created_from = _moment(creato_da, "creato_da")
         created_to = _moment(creato_a, "creato_a")
         rate_from = _number(tariffa_min, "tariffa_min")
@@ -384,6 +414,8 @@ def build_server(
                 con_accessi=con_accessi,
                 creato_da=created_from,
                 creato_a=created_to,
+                competenze=skills,
+                luogo=place,
             )
         )
 
@@ -391,8 +423,8 @@ def build_server(
         """`get_talento`'s answer for a card: `FreelancerDetail`
         (`FreelancerService.get`), plus `ha_scheda_anonima` (REB-518, spec § 8), which
         that schema does not carry -- only `TalentoRead` (`list_talenti`) does. The
-        same predicate `talenti._has_anonymous_card` runs for the list: a card the
-        writer retired to SQL `NULL` after a failure is none."""
+        same test `talenti._card_read` applies to the list: a card the writer retired to
+        SQL `NULL` after a failure is none."""
         detail = FreelancerService(session, settings, http).get(freelancer_id)
         has_card = session.scalar(
             select(

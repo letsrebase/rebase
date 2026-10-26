@@ -371,3 +371,117 @@ def test_per_stato_respects_an_active_search(clean: Session) -> None:
         "lead": 0,
     }
     assert filtered.totale == 1
+
+
+def _apply(session: Session, email: str, **extra: object) -> UUID:
+    row, _ = FreelancerService(session).apply(
+        _application(email, **extra), PDF, "cv.pdf", "application/pdf"
+    )
+    return row.id
+
+
+def _with_card(session: Session, freelancer_id: UUID, card: object) -> None:
+    session.add(FreelancerCard(freelancer_id=freelancer_id, cv_sha256="0" * 64, card=card))
+    session.commit()
+
+
+def test_a_row_carries_the_position_and_what_the_anonymous_card_says(clean: Session) -> None:
+    """REB-778: an agent matching a request reads the role, the seniority, the years,
+    the skills and the place from the list itself. A field of a card written by hand
+    with the wrong type reads as missing rather than failing the whole list."""
+    ada = _apply(clean, "ada@studio.it", posizione="Backend developer")
+    grace = _apply(clean, "grace@studio.it", nome="Grace", cognome="Hopper")
+    _apply(clean, "nocard@studio.it", nome="Nadia", cognome="Senza")
+    _signup(clean, "lead@studio.it")
+    _with_card(
+        clean,
+        ada,
+        {
+            "ruolo": "Data engineer",
+            "seniority": "senior",
+            "anni": 9,
+            "competenze": ["SQL Server", "React"],
+            "luogo": "Monza",
+        },
+    )
+    _with_card(clean, grace, {"ruolo": 7, "anni": "nove", "competenze": "Python", "luogo": None})
+
+    for q in (None, "studio"):
+        by_email = {item.email: item for item in TalentiService(clean).list_recent(q=q).items}
+        ada_row = by_email["ada@studio.it"]
+        assert ada_row.posizione == "Backend developer"
+        assert (ada_row.ruolo, ada_row.seniority, ada_row.anni) == ("Data engineer", "senior", 9)
+        assert ada_row.competenze == ["SQL Server", "React"]
+        assert ada_row.luogo == "Monza"
+        grace_row = by_email["grace@studio.it"]
+        assert grace_row.ha_scheda_anonima is True
+        assert (grace_row.ruolo, grace_row.anni, grace_row.luogo) == (None, None, None)
+        assert grace_row.competenze == []
+        no_card = by_email["nocard@studio.it"]
+        assert no_card.ha_scheda_anonima is False
+        assert no_card.posizione == "Backend developer" and no_card.competenze == []
+        assert by_email["lead@studio.it"].posizione is None
+
+
+def test_competenze_keeps_the_cards_that_name_every_term(clean: Session) -> None:
+    """Each term may sit in a skill, the role, the summary or the position, whatever the
+    case; a card that names only some of them, a card whose skills are not a list, a
+    card that is not a JSON object and every lead stay out, without failing the list."""
+    both_skills = _apply(clean, "ada@studio.it", posizione="Backend developer")
+    spread = _apply(clean, "bruno@studio.it", nome="Bruno", posizione="React developer")
+    in_the_role = _apply(clean, "fabio@studio.it", nome="Fabio")
+    one_only = _apply(clean, "cara@studio.it", nome="Cara")
+    not_a_list = _apply(clean, "eva@studio.it", nome="Eva")
+    an_array = _apply(clean, "gina@studio.it", nome="Gina")
+    a_string = _apply(clean, "hugo@studio.it", nome="Hugo")
+    _apply(clean, "dario@studio.it", nome="Dario", posizione="SQL Server DBA")
+    _signup(clean, "lead@studio.it")
+    _with_card(clean, both_skills, {"competenze": ["SQL Server", "React"]})
+    _with_card(
+        clean,
+        spread,
+        {"ruolo": "Frontend", "sintesi": "Usa SQL Server ogni giorno.", "competenze": ["CSS"]},
+    )
+    _with_card(clean, in_the_role, {"ruolo": "SQL Server architect", "competenze": ["React"]})
+    _with_card(clean, one_only, {"competenze": ["sql server"]})
+    _with_card(clean, not_a_list, {"competenze": "SQL Server, React"})
+    _with_card(clean, an_array, ["SQL Server", "React"])
+    _with_card(clean, a_string, "SQL Server React")
+
+    talenti = TalentiService(clean)
+    matching = {"ada@studio.it", "bruno@studio.it", "fabio@studio.it"}
+    found = talenti.list_recent(competenze=["sql server", "REACT"])
+    assert {item.email for item in found.items} == matching
+    assert found.totale == 3 and found.per_stato["lead"] == 0
+
+    # One row a page still walks every match once, the card join included.
+    walked: list[str] = []
+    cursor = None
+    while True:
+        page = talenti.list_recent(limit=1, cursor=cursor, competenze=["sql server", "react"])
+        walked += [item.email for item in page.items]
+        cursor = page.next_cursor
+        if cursor is None:
+            break
+    assert sorted(walked) == sorted(matching)
+
+    # A blank term narrows nothing, and `%` is a character, not a wildcard.
+    assert talenti.list_recent(competenze=["  "]).totale == 9
+    assert talenti.list_recent(competenze=["%"]).totale == 0
+
+
+def test_luogo_matches_part_of_the_card_place(clean: Session) -> None:
+    monza = _apply(clean, "ada@studio.it")
+    rome = _apply(clean, "bruno@studio.it", nome="Bruno")
+    an_array = _apply(clean, "cara@studio.it", nome="Cara")
+    _apply(clean, "dario@studio.it", nome="Dario")
+    _signup(clean, "lead@studio.it")
+    _with_card(clean, monza, {"luogo": "Monza e Brianza"})
+    _with_card(clean, rome, {"luogo": "Roma"})
+    _with_card(clean, an_array, ["Monza"])
+
+    talenti = TalentiService(clean)
+    found = talenti.list_recent(luogo="monza")
+    assert [item.email for item in found.items] == ["ada@studio.it"]
+    assert found.per_stato["lead"] == 0
+    assert talenti.list_recent(luogo="%").totale == 0

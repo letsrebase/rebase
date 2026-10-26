@@ -91,6 +91,11 @@ running the core service the admin area runs, with the calling admin as the acto
 - `grant_talent_cloud`, `revoke_talent_cloud`, `list_talent_cloud_grants`: the cloud's grants.
 
 `get_talento` and `list_talenti` carry `vetted_at` and whether an anonymous card exists.
+Since REB-778 each `list_talenti` row also carries the card's `posizione` and the
+anonymous card's `ruolo`, `seniority`, `anni`, `competenze` and `luogo`, and the tool
+filters by `competenze` (every term, in the position or the card's role, skills or
+summary) and by `luogo`, so an agent matches a request in one call instead of one
+`get_talento` per profile.
 
 The campaigns are read-only over MCP (P-REB-41 phase 2), so an agent reports on a
 campaign without a terminal:
