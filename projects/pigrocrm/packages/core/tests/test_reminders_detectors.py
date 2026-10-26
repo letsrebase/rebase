@@ -632,5 +632,13 @@ def test_the_catalogue_and_the_detectors_name_the_same_types() -> None:
         "deal_past_close",
         "deal_stale",
         "timer_running_long",
+        "invoice_overdue",
+        "invoice_not_transmitted",
+        "proforma_not_invoiced",
+        "hours_unbilled",
+        "billable_period_closed",
+        "fixed_fee_period_unbilled",
+        "on_completion_unbilled",
+        "invoice_days_unlinked",
     ]
     assert {detector.kind.key for detector in DETECTORS} == set(REMINDER_TYPES)

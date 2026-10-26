@@ -127,6 +127,90 @@ REMINDER_TYPES: Mapping[str, ReminderType] = {
             unit="hours",
             ladder={"serious": 10, "critical": 24},
         ),
+        ReminderType(
+            key="invoice_overdue",
+            label="Fattura scaduta",
+            description="Una fattura emessa e non incassata ha superato la data di scadenza.",
+            subject="invoice",
+            direction="since",
+            unit="days",
+            ladder={"warning": 1, "serious": 8, "critical": 30},
+        ),
+        ReminderType(
+            key="invoice_not_transmitted",
+            label="Fattura non trasmessa",
+            description=(
+                "Una fattura emessa non risulta trasmessa all'intermediario dopo qualche giorno."
+            ),
+            subject="invoice",
+            direction="since",
+            unit="days",
+            ladder={"warning": 2, "serious": 3, "critical": 7},
+        ),
+        ReminderType(
+            key="proforma_not_invoiced",
+            label="Proforma non fatturata",
+            description="Una proforma confermata non è ancora diventata una fattura.",
+            subject="proforma",
+            direction="since",
+            unit="days",
+            ladder={"warning": 7, "serious": 21},
+        ),
+        ReminderType(
+            key="hours_unbilled",
+            label="Ore da fatturare",
+            description=(
+                "Ci sono ore fatturabili di un deal che non sono su nessuna fattura emessa."
+            ),
+            subject="deal",
+            direction="since",
+            unit="days",
+            ladder={"warning": 30, "serious": 60},
+        ),
+        ReminderType(
+            key="billable_period_closed",
+            label="Periodo chiuso da fatturare",
+            description=(
+                "Il periodo di fatturazione di un contratto è finito con giornate non fatturate."
+            ),
+            subject="contract",
+            direction="since",
+            unit="days",
+            ladder={"warning": 0, "serious": 30, "critical": 60},
+        ),
+        ReminderType(
+            key="fixed_fee_period_unbilled",
+            label="Canone del periodo da fatturare",
+            description=(
+                "Il periodo di un contratto a canone fisso è finito senza la fattura del canone."
+            ),
+            subject="contract",
+            direction="since",
+            unit="days",
+            ladder={"warning": 0, "serious": 30, "critical": 60},
+        ),
+        ReminderType(
+            key="on_completion_unbilled",
+            label="Contratto concluso da fatturare",
+            description=(
+                "Un contratto a fatturazione a completamento è concluso e non è stato fatturato."
+            ),
+            subject="contract",
+            direction="since",
+            unit="days",
+            ladder={"warning": 0, "serious": 30, "critical": 60},
+        ),
+        ReminderType(
+            key="invoice_days_unlinked",
+            label="Fattura senza giornate collegate",
+            description=(
+                "Una fattura emessa non porta le giornate che il contratto ha ancora da fatturare."
+            ),
+            subject="invoice",
+            direction="since",
+            unit="days",
+            ladder={"serious": 0},
+        ),
     )
 }
 
