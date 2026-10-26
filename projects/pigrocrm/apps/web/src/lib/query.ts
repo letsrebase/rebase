@@ -155,4 +155,9 @@ export const queryKeys = {
   // read this one entry, so a snooze updates both at once. It is the caller's list, and
   // `logout()` clears the whole cache, so no user id is needed to keep two people apart.
   reminders: ['reminders'] as const,
+  // Both layers of reminder settings and what they resolve to for the caller (REB-735): the
+  // space's editor and the personal one read this one entry, so a write in either shows in
+  // both. A key of its own, not a child of `reminders`: a write invalidates the Avvisi list
+  // too, and the two are different reads.
+  reminderPreferences: ['reminder-preferences'] as const,
 }
