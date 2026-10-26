@@ -50,6 +50,26 @@ class WorkUnitCreate(BaseModel):
     note: SafeStr | None = None
 
 
+class WorkUnitRecord(BaseModel):
+    """What a person records over REST (REB-745): a day proposed or worked, and nothing the
+    ledger decides for itself. Narrower than `WorkUnitCreate` on purpose: `approvato` needs an
+    approval and is what `POST /api/approvals` writes, and an `approval_id` named by the
+    caller could point at another contract's evidence. The proposal-accept path keeps the
+    full `WorkUnitCreate`.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    contract_id: UUID
+    data: date
+    quantita: Decimal = Field(
+        gt=0, max_digits=QUANTITA_MAX_DIGITS, decimal_places=QUANTITA_DECIMAL_PLACES
+    )
+    descrizione: SafeStr = Field(min_length=1)
+    stato: Literal["proposto", "lavorato"] = "lavorato"
+    note: SafeStr | None = None
+
+
 class WorkUnitTransitionIn(BaseModel):
     """What a caller supplies to move a day -- everything else (`stato_precedente`,
     `attore`, the row itself) is the trigger's own to write."""

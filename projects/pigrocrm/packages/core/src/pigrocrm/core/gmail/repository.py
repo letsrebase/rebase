@@ -334,6 +334,19 @@ class GmailRepository:
         """
         return self.session.get(GmailMessage, message_id)
 
+    def message_linked_to(self, message_id: UUID, entity_type: str, entity_id: UUID) -> bool:
+        """Whether a stored message is filed against this customer, person or deal."""
+        return (
+            self.session.execute(
+                select(GmailMessageLink.id).where(
+                    GmailMessageLink.gmail_message_id == message_id,
+                    GmailMessageLink.entity_type == entity_type,
+                    GmailMessageLink.entity_id == entity_id,
+                )
+            ).first()
+            is not None
+        )
+
     def message_by_gmail_id(self, account_id: UUID, gmail_id: str) -> GmailMessage | None:
         return self.session.execute(
             select(GmailMessage).where(

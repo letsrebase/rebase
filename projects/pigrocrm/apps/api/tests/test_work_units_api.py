@@ -101,11 +101,35 @@ def test_a_second_day_on_the_same_date_is_a_409(logged_in: TestClient) -> None:
     assert response.status_code == 409, response.text
 
 
+def _approved_day(client: TestClient, contract_id: str, giorno: str) -> dict[str, Any]:
+    """A day an approval covers, the only way over REST to have an approved one."""
+    day = _record(client, contract_id, giorno, stato="proposto")
+    document = client.post(
+        "/api/documents",
+        json={"contract_id": contract_id, "tipo": "documento", "titolo": "Mail di conferma"},
+    )
+    assert document.status_code == 201, document.text
+    recorded = client.post(
+        "/api/approvals",
+        json={
+            "contract_id": contract_id,
+            "canale": "email",
+            "mittente": "giulia@cliente.example",
+            "ricevuto_il": "2026-03-01T09:00:00Z",
+            "estratto": "Confermo.",
+            "document_id": document.json()["id"],
+            "work_unit_ids": [day["id"]],
+        },
+    )
+    assert recorded.status_code == 201, recorded.text
+    return dict(recorded.json()["work_units"][0])
+
+
 def test_a_day_is_moved_and_the_page_shows_both_moves_with_their_dates(
     logged_in: TestClient,
 ) -> None:
     contract_id = _contract(logged_in)
-    day = _record(logged_in, contract_id, "2026-03-02", stato="approvato")
+    day = _approved_day(logged_in, contract_id, "2026-03-02")
 
     worked = logged_in.post(
         f"/api/work-units/{day['id']}/transitions",
@@ -122,13 +146,62 @@ def test_a_day_is_moved_and_the_page_shows_both_moves_with_their_dates(
     assert body["stato"] == "contestato"
     moves = [(t["stato_precedente"], t["stato_nuovo"], t["motivo"]) for t in body["transizioni"]]
     assert moves == [
-        (None, "approvato", "creazione"),
+        (None, "proposto", "creazione"),
+        ("proposto", "approvato", "Approvazione registrata"),
         ("approvato", "lavorato", "Fatta"),
         ("lavorato", "contestato", "Il cliente contesta le ore"),
     ]
     assert all(t["created_at"] for t in body["transizioni"])
     assert body["transizioni"][-1]["attore"]["kind"] == "human"
     assert body["azioni"] == ["lavorato", "revocato", "non_fatturabile"]
+
+
+def test_a_person_cannot_write_the_edges_that_belong_to_an_approval_or_an_invoice(
+    logged_in: TestClient,
+) -> None:
+    contract_id = _contract(logged_in)
+    worked = _record(logged_in, contract_id, "2026-03-02")
+    proposed = _record(logged_in, contract_id, "2026-03-03", stato="proposto")
+
+    billed = logged_in.post(
+        f"/api/work-units/{worked['id']}/transitions", json={"stato": "fatturato", "motivo": "x"}
+    )
+    approved = logged_in.post(
+        f"/api/work-units/{proposed['id']}/transitions", json={"stato": "approvato", "motivo": "x"}
+    )
+
+    assert billed.status_code == 409, billed.text
+    assert approved.status_code == 409, approved.text
+    assert logged_in.get(f"/api/work-units/{worked['id']}").json()["stato"] == "lavorato"
+
+
+def test_a_flagged_day_has_no_plain_move_back_to_worked(logged_in: TestClient) -> None:
+    """The trigger would rewrite it straight back, so the page never offered it and the API
+    does not pretend: the way out is an approval."""
+    contract_id = _contract(logged_in, requires_prior_approval=True)
+    flagged = _record(logged_in, contract_id, "2026-03-02")
+
+    response = logged_in.post(
+        f"/api/work-units/{flagged['id']}/transitions", json={"stato": "lavorato", "motivo": "x"}
+    )
+
+    assert response.status_code == 409, response.text
+
+
+def test_a_day_is_recorded_proposed_or_worked_and_never_approved_or_with_an_approval(
+    logged_in: TestClient,
+) -> None:
+    contract_id = _contract(logged_in)
+    base = {
+        "contract_id": contract_id,
+        "data": "2026-03-02",
+        "quantita": "1.00",
+        "descrizione": "Giornata",
+    }
+
+    assert logged_in.post("/api/work-units", json={**base, "stato": "approvato"}).status_code == 422
+    forged = {**base, "stato": "lavorato", "approval_id": "00000000-0000-0000-0000-000000000000"}
+    assert logged_in.post("/api/work-units", json=forged).status_code == 422
 
 
 def test_an_edge_the_graph_does_not_allow_is_a_409(logged_in: TestClient) -> None:
@@ -285,7 +358,9 @@ def test_an_approval_over_a_day_that_cannot_use_it_is_a_409_and_changes_nothing(
 ) -> None:
     contract_id = _contract(logged_in)
     fine = _record(logged_in, contract_id, "2026-03-02", stato="proposto")
-    paid_for = _record(logged_in, contract_id, "2026-03-03", stato="approvato")
+    paid_for = _record(
+        logged_in, contract_id, "2026-03-03"
+    )  # worked on a contract that asks for none
     document_id = _document(logged_in, contract_id)
 
     response = logged_in.post(
@@ -302,8 +377,10 @@ def test_an_approval_with_two_proofs_or_none_is_a_422(logged_in: TestClient) -> 
     day = _record(logged_in, contract_id, "2026-03-02", stato="proposto")
     body = _approval_body(contract_id, _document(logged_in, contract_id), [day["id"]])
     neither = {k: v for k, v in body.items() if k != "document_id"}
+    both = {**body, "gmail_message_id": "00000000-0000-0000-0000-000000000000"}
 
     assert logged_in.post("/api/approvals", json=neither).status_code == 422
+    assert logged_in.post("/api/approvals", json=both).status_code == 422
 
 
 def test_an_agent_token_cannot_record_an_approval(

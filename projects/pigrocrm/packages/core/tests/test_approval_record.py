@@ -21,7 +21,7 @@ from pigrocrm.core.contracts.models import Contract
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.errors import AgentForbidden, Conflict, NotFound, ValidationFailed
-from pigrocrm.core.gmail.models import GmailMessage
+from pigrocrm.core.gmail.models import GmailMessage, GmailMessageLink
 from pigrocrm.core.storage.local import LocalFileStorage
 from pigrocrm.core.work_units.models import Approval
 from pigrocrm.core.work_units.schemas import ApprovalRecord, WorkUnitCreate
@@ -107,11 +107,11 @@ def test_a_proposed_day_becomes_approved_and_a_flagged_one_is_recovered(
     assert all(day.approval_id == recorded.approval.id for day in recorded.work_units)
     assert recorded.approval.documento_titolo == "Mail di conferma"
     assert recorded.approval.origine == {"kind": "manuale"}
-    # The log says who moved them, and why.
+    # The log says who moved them and that an approval was recorded; the sender is on the approval.
     steps = WorkUnitService(db_session).transitions_for(proposed)
     assert steps[-1].stato_nuovo == "approvato"
     assert steps[-1].attore == {"kind": "human", "id": str(WRITER.id)}
-    assert "giulia@cliente.example" in steps[-1].motivo
+    assert steps[-1].motivo == "Approvazione registrata"
 
 
 def test_one_day_that_cannot_use_the_approval_refuses_all_and_writes_nothing(
@@ -196,6 +196,12 @@ def test_a_synced_email_is_filed_as_a_document_of_the_contract(
     )
     db_session.add(message)
     db_session.flush()
+    db_session.add(
+        GmailMessageLink(
+            gmail_message_id=message.id, entity_type="customer", entity_id=contract.customer_id
+        )
+    )
+    db_session.flush()
     storage = LocalFileStorage(str(tmp_path / "documents"))
     # A real user: the filed version records who created it.
     person = Actor(id=account.user_id, type="user", role="collaboratore")
@@ -212,6 +218,42 @@ def test_a_synced_email_is_filed_as_a_document_of_the_contract(
     assert document.contract_id == contract.id
     assert document.titolo == "Email di giulia@cliente.example: Re: giornate di marzo"
     assert recorded.work_units[0].stato == "approvato"
+    # The log keeps the fact, not the sender's address: that is on the approval.
+    assert WorkUnitService(db_session).transitions_for(day)[-1].motivo == "Approvazione registrata"
+
+
+def test_an_email_of_another_customer_cannot_be_the_proof(db_session: Session, tmp_path) -> None:
+    contract = _contract(db_session)
+    other = _contract(db_session)
+    day = _day(db_session, contract, date(2026, 3, 2), "proposto")
+    account = connected_account(db_session)
+    message = GmailMessage(
+        google_account_id=account.id,
+        gmail_message_id="g3",
+        gmail_thread_id="t3",
+        direction="inbound",
+        from_address="altro@cliente.example",
+        to_addresses=[MAILBOX],
+        cc_addresses=[],
+        subject="Altro cliente",
+        snippet="",
+        internal_date=datetime(2026, 3, 1, tzinfo=UTC),
+        body_text="Confermo.",
+        attachments=[],
+    )
+    db_session.add(message)
+    db_session.flush()
+    db_session.add(
+        GmailMessageLink(
+            gmail_message_id=message.id, entity_type="customer", entity_id=other.customer_id
+        )
+    )
+    db_session.flush()
+
+    with pytest.raises(ValidationFailed, match="tra quelli di questo cliente"):
+        ApprovalService(db_session, LocalFileStorage(str(tmp_path / "d"))).record(
+            _record(contract, [day], gmail_message_id=message.id), WRITER
+        )
 
 
 def test_an_email_whose_body_was_not_stored_cannot_be_the_proof(
@@ -235,6 +277,12 @@ def test_an_email_whose_body_was_not_stored_cannot_be_the_proof(
         attachments=[],
     )
     db_session.add(message)
+    db_session.flush()
+    db_session.add(
+        GmailMessageLink(
+            gmail_message_id=message.id, entity_type="customer", entity_id=contract.customer_id
+        )
+    )
     db_session.flush()
 
     with pytest.raises(ValidationFailed, match="non e' archiviato"):

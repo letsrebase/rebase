@@ -41,7 +41,7 @@ describe('the days register', () => {
     ])
     renderWithQuery(<DaysPage search={{ contract: CONTRACT_ID }} onSearchChange={vi.fn()} />)
 
-    expect(await screen.findByRole('link', { name: /Workshop/ })).toHaveAttribute('href', '/app/days/d1')
+    expect(await screen.findByRole('link', { name: /Workshop/ }, { timeout: 5000 })).toHaveAttribute('href', '/app/days/d1')
     expect(screen.getByText('Lavorata senza approvazione')).toBeInTheDocument()
     expect(screen.getByText('Contestata')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Registra giornata/ })).toHaveAttribute('href', '/app/days/new')

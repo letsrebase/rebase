@@ -231,6 +231,26 @@ class WorkUnitService:
         self.session.commit()
         return WorkUnitRead.model_validate(work_unit)
 
+    def move(self, work_unit_id: UUID, nuovo_stato: str, actor: Actor, motivo: str) -> WorkUnitRead:
+        """A person's move (REB-746): `transition`, refused unless the day's own page would
+        have offered it (`allowed_actions`). The graph in the database allows more than a
+        person may do from a screen: `approvato` is what recording an approval writes,
+        `fatturato` is what an invoice writes, and `lavorato` from a day worked without
+        approval would be rewritten straight back by the trigger. `transition` stays the
+        unrestricted write for the code that owns those edges."""
+        actor.require_write("transition_work_unit")
+        work_unit = self.repo.get(work_unit_id)
+        if work_unit is None:
+            raise NotFound(WORK_UNIT_ENTITY, work_unit_id)
+        if nuovo_stato not in allowed_actions(work_unit.stato):
+            raise Conflict(
+                WORK_UNIT_ENTITY,
+                f"una giornata '{work_unit.stato}' non puo' passare a '{nuovo_stato}' da qui",
+                da=work_unit.stato,
+                a=nuovo_stato,
+            )
+        return self.transition(work_unit_id, nuovo_stato, actor, motivo)
+
     def link_approval(
         self, work_unit_id: UUID, approval_id: UUID, actor: Actor, motivo: str
     ) -> WorkUnitRead:
@@ -391,16 +411,23 @@ class ApprovalService:
                 origine={"kind": "manuale"},
             )
         )
-        set_transition_context(
-            self.session,
-            actor,
-            f"Approvazione di {data.mittente} del {data.ricevuto_il.date().isoformat()}",
-        )
+        # A fixed reason: who sent the approval and when are on the approval, which is the
+        # evidence, and an address does not belong in a log nobody can edit.
+        set_transition_context(self.session, actor, "Approvazione registrata")
         for day in days:
             day.approval_id = approval.id
             if day.stato == "proposto":
                 day.stato = "approvato"
-        self.session.flush()
+        try:
+            self.session.flush()
+        except IntegrityError as exc:
+            # The days were read under a lock below, so this is a move the database refused
+            # that the checks above could not see (a trigger edge): the whole recording goes.
+            self.session.rollback()
+            raise Conflict(
+                APPROVAL_ENTITY,
+                "una delle giornate e' cambiata nel frattempo: riapri la pagina e riprova",
+            ) from exc
         for day in days:
             self.session.refresh(day)
         self.session.refresh(approval)
@@ -415,11 +442,12 @@ class ApprovalService:
         return ApprovalRecorded(approval=detail, work_units=recorded)
 
     def _days_to_approve(self, data: ApprovalRecord) -> list[WorkUnit]:
-        repo = WorkUnitRepository(self.session)
         days: list[WorkUnit] = []
         refused: list[str] = []
-        for day_id in data.work_unit_ids:
-            day = repo.get(day_id)
+        for day_id in sorted(data.work_unit_ids):
+            # Locked, in a fixed order: two recordings over the same day wait for each other
+            # and the second then sees the first one's approval instead of overwriting it.
+            day = self.session.get(WorkUnit, day_id, with_for_update=True)
             if day is None or day.contract_id != data.contract_id:
                 raise NotFound(WORK_UNIT_ENTITY, day_id)
             if day.stato not in APPROVABLE_STATI or day.approval_id is not None:
@@ -454,6 +482,13 @@ class ApprovalService:
         message = GmailRepository(self.session).message(message_id)
         if message is None:
             raise NotFound("gmail_message", message_id)
+        if not GmailRepository(self.session).message_linked_to(message.id, "customer", customer_id):
+            raise ValidationFailed(
+                APPROVAL_ENTITY,
+                "gmail_message_id",
+                "il messaggio non e' tra quelli di questo cliente",
+                expected="un messaggio sincronizzato per il cliente del contratto",
+            )
         if not message.body_text.strip():
             raise ValidationFailed(
                 APPROVAL_ENTITY,

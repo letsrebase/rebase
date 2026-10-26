@@ -10,6 +10,7 @@ import {
   quantitaLabel,
   statoLabel,
   statoTone,
+  unitaLabel,
 } from './labels'
 import { rateCard } from './testing'
 
@@ -84,5 +85,15 @@ describe('cellDaysLabel', () => {
     expect(cellDaysLabel([day('lavorato'), day('lavorato_senza_approvazione')])).toBe(
       ', 2 giornate, 1 senza approvazione',
     )
+  })
+})
+
+describe('unitaLabel', () => {
+  it('says the unit as the words after a rate’s figure', () => {
+    expect(unitaLabel('giorno')).toBe('al giorno')
+    expect(unitaLabel('ora')).toBe('all’ora')
+    expect(unitaLabel('anno')).toBe('all’anno')
+    expect(unitaLabel('forfait')).toBe('a forfait')
+    expect(unitaLabel('settimana')).toBe('per settimana')
   })
 })

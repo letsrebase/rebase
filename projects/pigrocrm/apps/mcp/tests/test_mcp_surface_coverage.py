@@ -760,6 +760,11 @@ _COPERTE_O_UMANE: dict[Method, str] = {
         "`POST /api/work-units/{id}/transitions`, and `AGENT_FORBIDDEN_ACTIONS` refuses "
         "it to any agent credential on that route too (REB-745)"
     ),
+    ("WorkUnitService", "move"): (
+        "the person's door to `transition`, refused to any agent credential "
+        "(`transition_work_unit`); its only caller is `POST /api/work-units/{id}/transitions` "
+        "(REB-746)"
+    ),
     ("WorkUnitService", "link_approval"): (
         "same reason as `transition`: linking an approval outside `accept_proposal`'s "
         "own atomic write would let an agent recover a flagged day, or attach "

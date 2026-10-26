@@ -20,7 +20,7 @@ import { Textarea } from '@rebase/ui/textarea'
 import { useCustomer } from '@/features/customers/queries'
 import { useGmailConfigured } from '@/features/gmail/queries'
 import { useSendDraft } from '@/features/gmail/draftQueries'
-import { toProblem } from '@/lib/api'
+import { api, toProblem, unwrap } from '@/lib/api'
 import { toIsoDate } from '@/lib/dates'
 import { FULL_DAY, HALF_DAY } from './labels'
 import {
@@ -93,6 +93,10 @@ export function ApprovalRequestDialog({
   const [oggetto, setOggetto] = useState('')
   const [corpo, setCorpo] = useState('')
   const [prepared, setPrepared] = useState<ApprovalRequestPrepared | null>(null)
+  // The draft as the server last said it was: its revision moves with every send attempt, so a
+  // retry names the one it read after the failure and never the one it prepared.
+  const [draft, setDraft] = useState<{ id: string; updated_at: string } | null>(null)
+  const [outcome, setOutcome] = useState<'sent' | 'retry' | 'unknown' | null>(null)
   const [sendFailure, setSendFailure] = useState<string | null>(null)
 
   const recipients = to ?? customer.data?.email ?? ''
@@ -104,6 +108,8 @@ export function ApprovalRequestDialog({
     setRows([emptyRow()])
     setTo(null)
     setPrepared(null)
+    setDraft(null)
+    setOutcome(null)
     setSendFailure(null)
     preview.reset()
     prepare.reset()
@@ -130,24 +136,47 @@ export function ApprovalRequestDialog({
     })
   }
 
-  async function deliver(draft: ApprovalRequestPrepared['draft']) {
+  /**
+   * Sends the draft, then reads it back: the draft is the truth about what happened, not the
+   * send's answer. A refused send is a 409 whose words say why and whose draft says which
+   * state it is now in: `fallito` and `bozza` can be sent again (with the revision just
+   * read), `incerto` and `in_invio` cannot, because asking Gmail is the only way to know and
+   * a second send is the only way to mail the client twice.
+   */
+  async function deliver(target: { id: string; updated_at: string }) {
     setSendFailure(null)
+    setOutcome(null)
     // The days are recorded and the draft exists whatever happens next, so the outcome, good
     // or bad, is the last step: a failure is told there, beside the way to send again.
     setStep('done')
+    let refusal: string | null = null
     try {
-      const sent = await send.mutateAsync(draft)
-      if (sent.send_state === 'inviato') {
-        toast.success('Richiesta inviata')
-        return
-      }
-      setSendFailure(
-        sent.send_state === 'incerto'
-          ? 'Non sappiamo se la richiesta è partita. Controlla dall’Email del cliente prima di rimandarla.'
-          : (sent.last_error ?? 'La richiesta non è partita.'),
-      )
+      await send.mutateAsync(target)
     } catch (error) {
-      setSendFailure(toProblem(error).detail)
+      refusal = toProblem(error).detail
+    }
+    try {
+      const read = await unwrap(
+        api.GET('/api/email-drafts/{draft_id}', { params: { path: { draft_id: target.id } } }),
+      )
+      setDraft({ id: read.id, updated_at: read.updated_at })
+      if (read.send_state === 'inviato') {
+        toast.success('Richiesta inviata')
+        setOutcome('sent')
+      } else if (read.send_state === 'incerto' || read.send_state === 'in_invio') {
+        setOutcome('unknown')
+        setSendFailure(
+          'Non sappiamo se la richiesta è partita. Controlla dall’Email del cliente prima di rimandarla.',
+        )
+      } else {
+        setOutcome('retry')
+        setSendFailure(read.last_error ?? refusal ?? 'La richiesta non è partita.')
+      }
+    } catch (error) {
+      // The draft could not be read back: what the send said is all there is, and a retry
+      // would name a revision nobody knows.
+      setOutcome('unknown')
+      setSendFailure(refusal ?? toProblem(error).detail)
     }
   }
 
@@ -161,6 +190,7 @@ export function ApprovalRequestDialog({
         corpo,
       })
       setPrepared(result)
+      setDraft({ id: result.draft.id, updated_at: result.draft.updated_at })
       if (gmail) await deliver(result.draft)
       else setStep('done')
     } catch {
@@ -180,7 +210,7 @@ export function ApprovalRequestDialog({
               ? 'Indica le date per cui chiedi l’approvazione preventiva.'
               : step === 'text'
                 ? 'Leggi la richiesta: parte esattamente quello che vedi.'
-                : sendFailure === null && gmail
+                : outcome === 'sent'
                   ? 'La richiesta è partita dal tuo indirizzo.'
                   : 'La richiesta è pronta.'}
           </DialogDescription>
@@ -285,15 +315,15 @@ export function ApprovalRequestDialog({
             <p>
               {days === 1 ? 'La giornata è registrata come proposta' : `Le ${days} giornate sono registrate come proposte`} sul
               contratto
-              {gmail && sendFailure === null ? ', in attesa della risposta del cliente.' : '.'}
+              {outcome === 'sent' ? ', in attesa della risposta del cliente.' : '.'}
             </p>
             {sendFailure !== null ? (
               <p role="alert" className="border border-destructive/50 bg-destructive/10 px-3 py-2 text-destructive">
                 {sendFailure}
               </p>
             ) : null}
-            {gmail && sendFailure !== null && prepared !== null && !sendFailure.startsWith('Non sappiamo') ? (
-              <Button type="button" onClick={() => void deliver(prepared.draft)} disabled={send.isPending}>
+            {outcome === 'retry' && draft !== null ? (
+              <Button type="button" onClick={() => void deliver(draft)} disabled={send.isPending}>
                 {send.isPending ? <Loader className="mr-2 size-4" /> : null}
                 Riprova l’invio
               </Button>

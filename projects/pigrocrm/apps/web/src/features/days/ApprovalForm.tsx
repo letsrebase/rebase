@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { toast } from '@rebase/ui/sonner'
 import { Textarea } from '@rebase/ui/textarea'
 import { formatOccurredAt } from '@/components/activityLabels'
-import { useGmailConfigured, useGmailMessages } from '@/features/gmail/queries'
+import { useGmailConfigured } from '@/features/gmail/queries'
 import { toProblem } from '@/lib/api'
 import { useCanWrite } from '@/lib/auth'
 import { formatIsoDateItalian } from '@/lib/dates'
@@ -26,9 +26,9 @@ import {
   type ApprovalCanale,
   type GmailMessage,
 } from './approvals'
-import { useFileProof, useRecordApproval } from './approvalQueries'
+import { useCustomerMessages, useFileProof, useRecordApproval } from './approvalQueries'
 import { quantitaLabel, statoLabel } from './labels'
-import { useDayContracts, useWorkUnits } from './queries'
+import { useDayContractOptions, useWorkUnits } from './queries'
 
 type ProofKind = 'messaggio' | 'file' | 'testo'
 
@@ -58,7 +58,7 @@ export function ApprovalForm({
 }) {
   const navigate = useNavigate()
   const canWrite = useCanWrite()
-  const contracts = useDayContracts()
+  const contracts = useDayContractOptions(initialContractId)
   const gmail = useGmailConfigured()
   const fileProof = useFileProof()
   const record = useRecordApproval()
@@ -76,12 +76,15 @@ export function ApprovalForm({
   const [messageId, setMessageId] = useState('')
   const [file, setFile] = useState<File | null>(null)
   const [testo, setTesto] = useState('')
+  // The document a failed recording already filed, and which proof it was: a retry reuses it
+  // instead of filing a second copy of the same evidence behind an approval that never landed.
+  const [filed, setFiled] = useState<{ key: string; id: string } | null>(null)
 
   const options = contracts.data ?? []
   const contract = options.find((candidate) => candidate.id === contractId)
   const candidates = useWorkUnits({ contractId }, { enabled: contractId !== '' })
   const days = (candidates.data?.items ?? []).filter(canReceiveApproval)
-  const messages = useGmailMessages({ entityType: 'customer', entityId: contract?.customer_id ?? '' })
+  const messages = useCustomerMessages(contract?.customer_id, gmail)
   const inbound = (messages.data ?? []).filter((message) => message.direction === 'inbound')
   const chosenMessage = inbound.find((message) => message.id === messageId)
 
@@ -115,7 +118,7 @@ export function ApprovalForm({
 
   const chosenDays = days.filter((day) => picked.has(day.id))
   const proofReady =
-    (proof === 'messaggio' && chosenMessage !== undefined) ||
+    (proof === 'messaggio' && chosenMessage !== undefined && chosenMessage.body_text.trim() !== '') ||
     (proof === 'file' && file !== null) ||
     (proof === 'testo' && testo.trim() !== '')
   const ready =
@@ -148,16 +151,25 @@ export function ApprovalForm({
       if (proof === 'messaggio') {
         body = { ...base, gmail_message_id: messageId }
       } else {
-        const upload =
+        const key =
           proof === 'file' && file !== null
-            ? file
-            : new File([testo], 'approvazione.txt', { type: 'text/plain' })
-        const document = await fileProof.mutateAsync({
-          contractId,
-          titolo: proof === 'file' && file !== null ? file.name : `Approvazione di ${mittente.trim()}`,
-          file: upload,
-        })
-        body = { ...base, document_id: document.id }
+            ? `file|${contractId}|${file.name}|${file.size}|${file.lastModified}`
+            : `testo|${contractId}|${mittente.trim()}|${testo}`
+        let documentId = filed?.key === key ? filed.id : null
+        if (documentId === null) {
+          const upload =
+            proof === 'file' && file !== null
+              ? file
+              : new File([testo], 'approvazione.txt', { type: 'text/plain' })
+          const document = await fileProof.mutateAsync({
+            contractId,
+            titolo: proof === 'file' && file !== null ? file.name : `Approvazione di ${mittente.trim()}`,
+            file: upload,
+          })
+          documentId = document.id
+          setFiled({ key, id: document.id })
+        }
+        body = { ...base, document_id: documentId }
       }
       const recorded = await record.mutateAsync(body)
       toast.success(
@@ -316,7 +328,7 @@ export function ApprovalForm({
             <MessagePicker
               configured={gmail}
               contractChosen={contractId !== ''}
-              loading={messages.isPending && contract !== undefined}
+              loading={messages.isPending && contract !== undefined && messages.fetchStatus !== 'idle'}
               error={messages.isError ? messages.error : null}
               messages={inbound}
               chosenId={messageId}
@@ -379,7 +391,7 @@ export function ApprovalForm({
 }
 
 /**
- * The messages already synced for the client, newest first as the API lists them, inbound
+ * The messages already synced for the client, newest first, inbound
  * only: an approval is something the client sent. Choosing one shows its text, because the
  * excerpt is a passage of it and the person copies it from here.
  */

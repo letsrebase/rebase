@@ -191,6 +191,79 @@ describe('recording an approval', () => {
     expect(await screen.findByText(/Nessun messaggio ricevuto da questo cliente/)).toBeInTheDocument()
   })
 
+  it('lists the client’s messages newest first, and does not ask for them before the contract is known', async () => {
+    const OLDER = { ...MESSAGE, id: 'msg-old', subject: 'Messaggio vecchio', internal_date: '2026-01-05T09:00:00Z' }
+    serving([OLDER, MESSAGE])
+    renderWithQuery(<ApprovalForm initialContractId={CONTRACT_ID} initialDayIds={['d1']} />)
+    await screen.findByRole('radio', { name: /Re: giornate di marzo/ })
+    const radios = within(screen.getByRole('list', { name: 'Messaggi del cliente' })).getAllByRole('radio')
+    expect(radios.map((radio) => radio.getAttribute('value'))).toEqual(['msg-1', 'msg-old'])
+    // Asked for with the API's ceiling, for a customer that is known.
+    const call = (vi.mocked(api.GET).mock.calls as unknown as [string, unknown][]).find(
+      ([path]) => path === '/api/gmail/messages',
+    )
+    expect(call?.[1]).toMatchObject({ params: { query: { entity_id: CUSTOMER_ID, limit: 200 } } })
+    const early = (
+      vi.mocked(api.GET).mock.calls as unknown as [string, { params: { query: { entity_id: string } } }][]
+    ).filter(([path, init]) => path === '/api/gmail/messages' && init.params.query.entity_id === '')
+    expect(early).toHaveLength(0)
+  })
+
+  it('does not let a message with no stored text be chosen as the proof', async () => {
+    serving([{ ...MESSAGE, body_text: '' }])
+    const user = userEvent.setup()
+    renderWithQuery(<ApprovalForm initialContractId={CONTRACT_ID} initialDayIds={['d1']} />)
+    await user.click(await screen.findByRole('radio', { name: /Re: giornate di marzo/ }))
+    await user.type(screen.getByLabelText(/La frase che approva/), 'confermo')
+    expect(screen.getByText(/non è archiviato: non può fare da prova/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Registra approvazione' })).toBeDisabled()
+  })
+
+  it('opens on an ended contract it was reached from, which the list leaves out', async () => {
+    vi.mocked(api.GET).mockImplementation(((path: string) => {
+      if (path === '/api/contracts') return Promise.resolve(ok({ items: [], next_cursor: null }))
+      if (path === '/api/contracts/{contract_id}') {
+        return Promise.resolve(ok(contract({ id: CONTRACT_ID, titolo: 'Contratto finito', stato: 'terminato' })))
+      }
+      if (path === '/api/work-units') return Promise.resolve(ok({ items: [], troncato: false }))
+      return Promise.resolve(ok([]))
+    }) as never)
+    renderWithQuery(<ApprovalForm initialContractId={CONTRACT_ID} initialDayIds={[]} />)
+    await waitFor(() =>
+      expect(screen.getByRole('combobox', { name: 'Contratto' })).toHaveTextContent('Contratto finito'),
+    )
+  })
+
+  it('reuses the document a failed recording already filed instead of filing another', async () => {
+    gmail.configured = false
+    serving()
+    const { fetchWithRefresh } = await import('@/lib/api')
+    vi.mocked(fetchWithRefresh).mockReset()
+    vi.mocked(fetchWithRefresh).mockResolvedValue(new Response(JSON.stringify({ id: 'v1' }), { status: 201 }))
+    let approvals = 0
+    vi.mocked(api.POST).mockImplementation(((path: string) => {
+      if (path === '/api/documents') return Promise.resolve(ok({ id: 'doc-7' }))
+      approvals += 1
+      if (approvals === 1) {
+        return Promise.resolve(refused(409, { title: 'x', status: 409, detail: 'una giornata è cambiata', code: 'conflict', instance: '/' }))
+      }
+      return Promise.resolve(ok({ approval: { id: 'a1' }, work_units: [row({ id: 'd1', stato: 'approvato' })] }))
+    }) as never)
+    const user = userEvent.setup()
+    renderWithQuery(<ApprovalForm initialContractId={CONTRACT_ID} initialDayIds={['d1']} />)
+    await user.click(await screen.findByRole('radio', { name: 'Testo incollato' }))
+    await user.type(screen.getByLabelText('Testo dell’approvazione'), 'Confermo.')
+    await user.type(screen.getByLabelText('Da chi'), 'giulia@cliente.example')
+    await user.type(screen.getByLabelText(/La frase che approva/), 'Confermo.')
+    await user.click(screen.getByRole('button', { name: 'Registra approvazione' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('una giornata è cambiata')
+    await user.click(screen.getByRole('button', { name: 'Registra approvazione' }))
+
+    await waitFor(() => expect(navigate).toHaveBeenCalled())
+    const filedDocuments = (vi.mocked(api.POST).mock.calls as unknown as [string][]).filter(([path]) => path === '/api/documents')
+    expect(filedDocuments).toHaveLength(1)
+  })
+
   it('offers a reader nothing to record', () => {
     auth.ruolo = 'readonly'
     serving()

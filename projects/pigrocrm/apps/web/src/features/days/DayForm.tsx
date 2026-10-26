@@ -23,7 +23,7 @@ import {
   statoLabel,
   unitaLabel,
 } from './labels'
-import { useDayContracts, useDayRateCards, useRecordDay, useWorkUnits } from './queries'
+import { useDayContractOptions, useDayRateCards, useRecordDay, useWorkUnits } from './queries'
 
 /** The states that leave a date free again (`uq_work_units_contract_data_live`). */
 const FREES_THE_DATE = new Set(['revocato', 'rifiutato'])
@@ -52,7 +52,7 @@ export function DayForm({
 }) {
   const navigate = useNavigate()
   const canWrite = useCanWrite()
-  const contracts = useDayContracts()
+  const contracts = useDayContractOptions(initialContractId)
   const record = useRecordDay()
   const [contractId, setContractId] = useState(initialContractId ?? '')
   const [data, setData] = useState(initialDate ?? toIsoDate(new Date()))
@@ -251,7 +251,7 @@ function RateLine({
     <p className="text-sm">
       <span className="text-muted-foreground">Tariffa in vigore: </span>
       <strong className="font-semibold tabular-nums">{money(card.importo)}</strong>{' '}
-      <span className="text-muted-foreground">al {unitaLabel(card.unita)}</span>
+      <span className="text-muted-foreground">{unitaLabel(card.unita)}</span>
     </p>
   )
 }

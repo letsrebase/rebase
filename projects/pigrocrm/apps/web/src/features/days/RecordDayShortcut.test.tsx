@@ -49,11 +49,16 @@ describe('the Home’s way into recording a day', () => {
         <div role="dialog">
           <button>dentro</button>
         </div>
+        <div role="menu">
+          <button role="menuitem">voce</button>
+        </div>
       </>,
     )
     await user.click(screen.getByLabelText('campo'))
     await user.keyboard('n')
     await user.click(screen.getByRole('button', { name: 'dentro' }))
+    await user.keyboard('n')
+    await user.click(screen.getByRole('menuitem', { name: 'voce' }))
     await user.keyboard('n')
     await user.click(document.body)
     await user.keyboard('{Control>}n{/Control}')

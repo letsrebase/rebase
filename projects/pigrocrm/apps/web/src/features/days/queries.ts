@@ -72,6 +72,32 @@ export function useDayContracts() {
   })
 }
 
+/**
+ * `useDayContracts`, plus the contract the page was opened for when it is not among them:
+ * a link from a day's page to an ended contract must open with that contract chosen and not
+ * a blank select, and the list rightly leaves ended contracts out of what a new day can be
+ * recorded on. Reads the one contract only when the list is in and does not hold it.
+ */
+export function useDayContractOptions(selectedId: string | undefined) {
+  const list = useDayContracts()
+  const missing =
+    selectedId !== undefined && list.isSuccess && !list.data.some((contract) => contract.id === selectedId)
+  const extra = useQuery({
+    enabled: missing,
+    queryKey: ['day-contract', selectedId ?? ''],
+    queryFn: () =>
+      unwrap(
+        api.GET('/api/contracts/{contract_id}', {
+          params: { path: { contract_id: selectedId ?? '' } },
+        }),
+      ),
+  })
+  return {
+    ...list,
+    data: list.data === undefined ? undefined : extra.data ? [...list.data, extra.data] : list.data,
+  }
+}
+
 export function useDayRateCards(contractId: string) {
   return useQuery({
     enabled: contractId !== '',

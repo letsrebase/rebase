@@ -12,6 +12,7 @@ from pigrocrm.core.work_units.schemas import (
     WorkUnitList,
     WorkUnitListQuery,
     WorkUnitRead,
+    WorkUnitRecord,
     WorkUnitStato,
     WorkUnitTransitionIn,
 )
@@ -23,12 +24,13 @@ router = APIRouter(prefix="/api/work-units", tags=["giornate"], responses=PROBLE
 
 
 @router.post("", response_model=WorkUnitRead, status_code=status.HTTP_201_CREATED)
-def create(data: WorkUnitCreate, session: SessionDep, actor: ActorDep) -> WorkUnitRead:
+def create(data: WorkUnitRecord, session: SessionDep, actor: ActorDep) -> WorkUnitRead:
     """Registra una giornata. Una giornata `lavorato` su un contratto che richiede
     l'approvazione preventiva, senza approvazione, nasce `lavorato_senza_approvazione`: il
     trigger la segna invece di rifiutarla. Chiusa a ogni credenziale di tipo agente: un
-    agente propone (`propose_day`), una persona conferma."""
-    return WorkUnitService(session).create(data, actor)
+    agente propone (`propose_day`), una persona conferma. Si registra una giornata `proposto` o
+    `lavorato`: `approvato` lo scrive `POST /api/approvals`, con la prova."""
+    return WorkUnitService(session).create(WorkUnitCreate(**data.model_dump()), actor)
 
 
 @router.get("", response_model=WorkUnitList)
@@ -61,8 +63,10 @@ def get(work_unit_id: UUID, session: SessionDep, actor: ActorDep) -> WorkUnitDet
 def transition(
     work_unit_id: UUID, data: WorkUnitTransitionIn, session: SessionDep, actor: ActorDep
 ) -> WorkUnitDetail:
-    """Sposta una giornata lungo il suo ciclo di vita. L'arco lo decide il database
-    (`work_unit_enforce_state_machine`); un arco che il grafo non ammette risponde 409."""
+    """Sposta una giornata lungo il suo ciclo di vita, con una mossa che la sua pagina offrirebbe
+    (`azioni` di `GET /api/work-units/{id}`): `approvato` lo scrive la registrazione di
+    un'approvazione e `fatturato` la fattura, quindi qui rispondono 409 come ogni arco che il
+    grafo non ammette (`work_unit_enforce_state_machine`)."""
     service = WorkUnitService(session)
-    service.transition(work_unit_id, data.stato, actor, data.motivo)
+    service.move(work_unit_id, data.stato, actor, data.motivo)
     return service.detail(work_unit_id, actor)

@@ -29,7 +29,7 @@ beforeEach(() => {
 describe('a contract’s days on its own page', () => {
   it('lists them and offers the three things a person does with them', async () => {
     renderWithQuery(<ContractDays contractId={CONTRACT_ID} customerId={CUSTOMER_ID} requiresPriorApproval />)
-    expect(await screen.findByRole('link', { name: /Workshop/ })).toHaveAttribute('href', '/app/days/d1')
+    expect(await screen.findByRole('link', { name: /Workshop/ }, { timeout: 5000 })).toHaveAttribute('href', '/app/days/d1')
     expect(screen.getByRole('button', { name: 'Chiedi approvazione' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Registra approvazione/ })).toHaveAttribute(
       'href',

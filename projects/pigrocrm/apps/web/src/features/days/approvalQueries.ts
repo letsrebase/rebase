@@ -1,7 +1,7 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, toProblem, unwrap } from '@/lib/api'
 import { putVersion } from '@/features/documents/queries'
-import type { ApprovalRecordBody } from './approvals'
+import type { ApprovalRecordBody, GmailMessage } from './approvals'
 
 /**
  * The proof as a document of the contract, before the approval that rests on it: a file
@@ -40,6 +40,32 @@ export function useRecordApproval() {
       void queryClient.invalidateQueries({ queryKey: ['work-unit'] })
       void queryClient.invalidateQueries({ queryKey: ['calendario'] })
       void queryClient.invalidateQueries({ queryKey: ['documents'] })
+    },
+  })
+}
+
+/** How many of a client's messages the picker reads: the API's own ceiling. */
+const MESSAGES_LIMIT = 200
+
+/**
+ * The messages synced for one customer, newest first: the API lists a customer's mailbox
+ * by thread so a conversation can be followed, which is the wrong order for choosing the
+ * one that approved something, and it stops at its limit, so the ceiling is asked for. Only
+ * read once a customer is known and the mailbox is connected.
+ */
+export function useCustomerMessages(customerId: string | undefined, enabled: boolean) {
+  return useQuery({
+    enabled: enabled && customerId !== undefined,
+    queryKey: ['gmail', 'messages', 'customer', customerId ?? '', 'proof'],
+    queryFn: async (): Promise<GmailMessage[]> => {
+      const messages = await unwrap(
+        api.GET('/api/gmail/messages', {
+          params: {
+            query: { entity_type: 'customer', entity_id: customerId ?? '', limit: MESSAGES_LIMIT },
+          },
+        }),
+      )
+      return [...messages].sort((a, b) => b.internal_date.localeCompare(a.internal_date))
     },
   })
 }

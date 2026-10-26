@@ -434,3 +434,37 @@ def test_list_refuses_an_unbounded_or_inverted_query(db_session: Session) -> Non
         service.list(WorkUnitListQuery(), WRITER)
     with pytest.raises(ValidationFailed):
         service.list(WorkUnitListQuery(da=date(2026, 3, 5), a=date(2026, 3, 4)), WRITER)
+
+
+# ---- WorkUnitService.move: the person's door --------------------------------------------
+
+
+def test_move_refuses_what_the_days_page_would_not_offer(db_session: Session) -> None:
+    contract = _contract(db_session, requires_prior_approval=True)
+    service = WorkUnitService(db_session)
+    flagged = service.create(_day(contract, date(2026, 3, 2)), WRITER)
+    proposed = service.create(_day(contract, date(2026, 3, 3), "proposto"), WRITER)
+
+    with pytest.raises(Conflict, match="da qui"):
+        service.move(proposed.id, "approvato", WRITER, "senza prova")
+    with pytest.raises(Conflict, match="da qui"):
+        service.move(flagged.id, "lavorato", WRITER, "il trigger lo riscriverebbe")
+    with pytest.raises(Conflict, match="da qui"):
+        service.move(flagged.id, "fatturato", WRITER, "lo fa una fattura")
+
+    assert service.get(flagged.id).stato == "lavorato_senza_approvazione"
+    assert service.get(proposed.id).stato == "proposto"
+
+
+def test_move_makes_the_moves_a_person_may_make_and_not_for_an_agent(db_session: Session) -> None:
+    contract = _contract(db_session)
+    service = WorkUnitService(db_session)
+    day = service.create(_day(contract, date(2026, 3, 2)), WRITER)
+
+    with pytest.raises(AgentForbidden):
+        service.move(day.id, "contestato", AGENT, "contesto")
+    moved = service.move(day.id, "contestato", WRITER, "il cliente contesta")
+
+    assert moved.stato == "contestato"
+    with pytest.raises(NotFound):
+        service.move(uuid4(), "contestato", WRITER, "x")

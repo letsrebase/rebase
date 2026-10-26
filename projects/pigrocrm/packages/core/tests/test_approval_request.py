@@ -90,6 +90,40 @@ def test_the_request_lists_the_dates_oldest_first_and_asks_for_a_reply_before_th
     assert "«Consulenza architetturale»" in message.corpo
 
 
+def test_a_date_asked_for_twice_is_refused_by_the_model() -> None:
+    with pytest.raises(ValueError, match="due volte"):
+        ApprovalRequestCompose(days=[_day(date(2026, 11, 2)), _day(date(2026, 11, 2), "0.5")])
+
+
+def test_the_body_and_the_recipient_lists_are_bounded() -> None:
+    with pytest.raises(ValueError):
+        ApprovalRequestPrepare(
+            days=[_day(date(2026, 11, 2))],
+            to_addresses=["a@b.example"],
+            oggetto="x",
+            corpo="y" * 100_001,
+        )
+    with pytest.raises(ValueError):
+        ApprovalRequestPrepare(
+            days=[_day(date(2026, 11, 2))],
+            to_addresses=[f"a{n}@b.example" for n in range(21)],
+            oggetto="x",
+            corpo="y",
+        )
+
+
+def test_an_address_that_is_not_one_is_refused_before_any_day_is_written(
+    db_session: Session,
+) -> None:
+    contract = _contract(db_session)
+    body = _prepare(_day(date(2026, 11, 2))).model_copy(update={"to_addresses": ["pippo"]})
+
+    with pytest.raises(ValidationFailed, match="non e' un indirizzo"):
+        _service(db_session).prepare(contract.id, body, WRITER)
+
+    assert db_session.scalars(select(WorkUnit)).all() == []
+
+
 def test_a_day_asked_for_by_date_is_whole_or_half() -> None:
     with pytest.raises(ValueError, match="intera"):
         _day(date(2026, 11, 2), "0.75")
@@ -118,7 +152,8 @@ def test_preparing_records_the_days_as_proposed_and_files_the_draft_in_one_go(
     assert prepared.draft.entity_type == "customer"
     assert db_session.scalar(select(EmailDraft).where(EmailDraft.id == prepared.draft.id))
     steps = WorkUnitService(db_session).transitions_for(prepared.work_units[0].id)
-    assert "amministrazione@acme.example" in steps[0].motivo
+    # A fixed reason: the recipient is on the draft, and the log is immutable.
+    assert steps[0].motivo == "Richiesta di approvazione preparata"
 
 
 def test_a_date_the_contract_already_holds_a_day_for_refuses_the_whole_request(

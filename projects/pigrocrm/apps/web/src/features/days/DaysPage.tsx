@@ -7,7 +7,7 @@ import { Label } from '@rebase/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rebase/ui/select'
 import { useCanWrite } from '@/lib/auth'
 import { DayRows } from './DayRows'
-import { useDayContracts, useWorkUnits } from './queries'
+import { useDayContractOptions, useWorkUnits } from './queries'
 import { defaultMese, monthWindow, type DaysSearch } from './search'
 
 const EVERY_CONTRACT = '__all__'
@@ -28,7 +28,7 @@ export function DaysPage({
   onSearchChange: (next: DaysSearch) => void
 }) {
   const canWrite = useCanWrite()
-  const contracts = useDayContracts()
+  const contracts = useDayContractOptions(search.contract)
   const mese = search.mese ?? (search.contract === undefined ? defaultMese() : undefined)
   const window = mese === undefined ? undefined : monthWindow(mese)
   const days = useWorkUnits({ contractId: search.contract, da: window?.da, a: window?.a })

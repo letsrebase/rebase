@@ -78,11 +78,28 @@ test.describe('le giornate di contratto', () => {
     await loginAsAdmin(page)
     const titolo = `Ciclo E2E ${Date.now()}`
     const contractId = await seedContract(page.request, { titolo, requiresPriorApproval: false })
+    // An approved day exists only through an approval, so the fixture records one.
     const created = await page.request.post('/api/work-units', {
-      data: { contract_id: contractId, data: PRIMO_ISO, quantita: '1.00', descrizione: 'Workshop con il cliente', stato: 'approvato' },
+      data: { contract_id: contractId, data: PRIMO_ISO, quantita: '1.00', descrizione: 'Workshop con il cliente', stato: 'proposto' },
     })
     expect(created.status(), await created.text()).toBe(201)
     const dayId = ((await created.json()) as { id: string }).id
+    const proof = await page.request.post('/api/documents', {
+      data: { contract_id: contractId, tipo: 'documento', titolo: 'Mail di conferma' },
+    })
+    expect(proof.status(), await proof.text()).toBe(201)
+    const approval = await page.request.post('/api/approvals', {
+      data: {
+        contract_id: contractId,
+        canale: 'email',
+        mittente: 'giulia@cliente.example',
+        ricevuto_il: new Date().toISOString(),
+        estratto: 'Confermo.',
+        document_id: ((await proof.json()) as { id: string }).id,
+        work_unit_ids: [dayId],
+      },
+    })
+    expect(approval.status(), await approval.text()).toBe(201)
 
     await page.goto(`/app/days/${dayId}`)
     await expect(page.getByText('Approvata').first()).toBeVisible()

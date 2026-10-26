@@ -22,15 +22,16 @@ from decimal import Decimal
 from typing import Annotated
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings
 from pigrocrm.core.contracts.repository import ContractRepository
-from pigrocrm.core.errors import Conflict, NotFound
+from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.gmail.drafts import EmailDraftService
 from pigrocrm.core.gmail.schemas import (
+    BODY_MAX_LENGTH,
     EMAIL_ADDRESS_MAX_LENGTH,
     SUBJECT_MAX_LENGTH,
     EmailDraftCreate,
@@ -47,6 +48,7 @@ from pigrocrm.core.work_units.schemas import (
 from pigrocrm.core.work_units.service import WorkUnitService
 
 DAYS_MAX = 31
+ADDRESSES_MAX = 20
 WEEKDAYS = ("lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato", "domenica")
 MONTHS = (
     "gennaio",
@@ -89,6 +91,13 @@ class ApprovalRequestCompose(BaseModel):
 
     days: list[ApprovalRequestDay] = Field(min_length=1, max_length=DAYS_MAX)
 
+    @model_validator(mode="after")
+    def _one_row_per_date(self) -> "ApprovalRequestCompose":
+        dates = [day.data for day in self.days]
+        if len(set(dates)) != len(dates):
+            raise ValueError("una data e' indicata due volte")
+        return self
+
 
 class ApprovalRequestMessage(BaseModel):
     """The subject and body the request would carry: what the person previews and edits."""
@@ -99,11 +108,13 @@ class ApprovalRequestMessage(BaseModel):
 
 class ApprovalRequestPrepare(ApprovalRequestCompose):
     to_addresses: list[Annotated[SafeStr, Field(max_length=EMAIL_ADDRESS_MAX_LENGTH)]] = Field(
-        min_length=1
+        min_length=1, max_length=ADDRESSES_MAX
     )
-    cc_addresses: list[Annotated[SafeStr, Field(max_length=EMAIL_ADDRESS_MAX_LENGTH)]] = []
+    cc_addresses: list[Annotated[SafeStr, Field(max_length=EMAIL_ADDRESS_MAX_LENGTH)]] = Field(
+        default_factory=list, max_length=ADDRESSES_MAX
+    )
     oggetto: SafeStr = Field(min_length=1, max_length=SUBJECT_MAX_LENGTH)
-    corpo: SafeStr = Field(min_length=1)
+    corpo: SafeStr = Field(min_length=1, max_length=BODY_MAX_LENGTH)
 
 
 class ApprovalRequestPrepared(BaseModel):
@@ -171,6 +182,14 @@ class ApprovalRequestService:
         """
         actor.require_write("request_approval")
         _, customer_id = self._contract(contract_id)
+        for address in (*data.to_addresses, *data.cc_addresses):
+            if "@" not in address or " " in address:
+                raise ValidationFailed(
+                    "approval_request",
+                    "to_addresses",
+                    "non e' un indirizzo email",
+                    expected="un indirizzo come nome@dominio.it",
+                )
         taken = self._taken(contract_id, data)
         if taken:
             raise Conflict(
@@ -189,22 +208,28 @@ class ApprovalRequestService:
                     stato="proposto",
                 ),
                 actor,
-                f"Richiesta di approvazione a {', '.join(data.to_addresses)}",
+                "Richiesta di approvazione preparata",
                 commit=False,
             )
             for day in sorted(data.days, key=lambda day: day.data)
         ]
-        draft = EmailDraftService(self.session, settings=self.settings).create(
-            EmailDraftCreate(
-                entity_type="customer",
-                entity_id=customer_id,
-                to_addresses=list(data.to_addresses),
-                cc_addresses=list(data.cc_addresses),
-                subject=data.oggetto,
-                body_markdown=data.corpo,
-            ),
-            actor,
-        )
+        try:
+            draft = EmailDraftService(self.session, settings=self.settings).create(
+                EmailDraftCreate(
+                    entity_type="customer",
+                    entity_id=customer_id,
+                    to_addresses=list(data.to_addresses),
+                    cc_addresses=list(data.cc_addresses),
+                    subject=data.oggetto,
+                    body_markdown=data.corpo,
+                ),
+                actor,
+            )
+        except Exception:
+            # The days are flushed and the draft is what commits them: a draft that could not
+            # be filed takes the days with it, here and not by the session happening to close.
+            self.session.rollback()
+            raise
         return ApprovalRequestPrepared(draft=draft, work_units=proposed)
 
     def _taken(self, contract_id: UUID, data: ApprovalRequestPrepare) -> list[str]:

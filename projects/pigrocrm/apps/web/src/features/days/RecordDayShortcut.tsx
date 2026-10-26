@@ -9,7 +9,9 @@ function isTypingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false
   return (
     target.isContentEditable ||
-    target.closest('input, textarea, select, [role="combobox"], [role="listbox"], [role="dialog"]') !== null
+    target.closest(
+      'input, textarea, select, [role="combobox"], [role="listbox"], [role="menu"], [role="menuitem"], [role="dialog"]',
+    ) !== null
   )
 }
 
@@ -32,6 +34,7 @@ export function RecordDayShortcut() {
     if (!canWrite) return
     function onKeyDown(event: KeyboardEvent) {
       if (event.key.toLowerCase() !== 'n') return
+      if (event.defaultPrevented) return
       if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || event.repeat) return
       if (isTypingTarget(event.target)) return
       event.preventDefault()

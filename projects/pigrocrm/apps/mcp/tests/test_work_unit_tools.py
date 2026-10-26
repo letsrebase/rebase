@@ -3,7 +3,9 @@
 An agent proposes a day (`propose_day`) and a person confirms it; it never records or
 moves one. What it can do is read, which is what these two tools are, and what is
 asserted beyond their shape is the other half: no tool of this module's name writes, and
-the four service writes refuse an agent credential (`AGENT_FORBIDDEN_ACTIONS`).
+the day recording refuses an agent credential (`AGENT_FORBIDDEN_ACTIONS`; the other ledger
+writes are refused in `test_work_units_service.py`, `test_approval_record.py` and
+`test_approval_request.py`, and over REST in `test_work_units_api.py`).
 """
 
 import json

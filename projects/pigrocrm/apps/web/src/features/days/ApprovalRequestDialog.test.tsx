@@ -31,8 +31,12 @@ const DRAFT = {
   last_error: null,
 }
 
+/** What the server says the draft is after a send: the test sets it, the dialog reads it back. */
+let draftNow: Record<string, unknown> = { ...DRAFT }
+
 function serving() {
   vi.mocked(api.GET).mockImplementation(((path: string) => {
+    if (path === '/api/email-drafts/{draft_id}') return Promise.resolve(ok(draftNow))
     if (path === '/api/customers/{customer_id}') {
       return Promise.resolve(ok({ id: CUSTOMER_ID, ragione_sociale: 'Acme', email: 'amministrazione@acme.example' }))
     }
@@ -40,13 +44,21 @@ function serving() {
   }) as never)
 }
 
-function posts(sent: Record<string, unknown> = { ...DRAFT, send_state: 'inviato' }) {
+function posts(sent: Record<string, unknown> | 'refused' = { ...DRAFT, send_state: 'inviato' }) {
   vi.mocked(api.POST).mockImplementation(((path: string) => {
     if (path === '/api/contracts/{contract_id}/approval-request/preview') return Promise.resolve(ok(MESSAGE))
     if (path === '/api/contracts/{contract_id}/approval-request') {
       return Promise.resolve(ok({ draft: DRAFT, work_units: [row({ id: 'p1', stato: 'proposto' }), row({ id: 'p2', stato: 'proposto' })] }))
     }
-    if (path === '/api/email-drafts/{draft_id}/send') return Promise.resolve(ok(sent))
+    if (path === '/api/email-drafts/{draft_id}/send') {
+      if (sent === 'refused') {
+        return Promise.resolve(
+          refused(409, { title: 'x', status: 409, detail: 'email_draft: il draft non e\' inviabile', code: 'conflict', instance: '/', send_state: draftNow.send_state }),
+        )
+      }
+      draftNow = sent
+      return Promise.resolve(ok(sent))
+    }
     return Promise.resolve(ok(undefined))
   }) as never)
 }
@@ -72,6 +84,7 @@ beforeEach(() => {
   vi.mocked(api.GET).mockReset()
   vi.mocked(api.POST).mockReset()
   gmail.configured = true
+  draftNow = { ...DRAFT }
   serving()
   posts()
 })
@@ -122,8 +135,15 @@ describe('asking a client for approval', () => {
     expect(vi.mocked(api.POST).mock.calls[1]?.[1]).toMatchObject({ body: { corpo: 'Testo mio' } })
   })
 
-  it('keeps the draft and the days when the send fails, and sends the same draft again', async () => {
-    posts({ ...DRAFT, send_state: 'fallito', last_error: 'Gmail ha rifiutato la richiesta' })
+  it('keeps the draft and the days when the send is refused, and sends it again on the revision it read', async () => {
+    // The refusal moved the draft: its revision is not the one that was prepared.
+    posts('refused')
+    const REFUSED = { ...DRAFT, send_state: 'fallito', last_error: 'Gmail ha rifiutato la richiesta', updated_at: '2026-10-26T10:05:00.654321Z' }
+    const original = vi.mocked(api.POST).getMockImplementation()
+    vi.mocked(api.POST).mockImplementation(((path: string, init: unknown) => {
+      if (path === '/api/email-drafts/{draft_id}/send') draftNow = REFUSED
+      return (original as (p: string, i: unknown) => Promise<unknown>)(path, init)
+    }) as never)
     const user = userEvent.setup()
     open()
     await toTheText(user)
@@ -133,13 +153,23 @@ describe('asking a client for approval', () => {
     posts()
     await user.click(screen.getByRole('button', { name: 'Riprova l’invio' }))
     await screen.findByText(/in attesa della risposta del cliente/)
-    // The retry sent the draft that already existed: no second request was prepared.
-    const prepared = postedPaths().filter((path) => path === '/api/contracts/{contract_id}/approval-request')
-    expect(prepared).toHaveLength(1)
+    // The retry sent the draft that already existed, on the revision read after the refusal:
+    // no second request was prepared, and the send did not name the stale one.
+    expect(postedPaths().filter((path) => path === '/api/contracts/{contract_id}/approval-request')).toHaveLength(1)
+    const sends = (vi.mocked(api.POST).mock.calls as unknown as [string, unknown][]).filter(
+      ([path]) => path === '/api/email-drafts/{draft_id}/send',
+    )
+    expect(sends[1]?.[1]).toMatchObject({ body: { updated_at: REFUSED.updated_at } })
   })
 
   it('does not offer a retry for an outcome nobody knows', async () => {
-    posts({ ...DRAFT, send_state: 'incerto' })
+    posts('refused')
+    draftNow = { ...DRAFT, send_state: 'incerto' }
+    const original = vi.mocked(api.POST).getMockImplementation()
+    vi.mocked(api.POST).mockImplementation(((path: string, init: unknown) => {
+      if (path === '/api/email-drafts/{draft_id}/send') draftNow = { ...DRAFT, send_state: 'incerto' }
+      return (original as (p: string, i: unknown) => Promise<unknown>)(path, init)
+    }) as never)
     const user = userEvent.setup()
     open()
     await toTheText(user)

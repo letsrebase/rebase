@@ -9,7 +9,7 @@ import type { components } from '@/lib/api-types'
  */
 export type WorkUnitRow = components['schemas']['WorkUnitRow']
 export type WorkUnitDetail = components['schemas']['WorkUnitDetail']
-export type WorkUnitCreateBody = components['schemas']['WorkUnitCreate']
+export type WorkUnitCreateBody = components['schemas']['WorkUnitRecord']
 export type WorkUnitTransition = components['schemas']['WorkUnitTransitionRead']
 export type RateCard = components['schemas']['RateCardRead']
 export type WorkUnitStato = WorkUnitDetail['azioni'][number]
@@ -163,17 +163,17 @@ export function allowsFraction(card: RateCard | null, quantita: string): boolean
   return card.frazioni_ammesse.some((allowed) => scaledFromDecimalString(allowed, 2) === wanted)
 }
 
-const UNITA_LABELS: Record<string, string> = {
-  ora: 'ora',
-  giorno: 'giorno',
-  mese: 'mese',
-  anno: 'anno',
-  forfait: 'forfait',
+const UNITA_PHRASES: Record<string, string> = {
+  ora: 'all’ora',
+  giorno: 'al giorno',
+  mese: 'al mese',
+  anno: 'all’anno',
+  forfait: 'a forfait',
 }
 
-/** «al giorno», «all’ora»…: the unit a rate card prices by, as the sentence after the figure. */
+/** The unit a rate card prices by, as the words after the figure: «al giorno», «all’ora». */
 export function unitaLabel(unita: string): string {
-  return UNITA_LABELS[unita] ?? unita
+  return UNITA_PHRASES[unita] ?? `per ${unita}`
 }
 
 /** The cell's contribution to its accessible name: how many days, and any flagged one. */
