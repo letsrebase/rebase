@@ -19,6 +19,7 @@ import {
   stateTone,
 } from '@/features/contracts/labels'
 import { RateCardsSection } from '@/features/contracts/RateCardsSection'
+import { RenewalSection } from '@/features/contracts/RenewalSection'
 import { useContract, type Contract } from '@/features/contracts/queries'
 import { useCustomer } from '@/features/customers/queries'
 import { formatDate, formatMoney } from '@/features/invoices/format'
@@ -150,6 +151,9 @@ export function ContractDetail() {
             </div>
             <div className="lg:col-span-2">
               <ExpensesSection contractId={row.id} />
+            </div>
+            <div className="lg:col-span-2">
+              <RenewalSection contract={row} />
             </div>
           </div>
         }
