@@ -92,6 +92,13 @@ class Customer(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     azienda_id: Mapped[UUID] = mapped_column(
         ForeignKey("emitter_profile.id"), nullable=False, index=True, default=default_azienda_id
     )
+    # Who answers for this customer (REB-773): the person the reminders about its invoices
+    # and contracts go to, with the deal's own owner for what hangs on a deal. Whoever
+    # creates the customer unless the request names someone else; `None` only for a
+    # customer nobody owns (a system actor created it, or the owner was cleared), which
+    # the reminders then give to the space's owner. Not `NOT NULL`: a user is archived,
+    # never deleted, and a customer must not stop existing with them.
+    owner_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None, index=True)
     partita_iva: Mapped[str | None] = mapped_column(String(11), default=None, index=True)
     codice_fiscale: Mapped[str | None] = mapped_column(String(16), default=None)
     codice_sdi: Mapped[str | None] = mapped_column(String(7), default=None)

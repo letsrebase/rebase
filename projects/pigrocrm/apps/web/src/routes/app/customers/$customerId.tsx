@@ -13,6 +13,7 @@ import { Skeleton } from '@rebase/ui/skeleton'
 import { EconomicsTab } from '@/features/analytics/EconomicsTab'
 import { CustomerForm, customerToFormValues } from '@/features/customers/CustomerForm'
 import { displayNative } from '@/features/customers/columns'
+import { useCustomerOwners } from '@/features/customers/owner'
 import {
   useCustomer,
   useCustomerDeals,
@@ -121,6 +122,7 @@ export function CustomerDetail() {
   // this reads the same cache entry. See `useGmailConfigured` for why an installation
   // without Google gets no Email tab at all rather than a permanently empty one.
   const gmailConfigured = useGmailConfigured()
+  const owners = useCustomerOwners()
 
   if (isLoading) return <Skeleton className="m-8 h-96" />
   // A failed fetch and a genuine 404 both leave `customer` undefined once loading
@@ -253,6 +255,7 @@ export function CustomerDetail() {
                 <Row label="Email" value={displayNative(customer.email)} />
                 <Row label="Telefono" value={displayNative(customer.telefono)} />
                 <Row label="Sito web" value={displayNative(customer.sito_web)} />
+                <Row label="Responsabile" value={owners.nameOf(customer.owner_id) ?? EMPTY} />
               </CardContent>
             </Card>
 
@@ -320,6 +323,7 @@ export function CustomerDetail() {
         open={editing}
         onOpenChange={setEditing}
         customFields={custom}
+        owners={owners.canChange ? owners.options : undefined}
         initial={customerToFormValues(customer)}
         problem={problem}
         busy={update.isPending}

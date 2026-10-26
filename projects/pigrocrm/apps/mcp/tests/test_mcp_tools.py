@@ -163,6 +163,34 @@ async def test_a_permission_error_tells_the_agent_to_ask_the_user(mcp_session: S
     assert "manualmente" in message
 
 
+async def test_an_agent_names_a_customers_owner_when_it_creates_it_and_when_it_updates_it(
+    server, mcp_session: Session
+) -> None:
+    """REB-773: `create_customer` takes `owner_id`, and `update_customer` takes it in
+    `changes` (its schema is `CustomerUpdate`'s). The agent here is an admin's."""
+    from pigrocrm.core.auth.models import User
+
+    first = User(email=f"a-{uuid4()}@example.test", password_hash="x", nome="A", ruolo="admin")
+    second = User(email=f"b-{uuid4()}@example.test", password_hash="x", nome="B", ruolo="admin")
+    mcp_session.add_all([first, second])
+    mcp_session.flush()
+
+    async with Client(server) as client:
+        created = _payload(
+            await client.call_tool(
+                "create_customer", {"ragione_sociale": "ACME", "owner_id": str(first.id)}
+            )
+        )
+        assert created["owner_id"] == str(first.id)
+        moved = _payload(
+            await client.call_tool(
+                "update_customer",
+                {"customer_id": created["id"], "changes": {"owner_id": str(second.id)}},
+            )
+        )
+        assert moved["owner_id"] == str(second.id)
+
+
 async def test_search_customers_finds_by_free_text(server, mcp_session: Session) -> None:
     async with Client(server) as client:
         await client.call_tool("create_customer", {"ragione_sociale": "ACME Srl"})
