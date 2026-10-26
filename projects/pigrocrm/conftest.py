@@ -119,7 +119,7 @@ _TEMPLATE = "pigrocrm_template"
 _AZIENDA_SCOPE_REVISIONS = (
     "0048_azienda_scope.py",
     "0049_azienda_scope_fast_path.py",
-    "0055_contract_email_templates.py",
+    "0056_contract_email_templates.py",
 )
 
 
