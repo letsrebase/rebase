@@ -39,14 +39,19 @@ initAnalytics({ maskText: true })
 api.use(analyticsMiddleware())
 
 // The manifest and the service worker of this space, in the production build only
-// (src/pwa/register.ts).
-startPwa({
-  production: import.meta.env.PROD,
-  pathname: window.location.pathname,
-  prefix: tenantPrefix,
-  document,
-  serviceWorker: navigator.serviceWorker,
-})
+// (src/pwa/register.ts). Asked again on every route change: signing in from the bare
+// `/app/login` reaches the application without a new document, and it is only then that
+// the page becomes one that can be installed.
+const startPwaHere = () =>
+  startPwa({
+    production: import.meta.env.PROD,
+    pathname: window.location.pathname,
+    prefix: tenantPrefix,
+    document,
+    serviceWorker: navigator.serviceWorker,
+  })
+startPwaHere()
+router.subscribe('onResolved', startPwaHere)
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

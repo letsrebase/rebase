@@ -3,6 +3,11 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { InstallPrompt } from './InstallPrompt'
 
+// The router is not mounted here: only the address it reports matters, and a test moves
+// it and re-renders to stand for a navigation.
+const router = vi.hoisted(() => ({ href: '/app/' }))
+vi.mock('@tanstack/react-router', () => ({ useRouterState: () => router.href }))
+
 function fireInstallPrompt(outcome: 'accepted' | 'dismissed' = 'accepted') {
   const event = new Event('beforeinstallprompt', { cancelable: true }) as Event & {
     prompt: () => Promise<void>
@@ -25,6 +30,7 @@ function engage() {
 describe('InstallPrompt', () => {
   beforeEach(() => {
     vi.stubEnv('PROD', true)
+    router.href = '/app/'
     window.localStorage.clear()
   })
   afterEach(() => {
@@ -61,6 +67,22 @@ describe('InstallPrompt', () => {
     fireInstallPrompt()
     engage()
     expect(screen.queryByRole('status')).toBeNull()
+  })
+
+  it('stays silent on the bare login and offers the install once the page moves on', () => {
+    router.href = '/app/login'
+    const { rerender } = render(<InstallPrompt />)
+    fireInstallPrompt()
+    engage()
+    expect(screen.queryByRole('status')).toBeNull()
+
+    // Signed in without a new document: the address is now one that can be installed.
+    router.href = '/app?tab=economica'
+    rerender(<InstallPrompt />)
+    fireInstallPrompt()
+    engage()
+    expect(screen.getByRole('status')).toHaveTextContent('Installa PigroCRM')
+    router.href = '/app/'
   })
 
   it('is silent in development, where there is no worker to install', () => {

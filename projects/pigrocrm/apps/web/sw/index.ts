@@ -115,12 +115,13 @@ async function offlinePage(): Promise<Response> {
   return new Response(cached.body, { status: 503, statusText: 'Service Unavailable', headers })
 }
 
-/** `ignoreVary`: these are the build's own files, one copy each, stored under the request
- *  that fetched them. A server that answers `Vary: Origin` (vite preview does) would
+/** `ignoreVary` and `ignoreSearch`: these are the build's own files, one copy each,
+ *  stored under a query-less URL by the request that fetched them (`decideFetch` also
+ *  answers by path). A server that answers `Vary: Origin` (vite preview does) would
  *  otherwise make a script tag's request, which differs from that one in headers only,
- *  miss its own file and fail offline. */
+ *  miss its own file and fail offline, and so would a `?v=1` on a reference to it. */
 async function shellFile(request: Request): Promise<Response> {
-  const cached = await (await caches.open(CACHE)).match(request, { ignoreVary: true })
+  const cached = await (await caches.open(CACHE)).match(request, { ignoreVary: true, ignoreSearch: true })
   return cached ?? fetch(request)
 }
 

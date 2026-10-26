@@ -20,9 +20,15 @@ export interface PwaEnvironment {
  * "replaced by a new deploy" true for an installed app, which may stay open for days
  * without a navigation, the only thing that makes a browser look for a new worker by
  * itself.
+ *
+ * Safe to call again: the manifest link is the mark that this page is already set up, so
+ * `main.tsx` calls it on every route change. It has to, because signing in from the
+ * bare `/app/login` reaches the application with no new document, and a page that began
+ * somewhere that cannot be installed would otherwise stay that way until a reload.
  */
 export function startPwa(env: PwaEnvironment): void {
   if (!env.production || !isInstallablePage(env.pathname, env.prefix)) return
+  if (env.document.head.querySelector('link[rel="manifest"]')) return
   const urls = pwaUrls(env.prefix)
 
   const manifest = env.document.createElement('link')

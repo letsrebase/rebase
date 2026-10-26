@@ -22,8 +22,12 @@ function setup() {
         addAll: async (requests: Request[]) => {
           for (const request of requests) store.set(request.url, new Response(`body of ${request.url}`))
         },
-        match: async (request: Request | string) =>
-          store.get(typeof request === 'string' ? request : request.url)?.clone(),
+        // The lookup the worker asks for: by URL, optionally without the query.
+        match: async (request: Request | string, options?: { ignoreSearch?: boolean }) => {
+          const url = typeof request === 'string' ? request : request.url
+          const key = options?.ignoreSearch ? url.split('?')[0] : url
+          return store.get(key ?? url)?.clone()
+        },
       }
     },
     keys: async () => [...stored.keys()],
@@ -128,6 +132,9 @@ describe('sw/index.ts', () => {
 
     const answer = await dispatch(listeners, { url: `${ORIGIN}/app/assets/offline-A.js` })
     expect(await answer?.text()).toBe(`body of ${ORIGIN}/app/assets/offline-A.js`)
+    // A reference with a query string is the same file (the policy answers by path).
+    const versioned = await dispatch(listeners, { url: `${ORIGIN}/app/assets/offline-A.js?v=1` })
+    expect(await versioned?.text()).toBe(`body of ${ORIGIN}/app/assets/offline-A.js`)
     fetchMock.mockResolvedValue(new Response('{"nome":"Rossi"}'))
     await dispatch(listeners, { url: `${ORIGIN}/studio/api/customers` })
     await dispatch(listeners, { url: `${SCOPE}`, mode: 'navigate' })

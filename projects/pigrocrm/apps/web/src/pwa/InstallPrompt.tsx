@@ -1,5 +1,5 @@
 import { Button } from '@rebase/ui/button'
-import { useState } from 'react'
+import { useRouterState } from '@tanstack/react-router'
 import { tenantPrefix } from '@/lib/tenant'
 import { useInstallPrompt } from './useInstallPrompt'
 import { isInstallablePage } from './urls'
@@ -9,13 +9,16 @@ import { isInstallablePage } from './urls'
  * until the person has done something, on Android and desktop; and, on iOS Safari,
  * which never fires that event, a line saying where the button is. Each is shown once.
  * Only in the production build, where the worker and the manifest exist, and only on a
- * page that belongs to a space (`isInstallablePage`), judged once from the address the
- * page was opened at, as `startPwa` judges it.
+ * page that belongs to a space (`isInstallablePage`), judged on every route change as
+ * `startPwa` is: signing in from the bare `/app/login` moves the same document onto one.
  */
 export function InstallPrompt() {
-  const [enabled] = useState(
-    () => import.meta.env.PROD && isInstallablePage(window.location.pathname, tenantPrefix),
-  )
+  // The router's own address, not `window.location`: a render that follows a navigation
+  // runs before the browser's history has caught up with it.
+  const href = useRouterState({ select: (state) => state.location.href })
+  const enabled =
+    import.meta.env.PROD &&
+    isInstallablePage(new URL(href, 'http://internal.invalid').pathname, tenantPrefix)
   const prompt = useInstallPrompt(enabled)
   if (!prompt.showAndroidPrompt && !prompt.showIosHint) return null
 

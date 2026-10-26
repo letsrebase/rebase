@@ -52,6 +52,19 @@ describe('startPwa', () => {
     await vi.waitFor(() => expect(registration.update).toHaveBeenCalledTimes(1))
   })
 
+  it('sets the page up once it moves onto an installable one, and only once', () => {
+    const { env, register } = setup({ pathname: '/app/login', prefix: '' })
+    Object.defineProperty(document, 'readyState', { value: 'complete', configurable: true })
+    startPwa(env)
+    expect(register).not.toHaveBeenCalled()
+
+    // Signed in: the same document, now on the application.
+    startPwa({ ...env, pathname: '/app/' })
+    startPwa({ ...env, pathname: '/app/customers' })
+    expect(register).toHaveBeenCalledTimes(1)
+    expect(document.head.querySelectorAll('link[rel="manifest"]')).toHaveLength(1)
+  })
+
   it('does nothing in development: a worker that outlived the dev server would serve stale code', () => {
     const { env, register } = setup({ production: false })
     startPwa(env)
