@@ -842,6 +842,23 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
 
     @mcp.tool()
     @guard
+    def list_contract_email_templates(contract_id: str) -> dict[str, Any]:
+        """I modelli di email salvati su un contratto: oggetto, corpo con le sue variabili
+        `{{nome}}` e gli allegati che portano (fattura, registro)."""
+        return {"items": contracts.email_templates(context, contract_id)}
+
+    @mcp.tool()
+    @guard
+    def preview_contract_email(
+        contract_id: str, template_id: str, invoice_id: str
+    ) -> dict[str, Any]:
+        """Oggetto e testo che partirebbero con un modello per una fattura emessa del
+        contratto, i destinatari che le persone del cliente suggeriscono e gli allegati.
+        Non scrive niente e non invia: l'invio è della persona."""
+        return contracts.email_preview(context, contract_id, template_id, invoice_id)
+
+    @mcp.tool()
+    @guard
     def set_renewal_assumption(
         contract_id: str,
         probabilita: Probabilita,

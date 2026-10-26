@@ -200,6 +200,30 @@ ROWS: list[Row] = [
         "/api/contracts/{contract_id}/register/pdf",
         params={"da": "2026-10-01", "a": "2026-10-31"},
     ),
+    # --- contracts / email templates (REB-753): `require_write` ----------------------
+    Row(
+        "POST",
+        "/api/contracts/{contract_id}/email-templates",
+        body={"nome": "Matrice", "oggetto": "Matrice", "corpo": "Matrice"},
+    ),
+    Row("PATCH", "/api/contracts/{contract_id}/email-templates/{template_id}", body={}),
+    Row(
+        "POST",
+        "/api/contracts/{contract_id}/email/draft",
+        body={
+            "template_id": "__FAKE__",
+            "invoice_id": "__FAKE__",
+            "to_addresses": ["matrice@example.test"],
+        },
+    ),
+    # A render, not a write: it answers what would leave and stores nothing, and a reader
+    # may read an invoice and a contract already.
+    Row(
+        "POST",
+        "/api/contracts/{contract_id}/email/preview",
+        expect="open",
+        body={"template_id": "__FAKE__", "invoice_id": "__FAKE__"},
+    ),
     # --- contracts / renewal assumption (REB-375): `require_write` -------------------
     Row(
         "PUT",

@@ -18,6 +18,7 @@ from pigrocrm.core.contracts.service import (
     RateCardService,
     RenewalAssumptionService,
 )
+from pigrocrm.core.contract_emails.service import ContractEmailService
 from pigrocrm.core.work_units.register import ContractRegisterService
 from pigrocrm_mcp.context import McpContext
 
@@ -70,6 +71,25 @@ def register(context: McpContext, contract_id: str, da: date, a: date) -> dict[s
     return (
         ContractRegisterService(context.session)
         .build(UUID(contract_id), da, a, context.actor)
+        .model_dump(mode="json")
+    )
+
+
+def email_templates(context: McpContext, contract_id: str) -> list[dict[str, Any]]:
+    return [
+        t.model_dump(mode="json")
+        for t in ContractEmailService(context.session).list_for_contract(
+            UUID(contract_id), context.actor
+        )
+    ]
+
+
+def email_preview(
+    context: McpContext, contract_id: str, template_id: str, invoice_id: str
+) -> dict[str, Any]:
+    return (
+        ContractEmailService(context.session)
+        .preview(UUID(contract_id), UUID(template_id), UUID(invoice_id), context.actor)
         .model_dump(mode="json")
     )
 
