@@ -642,6 +642,26 @@ PUBLIC_ROUTES: dict[tuple[str, str], str] = {
         "clients hold no identity session, and calling it would rotate a token no test "
         "minted."
     ),
+    ("POST", "/api/reminders/acknowledge"): (
+        "A person's own bookkeeping (REB-732, spec 2026-10-26 §8.2), open to every role "
+        "by design: a `readonly` member is reminded too and may say they have seen it. "
+        "The row it writes is keyed by the caller's user id and hides nothing from "
+        "anybody else, so there is no write to refuse a role for."
+    ),
+    ("POST", "/api/reminders/snooze"): (
+        "The same as acknowledge, with a date: the caller's own state, any role."
+    ),
+    ("PATCH", "/api/reminders/preferences/{scope}/{type_key}"): (
+        "Two layers behind one path. `me` is the caller's own overrides, open to every "
+        "role like their profile. `space` is the space's defaults and is an unscoped "
+        "admin's (`ReminderPreferenceService._owner`, `require_unscoped_admin`): "
+        "`test_reminders_api.py` and `test_reminders_preferences.py` walk that refusal, "
+        "which this sweep's single path template cannot express."
+    ),
+    ("DELETE", "/api/reminders/preferences/{scope}/{type_key}"): (
+        "The way back to the default, for the same two layers and with the same gate as "
+        "the PATCH above."
+    ),
 }
 
 _SAFE_METHODS = {"get", "head", "options", "trace"}

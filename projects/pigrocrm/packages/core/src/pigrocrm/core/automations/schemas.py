@@ -38,6 +38,9 @@ ATTIVITA_RULES: tuple[AttivitaRule, ...] = (
     "fattura_scaduta",
 )
 AutomationRuleCode = AutomationRule | AttivitaRule
+# The rule whose cause a reminder already raises (`invoice_overdue`): the attivita reminders
+# skip what it opened, so one late invoice is not announced twice. See `daily.py`.
+REGOLA_COPERTA_DA_PROMEMORIA: AttivitaRule = "fattura_scaduta"
 
 # The four declared conditions the runner absorbs. Anything not in this list propagates
 # and rolls the trigger back (§9.3): a database that cannot write is not an automation

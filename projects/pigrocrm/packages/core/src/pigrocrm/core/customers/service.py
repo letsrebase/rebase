@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.auth.repository import UserRepository
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.customers.repository import CustomerRepository
 from pigrocrm.core.customers.schemas import (
@@ -109,6 +110,38 @@ class CustomerService:
         self.fields = FieldDefinitionService(session)
         self.activities = ActivityService(session)
         self.aziende = LegalEntityService(session)
+        self.users = UserRepository(session)
+
+    def _owner_for(self, owner_id: UUID | None, actor: Actor, *, creating: bool) -> UUID | None:
+        """The owner a write leaves on the customer (REB-773).
+
+        Creating: whoever named in the request, and otherwise whoever creates it. The
+        actor of a job or of rebase has no user id, so such a customer has no owner,
+        which the reminders give to the space's owner. Naming a person other than
+        yourself, and every later change, is an admin's: the owner decides who is told
+        about the customer's invoices, and a collaborator reassigning that to somebody
+        else is moving someone's work onto them. The person must be an active user of
+        the space: a dangling id is worse than none, and a deactivated one would be told
+        nothing.
+
+        `None` on an update clears the owner, and is the only way to: on a create it
+        means «not said», which is the default above.
+        """
+        if not creating or (owner_id is not None and owner_id != actor.id):
+            actor.require_admin("change_customer_owner")
+        if owner_id is None:
+            return actor.id if creating else None
+        owner = self.users.get(owner_id)
+        if owner is None:
+            raise NotFound("user", owner_id)
+        if not owner.attivo:
+            raise ValidationFailed(
+                ENTITY,
+                "owner_id",
+                "la persona e' disattivata: un cliente si assegna a un utente attivo",
+                expected="l'id di un utente attivo",
+            )
+        return owner.id
 
     def _validated_custom(self, values: dict[str, Any]) -> dict[str, Any]:
         """Used by `create` only: `values` is the *complete* desired set of custom
@@ -198,6 +231,7 @@ class CustomerService:
         _check_fiscal(payload, payload.get("nazione") or "IT")
         payload["custom_fields"] = self._validated_custom(payload.get("custom_fields") or {})
         payload["azienda_id"] = self._azienda_for(payload.get("azienda_id"), payload.get("nazione"))
+        payload["owner_id"] = self._owner_for(payload.get("owner_id"), actor, creating=True)
 
         customer = self.repo.add(Customer(**payload))
         self.activities.record(
@@ -322,6 +356,11 @@ class CustomerService:
             # Named, so no proposal: a move is a decision, and it moves nothing already
             # created under the customer (spec §1.7).
             changes["azienda_id"] = self._azienda_for(changes["azienda_id"], None)
+        if "owner_id" in changes and changes["owner_id"] != customer.owner_id:
+            changes["owner_id"] = self._owner_for(changes["owner_id"], actor, creating=False)
+        else:
+            # Said again, unchanged: nothing to write and nobody's permission to ask.
+            changes.pop("owner_id", None)
         if data.custom_fields is not None:
             changes["custom_fields"] = self._update_custom_fields(customer, data.custom_fields)
         for key, value in changes.items():

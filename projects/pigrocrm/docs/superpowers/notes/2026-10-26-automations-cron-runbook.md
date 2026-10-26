@@ -14,9 +14,9 @@ match today and opens one attività for each that has none open.
 
 | Rule (`regola`) | It matches | The attività | Due | Assigned to |
 |---|---|---|---|---|
-| `offerta_inviata_richiama` | an offer in state `inviata` for at least 7 days and at most 37 | «Richiamare {cliente} sull'offerta {titolo}» | 7 days after the sending | the owner of the offer's deal |
+| `offerta_inviata_richiama` | an offer in state `inviata` for at least 7 days and at most 37 | «Richiamare {cliente} sull'offerta {titolo}» | 7 days after the sending | the owner of the offer's deal, else of its customer |
 | `deal_fermo` | an open deal in the same stage for at least the threshold (default 30 days, Impostazioni → Automazioni) | «Il deal {nome} è fermo da {n} giorni» | today | the deal's owner |
-| `fattura_scaduta` | an issued, unpaid invoice strictly past its due date | «Sollecitare {cliente} per {numero}» | today | the owner of the invoice's deal |
+| `fattura_scaduta` | an issued, unpaid invoice strictly past its due date | «Sollecitare {cliente} per {numero}» | today | the owner of the invoice's deal, else of its customer |
 
 Each rule has its switch in Impostazioni → Automazioni (admin only; the MCP surface only
 reads them, `describe_automations`). A switched-off rule opens nothing and the log says

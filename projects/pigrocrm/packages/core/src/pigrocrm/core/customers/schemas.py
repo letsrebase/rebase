@@ -63,6 +63,9 @@ class CustomerCreate(BaseModel):
     # The azienda that bills this customer (REB-623, spec §1.6). `None` asks the
     # service for the one `nazione` proposes; an id names one, which must be active.
     azienda_id: UUID | None = None
+    # The owner (REB-773). Omitted, it is whoever creates the customer; naming someone
+    # else is an admin's act, like changing it later.
+    owner_id: UUID | None = None
     # Plain `str`, not `EmailStr`: unlike `UserCreate.email`, nothing in this codebase
     # validates a customer's email format today, and this fix wave does not add that.
     # `SafeStr` still closes the NUL-byte gap that a plain `str` would otherwise leave
@@ -103,6 +106,8 @@ class CustomerUpdate(BaseModel):
     nazione: SafeStr | None = Field(default=None, max_length=NAZIONE_MAX_LENGTH)
     # Editable afterwards (§1.6); moving it moves nothing already created (§1.7).
     azienda_id: UUID | None = None
+    # An admin's change (REB-773); an explicit `null` leaves the customer with no owner.
+    owner_id: UUID | None = None
     email: SafeStr | None = Field(default=None, max_length=EMAIL_MAX_LENGTH)
     telefono: SafeStr | None = Field(default=None, max_length=TELEFONO_MAX_LENGTH)
     sito_web: SafeStr | None = Field(default=None, max_length=SITO_WEB_MAX_LENGTH)
@@ -120,6 +125,7 @@ class CustomerRead(BaseModel):
 
     id: UUID
     azienda_id: UUID
+    owner_id: UUID | None
     ragione_sociale: str
     partita_iva: str | None
     codice_fiscale: str | None

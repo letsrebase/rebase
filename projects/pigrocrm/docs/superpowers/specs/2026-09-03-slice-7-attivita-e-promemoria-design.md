@@ -165,6 +165,18 @@ dei due. Questo slice ne usa il meccanismo per tre regole nuove, non ne costruis
 Tutte e tre **disattivabili** da `automation_config`, come le esistenti, e tutte e tre soggette alla
 stessa regola di R5 che lo slice 6B ha applicato a se stesso: la configurazione è audited.
 
+> **Note of 2026-10-26 (REB-727, REB-728).** Built as a daily pass, `pigrocrm automations`
+> (`docs/superpowers/notes/2026-10-26-automations-cron-runbook.md`), and the table above is
+> read as follows. `offerta_inviata_richiama` matches an offer in `inviata` for 7 to 37 days
+> (older ones are no longer the follow-up of that sending), due 7 days after it; `deal_fermo`
+> counts from the last stage change on the deal's timeline (the deal's creation when it never
+> moved) against `a4_deal_fermo_giorni`, 30 by default; `fattura_scaduta` is the receivables
+> page's «scaduto». Each is assigned to the deal's owner, else the customer's. The index of
+> §6.1 is over `(regola, coalesce(customer_id, person_id, deal_id, invoice_id))` and not over
+> the four columns: a NULL is distinct from a NULL, so four nullable columns in one key would
+> admit every duplicate. The attività reminders skip what `fattura_scaduta` opened, because
+> `invoice_overdue` already raises that cause.
+
 ### 6.1 L'idempotenza, che è la parte difficile
 
 Una regola che gira ogni giorno su una fattura scaduta crea un'attività al giorno. Dopo una settimana

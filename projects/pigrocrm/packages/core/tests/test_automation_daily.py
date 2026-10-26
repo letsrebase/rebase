@@ -362,6 +362,20 @@ def test_closing_the_attivita_lets_the_next_pass_open_a_new_one(db_session: Sess
     assert len(_rows(db_session, "fattura_scaduta")) == 3
 
 
+def test_a_deal_without_an_owner_falls_back_to_the_customers_owner(db_session: Session) -> None:
+    owner = _owner(db_session)
+    customer = _customer(db_session)
+    customer.owner_id = owner.id
+    deal = _deal(db_session, customer, _stage(db_session))
+    _invoice(db_session, customer, deal=deal, numero=5)
+    _invoice(db_session, customer, numero=6)  # no deal at all
+
+    _run(db_session)
+
+    rows = _rows(db_session, "fattura_scaduta")
+    assert [row.assegnata_a for row in rows] == [owner.id, owner.id]
+
+
 def test_an_inactive_owner_leaves_the_attivita_for_whoever_opens_the_list(
     db_session: Session,
 ) -> None:

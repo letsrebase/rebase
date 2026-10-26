@@ -283,7 +283,7 @@ class AutomationPass:
                 Document.deal_id,
                 Customer.id,
                 Customer.ragione_sociale,
-                Deal.owner_id,
+                func.coalesce(Deal.owner_id, Customer.owner_id),
             )
             .outerjoin(Deal, Deal.id == Document.deal_id)
             .join(Customer, Customer.id == func.coalesce(Document.customer_id, Deal.customer_id))
@@ -331,7 +331,12 @@ class AutomationPass:
             )
         }
         rows = self.session.execute(
-            select(Deal.id, Deal.nome, Deal.owner_id, Deal.created_at)
+            select(
+                Deal.id,
+                Deal.nome,
+                func.coalesce(Deal.owner_id, Customer.owner_id),
+                Deal.created_at,
+            )
             .join(PipelineStage, PipelineStage.id == Deal.pipeline_stage_id)
             .join(Customer, Customer.id == Deal.customer_id)
             .where(
@@ -361,10 +366,14 @@ class AutomationPass:
     def _fatture_scadute(self, today: date) -> list[_Candidate]:
         """Issued invoices nobody has paid, strictly past their due date: the receivables
         page's «scaduto», and the reminder `invoice_overdue`'s cause. Assigned to the owner
-        of the invoice's deal."""
+        of the invoice's deal, or of its customer when it has no deal."""
         rows = self.session.execute(
             select(
-                Invoice.id, Invoice.anno, Invoice.numero, Customer.ragione_sociale, Deal.owner_id
+                Invoice.id,
+                Invoice.anno,
+                Invoice.numero,
+                Customer.ragione_sociale,
+                func.coalesce(Deal.owner_id, Customer.owner_id),
             )
             .join(Customer, Customer.id == Invoice.customer_id)
             .outerjoin(Deal, Deal.id == Invoice.deal_id)

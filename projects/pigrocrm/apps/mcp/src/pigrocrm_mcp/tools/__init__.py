@@ -272,8 +272,14 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         custom_fields: dict[str, Any] | None = None,
         nazione: str | None = None,
         azienda_id: str | None = None,
+        owner_id: str | None = None,
     ) -> dict[str, Any]:
         """Crea un cliente. Chiama prima `describe_schema` per i campi personalizzati.
+
+        `owner_id` e' la persona che risponde del cliente, a cui arrivano i promemoria
+        su fatture e contratti: omesso, e' chi crea il cliente. Indicare un'altra
+        persona, come cambiarla poi con `update_customer`, lo puo' fare solo un
+        amministratore.
 
         `giorni_pagamento` e `pagamento_fine_mese` sono i termini di pagamento concordati
         («30 giorni data fattura fine mese» e' `30` con `True`): da qui `issue_invoice`
@@ -305,6 +311,7 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
                 "custom_fields": custom_fields or {},
                 **({"nazione": nazione} if nazione is not None else {}),
                 "azienda_id": parse_legal_entity_id(azienda_id),
+                "owner_id": owner_id,
             },
         )
 
@@ -321,7 +328,10 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
     @mcp.tool()
     @guard
     def update_customer(customer_id: str, changes: CustomerChanges) -> dict[str, Any]:
-        """Aggiorna un cliente. `changes` contiene solo i campi da modificare."""
+        """Aggiorna un cliente. `changes` contiene solo i campi da modificare.
+
+        `owner_id` (la persona che risponde del cliente) lo cambia solo un
+        amministratore; `null` toglie il responsabile."""
         return customers.update(context, customer_id, changes)
 
     @mcp.tool()

@@ -13,13 +13,19 @@ vi.mock('@tanstack/react-router', async (importOriginal) => {
 
 // Hoisted so a single test can flip it: everything below is about what the page draws
 // for a reader, and only the Fatture tab's button is about what a writer may do.
-const auth = vi.hoisted(() => ({ canWrite: false }))
+const auth = vi.hoisted(() => ({
+  canWrite: false,
+  admin: false,
+  user: null as { id: string; nome: string } | null,
+}))
 vi.mock('@/lib/auth', () => ({
   useCanWrite: () => auth.canWrite,
   // REB-294: the pages below mount controls that read their own action from the
   // table (`NewProformaButton`, `DocumentsTab`); they follow the same switch, so a
-  // test asking for a writer gets every writer control and a reader gets none.
-  useCan: () => auth.canWrite,
+  // test asking for a writer gets every writer control and a reader gets none. The
+  // owner's change (REB-773) is an admin's, so it follows its own switch.
+  useCan: (action: string) => (action === 'change_customer_owner' ? auth.admin : auth.canWrite),
+  useAuth: () => ({ user: auth.user }),
 }))
 
 // `api.GET` is spied on directly (not `vi.mock('@/lib/api', ...)`), mirroring
@@ -48,6 +54,8 @@ function mockCustomerFetch(result: ReturnType<typeof ok> | ReturnType<typeof fai
 beforeEach(() => {
   mockGet.mockReset()
   auth.canWrite = false
+  auth.admin = false
+  auth.user = null
 })
 
 /** Enough of a `CustomerRead` for the page to render past its guards. Cast rather than
@@ -79,6 +87,45 @@ describe('CustomerDetail', () => {
       renderWithClient(<CustomerDetail />)
       expect(await screen.findByText('Termini di pagamento')).toBeInTheDocument()
       expect(screen.getByText('Dal profilo fiscale')).toBeInTheDocument()
+    })
+  })
+
+  /** REB-773: who answers for the customer, which is who its reminders go to. */
+  describe('the owner row', () => {
+    it('shows a dash for a customer nobody owns', async () => {
+      mockCustomerFetch(ok({ ...(CUSTOMER as object), owner_id: null }))
+      renderWithClient(<CustomerDetail />)
+      const label = await screen.findByText('Responsabile')
+      expect(label.parentElement).toHaveTextContent('Responsabile—')
+    })
+
+    it('names the signed-in person when the customer is theirs', async () => {
+      auth.user = { id: 'u1', nome: 'Giulia' }
+      mockCustomerFetch(ok({ ...(CUSTOMER as object), owner_id: 'u1' }))
+      renderWithClient(<CustomerDetail />)
+      expect(await screen.findByText('Giulia (tu)')).toBeInTheDocument()
+    })
+
+    it('does not name a colleague to someone who cannot list the space', async () => {
+      auth.user = { id: 'u1', nome: 'Giulia' }
+      mockCustomerFetch(ok({ ...(CUSTOMER as object), owner_id: 'u2' }))
+      renderWithClient(<CustomerDetail />)
+      expect(await screen.findByText('Un collega')).toBeInTheDocument()
+    })
+
+    it('names the owner to an admin, who can list the users', async () => {
+      auth.admin = true
+      auth.canWrite = true
+      auth.user = { id: 'u1', nome: 'Giulia' }
+      mockGet.mockImplementation(((path: string) => {
+        if (path === '/api/customers/{customer_id}') {
+          return ok({ ...(CUSTOMER as object), owner_id: 'u2' })
+        }
+        if (path === '/api/users') return ok([{ id: 'u2', nome: 'Marco', attivo: true }])
+        return ok({ items: [] })
+      }) as never)
+      renderWithClient(<CustomerDetail />)
+      expect(await screen.findByText('Marco')).toBeInTheDocument()
     })
   })
 

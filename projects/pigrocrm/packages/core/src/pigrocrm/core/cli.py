@@ -34,6 +34,7 @@ from pigrocrm.core.gmail.sync import GmailSyncService
 from pigrocrm.core.gmail.tokens import GoogleTokenClient
 from pigrocrm.core.gmail.transport import GmailTransport
 from pigrocrm.core.mail import sender_from_settings
+from pigrocrm.core.reminders.run import ReminderOutcome, ReminderRun
 
 # Both forms of the same module, deliberately. `telemetry` as a module is what
 # `digest` calls `shutdown()` through, so the call resolves the attribute at run time and
@@ -523,6 +524,117 @@ def _stampa_esito(esito: DigestOutcome, *, dry_run: bool) -> None:
         print(f"{esito.slug}: saltato ({esito.motivo})", file=sys.stderr)
 
 
+def reminders(*, slug: str | None, data: date | None, dry_run: bool) -> int:
+    """`pigrocrm reminders`: the reminder pass over the root installation and every space in
+    the registry, for cron (spec 2026-10-26 §9, REB-736).
+
+    One line per space, counters only, and a run **exits 1 when any line went to
+    `stderr`**, unlike the digest: the pass runs every fifteen minutes and its exit status
+    is what the host's dead-man's-switch check reads (the runbook's `&&` ping), so a space
+    that could not be walked has to be able to stop the ping. The spaces are independent
+    all the same: an exception in one is one line (the slug and the exception's *name*,
+    never its message, which may quote an address) and the pass goes on with the next.
+
+    **The root installation is the first line**, as the digest's is: it is not in the
+    registry, its owner is its first active admin, and `--slug root` visits it alone
+    without opening the registry. Every other name is a registry space, in the order the
+    spaces were created, and the crontab line does not change when one is added.
+
+    **This command migrates nothing**, like the digest and for the same reason: a space
+    behind the image answers `saltato (ProgrammingError)` until the API's boot command
+    migrates it (`ensure-space-defaults`, ORB-189). A cron that ran Alembic on every
+    database every quarter of an hour would be the riskiest thing this product does.
+
+    **One decision.** `ReminderRun.run_for_space` decides; `--dry-run` asks it what would
+    be put in people's lists and writes nothing, and `--data` evaluates another day (the
+    attività due that morning, the overdue ones that day) and only with `--dry-run`: a
+    real pass of another day would end and record things against today's reminders. A
+    rehearsal is a call to the same code as the cron.
+    """
+    from sqlalchemy import create_engine, select
+
+    from pigrocrm.core.db.clock import today_local
+    from pigrocrm.core.tenants import Tenant, ensure_tenants_database
+    from pigrocrm.core.tenants.database import tenant_database_url
+
+    settings = get_settings()
+    if data is not None and data != today_local(settings) and not dry_run:
+        # A real pass writes: it ends the occurrences the day did not raise and records
+        # deliveries at that day's severities. Another day's pass would do that to
+        # reminders that exist today, so another day is only ever a rehearsal.
+        print("--data cambia il giorno: si usa solo con --dry-run", file=sys.stderr)
+        return 2
+    failed = False
+    root_only = slug == ROOT_LABEL
+    # (the line's label, the database)
+    spaces: list[tuple[str, str | URL]] = []
+    if slug is None or root_only:
+        spaces.append((ROOT_LABEL, settings.database_url))
+    registry_read = False
+    if not root_only:
+        try:
+            registry = ensure_tenants_database(settings)
+            try:
+                with session_factory(registry)() as session:
+                    spaces.extend(
+                        (row.slug, tenant_database_url(settings, row.db_name))
+                        for row in session.scalars(select(Tenant).order_by(Tenant.created_at)).all()
+                        if slug is None or row.slug == slug
+                    )
+                registry_read = True
+            finally:
+                registry.dispose()
+        except Exception as exc:  # noqa: BLE001 - a cron line, never a traceback
+            # The type and never the text: a psycopg error can carry the URL, password
+            # included, and this line is appended to a file on the host. Not a `return`:
+            # the root is not in the registry, and its pass still runs.
+            print(f"registro degli spazi non raggiungibile ({type(exc).__name__})", file=sys.stderr)
+            failed = True
+    if not spaces:
+        if slug is not None and registry_read:
+            print(f"{slug}: non nel registro", file=sys.stderr)
+            return 1
+        return 1 if failed else 0
+
+    run = ReminderRun(settings)
+    today = data
+    now = None
+    if data is not None and data != today_local(settings):
+        from datetime import time
+        from zoneinfo import ZoneInfo
+
+        # Another day: its last minute, so a timer that was running by then has run.
+        now = datetime.combine(data, time(23, 59, 59), tzinfo=ZoneInfo(settings.timezone))
+    for space_slug, database_url in spaces:
+        engine = create_engine(database_url, future=True)
+        try:
+            outcome = run.run_for_space(space_slug, engine, today=today, now=now, dry_run=dry_run)
+        except Exception as exc:  # noqa: BLE001 - one space must not stop the others
+            print(f"{space_slug}: saltato ({type(exc).__name__})", file=sys.stderr)
+            failed = True
+            continue
+        finally:
+            engine.dispose()
+        _stampa_promemoria(outcome, dry_run=dry_run)
+    return 1 if failed else 0
+
+
+def _stampa_promemoria(outcome: ReminderOutcome, *, dry_run: bool) -> None:
+    """One space, one line, counters only. A pass that found another one running is the
+    lock doing its work and goes to `stdout`, like gmail-sync's «già in corso»: an error
+    in the log for the system working as designed teaches the operator to ignore the log.
+
+    `(prova)` on a rehearsal, for the reason the digest's has it: a log where the
+    rehearsal and the real pass read identically cannot answer whether the pass ran."""
+    if outcome.esito == "in_corso":
+        print(f"{outcome.slug}: saltato (in_corso)")
+        return
+    print(
+        f"{outcome.slug}: promemoria {outcome.raised}, nuovi {outcome.delivered}, "
+        f"chiusi {outcome.ended}{' (prova)' if dry_run else ''}"
+    )
+
+
 def automations(*, slug: str | None, data: date | None, dry_run: bool) -> int:
     """`pigrocrm automations`: the daily pass of the rules that open attivita (REB-727,
     slice 7 §6), over the root installation and every space in the registry, for cron.
@@ -963,6 +1075,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Prova: prepara il resoconto, dice a quanti andrebbe e non manda niente",
     )
 
+    promemoria = sub.add_parser(
+        "reminders", help="Alza i promemoria di ogni spazio e li mette nelle liste (per cron)"
+    )
+    promemoria.add_argument("--slug", help="Un solo spazio, invece di tutto il registro")
+    promemoria.add_argument(
+        "--data",
+        type=date.fromisoformat,
+        metavar="YYYY-MM-DD",
+        help="Valuta un altro giorno, invece di oggi",
+    )
+    promemoria.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Prova: dice cosa metterebbe nelle liste e non scrive niente",
+    )
+
     automazioni = sub.add_parser(
         "automations",
         help="Apre le attività delle regole che scattano col tempo, in ogni spazio (per cron)",
@@ -995,6 +1123,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return gmail_sync(args.email)
     if args.command == "digest":
         return digest(slug=args.slug, data=args.data, forza=args.forza, dry_run=args.dry_run)
+    if args.command == "reminders":
+        return reminders(slug=args.slug, data=args.data, dry_run=args.dry_run)
     if args.command == "automations":
         return automations(slug=args.slug, data=args.data, dry_run=args.dry_run)
     return 1
