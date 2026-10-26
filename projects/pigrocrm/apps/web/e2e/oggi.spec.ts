@@ -10,7 +10,7 @@ import { loginAsAdmin } from './helpers'
  * other specs of this suite leave their own attività in the same space.
  */
 test.describe('Oggi', () => {
-  test('un’attività di ieri è in ritardo, e Fatto la toglie dalla sezione e dal conteggio', async ({
+  test('an attività due yesterday is overdue, and Fatto takes it out of the section and the count', async ({
     page,
   }) => {
     await loginAsAdmin(page)

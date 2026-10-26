@@ -29,7 +29,7 @@ from uuid import UUID
 
 import pytest
 from fakes.azienda_fixtures import committed_default_azienda, remove_azienda
-from sqlalchemy import Engine, delete, func, select
+from sqlalchemy import Engine, delete, func, select, update
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.models import Activity
@@ -800,6 +800,62 @@ def test_forza_sends_again_and_moves_the_row_instead_of_writing_a_second(
 
 
 # --- the runs that write nothing ------------------------------------------------------
+
+
+def test_a_space_with_only_an_open_attivita_still_gets_its_da_fare(db_engine: Engine) -> None:
+    """An attivita needs no customer, deal, invoice or hour, so a space of nothing but
+    to-dos is not empty: its owner is mailed the week's «Da fare», and a space whose
+    only attivita is closed hears nothing (REB-726, Greptile on #635)."""
+    factory = session_factory(db_engine)
+    oggi = today_local(SETTINGS)
+    with factory() as session:
+        _require_empty(session)
+        titolare = User(
+            email=f"{_PREFIX.lower()}-solo-{uuid7()}@example.test",
+            password_hash="x",
+            nome=f"{_PREFIX} Solo",
+            ruolo="admin",
+        )
+        session.add(titolare)
+        session.flush()
+        indirizzo = titolare.email
+        session.add(
+            Attivita(
+                titolo=f"{_PREFIX} Chiamare Rossi",
+                scadenza=oggi - timedelta(days=1),
+                stato="aperta",
+                origine="manuale",
+                assegnata_a=titolare.id,
+                custom_fields={},
+            )
+        )
+        session.commit()
+    settimana = _settimana_scorsa()
+    sender = RecordingSender()
+    try:
+        esito = _esegui(db_engine, settimana=settimana, titolare=indirizzo, sender=sender)
+        assert esito == DigestOutcome(
+            slug=SLUG, esito="inviato", settimana=iso_week(settimana[0]), destinatari=1
+        )
+        assert "Chiamare Rossi" in sender.sent[0].text
+
+        with factory() as session:
+            session.execute(
+                update(Attivita)
+                .where(Attivita.titolo == f"{_PREFIX} Chiamare Rossi")
+                .values(stato="completata", completata_il=oggi)
+            )
+            # The first run's timeline entry goes with its row, before the row does:
+            # `_pulisci` finds an entry through the week's `digests` id.
+            session.execute(delete(Activity).where(Activity.entity_type == _ENTITA))
+            session.execute(delete(Digest).where(Digest.settimana == iso_week(settimana[0])))
+            session.commit()
+        chiuso = _esegui(
+            db_engine, settimana=settimana, titolare=indirizzo, sender=RecordingSender()
+        )
+        assert chiuso.esito == "vuoto"
+    finally:
+        _pulisci(factory, iso_week(settimana[0]))
 
 
 def test_an_empty_space_hears_nothing(db_engine: Engine) -> None:

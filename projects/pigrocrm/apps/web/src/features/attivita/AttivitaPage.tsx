@@ -107,8 +107,11 @@ function LinkFilter({
 export function AttivitaPage({
   openId,
   onDismissOpen,
+  initialAssignee = ME,
 }: {
   openId?: string
+  /** Whose attività the page opens on: `ME`, `EVERYONE` or a user id. */
+  initialAssignee?: string
   /** Called when the dialog opened by `openId` is closed: the route takes `?apri=` off the
    *  URL, so the same hit picked again is a new navigation and a refresh does not reopen. */
   onDismissOpen?: () => void
@@ -117,7 +120,7 @@ export function AttivitaPage({
   const assignees = useAssignees()
   const [stato, setStato] = useState<Stato | null>('aperta')
   const [scadenza, setScadenza] = useState<Scadenza | null>(null)
-  const [assignee, setAssignee] = useState(ME)
+  const [assignee, setAssignee] = useState(initialAssignee)
   const [link, setLink] = useState<LinkValue | null>(null)
   const [archiviate, setArchiviate] = useState(false)
   const [creating, setCreating] = useState(false)

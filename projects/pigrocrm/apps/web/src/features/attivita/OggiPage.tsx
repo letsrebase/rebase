@@ -34,6 +34,7 @@ function Sezione({
   showScadenza,
   tone,
   foldable = false,
+  assignee,
 }: {
   id: string
   titolo: string
@@ -44,6 +45,9 @@ function Sezione({
    *  so it is the one heading drawn in the danger tint. */
   tone?: 'danger'
   foldable?: boolean
+  /** The select's value, carried to the Attività page so the rows left out are listed
+   *  for the same person and not for the page's own default. */
+  assignee: string
 }) {
   // An <h2> in both shapes, so heading navigation finds the folding section too.
   const heading = (
@@ -67,7 +71,11 @@ function Sezione({
         {gruppo.totale > gruppo.items.length && (
           <p className="text-sm text-muted-foreground">
             Ne sono mostrate {gruppo.items.length} su {gruppo.totale}: le altre sono nella{' '}
-            <Link to="/app/activities" className="underline underline-offset-4">
+            <Link
+              to="/app/activities"
+              search={{ assegnata: assignee }}
+              className="underline underline-offset-4"
+            >
               pagina Attività
             </Link>
             .
@@ -154,6 +162,7 @@ export function OggiPage() {
               titolo="In ritardo"
               gruppo={panel.data.in_ritardo}
               vuoto="Niente in ritardo."
+              assignee={assignee}
               showScadenza
               tone="danger"
             />
@@ -162,6 +171,7 @@ export function OggiPage() {
               titolo="Oggi"
               gruppo={panel.data.scadono_oggi}
               vuoto="Niente in scadenza oggi."
+              assignee={assignee}
               showScadenza={false}
             />
             <Sezione
@@ -169,6 +179,7 @@ export function OggiPage() {
               titolo="Prossimi sette giorni"
               gruppo={panel.data.prossimi_sette_giorni}
               vuoto="Niente nei prossimi sette giorni."
+              assignee={assignee}
               showScadenza
             />
             <Sezione
@@ -176,6 +187,7 @@ export function OggiPage() {
               titolo="Senza scadenza"
               gruppo={panel.data.senza_scadenza}
               vuoto="Niente senza scadenza."
+              assignee={assignee}
               showScadenza={false}
               foldable
             />

@@ -52,6 +52,7 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.attivita.models import Attivita
 from pigrocrm.core.auth.repository import UserRepository
 from pigrocrm.core.auth.scope import actor_for, scope_of
 from pigrocrm.core.config import Settings
@@ -394,10 +395,10 @@ class DigestRun:
     def _spazio_vuoto(self) -> bool:
         """§2: silence for a space with nothing in it.
 
-        Four existence probes rather than the built report's own `vuoto`, because this is
-        the question asked *before* building: a space that has never had a customer should
-        cost one bounded query per table on a Monday morning, not seven sections and a
-        snapshot. `LIMIT 1` on the primary key: the answer is whether there is a row, not
+        Four existence probes (and a fifth, for open attivita) rather than the built
+        report's own `vuoto`, because this is the question asked *before* building: a space
+        that has never had a customer should cost one bounded query per table on a Monday
+        morning, not seven sections and a snapshot. `LIMIT 1` on the primary key: the answer is whether there is a row, not
         how many.
 
         `deleted_at IS NULL` on every one of them. All four carry `SoftDeleteMixin` and
@@ -407,12 +408,26 @@ class DigestRun:
         registers themselves read under, so the probe and the report agree about what
         exists.
         """
-        return all(
+        vuoto = all(
             self.session.execute(
                 select(model.id).where(model.deleted_at.is_(None)).limit(1)
             ).first()
             is None
             for model in (Customer, Deal, Invoice, TimeEntry)
+        )
+        if not vuoto:
+            return False
+        # A fifth probe, and a different one: an open attivita needs none of the four
+        # records above (a to-do belongs to nobody's customer), so a space that holds
+        # only commitments still has a week to report in «Da fare» (REB-726). Only the
+        # open ones: a space whose every attivita is closed has nothing to say.
+        return (
+            self.session.execute(
+                select(Attivita.id)
+                .where(Attivita.deleted_at.is_(None), Attivita.stato == "aperta")
+                .limit(1)
+            ).first()
+            is None
         )
 
     def _riga_della_settimana(self, iso: str) -> UUID | None:

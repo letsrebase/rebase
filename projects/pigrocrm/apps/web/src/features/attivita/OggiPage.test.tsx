@@ -22,7 +22,11 @@ vi.mock('@/lib/auth', () => ({
 vi.mock('@rebase/ui/sonner', () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.fn() } }))
 
 vi.mock('@tanstack/react-router', () => ({
-  Link: ({ children }: { children: React.ReactNode }) => <a href="/x">{children}</a>,
+  Link: ({ children, search }: { children: React.ReactNode; search?: Record<string, string> }) => (
+    <a href="/x" data-search={JSON.stringify(search ?? {})}>
+      {children}
+    </a>
+  ),
 }))
 
 function row(over: Record<string, unknown>) {
@@ -158,5 +162,20 @@ describe('OggiPage', () => {
     renderPage()
 
     expect(await screen.findByText(/Ne sono mostrate 1 su 120/)).toBeInTheDocument()
+    // The rows left out are listed for the person this page is showing, not for the
+    // Attività page's own default.
+    expect(screen.getByRole('link', { name: 'pagina Attività' })).toHaveAttribute(
+      'data-search',
+      JSON.stringify({ assegnata: 'io' }),
+    )
+
+    await userEvent.click(screen.getByRole('combobox', { name: 'Filtra per assegnatario' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'Di chiunque' }))
+    await waitFor(() =>
+      expect(screen.getByRole('link', { name: 'pagina Attività' })).toHaveAttribute(
+        'data-search',
+        JSON.stringify({ assegnata: 'tutte' }),
+      ),
+    )
   })
 })
