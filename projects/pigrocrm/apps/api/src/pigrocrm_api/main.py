@@ -45,6 +45,7 @@ from pigrocrm_api.routers import (
     time_entries,
     tokens,
     users,
+    work_units,
 )
 from pigrocrm_api.tenancy import TenantPrefixMiddleware
 
@@ -121,6 +122,8 @@ def create_app() -> FastAPI:
         # REB-362: the review-before-write step -- a contract's first draft, or a
         # day's evidence -- accepted or rejected by a human.
         proposals,
+        # REB-745: the day ledger on screen -- record a day, read it, move it.
+        work_units,
     ):
         app.include_router(module.router)
 

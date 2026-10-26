@@ -279,3 +279,68 @@ def test_an_issued_unpaid_invoice_lands_on_its_due_date(
     assert len(day.fatture) == 1
     assert day.fatture[0].numero is not None
     assert day.fatture[0].totale > Decimal("0")
+
+
+# --- the contract days (REB-748) ---------------------------------------------------------
+
+
+def _contract_day(db_session: Session, giorno: date, stato: str = "lavorato") -> UUID:
+    from pigrocrm.core.contracts.models import Contract
+    from pigrocrm.core.work_units.models import WorkUnit
+
+    customer = Customer(ragione_sociale=f"Cliente {uuid4()}")
+    db_session.add(customer)
+    db_session.flush()
+    contract = Contract(
+        customer_id=customer.id,
+        titolo="Consulenza",
+        inizio=date(2026, 1, 1),
+        tipo_rinnovo="nessuno",
+        preavviso_disdetta_giorni=30,
+        cadenza_fatturazione="mensile",
+        politica_spese={"kind": "non_rimborsabile"},
+        requires_prior_approval=True,
+    )
+    db_session.add(contract)
+    db_session.flush()
+    day = WorkUnit(
+        contract_id=contract.id,
+        data=giorno,
+        quantita=Decimal("0.50"),
+        descrizione="Revisione",
+        stato=stato,
+    )
+    db_session.add(day)
+    db_session.flush()
+    db_session.refresh(day)
+    return day.id
+
+
+def test_a_day_worked_without_the_required_approval_is_on_its_date_marked_as_such(
+    calendario: CalendarService, db_session: Session
+) -> None:
+    day_id = _contract_day(db_session, date(2026, 9, 3))
+
+    month = calendario.month(MESE, ADMIN)
+
+    day = next(d for d in month.giorni if d.giorno == date(2026, 9, 3))
+    assert [(g.id, g.stato, g.quantita) for g in day.giornate] == [
+        (day_id, "lavorato_senza_approvazione", Decimal("0.50"))
+    ]
+    assert day.ore == Decimal("0.00")
+
+
+def test_a_withdrawn_or_refused_day_does_not_occupy_a_cell(
+    calendario: CalendarService, db_session: Session
+) -> None:
+    _contract_day(db_session, date(2026, 9, 4), "proposto")
+    from pigrocrm.core.work_units.models import WorkUnit
+
+    rows = db_session.query(WorkUnit).all()
+    for row in rows:
+        row.stato = "rifiutato"
+    db_session.flush()
+
+    month = calendario.month(MESE, ADMIN)
+
+    assert month.giorni == []

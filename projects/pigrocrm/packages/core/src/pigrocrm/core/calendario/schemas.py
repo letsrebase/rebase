@@ -59,6 +59,20 @@ class DueInvoice(BaseModel):
     in_ritardo: bool
 
 
+class DayWorkUnit(BaseModel):
+    """One contract day on the calendar: which contract, how much of a day, and the state
+    a cell marks it with. `stato` is the ledger's own word (`lavorato_senza_approvazione`
+    among them), so the cell can say a day was worked without the approval its contract
+    requires rather than drawing it like any other."""
+
+    id: UUID
+    contract_id: UUID
+    contract_titolo: str
+    customer_nome: str
+    quantita: Decimal
+    stato: str
+
+
 class CalendarDay(BaseModel):
     """One day that has something on it.
 
@@ -72,6 +86,7 @@ class CalendarDay(BaseModel):
     per_deal: list[DayDealHours] = Field(default_factory=list)
     attivita: list[AttivitaRead] = Field(default_factory=list)
     fatture: list[DueInvoice] = Field(default_factory=list)
+    giornate: list[DayWorkUnit] = Field(default_factory=list)
 
 
 class CalendarMonth(BaseModel):

@@ -756,9 +756,9 @@ _COPERTE_O_UMANE: dict[Method, str] = {
     ),
     ("WorkUnitService", "transition"): (
         "moving a day through the state graph directly is exactly what invariant 3 "
-        "denies an agent; nothing in this codebase calls it outside its own tests -- "
-        "a future human-facing (non-agent) UI action is the only plausible caller, "
-        "and it does not exist yet"
+        "denies an agent; its only caller is the web app's day page, over "
+        "`POST /api/work-units/{id}/transitions`, and `AGENT_FORBIDDEN_ACTIONS` refuses "
+        "it to any agent credential on that route too (REB-745)"
     ),
     ("WorkUnitService", "link_approval"): (
         "same reason as `transition`: linking an approval outside `accept_proposal`'s "

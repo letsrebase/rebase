@@ -119,3 +119,75 @@ class ApprovalRead(BaseModel):
     origine: dict[str, Any]
     created_at: datetime
     updated_at: datetime
+
+
+# How many days one list answers. The register is read a month or a contract at a time, so
+# this is a ceiling against an unbounded read and not a page size; `WorkUnitList.troncato`
+# says when it cut.
+LIST_LIMIT_MAX = 500
+LIST_LIMIT_DEFAULT = 200
+
+
+class WorkUnitListQuery(BaseModel):
+    """Which days to read. `WorkUnitService.list` refuses a query with none of `contract_id`,
+    `da` or `a`: the whole ledger of a space is not a question any screen asks, and an
+    unbounded read of it is how a list becomes a slow page. The check lives there and not in
+    a validator here because the router builds this model itself, and a `ValidationError`
+    raised in a handler body is a 500, not a 422."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    contract_id: UUID | None = None
+    azienda_id: UUID | None = None
+    da: date | None = None
+    a: date | None = None
+    stato: WorkUnitStato | None = None
+    limit: int = Field(default=LIST_LIMIT_DEFAULT, ge=1, le=LIST_LIMIT_MAX)
+
+
+class WorkUnitRow(WorkUnitRead):
+    """A day with the labels a list or a calendar cell prints: the contract's title and
+    the customer's name, resolved by the same read so a month of days costs one query and
+    not one per row. A soft-deleted customer still answers with its name: archiving a
+    client did not unhappen the work."""
+
+    contract_titolo: str
+    customer_id: UUID
+    customer_nome: str
+
+
+class WorkUnitList(BaseModel):
+    items: list[WorkUnitRow]
+    # `True` when more days matched than `limit`: the newest `limit` are here.
+    troncato: bool = False
+
+
+class ApprovalDetail(ApprovalRead):
+    """An approval with the title of the archived original it interprets, so the day's
+    page can name the evidence without a second read per document."""
+
+    documento_titolo: str | None = None
+
+
+TermViolation = Literal["prima_dell_inizio", "dopo_la_fine"]
+
+
+class WorkUnitDetail(WorkUnitRow):
+    """One day as its page shows it: the contract it belongs to, the approval it rests
+    on, its log in the order it happened, and the moves the state machine allows from
+    where it is.
+
+    `azioni` is computed here from `WORK_UNIT_TRANSITIONS` so the browser never carries a
+    copy of the graph. It leaves out the two edges that are not a person's click: `fatturato`
+    is what an invoice does to a day, and `approvato` is what recording an approval does.
+    The database refuses every edge outside the graph regardless of this list.
+    """
+
+    requires_prior_approval: bool
+    contratto_inizio: date
+    contratto_fine: date | None
+    # The same fact the alert engine reads: a day outside the contract's own term.
+    fuori_termine: TermViolation | None
+    approval: ApprovalDetail | None
+    transizioni: list[WorkUnitTransitionRead]
+    azioni: list[WorkUnitStato]
