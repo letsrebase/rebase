@@ -357,6 +357,26 @@ describe('AppShell', () => {
     expect(sidebar().getByRole('link', { name: 'Token' })).toBeInTheDocument()
   })
 
+  /**
+   * The Proposte queue (REB-750) is every role's to read, like the pages of the groups
+   * above: deciding is gated at the buttons and the service, not at the menu. It is the
+   * last top-level entry, after Token, and opens `/app/proposals`.
+   */
+  it.each(['admin', 'collaboratore', 'readonly'])('shows Proposte to a %s, right after Token', (ruolo) => {
+    mockAuth.ruolo = ruolo
+    renderShell()
+    const links = sidebar().getAllByRole('link')
+    const names = links.map((link) => link.textContent)
+    expect(names.indexOf('Proposte')).toBe(names.indexOf('Token') + 1)
+    expect(links[names.indexOf('Proposte')]).toHaveAttribute('href', '/app/proposals')
+  })
+
+  it('keeps Proposte one click away in the collapsed icon rail', async () => {
+    renderShell()
+    await userEvent.click(screen.getByRole('button', { name: 'Comprimi il menu' }))
+    expect(sidebar().getByRole('link', { name: 'Proposte' })).toHaveAttribute('href', '/app/proposals')
+  })
+
   it('collapses to an icon rail: no group headers, every section still one click away', async () => {
     renderShell()
     await userEvent.click(screen.getByRole('button', { name: 'Comprimi il menu' }))
