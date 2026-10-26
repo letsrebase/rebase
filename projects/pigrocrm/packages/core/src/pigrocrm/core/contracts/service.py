@@ -149,7 +149,7 @@ class ContractService:
         moves `tipo_rinnovo` to `tacito` without a notice is refused, and so is one that
         clears `giorni_pagamento` and leaves `pagamento_fine_mese` behind."""
         actor.require_write("update_contract")
-        contract = self.repo.get(contract_id)
+        contract = self.repo.get_locked(contract_id)
         if contract is None:
             raise NotFound(ENTITY, contract_id)
 
@@ -216,7 +216,7 @@ class ContractService:
         """The one writer of `Contract.stato`. Any state to any other; the same state
         again is refused, so a double click never writes a second timeline row."""
         actor.require_write("set_contract_state")
-        contract = self.repo.get(contract_id)
+        contract = self.repo.get_locked(contract_id)
         if contract is None:
             raise NotFound(ENTITY, contract_id)
         if contract.stato == data.stato:

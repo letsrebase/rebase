@@ -24,12 +24,24 @@ export type ContractConcentration = components['schemas']['ContractConcentration
 export function useCustomerContracts(customerId: string) {
   return useQuery({
     queryKey: queryKeys.contracts({ customer_id: customerId }),
-    queryFn: () =>
-      unwrap(
-        api.GET('/api/contracts', {
-          params: { query: { customer_id: customerId, limit: 200, sort: 'created_at', dir: 'desc' } },
-        }),
-      ),
+    // Every page, newest first: a customer has a handful of contracts over its life, and
+    // a tab that stopped at the first page would hide the older ones with no way to ask.
+    queryFn: async () => {
+      const items: Contract[] = []
+      let cursor: string | undefined
+      do {
+        const page = await unwrap(
+          api.GET('/api/contracts', {
+            params: {
+              query: { customer_id: customerId, limit: 200, sort: 'created_at', dir: 'desc', cursor },
+            },
+          }),
+        )
+        items.push(...page.items)
+        cursor = page.next_cursor ?? undefined
+      } while (cursor !== undefined)
+      return { items }
+    },
   })
 }
 

@@ -196,8 +196,26 @@ function RateCardDialog({ open, onOpenChange, contractId, cards, card }: DialogP
   // An overlap is a 409 with no field: it is the answer to the dates, so it is read
   // under them and not as a banner nobody connects to the two inputs.
   const overlap = problem?.status === 409 ? problem.detail : null
+  // Whatever no control above answers for (a model-level error on `body`, a bad item of
+  // the fractions list) still has to be read, or saving would seem to do nothing.
+  const drawn =
+    fieldError !== null &&
+    [
+      'valido_da',
+      'valido_a',
+      'tipo',
+      'unita',
+      'importo',
+      'frazioni_ammesse',
+      'ore_minime',
+      'periodo_erogazione',
+    ].includes(fieldError.field)
   const elsewhere =
-    problem !== null && overlap === null && fieldError === null ? problem.detail : null
+    problem !== null && overlap === null && !drawn
+      ? fieldError === null
+        ? problem.detail
+        : fieldError.message
+      : null
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

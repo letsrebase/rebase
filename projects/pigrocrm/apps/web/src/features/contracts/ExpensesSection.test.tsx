@@ -105,4 +105,21 @@ describe('ExpensesSection', () => {
     expect(await screen.findByRole('option', { name: 'Trasferte' })).toBeInTheDocument()
     expect(screen.queryByRole('option', { name: 'Vecchia' })).not.toBeInTheDocument()
   })
+
+  it('edits an expense without resending its category, which may be archived since', async () => {
+    mockGets([{ ...WAITING, category_id: 'cat-2' }])
+    vi.mocked(api.PATCH).mockImplementation((() => ok(WAITING)) as never)
+    renderSection()
+    await userEvent.click(await screen.findByRole('button', { name: 'Modifica la spesa Treno' }))
+    const dialog = screen.getByRole('dialog')
+    const importo = within(dialog).getByLabelText('Importo (€)')
+    await userEvent.clear(importo)
+    await userEvent.type(importo, '50.00')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Salva' }))
+
+    const call = vi.mocked(api.PATCH).mock.calls[0]
+    const body = (call?.[1] as unknown as { body: Record<string, unknown> }).body
+    expect(body.importo).toBe('50.00')
+    expect('category_id' in body).toBe(false)
+  })
 })

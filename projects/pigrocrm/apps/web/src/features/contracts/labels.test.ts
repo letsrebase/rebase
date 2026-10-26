@@ -38,6 +38,10 @@ describe('the expense policy', () => {
     ).toEqual({ kind: 'non_rimborsabile' })
   })
 
+  it('reads a numeric cap as the string a form can show', () => {
+    expect(readExpensePolicy({ kind: 'rimborsabile_con_tetto', importo_tetto: 500 })?.importo_tetto).toBe('500')
+  })
+
   it('reads a document another writer made as nothing, never as a guess', () => {
     expect(readExpensePolicy({ tipo: 'non_rimborsabile' })).toBeNull()
   })

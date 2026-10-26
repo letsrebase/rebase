@@ -34,6 +34,7 @@ import {
   useCreateContractExpense,
   useUpdateContractExpense,
   type ContractExpense,
+  type ContractExpenseCreateBody,
 } from './queries'
 
 interface ExpenseFormValues {
@@ -79,7 +80,9 @@ function ExpenseDialog({ open, onOpenChange, contractId, expense }: DialogProps)
   const initial = expense === undefined ? emptyForm() : toFormValues(expense)
   const [values, setValues] = useState<ExpenseFormValues>(initial)
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
-  const categories = useCostCategories()
+  // Archived ones too: the expense being edited may sit under one, and the dialog has to
+  // show it. `choices` below keeps them out of a new expense's list.
+  const categories = useCostCategories(true)
   const create = useCreateContractExpense(contractId)
   const update = useUpdateContractExpense(contractId, expense?.id ?? '')
 
@@ -97,8 +100,12 @@ function ExpenseDialog({ open, onOpenChange, contractId, expense }: DialogProps)
   }
 
   function submit() {
+    // The category is sent only when it changed: an archived one is refused by the API
+    // for a new assignment, and an edit of the amount must not trip on it.
     const body = {
-      category_id: values.category_id,
+      ...(isCreate || values.category_id !== expense.category_id
+        ? { category_id: values.category_id }
+        : {}),
       data: values.data,
       importo: values.importo.trim().replace(',', '.'),
       descrizione: values.descrizione.trim(),
@@ -115,7 +122,7 @@ function ExpenseDialog({ open, onOpenChange, contractId, expense }: DialogProps)
       },
       onError: (error: unknown) => setProblem(toProblem(error)),
     }
-    if (isCreate) create.mutate(body, callbacks)
+    if (isCreate) create.mutate(body as ContractExpenseCreateBody, callbacks)
     else update.mutate(body, callbacks)
   }
 

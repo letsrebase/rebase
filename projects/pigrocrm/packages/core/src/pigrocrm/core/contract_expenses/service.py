@@ -65,7 +65,9 @@ class ContractExpenseService:
         self, contract_id: UUID, data: ContractExpenseCreate, actor: Actor
     ) -> ContractExpenseRead:
         actor.require_write("create_contract_expense")
-        if self.contracts.get(contract_id) is None:
+        # Shared lock: a policy change on the contract waits for this write, and this
+        # write waits for one in flight, so the trigger reads a settled policy.
+        if self.contracts.get_locked(contract_id, shared=True) is None:
             raise NotFound("contract", contract_id)
         self.categories.require_active(data.category_id)
         self._check_refs(data.document_id)
@@ -103,6 +105,8 @@ class ContractExpenseService:
         self, contract_id: UUID, expense_id: UUID, data: ContractExpenseUpdate, actor: Actor
     ) -> ContractExpenseRead:
         actor.require_write("update_contract_expense")
+        if self.contracts.get_locked(contract_id, shared=True) is None:
+            raise NotFound("contract", contract_id)
         expense = self.repo.get(expense_id)
         if expense is None or expense.contract_id != contract_id:
             raise NotFound(ENTITY, expense_id)

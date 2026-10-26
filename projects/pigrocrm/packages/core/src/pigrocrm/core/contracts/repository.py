@@ -20,6 +20,18 @@ class ContractRepository:
             return None
         return contract
 
+    def get_locked(self, contract_id: UUID, *, shared: bool = False) -> Contract | None:
+        """`get`, holding a row lock until the transaction ends. A write to the contract
+        takes it exclusively and a write to one of its expenses takes it shared, so a
+        policy change and an expense write on the same contract run one after the
+        other: the expense trigger never reads a policy that is about to change, and
+        the re-evaluation of a changed policy never misses an expense in flight."""
+        stmt = select(Contract).where(Contract.id == contract_id).with_for_update(read=shared)
+        contract = self.session.execute(stmt).scalars().first()
+        if contract is None or contract.deleted_at is not None:
+            return None
+        return contract
+
     def list_active(self) -> list[Contract]:
         """Every non-deleted contract, unpaginated -- read by REB-352 §1.6's cash
         calendar overlay, which needs every contract's own dates, and by REB-352

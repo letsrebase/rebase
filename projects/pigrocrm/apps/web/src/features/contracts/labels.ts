@@ -96,7 +96,10 @@ export function readExpensePolicy(raw: Record<string, unknown>): ExpensePolicy |
   if (!EXPENSE_POLICY_KINDS.includes(kind as ExpensePolicyKind)) return null
   return {
     kind: kind as ExpensePolicyKind,
-    importo_tetto: typeof raw.importo_tetto === 'string' ? raw.importo_tetto : undefined,
+    importo_tetto:
+      typeof raw.importo_tetto === 'string' || typeof raw.importo_tetto === 'number'
+        ? String(raw.importo_tetto)
+        : undefined,
     richiede_preautorizzazione:
       typeof raw.richiede_preautorizzazione === 'boolean' ? raw.richiede_preautorizzazione : undefined,
   }
