@@ -117,6 +117,9 @@ export const MIN_ROLE = {
   // Contratti: the page's own writes (REB-741..744). `require_write` in the services.
   create_contract: 'collaboratore',
   render_contract_register: 'collaboratore',
+  create_contract_email_template: 'collaboratore',
+  update_contract_email_template: 'collaboratore',
+  prepare_contract_email: 'collaboratore',
   update_contract: 'collaboratore',
   set_contract_state: 'collaboratore',
   create_rate_card: 'collaboratore',

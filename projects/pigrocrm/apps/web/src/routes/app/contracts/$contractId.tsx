@@ -9,6 +9,7 @@ import { Card, CardContent } from '@rebase/ui/card'
 import { Skeleton } from '@rebase/ui/skeleton'
 import { ContractForm } from '@/features/contracts/ContractForm'
 import { ContractDays } from '@/features/days/ContractDays'
+import { ContractEmailSection } from '@/features/contracts/ContractEmailSection'
 import { ContractStateActions } from '@/features/contracts/ContractStateActions'
 import { DaysToInvoiceSection } from '@/features/contracts/DaysToInvoiceSection'
 import { ExpensesSection } from '@/features/contracts/ExpensesSection'
@@ -168,6 +169,9 @@ export function ContractDetail() {
             </div>
             <div className="lg:col-span-2">
               <RegisterSection contractId={row.id} />
+            </div>
+            <div className="lg:col-span-2">
+              <ContractEmailSection contractId={row.id} customerId={row.customer_id} />
             </div>
             <div className="lg:col-span-2">
               <RenewalSection contract={row} />
