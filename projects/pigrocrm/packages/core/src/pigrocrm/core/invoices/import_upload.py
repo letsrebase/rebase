@@ -240,15 +240,17 @@ class UploadedInvoiceConfirmResult(BaseModel):
 
 
 class UploadedPartyDecision(BaseModel):
-    """The two human decisions `InvoiceConfirmRequest` carries for one document, for one
-    counterparty: which customer to attach, and whether to create the counterparty when
-    none matches. Absent, an invoice is written only when its customer matches on its
-    own, and otherwise comes back `needs_customer_confirmation`, written nowhere."""
+    """The human decisions `InvoiceConfirmRequest` carries for one document, for one
+    counterparty: which customer to attach, whether to create the counterparty when none
+    matches, and `skip`, to leave its invoices out whatever the register would match.
+    Absent, an invoice is written only when its customer matches on its own, and otherwise
+    comes back `needs_customer_confirmation`, written nowhere."""
 
     model_config = ConfigDict(extra="forbid")
 
     customer_id: UUID | None = None
     create_customer: bool = False
+    skip: bool = False
 
 
 class UploadedInvoiceDecisions(BaseModel):

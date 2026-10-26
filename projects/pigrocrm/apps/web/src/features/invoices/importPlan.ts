@@ -18,7 +18,7 @@ export type ConfirmOutcome = ConfirmRow['outcome']
 /** What the confirmation takes: one decision per new customer, keyed by the `party_key`
  *  the review named (`UploadedInvoiceDecisions`). */
 export interface ImportDecisions {
-  clienti: Record<string, { create_customer?: true; customer_id?: string }>
+  clienti: Record<string, { create_customer?: true; customer_id?: string; skip?: true }>
 }
 
 /** The words of each verdict. Typed on the API's own union, so a seventh outcome added
@@ -133,12 +133,12 @@ export function countWrites(rows: readonly ReviewRow[], declined: ReadonlySet<st
   return rows.filter((row) => willBeWritten(row, declined)).length
 }
 
-/** The decisions to send, one per new customer left ticked. A customer an earlier batch
- *  already created is attached by id instead of created again, which is what keeps a
- *  counterparty the register cannot match by tax id (a foreign one) at one customer
- *  however many batches its invoices fall in. An unticked customer gets none, and the
- *  server then answers its invoices `needs_customer_confirmation` and writes nothing,
- *  which is what unticking means. */
+/** The decisions to send, one per new customer in the batch: `create_customer` for one left
+ *  ticked, or `customer_id` for one an earlier batch already created, which is what keeps
+ *  a counterparty the register cannot match by tax id (a foreign one) at one customer
+ *  however many batches its invoices fall in. An unticked customer is sent as an explicit
+ *  `skip`: left out, a customer created by somebody else after the review would match and
+ *  its invoices be written anyway, whatever the person unticked. */
 export function decisionsFor(
   rows: readonly ReviewRow[],
   declined: ReadonlySet<string>,
@@ -146,10 +146,14 @@ export function decisionsFor(
 ): ImportDecisions {
   const clienti: ImportDecisions['clienti'] = {}
   for (const row of rows) {
-    if (row.outcome !== 'needs_customer_confirmation' || !willBeWritten(row, declined)) continue
-    const key = row.party_key as string
+    if (row.outcome !== 'needs_customer_confirmation' || !row.party_key) continue
+    const key = row.party_key
     const customerId = created.get(key)
-    clienti[key] = customerId === undefined ? { create_customer: true } : { customer_id: customerId }
+    clienti[key] = declined.has(key)
+      ? { skip: true }
+      : customerId === undefined
+        ? { create_customer: true }
+        : { customer_id: customerId }
   }
   return { clienti }
 }

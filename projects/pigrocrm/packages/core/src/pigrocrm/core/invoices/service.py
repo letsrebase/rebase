@@ -1279,7 +1279,7 @@ class InvoiceService:
                 actor,
                 stored_as=document_id,
                 origin=None,
-                decide=lambda _party: (customer_id, create_customer),
+                decide=lambda _party: (customer_id, create_customer, False),
                 created_customers={},
             )
         ]
@@ -1339,11 +1339,11 @@ class InvoiceService:
         actor.require_admin(CONFIRM_ACTION)
         aziende = self._importing_aziende()
 
-        def decide(party: ParsedInvoiceParty) -> tuple[UUID | None, bool]:
+        def decide(party: ParsedInvoiceParty) -> tuple[UUID | None, bool, bool]:
             decision = decisions.get(party_key(party))
             if decision is None:
-                return None, False
-            return decision.customer_id, decision.create_customer
+                return None, False, False
+            return decision.customer_id, decision.create_customer, decision.skip
 
         created_customers: dict[str, UUID] = {}
         rows: list[UploadedInvoiceConfirmRead] = []
@@ -1379,7 +1379,7 @@ class InvoiceService:
         *,
         stored_as: UUID | None,
         origin: str | None,
-        decide: Callable[[ParsedInvoiceParty], tuple[UUID | None, bool]],
+        decide: Callable[[ParsedInvoiceParty], tuple[UUID | None, bool, bool]],
         created_customers: dict[str, UUID],
     ) -> list[ConfirmedInvoice]:
         """The write both `confirm_import` and `confirm_upload` run, on one file's bytes
@@ -1387,8 +1387,9 @@ class InvoiceService:
         read from, which a single-invoice file's row is pointed at; `None` means the
         bytes came in with the request, and `origin`, their file name, is recorded as
         the provenance of the document archived for them. `decide` answers, for an
-        invoice's customer, the `customer_id` to attach and whether to create the
-        counterparty when none matches. `created_customers`, keyed by `party_key`, is
+        invoice's customer, the `customer_id` to attach, whether to create the
+        counterparty when none matches, and whether to leave the invoice out altogether.
+        `created_customers`, keyed by `party_key`, is
         owned by the caller so it outlives one file."""
         adapter = detect_adapter(content)
         if adapter is None:
@@ -1438,7 +1439,19 @@ class InvoiceService:
                     )
                 )
                 continue
-            customer_id, create_customer = decide(invoice.cliente)
+            customer_id, create_customer, skip = decide(invoice.cliente)
+            if skip:
+                # The person left this customer out: whatever the register would match now
+                # (a customer created by somebody else since the review, say), the invoice
+                # is not written.
+                rows.append(
+                    ConfirmedInvoice(
+                        outcome="needs_customer_confirmation",
+                        azienda_id=azienda.id,
+                        party_key=party,
+                    )
+                )
+                continue
             resolved_customer_id = customer_id
             if resolved_customer_id is None:
                 resolved_customer_id = match_customer(self.session, invoice.cliente)

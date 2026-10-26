@@ -116,9 +116,11 @@ describe('what a confirmation would write', () => {
     expect(willBeWritten(rows[0]!, declined)).toBe(true)
   })
 
-  it('sends one decision per new customer left ticked, and none for an unticked one', () => {
+  it('sends one decision per new customer: create for one ticked, an explicit skip for one unticked', () => {
     expect(decisionsFor(rows, NONE)).toEqual({ clienti: { '09876543210': { create_customer: true } } })
-    expect(decisionsFor(rows, new Set(['09876543210']))).toEqual({ clienti: {} })
+    expect(decisionsFor(rows, new Set(['09876543210']))).toEqual({
+      clienti: { '09876543210': { skip: true } },
+    })
   })
 
   it('attaches by id a customer an earlier batch already created, instead of creating it again', () => {
@@ -136,7 +138,7 @@ describe('what a confirmation would write', () => {
     ]
 
     expect(decisionsFor(two, new Set(['AAA']))).toEqual({
-      clienti: { BBB: { create_customer: true } },
+      clienti: { AAA: { skip: true }, BBB: { create_customer: true } },
     })
     expect(countWrites(two, new Set(['AAA']))).toBe(1)
   })

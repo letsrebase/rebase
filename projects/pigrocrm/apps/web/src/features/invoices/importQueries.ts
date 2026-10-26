@@ -57,6 +57,10 @@ export function useInvalidateAfterImport() {
   return () => {
     void queryClient.invalidateQueries({ queryKey: ['invoices'] })
     void queryClient.invalidateQueries({ queryKey: ['invoices-list'] })
+    // The year's register and the room under the ceilings read the same invoices, as in
+    // `useInvoiceInvalidation`.
+    void queryClient.invalidateQueries({ queryKey: ['year-overview'] })
+    void queryClient.invalidateQueries({ queryKey: ['ceilings'] })
     void queryClient.invalidateQueries({ queryKey: ['customers'] })
     void queryClient.invalidateQueries({ queryKey: ['documents'] })
   }

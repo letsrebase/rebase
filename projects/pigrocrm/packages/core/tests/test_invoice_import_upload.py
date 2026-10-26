@@ -347,6 +347,26 @@ def test_a_decision_names_the_customer_to_attach_by_the_partys_tax_id(
     assert row.fattura is not None and row.fattura.customer_id == chosen.id
 
 
+def test_a_skip_decision_leaves_the_invoice_out_even_when_its_customer_matches_now(
+    db_session: Session, local_storage: LocalFileStorage
+) -> None:
+    """The customer was created by somebody else after the review: matching would write the
+    invoice, and the person had unticked it."""
+    service = _svc(db_session, local_storage)
+    _customer(db_session, partita_iva=CLIENTE_PIVA)
+    invoices = _invoice_count(db_session)
+
+    [row] = service.confirm_upload(
+        [("fattura.xml", _fixture(CONSULENZA))],
+        {"09876543210": UploadedPartyDecision(skip=True)},
+        ADMIN,
+    )
+
+    assert row.outcome == "needs_customer_confirmation"
+    assert row.fattura is None
+    assert _invoice_count(db_session) == invoices
+
+
 def test_a_lotto_is_written_per_invoice_and_archives_no_xml(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
