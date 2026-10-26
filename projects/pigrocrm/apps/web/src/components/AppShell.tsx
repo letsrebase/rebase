@@ -12,6 +12,7 @@ import {
   HardDrive,
   KeyRound,
   LayoutDashboard,
+  ListChecks,
   LogOut,
   MailPlus,
   PanelLeftIcon,
@@ -99,6 +100,10 @@ const TOP_LEVEL = [
   // group for the same reason Home is: a month of one's own days and deadlines is a
   // cross-cutting view, not a step of «Vendite» or of «Amministrazione».
   { to: '/app/calendar', label: 'Calendario', icon: CalendarDays, exact: false },
+  // Every to-do of the space, right under the calendar that draws the dated ones by day
+  // (REB-722): the calendar answers «what falls on which day», this answers «what is
+  // still open for me», and neither can answer the other's question.
+  { to: '/app/activities', label: 'Attività', icon: ListChecks, exact: false },
   { to: '/app/token', label: 'Token', icon: KeyRound, exact: false },
 ] as const
 

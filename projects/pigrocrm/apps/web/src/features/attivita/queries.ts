@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { useCallback, useMemo } from 'react'
 import { useCustomer } from '@/features/customers/queries'
 import { useDeal } from '@/features/deals/queries'
@@ -93,6 +93,7 @@ export interface AttivitaFilters {
   invoice_id?: string
   scade_entro?: string
   senza_scadenza?: boolean
+  archiviate?: boolean
   sort?: 'created_at' | 'scadenza'
   dir?: 'asc' | 'desc'
   limit?: number
@@ -109,4 +110,34 @@ export function useAttivitaList(filters: AttivitaFilters, options: { enabled?: b
     queryKey: ['attivita', 'list', filters] as const,
     queryFn: () => unwrap(api.GET('/api/activities', { params: { query: filters } })),
   })
+}
+
+/**
+ * The same list walked page by page, for the screen that is the list itself. A fresh
+ * `filters` object starts a fresh walk at the first page (it is part of the key), so a
+ * chip pressed halfway down never resumes a cursor issued for another query.
+ */
+export function useAttivitaPages(filters: AttivitaFilters) {
+  const query = useInfiniteQuery({
+    queryKey: ['attivita', 'pages', filters] as const,
+    queryFn: ({ pageParam }) =>
+      unwrap(api.GET('/api/activities', { params: { query: { ...filters, cursor: pageParam } } })),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
+  })
+  // Memoised on the page array's reference: a fresh `items` on every render would
+  // rebuild the table's row model for renders the fetched pages had no part in.
+  const items = useMemo(
+    () => query.data?.pages.flatMap((page) => page.items) ?? [],
+    [query.data?.pages],
+  )
+  return {
+    items,
+    isLoading: query.isLoading,
+    isError: query.isError,
+    error: query.error,
+    hasMore: query.hasNextPage,
+    isFetchingMore: query.isFetchingNextPage,
+    loadMore: () => void query.fetchNextPage(),
+  }
 }

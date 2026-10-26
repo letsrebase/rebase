@@ -77,7 +77,9 @@ describe('EntityAttivita', () => {
     renderTab()
 
     expect(await screen.findByText('Preparare le proposte')).toBeInTheDocument()
-    const call = vi.mocked(api.GET).mock.calls.find(([path]) => path === '/api/activities')
+    const call = (vi.mocked(api.GET).mock.calls as unknown as [string, unknown][]).find(
+      ([path]) => path === '/api/activities',
+    )
     expect(call?.[1]).toMatchObject({ params: { query: { deal_id: DEAL } } })
     expect(screen.getByText('Entro il 30/10/2026')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Chiuse' })).toBeInTheDocument()

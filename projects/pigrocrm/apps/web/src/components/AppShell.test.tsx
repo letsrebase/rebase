@@ -326,7 +326,7 @@ describe('AppShell', () => {
   })
 
   it.each(['collaboratore', 'readonly'])(
-    'keeps the %s navigation surface intact: four top-level entries and both groups',
+    'keeps the %s navigation surface intact: five top-level entries and both groups',
     (ruolo) => {
       // REB-294 hid controls, never navigation a role may read -- the readonly person's
       // reading surface is unchanged. Asserted for both non-admin roles in one test
@@ -335,7 +335,7 @@ describe('AppShell', () => {
       mockAuth.ruolo = ruolo
       renderShell()
       const nav = sidebar()
-      for (const label of ['Home', 'Primi passi', 'Calendario', 'Token']) {
+      for (const label of ['Home', 'Primi passi', 'Calendario', 'Attività', 'Token']) {
         expect(nav.getByRole('link', { name: label })).toBeInTheDocument()
       }
       for (const label of ['Vendite', 'Amministrazione']) {
