@@ -30,6 +30,7 @@ admin sees every azienda unless somebody limited them, and then only theirs.
 
 from __future__ import annotations
 
+import weakref
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -55,7 +56,28 @@ IMMEDIATE_CEILING = "soglia_fuoriuscita_immediata"
 _HUNDRED = Decimal(100)
 
 
-def _forfettario_aziende(ctx: DetectorContext) -> list[tuple[LegalEntity, FiscalPack]]:
+_Aziende = list[tuple[LegalEntity, FiscalPack]]
+
+# One evaluation builds one `DetectorContext` and hands it to `applies` and `detect` of
+# both types, so the aziende are read once per evaluation and shared by the four calls.
+# Keyed by the context's identity and dropped when the context is collected: the cache
+# never outlives an evaluation, so it can never show a later one the data of an earlier.
+_LOADED: dict[int, tuple[weakref.ref[DetectorContext], _Aziende]] = {}
+
+
+def _forfettario_aziende(ctx: DetectorContext) -> _Aziende:
+    """The active aziende under the forfettario with the pack that governs them, the
+    default azienda first, read once per evaluation."""
+    key = id(ctx)
+    hit = _LOADED.get(key)
+    if hit is not None and hit[0]() is ctx:
+        return hit[1]
+    found = _load_aziende(ctx)
+    _LOADED[key] = (weakref.ref(ctx, lambda _: _LOADED.pop(key, None)), found)
+    return found
+
+
+def _load_aziende(ctx: DetectorContext) -> _Aziende:
     """The active aziende under the forfettario with the pack that governs them, the
     default azienda first."""
     rows = ctx.session.execute(

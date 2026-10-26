@@ -13,7 +13,7 @@ from itertools import count
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import event, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
@@ -37,7 +37,6 @@ from pigrocrm.core.reminders.catalogue import LADDER_MAX, REMINDER_TYPES, Severi
 from pigrocrm.core.reminders.detectors import DETECTORS
 from pigrocrm.core.reminders.detectors.space import (
     BROKEN,
-    GMAIL_SYNC_JOB,
     MAX_PROPOSALS,
     REMINDER_PASS_JOB,
     job_subject,
@@ -47,6 +46,8 @@ from pigrocrm.core.reminders.detectors.space import (
 from pigrocrm.core.reminders.engine import Evaluation, ReminderEngine
 from pigrocrm.core.reminders.ledger import ReminderLedger
 from pigrocrm.core.reminders.models import ReminderJobRun
+from pigrocrm.core.reminders.preferences import ReminderPreferenceService
+from pigrocrm.core.reminders.schemas import ReminderPreferenceWrite
 from pigrocrm.core.timetracking.models import PeriodLock
 
 TODAY = date(2026, 10, 26)
@@ -638,7 +639,7 @@ def test_a_space_that_connected_nothing_runs_no_connection_check(space: Space) -
 
 @pytest.mark.parametrize(
     ("hours", "expected"),
-    [(2.99, None), (3.0, "serious"), (71.0, "serious"), (72.0, "critical")],
+    [(2.99, None), (3.0, "serious"), (72.0, "serious"), (700.0, "serious")],
 )
 def test_a_mailbox_that_stopped_syncing_is_serious_at_3_hours(
     space: Space, hours: float, expected: Severity | None
@@ -668,9 +669,6 @@ def test_a_broken_credential_is_critical_at_once_whatever_the_last_sync(
 
 
 def test_a_broken_credential_stays_critical_under_an_edited_ladder(space: Space) -> None:
-    from pigrocrm.core.reminders.preferences import ReminderPreferenceService
-    from pigrocrm.core.reminders.schemas import ReminderPreferenceWrite
-
     ReminderPreferenceService(space.session).write(
         Actor(id=space.owner.id, type="user", role="admin"),
         "space",
@@ -761,37 +759,18 @@ def test_the_reminder_pass_is_serious_at_twice_its_interval_and_critical_after_3
         assert reminder.measure == float(minutes)
 
 
-@pytest.mark.parametrize(
-    ("minutes", "expected"), [(29, None), (30, "serious"), (600, "serious"), (100000, "serious")]
-)
-def test_the_mailbox_sync_is_late_at_twice_its_interval_but_never_critical(
-    space: Space, minutes: int, expected: Severity | None
-) -> None:
-    account = _gmail(space, synced_hours_ago=minutes / 60)
+def test_a_stale_mailbox_is_connection_failing_and_not_a_second_late_job(space: Space) -> None:
+    """One cause, one reminder: the mailbox sync's clock is `last_sync_at`, which
+    `connection_failing` reads with the account's name, so `job_late` does not."""
+    account = _gmail(space, synced_hours_ago=48)
 
-    told = {r.user_id: r.severity for r in space.evaluate().reminders if r.type == "job_late"}
+    reminders = space.evaluate().reminders
 
-    assert told == (
-        {} if expected is None else {space.owner.id: expected, space.other_admin.id: expected}
-    )
-    assert account.id, "the mailbox is the job's clock, and nothing else is written"
-    assert space.session.scalars(select(ReminderJobRun)).all() == []
+    assert {r.entity_id for r in reminders if r.type == "connection_failing"} == {account.id}
+    assert [r for r in reminders if r.type == "job_late"] == []
 
 
-def test_the_sync_clock_is_the_freshest_mailbox_that_is_meant_to_sync(space: Space) -> None:
-    _gmail(space, synced_hours_ago=48)
-    _gmail(space, status="revoked", synced_hours_ago=0.1)
-    _gmail(space, scopes=(SCOPE_SEND,), synced_hours_ago=0.1)
-
-    reminder = next(r for r in space.evaluate().reminders if r.type == "job_late")
-    assert reminder.entity_id == job_subject(GMAIL_SYNC_JOB)
-
-    _gmail(space, synced_hours_ago=0.1)
-
-    assert space.told("job_late") == {}, "one mailbox that works means the job ran"
-
-
-def test_each_late_job_is_its_own_reminder_and_a_job_nothing_names_is_ignored(
+def test_only_the_reminder_pass_is_a_job_and_a_job_nothing_names_is_ignored(
     space: Space,
 ) -> None:
     _touch(space, REMINDER_PASS_JOB, 200)
@@ -800,7 +779,63 @@ def test_each_late_job_is_its_own_reminder_and_a_job_nothing_names_is_ignored(
 
     subjects = {r.entity_id for r in space.evaluate().reminders if r.type == "job_late"}
 
-    assert subjects == {job_subject(REMINDER_PASS_JOB), job_subject(GMAIL_SYNC_JOB)}
+    assert subjects == {job_subject(REMINDER_PASS_JOB)}
+
+
+def test_an_edited_ladder_changes_the_pass_severity_and_nothing_else_can_reach_it(
+    space: Space,
+) -> None:
+    ReminderPreferenceService(space.session).write(
+        Actor(id=space.owner.id, type="user", role="admin"),
+        "space",
+        "job_late",
+        ReminderPreferenceWrite(ladder={"serious": 10, "critical": 40}),
+    )
+    _touch(space, REMINDER_PASS_JOB, 45)
+    _gmail(space, synced_hours_ago=9)  # long past 40 minutes, and not a `job_late` subject
+
+    reminders = [r for r in space.evaluate().reminders if r.type == "job_late"]
+
+    assert {(r.entity_id, r.severity) for r in reminders} == {
+        (job_subject(REMINDER_PASS_JOB), "critical")
+    }
+
+
+def test_a_detail_says_one_day_one_hour_one_minute_and_not_one_days(space: Space) -> None:
+    admin = Actor(id=space.owner.id, type="user", role="admin")
+    prefs = ReminderPreferenceService(space.session)
+    prefs.write(admin, "space", "proposal_pending", ReminderPreferenceWrite(ladder={"warning": 1}))
+    prefs.write(
+        admin, "space", "connection_failing", ReminderPreferenceWrite(ladder={"serious": 1})
+    )
+    prefs.write(admin, "space", "job_late", ReminderPreferenceWrite(ladder={"serious": 1}))
+    _proposal(space, age_days=1)
+    _gmail(space, synced_hours_ago=1)
+    _touch(space, REMINDER_PASS_JOB, 1)
+
+    details = {r.type: r.detail for r in space.evaluate().reminders}
+
+    assert "da 1 giorno:" in details["proposal_pending"]
+    assert "è di 1 ora fa" in details["connection_failing"]
+    assert "da 1 minuto:" in details["job_late"]
+
+
+def test_the_aziende_are_read_once_per_evaluation(space: Space) -> None:
+    seen: list[str] = []
+
+    def record(_c: object, _cur: object, statement: str, *_a: object) -> None:
+        if "FROM emitter_profile JOIN fiscal_profile" in statement:
+            seen.append(statement)
+
+    engine = space.session.get_bind()
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        evaluation = space.evaluate()
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+
+    assert {"ceiling_approaching", "year_end_overrun_projected"} <= evaluation.ran
+    assert len(seen) == 1
 
 
 def test_a_job_late_goes_to_unscoped_admins_and_recovers_when_it_runs(space: Space) -> None:

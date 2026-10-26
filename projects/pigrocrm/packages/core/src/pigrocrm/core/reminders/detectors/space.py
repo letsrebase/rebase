@@ -12,8 +12,9 @@ has no azienda, goes to the unscoped admins, which is exactly who may close a pe
 that belongs to nobody's azienda. `admins_seeing` is that decision, written once.
 
 **Nothing here is stored and nothing is invented.** A job can be late only if something
-records when it last ran: the reminder pass writes `reminder_job_run`, and the mailbox sync
-leaves `GoogleAccount.last_sync_at`. The weekly digest is not read: it writes a row only
+records when it last ran: only the reminder pass does, in `reminder_job_run`. The mailbox
+sync leaves `GoogleAccount.last_sync_at`, which `connection_failing` reads. The weekly
+digest is not read: it writes a row only
 when mail actually left (`digest/run.py`, «nothing is recorded that did not happen»), so the
 absence of one is a quiet week or a provider that is not configured as often as it is a late
 cron, and an alert that is wrong in a space that has nothing to report would teach admins to
@@ -47,6 +48,12 @@ NOT_CLOSED = REMINDER_TYPES["month_not_closed"]
 PENDING = REMINDER_TYPES["proposal_pending"]
 FAILING = REMINDER_TYPES["connection_failing"]
 LATE = REMINDER_TYPES["job_late"]
+
+
+def _count(number: int, one: str, many: str) -> str:
+    """`1 giorno`, `2 giorni`: the number with the noun in the right number, so a detail
+    never reads «da 1 giorni»."""
+    return f"{number} {one if number == 1 else many}"
 
 
 def admins_seeing(ctx: DetectorContext, azienda_id: UUID | None) -> frozenset[UUID]:
@@ -114,7 +121,8 @@ def detect_not_closed(ctx: DetectorContext) -> list[Detection]:
                 recipients=recipients,
                 title=f"Mese non chiuso: {period_label(anno, mese)}",
                 detail=(
-                    f"{period_label(anno, mese).capitalize()} è finito da {days} giorni e non è "
+                    f"{period_label(anno, mese).capitalize()} è finito da "
+                    f"{_count(days, 'giorno', 'giorni')} e non è "
                     "stato chiuso: finché è aperto, ore e costi del mese possono ancora cambiare"
                 ),
                 entity="period",
@@ -162,7 +170,10 @@ def detect_pending(ctx: DetectorContext) -> list[Detection]:
                 measure=float(days),
                 recipients=recipients,
                 title="Proposta in attesa di una decisione",
-                detail=f"{what} aspetta da {days} giorni: accettala o rifiutala{about}",
+                detail=(
+                    f"{what} aspetta da {_count(days, 'giorno', 'giorni')}: accettala o "
+                    f"rifiutala{about}"
+                ),
                 entity="proposal",
                 entity_id=proposal.id,
                 azienda_id=azienda_id,
@@ -175,10 +186,11 @@ def detect_pending(ctx: DetectorContext) -> list[Detection]:
 # -- connection_failing -------------------------------------------------------------------
 
 # A credential Google refused, or that lapsed, is broken whatever the clock says. The
-# ladder reads hours, and the least hacky way to put «critical, at once» in it is the
-# largest number a ladder may hold: no valid rung is above `LADDER_MAX`, so this measure
-# reaches every rung of every ladder, an edited one included, and is critical for anybody
-# who has the type on. A merely stale sync keeps the honest number of hours.
+# ladder reads hours, and its critical rung is `LADDER_MAX`, the largest number a ladder
+# may hold (the catalogue row says so): no valid rung is above it, so a broken
+# credential's measure reaches every rung of every ladder, an edited one included, and
+# is critical for anybody who has the type on, while a merely stale sync keeps its honest
+# number of hours and stops at serious.
 BROKEN: Final = float(LADDER_MAX)
 _BROKEN_STATUSES = ("revoked", "expired")
 
@@ -239,8 +251,11 @@ def detect_failing(ctx: DetectorContext) -> list[Detection]:
             if hours < floor:
                 continue
             measure = float(hours)
-            title = f"Gmail non si sincronizza da {hours} ore"
-            detail = f"L'ultima sincronizzazione della casella {email} è di {hours} ore fa"
+            title = f"Gmail non si sincronizza da {_count(hours, 'ora', 'ore')}"
+            detail = (
+                f"L'ultima sincronizzazione della casella {email} è di "
+                f"{_count(hours, 'ora', 'ore')} fa"
+            )
         else:
             # Without `gmail.readonly` the sync is switched off and says so in its own
             # banner; there is nothing here that failed.
@@ -284,70 +299,56 @@ def detect_failing(ctx: DetectorContext) -> list[Detection]:
 # -- job_late -----------------------------------------------------------------------------
 
 # Every job of the crontab runs every quarter of an hour (`docs/superpowers/notes`), so
-# the ladder's `serious` rung, 30 minutes, is «later than twice its interval» for all of
-# them. A job with another interval would need its own scaling of the measure here.
+# the ladder's `serious` rung, 30 minutes, is «later than twice its interval».
 JOB_INTERVAL_MINUTES: Final = 15
 REMINDER_PASS_JOB: Final = "reminders"
-GMAIL_SYNC_JOB: Final = "gmail-sync"
 
-_JOB_LABELS = {
-    REMINDER_PASS_JOB: "Il passaggio dei promemoria",
-    GMAIL_SYNC_JOB: "La sincronizzazione di Gmail",
-}
+# The jobs this type reads, by the name they have in `reminder_job_run`. Only the reminder
+# pass is here, and that is the whole answer to «which jobs may reach `critical`»: the
+# ladder's critical rung is the pass's own (spec §3.5: «when the reminder pass itself has
+# not run for 3 hours»), so a job added here shares it and one that must stay under it
+# needs a type of its own. The mailbox sync is deliberately not here: a sync that stopped
+# is `connection_failing`'s, which reads the same `last_sync_at` with the account's name
+# and its own ladder, and two reminders about one cause would be noise.
+_JOB_LABELS = {REMINDER_PASS_JOB: "Il passaggio dei promemoria"}
 
 
 def job_subject(job: str) -> UUID:
-    """A job has no id of its own (`reminder_job_run` is keyed by name, and the mailbox
-    sync is not a row at all), so its subject is one derived from the name."""
+    """A job has no id of its own (`reminder_job_run` is keyed by name), so its subject is
+    one derived from the name."""
     return uuid5(NAMESPACE_DNS, f"{job}.job.pigrocrm")
 
 
 def _last_runs(ctx: DetectorContext) -> dict[str, datetime]:
     """When each job we can read last ran. The reminder pass writes its own clock at the
     end of a pass (`ReminderLedger.touch_job`), after the detectors have read, so a pass
-    sees the previous one. The mailbox sync records no clock of its own; the freshest
-    `last_sync_at` of a mailbox that is meant to sync stands for it. A job nothing records
-    is not in the answer, and is therefore never late: no row is invented."""
-    runs: dict[str, datetime] = {
+    sees the previous one. A job nothing records is not in the answer, and is therefore
+    never late: no row is invented."""
+    return {
         row.job: row.ran_at
         for row in ctx.session.scalars(
             select(ReminderJobRun).where(ReminderJobRun.job.in_(_JOB_LABELS))
         )
     }
-    moments = [
-        _sync_baseline(account)
-        for account in ctx.session.scalars(
-            select(GoogleAccount).where(GoogleAccount.status == "active")
-        )
-        if SCOPE_READONLY in account.scopes_granted
-    ]
-    if moments:
-        runs[GMAIL_SYNC_JOB] = max(moments)
-    return runs
 
 
 def detect_late(ctx: DetectorContext) -> list[Detection]:
-    """Jobs whose last run is `bound` minutes old or more. Only the reminder pass may be
-    critical (spec §3.5: «when the reminder pass itself has not run for 3 hours»), and a
-    mailbox sync that stopped is reported as `connection_failing` at its own pace, so the
-    other jobs' measure is held one minute under the critical rung."""
+    """Jobs whose last run is `bound` minutes old or more."""
     recipients = admins_seeing(ctx, None)
     if not recipients:
         return []
     floor = max(ctx.bound(LATE), 1)
-    ceiling = LATE.ladder["critical"] - 1
     found: list[Detection] = []
     for job, ran_at in sorted(_last_runs(ctx).items()):
         minutes = max(int((ctx.now - ran_at).total_seconds() // 60), 0)
         if minutes < floor:
             continue
         subject = job_subject(job)
-        shown = minutes if job == REMINDER_PASS_JOB else min(minutes, ceiling)
         found.append(
             Detection(
                 type="job_late",
                 subject_id=subject,
-                measure=float(shown),
+                measure=float(minutes),
                 recipients=recipients,
                 title=f"{_JOB_LABELS[job]} è in ritardo",
                 detail=(
@@ -363,8 +364,8 @@ def detect_late(ctx: DetectorContext) -> list[Detection]:
 
 def _duration(minutes: int) -> str:
     if minutes < 120:
-        return f"{minutes} minuti"
-    return f"{minutes // 60} ore"
+        return _count(minutes, "minuto", "minuti")
+    return _count(minutes // 60, "ora", "ore")
 
 
 DETECTORS = (

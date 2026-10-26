@@ -229,8 +229,9 @@ REMINDER_TYPES: Mapping[str, ReminderType] = {
             key="renewal_window_open",
             label="Termine di rinnovo vicino",
             description=(
-                "Il termine per rinnovare o dare disdetta si avvicina: i giorni mancano alla "
-                "chiusura della finestra. «Avviso» è quando la finestra si apre."
+                "Si avvicina l'ultimo giorno utile per esercitare il rinnovo del contratto: "
+                "i giorni sono quelli che mancano a quel termine, e la prima soglia è "
+                "l'anticipo con cui il promemoria comincia."
             ),
             subject="contract",
             direction="until",
@@ -293,7 +294,7 @@ REMINDER_TYPES: Mapping[str, ReminderType] = {
             label="Soglia del forfettario vicina",
             description=(
                 "I ricavi incassati dell'anno si avvicinano alla soglia di ricavi del regime "
-                "forfettario: la soglia è in percentuale."
+                "forfettario: le soglie sono la percentuale di quella soglia."
             ),
             subject="fiscal",
             direction="since",
@@ -306,7 +307,7 @@ REMINDER_TYPES: Mapping[str, ReminderType] = {
             label="Soglia del forfettario superata a fine anno",
             description=(
                 "La proiezione dell'anno (incassato, da incassare e bozze) supera la soglia di "
-                "ricavi del regime forfettario: la soglia è in percentuale."
+                "ricavi del regime forfettario: le soglie sono la percentuale di quella soglia."
             ),
             subject="fiscal",
             direction="since",
@@ -340,21 +341,23 @@ REMINDER_TYPES: Mapping[str, ReminderType] = {
             key="connection_failing",
             label="Collegamento Google in difficoltà",
             description=(
-                "Gmail o Drive non funzionano: il consenso è stato revocato o è scaduto, "
-                "oppure la sincronizzazione di Gmail è ferma da ore."
+                "Gmail o Drive non funzionano. Grave quando la sincronizzazione di Gmail è ferma "
+                "da ore; critico quando il consenso è revocato o scaduto."
             ),
             subject="google_connection",
             direction="since",
             unit="hours",
-            ladder={"serious": 3, "critical": 72},
+            # The critical rung is a broken credential: its measure is `LADDER_MAX` hours, which
+            # every valid rung is at or under (`detectors/space.py`). No stale sync gets there.
+            ladder={"serious": 3, "critical": LADDER_MAX},
             audience="admins",
         ),
         ReminderType(
             key="job_late",
             label="Operazione pianificata in ritardo",
             description=(
-                "Una operazione che gira da sola (la sincronizzazione di Gmail, il passaggio dei "
-                "promemoria) non parte da troppo tempo: i minuti sono dall'ultima esecuzione."
+                "Il passaggio dei promemoria non parte da troppo tempo: i minuti sono "
+                "dall'ultima esecuzione."
             ),
             subject="job",
             direction="since",
