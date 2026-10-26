@@ -1,5 +1,10 @@
 """The reminders surface on the default MCP tools (spec 2026-10-26, REB-732).
 
+The tools are named for the feature the way the product names it, `promemoria`, as
+`create_attivita` is for attività: a name with `reminder` in it would also trip
+`test_gmail_tools.py::test_no_tool_prepares_a_payment_reminder`, the guard on the one
+thing that is not this feature, the sollecito.
+
 Everything here is the person's own bookkeeping or the space's settings, and none of it
 consumes a number, touches the fiscal register or rewrites a rate, so none of it is on
 the forbidden list of slice 3 §11. An agent may read what the space raises, set a
@@ -37,18 +42,18 @@ def register(
 ) -> None:
     @mcp.tool()
     @guard
-    def list_reminders() -> list[dict[str, Any]]:
+    def list_promemoria() -> list[dict[str, Any]]:
         """I promemoria di chi chiede, ricalcolati adesso dai dati, i più gravi per primi.
 
         Ogni voce dice `status` (`open`, `acknowledged`, `snoozed`), che cosa è
-        (`entity`, `entity_id`) e `key`, quello che serve a `acknowledge_reminder` e
-        `snooze_reminder`. Quando la causa si risolve, il promemoria sparisce da solo."""
+        (`entity`, `entity_id`) e `key`, quello che serve a `acknowledge_promemoria` e
+        `snooze_promemoria`. Quando la causa si risolve, il promemoria sparisce da solo."""
         reminders = ReminderService(context.session, settings).list(context.actor)
         return [item.model_dump(mode="json") for item in reminders]
 
     @mcp.tool()
     @guard
-    def list_reminder_types() -> list[dict[str, Any]]:
+    def list_promemoria_types() -> list[dict[str, Any]]:
         """I tipi di promemoria che il CRM alza da solo, con le soglie predefinite.
 
         Un promemoria non è salvato: si ricalcola a ogni passaggio dai dati, e sparisce
@@ -58,7 +63,7 @@ def register(
 
     @mcp.tool()
     @guard
-    def get_reminder_preferences() -> dict[str, Any]:
+    def get_promemoria_preferences() -> dict[str, Any]:
         """Le preferenze sui promemoria: i valori dello spazio, quelli della persona che
         chiede e quello che ne risulta per lei (`effective`: la sua scelta, poi il
         valore dello spazio, poi il predefinito)."""
@@ -66,7 +71,7 @@ def register(
 
     @mcp.tool()
     @guard
-    def set_reminder_preference(scope: str, type: str, changes: dict[str, Any]) -> dict[str, Any]:
+    def set_promemoria_preference(scope: str, type: str, changes: dict[str, Any]) -> dict[str, Any]:
         """Imposta le preferenze di un tipo di promemoria, o con `type` = `general` le
         ore di silenzio e l'ora del riepilogo.
 
@@ -84,7 +89,7 @@ def register(
 
     @mcp.tool()
     @guard
-    def reset_reminder_preference(scope: str, type: str) -> dict[str, str]:
+    def reset_promemoria_preference(scope: str, type: str) -> dict[str, str]:
         """Torna al valore predefinito di un tipo (o di `general`): cancella la scelta,
         così una modifica successiva del predefinito arriva ancora."""
         _preferences(context).reset(context.actor, _scope(scope), type)
@@ -92,7 +97,7 @@ def register(
 
     @mcp.tool()
     @guard
-    def acknowledge_reminder(key: str, severity: str) -> dict[str, Any]:
+    def acknowledge_promemoria(key: str, severity: str) -> dict[str, Any]:
         """Segna un promemoria come visto per la persona che chiede, alla gravità che ha
         visto (`warning`, `serious`, `critical`). Non lo nasconde agli altri e torna a
         comparire se sale di gravità. `key` è `tipo:identificativo`."""
@@ -105,7 +110,7 @@ def register(
 
     @mcp.tool()
     @guard
-    def snooze_reminder(key: str, severity: str, until: str) -> dict[str, Any]:
+    def snooze_promemoria(key: str, severity: str, until: str) -> dict[str, Any]:
         """Rimanda un promemoria per la persona che chiede. `until` è `tomorrow`,
         `next_monday`, `in_a_week` o `in_a_month`, mai una data libera. Torna a comparire
         quel giorno, o prima se sale di gravità."""
@@ -118,7 +123,7 @@ def register(
 
     @mcp.tool()
     @guard
-    def list_my_reminder_state() -> list[dict[str, Any]]:
+    def list_my_promemoria_state() -> list[dict[str, Any]]:
         """I promemoria che la persona che chiede ha già chiuso o rimandato."""
         return [item.model_dump(mode="json") for item in _state(context).mine(context.actor)]
 
