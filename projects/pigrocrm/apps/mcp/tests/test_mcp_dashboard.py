@@ -298,10 +298,16 @@ async def test_the_session_survives_a_rejected_period(dashboard_server: Any) -> 
     assert _payload(after)["pipeline"]
 
 
-async def test_describe_automations_names_both_rules(dashboard_server: Any) -> None:
+async def test_describe_automations_names_every_rule(dashboard_server: Any) -> None:
     async with Client(dashboard_server) as client:
         payload = _payload(await client.call_tool("describe_automations", {}))
-    assert [rule["codice"] for rule in payload["regole"]] == ["A1", "A2"]
+    assert [rule["codice"] for rule in payload["regole"]] == [
+        "A1",
+        "A2",
+        "offerta_inviata_richiama",
+        "deal_fermo",
+        "fattura_scaduta",
+    ]
     assert all(rule["descrizione"] for rule in payload["regole"])
     assert set(payload) == {"configurazione", "regole", "esecuzioni"}
 
