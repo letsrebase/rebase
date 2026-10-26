@@ -33,12 +33,17 @@ COLLABORATORE = Actor(id=uuid7(), type="user", role="collaboratore")
 READONLY = Actor(id=uuid7(), type="user", role="readonly")
 
 
-def test_both_rules_are_on_by_default(db_session: Session) -> None:
+def test_every_rule_is_on_by_default(db_session: Session) -> None:
     """Default `true`, and it is a decision: an automation nobody switched on is an
     automation nobody knows exists."""
     described = AutomationConfigService(db_session).describe_automations(ADMIN)
     assert described.configurazione.a1_offerta_accettata_vince_deal is True
     assert described.configurazione.a2_offerta_inviata_avanza_deal is True
+    assert described.configurazione.a3_offerta_inviata_richiama is True
+    assert described.configurazione.a4_deal_fermo is True
+    assert described.configurazione.a5_fattura_scaduta is True
+    # The one threshold: thirty days in the same stage.
+    assert described.configurazione.a4_deal_fermo_giorni == 30
 
 
 def test_the_row_is_created_on_first_read_and_not_duplicated(db_session: Session) -> None:
@@ -65,9 +70,15 @@ def test_a_second_service_instance_finds_the_same_row(db_session: Session) -> No
     assert db_session.scalar(select(func.count()).select_from(AutomationConfig)) == 1
 
 
-def test_describe_lists_both_rules_with_their_state(db_session: Session) -> None:
+def test_describe_lists_every_rule_with_their_state(db_session: Session) -> None:
     described = AutomationConfigService(db_session).describe_automations(ADMIN)
-    assert [rule.codice for rule in described.regole] == ["A1", "A2"]
+    assert [rule.codice for rule in described.regole] == [
+        "A1",
+        "A2",
+        "offerta_inviata_richiama",
+        "deal_fermo",
+        "fattura_scaduta",
+    ]
     assert all(rule.attiva for rule in described.regole)
     # The description is what an agent reads to know what the system does by itself.
     assert "vinto" in described.regole[0].descrizione.lower()
@@ -82,7 +93,50 @@ def test_a_switched_off_rule_is_reported_as_inactive(db_session: Session) -> Non
     )
     described = service.describe_automations(ADMIN)
     attiva = {rule.codice: rule.attiva for rule in described.regole}
-    assert attiva == {"A1": True, "A2": False}
+    assert attiva == {
+        "A1": True,
+        "A2": False,
+        "offerta_inviata_richiama": True,
+        "deal_fermo": True,
+        "fattura_scaduta": True,
+    }
+
+
+@pytest.mark.parametrize(
+    ("field", "code"),
+    [
+        ("a3_offerta_inviata_richiama", "offerta_inviata_richiama"),
+        ("a4_deal_fermo", "deal_fermo"),
+        ("a5_fattura_scaduta", "fattura_scaduta"),
+    ],
+)
+def test_each_new_rule_reports_its_own_switch(db_session: Session, field: str, code: str) -> None:
+    """Five flags, five codes: a mapping that read one rule's column for another passes the
+    test above, which switches off a single rule."""
+    service = AutomationConfigService(db_session)
+    service.update_automation_config(AutomationConfigUpdate(**{field: False}), ADMIN)
+    attiva = {rule.codice: rule.attiva for rule in service.describe_automations(ADMIN).regole}
+    assert [name for name, on in attiva.items() if not on] == [code]
+
+
+@pytest.mark.parametrize("giorni", [0, -1, 366])
+def test_the_threshold_is_bounded_like_its_column(giorni: int) -> None:
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        AutomationConfigUpdate(a4_deal_fermo_giorni=giorni)
+
+
+def test_changing_the_threshold_is_audited_and_an_equal_value_is_not(db_session: Session) -> None:
+    from pigrocrm.core.activities.repository import ActivityRepository
+
+    service = AutomationConfigService(db_session)
+    service.update_automation_config(AutomationConfigUpdate(a4_deal_fermo_giorni=30), ADMIN)
+    assert ActivityRepository(db_session).by_kind(["automazione.configurazione_modificata"]) == []
+
+    service.update_automation_config(AutomationConfigUpdate(a4_deal_fermo_giorni=45), ADMIN)
+    (entry,) = ActivityRepository(db_session).by_kind(["automazione.configurazione_modificata"])
+    assert entry.payload["a4_deal_fermo_giorni"] == {"da": 30, "a": 45}
 
 
 def test_an_admin_can_switch_a_rule_off(db_session: Session) -> None:

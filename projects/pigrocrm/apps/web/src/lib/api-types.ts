@@ -4395,6 +4395,14 @@ export interface components {
             a1_offerta_accettata_vince_deal: boolean;
             /** A2 Offerta Inviata Avanza Deal */
             a2_offerta_inviata_avanza_deal: boolean;
+            /** A3 Offerta Inviata Richiama */
+            a3_offerta_inviata_richiama: boolean;
+            /** A4 Deal Fermo */
+            a4_deal_fermo: boolean;
+            /** A4 Deal Fermo Giorni */
+            a4_deal_fermo_giorni: number;
+            /** A5 Fattura Scaduta */
+            a5_fattura_scaduta: boolean;
         };
         /**
          * AutomationConfigUpdate
@@ -4413,14 +4421,19 @@ export interface components {
             a1_offerta_accettata_vince_deal?: boolean | null;
             /** A2 Offerta Inviata Avanza Deal */
             a2_offerta_inviata_avanza_deal?: boolean | null;
+            /** A3 Offerta Inviata Richiama */
+            a3_offerta_inviata_richiama?: boolean | null;
+            /** A4 Deal Fermo */
+            a4_deal_fermo?: boolean | null;
+            /** A4 Deal Fermo Giorni */
+            a4_deal_fermo_giorni?: number | null;
+            /** A5 Fattura Scaduta */
+            a5_fattura_scaduta?: boolean | null;
         };
         /** AutomationRuleDescription */
         AutomationRuleDescription: {
-            /**
-             * Codice
-             * @enum {string}
-             */
-            codice: "A1" | "A2";
+            /** Codice */
+            codice: ("A1" | "A2") | ("offerta_inviata_richiama" | "deal_fermo" | "fattura_scaduta");
             /** Titolo */
             titolo: string;
             /** Descrizione */

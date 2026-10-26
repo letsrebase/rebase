@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 # New `kind` values. No migration: `activities.kind` is an open value by project
 # (slice 1 §5.8) and `ActivityService.record` takes `kind: str` and truncates to the
@@ -19,13 +19,28 @@ from pydantic import BaseModel, ConfigDict
 KIND_STAGE_MOVED = "automazione.stage_spostato"
 KIND_NOT_EXECUTED = "automazione.non_eseguita"
 KIND_CONFIG_CHANGED = "automazione.configurazione_modificata"
+# One timeline entry per attivita the daily pass opens, on the attivita itself (REB-727).
+KIND_ATTIVITA_OPENED = "automazione.attivita_aperta"
 AUTOMATION_KINDS: tuple[str, ...] = (
     KIND_STAGE_MOVED,
     KIND_NOT_EXECUTED,
     KIND_CONFIG_CHANGED,
+    KIND_ATTIVITA_OPENED,
 )
 
+# A1 and A2 move a deal when an offer changes state; the other three open an attivita from
+# the daily pass and are named by the `attivita.regola` they write (slice 7 §6).
 AutomationRule = Literal["A1", "A2"]
+AttivitaRule = Literal["offerta_inviata_richiama", "deal_fermo", "fattura_scaduta"]
+ATTIVITA_RULES: tuple[AttivitaRule, ...] = (
+    "offerta_inviata_richiama",
+    "deal_fermo",
+    "fattura_scaduta",
+)
+AutomationRuleCode = AutomationRule | AttivitaRule
+# The rule whose cause a reminder already raises (`invoice_overdue`): the attivita reminders
+# skip what it opened, so one late invoice is not announced twice. See `daily.py`.
+REGOLA_COPERTA_DA_PROMEMORIA: AttivitaRule = "fattura_scaduta"
 
 # The four declared conditions the runner absorbs. Anything not in this list propagates
 # and rolls the trigger back (§9.3): a database that cannot write is not an automation
@@ -43,6 +58,10 @@ class AutomationConfigRead(BaseModel):
 
     a1_offerta_accettata_vince_deal: bool
     a2_offerta_inviata_avanza_deal: bool
+    a3_offerta_inviata_richiama: bool
+    a4_deal_fermo: bool
+    a4_deal_fermo_giorni: int
+    a5_fattura_scaduta: bool
 
 
 class AutomationConfigUpdate(BaseModel):
@@ -61,10 +80,16 @@ class AutomationConfigUpdate(BaseModel):
 
     a1_offerta_accettata_vince_deal: bool | None = None
     a2_offerta_inviata_avanza_deal: bool | None = None
+    a3_offerta_inviata_richiama: bool | None = None
+    a4_deal_fermo: bool | None = None
+    # The same bounds as the table's CHECK, so a value outside them is a 422 with the
+    # field's name and not a database error.
+    a4_deal_fermo_giorni: int | None = Field(default=None, ge=1, le=365)
+    a5_fattura_scaduta: bool | None = None
 
 
 class AutomationRuleDescription(BaseModel):
-    codice: AutomationRule
+    codice: AutomationRuleCode
     titolo: str
     descrizione: str
     attiva: bool
@@ -87,7 +112,7 @@ class AutomationsDescription(BaseModel):
 
 # The prose an agent and a human both read. Here rather than in the service so the two
 # surfaces cannot drift, and in Italian like every other user-facing string.
-RULE_DESCRIPTIONS: dict[AutomationRule, tuple[str, str]] = {
+RULE_DESCRIPTIONS: dict[AutomationRuleCode, tuple[str, str]] = {
     "A1": (
         "Offerta accettata → deal vinto",
         "Quando un'offerta passa da «inviata» ad «accettata», il deal collegato viene "
@@ -101,5 +126,25 @@ RULE_DESCRIPTIONS: dict[AutomationRule, tuple[str, str]] = {
         "stato con code «offerta», ma solo se la sua posizione attuale è precedente. Non "
         "torna mai indietro: un deal già in negoziazione non retrocede perché è stata "
         "mandata una seconda offerta.",
+    ),
+    "offerta_inviata_richiama": (
+        "Offerta senza risposta → un'attività per richiamare",
+        "Una volta al giorno: per ogni offerta inviata da almeno sette giorni e ancora in "
+        "attesa (fino a trentasette: dopo, richiamare non è più il seguito dell'invio), apre "
+        "«Richiamare {cliente} sull'offerta {titolo}», con scadenza sette giorni dopo "
+        "l'invio, al titolare del deal. Una sola finché è aperta.",
+    ),
+    "deal_fermo": (
+        "Deal fermo → un'attività per riprenderlo",
+        "Una volta al giorno: per ogni deal aperto che resta nello stesso stato da almeno i "
+        "giorni della soglia sotto, apre «Il deal {nome} è fermo da {n} giorni», con "
+        "scadenza oggi, al titolare del deal. Una sola finché è aperta.",
+    ),
+    "fattura_scaduta": (
+        "Fattura scaduta → un'attività per sollecitare",
+        "Una volta al giorno: per ogni fattura emessa, non incassata e oltre la scadenza, "
+        "apre «Sollecitare {cliente} per {numero}», con scadenza oggi, al titolare del "
+        "deal della fattura. Il sollecito resta un atto a parte: da qui si arriva alla sua "
+        "pagina, ma non parte nessuna richiesta di denaro da sola. Una sola finché è aperta.",
     ),
 }

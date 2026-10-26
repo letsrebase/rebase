@@ -21,13 +21,20 @@ from pigrocrm.core.automations.schemas import (
     RULE_DESCRIPTIONS,
     AutomationConfigRead,
     AutomationConfigUpdate,
-    AutomationRule,
+    AutomationRuleCode,
     AutomationRuleDescription,
     AutomationRun,
     AutomationsDescription,
 )
 
 ENTITY = "automation_config"
+RULE_CODES: tuple[AutomationRuleCode, ...] = (
+    "A1",
+    "A2",
+    "offerta_inviata_richiama",
+    "deal_fermo",
+    "fattura_scaduta",
+)
 _RUN_LIMIT = 20
 
 
@@ -39,7 +46,7 @@ class AutomationConfigService:
         self.activity_repo = ActivityRepository(session)
 
     def describe_automations(self, actor: Actor) -> AutomationsDescription:
-        """The two rules, their state, and the last twenty executions with their outcome.
+        """The rules, their state, and the last twenty executions with their outcome.
 
         No authorisation check: it is a read of what the system does by itself, every role
         may see it, and spec §13 states this slice adds no authorisation rule. `actor` is
@@ -59,7 +66,7 @@ class AutomationConfigService:
                 descrizione=RULE_DESCRIPTIONS[code][1],
                 attiva=self._is_active(config, code),
             )
-            for code in ("A1", "A2")
+            for code in RULE_CODES
         ]
         runs = [
             AutomationRun(
@@ -79,10 +86,18 @@ class AutomationConfigService:
         return AutomationsDescription(configurazione=config, regole=rules, esecuzioni=runs)
 
     @staticmethod
-    def _is_active(config: AutomationConfigRead, code: AutomationRule) -> bool:
-        if code == "A1":
-            return config.a1_offerta_accettata_vince_deal
-        return config.a2_offerta_inviata_avanza_deal
+    def _is_active(config: AutomationConfigRead, code: AutomationRuleCode) -> bool:
+        match code:
+            case "A1":
+                return config.a1_offerta_accettata_vince_deal
+            case "A2":
+                return config.a2_offerta_inviata_avanza_deal
+            case "offerta_inviata_richiama":
+                return config.a3_offerta_inviata_richiama
+            case "deal_fermo":
+                return config.a4_deal_fermo
+            case "fattura_scaduta":
+                return config.a5_fattura_scaduta
 
     def update_automation_config(
         self, data: AutomationConfigUpdate, actor: Actor
@@ -108,9 +123,10 @@ class AutomationConfigService:
             if value is None:
                 continue
             current = getattr(row, field)
-            # `is not` on booleans, and only a real difference is recorded: an audit entry
-            # that lists every field on every save is an audit entry nobody reads.
-            if current is not value:
+            # Only a real difference is recorded: an audit entry that lists every field on
+            # every save is an audit entry nobody reads. `!=` and not `is not`, because the
+            # threshold is an int and two equal ints are not promised to be one object.
+            if current != value:
                 changes[field] = {"da": current, "a": value}
                 setattr(row, field, value)
 

@@ -6,9 +6,11 @@ import {
   type AutomationConfigUpdate,
 } from '@/features/dashboard/queries'
 import { cn } from '@rebase/ui/cn'
+import { Input } from '@rebase/ui/input'
+import { useState } from 'react'
 
 /**
- * §9.5's third observability surface: the two rules, their switch, and the last executions
+ * §9.5's third observability surface: the rules, their switch, and the last executions
  * with their outcome -- a query over `activities` by `kind`, never a new table.
  *
  * The non-executions are the reason this page earns its place. Without them, "it did not
@@ -27,12 +29,20 @@ const KINDS: Record<string, string> = {
   'automazione.stage_spostato': 'Deal spostato',
   'automazione.non_eseguita': 'Non eseguita',
   'automazione.configurazione_modificata': 'Configurazione modificata',
+  'automazione.attivita_aperta': 'Attività aperta',
 }
 
 const FIELD_BY_RULE: Record<string, keyof AutomationConfigUpdate> = {
   A1: 'a1_offerta_accettata_vince_deal',
   A2: 'a2_offerta_inviata_avanza_deal',
+  // The three rules of the daily pass (REB-727, REB-728), named by the `regola` they write.
+  offerta_inviata_richiama: 'a3_offerta_inviata_richiama',
+  deal_fermo: 'a4_deal_fermo',
+  fattura_scaduta: 'a5_fattura_scaduta',
 }
+
+const DEAL_FERMO_MIN_DAYS = 1
+const DEAL_FERMO_MAX_DAYS = 365
 
 const timestamp = new Intl.DateTimeFormat('it-IT', { dateStyle: 'short', timeStyle: 'short' })
 
@@ -75,6 +85,53 @@ function RuleSwitch({
         )}
       />
     </button>
+  )
+}
+
+/**
+ * The one threshold: how many days a deal stays in its stage before `deal_fermo` opens an
+ * attività. Kept as the text being typed (`draft`) and sent when the box loses focus, so a
+ * refetch cannot overwrite a number half typed; `null` means «show the server's».
+ */
+function DaysThreshold({
+  value,
+  disabled,
+  onCommit,
+}: {
+  value: number
+  disabled: boolean
+  onCommit: (days: number, settled: () => void) => void
+}) {
+  const [draft, setDraft] = useState<string | null>(null)
+  const days = draft === null ? null : Number(draft)
+  const valid =
+    days !== null && Number.isInteger(days) && days >= DEAL_FERMO_MIN_DAYS && days <= DEAL_FERMO_MAX_DAYS
+  return (
+    <label className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+      Giorni nello stesso stato
+      <Input
+        type="number"
+        min={DEAL_FERMO_MIN_DAYS}
+        max={DEAL_FERMO_MAX_DAYS}
+        aria-label="Giorni di un deal fermo"
+        aria-invalid={draft !== null && !valid}
+        disabled={disabled}
+        value={draft ?? String(value)}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={() => {
+          // A valid change is sent and the typed number stays until the answer is in, so
+          // the box never shows the old value in between; anything else is dropped.
+          if (draft !== null && valid && days !== value) onCommit(days, () => setDraft(null))
+          else if (valid || draft === '') setDraft(null)
+        }}
+        className="w-20"
+      />
+      {draft !== null && !valid && (
+        <span role="status" className="text-destructive">
+          Da {DEAL_FERMO_MIN_DAYS} a {DEAL_FERMO_MAX_DAYS} giorni
+        </span>
+      )}
+    </label>
   )
 }
 
@@ -121,6 +178,15 @@ export function AutomationsPanel() {
               <div className="min-w-0">
                 <p className="text-sm font-medium">{rule.titolo}</p>
                 <p className="mt-1 text-xs text-muted-foreground">{rule.descrizione}</p>
+                {rule.codice === 'deal_fermo' && (
+                  <DaysThreshold
+                    value={data.configurazione.a4_deal_fermo_giorni}
+                    disabled={update.isPending}
+                    onCommit={(days, settled) =>
+                      update.mutate({ a4_deal_fermo_giorni: days }, { onSuccess: settled })
+                    }
+                  />
+                )}
               </div>
             </div>
           )
@@ -140,6 +206,9 @@ export function AutomationsPanel() {
                     day and a blank line would hide the run entirely. */}
                 <span className="font-medium">{KINDS[run.kind] ?? run.kind}</span>
                 {run.regola && <span className="text-muted-foreground"> · {run.regola}</span>}
+                {typeof run.payload.titolo === 'string' && (
+                  <span className="text-muted-foreground"> · {run.payload.titolo}</span>
+                )}
                 {run.motivo && (
                   <span className="text-muted-foreground"> · {REASONS[run.motivo] ?? run.motivo}</span>
                 )}

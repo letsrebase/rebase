@@ -209,14 +209,16 @@ export function useUpdateAutomationConfig() {
   const client = useQueryClient()
   return useMutation({
     mutationFn: (body: AutomationConfigUpdate) => unwrap(api.PUT('/api/automation-config', { body })),
-    onSuccess: () => {
-      void client.invalidateQueries({ queryKey: queryKeys.automations() })
+    onSuccess: async () => {
       // The commercial dashboard's signal count reflects whether A1 has been firing, so a
       // configuration change is a reason to re-read it. By the `['dashboard']` prefix
       // rather than an exact key: a mutation cannot know which period the user is looking
       // at, and the prefix covers every cached period and every tab.
       void client.invalidateQueries({ queryKey: ['dashboard'] })
       toast.success('Configurazione aggiornata')
+      // Awaited, last: a caller's own `onSuccess` runs once the description is fresh, so a
+      // box that held a typed number can let go of it without flashing the old one.
+      await client.invalidateQueries({ queryKey: queryKeys.automations() })
     },
     // No `onError` that copies the failure into component state: the panel renders it from
     // this mutation's own `error`, so a later success clears it by construction. An error

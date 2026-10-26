@@ -23,6 +23,7 @@ from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.emitter.models import LegalEntity
 from pigrocrm.core.gmail.models import GmailMessage, GmailMessageLink, GoogleAccount
+from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.reminders.catalogue import REMINDER_TYPES, reminder_key
 from pigrocrm.core.reminders.detectors import DETECTORS
@@ -215,6 +216,59 @@ def test_on_the_day_it_is_due_and_the_day_after_it_is_overdue(world: World) -> N
 
     assert ("attivita_due", row.id) in today and ("attivita_overdue", row.id) not in today
     assert ("attivita_overdue", row.id) in tomorrow and ("attivita_due", row.id) not in tomorrow
+
+
+def test_what_the_pass_opened_for_a_late_invoice_is_not_announced_twice_to_one_person(
+    world: World,
+) -> None:
+    """`fattura_scaduta`'s attivita is the to-do of the reminder `invoice_overdue`: a person
+    already told of the invoice is not told of its attivita as well, and a person who is not
+    (here the assignee, who owns nothing) still is. The other rules' attivita and manual
+    ones are announced like any other."""
+    invoice = Invoice(
+        customer_id=world.customer.id,
+        azienda_id=world.azienda,
+        tipo="fattura",
+        stato="emessa",
+        anno=2026,
+        numero=1,
+        data_emissione=TODAY - timedelta(days=40),
+        data_scadenza=TODAY - timedelta(days=3),
+        totale=Decimal("1220.00"),
+    )
+    world.session.add(invoice)
+    world.session.flush()
+    covered = world.attivita(
+        TODAY,
+        assegnata_a=world.alice.id,
+        invoice_id=invoice.id,
+        origine="automazione",
+        regola="fattura_scaduta",
+    )
+    other = world.attivita(
+        TODAY, assegnata_a=world.alice.id, origine="automazione", regola="deal_fermo"
+    )
+    manual = world.attivita(TODAY, assegnata_a=world.alice.id, invoice_id=invoice.id)
+
+    evaluation = world.evaluate()
+    raised = world.raised(evaluation)
+
+    assert ("invoice_overdue", invoice.id) in raised
+    # Still detected for everybody, so a person's acknowledge or snooze of it is not forgotten
+    # on the day it is not raised for them.
+    assert reminder_key("attivita_due", covered.id) in evaluation.raised
+    # The customer's owner hears of the invoice already; the assignee does not.
+    assert raised[("attivita_due", covered.id)] == {world.alice.id}
+    assert world.carol.id in raised[("attivita_due", manual.id)]
+    assert raised[("attivita_due", other.id)] == {world.alice.id}
+
+    # And a person who switched `invoice_overdue` off keeps the attivita's reminders.
+    ReminderPreferenceService(world.session).write(
+        _actor(world.owner), "space", "invoice_overdue", ReminderPreferenceWrite(enabled=False)
+    )
+    after = world.raised(world.evaluate())
+    assert ("invoice_overdue", invoice.id) not in after
+    assert world.carol.id in after[("attivita_due", covered.id)]
 
 
 def test_an_overdue_attivita_climbs_the_ladder_as_days_pass(world: World) -> None:
