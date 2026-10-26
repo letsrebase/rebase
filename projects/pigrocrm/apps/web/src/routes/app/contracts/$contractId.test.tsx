@@ -51,6 +51,7 @@ function mockApi(contract: ReturnType<typeof ok> | ReturnType<typeof failed>) {
   mockGet.mockImplementation(((path: string) => {
     if (path === '/api/contracts/{contract_id}') return contract
     if (path === '/api/customers/{customer_id}') return ok({ id: 'cust-1', ragione_sociale: 'ACME Srl' })
+    if (path === '/api/work-units') return ok({ items: [], troncato: false })
     if (path === '/api/schema/{entity_type}') {
       return ok({ entity_type: 'contract', native_fields: [], custom_fields: [] })
     }
@@ -106,6 +107,9 @@ describe('ContractDetail', () => {
     expect(await screen.findByRole('heading', { name: 'Tariffe' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Spese' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Rinnovo e ricavi programmati' })).toBeInTheDocument()
+    // The contract's days (REB-745): its own section, with the empty state of a contract that has none.
+    expect(screen.getByRole('heading', { name: 'Giornate' })).toBeInTheDocument()
+    expect(await screen.findByText('Nessuna giornata su questo contratto')).toBeInTheDocument()
   })
 
   it('offers Attiva, Stato and Modifica to a writer', async () => {
@@ -114,6 +118,8 @@ describe('ContractDetail', () => {
     expect(await screen.findByRole('button', { name: 'Attiva' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Stato' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Modifica' })).toBeInTheDocument()
+    // This contract requires prior approval, so the days section offers to ask for one.
+    expect(screen.getByRole('button', { name: 'Chiedi approvazione' })).toBeInTheDocument()
   })
 
   it('offers no write control to someone who cannot write', async () => {
@@ -126,6 +132,8 @@ describe('ContractDetail', () => {
     expect(screen.queryByRole('button', { name: 'Nuova tariffa' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Nuova spesa' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Salva assunzione' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Chiedi approvazione' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Registra giornata/ })).not.toBeInTheDocument()
   })
 
   it('says the contract does not exist on a 404 and does not blame the network', async () => {

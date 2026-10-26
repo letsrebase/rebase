@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { CalendarCheck, FileText } from 'lucide-react'
+import { CalendarCheck, FileCheck, FileText } from 'lucide-react'
 import { useState } from 'react'
 import { PageHeader } from '@/components/PageHeader'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
@@ -20,6 +20,7 @@ import { formatOccurredAt } from '@/components/activityLabels'
 import { toProblem } from '@/lib/api'
 import { useCanWrite } from '@/lib/auth'
 import { formatIsoDateItalian } from '@/lib/dates'
+import { canReceiveApproval } from './approvals'
 import { DayStatePill } from './DayStatePill'
 import {
   ACTIONS,
@@ -132,6 +133,13 @@ function Loaded({ day }: { day: WorkUnitDetail }) {
             Tutte le giornate del contratto
           </Link>
           <Link
+            to="/app/contracts/$contractId"
+            params={{ contractId: day.contract_id }}
+            className="underline underline-offset-4"
+          >
+            {day.contract_titolo}
+          </Link>
+          <Link
             to="/app/customers/$customerId"
             params={{ customerId: day.customer_id }}
             className="underline underline-offset-4"
@@ -225,17 +233,28 @@ function Notice({ children }: { children: React.ReactNode }) {
  */
 function Approval({ day }: { day: WorkUnitDetail }) {
   const approval = day.approval
+  const canWrite = useCanWrite()
   return (
     <section aria-labelledby="day-approval" className="space-y-3">
       <h2 id="day-approval" className="font-semibold">
         Approvazione
       </h2>
       {approval === null ? (
-        <p className="text-sm text-muted-foreground">
-          {day.requires_prior_approval
-            ? 'Nessuna approvazione collegata, e il contratto ne richiede una.'
-            : 'Nessuna approvazione collegata. Il contratto non la richiede.'}
-        </p>
+        <>
+          <p className="text-sm text-muted-foreground">
+            {day.requires_prior_approval
+              ? 'Nessuna approvazione collegata, e il contratto ne richiede una.'
+              : 'Nessuna approvazione collegata. Il contratto non la richiede.'}
+          </p>
+          {canWrite && canReceiveApproval(day) ? (
+            <Button asChild variant="outline" size="sm">
+              <Link to="/app/approvals/new" search={{ contract: day.contract_id, days: day.id }}>
+                <FileCheck className="mr-2 size-4" aria-hidden />
+                Registra l’approvazione del cliente
+              </Link>
+            </Button>
+          ) : null}
+        </>
       ) : (
         <>
           <p className="text-sm text-muted-foreground">

@@ -114,4 +114,75 @@ test.describe('le giornate di contratto', () => {
     await expect(page).toHaveURL(/\/app\/days\/new$/)
     await expect(page.getByRole('heading', { level: 1, name: 'Registra una giornata' })).toBeVisible()
   })
+
+  test('l’approvazione di un cliente, con il suo testo come prova, porta i giorni a approvati', async ({ page }) => {
+    await loginAsAdmin(page)
+    const titolo = `Approvazione E2E ${Date.now()}`
+    const contractId = await seedContract(page.request, { titolo, requiresPriorApproval: true })
+    const days: string[] = []
+    for (const [data, stato] of [
+      [PRIMO_ISO, 'proposto'],
+      [`${MESE}-02`, 'lavorato'],
+    ] as const) {
+      const created = await page.request.post('/api/work-units', {
+        data: { contract_id: contractId, data, quantita: '1.00', descrizione: `Giornata ${data}`, stato },
+      })
+      expect(created.status(), await created.text()).toBe(201)
+      days.push(((await created.json()) as { id: string }).id)
+    }
+
+    // From the contract's own page: its days, and the way to record an approval.
+    await page.goto(`/app/contracts/${contractId}`)
+    await expect(page.getByRole('heading', { name: 'Giornate' })).toBeVisible()
+    await page.getByRole('link', { name: 'Registra approvazione' }).click()
+    await expect(page).toHaveURL(/\/app\/approvals\/new\?contract=/)
+
+    await page.getByRole('checkbox', { name: new RegExp(`Giornata ${PRIMO_ISO}`) }).check()
+    await page.getByRole('checkbox', { name: new RegExp(`Giornata ${MESE}-02`) }).check()
+    await page.getByRole('radio', { name: 'Testo incollato' }).check({ force: true })
+    await page.getByLabel('Testo dell’approvazione').fill('Confermo le giornate del mese, il cliente.')
+    await page.getByLabel('Da chi').fill('giulia@cliente.example')
+    await page.getByLabel(/La frase che approva/).fill('Confermo le giornate del mese')
+    await page.getByRole('button', { name: 'Registra approvazione per 2 giornate' }).click()
+
+    // Both days moved: the proposed one is approved, the flagged one is worked again.
+    await expect(page).toHaveURL(/\/app\/days\?contract=/)
+    await expect(page.getByText('Approvata')).toBeVisible()
+    await expect(page.getByText('Lavorata', { exact: true })).toBeVisible()
+    await page.goto(`/app/days/${days[1]}`)
+    await expect(page.getByText('giulia@cliente.example').first()).toBeVisible()
+    await expect(page.getByText('Confermo le giornate del mese').first()).toBeVisible()
+  })
+
+  test('chiedere l’approvazione di tre date le registra come proposte e prepara la richiesta', async ({ page }) => {
+    await loginAsAdmin(page)
+    const titolo = `Richiesta E2E ${Date.now()}`
+    const contractId = await seedContract(page.request, { titolo, requiresPriorApproval: true })
+    // A customer with an address, so the request has somewhere to go.
+    await page.goto(`/app/contracts/${contractId}`)
+    await page.getByRole('button', { name: 'Chiedi approvazione' }).click()
+    const dialog = page.getByRole('dialog')
+
+    const future = (days: number) => {
+      const value = new Date()
+      value.setDate(value.getDate() + days)
+      return ISO(value)
+    }
+    for (let index = 0; index < 3; index += 1) {
+      if (index > 0) await dialog.getByRole('button', { name: 'Aggiungi una data' }).click()
+      await dialog.getByLabel(`Data ${index + 1}`, { exact: true }).fill(future(10 + index))
+      await dialog.getByLabel('Cosa farai').nth(index).fill(`Workshop ${index + 1}`)
+    }
+    await dialog.getByRole('button', { name: 'Leggi la richiesta' }).click()
+    await expect(dialog.getByLabel('Messaggio')).toHaveValue(/Workshop 1/)
+    await dialog.getByLabel('A', { exact: true }).fill('amministrazione@cliente.example')
+    // No mailbox is connected in this stack: the request is prepared as a draft, said so.
+    await expect(dialog.getByText(/La posta non è collegata/)).toBeVisible()
+    await dialog.getByRole('button', { name: 'Prepara la bozza' }).click()
+    await expect(dialog.getByText(/Le 3 giornate sono registrate come proposte/)).toBeVisible()
+    await dialog.getByRole('button', { name: 'Chiudi' }).first().click()
+
+    await expect(page.getByRole('link', { name: /Workshop 2/ })).toBeVisible()
+    await expect(page.getByText('Proposta').first()).toBeVisible()
+  })
 })

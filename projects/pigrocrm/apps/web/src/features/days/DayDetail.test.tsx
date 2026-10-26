@@ -157,6 +157,20 @@ describe('a day’s page', () => {
     expect(screen.getByRole('link', { name: /Mail di conferma/ })).toHaveAttribute('href', '/app/documents/doc-9')
   })
 
+  it('offers to record the client’s approval on a day that can use one, and not on one that has it', async () => {
+    serving(detail({ stato: 'lavorato_senza_approvazione', requires_prior_approval: true, azioni: ['contestato'] }))
+    renderWithQuery(<DayDetail workUnitId={DAY_ID} />)
+    const link = await screen.findByRole('link', { name: /Registra l’approvazione del cliente/ })
+    expect(link.getAttribute('href')).toBe('/app/approvals/new')
+  })
+
+  it('links the contract the day belongs to', async () => {
+    serving()
+    renderWithQuery(<DayDetail workUnitId={DAY_ID} />)
+    const link = await screen.findByRole('link', { name: 'Consulenza architetturale' })
+    expect(link).toHaveAttribute('href', '/app/contracts/5b2c70c2-0000-4000-8000-000000000001')
+  })
+
   it('says when the date is outside the contract', async () => {
     serving(detail({ fuori_termine: 'dopo_la_fine', contratto_fine: '2026-02-28' }))
     renderWithQuery(<DayDetail workUnitId={DAY_ID} />)
