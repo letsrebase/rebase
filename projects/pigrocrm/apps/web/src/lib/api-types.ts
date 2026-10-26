@@ -3728,7 +3728,8 @@ export interface paths {
         /**
          * Render Register Pdf
          * @description Il registro come PDF, archiviato come documento del cliente: si scarica dal documento
-         *     e si allega alla fattura. Rigenerarlo crea una nuova versione, non una sovrascrittura.
+         *     e si allega alla fattura. Ogni chiamata archivia un documento nuovo: non ne sovrascrive
+         *     mai uno precedente.
          */
         post: operations["render_register_pdf_api_contracts__contract_id__register_pdf_post"];
         delete?: never;
@@ -6454,6 +6455,8 @@ export interface components {
             customer_id?: string | null;
             /** Deal Id */
             deal_id?: string | null;
+            /** Azienda Id */
+            azienda_id?: string | null;
             /** Titolo */
             titolo: string;
             /**
