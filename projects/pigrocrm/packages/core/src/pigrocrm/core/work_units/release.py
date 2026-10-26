@@ -14,7 +14,7 @@ cycle.
 
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
@@ -24,6 +24,19 @@ from pigrocrm.core.work_units.service import set_transition_context
 
 DELETED_DRAFT_REASON = "la bozza di fattura è stata eliminata: giornata di nuovo da fatturare"
 ANNULLED_INVOICE_REASON = "la fattura è stata annullata: giornata di nuovo da fatturare"
+
+
+def count_days_billed_on(session: Session, invoice_id: UUID) -> int:
+    """How many days sit on a line of `invoice_id`. `InvoiceService.replace_lines` refuses a
+    draft that has any: it deletes every line and writes new ones, and the days point at the
+    old ids, so they would be left `fatturato` with no line and no way back."""
+    return int(
+        session.execute(
+            select(func.count(WorkUnit.id))
+            .join(InvoiceLine, InvoiceLine.id == WorkUnit.invoice_line_id)
+            .where(InvoiceLine.invoice_id == invoice_id)
+        ).scalar_one()
+    )
 
 
 def release_days_of_invoice(session: Session, invoice_id: UUID, actor: Actor, motivo: str) -> int:
@@ -52,4 +65,9 @@ def release_days_of_invoice(session: Session, invoice_id: UUID, actor: Actor, mo
     return len(days)
 
 
-__all__ = ["ANNULLED_INVOICE_REASON", "DELETED_DRAFT_REASON", "release_days_of_invoice"]
+__all__ = [
+    "ANNULLED_INVOICE_REASON",
+    "DELETED_DRAFT_REASON",
+    "count_days_billed_on",
+    "release_days_of_invoice",
+]

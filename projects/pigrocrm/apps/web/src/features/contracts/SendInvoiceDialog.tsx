@@ -8,8 +8,9 @@ import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rebase/ui/select'
 import { Skeleton } from '@rebase/ui/skeleton'
-import { formatInvoiceNumber, formatMoney } from '@/features/invoices/format'
+import { formatInvoiceNumber } from '@/features/invoices/format'
 import { useInvoices } from '@/features/invoices/queries'
+import { formatAmount } from './labels'
 import { useEmailPreview, useSendContractEmail, type EmailTemplate } from './emailQueries'
 
 interface Props {
@@ -88,7 +89,7 @@ export function SendInvoiceDialog({ contractId, customerId, templates, open, onO
                   <SelectContent>
                     {issued.map((invoice) => (
                       <SelectItem key={invoice.id} value={invoice.id}>
-                        {formatInvoiceNumber(invoice)} · {formatMoney(invoice.totale)}
+                        {formatInvoiceNumber(invoice)} · {formatAmount(invoice.totale, invoice.divisa)}
                       </SelectItem>
                     ))}
                   </SelectContent>

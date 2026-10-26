@@ -58,8 +58,13 @@ export function useInvoiceDays(contractId: string) {
   })
 }
 
-export function useContractRegister(contractId: string, period: { da: string; a: string }) {
+export function useContractRegister(
+  contractId: string,
+  period: { da: string; a: string },
+  enabled = true,
+) {
   return useQuery({
+    enabled,
     queryKey: queryKeys.contractRegister(contractId, period),
     staleTime: 0,
     queryFn: () =>

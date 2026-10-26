@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useRef } from 'react'
 import { api, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
 
@@ -89,28 +90,41 @@ export function useEmailPreview(
  */
 export function useSendContractEmail(contractId: string) {
   const queryClient = useQueryClient()
+  // The draft of the last attempt, kept for as long as it was not sent: pressing «Invia»
+  // again after a failed send sends that draft, not a second one with a second archived
+  // register behind it.
+  const pending = useRef<{ key: string; id: string } | null>(null)
   return useMutation({
-    mutationFn: async (variables: {
-      templateId: string
-      invoiceId: string
-      to: string[]
-    }) => {
+    mutationFn: async (variables: { templateId: string; invoiceId: string; to: string[] }) => {
+      const key = [variables.templateId, variables.invoiceId, ...variables.to].join('|')
+      let draftId = pending.current?.key === key ? pending.current.id : undefined
+      if (draftId === undefined) {
+        const created = await unwrap(
+          api.POST('/api/contracts/{contract_id}/email/draft', {
+            params: { path: { contract_id: contractId } },
+            body: {
+              template_id: variables.templateId,
+              invoice_id: variables.invoiceId,
+              to_addresses: variables.to,
+            },
+          }),
+        )
+        draftId = created.id
+        pending.current = { key, id: created.id }
+      }
+      // Read again: the revision to send is the one the row holds now, which a failed
+      // attempt may have moved.
       const draft = await unwrap(
-        api.POST('/api/contracts/{contract_id}/email/draft', {
-          params: { path: { contract_id: contractId } },
-          body: {
-            template_id: variables.templateId,
-            invoice_id: variables.invoiceId,
-            to_addresses: variables.to,
-          },
-        }),
+        api.GET('/api/email-drafts/{draft_id}', { params: { path: { draft_id: draftId } } }),
       )
-      return unwrap(
+      const sent = await unwrap(
         api.POST('/api/email-drafts/{draft_id}/send', {
           params: { path: { draft_id: draft.id } },
           body: { updated_at: draft.updated_at },
         }),
       )
+      pending.current = null
+      return sent
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['email-drafts'] })

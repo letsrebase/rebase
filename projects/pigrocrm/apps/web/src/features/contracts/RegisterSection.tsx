@@ -54,8 +54,10 @@ export function RegisterSection({ contractId }: { contractId: string }) {
   const canRender = useCan('render_contract_register')
   // `toIsoMonth`, never `toISOString().slice(0, 7)` -- see @/lib/dates for why.
   const [month, setMonth] = useState(() => toIsoMonth(new Date()))
-  const period = monthBounds(month)
-  const register = useContractRegister(contractId, period)
+  // Cleared with the keyboard, the field is empty: nothing to ask for until it is a month.
+  const validMonth = /^\d{4}-\d{2}$/.test(month)
+  const period = monthBounds(validMonth ? month : toIsoMonth(new Date()))
+  const register = useContractRegister(contractId, period, validMonth)
   const render = useRenderRegisterPdf(contractId)
 
   return (
@@ -77,7 +79,7 @@ export function RegisterSection({ contractId }: { contractId: string }) {
           {canRender && (
             <Button
               variant="outline"
-              disabled={render.isPending}
+              disabled={render.isPending || !validMonth}
               onClick={() =>
                 render.mutate(period, {
                   onSuccess: () => toast.success('Registro archiviato e scaricato'),

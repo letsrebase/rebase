@@ -132,7 +132,18 @@ class ContractRegisterService:
         self.storage = storage
         self.templates = TemplateRepository(session)
 
-    def build(self, contract_id: UUID, da: date, a: date, actor: Actor) -> ContractRegister:
+    def build(
+        self,
+        contract_id: UUID,
+        da: date,
+        a: date,
+        actor: Actor,
+        *,
+        invoice_id: UUID | None = None,
+    ) -> ContractRegister:
+        """`invoice_id` narrows it to the days on that one invoice, for the register that is
+        attached to it: a period can hold days billed on another, and the total has to be
+        the invoice's."""
         if a < da:
             raise ValidationFailed(
                 ENTITY, "a", "il periodo finisce prima di iniziare", expected="a >= da"
@@ -142,7 +153,7 @@ class ContractRegisterService:
             raise NotFound("contract", contract_id)
         customer = self.session.get(Customer, contract.customer_id)
 
-        rows = self.session.execute(
+        query = (
             select(WorkUnit, Approval, Invoice.anno, Invoice.numero)
             .outerjoin(Approval, Approval.id == WorkUnit.approval_id)
             # LEFT, unlike mastro's own approval join and for the reason in the module
@@ -157,7 +168,10 @@ class ContractRegisterService:
                 WorkUnit.stato.in_(BILLED_STATI),
             )
             .order_by(WorkUnit.data, WorkUnit.id)
-        ).all()
+        )
+        if invoice_id is not None:
+            query = query.where(Invoice.id == invoice_id)
+        rows = self.session.execute(query).all()
 
         voci = [
             RegisterEntry(
@@ -255,7 +269,15 @@ class ContractRegisterService:
             )
         )
 
-    def render_pdf(self, contract_id: UUID, da: date, a: date, actor: Actor) -> DocumentRead:
+    def render_pdf(
+        self,
+        contract_id: UUID,
+        da: date,
+        a: date,
+        actor: Actor,
+        *,
+        invoice_id: UUID | None = None,
+    ) -> DocumentRead:
         """Archived as a `document` on the contract's customer through the slice 2
         pipeline unchanged, so it gets the versioning, the hash, the pluggable storage and
         the timeline, and a regenerated register is a new version rather than an
@@ -266,7 +288,7 @@ class ContractRegisterService:
             raise ValidationFailed(
                 ENTITY, "storage", "nessun backend di storage configurato", expected="uno storage"
             )
-        register = self.build(contract_id, da, a, actor)
+        register = self.build(contract_id, da, a, actor, invoice_id=invoice_id)
         contract = self.session.get(Contract, contract_id)
         assert contract is not None  # `build` raised NotFound otherwise
         template = self._template()

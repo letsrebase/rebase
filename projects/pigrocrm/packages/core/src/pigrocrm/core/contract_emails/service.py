@@ -329,7 +329,7 @@ class ContractEmailService:
             version_ids.append(version.id)
         if "registro_pdf" in template.allegati:
             archived = ContractRegisterService(self.session, storage).render_pdf(
-                contract_id, da, a, actor
+                contract_id, da, a, actor, invoice_id=invoice.id
             )
             version = documents.version(archived.id, archived.versione_corrente)
             assert version is not None

@@ -28,7 +28,14 @@ const TEMPLATE = {
   created_at: '2026-10-26T10:00:00Z',
   updated_at: '2026-10-26T10:00:00Z',
 }
-const INVOICE = { id: 'i1', anno: 2026, numero: 12, riferimento: null, totale: '1250.00' }
+const INVOICE = {
+  id: 'i1',
+  anno: 2026,
+  numero: 12,
+  riferimento: null,
+  totale: '1250.00',
+  divisa: 'EUR',
+}
 const PREVIEW = {
   subject: 'Fattura 2026/12',
   body: 'Gentile Acme S.r.l.,\n\nin allegato la fattura 2026/12.',
@@ -44,6 +51,9 @@ const PREVIEW = {
 function mockGets(templates: unknown[]) {
   vi.mocked(api.GET).mockImplementation(((path: string) => {
     if (path === '/api/invoices') return ok({ items: [INVOICE], next_cursor: null })
+    if (path === '/api/email-drafts/{draft_id}') {
+      return ok({ id: 'd1', updated_at: '2026-10-26T11:00:00Z' })
+    }
     if (path.endsWith('/email-template-variables')) {
       return ok([{ nome: 'cliente', etichetta: 'Cliente' }])
     }
@@ -133,6 +143,35 @@ describe('ContractEmailSection', () => {
       }),
     )
     await waitFor(() => expect(toast.success).toHaveBeenCalled())
+  })
+
+  it('sends the same draft again after a failed send instead of making a second one', async () => {
+    mockGets([TEMPLATE])
+    let sends = 0
+    vi.mocked(api.POST).mockImplementation(((path: string) => {
+      if (path.endsWith('/email/preview')) return ok(PREVIEW)
+      if (path.endsWith('/email/draft')) return ok({ id: 'd1', updated_at: '2026-10-26T11:00:00Z' })
+      sends += 1
+      return sends === 1
+        ? (Promise.resolve({
+            error: { status: 409, code: 'conflict', detail: 'Google non collegato' },
+            response: new Response(null, { status: 409 }),
+          }) as never)
+        : ok({ id: 'd1' })
+    }) as never)
+    renderSection()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Invia fattura e registro' }))
+    await screen.findAllByText('Fattura 2026/12')
+    await userEvent.click(screen.getByRole('button', { name: 'Invia' }))
+    await waitFor(() => expect(sends).toBe(1))
+    await userEvent.click(await screen.findByRole('button', { name: 'Invia' }))
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalled())
+    const drafts = vi
+      .mocked(api.POST)
+      .mock.calls.filter((call) => String(call[0]).endsWith('/email/draft'))
+    expect(drafts).toHaveLength(1)
   })
 
   it('says when the customer has no issued invoice', async () => {

@@ -504,3 +504,84 @@ def test_a_paid_day_stays_where_it_is_when_its_invoice_is_annulled(
     db_session.refresh(day)
     assert day.stato == "pagato"
     assert day.invoice_line_id is not None
+
+
+# ---- a draft's days cannot be cut loose, and a failed binding leaves no draft -----------
+
+
+def test_editing_the_lines_of_a_draft_that_bills_days_is_refused(
+    db_session: Session, local_storage: LocalFileStorage
+) -> None:
+    from pigrocrm.core.errors import Conflict
+    from pigrocrm.core.invoices.schemas import InvoiceLineIn
+
+    _install_fiscal_and_emitter_profiles(db_session)
+    contract = _contract(db_session)
+    _rate_card(db_session, contract)
+    day = _work_unit(db_session, contract)
+    invoice = assemble_unbilled_work_units_into_new_invoice(
+        db_session, local_storage, contract.id, ADMIN
+    )
+
+    with pytest.raises(Conflict):
+        InvoiceService(db_session, local_storage).replace_lines(
+            invoice.id,
+            [
+                InvoiceLineIn(
+                    descrizione="Altro", quantita=Decimal("1"), prezzo_unitario=Decimal("1")
+                )
+            ],
+            ADMIN,
+        )
+
+    db_session.refresh(day)
+    assert day.stato == "fatturato" and day.invoice_line_id is not None
+
+
+def test_a_day_billed_in_the_meantime_is_refused_not_repointed(
+    db_session: Session,
+) -> None:
+    from pigrocrm.core.errors import Conflict
+
+    contract = _contract(db_session)
+    day = _work_unit(db_session, contract)
+    first = _bare_invoice_line(db_session, contract)
+    second = _bare_invoice_line(db_session, contract)
+    bind_work_units(db_session, [[day.id]], [first.id], ADMIN)
+
+    with pytest.raises(Conflict):
+        bind_work_units(db_session, [[day.id]], [second.id], ADMIN)
+
+    db_session.refresh(day)
+    assert day.invoice_line_id == first.id
+
+
+def test_a_failed_binding_takes_the_draft_back_out_and_leaves_the_days_ready(
+    db_session: Session,
+    local_storage: LocalFileStorage,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from pigrocrm.core.work_units import invoicing
+
+    _install_fiscal_and_emitter_profiles(db_session)
+    contract = _contract(db_session)
+    _rate_card(db_session, contract)
+    day = _work_unit(db_session, contract)
+
+    def explode(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("binding failed")
+
+    monkeypatch.setattr(invoicing, "bind_work_units", explode)
+    with pytest.raises(RuntimeError):
+        assemble_unbilled_work_units_into_new_invoice(db_session, local_storage, contract.id, ADMIN)
+    monkeypatch.undo()
+
+    db_session.refresh(day)
+    assert (day.stato, day.invoice_line_id) == ("lavorato", None)
+    live = db_session.scalars(
+        select(Invoice).where(
+            Invoice.customer_id == contract.customer_id, Invoice.deleted_at.is_(None)
+        )
+    ).all()
+    assert live == []
+    assert billable_days(db_session, contract.id).giornate == 1

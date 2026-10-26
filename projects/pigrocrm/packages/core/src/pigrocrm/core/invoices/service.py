@@ -126,6 +126,7 @@ from pigrocrm.core.storage.base import DocumentStorage
 from pigrocrm.core.work_units.release import (
     ANNULLED_INVOICE_REASON,
     DELETED_DRAFT_REASON,
+    count_days_billed_on,
     release_days_of_invoice,
 )
 
@@ -601,6 +602,14 @@ class InvoiceService:
         actor.require_write("replace_invoice_lines")
         invoice = self._require(invoice_id)
         self._require_editable(invoice, "righe")
+        billed = count_days_billed_on(self.session, invoice.id)
+        if billed:
+            raise Conflict(
+                ENTITY,
+                f"questa bozza porta {billed} giornate fatturate: per cambiare le righe "
+                "elimina la bozza e rifai la fattura dal contratto",
+                giornate=billed,
+            )
         customer = self._check_owner(invoice.customer_id, None)
         _, profile = self._regime(invoice.azienda_id)
         computed = self._computed_lines(righe, profile, nazione_cliente=customer.nazione)

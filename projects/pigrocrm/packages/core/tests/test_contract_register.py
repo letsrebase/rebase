@@ -363,3 +363,29 @@ def test_the_pdf_needs_a_storage(db_session: Session) -> None:
         ContractRegisterService(db_session).render_pdf(
             contract.id, date(2026, 10, 1), date(2026, 10, 31), ADMIN
         )
+
+
+def test_a_register_narrowed_to_an_invoice_leaves_out_the_days_billed_on_another(
+    db_session: Session, local_storage: LocalFileStorage
+) -> None:
+    _install_profiles(db_session)
+    contract = _contract(db_session)
+    for day in (date(2026, 10, 7), date(2026, 10, 10), date(2026, 10, 20)):
+        _day(db_session, contract, data=day)
+    other = assemble_unbilled_work_units_into_new_invoice(
+        db_session, local_storage, contract.id, ADMIN, date(2026, 10, 10), date(2026, 10, 10)
+    )
+    mine = assemble_unbilled_work_units_into_new_invoice(
+        db_session, local_storage, contract.id, ADMIN
+    )
+    service = ContractRegisterService(db_session)
+
+    whole = service.build(contract.id, date(2026, 10, 7), date(2026, 10, 20), ADMIN)
+    narrowed = service.build(
+        contract.id, date(2026, 10, 7), date(2026, 10, 20), ADMIN, invoice_id=mine.id
+    )
+
+    assert whole.totale_quantita == Decimal("3.00")
+    assert [v.data for v in narrowed.voci] == [date(2026, 10, 7), date(2026, 10, 20)]
+    assert narrowed.totale_quantita == Decimal("2.00")
+    assert other.id != mine.id

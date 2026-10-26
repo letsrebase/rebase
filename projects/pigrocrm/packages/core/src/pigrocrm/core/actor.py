@@ -81,6 +81,12 @@ AGENT_FORBIDDEN_ACTIONS: frozenset[str] = frozenset(
         # The same bridge from a contract's days (REB-751): choosing what goes on a draft
         # decides what an issue will freeze, whatever the unit.
         "bill_contract_days",
+        # The text that leaves in the owner's name, and the draft that carries an invoice and
+        # its register (REB-753). Sending has no MCP counterpart by structure; these are the
+        # REST routes a token could reach without the ban, so they close with it.
+        "create_contract_email_template",
+        "update_contract_email_template",
+        "prepare_contract_email",
         "get_fiscal_estimate",
         # Asking Gmail who at a customer's domain one has written to. It spends the
         # owner's quota under the owner's consent, exactly as a backfill does, and the

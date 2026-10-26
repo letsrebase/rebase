@@ -818,8 +818,10 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
     ) -> dict[str, Any]:
         """La quota dei ricavi fatturati di un cliente sull'anno di anniversario di
         un contratto (REB-352 §1.5): il periodo si resetta sulla data di inizio del
-        contratto, non sull'anno solare. `soglia` (0..1) è facoltativa e non viene
-        mai salvata: se presente, `superata` dice se la quota la supera."""
+        contratto, non sull'anno solare. Le cifre sono una riga per valuta in `valute`
+        (ricavi del cliente e totali, mai convertiti, con la loro `quota`). `soglia` (0..1) è
+        facoltativa e non viene mai salvata: se presente, `superata` di ogni riga dice se la
+        quota la supera."""
         return contracts.concentration_cap(
             context,
             contract_id,

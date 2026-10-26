@@ -20,7 +20,13 @@ from pigrocrm.core.contracts.models import Contract, RateCard
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.emitter.schemas import LegalEntityUpsert
 from pigrocrm.core.emitter.service import LegalEntityService
-from pigrocrm.core.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
+from pigrocrm.core.errors import (
+    AgentForbidden,
+    Conflict,
+    NotFound,
+    PermissionDenied,
+    ValidationFailed,
+)
 from pigrocrm.core.fiscal.repository import FiscalProfileRepository
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
@@ -278,3 +284,31 @@ def test_a_template_of_another_contract_is_not_found(db_session: Session) -> Non
         ContractEmailService(db_session).update(
             other.id, template_id, ContractEmailTemplateUpdate(nome="x"), ADMIN
         )
+
+
+def test_an_agent_cannot_write_a_template_or_prepare_a_draft(
+    db_session: Session, local_storage: LocalFileStorage
+) -> None:
+    contract = _setup(db_session)
+    template_id = _template(db_session, contract)
+    agent = Actor(id=None, type="mcp", role="admin")
+    service = ContractEmailService(db_session)
+
+    with pytest.raises(AgentForbidden):
+        service.create(
+            contract.id, ContractEmailTemplateCreate(nome="x", oggetto="x", corpo="y"), agent
+        )
+    with pytest.raises(AgentForbidden):
+        service.update(contract.id, template_id, ContractEmailTemplateUpdate(nome="z"), agent)
+    with pytest.raises(AgentForbidden):
+        service.prepare(
+            contract.id,
+            template_id,
+            uuid4(),
+            ["a@example.test"],
+            agent,
+            settings=SETTINGS,
+            storage=local_storage,
+        )
+    # The reads stay open to it.
+    assert len(service.list_for_contract(contract.id, agent)) == 1
