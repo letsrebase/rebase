@@ -336,7 +336,8 @@ def test_the_overdue_text_names_the_invoice_the_amount_and_the_customer(world: W
     reminder = next(r for r in world.evaluate().reminders if r.type == "invoice_overdue")
 
     assert reminder.title == "Incasso in ritardo: fattura 2026/7"
-    assert "3 giorni fa" in reminder.detail and "ACME Srl" in reminder.detail
+    assert "scaduta il " in reminder.detail and "(3 giorni fa)" in reminder.detail
+    assert "ACME Srl" in reminder.detail
     assert reminder.entity == "invoice" and reminder.entity_id == invoice.id
     assert reminder.customer_id == world.customer.id
 
@@ -567,7 +568,7 @@ def test_a_closed_period_with_unbilled_days_is_counted_from_the_end_of_the_oldes
     assert raised == {september.id: ("warning", {world.carol.id})}
     reminder = next(r for r in world.evaluate().reminders if r.type == "billable_period_closed")
     assert reminder.measure == 26.0, "30 September to 26 October"
-    assert reminder.entity == "contract" and "1 giornate" in reminder.detail
+    assert reminder.entity == "contract" and "1 giornata di lavoro" in reminder.detail
 
 
 @pytest.mark.parametrize(
@@ -651,7 +652,7 @@ def test_a_fixed_fee_period_with_no_invoice_since_its_last_day_is_raised_for_tha
     world: World,
 ) -> None:
     contract = _fee_contract(world)
-    world.invoice(data_emissione=date(2026, 9, 29))
+    world.invoice(data_emissione=date(2026, 8, 31))
 
     raised = world.raised("fixed_fee_period_unbilled")
 
@@ -660,6 +661,7 @@ def test_a_fixed_fee_period_with_no_invoice_since_its_last_day_is_raised_for_tha
     reminder = next(r for r in world.evaluate().reminders if r.type == "fixed_fee_period_unbilled")
     assert reminder.entity == "contract" and reminder.entity_id == contract.id
     assert reminder.measure == 26.0
+    assert "chiuso da 26 giorni" in reminder.detail
 
 
 def test_an_invoice_dated_on_the_periods_last_day_or_later_covers_it(world: World) -> None:
@@ -670,12 +672,32 @@ def test_an_invoice_dated_on_the_periods_last_day_or_later_covers_it(world: Worl
 
 
 @pytest.mark.parametrize(
+    ("last_invoice", "period", "severity"),
+    [
+        (date(2026, 8, 31), "2026-09-01", "warning"),  # September ended 26 days ago
+        (date(2026, 7, 31), "2026-08-01", "serious"),  # August ended 56 days ago
+        (date(2026, 6, 30), "2026-07-01", "critical"),  # July ended 87 days ago
+    ],
+)
+def test_a_fee_left_unbilled_for_months_is_counted_from_the_oldest_uncovered_period(
+    world: World, last_invoice: date, period: str, severity: str
+) -> None:
+    contract = _fee_contract(world)
+    world.invoice(data_emissione=last_invoice)
+
+    assert world.raised("fixed_fee_period_unbilled") == {
+        uuid5(contract.id, period): (severity, {world.carol.id})
+    }
+
+
+@pytest.mark.parametrize(
     ("today", "severity"), [(date(2026, 10, 29), "warning"), (date(2026, 10, 30), "serious")]
 )
-def test_the_fixed_fee_ladder_counts_from_the_last_day_of_the_closed_period(
+def test_the_fixed_fee_ladder_counts_from_the_last_day_of_the_oldest_uncovered_period(
     world: World, today: date, severity: str
 ) -> None:
     contract = _fee_contract(world)
+    world.invoice(data_emissione=date(2026, 8, 31))
 
     assert (
         world.severity("fixed_fee_period_unbilled", uuid5(contract.id, "2026-09-01"), today)
@@ -683,22 +705,39 @@ def test_the_fixed_fee_ladder_counts_from_the_last_day_of_the_closed_period(
     )
 
 
-def test_the_next_period_is_a_new_occurrence_that_an_earlier_acknowledgement_does_not_cover(
+def test_the_subject_is_stable_while_the_period_stays_uncovered_and_moves_when_it_is_billed(
     world: World,
 ) -> None:
     contract = _fee_contract(world)
+    last = world.invoice(data_emissione=date(2026, 8, 31))
     september = uuid5(contract.id, "2026-09-01")
-    october = uuid5(contract.id, "2026-10-01")
 
-    raised = world.raised("fixed_fee_period_unbilled", date(2026, 11, 2))
+    assert set(world.raised("fixed_fee_period_unbilled")) == {september}
+    later = world.raised("fixed_fee_period_unbilled", date(2026, 11, 2))
+    assert later == {september: ("serious", {world.carol.id})}, "same subject, higher rung"
 
-    assert set(raised) == {october}, "September is no longer the last closed period"
-    assert september != october
+    last.data_emissione = date(2026, 9, 30)
+    assert world.raised("fixed_fee_period_unbilled") == {}
+    assert set(world.raised("fixed_fee_period_unbilled", date(2026, 11, 2))) == {
+        uuid5(contract.id, "2026-10-01")
+    }
+
+
+def test_a_contract_never_invoiced_is_counted_from_the_first_period_with_a_fee_in_force(
+    world: World,
+) -> None:
+    contract = world.contract()
+    world.fee(contract, valido_da=date(2026, 9, 15))
+
+    raised = world.raised("fixed_fee_period_unbilled")
+
+    assert raised == {uuid5(contract.id, "2026-09-01"): ("warning", {world.carol.id})}
 
 
 def test_a_fee_not_in_force_or_a_contract_not_running_in_the_period_is_not_raised(
     world: World,
 ) -> None:
+    world.invoice(data_emissione=date(2026, 8, 31))
     ended_card = world.contract()
     world.fee(ended_card, valido_a=date(2026, 8, 31))
     not_started = _fee_contract(world, inizio=date(2026, 10, 1))
@@ -841,3 +880,64 @@ def test_unlinked_days_clear_once_the_days_are_billed_and_the_type_needs_days_to
     unit.invoice_line_id = world.line(world.invoice(stato="bozza")).id
 
     assert world.raised("invoice_days_unlinked") == {}
+
+
+def test_a_paid_or_old_invoice_is_not_raised_as_unlinked(world: World) -> None:
+    contract = world.contract()
+    world.day(contract, _ago(150))
+    world.invoice(data_emissione=_ago(10), stato_pagamento="incassato", data_incasso=_ago(1))
+    world.invoice(data_emissione=_ago(91))
+    inside = world.invoice(data_emissione=_ago(90))
+
+    assert set(world.raised("invoice_days_unlinked")) == {inside.id}
+
+
+# -- lookbacks and the Italian ---------------------------------------------------------------
+
+
+def test_an_invoice_issued_over_180_days_ago_is_no_longer_asked_to_be_transmitted(
+    world: World,
+) -> None:
+    inside = world.invoice(data_emissione=_ago(180))
+    world.invoice(data_emissione=_ago(181))
+
+    assert set(world.raised("invoice_not_transmitted")) == {inside.id}
+
+
+def test_the_details_say_one_day_and_yesterday_and_never_one_days(world: World) -> None:
+    world.overdue(1, numero=3, anno=2026)
+    world.invoice(data_emissione=_ago(2))
+    details = {r.type: r.detail for r in world.evaluate().reminders}
+
+    assert "(ieri)" in details["invoice_overdue"]
+    assert (
+        "scaduta il " in details["invoice_overdue"] and "da incassare" in details["invoice_overdue"]
+    )
+
+
+def test_the_italian_helpers_pluralise_and_use_a_decimal_comma() -> None:
+    from pigrocrm.core.reminders.detectors.billing_text import (
+        giornate,
+        giorni,
+        giorni_fa,
+        ore,
+        voci,
+    )
+
+    assert giorni(1) == "1 giorno" and giorni(0) == "0 giorni" and giorni(5) == "5 giorni"
+    assert giornate(Decimal("1.00")) == "1 giornata"
+    assert (
+        giornate(Decimal("1.50")) == "1,5 giornate" and giornate(Decimal("12.00")) == "12 giornate"
+    )
+    assert voci(1) == "1 voce" and voci(3) == "3 voci"
+    assert ore(Decimal("1")) == "1 ora" and ore(Decimal("2.25")) == "2,25 ore"
+    assert giorni_fa(1) == "ieri" and giorni_fa(2) == "2 giorni fa"
+
+
+def test_the_hours_detail_counts_in_italian(world: World) -> None:
+    world.hours(_ago(40), ore=Decimal("1.00"))
+    world.hours(_ago(41), ore=Decimal("0.50"))
+
+    reminder = next(r for r in world.evaluate().reminders if r.type == "hours_unbilled")
+
+    assert "1,5 ore in 2 voci" in reminder.detail
