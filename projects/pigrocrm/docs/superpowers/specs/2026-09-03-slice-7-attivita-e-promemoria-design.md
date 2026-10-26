@@ -210,11 +210,11 @@ non scade.
 Ogni metodo nuovo dev'essere un tool o un'esclusione **nominata e motivata**:
 `test_mcp_surface_coverage.py` lo impone meccanicamente, e nessuna voce può rimandare a un task futuro.
 
-> **Nota del 2026-10-26 (REB-724).** Il paragrafo su `delete_attivita` resta, ma la frase «chiudere
-> con `annullata` è ciò che un agente deve fare» non esclude più l'archiviazione: `archive_attivita`
-> e `restore_attivita` sono sulla superficie MCP predefinita, perché archiviare è un soft delete
-> reversibile e proprio quello protegge il ragionamento qui sopra. `delete_attivita` resta non
-> registrato. Riga in `docs/design/DECISIONS.md`, 2026-10-26.
+> **Note of 2026-10-26 (REB-724).** The paragraph on `delete_attivita` stands, but the sentence
+> «chiudere con `annullata` è ciò che un agente deve fare» no longer rules out archiving:
+> `archive_attivita` and `restore_attivita` are on the default MCP surface, because archiving
+> is a reversible soft delete and that is what the reasoning above protects. `delete_attivita`
+> stays unregistered. Row in `docs/design/DECISIONS.md`, 2026-10-26.
 
 ---
 
@@ -229,11 +229,11 @@ Ogni metodo nuovo dev'essere un tool o un'esclusione **nominata e motivata**:
 - **Nessuna priorità.** La scadenza è la priorità. Un campo priorità accanto a una scadenza è un
   secondo ordinamento che contraddice il primo.
 
-> **Nota del 2026-10-26 (REB-729).** La riga «Nessuna notifica push, nessuna email di promemoria»
-> è superata: Lorenzo l'ha rovesciata il 2026-10-26. I promemoria, con push, Slack ed email, sono
-> in `2026-10-26-promemoria-design.md`; la riga di `docs/design/DECISIONS.md` del 2026-10-26 dice
-> perché. Le altre tre voci di questo elenco (nessuna ricorrenza, nessun assegnatario multiplo,
-> nessuna priorità) restano com'erano.
+> **Note of 2026-10-26 (REB-729).** The line «Nessuna notifica push, nessuna email di promemoria»
+> is superseded: Lorenzo reversed it on 2026-10-26. Reminders, with push, Slack and email, are
+> in `2026-10-26-promemoria-design.md`; the row of `docs/design/DECISIONS.md` dated 2026-10-26
+> says why. The other three entries of this list (no recurrence, no multiple assignees, no
+> priority) stand as they were.
 
 ---
 
@@ -272,11 +272,11 @@ esattamente §7.
 7. `create_attivita` esiste come tool MCP; `delete_attivita` non è registrato, e la scansione della
    sorgente non trova nessuna chiamata al soft delete sotto `tools/`.
 
-   > **Nota del 2026-10-26 (REB-724).** Il criterio 7 è emendato: `archive_attivita` e
-   > `restore_attivita` sono registrati (in `tools/__init__.py`, implementati in `tools/calendario.py`) e la scansione della sorgente
-   > trova quindi chiamate al soft delete sotto `tools/`. Resta vero che `delete_attivita` non è
-   > registrato e che nessun tool cancella un'attività per sempre. Riga in
-   > `docs/design/DECISIONS.md`, 2026-10-26.
+   > **Note of 2026-10-26 (REB-724).** Criterion 7 is amended: `archive_attivita` and
+   > `restore_attivita` are registered (in `tools/__init__.py`, implemented in
+   > `tools/calendario.py`), so the source scan does find calls to the soft delete under
+   > `tools/`. It stays true that `delete_attivita` is not registered and that no tool deletes
+   > an attività for good. Row in `docs/design/DECISIONS.md`, 2026-10-26.
 8. Nessuna cifra e nessuna data nasce nel pacchetto della pagina: `oggi` arriva da un servizio.
 9. Un'attività compare nella ricerca globale, come sesto ramo — con il suo indice trigram, misurato.
 10. Le tre regole nuove sono disattivabili e la loro configurazione lascia traccia in timeline.

@@ -157,6 +157,14 @@ A reminder is raised for a **set of users**, computed by its detector from the s
 2. The owner of the linked customer or deal.
 3. For the space-wide types, every user whose role is admin.
 
+**A recipient is shown only what they may read.** The weekly digest already filters each
+person's content to what their scope allows (`actor_for` and `scope_of` in
+`core/auth/scope.py`, the same scope `DigestService.build` takes). A reminder obeys the
+same rule: a user is dropped from a subject's recipient set, the owner fallback included,
+when their scope does not cover the subject's company, and the in-app list, push, Slack
+and email text are all built under that actor. Assigning a deal never widens who can read
+its customer's invoices.
+
 **The customer has no owner today.** `Customer` and the contract models carry no owner
 column; the only owner in the code is `Deal.owner_id`. Lorenzo's rule («the owner of the
 linked customer or deal») therefore needs a resolution, and the proposal is: for a
@@ -285,7 +293,7 @@ bookkeeping about it is.
 | `reminder_preference` | space or user, type | The § 5 settings as overrides (a null column is «inherit») |
 | `reminder_ack` | reminder key, user | The severity rank acknowledged, who and when |
 | `reminder_snooze` | reminder key, user | The severity rank, the date it lasts until |
-| `reminder_delivery` | reminder key, user, channel, mode (`immediate` or `summary`), period | The severity rank delivered and when; unique on the key, user, channel, mode and period. `period` is null, except for the types that repeat daily (`attivita_overdue`), where it is that day |
+| `reminder_delivery` | reminder key, user, channel, mode (`immediate` or `summary`), period | The severity rank delivered and when; unique on the key, user, channel, mode and period, declared `NULLS NOT DISTINCT` (PostgreSQL 15 or later; on an older server `period` is a date that holds a fixed sentinel instead of null), because a plain unique constraint accepts two rows whose `period` is null. `period` is null, except for the types that repeat daily (`attivita_overdue`), where it is that day |
 | `reminder_summary_run` | user, day | That the user's daily summary for that day was sent, so an urgent mail at 09:00 is not mistaken for it |
 | `reminder_job_run` | job name | When each scheduled job last ran, for `job_late`, the reminder pass included |
 
@@ -300,8 +308,12 @@ silencing «critical» forever. **Snooze** is the same with a date: covered unti
 calendar day in the installation's zone, compared as dates, never instants. The offered set
 (Proposal, Mastro's): tomorrow, next Monday, in a week, in a month; never a free date
 picker. A cleared cause removes the reminder from the next pass whether or not anyone
-acknowledged it; the stored rows are inert bookkeeping and are swept when their subject
-is gone.
+acknowledged it. **A cleared cause also ends the occurrence:** at the end of each pass,
+for every type that applied and ran in the space, the acknowledge, snooze and delivery
+rows of every key the pass did not raise are deleted. A connection that recovers and then
+fails again, or an invoice reopened after a payment is undone, is therefore a new
+occurrence that nothing earlier suppresses. A type that did not run (switched off, or not
+applicable) leaves its rows alone, so a switch turned back on resumes where it was.
 
 ### 8.3 The delivery ledger
 
@@ -327,7 +339,7 @@ is delivered once per rank. The summary email writes one row per reminder it car
 Like `pigrocrm digest` and `pigrocrm gmail-sync` (`packages/core/src/pigrocrm/core/digest/run.py`
 and the runbook `docs/superpowers/notes/2026-09-09-gmail-cron-runbook.md`), the pass is a
 **command run from the host's crontab**, not a daemon and not a queue: `pigrocrm
-reminders`, one line, `docker compose exec -T api uv run --no-sync pigrocrm reminders`.
+reminders`, one line, in the shape of the runbook's (`cd $DEPLOY_PATH/projects/pigrocrm && docker compose --env-file ../../.env exec -T api uv run --no-sync pigrocrm reminders >> /var/log/pigrocrm-reminders.log 2>&1`; the `cd` and the `--env-file` are not optional, the runbook says why).
 It walks the root installation first and then every space in the registry, in the order
 they were created, each with its own settings and its own database session. The crontab
 line does not change when a space is added.
@@ -348,9 +360,11 @@ transaction is not held across a network call.
 - **This command migrates nothing**, like the digest: a space behind the image answers
   `saltato` with the exception's name until the API migrates it.
 - **One pass per space at a time.** The pass takes a Postgres advisory lock on the space's
-  database before it sends (`pg_try_advisory_lock`); a pass that does not get it prints
-  one line `saltato (in_corso)` for that space and moves on. Detection is read-only, so
-  this guards the sends, and the ledger's unique key (§ 8.3) is the backstop.
+  database (`pg_try_advisory_lock`) **before it reads any delivery state**, and holds it
+  until the ledger writes are committed; a pass that does not get it prints one line
+  `saltato (in_corso)` for that space and moves on. Taking it only around the sends would
+  let two passes read the same undelivered list and send from it one after the other. The
+  ledger's unique key (§ 8.3) is the backstop.
 - The interval is **15 minutes** (Proposal), the gmail-sync cadence: it is what delivers
   an urgent reminder within a quarter of an hour and ends quiet hours promptly. The
   daily summary does not need its own cron line: the pass sends it in the first run
