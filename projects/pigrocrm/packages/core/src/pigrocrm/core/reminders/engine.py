@@ -60,12 +60,9 @@ class PassResult:
 
 
 class ReminderEngine:
-    def __init__(
-        self, session: Session, settings: Settings, *, owner_email: str | None = None
-    ) -> None:
+    def __init__(self, session: Session, settings: Settings) -> None:
         self.session = session
         self.settings = settings
-        self.owner_email = owner_email
 
     def evaluate(self, *, today: date | None = None, now: datetime | None = None) -> Evaluation:
         """Runs every detector that applies to the space and is switched on for it, and
@@ -78,7 +75,7 @@ class ReminderEngine:
             today=today,
             now=now,
             timezone=self.settings.timezone,
-            directory=Directory.load(self.session, self.owner_email),
+            directory=Directory.load(self.session),
             settings=preferences,
         )
         reminders: list[Reminder] = []

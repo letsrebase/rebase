@@ -75,9 +75,7 @@ class World:
 
     def evaluate(self, today: date = TODAY, now: datetime = NOON) -> Evaluation:
         self.session.flush()
-        return ReminderEngine(self.session, SETTINGS, owner_email=self.owner.email).evaluate(
-            today=today, now=now
-        )
+        return ReminderEngine(self.session, SETTINGS).evaluate(today=today, now=now)
 
     def raised(self, evaluation: Evaluation) -> dict[tuple[str, UUID], set[UUID]]:
         """`(type, subject)` to the people told."""
@@ -488,7 +486,7 @@ def _delivered(world: World) -> int:
 
 def test_a_pass_puts_each_reminder_in_each_persons_list_once(world: World) -> None:
     world.attivita(TODAY, assegnata_a=world.alice.id)
-    engine = ReminderEngine(world.session, SETTINGS, owner_email=world.owner.email)
+    engine = ReminderEngine(world.session, SETTINGS)
 
     first = engine.record_pass(world.evaluate(), today=TODAY)
     second = engine.record_pass(world.evaluate(), today=TODAY)
@@ -500,7 +498,7 @@ def test_a_pass_puts_each_reminder_in_each_persons_list_once(world: World) -> No
 
 def test_an_escalation_is_delivered_again_and_a_daily_type_the_next_day(world: World) -> None:
     world.attivita(TODAY - timedelta(days=1), assegnata_a=world.alice.id)
-    engine = ReminderEngine(world.session, SETTINGS, owner_email=world.owner.email)
+    engine = ReminderEngine(world.session, SETTINGS)
     day = TODAY
 
     assert engine.record_pass(world.evaluate(day), today=day).delivered == 1
@@ -516,7 +514,7 @@ def test_an_escalation_is_delivered_again_and_a_daily_type_the_next_day(world: W
 
 def test_a_threshold_type_is_delivered_once_per_rank_not_once_a_day(world: World) -> None:
     world.deal.data_chiusura_prevista = TODAY - timedelta(days=2)
-    engine = ReminderEngine(world.session, SETTINGS, owner_email=world.owner.email)
+    engine = ReminderEngine(world.session, SETTINGS)
 
     first = engine.record_pass(world.evaluate(TODAY), today=TODAY)
     next_day = TODAY + timedelta(days=1)
@@ -532,7 +530,7 @@ def test_a_reminder_a_person_acknowledged_is_not_delivered_to_them_again(world: 
     ReminderStateService(world.session).acknowledge(
         _actor(world.alice), reminder_key("attivita_due", row.id), "warning"
     )
-    engine = ReminderEngine(world.session, SETTINGS, owner_email=world.owner.email)
+    engine = ReminderEngine(world.session, SETTINGS)
 
     result = engine.record_pass(world.evaluate(), today=TODAY)
 
@@ -545,7 +543,7 @@ def test_a_snoozed_reminder_comes_back_when_the_snooze_ends(world: World) -> Non
     row = world.attivita(TODAY - timedelta(days=2), assegnata_a=world.alice.id)
     key = reminder_key("attivita_overdue", row.id)
     ReminderStateService(world.session).snooze(_actor(world.alice), key, "serious", "tomorrow")
-    engine = ReminderEngine(world.session, SETTINGS, owner_email=world.owner.email)
+    engine = ReminderEngine(world.session, SETTINGS)
 
     assert engine.record_pass(world.evaluate(TODAY), today=TODAY).delivered == 0
     ends = world.session.scalar(select(ReminderSnooze.until).where(ReminderSnooze.key == key))
@@ -556,7 +554,7 @@ def test_a_snoozed_reminder_comes_back_when_the_snooze_ends(world: World) -> Non
 def test_a_cleared_cause_ends_the_occurrence_with_everything_behind_it(world: World) -> None:
     row = world.attivita(TODAY - timedelta(days=2), assegnata_a=world.alice.id)
     key = reminder_key("attivita_overdue", row.id)
-    engine = ReminderEngine(world.session, SETTINGS, owner_email=world.owner.email)
+    engine = ReminderEngine(world.session, SETTINGS)
     ReminderStateService(world.session).acknowledge(_actor(world.alice), key, "serious")
     engine.record_pass(world.evaluate(), today=TODAY)
 
@@ -580,7 +578,7 @@ def test_a_cleared_cause_ends_the_occurrence_with_everything_behind_it(world: Wo
 def test_a_type_switched_off_leaves_its_rows_alone(world: World) -> None:
     row = world.attivita(TODAY - timedelta(days=2), assegnata_a=world.alice.id)
     key = reminder_key("attivita_overdue", row.id)
-    engine = ReminderEngine(world.session, SETTINGS, owner_email=world.owner.email)
+    engine = ReminderEngine(world.session, SETTINGS)
     engine.record_pass(world.evaluate(), today=TODAY)
     ReminderPreferenceService(world.session).write(
         _actor(world.owner), "space", "attivita_overdue", ReminderPreferenceWrite(enabled=False)
@@ -606,7 +604,7 @@ def test_a_person_lists_their_reminders_with_what_they_did_about_each(world: Wor
     ReminderStateService(world.session).acknowledge(
         _actor(world.alice), reminder_key("attivita_due", due.id), "warning"
     )
-    engine = ReminderEngine(world.session, SETTINGS, owner_email=world.owner.email)
+    engine = ReminderEngine(world.session, SETTINGS)
     engine.record_pass(world.evaluate(), today=TODAY)
     world.session.flush()
 

@@ -69,14 +69,14 @@ class ReminderRun:
         self,
         slug: str,
         engine: Engine,
-        owner_email: str | None,
         *,
         today: date | None = None,
         now: datetime | None = None,
         dry_run: bool = False,
     ) -> ReminderOutcome:
-        """The whole decision for one space. `owner_email` is the registry's for a space,
-        and `None` for the root installation, whose owner is its first active admin.
+        """The whole decision for one space. The space's owner, who hears of a reminder
+        nobody else can be told, is its first active admin, the same person the list
+        in the app falls back to (`directory.py`).
 
         Raises whatever the database raises: the caller turns it into one `saltato` line,
         the way the digest's does, so one space's failure is not the pass's.
@@ -90,7 +90,7 @@ class ReminderRun:
             if not held:
                 return ReminderOutcome(slug, "in_corso")
             try:
-                return self._pass(slug, engine, owner_email, today, now, dry_run)
+                return self._pass(slug, engine, today, now, dry_run)
             finally:
                 lock.execute(
                     text("SELECT pg_advisory_unlock(:namespace, :key)"),
@@ -101,7 +101,6 @@ class ReminderRun:
         self,
         slug: str,
         engine: Engine,
-        owner_email: str | None,
         today: date | None,
         now: datetime | None,
         dry_run: bool,
@@ -112,7 +111,7 @@ class ReminderRun:
             # whose scope does not cover it, by the recipient rules (`directory.py`), and
             # not by what the cron's own session could read (REB-634).
             bind_scope(session, Actor.system())
-            reminders = ReminderEngine(session, self.settings, owner_email=owner_email)
+            reminders = ReminderEngine(session, self.settings)
             evaluation = reminders.evaluate(today=today, now=now)
             if dry_run:
                 planned = reminders.plan(evaluation, today=today)

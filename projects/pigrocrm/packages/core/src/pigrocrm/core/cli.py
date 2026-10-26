@@ -546,8 +546,9 @@ def reminders(*, slug: str | None, data: date | None, dry_run: bool) -> int:
 
     **One decision.** `ReminderRun.run_for_space` decides; `--dry-run` asks it what would
     be put in people's lists and writes nothing, and `--data` evaluates another day (the
-    attività due that morning, the overdue ones that day), so a rehearsal and a re-run are
-    calls to the same code as the cron.
+    attività due that morning, the overdue ones that day) and only with `--dry-run`: a
+    real pass of another day would end and record things against today's reminders. A
+    rehearsal is a call to the same code as the cron.
     """
     from sqlalchemy import create_engine, select
 
@@ -556,12 +557,18 @@ def reminders(*, slug: str | None, data: date | None, dry_run: bool) -> int:
     from pigrocrm.core.tenants.database import tenant_database_url
 
     settings = get_settings()
+    if data is not None and data != today_local(settings) and not dry_run:
+        # A real pass writes: it ends the occurrences the day did not raise and records
+        # deliveries at that day's severities. Another day's pass would do that to
+        # reminders that exist today, so another day is only ever a rehearsal.
+        print("--data cambia il giorno: si usa solo con --dry-run", file=sys.stderr)
+        return 2
     failed = False
     root_only = slug == ROOT_LABEL
-    # (the line's label, the database, the registry's owner or `None` for the root)
-    spaces: list[tuple[str, str | URL, str | None]] = []
+    # (the line's label, the database)
+    spaces: list[tuple[str, str | URL]] = []
     if slug is None or root_only:
-        spaces.append((ROOT_LABEL, settings.database_url, None))
+        spaces.append((ROOT_LABEL, settings.database_url))
     registry_read = False
     if not root_only:
         try:
@@ -569,7 +576,7 @@ def reminders(*, slug: str | None, data: date | None, dry_run: bool) -> int:
             try:
                 with session_factory(registry)() as session:
                     spaces.extend(
-                        (row.slug, tenant_database_url(settings, row.db_name), row.owner_email)
+                        (row.slug, tenant_database_url(settings, row.db_name))
                         for row in session.scalars(select(Tenant).order_by(Tenant.created_at)).all()
                         if slug is None or row.slug == slug
                     )
@@ -597,12 +604,10 @@ def reminders(*, slug: str | None, data: date | None, dry_run: bool) -> int:
 
         # Another day: its last minute, so a timer that was running by then has run.
         now = datetime.combine(data, time(23, 59, 59), tzinfo=ZoneInfo(settings.timezone))
-    for space_slug, database_url, owner_email in spaces:
+    for space_slug, database_url in spaces:
         engine = create_engine(database_url, future=True)
         try:
-            outcome = run.run_for_space(
-                space_slug, engine, owner_email, today=today, now=now, dry_run=dry_run
-            )
+            outcome = run.run_for_space(space_slug, engine, today=today, now=now, dry_run=dry_run)
         except Exception as exc:  # noqa: BLE001 - one space must not stop the others
             print(f"{space_slug}: saltato ({type(exc).__name__})", file=sys.stderr)
             failed = True

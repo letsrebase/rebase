@@ -235,18 +235,33 @@ def test_a_slug_that_is_not_in_the_registry_is_said_and_fails(
     assert captured.out == ""
 
 
-def test_another_day_is_evaluated_as_that_day(
+def test_another_day_is_rehearsed_as_that_day_and_writes_nothing(
     settings: Settings, cron: None, capsys: pytest.CaptureFixture[str]
 ) -> None:
     tomorrow = (today_local(settings) + timedelta(days=1)).isoformat()
 
-    assert cli.main(["reminders", "--slug", UNO, "--data", tomorrow]) == 0
+    assert cli.main(["reminders", "--slug", UNO, "--data", tomorrow, "--dry-run"]) == 0
 
     # Due today is overdue by tomorrow: a `serious` where today it was a `warning`.
-    assert capsys.readouterr().out.splitlines() == [f"{UNO}: promemoria 1, nuovi 1, chiusi 0"]
+    assert capsys.readouterr().out.splitlines() == [
+        f"{UNO}: promemoria 1, nuovi 1, chiusi 0 (prova)"
+    ]
     with _engine(_url(settings, UNO)) as engine, engine.connect() as connection:
-        key = connection.execute(text("select key from reminder_delivery")).scalar_one()
-    assert key.startswith("attivita_overdue:")
+        assert connection.execute(text("select count(*) from reminder_delivery")).scalar_one() == 0
+
+
+def test_another_day_is_refused_without_a_dry_run(
+    settings: Settings, cron: None, capsys: pytest.CaptureFixture[str]
+) -> None:
+    tomorrow = (today_local(settings) + timedelta(days=1)).isoformat()
+
+    assert cli.main(["reminders", "--slug", UNO, "--data", tomorrow]) == 2
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "--dry-run" in captured.err
+    with _engine(_url(settings, UNO)) as engine, engine.connect() as connection:
+        assert connection.execute(text("select count(*) from reminder_delivery")).scalar_one() == 0
 
 
 def test_a_failing_space_is_one_line_with_the_exception_name_and_the_next_goes_on(
@@ -257,10 +272,10 @@ def test_a_failing_space_is_one_line_with_the_exception_name_and_the_next_goes_o
 ) -> None:
     original = ReminderRun.run_for_space
 
-    def run(self, slug, engine, owner_email, **kwargs):  # type: ignore[no-untyped-def]
+    def run(self, slug, engine, **kwargs):  # type: ignore[no-untyped-def]
         if slug == UNO:
             raise RuntimeError("postgresql://user:secret@host/db")
-        return original(self, slug, engine, owner_email, **kwargs)
+        return original(self, slug, engine, **kwargs)
 
     monkeypatch.setattr(ReminderRun, "run_for_space", run)
 

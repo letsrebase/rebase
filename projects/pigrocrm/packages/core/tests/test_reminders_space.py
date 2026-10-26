@@ -67,9 +67,7 @@ class Space:
 
     def evaluate(self, today: date = TODAY, now: datetime = NOON) -> Evaluation:
         self.session.flush()
-        return ReminderEngine(self.session, SETTINGS, owner_email=self.owner.email).evaluate(
-            today=today, now=now
-        )
+        return ReminderEngine(self.session, SETTINGS).evaluate(today=today, now=now)
 
     def told(self, type_key: str, evaluation: Evaluation | None = None) -> dict[UUID, Severity]:
         """Who is told of `type_key`, and at which severity (one subject at a time: the
@@ -853,7 +851,7 @@ def test_a_pass_sees_the_previous_runs_clock_not_its_own(space: Space) -> None:
     """The pass writes its job time after the detectors read (`record_pass`), so the
     clock a pass reads is the last one's."""
     _touch(space, REMINDER_PASS_JOB, 200)
-    engine = ReminderEngine(space.session, SETTINGS, owner_email=space.owner.email)
+    engine = ReminderEngine(space.session, SETTINGS)
 
     first = engine.evaluate(today=TODAY, now=NOON)
     engine.record_pass(first, today=TODAY, job=REMINDER_PASS_JOB)

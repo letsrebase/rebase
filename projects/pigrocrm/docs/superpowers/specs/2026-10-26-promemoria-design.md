@@ -180,6 +180,8 @@ nothing reads it any more: a subject linked to a customer goes to the customer's
 subject linked to a deal to the deal's owner as well, and a customer nobody owns to the
 space's owner. `docs/design/DECISIONS.md` has the row.
 
+**Amended on 2026-10-26 (REB-733 review).** The space's owner is its first active admin, for a space as for the root installation, and not the registry's `owner_email`: the list in the app is served from inside the space and cannot read the registry, so the pass and the list must name one person by what the space's own database holds (`docs/design/DECISIONS.md`).
+
 The set is deduplicated: one person who is both assignee and owner gets one reminder. A
 user who is archived or has no email address is dropped from the set, and the reminder
 keeps going to the others. A reminder whose set is empty goes to the space's owner, so a

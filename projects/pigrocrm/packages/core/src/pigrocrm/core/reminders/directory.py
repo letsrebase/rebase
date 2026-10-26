@@ -13,8 +13,10 @@ detector only names who it would like to tell:
 - **A user who cannot be told is dropped.** An archived user, or one with no address,
   stays out of the set, and the reminder goes on to the others.
 - **A set that ends up empty goes to the space's owner**, so a type never fires into a
-  void. The owner is the registry's `owner_email` for a space and the first active admin
-  for the root installation (the digest's titolare, `digest/run.py`).
+  void. The owner is the first active admin of the space's own database, for the root
+  installation and for every space alike: the pass and the list in the app run over the
+  same database and so name the same person (the registry's `owner_email` is not read,
+  because the app cannot see the registry from inside a space).
 
 The set is deduplicated: a person who is both assignee and owner gets one reminder.
 """
@@ -58,9 +60,8 @@ class Directory:
         self.owner_id = owner_id
 
     @classmethod
-    def load(cls, session: Session, owner_email: str | None = None) -> Directory:
-        """Every active user with an address, and the space's owner. `owner_email` is the
-        registry's for a space; `None` asks for the root installation's, the first active
+    def load(cls, session: Session) -> Directory:
+        """Every active user with an address, and the space's owner: its first active
         admin."""
         users = UserRepository(session)
         people = [
@@ -68,9 +69,7 @@ class Directory:
             for user in session.scalars(select(User).where(User.attivo.is_(True)).order_by(User.id))
             if user.email
         ]
-        owner = users.get_by_email(owner_email) if owner_email is not None else None
-        if owner is None and owner_email is None:
-            owner = users.first_active_admin()
+        owner = users.first_active_admin()
         return cls(people, owner.id if owner is not None and owner.attivo else None)
 
     def recipients(

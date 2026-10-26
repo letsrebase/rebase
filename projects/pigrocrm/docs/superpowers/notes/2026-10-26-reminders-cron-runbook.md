@@ -68,7 +68,9 @@ cd /opt/pigrocrm/projects/pigrocrm && docker compose --env-file ../../.env exec 
 `--slug studio-rossi` visits one space (`--slug root` the root installation alone, without
 opening the registry), and `--data 2026-11-02` evaluates that day instead of today: the
 attività due that morning, the overdue ones that day, the timers that had run by its last
-minute. A rehearsal and a re-run are calls to the same code as the cron, never a copy of it.
+minute. It is accepted only with `--dry-run` (exit 2 otherwise): a real pass of another day
+would end and record things against today's reminders. A rehearsal is a call to the same
+code as the cron, never a copy of it.
 
 ## 3. Reading the log
 
@@ -137,5 +139,7 @@ cd /opt/pigrocrm/projects/pigrocrm && docker compose --env-file ../../.env resta
 
 It sends no mail, no push and no Slack message: those are REB-737, REB-738 and REB-740,
 which plug into the same pass after the reads and before the ledger writes. It never sends
-anything to a customer: the sollecito stays an act (slice 7 §9). It runs no detector of the
-catalogue's other groups until their cards land (REB-767, REB-768, REB-769).
+anything to a customer: the sollecito stays an act (slice 7 §9). It runs a detector for every
+type of the catalogue except the four whose data does not exist yet: `invoice_rejected_sdi`,
+`register_publication_failed`, `tax_payment_due` and `approval_coverage_expiring`
+(`docs/design/DECISIONS.md`, 2026-10-26).

@@ -130,6 +130,18 @@ def test_a_snooze_covers_until_its_day_and_stops_that_day(db_session: Session) -
     assert not state.covers("critical", TODAY), "a higher severity is never snoozed away"
 
 
+def test_a_later_snooze_replaces_the_rank_and_the_day_together(db_session: Session) -> None:
+    user = _user(db_session)
+    service = ReminderStateService(db_session)
+    service.snooze(_actor(user), KEY, "critical", "tomorrow")
+
+    again = service.snooze(_actor(user), KEY, "warning", "in_a_month")
+
+    assert again.snoozed_severity == "warning", "what was snoozed is what the last click saw"
+    state = states_for(db_session, [user.id])[(user.id, KEY)]
+    assert not state.covers("critical", TODAY), "a climb back to critical is not hidden for a month"
+
+
 def test_a_snooze_is_per_user_like_an_acknowledgement(db_session: Session) -> None:
     one, other = _user(db_session), _user(db_session)
     ReminderStateService(db_session).snooze(_actor(one), KEY, "serious", "tomorrow")

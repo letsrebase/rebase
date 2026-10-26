@@ -174,9 +174,7 @@ class World:
 
     def evaluate(self, today: date = TODAY) -> Evaluation:
         self.session.flush()
-        return ReminderEngine(self.session, SETTINGS, owner_email=self.owner.email).evaluate(
-            today=today, now=NOON
-        )
+        return ReminderEngine(self.session, SETTINGS).evaluate(today=today, now=NOON)
 
     def raised(
         self, type_key: str, today: date = TODAY, evaluation: Evaluation | None = None

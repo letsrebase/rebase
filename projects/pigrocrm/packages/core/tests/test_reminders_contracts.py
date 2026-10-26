@@ -125,9 +125,7 @@ class World:
 
     def evaluate(self) -> Evaluation:
         self.session.flush()
-        return ReminderEngine(self.session, SETTINGS, owner_email=self.owner.email).evaluate(
-            today=TODAY, now=NOON
-        )
+        return ReminderEngine(self.session, SETTINGS).evaluate(today=TODAY, now=NOON)
 
     def raised(self, evaluation: Evaluation | None = None) -> dict[tuple[str, UUID], set[UUID]]:
         """`(type, subject)` to the people told."""

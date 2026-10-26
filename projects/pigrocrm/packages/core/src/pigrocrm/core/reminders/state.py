@@ -174,10 +174,11 @@ class ReminderStateService:
         self.session.execute(
             statement.on_conflict_do_update(
                 constraint="uq_reminder_snooze_key_user",
+                # The latest snooze replaces the earlier one whole, rank and day together:
+                # a rank kept from an earlier snooze with a later day would hide a climb
+                # to that rank for longer than anybody chose.
                 set_={
-                    "severity_rank": func.greatest(
-                        ReminderSnooze.severity_rank, statement.excluded.severity_rank
-                    ),
+                    "severity_rank": statement.excluded.severity_rank,
                     "until": statement.excluded["until"],
                     "updated_at": func.now(),
                 },
