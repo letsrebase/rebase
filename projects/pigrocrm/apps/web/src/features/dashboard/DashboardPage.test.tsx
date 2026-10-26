@@ -245,10 +245,10 @@ describe('DashboardPage, the page intestazione', () => {
 })
 
 describe('DashboardPage, four tabs', () => {
-  it('offers the economic, commercial, scadenziario and anno tabs, and marks the current one', () => {
+  it('offers the economic, commercial, scadenziario, anno and giornate tabs, and marks the current one', () => {
     renderPage({ ...SEARCH, tab: 'economica' })
     const tabs = screen.getAllByRole('tab').map((tab) => tab.textContent)
-    expect(tabs).toEqual(['Economica', 'Commerciale', 'Scadenziario', 'Anno'])
+    expect(tabs).toEqual(['Economica', 'Commerciale', 'Scadenziario', 'Anno', 'Giornate'])
     expect(screen.getByRole('tab', { name: 'Economica' })).toHaveAttribute('aria-selected', 'true')
   })
 

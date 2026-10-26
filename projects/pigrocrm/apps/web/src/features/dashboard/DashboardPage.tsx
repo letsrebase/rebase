@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { PageHeader } from '@/components/PageHeader'
 import { Tabs, TabsList, TabsTrigger } from '@rebase/ui/tabs'
 import { CommercialTab } from './CommercialTab'
+import { DaysTab } from './DaysTab'
 import { EconomicTab } from './EconomicTab'
 import { PeriodPicker } from './PeriodPicker'
 import { ReceivablesTab } from './ReceivablesTab'
@@ -72,6 +73,7 @@ export function DashboardPage({
         {tab === 'commerciale' && <CommercialTab periodo={{ da, a }} />}
         {tab === 'scadenziario' && <ReceivablesTab />}
         {tab === 'anno' && <YearTab periodo={{ da, a }} />}
+        {tab === 'giornate' && <DaysTab periodo={{ da, a }} />}
         {tab === 'economica' && (
           <EconomicTab
             periodo={{ da, a }}

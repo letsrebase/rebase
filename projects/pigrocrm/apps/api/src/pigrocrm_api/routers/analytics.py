@@ -21,6 +21,7 @@ from pigrocrm.core.analytics.schemas import (
     CeilingHeadroom,
     CeilingSimulation,
     CeilingSimulationQuery,
+    DaysAnalysis,
     EconomicOverview,
     FiscalEstimate,
     PeriodPnl,
@@ -205,6 +206,21 @@ def simulate_ceiling(
         actor,
         azienda_id,
     )
+
+
+@router.get("/days", response_model=DaysAnalysis)
+def days_analysis(
+    session: SessionDep,
+    actor: ActorDep,
+    da: Annotated[date | None, Query(description="Inizio del periodo, YYYY-MM-DD")] = None,
+    a: Annotated[date | None, Query(description="Fine del periodo, YYYY-MM-DD")] = None,
+    azienda_id: LegalEntityFilter = None,
+) -> DaysAnalysis:
+    """Le giornate di un periodo (REB-756): per mese e per stato, la tariffa reale
+    contro il listino per cliente e per contratto, e l'andamento delle giornate
+    lavorate senza l'approvazione che il contratto chiede. Entrambe le date o nessuna
+    (il mese corrente). Aperto a ogni ruolo, come le giornate."""
+    return AnalyticsService(session).days_analysis(actor, da, a, azienda_id)
 
 
 @router.get("/year", response_model=YearOverview)

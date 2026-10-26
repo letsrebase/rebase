@@ -72,3 +72,10 @@ export function percent(value: string | null | undefined): string {
 export function hours(value: string): string {
   return `${value.replace('.', ',')} ore`
 }
+
+/** «1.50» as «1,5», «2.00» as «2»: days are quantities of a unit, not money, and a trailing
+ *  «,00» on a count of days reads as a price. A string replace, never a parse. */
+export function days(value: string): string {
+  const trimmed = value.includes('.') ? value.replace(/\.?0+$/, '') : value
+  return trimmed.replace('.', ',')
+}

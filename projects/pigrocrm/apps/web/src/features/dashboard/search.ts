@@ -24,6 +24,9 @@ export const DASHBOARD_TABS = [
   // REB-757: the year as the accountant reads it, and the CSV of it. The period picker
   // names the year, as it does on Economica.
   { id: 'anno', label: 'Anno' },
+  // REB-756: the days of the period by state, the rate they really earned and the trend of
+  // days worked without the approval the contract asks for.
+  { id: 'giornate', label: 'Giornate' },
 ] as const
 
 export type TabId = (typeof DASHBOARD_TABS)[number]['id']

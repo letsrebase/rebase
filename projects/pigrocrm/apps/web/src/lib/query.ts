@@ -130,7 +130,7 @@ export const queryKeys = {
   // dashboard key starts with the literal 'dashboard' so a mutation that cannot know which
   // period is on screen can invalidate all of them by prefix.
   dashboard: (
-    kind: 'commerciale' | 'economica' | 'panoramica' | 'scadenziario',
+    kind: 'commerciale' | 'economica' | 'panoramica' | 'scadenziario' | 'giornate',
     params: Record<string, string>,
   ) =>
     ['dashboard', kind, params] as const,

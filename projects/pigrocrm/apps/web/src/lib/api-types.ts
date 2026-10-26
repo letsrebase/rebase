@@ -2195,6 +2195,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/analytics/days": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Days Analysis
+         * @description Le giornate di un periodo (REB-756): per mese e per stato, la tariffa reale
+         *     contro il listino per cliente e per contratto, e l'andamento delle giornate
+         *     lavorate senza l'approvazione che il contratto chiede. Entrambe le date o nessuna
+         *     (il mese corrente). Aperto a ogni ruolo, come le giornate.
+         */
+        get: operations["days_analysis_api_analytics_days_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/analytics/year": {
         parameters: {
             query?: never;
@@ -5564,6 +5587,123 @@ export interface components {
             quantita: string;
             /** Stato */
             stato: string;
+        };
+        /**
+         * DaysAnalysis
+         * @description The days of a period: by month and state, the realised rate, and the trend of days
+         *     worked without the approval the contract asks for. The period is echoed back, rounded
+         *     out to whole months for the monthly figures; the rate reads the exact `da`..`a`.
+         */
+        DaysAnalysis: {
+            /**
+             * Da
+             * Format: date
+             */
+            da: string;
+            /**
+             * A
+             * Format: date
+             */
+            a: string;
+            /** Azienda Id */
+            azienda_id: string | null;
+            /**
+             * Oggi
+             * Format: date
+             */
+            oggi: string;
+            /** Mesi */
+            mesi: components["schemas"]["DaysMonth"][];
+            /** Ultimo Mese Completo */
+            ultimo_mese_completo: string | null;
+            /** Giorni Nel Periodo */
+            giorni_nel_periodo: string;
+            /** Giorni Fatturati */
+            giorni_fatturati: string;
+            /** Tariffa Reale */
+            tariffa_reale?: string | null;
+            /** Per Cliente */
+            per_cliente: components["schemas"]["DaysRate"][];
+            /** Per Contratto */
+            per_contratto: components["schemas"]["DaysRate"][];
+            /** Senza Approvazione Nel Periodo */
+            senza_approvazione_nel_periodo: number;
+            /** Senza Approvazione Sempre */
+            senza_approvazione_sempre: number;
+        };
+        /**
+         * DaysMonth
+         * @description One calendar month of the days analysis.
+         *
+         *     `registrati` is the days that really happened (worked, worked without approval,
+         *     invoiced, paid, disputed); `media_precedente` is the mean of the three months before
+         *     this one, a quiet month counting as zero. `completo` is false for a
+         *     month that has not yet ended. `senza_approvazione` counts the days that slipped into
+         *     «lavorato senza approvazione» in the month, by the moment of the transition, so a day
+         *     since regularised still counts: it is history, not a figure about the present.
+         */
+        DaysMonth: {
+            /** Mese */
+            mese: string;
+            /** Completo */
+            completo: boolean;
+            /** Per Stato */
+            per_stato: components["schemas"]["DaysStateShare"][];
+            /** Totale */
+            totale: string;
+            /** Quota Totale */
+            quota_totale: number;
+            /** Registrati */
+            registrati: string;
+            /** Quota Registrati */
+            quota_registrati: number;
+            /** Media Precedente */
+            media_precedente: string;
+            /** Senza Approvazione */
+            senza_approvazione: number;
+            /** Quota Senza Approvazione */
+            quota_senza_approvazione: number;
+        };
+        /**
+         * DaysRate
+         * @description The realised day rate of one customer or one contract against the rate card.
+         *
+         *     `tariffa_reale` is what the invoice lines billed over the days they bill, `None` when
+         *     nothing was invoiced. `tariffa_nominale` is the rate card's own price over the days a
+         *     card covers, `None` when no billed day is covered; `giorni_senza_listino` are the days
+         *     no card covered, reported on their own and never priced at zero.
+         */
+        DaysRate: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Etichetta */
+            etichetta: string;
+            /** Giorni Fatturati */
+            giorni_fatturati: string;
+            /** Importo Fatturato */
+            importo_fatturato: string;
+            /** Tariffa Reale */
+            tariffa_reale?: string | null;
+            /** Giorni Senza Listino */
+            giorni_senza_listino: string;
+            /** Tariffa Nominale */
+            tariffa_nominale?: string | null;
+        };
+        /**
+         * DaysStateShare
+         * @description One state's days in one month. `quota` is a share of the tallest month's total in
+         *     [0, 1], computed here so the browser draws a bar and never adds a figure.
+         */
+        DaysStateShare: {
+            /** Stato */
+            stato: string;
+            /** Giorni */
+            giorni: string;
+            /** Quota */
+            quota: number;
         };
         /** DealCreate */
         DealCreate: {
@@ -28077,6 +28217,130 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CeilingSimulation"];
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    days_analysis_api_analytics_days_get: {
+        parameters: {
+            query?: {
+                /** @description Inizio del periodo, YYYY-MM-DD */
+                da?: string | null;
+                /** @description Fine del periodo, YYYY-MM-DD */
+                a?: string | null;
+                /** @description Limita le cifre a un'azienda dello spazio; omesso, tutte le aziende sommate. La risposta lo riporta in `azienda_id`. */
+                azienda_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DaysAnalysis"];
                 };
             };
             /** @description Permesso negato: l'actor non ha il ruolo richiesto. */

@@ -1,3 +1,4 @@
+import calendar
 from collections import defaultdict
 from dataclasses import replace
 from datetime import UTC, date, datetime
@@ -9,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.analytics.days import monthly_figures, months_between, realised_rates
 from pigrocrm.core.analytics.fiscal import estimate_income
 from pigrocrm.core.analytics.repository import AnalyticsRepository
 from pigrocrm.core.analytics.schemas import (
@@ -25,6 +27,7 @@ from pigrocrm.core.analytics.schemas import (
     CeilingSimulationResult,
     CeilingStatusRead,
     ContractDateMarker,
+    DaysAnalysis,
     DealPnl,
     EconomicOverview,
     FiscalEstimate,
@@ -81,6 +84,7 @@ from pigrocrm.core.timetracking.models import TimeEntry
 from pigrocrm.core.timetracking.service import TimeEntryService, billed_entry_ids
 
 ENTITY = "analytics"
+MAX_DAYS_MONTHS = 120
 
 
 def _months_between(da: date, a: date) -> list[tuple[int, int]]:
@@ -598,6 +602,69 @@ class AnalyticsService:
         the azienda is on today: an invoice keeps the lines it was issued with.
         """
         return self._year(anno, actor, azienda_id)[0]
+
+    def days_analysis(
+        self,
+        actor: Actor,
+        da: date | None = None,
+        a: date | None = None,
+        azienda_id: UUID | None = None,
+    ) -> DaysAnalysis:
+        """REB-756: the days of a period by month and state, the realised day rate by
+        customer and by contract, and the trend of days worked without approval.
+
+        Both bounds or neither, as every dashboard period is: with neither, the current
+        month. Open to every role, like the days themselves, and `azienda_id` one more
+        predicate, omitted for «tutte». The monthly figures are whole calendar months
+        (a bar is a month); the rate reads the exact `da`..`a`. At most ten years, the
+        dashboard's own ceiling.
+        """
+        if (da is None) != (a is None):
+            raise ValidationFailed(
+                "periodo",
+                "da" if da is None else "a",
+                "il periodo richiede entrambe le date, o nessuna",
+                expected="da e a insieme, oppure nessuna delle due",
+            )
+        today = today_local()
+        if da is None or a is None:
+            da = today.replace(day=1)
+            a = today.replace(day=calendar.monthrange(today.year, today.month)[1])
+        if da > a:
+            raise ValidationFailed(
+                "periodo",
+                "da",
+                "la data iniziale è successiva a quella finale",
+                expected=f"da <= {a.isoformat()}",
+            )
+        if len(months_between(da, a)) > MAX_DAYS_MONTHS:
+            raise ValidationFailed(
+                "periodo",
+                "a",
+                f"il periodo non può superare {MAX_DAYS_MONTHS} mesi",
+                expected=f"un periodo di al più {MAX_DAYS_MONTHS} mesi",
+            )
+        mesi, ultimo, giorni, nel_periodo, sempre = monthly_figures(
+            self.session, da, a, azienda_id, today, get_settings().timezone
+        )
+        per_cliente, per_contratto, giorni_fatturati, tariffa = realised_rates(
+            self.session, da, a, azienda_id
+        )
+        return DaysAnalysis(
+            da=da,
+            a=a,
+            azienda_id=azienda_id,
+            oggi=today,
+            mesi=mesi,
+            ultimo_mese_completo=ultimo,
+            giorni_nel_periodo=giorni,
+            giorni_fatturati=giorni_fatturati,
+            tariffa_reale=tariffa,
+            per_cliente=per_cliente,
+            per_contratto=per_contratto,
+            senza_approvazione_nel_periodo=nel_periodo,
+            senza_approvazione_sempre=sempre,
+        )
 
     def build_year_csv(
         self, anno: int, actor: Actor, azienda_id: UUID | None = None

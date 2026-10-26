@@ -20,6 +20,9 @@ export type FasciaScadenza = components['schemas']['FasciaScadenza']
 export type CeilingHeadroom = components['schemas']['CeilingHeadroom']
 export type CeilingStatus = components['schemas']['CeilingStatusRead']
 export type CeilingSimulation = components['schemas']['CeilingSimulation']
+export type DaysAnalysis = components['schemas']['DaysAnalysis']
+export type DaysMonth = components['schemas']['DaysMonth']
+export type DaysRate = components['schemas']['DaysRate']
 export type YearOverview = components['schemas']['YearOverview']
 export type YearRegisterRow = components['schemas']['YearRegisterRow']
 export type AutomationsDescription = components['schemas']['AutomationsDescription']
@@ -58,6 +61,17 @@ export function useEconomicDashboard(periodo: Periodo) {
   return useQuery({
     queryKey: queryKeys.dashboard('economica', params),
     queryFn: () => unwrap(api.GET('/api/dashboard/economic', { params: { query: params } })),
+    staleTime: DASHBOARD_STALE_MS,
+  })
+}
+
+/** The days of the period (REB-756): by month and state, the realised rate and the trend of
+ *  days worked without approval. Every figure comes computed; the period is both dates. */
+export function useDaysAnalysis(periodo: Periodo) {
+  const params = { ...periodo, ...useLegalEntityParam() }
+  return useQuery({
+    queryKey: queryKeys.dashboard('giornate', params),
+    queryFn: () => unwrap(api.GET('/api/analytics/days', { params: { query: params } })),
     staleTime: DASHBOARD_STALE_MS,
   })
 }
