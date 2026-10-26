@@ -2,6 +2,7 @@ import { Link, useRouterState } from '@tanstack/react-router'
 import type { LucideIcon } from 'lucide-react'
 import {
   ArrowLeftRight,
+  Bell,
   Briefcase,
   Building2,
   CalendarCheck,
@@ -32,6 +33,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { BrandMark } from '@/components/BrandMark'
 import { readSidebarGroups, writeSidebarGroups } from '@/components/sidebarGroups'
 import { useOverdueCount } from '@/features/attivita/queries'
+import { useUnreadCount } from '@/features/reminders/queries'
 import { CommandPalette } from '@/features/search/CommandPalette'
 import { SETTINGS_GROUPS, type SettingsTabValue } from '@/features/settings/tabs'
 import { ConnectAgentDialog } from '@/features/tokens/ConnectAgentDialog'
@@ -111,6 +113,9 @@ const TOP_LEVEL = [
   // still open for me», and neither can answer the other's question.
   { to: '/app/activities', label: 'Attività', icon: ListChecks, exact: false },
   { to: '/app/token', label: 'Token', icon: KeyRound, exact: false },
+  // What needs attention, with the count of what is still unread (REB-734). Right before
+  // Proposte, so it sits clear of the entries other cards add between Calendario and Token.
+  { to: '/app/avvisi', label: 'Avvisi', icon: Bell, exact: false },
   // The agent proposals waiting for a decision (REB-750). Last, after Token, so it stays
   // clear of the entries other cards add between Calendario and Token.
   { to: '/app/proposals', label: 'Proposte', icon: Inbox, exact: false },
@@ -275,6 +280,9 @@ export function AppShell({
   // and the navigation, so the lists below it read as «of this azienda».
   const azienda = useLegalEntity()
   const { location } = useRouterState()
+  // The sidebar's unread count (REB-734): the reminders still open for this person. The
+  // Avvisi page reads the same query, so a snooze there moves this number at once.
+  const unread = useUnreadCount()
   // Below `lg` a 272px sidebar leaves ~118px of page on a 390px phone, so there the
   // sidebar is the rail by default and its expanded form is an overlay over the content.
   // The breakpoint has to be read in JS and not only in CSS because the two are different
@@ -427,17 +435,21 @@ export function AppShell({
   // attività are past their deadline, drawn beside «Oggi» and only when it is above zero.
   const overdue = useOverdueCount()
 
-  /** A leaf entry: an icon and a label expanded, an icon alone in the rail. */
+  /** A leaf entry: an icon and a label expanded, an icon alone in the rail. A `count`
+   *  above zero is drawn as a badge after the label, and on the icon's corner in the rail,
+   *  where it is also part of the link's accessible name. */
   const leaf = ({
     to,
     label,
     icon: Icon,
     exact = false,
+    count = 0,
   }: {
     to: LinkTo
     label: string
     icon: LucideIcon
     exact?: boolean
+    count?: number
   }) => (
     <Link
       key={to}
@@ -463,8 +475,28 @@ export function AppShell({
           <span className="sr-only">{overdue} in ritardo</span>
         </span>
       )}
+      {count > 0 && (
+        <>
+          {/* Sidebar Watermelon Strong under white, the pair the active tile already uses
+              and `tokens.test.ts` measures at AA. In the rail it sits on the icon's corner. */}
+          <span
+            aria-hidden="true"
+            className={cn(
+              'bg-sidebar-primary px-1.5 text-xs font-medium tabular-nums text-sidebar-primary-foreground',
+              rail ? 'absolute right-1.5 top-0.5 min-w-4 px-1 text-center' : 'ml-auto',
+            )}
+          >
+            {count > 99 ? '99+' : count}
+          </span>
+          <span className="sr-only">{`, ${count} da leggere`}</span>
+        </>
+      )}
     </Link>
   )
+
+  /** The top-level entries below the groups, the one with a count carrying it. */
+  const topLevel = (item: (typeof TOP_LEVEL)[number]) =>
+    leaf(item.to === '/app/avvisi' ? { ...item, count: unread } : item)
 
   return (
     <div className="flex h-full overflow-hidden">
@@ -629,6 +661,12 @@ export function AppShell({
                 // accessible name, and «Profilo» would say nothing about where it goes.
                 // Profilo is open to every role, so every role has this link.
                 leaf({ to: SETTINGS_PATHS.profile, label: SETTINGS.label, icon: Settings }),
+                ...TOP_LEVEL.slice(2).map((item) => topLevel(item)),
+                // The first tab, under the group's own name: in the rail the label is the
+                // accessible name, and «Spazio» would say nothing about where it goes.
+                isAdmin
+                  ? leaf({ to: SETTINGS_PATHS.space, label: SETTINGS.label, icon: Settings })
+                  : null,
               ]
             : [
                 ...GROUPS.map((group) => (
@@ -652,6 +690,18 @@ export function AppShell({
                 >
                   {settingsItems.map((item) => subItem(item))}
                 </NavGroup>,
+                ...TOP_LEVEL.slice(2).map((item) => topLevel(item)),
+                isAdmin ? (
+                  <NavGroup
+                    key={SETTINGS.id}
+                    label={SETTINGS.label}
+                    icon={SETTINGS.icon}
+                    open={isOpen(SETTINGS.id)}
+                    onToggle={() => toggleGroup(SETTINGS.id)}
+                  >
+                    {settingsItems.map((item) => subItem(item))}
+                  </NavGroup>
+                ) : null,
               ]}
         </nav>
 
