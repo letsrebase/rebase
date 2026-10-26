@@ -734,27 +734,35 @@ class AnalyticsRepository:
         a: date,
         base: RevenueBase = "emissione",
         azienda_id: UUID | None = None,
-    ) -> tuple[Decimal, Decimal]:
-        """`(ricavi del cliente, ricavi totali)` over `[da, a]` -- the two figures a
-        concentration cap divides (REB-352 §1.5), summed in one statement so the two
-        sides of the ratio can never read a different snapshot. Same revenue
-        definition `annual_revenue` uses (`_revenue_filter`), windowed by `da`/`a`
-        rather than by `Invoice.anno`: a contract's own anniversary year rarely lines
-        up with the calendar one `anno` names. Within one azienda when named
+    ) -> list[tuple[str, Decimal, Decimal]]:
+        """`(divisa, ricavi del cliente, ricavi totali)` per currency over `[da, a]` --
+        the two figures a concentration cap divides (REB-352 §1.5), summed in one
+        statement so the two sides of the ratio can never read a different snapshot.
+        Same revenue definition `annual_revenue` uses (`_revenue_filter`), windowed by
+        `da`/`a` rather than by `Invoice.anno`: a contract's own anniversary year rarely
+        lines up with the calendar one `anno` names. Within one azienda when named
         (REB-630): the cap is the contract's azienda's, so both sides of the ratio
         read that register alone.
+
+        Grouped by `Invoice.divisa` and never converted (REB-776): a sum across
+        currencies is not an amount in any of them. Ordered by currency code, so the
+        answer does not depend on how Postgres happened to group.
         """
         when = _revenue_date(base)
         cliente = func.coalesce(
             func.sum(case((Invoice.customer_id == customer_id, Invoice.imponibile), else_=0)), 0
         )
         totale = func.coalesce(func.sum(Invoice.imponibile), 0)
-        row = self.session.execute(
-            select(cliente, totale).where(
-                when >= da, when <= a, *_revenue_filter(), *_invoice_azienda(azienda_id)
-            )
-        ).one()
-        return round_money(Decimal(row[0])), round_money(Decimal(row[1]))
+        rows = self.session.execute(
+            select(Invoice.divisa, cliente, totale)
+            .where(when >= da, when <= a, *_revenue_filter(), *_invoice_azienda(azienda_id))
+            .group_by(Invoice.divisa)
+            .order_by(Invoice.divisa)
+        ).all()
+        return [
+            (str(row[0]), round_money(Decimal(row[1])), round_money(Decimal(row[2])))
+            for row in rows
+        ]
 
     def year_invoices(self, anno: int, azienda_id: UUID) -> list[tuple[Invoice, Customer | None]]:
         """Every invoice of the year's register, in register order: `anno`, one azienda,

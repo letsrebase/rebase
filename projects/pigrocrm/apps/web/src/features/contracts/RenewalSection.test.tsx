@@ -63,9 +63,7 @@ const CONCENTRATION = {
   customer_id: 'cust-1',
   periodo_da: '2026-01-01',
   periodo_a: '2026-12-31',
-  ricavi_cliente: '3000.00',
-  ricavi_totali: '12000.00',
-  quota: 0.25,
+  valute: [{ divisa: 'EUR', ricavi_cliente: '3000.00', ricavi_totali: '12000.00', quota: 0.25 }],
 }
 
 function renderSection() {
@@ -99,6 +97,43 @@ describe('RenewalSection', () => {
     expect(screen.getAllByText('1.500,00 €').length).toBeGreaterThan(0)
     // The share is the API's number as a percentage, never recomputed from the two sums.
     expect(await screen.findByText('25%')).toBeInTheDocument()
+  })
+
+  it('shows the customer revenue in the currency of its invoices, not the contract\u2019s', async () => {
+    vi.mocked(api.GET).mockImplementation(((path: string) => {
+      if (path.endsWith('/renewal-assumption')) return ok(ASSUMPTION)
+      if (path.endsWith('/projection')) return ok(projection('0.00', '1500.00'))
+      return ok(CONCENTRATION)
+    }) as never)
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={client}>
+        <RenewalSection contract={{ ...CONTRACT, divisa: 'USD' }} />
+      </QueryClientProvider>,
+    )
+
+    expect(await screen.findByText('3.000,00 € su 12.000,00 € fatturati')).toBeInTheDocument()
+    expect(screen.queryByText(/\$/)).not.toBeInTheDocument()
+  })
+
+  it('shows one figure per currency when the invoices are in two', async () => {
+    vi.mocked(api.GET).mockImplementation(((path: string) => {
+      if (path.endsWith('/renewal-assumption')) return ok(ASSUMPTION)
+      if (path.endsWith('/projection')) return ok(projection('0.00', '1500.00'))
+      return ok({
+        ...CONCENTRATION,
+        valute: [
+          ...CONCENTRATION.valute,
+          { divisa: 'USD', ricavi_cliente: '50.00', ricavi_totali: '50.00', quota: 1 },
+        ],
+      })
+    }) as never)
+    renderSection()
+
+    expect(await screen.findByText(/\(EUR\)$/)).toBeInTheDocument()
+    expect(screen.getByText(/\(USD\)$/)).toBeInTheDocument()
+    expect(screen.getByText('3.000,00 € su 12.000,00 € fatturati')).toBeInTheDocument()
+    expect(screen.getByText('50.00 USD su 50.00 USD fatturati')).toBeInTheDocument()
   })
 
   it('sets a 70% renewal and shows the revenue it programs', async () => {

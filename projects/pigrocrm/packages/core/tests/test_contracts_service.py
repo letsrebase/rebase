@@ -220,7 +220,12 @@ def test_rate_card_list_for_an_unknown_contract_is_not_found(db_session: Session
 
 
 def _invoice(
-    db_session: Session, customer_id: UUID, *, imponibile: str, data_emissione: date
+    db_session: Session,
+    customer_id: UUID,
+    *,
+    imponibile: str,
+    data_emissione: date,
+    divisa: str = "EUR",
 ) -> None:
     row = Invoice(
         customer_id=customer_id,
@@ -233,7 +238,7 @@ def _invoice(
         totale=Decimal(imponibile),
         data_emissione=data_emissione,
         tipo_documento="TD01",
-        divisa="EUR",
+        divisa=divisa,
         custom_fields={},
     )
     db_session.add(row)
@@ -264,11 +269,13 @@ def test_concentration_cap_computes_the_clients_share_of_the_anniversary_year(
     assert cap.contract_id == contract.id
     assert cap.customer_id == customer.id
     assert (cap.periodo_da, cap.periodo_a) == (date(2026, 3, 10), date(2027, 3, 9))
-    assert cap.ricavi_cliente == Decimal("300.00")
-    assert cap.ricavi_totali == Decimal("1000.00")
-    assert cap.quota == pytest.approx(0.3)
+    [eur] = cap.valute
+    assert eur.divisa == "EUR"
+    assert eur.ricavi_cliente == Decimal("300.00")
+    assert eur.ricavi_totali == Decimal("1000.00")
+    assert eur.quota == pytest.approx(0.3)
     assert cap.soglia is None
-    assert cap.superata is None
+    assert eur.superata is None
 
 
 def test_concentration_cap_is_zero_when_nothing_has_been_invoiced_in_the_window(
@@ -279,9 +286,41 @@ def test_concentration_cap_is_zero_when_nothing_has_been_invoiced_in_the_window(
 
     cap = ContractService(db_session).concentration_cap(contract.id, ADMIN, as_of=date(2026, 6, 1))
 
-    assert cap.ricavi_cliente == Decimal("0.00")
-    assert cap.ricavi_totali == Decimal("0.00")
-    assert cap.quota == 0.0
+    # One row in the contract's own currency, all zero: a quiet year is not an empty list.
+    [row] = cap.valute
+    assert row.divisa == "EUR"
+    assert row.ricavi_cliente == Decimal("0.00")
+    assert row.ricavi_totali == Decimal("0.00")
+    assert row.quota == 0.0
+
+
+def test_concentration_cap_reports_the_currency_the_invoices_are_in_not_the_contracts(
+    db_session: Session,
+) -> None:
+    """REB-776: a USD contract of a customer billed in euros answers euro totals, so the
+    page cannot label them as dollars. Invoices in another currency are their own row
+    and never summed into the euro figure."""
+    customer = _customer(db_session)
+    other = Customer(ragione_sociale="Altro Cliente")
+    db_session.add(other)
+    db_session.flush()
+    contract = ContractService(db_session).create(_create_payload(customer.id, divisa="USD"), ADMIN)
+    _invoice(db_session, customer.id, imponibile="300.00", data_emissione=date(2026, 4, 1))
+    _invoice(db_session, other.id, imponibile="700.00", data_emissione=date(2026, 4, 1))
+    _invoice(
+        db_session,
+        customer.id,
+        imponibile="50.00",
+        data_emissione=date(2026, 4, 2),
+        divisa="USD",
+    )
+
+    cap = ContractService(db_session).concentration_cap(contract.id, ADMIN, as_of=date(2026, 6, 1))
+
+    assert [(v.divisa, v.ricavi_cliente, v.ricavi_totali) for v in cap.valute] == [
+        ("EUR", Decimal("300.00"), Decimal("1000.00")),
+        ("USD", Decimal("50.00"), Decimal("50.00")),
+    ]
 
 
 def test_concentration_cap_reports_whether_a_threshold_is_exceeded(db_session: Session) -> None:
@@ -300,8 +339,8 @@ def test_concentration_cap_reports_whether_a_threshold_is_exceeded(db_session: S
         contract.id, ADMIN, as_of=date(2026, 6, 1), soglia=0.2
     )
 
-    assert below.soglia == 0.5 and below.superata is False
-    assert above.soglia == 0.2 and above.superata is True
+    assert below.soglia == 0.5 and [v.superata for v in below.valute] == [False]
+    assert above.soglia == 0.2 and [v.superata for v in above.valute] == [True]
 
 
 def test_concentration_cap_defaults_as_of_to_today(

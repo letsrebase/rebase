@@ -70,9 +70,7 @@ function mockApi(contract: ReturnType<typeof ok> | ReturnType<typeof failed>) {
       return ok({
         periodo_da: '2026-01-01',
         periodo_a: '2026-12-31',
-        ricavi_cliente: '0.00',
-        ricavi_totali: '0.00',
-        quota: 0,
+        valute: [{ divisa: 'EUR', ricavi_cliente: '0.00', ricavi_totali: '0.00', quota: 0 }],
       })
     }
     return ok([])

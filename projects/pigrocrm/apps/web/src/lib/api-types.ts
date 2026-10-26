@@ -4862,6 +4862,25 @@ export interface components {
             offerte_accettate_deal_non_vinto: number;
         };
         /**
+         * ConcentrationFigures
+         * @description One currency's side of a concentration cap: the customer's invoiced revenue and
+         *     the azienda's total, both in `divisa` and never converted, with the share one is of
+         *     the other. A customer billed in euros on a USD contract is a `EUR` row, not a figure
+         *     labelled with the contract's own currency (REB-776).
+         */
+        ConcentrationFigures: {
+            /** Divisa */
+            divisa: string;
+            /** Ricavi Cliente */
+            ricavi_cliente: string;
+            /** Ricavi Totali */
+            ricavi_totali: string;
+            /** Quota */
+            quota: number;
+            /** Superata */
+            superata?: boolean | null;
+        };
+        /**
          * ConfirmedInvoiceRead
          * @description One row of `confirm_invoice_import`'s own output: one per invoice the
          *     reviewed document parses into, mirroring `ReviewedInvoiceRead`'s own shape.
@@ -4900,11 +4919,17 @@ export interface components {
          *     (`ceiling.ts:55-75, 197-233`), anchored to `Contract.inizio` instead of a
          *     ledger row.
          *
+         *     The figures are per currency (`valute`), since an invoice's `divisa` is its own and
+         *     nothing here converts: a share of euros of dollars is not a number. A window with no
+         *     invoice at all answers one row in the contract's currency, all zero, so a reader
+         *     never gets an empty list for a quiet year.
+         *
          *     `soglia` is never persisted: no threshold column exists on `contracts` yet (a
          *     future ceiling entity's own concern, REB-361), so a caller names the share it
          *     wants checked against, per REB-352 §5 item 4's "would this fit" reading -- a
-         *     live comparison with no persistence required. `superata` mirrors mastro's own
-         *     `crossed` (`ceiling.ts:257`) and stays `None` until a `soglia` is supplied.
+         *     live comparison with no persistence required. Each row's `superata` mirrors
+         *     mastro's own `crossed` (`ceiling.ts:257`) and stays `None` until a `soglia` is
+         *     supplied.
          */
         ContractConcentrationCap: {
             /**
@@ -4927,16 +4952,10 @@ export interface components {
              * Format: date
              */
             periodo_a: string;
-            /** Ricavi Cliente */
-            ricavi_cliente: string;
-            /** Ricavi Totali */
-            ricavi_totali: string;
-            /** Quota */
-            quota: number;
             /** Soglia */
             soglia?: number | null;
-            /** Superata */
-            superata?: boolean | null;
+            /** Valute */
+            valute: components["schemas"]["ConcentrationFigures"][];
         };
         /**
          * ContractCreate
