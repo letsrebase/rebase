@@ -23,6 +23,7 @@ import {
   type RelatedDeal,
   type RelatedPerson,
 } from '@/features/customers/queries'
+import { ContractsTab } from '@/features/contracts/ContractsTab'
 import { DocumentsTab } from '@/features/documents/DocumentsTab'
 import { EmailTab } from '@/features/gmail/EmailTab'
 import { useGmailConfigured } from '@/features/gmail/queries'
@@ -194,6 +195,7 @@ export function CustomerDetail() {
             actions={canWrite ? <NewProformaButton customerId={customerId} /> : undefined}
           />
         }
+        contracts={<ContractsTab customerId={customerId} />}
         economics={<EconomicsTab customerId={customerId} />}
         attivita={<EntityAttivita link={{ kind: 'customer', id: customerId }} />}
         emails={gmailConfigured ? <EmailTab entityType="customer" entityId={customerId} /> : undefined}
