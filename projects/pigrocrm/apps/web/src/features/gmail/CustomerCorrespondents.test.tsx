@@ -58,13 +58,22 @@ function found() {
   ]
 }
 
-function renderIt() {
+function renderIt(customerId = CUSTOMER_ID) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(
+  const view = render(
     <QueryClientProvider client={client}>
-      <CustomerCorrespondents customerId={CUSTOMER_ID} />
+      <CustomerCorrespondents customerId={customerId} />
     </QueryClientProvider>,
   )
+  return {
+    ...view,
+    showCustomer: (next: string) =>
+      view.rerender(
+        <QueryClientProvider client={client}>
+          <CustomerCorrespondents customerId={next} />
+        </QueryClientProvider>,
+      ),
+  }
 }
 
 beforeEach(() => {
@@ -77,6 +86,19 @@ describe('CustomerCorrespondents', () => {
     renderIt()
     expect(screen.getByRole('button', { name: ASK })).toBeInTheDocument()
     expect(api.GET).not.toHaveBeenCalled()
+  })
+
+  it('asks nothing for another customer the page moves to, until that one is pressed', async () => {
+    vi.mocked(api.GET).mockResolvedValue(report())
+    const { showCustomer } = renderIt()
+    await userEvent.click(screen.getByRole('button', { name: ASK }))
+    await screen.findByRole('list', { name: 'Indirizzi di acme.it nella casella' })
+    expect(api.GET).toHaveBeenCalledTimes(1)
+
+    showCustomer('00000000-0000-7000-8000-000000000002')
+
+    expect(screen.getByRole('button', { name: ASK })).toBeInTheDocument()
+    expect(api.GET).toHaveBeenCalledTimes(1)
   })
 
   it('lists the addresses with their messages and last one, and marks those already filed', async () => {
