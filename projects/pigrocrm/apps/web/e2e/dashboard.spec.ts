@@ -320,7 +320,7 @@ test.describe('il ciclo completo — metà umana', () => {
     await expect(page.getByRole('button', { name: 'Simula' })).toBeVisible()
   })
 
-  test('la scheda Anno mostra il registro e propone il CSV per il commercialista', async ({
+  test('the year tab shows the register and offers the accountant CSV', async ({
     page,
   }) => {
     await loginAsAdmin(page)
