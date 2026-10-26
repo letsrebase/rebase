@@ -308,3 +308,21 @@ def test_the_filename_is_the_year_and_the_azienda_reduced_to_ascii(
     assert year_csv_filename(named.model_copy(update={"azienda_nome": "***"})) == (
         f"registro-{ANNO}-azienda.csv"
     )
+
+
+def test_the_register_prints_the_customer_as_the_invoice_froze_it(
+    db_session: Session, service: InvoiceService
+) -> None:
+    """A customer who had no partita IVA at issue has none in the register, whatever the
+    record says today; and an invoice does not drop out of the register because the
+    customer it was issued to is no longer readable (the outer join)."""
+    customer = _customer(db_session, "Privato Rossi", None)
+    invoice = _issue(service, customer, ("Consulenza", "100.00"))
+    customer.partita_iva = "99999999999"
+    db_session.flush()
+
+    overview = AnalyticsService(db_session).year_overview(ANNO, READER)
+
+    [row] = overview.registro
+    assert (row.ragione_sociale, row.partita_iva) == ("Privato Rossi", None)
+    assert row.invoice_id == invoice.id

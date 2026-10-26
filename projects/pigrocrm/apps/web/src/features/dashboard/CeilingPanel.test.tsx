@@ -416,6 +416,21 @@ describe('CeilingPanel, simulating a deal', () => {
     expect(await screen.findByText('Ci sta.')).toBeInTheDocument()
   })
 
+  it('says so when the pipeline stages cannot be read, instead of waiting for them', async () => {
+    route({
+      '/api/analytics/ceilings': () => ok(headroom()),
+      '/api/deals': () => ok({ items: [DEAL], next_cursor: null }),
+      '/api/pipeline-stages': () => failed({ detail: 'Stadi non disponibili' }, 500),
+    })
+    renderPanel()
+    await screen.findByRole('group', { name: RICAVI.etichetta })
+    const user = userEvent.setup()
+
+    await user.click(screen.getByRole('radio', { name: 'Un deal' }))
+
+    expect(await screen.findByText(/stadi non disponibili/i)).toBeInTheDocument()
+  })
+
   it('asks for a deal before it asks the server anything', async () => {
     routeWithDeals()
     renderPanel()

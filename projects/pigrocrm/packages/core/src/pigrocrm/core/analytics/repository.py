@@ -756,13 +756,15 @@ class AnalyticsRepository:
         ).one()
         return round_money(Decimal(row[0])), round_money(Decimal(row[1]))
 
-    def year_invoices(self, anno: int, azienda_id: UUID) -> list[tuple[Invoice, Customer]]:
+    def year_invoices(self, anno: int, azienda_id: UUID) -> list[tuple[Invoice, Customer | None]]:
         """Every invoice of the year's register, in register order: `anno`, one azienda,
         and `_revenue_filter`'s definition of an invoice that is revenue, so the list and
-        `annual_revenue` can never read a different universe."""
+        `annual_revenue` can never read a different universe. The customer is an outer
+        join: a member scoped to this azienda cannot read a customer who moved to another
+        one, and an invoice they can read must not drop out of the register for it."""
         rows = self.session.execute(
             select(Invoice, Customer)
-            .join(Customer, Customer.id == Invoice.customer_id)
+            .outerjoin(Customer, Customer.id == Invoice.customer_id)
             .where(Invoice.anno == anno, *_revenue_filter(), *_invoice_azienda(azienda_id))
             .order_by(Invoice.numero)
         ).all()

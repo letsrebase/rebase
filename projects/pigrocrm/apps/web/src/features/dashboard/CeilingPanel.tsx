@@ -125,6 +125,7 @@ function DealPicker({
   const deals = useDeals(aziendaId ? { azienda_id: aziendaId } : {})
   const stages = useStages()
   if (deals.isError) return <QueryErrorBanner error={deals.error} />
+  if (stages.isError) return <QueryErrorBanner error={stages.error} />
   if (deals.isPending || stages.isPending || !deals.data || !stages.data) {
     return <Skeleton className="h-9 w-full" />
   }

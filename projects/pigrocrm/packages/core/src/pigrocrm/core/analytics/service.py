@@ -626,7 +626,10 @@ class AnalyticsService:
         for invoice, customer in self.repo.year_invoices(anno, azienda.id):
             assert invoice.numero is not None and invoice.data_emissione is not None  # noqa: S101
             snapshot = invoice.snapshot or {}
-            cliente = snapshot.get("cliente") or {}
+            # What the document printed, as frozen at issue. A customer who had no partita
+            # IVA then has none here, whatever the customer record says today; the live
+            # record is only the fallback for an invoice with no snapshot at all.
+            cliente = snapshot.get("cliente")
             fiscale = snapshot.get("fiscale") or {}
             rivalsa = sum_money(
                 line.prezzo_totale
@@ -639,9 +642,21 @@ class AnalyticsService:
                     anno=anno,
                     numero=invoice.numero,
                     data_emissione=invoice.data_emissione,
-                    customer_id=customer.id,
-                    ragione_sociale=cliente.get("ragione_sociale") or customer.ragione_sociale,
-                    partita_iva=cliente.get("partita_iva") or customer.partita_iva,
+                    customer_id=invoice.customer_id,
+                    ragione_sociale=(
+                        cliente["ragione_sociale"]
+                        if cliente is not None
+                        else customer.ragione_sociale
+                        if customer is not None
+                        else "Cliente non disponibile"
+                    ),
+                    partita_iva=(
+                        cliente.get("partita_iva")
+                        if cliente is not None
+                        else customer.partita_iva
+                        if customer is not None
+                        else None
+                    ),
                     tipo_documento=invoice.tipo_documento,
                     imponibile=invoice.imponibile,
                     rivalsa=rivalsa,
