@@ -8,7 +8,7 @@ import { formatIsoDateItalian } from '@/lib/dates'
 import { useCanWrite } from '@/lib/auth'
 import { cn } from '@rebase/ui/cn'
 import { AttivitaDialog } from '@/features/attivita/AttivitaDialog'
-import { AttivitaMeta } from '@/features/attivita/AttivitaMeta'
+import { AttivitaItem } from '@/features/attivita/AttivitaItem'
 import { DayPanel } from './DayPanel'
 import { monthCells, monthLabel, monthOf, shiftMonth, WEEKDAY_LABELS } from './month'
 import { useCalendarMonth, type CalendarDay } from './queries'
@@ -153,10 +153,7 @@ export function CalendarPage({
                 </h2>
                 <ul className="space-y-2 text-sm">
                   {senzaScadenza.map((item) => (
-                    <li key={item.id} className="flex flex-col gap-0.5">
-                      <span>{item.titolo}</span>
-                      <AttivitaMeta attivita={item} />
-                    </li>
+                    <AttivitaItem key={item.id} attivita={item} />
                   ))}
                 </ul>
               </section>

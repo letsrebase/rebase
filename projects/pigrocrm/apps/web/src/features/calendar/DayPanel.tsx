@@ -19,18 +19,14 @@ import {
   SelectValue,
 } from '@rebase/ui/select'
 import { AttivitaDialog } from '@/features/attivita/AttivitaDialog'
-import { AttivitaMeta } from '@/features/attivita/AttivitaMeta'
+import { AttivitaItem } from '@/features/attivita/AttivitaItem'
 import { useDeals } from '@/features/deals/queries'
 import { useLogTime } from '@/features/time/queries'
 import { toProblem } from '@/lib/api'
 import { useAuth, useCanWrite } from '@/lib/auth'
 import { formatIsoDateItalian } from '@/lib/dates'
 import { GIORNATA, MEZZA, normaliseHours } from './hours'
-import {
-  useCancelAttivita,
-  useCompleteAttivita,
-  type CalendarDay,
-} from './queries'
+import type { CalendarDay } from './queries'
 
 /**
  * One day, opened from a cell: what was worked, what falls due, and the two things that
@@ -66,7 +62,7 @@ export function DayPanel({
 
         <div className="space-y-5">
           <Worked data={data} />
-          <Due data={data} onProblem={setProblem} canWrite={canWrite} />
+          <Due data={data} />
           {canWrite && (
             <>
               <LogHours giorno={giorno} onProblem={setProblem} />
@@ -115,28 +111,10 @@ function Worked({ data }: { data: CalendarDay | undefined }) {
 
 /** The day's deadlines: commitments, which can be closed from here, and invoices, which
  *  cannot be touched from here at all. */
-function Due({
-  data,
-  onProblem,
-  canWrite,
-}: {
-  data: CalendarDay | undefined
-  onProblem: (message: string | null) => void
-  canWrite: boolean
-}) {
-  const complete = useCompleteAttivita()
-  const cancel = useCancelAttivita()
+function Due({ data }: { data: CalendarDay | undefined }) {
   const attivita = data?.attivita ?? []
   const fatture = data?.fatture ?? []
   if (attivita.length === 0 && fatture.length === 0) return null
-
-  function close(mutation: typeof complete, id: string, done: string) {
-    onProblem(null)
-    mutation.mutate(id, {
-      onSuccess: () => toast.success(done),
-      onError: (error) => onProblem(toProblem(error).detail),
-    })
-  }
 
   return (
     <section aria-labelledby="scadenze-del-giorno" className="space-y-2">
@@ -145,35 +123,7 @@ function Due({
       </h3>
       <ul className="space-y-2 text-sm">
         {attivita.map((item) => (
-          <li key={item.id} className="flex items-center justify-between gap-3">
-            <span className="flex min-w-0 flex-col gap-0.5">
-              <span className={item.stato === 'aperta' ? undefined : 'line-through opacity-60'}>
-                {item.titolo}
-              </span>
-              <AttivitaMeta attivita={item} />
-            </span>
-            {canWrite && item.stato === 'aperta' && (
-              <span className="flex gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => close(complete, item.id, 'Fatto')}
-                >
-                  Fatto
-                </Button>
-                {/* «Annulla» is not a delete and not «fatto»: it records that the
-                    commitment stopped mattering, which is the answer to *why* six
-                    months later. */}
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => close(cancel, item.id, 'Annullata')}
-                >
-                  Annulla
-                </Button>
-              </span>
-            )}
-          </li>
+          <AttivitaItem key={item.id} attivita={item} />
         ))}
         {fatture.map((fattura) => (
           <li key={fattura.id} className="flex items-center justify-between gap-3">

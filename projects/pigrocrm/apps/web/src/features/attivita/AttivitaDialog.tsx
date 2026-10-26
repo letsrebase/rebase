@@ -18,9 +18,17 @@ import {
   SelectValue,
 } from '@rebase/ui/select'
 import { Textarea } from '@rebase/ui/textarea'
-import { useCreateAttivita } from '@/features/calendar/queries'
+import {
+  useArchiveAttivita,
+  useCreateAttivita,
+  useReopenAttivita,
+  useRestoreAttivita,
+  useUpdateAttivita,
+  type Attivita,
+  type AttivitaUpdateBody as UpdateBody,
+} from '@/features/calendar/queries'
 import { toProblem } from '@/lib/api'
-import { linkColumns, type LinkValue } from './links'
+import { linkColumns, linkOf, sameLink, type LinkValue } from './links'
 import { useAssignees } from './queries'
 import { RecordPicker } from './RecordPicker'
 
@@ -37,8 +45,14 @@ export interface AttivitaDefaults {
 
 /**
  * The one dialog an attività is written in: title, optional deadline, notes, assignee and
- * at most one linked record. Reused by every screen that creates one, each prefilling what
- * it already knows (`defaults`), so no screen has its own small form that forgets a field.
+ * at most one linked record. Reused by every screen that creates or opens one, each
+ * prefilling what it already knows (`defaults`), so no screen has its own small form that
+ * forgets a field.
+ *
+ * Given an `attivita` it is the edit form of that row, with the two things that only make
+ * sense on an existing one: «Riapri» for a closed one and «Archivia» for a row made by
+ * mistake (or «Ripristina», when the row is already archived: `archived`, since the read
+ * shape does not say). Completing and cancelling stay where they were, on the lists.
  *
  * The form is a child rendered only while the dialog is open, so its state is born with
  * each opening: a dialog that kept the last title would offer to create the same task
@@ -47,58 +61,134 @@ export interface AttivitaDefaults {
 export function AttivitaDialog({
   open,
   onOpenChange,
+  attivita,
+  archived = false,
   defaults = {},
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
+  attivita?: Attivita
+  archived?: boolean
   defaults?: AttivitaDefaults
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Nuova attività</DialogTitle>
+          <DialogTitle>{attivita ? 'Modifica attività' : 'Nuova attività'}</DialogTitle>
         </DialogHeader>
-        <AttivitaForm defaults={defaults} onClose={() => onOpenChange(false)} />
+        <AttivitaForm
+          attivita={attivita}
+          archived={archived}
+          defaults={defaults}
+          onClose={() => onOpenChange(false)}
+        />
       </DialogContent>
     </Dialog>
   )
 }
 
-function AttivitaForm({ defaults, onClose }: { defaults: AttivitaDefaults; onClose: () => void }) {
+function AttivitaForm({
+  attivita,
+  archived,
+  defaults,
+  onClose,
+}: {
+  attivita: Attivita | undefined
+  archived: boolean
+  defaults: AttivitaDefaults
+  onClose: () => void
+}) {
   const create = useCreateAttivita()
+  const update = useUpdateAttivita()
+  const reopen = useReopenAttivita()
+  const archive = useArchiveAttivita()
+  const restore = useRestoreAttivita()
   const assignees = useAssignees()
-  const [titolo, setTitolo] = useState('')
-  const [scadenza, setScadenza] = useState(defaults.scadenza ?? '')
-  const [note, setNote] = useState('')
-  const [assegnataA, setAssegnataA] = useState(NOBODY)
-  const [link, setLink] = useState<LinkValue | null>(defaults.link ?? null)
+
+  const initialLink = attivita ? linkOf(attivita) : (defaults.link ?? null)
+  const [titolo, setTitolo] = useState(attivita?.titolo ?? '')
+  const [scadenza, setScadenza] = useState(attivita?.scadenza ?? defaults.scadenza ?? '')
+  const [note, setNote] = useState(attivita?.note ?? '')
+  const [assegnataA, setAssegnataA] = useState(attivita?.assegnata_a ?? NOBODY)
+  const [link, setLink] = useState<LinkValue | null>(initialLink)
   const [problem, setProblem] = useState<string | null>(null)
 
   const trimmed = titolo.trim()
+  const busy =
+    create.isPending ||
+    update.isPending ||
+    reopen.isPending ||
+    archive.isPending ||
+    restore.isPending
+
+  /** Runs a mutation, closing the dialog with `done` on success and showing the API's own
+   *  sentence on failure: the refusals of a row that changed under us are worth reading. */
+  function run<T>(
+    mutate: (options: { onSuccess: (data: T) => void; onError: (error: unknown) => void }) => void,
+    done: string,
+  ) {
+    setProblem(null)
+    mutate({
+      onSuccess: () => {
+        toast.success(done)
+        onClose()
+      },
+      onError: (error) => setProblem(toProblem(error).detail),
+    })
+  }
 
   function submit() {
     if (trimmed === '') return
-    setProblem(null)
-    create.mutate(
-      {
-        titolo: trimmed,
-        note: note.trim() === '' ? null : note.trim(),
-        scadenza: scadenza === '' ? null : scadenza,
-        assegnata_a: assegnataA === NOBODY ? null : assegnataA,
-        ...linkColumns(link),
-        // Required by the generated schema (the field has a server-side default, which
-        // openapi-typescript reads as «always present»); none is what a manual one has.
-        custom_fields: {},
-      },
-      {
-        onSuccess: () => {
-          toast.success('Attività aggiunta')
-          onClose()
-        },
-        onError: (error) => setProblem(toProblem(error).detail),
-      },
-    )
+    const cleanNote = note.trim() === '' ? null : note.trim()
+    const cleanScadenza = scadenza === '' ? null : scadenza
+    const cleanAssignee = assegnataA === NOBODY ? null : assegnataA
+
+    if (!attivita) {
+      run(
+        (options) =>
+          create.mutate(
+            {
+              titolo: trimmed,
+              note: cleanNote,
+              scadenza: cleanScadenza,
+              assegnata_a: cleanAssignee,
+              ...linkColumns(link),
+              // Required by the generated schema (the field has a server-side default,
+              // which openapi-typescript reads as «always present»); none is what a
+              // manual one has.
+              custom_fields: {},
+            },
+            options,
+          ),
+        'Attività aggiunta',
+      )
+      return
+    }
+
+    // Only what changed: the timeline records which fields a PATCH named, and a save that
+    // names all of them says the person rewrote everything.
+    const edits: Omit<UpdateBody, 'scadenza_da_rimuovere' | 'riferimento_da_rimuovere'> = {}
+    if (trimmed !== attivita.titolo) edits.titolo = trimmed
+    if (cleanNote !== attivita.note) edits.note = cleanNote
+    if (cleanScadenza !== attivita.scadenza) edits.scadenza = cleanScadenza
+    if (cleanAssignee !== attivita.assegnata_a) edits.assegnata_a = cleanAssignee
+    // All four columns together: moving a task from a customer to a deal is «set deal_id
+    // and clear customer_id», and the service checks the result, not the patch.
+    if (!sameLink(link, initialLink)) Object.assign(edits, linkColumns(link))
+
+    if (Object.keys(edits).length === 0) {
+      onClose()
+      return
+    }
+    // The two flags are required by the generated schema (server-side defaults, read as
+    // «always present»): both false, because a null is how this form clears a field.
+    const changes: UpdateBody = {
+      ...edits,
+      scadenza_da_rimuovere: false,
+      riferimento_da_rimuovere: false,
+    }
+    run((options) => update.mutate({ id: attivita.id, changes }, options), 'Attività salvata')
   }
 
   return (
@@ -145,6 +235,15 @@ function AttivitaForm({ defaults, onClose }: { defaults: AttivitaDefaults; onClo
                   {person.id === assignees.me ? `${person.nome} (io)` : person.nome}
                 </SelectItem>
               ))}
+              {/* The current assignee when this list cannot name them (a colleague seen by
+                  somebody who is not an admin, or an account since deactivated): the row
+                  keeps its value until somebody chooses another. */}
+              {attivita?.assegnata_a &&
+                !assignees.options.some((person) => person.id === attivita.assegnata_a) && (
+                  <SelectItem value={attivita.assegnata_a}>
+                    {assignees.nameOf(attivita.assegnata_a)}
+                  </SelectItem>
+                )}
             </SelectContent>
           </Select>
         </div>
@@ -171,13 +270,49 @@ function AttivitaForm({ defaults, onClose }: { defaults: AttivitaDefaults; onClo
         </p>
       )}
 
-      <DialogFooter>
-        <Button type="button" variant="outline" onClick={onClose}>
-          Annulla
-        </Button>
-        <Button type="submit" disabled={trimmed === '' || create.isPending}>
-          Aggiungi
-        </Button>
+      <DialogFooter className="sm:justify-between">
+        <div className="flex gap-2">
+          {attivita && archived && (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={busy}
+              onClick={() => run((options) => restore.mutate(attivita.id, options), 'Attività ripristinata')}
+            >
+              Ripristina
+            </Button>
+          )}
+          {attivita && !archived && attivita.stato !== 'aperta' && (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={busy}
+              onClick={() => run((options) => reopen.mutate(attivita.id, options), 'Attività riaperta')}
+            >
+              Riapri
+            </Button>
+          )}
+          {attivita && !archived && (
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={busy}
+              onClick={() => run((options) => archive.mutate(attivita.id, options), 'Attività archiviata')}
+            >
+              Archivia
+            </Button>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <Button type="button" variant="outline" onClick={onClose}>
+            Annulla
+          </Button>
+          {!archived && (
+            <Button type="submit" disabled={trimmed === '' || busy}>
+              {attivita ? 'Salva' : 'Aggiungi'}
+            </Button>
+          )}
+        </div>
       </DialogFooter>
     </form>
   )

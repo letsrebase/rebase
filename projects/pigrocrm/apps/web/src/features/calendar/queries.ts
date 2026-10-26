@@ -15,7 +15,7 @@ export type CalendarDay = components['schemas']['CalendarDay']
 export type Attivita = components['schemas']['AttivitaRead']
 export type DueInvoice = components['schemas']['DueInvoice']
 type AttivitaCreateBody = components['schemas']['AttivitaCreate']
-type AttivitaUpdateBody = components['schemas']['AttivitaUpdate']
+export type AttivitaUpdateBody = components['schemas']['AttivitaUpdate']
 
 export function useCalendarMonth(mese: string) {
   // The sidebar's azienda (REB-625): the hours through their deal and the invoices
@@ -62,6 +62,32 @@ export function useUpdateAttivita() {
         api.PATCH('/api/activities/{attivita_id}', {
           params: { path: { attivita_id: id } },
           body: changes,
+        }),
+      ),
+    onSuccess: () => invalidateAfterWrite(queryClient),
+  })
+}
+
+/**
+ * Archiving is `DELETE`, a soft one: the row stays, restorable, and leaves every list.
+ * It is for the typo; the change of plan is `cancel`.
+ */
+export function useArchiveAttivita() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) =>
+      unwrap(api.DELETE('/api/activities/{attivita_id}', { params: { path: { attivita_id: id } } })),
+    onSuccess: () => invalidateAfterWrite(queryClient),
+  })
+}
+
+export function useRestoreAttivita() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) =>
+      unwrap(
+        api.POST('/api/activities/{attivita_id}/restore', {
+          params: { path: { attivita_id: id } },
         }),
       ),
     onSuccess: () => invalidateAfterWrite(queryClient),

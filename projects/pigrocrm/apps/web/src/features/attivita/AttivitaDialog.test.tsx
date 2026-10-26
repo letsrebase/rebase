@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
@@ -70,12 +70,12 @@ beforeEach(() => {
 function renderDialog(props: Partial<React.ComponentProps<typeof AttivitaDialog>> = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const onOpenChange = vi.fn()
-  render(
+  const { unmount } = render(
     <QueryClientProvider client={client}>
       <AttivitaDialog open onOpenChange={onOpenChange} {...props} />
     </QueryClientProvider>,
   )
-  return onOpenChange
+  return { onOpenChange, unmount }
 }
 
 function posted() {
@@ -88,7 +88,7 @@ function posted() {
 
 describe('AttivitaDialog', () => {
   it('creates an attività with no deadline, linked to a deal and given to a colleague', async () => {
-    const onOpenChange = renderDialog()
+    const { onOpenChange } = renderDialog()
 
     await userEvent.type(screen.getByLabelText('Titolo'), 'Preparare le proposte')
     await userEvent.type(screen.getByLabelText('Note'), 'Con i prezzi nuovi')
@@ -142,5 +142,102 @@ describe('AttivitaDialog', () => {
 
     await waitFor(() => expect(api.POST).toHaveBeenCalled())
     expect(posted().body).toMatchObject({ deal_id: null, scadenza: null, assegnata_a: null })
+  })
+})
+
+const existing = {
+  id: 'att-1',
+  titolo: 'Sollecitare Rossi',
+  note: null,
+  scadenza: '2026-10-30',
+  stato: 'aperta' as const,
+  completata_il: null,
+  assegnata_a: null,
+  customer_id: null,
+  person_id: null,
+  deal_id: DEAL,
+  invoice_id: null,
+  origine: 'manuale' as const,
+  regola: null,
+  custom_fields: {},
+  created_at: '2026-10-01T00:00:00Z',
+  updated_at: '2026-10-01T00:00:00Z',
+}
+
+describe('AttivitaDialog on an existing attività', () => {
+  beforeEach(() => {
+    vi.mocked(api.PATCH).mockReset()
+    vi.mocked(api.DELETE).mockReset()
+    vi.mocked(api.PATCH).mockImplementation((() => ok(existing)) as never)
+    vi.mocked(api.DELETE).mockImplementation((() => ok(undefined)) as never)
+  })
+
+  it('sends only what changed: the new deadline, nothing else', async () => {
+    renderDialog({ attivita: existing })
+
+    expect(screen.getByLabelText('Titolo')).toHaveValue('Sollecitare Rossi')
+    fireEvent.change(screen.getByLabelText('Scadenza'), { target: { value: '2026-11-06' } })
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+
+    await waitFor(() => expect(api.PATCH).toHaveBeenCalled())
+    const [path, options] = vi.mocked(api.PATCH).mock.calls[0] as unknown as [
+      string,
+      { body: Record<string, unknown>; params: { path: { attivita_id: string } } },
+    ]
+    expect(path).toBe('/api/activities/{attivita_id}')
+    expect(options.params.path.attivita_id).toBe('att-1')
+    expect(options.body).toEqual({
+      scadenza: '2026-11-06',
+      scadenza_da_rimuovere: false,
+      riferimento_da_rimuovere: false,
+    })
+  })
+
+  it('takes a deadline off with null, and moves the link as four columns', async () => {
+    renderDialog({ attivita: existing })
+
+    fireEvent.change(screen.getByLabelText('Scadenza'), { target: { value: '' } })
+    await userEvent.click(screen.getByRole('button', { name: 'Scollega' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+
+    await waitFor(() => expect(api.PATCH).toHaveBeenCalled())
+    const options = vi.mocked(api.PATCH).mock.calls[0]?.[1] as unknown as {
+      body: Record<string, unknown>
+    }
+    expect(options.body).toEqual({
+      scadenza: null,
+      customer_id: null,
+      person_id: null,
+      deal_id: null,
+      invoice_id: null,
+      scadenza_da_rimuovere: false,
+      riferimento_da_rimuovere: false,
+    })
+  })
+
+  it('reopens a completed one, and offers no «Riapri» on an open one', async () => {
+    const { unmount } = renderDialog({ attivita: existing })
+    expect(screen.queryByRole('button', { name: 'Riapri' })).not.toBeInTheDocument()
+    unmount()
+
+    renderDialog({ attivita: { ...existing, stato: 'completata', completata_il: '2026-10-20' } })
+    await userEvent.click(screen.getByRole('button', { name: 'Riapri' }))
+
+    await waitFor(() => expect(api.POST).toHaveBeenCalled())
+    expect(vi.mocked(api.POST).mock.calls[0]?.[0]).toBe('/api/activities/{attivita_id}/reopen')
+  })
+
+  it('archives with DELETE, and an archived one offers «Ripristina» instead', async () => {
+    const { unmount } = renderDialog({ attivita: existing })
+    await userEvent.click(screen.getByRole('button', { name: 'Archivia' }))
+    await waitFor(() => expect(api.DELETE).toHaveBeenCalled())
+    expect(vi.mocked(api.DELETE).mock.calls[0]?.[0]).toBe('/api/activities/{attivita_id}')
+    unmount()
+
+    renderDialog({ attivita: existing, archived: true })
+    expect(screen.queryByRole('button', { name: 'Archivia' })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Ripristina' }))
+    await waitFor(() => expect(api.POST).toHaveBeenCalled())
+    expect(vi.mocked(api.POST).mock.calls[0]?.[0]).toBe('/api/activities/{attivita_id}/restore')
   })
 })
