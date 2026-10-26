@@ -46,6 +46,7 @@ from pigrocrm_api.routers import (
     scheduled_jobs,
     schema,
     search,
+    slack,
     space_settings,
     templates,
     tenants,
@@ -102,6 +103,8 @@ def create_app() -> FastAPI:
         legal_entities,
         gmail,
         drive,
+        # REB-739: the Slack app installed per space, and who in it is whom.
+        slack,
         email_drafts,
         payment_reminders,
         # Slice 6. The tuple is grouped by slice rather than sorted -- the import list

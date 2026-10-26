@@ -235,6 +235,33 @@ class Settings(BaseSettings):
     # carry its own prefix before it looks anything up.
     google_oauth_state_prefix: str = ""
 
+    # --- Slack (REB-739, REB-740; spec 2026-10-26 §6.4). Absent, not broken, like Gmail: with
+    # no `slack_client_id` the Slack section says so and nothing is offered. One Slack app
+    # serves the whole installation, installed once per space: a space never configures a
+    # client of its own, it borrows the root's (`space_base_settings`), which is why there
+    # is no row in `space_settings` for any of these. The two secrets are `repr=False` for
+    # the reason `google_client_secret` is.
+    slack_client_id: str = ""
+    slack_client_secret: str = Field(default="", repr=False)
+    # 32 raw bytes, base64: seals each space's bot token at rest (AES-256-GCM, the same
+    # `seal` as the Gmail and Drive refresh tokens). Its own variable and not
+    # `google_token_key`: a Slack token is a different credential, and a space without
+    # Google must still be able to hold one. A space is sealed with a key derived from this
+    # one and its slug (`tenants/google.py::space_slack_token_key`).
+    slack_token_key: str = Field(default="", repr=False)
+    # Slack's own origin. Never changed in production; a setting because the capture and
+    # the tests point it at a fake, and because GovSlack answers on `slack-gov.com`. The
+    # authorize page is `{slack_url}/oauth/v2/authorize`, the Web API `{slack_url}/api/`.
+    slack_url: str = "https://slack.com"
+    # Where Slack sends the browser back: `{slack_callback_base_url}/api/slack/oauth/
+    # callback`. Empty means `public_url`. Set for a space (by `space_base_settings`) to the
+    # root's address, because Slack compares the redirect URL with the list registered on
+    # the app, and one address per space would be one more to register for every signup.
+    slack_callback_base_url: str = ""
+    # Written ahead of the jti in the `state`, so the root's callback can relay the browser
+    # to the space that started the flow (`<slug>.<jti>`, `tenants/google.py`).
+    slack_oauth_state_prefix: str = ""
+
     # --- Outbound mail (spec 2026-09-12 §6.1). Resend sends the login link and the
     # welcome mail. Empty key: no sender, and the endpoints that would mail answer 503
     # with a sentence rather than pretend. `repr=False` for the same reason as the Google
@@ -405,6 +432,40 @@ def decode_google_token_key(settings: Settings) -> bytes:
     if len(key) != GOOGLE_TOKEN_KEY_BYTES:
         raise ValueError(
             f"PIGROCRM_GOOGLE_TOKEN_KEY must decode to exactly {GOOGLE_TOKEN_KEY_BYTES} "
+            f"bytes for AES-256-GCM, got {len(key)}"
+        )
+    return key
+
+
+def slack_configured(settings: Settings) -> bool:
+    """All four or none, for the reason `gmail_configured` gives: a client id with no key
+    would connect a workspace and then be unable to store its bot token. The address is
+    the callback's, a space's own or the root's."""
+    return bool(
+        settings.slack_client_id
+        and settings.slack_client_secret
+        and settings.slack_token_key
+        and (settings.slack_callback_base_url or settings.public_url)
+    )
+
+
+def require_slack_configured(settings: Settings) -> None:
+    if not slack_configured(settings):
+        raise Conflict("slack", "Slack non è configurato su questa installazione")
+
+
+def decode_slack_token_key(settings: Settings) -> bytes:
+    """The AES-256-GCM key of the bot tokens. Raises `ValueError` naming the variable and
+    never quoting the value, as `decode_google_token_key` does and for the same reasons."""
+    if not settings.slack_token_key:
+        raise ValueError("PIGROCRM_SLACK_TOKEN_KEY is not set, so a Slack token cannot be read")
+    try:
+        key = base64.b64decode(settings.slack_token_key, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ValueError("PIGROCRM_SLACK_TOKEN_KEY is not valid base64") from exc
+    if len(key) != GOOGLE_TOKEN_KEY_BYTES:
+        raise ValueError(
+            f"PIGROCRM_SLACK_TOKEN_KEY must decode to exactly {GOOGLE_TOKEN_KEY_BYTES} "
             f"bytes for AES-256-GCM, got {len(key)}"
         )
     return key
