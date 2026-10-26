@@ -5627,9 +5627,9 @@ export interface components {
             /** Per Contratto */
             per_contratto: components["schemas"]["DaysRate"][];
             /** Senza Approvazione Nel Periodo */
-            senza_approvazione_nel_periodo: number;
+            senza_approvazione_nel_periodo: string;
             /** Senza Approvazione Sempre */
-            senza_approvazione_sempre: number;
+            senza_approvazione_sempre: string;
         };
         /**
          * DaysMonth
@@ -5638,9 +5638,10 @@ export interface components {
          *     `registrati` is the days that really happened (worked, worked without approval,
          *     invoiced, paid, disputed, written off); `media_precedente` is the mean of the three
          *     months before this one, a quiet month counting as zero. `completo` is false for a
-         *     month that has not yet ended. `senza_approvazione` counts the days that slipped into
-         *     «lavorato senza approvazione» in the month, by the moment of the transition, so a day
-         *     since regularised still counts: it is history, not a figure about the present.
+         *     month that has not yet ended. `senza_approvazione` is the days (by quantity, so a half day
+         *     is a half) that slipped into «lavorato senza approvazione» in the month, by the moment
+         *     of the transition, so a day since regularised still counts: it is history, not a figure
+         *     about the present.
          */
         DaysMonth: {
             /** Mese */
@@ -5660,7 +5661,7 @@ export interface components {
             /** Media Precedente */
             media_precedente: string;
             /** Senza Approvazione */
-            senza_approvazione: number;
+            senza_approvazione: string;
             /** Quota Senza Approvazione */
             quota_senza_approvazione: number;
         };

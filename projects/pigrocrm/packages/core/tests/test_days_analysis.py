@@ -312,15 +312,15 @@ def test_a_day_that_slipped_without_approval_is_counted_in_the_month_of_the_slip
     contract = _contract(db_session, requires_prior_approval=True)
     # Asked as worked on a contract that wants prior approval, so the database redirects
     # it: the transition is what the trend counts.
-    slipped = _day(db_session, contract, date(today.year, today.month, 1), "lavorato")
+    slipped = _day(db_session, contract, date(today.year, today.month, 1), "lavorato", "0.50")
     assert slipped.stato == "lavorato_senza_approvazione"
 
     analysis = AnalyticsService(db_session).days_analysis(READER)
-    assert analysis.senza_approvazione_nel_periodo == 1
-    assert analysis.mesi[0].senza_approvazione == 1
+    assert analysis.senza_approvazione_nel_periodo == Decimal("0.50")
+    assert analysis.mesi[0].senza_approvazione == Decimal("0.50")
     assert analysis.mesi[0].quota_senza_approvazione == 1.0
-    assert analysis.senza_approvazione_sempre == 1
-    assert _stack(analysis.mesi[0], "lavorato_senza_approvazione") == Decimal("1.00")
+    assert analysis.senza_approvazione_sempre == Decimal("0.50")
+    assert _stack(analysis.mesi[0], "lavorato_senza_approvazione") == Decimal("0.50")
 
 
 def test_one_bound_without_the_other_and_a_backwards_period_are_refused_by_name(

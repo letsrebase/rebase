@@ -291,6 +291,8 @@ function useInvoiceInvalidation() {
     // otherwise keep the old figures while the CSV, read fresh, shows the new ones.
     void queryClient.invalidateQueries({ queryKey: ['year-overview'] })
     void queryClient.invalidateQueries({ queryKey: ['ceilings'] })
+    // And the days analysis' realised rate, which reads the lines of issued invoices (REB-756).
+    void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
     if (invoiceId !== undefined) {
       void queryClient.invalidateQueries({ queryKey: queryKeys.invoice(invoiceId) })
       void queryClient.invalidateQueries({ queryKey: queryKeys.invoiceLines(invoiceId) })

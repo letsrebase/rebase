@@ -579,9 +579,10 @@ class DaysMonth(BaseModel):
     `registrati` is the days that really happened (worked, worked without approval,
     invoiced, paid, disputed, written off); `media_precedente` is the mean of the three
     months before this one, a quiet month counting as zero. `completo` is false for a
-    month that has not yet ended. `senza_approvazione` counts the days that slipped into
-    «lavorato senza approvazione» in the month, by the moment of the transition, so a day
-    since regularised still counts: it is history, not a figure about the present.
+    month that has not yet ended. `senza_approvazione` is the days (by quantity, so a half day
+    is a half) that slipped into «lavorato senza approvazione» in the month, by the moment
+    of the transition, so a day since regularised still counts: it is history, not a figure
+    about the present.
     """
 
     mese: str
@@ -592,7 +593,7 @@ class DaysMonth(BaseModel):
     registrati: Decimal = Field(max_digits=10, decimal_places=2)
     quota_registrati: float
     media_precedente: Decimal = Field(max_digits=10, decimal_places=2)
-    senza_approvazione: int
+    senza_approvazione: Decimal = Field(max_digits=10, decimal_places=2)
     quota_senza_approvazione: float
 
 
@@ -630,8 +631,8 @@ class DaysAnalysis(BaseModel):
     tariffa_reale: Decimal | None = Field(default=None, max_digits=12, decimal_places=2)
     per_cliente: list[DaysRate]
     per_contratto: list[DaysRate]
-    senza_approvazione_nel_periodo: int
-    senza_approvazione_sempre: int
+    senza_approvazione_nel_periodo: Decimal = Field(max_digits=10, decimal_places=2)
+    senza_approvazione_sempre: Decimal = Field(max_digits=10, decimal_places=2)
 
 
 __all__ = [

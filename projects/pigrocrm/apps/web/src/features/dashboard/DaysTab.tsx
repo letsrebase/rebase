@@ -187,7 +187,7 @@ function Days({ analysis }: { analysis: DaysAnalysis }) {
   }))
   const riskRows: BarRow[] = mesi.map((month) => ({
     label: monthLabel(month.mese, true),
-    value: String(month.senza_approvazione),
+    value: days(month.senza_approvazione),
     ratio: month.quota_senza_approvazione,
     tone: 1,
   }))
@@ -213,8 +213,8 @@ function Days({ analysis }: { analysis: DaysAnalysis }) {
         />
         <BigNumber
           label="Senza approvazione"
-          value={String(analysis.senza_approvazione_nel_periodo)}
-          hint={`giornate finite lì nel periodo · in tutto ${analysis.senza_approvazione_sempre}`}
+          value={days(analysis.senza_approvazione_nel_periodo)}
+          hint={`giornate finite lì nel periodo · in tutto ${days(analysis.senza_approvazione_sempre)}`}
         />
       </div>
 
@@ -249,7 +249,7 @@ function Days({ analysis }: { analysis: DaysAnalysis }) {
           Quante giornate sono finite in «lavorato senza approvazione» in ogni mese, anche se poi
           regolarizzate: è la storia, non un allarme sul presente.
         </p>
-        {analysis.senza_approvazione_sempre === 0 ? (
+        {analysis.senza_approvazione_sempre === '0.00' ? (
           <p className="text-sm text-muted-foreground">
             Nessuna giornata è mai stata lavorata senza l’approvazione che il contratto chiede.
           </p>

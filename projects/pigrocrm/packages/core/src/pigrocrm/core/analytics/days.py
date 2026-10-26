@@ -95,7 +95,7 @@ def monthly_figures(
     azienda_id: UUID | None,
     today: date,
     timezone: str,
-) -> tuple[list[DaysMonth], str | None, Decimal, int, int]:
+) -> tuple[list[DaysMonth], str | None, Decimal, Decimal, Decimal]:
     """`(mesi, ultimo_mese_completo, giorni_nel_periodo, senza_approvazione_nel_periodo,
     senza_approvazione_sempre)`."""
     window = months_between(da, a)
@@ -123,7 +123,7 @@ def monthly_figures(
 
     slipped_at = func.to_char(func.timezone(timezone, WorkUnitTransition.created_at), "YYYY-MM")
     risk_stmt = (
-        select(slipped_at, func.count(WorkUnitTransition.id))
+        select(slipped_at, func.sum(WorkUnit.quantita))
         .join(WorkUnit, WorkUnit.id == WorkUnitTransition.work_unit_id)
         .join(Contract, Contract.id == WorkUnit.contract_id)
         .where(WorkUnitTransition.stato_nuovo == "lavorato_senza_approvazione")
@@ -131,7 +131,7 @@ def monthly_figures(
     )
     if azienda_id is not None:
         risk_stmt = risk_stmt.where(Contract.azienda_id == azienda_id)
-    risk_by_month = {key: int(count) for key, count in session.execute(risk_stmt).all()}
+    risk_by_month = {key: Decimal(days) for key, days in session.execute(risk_stmt).all()}
 
     def recorded(key: str) -> Decimal:
         return sum(
@@ -150,11 +150,13 @@ def monthly_figures(
         ]
         average = round_money(sum(prior, start=ZERO_DAYS) / FINESTRA_MEDIA)
         stack = {s: per_month.get(key, {}).get(s, ZERO_DAYS) for s in STATI_GRAFICO}
-        rows.append((year, month, key, stack, recorded(key), average, risk_by_month.get(key, 0)))
+        rows.append(
+            (year, month, key, stack, recorded(key), average, risk_by_month.get(key, ZERO_DAYS))
+        )
 
     tallest = max((sum(row[3].values(), start=ZERO_DAYS) for row in rows), default=ZERO_DAYS)
     tallest_recorded = max((row[4] for row in rows), default=ZERO_DAYS)
-    tallest_risk = max((row[6] for row in rows), default=0)
+    tallest_risk = max((row[6] for row in rows), default=ZERO_DAYS)
 
     months: list[DaysMonth] = []
     for year, month, key, stack, registrati, average, risk in rows:
@@ -174,7 +176,7 @@ def monthly_figures(
                 quota_registrati=_share(registrati, tallest_recorded),
                 media_precedente=average,
                 senza_approvazione=risk,
-                quota_senza_approvazione=0.0 if tallest_risk == 0 else risk / tallest_risk,
+                quota_senza_approvazione=_share(risk, tallest_risk),
             )
         )
     last_complete = next((m.mese for m in reversed(months) if m.completo), None)
@@ -184,8 +186,8 @@ def monthly_figures(
         months,
         last_complete,
         period_total,
-        sum(count for key, count in risk_by_month.items() if key in in_window),
-        sum(risk_by_month.values()),
+        sum((days for key, days in risk_by_month.items() if key in in_window), start=ZERO_DAYS),
+        sum(risk_by_month.values(), start=ZERO_DAYS),
     )
 
 

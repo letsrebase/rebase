@@ -36,7 +36,7 @@ function month(mese: string, over: Record<string, unknown> = {}, given: Record<s
     registrati: '12.00',
     quota_registrati: 1,
     media_precedente: '10.00',
-    senza_approvazione: 2,
+    senza_approvazione: '2.50',
     quota_senza_approvazione: 1,
     ...over,
   }
@@ -77,8 +77,8 @@ const analysis = (over: Record<string, unknown> = {}) => ({
       tariffa_nominale: null,
     },
   ],
-  senza_approvazione_nel_periodo: 4,
-  senza_approvazione_sempre: 9,
+  senza_approvazione_nel_periodo: '4.50',
+  senza_approvazione_sempre: '9.50',
   ...over,
 })
 
@@ -186,8 +186,8 @@ describe('DaysTab', () => {
     renderTab()
 
     const group = await screen.findByRole('group', { name: 'Senza approvazione' })
-    expect(within(group).getByText('4')).toBeInTheDocument()
-    expect(within(group).getByText(/in tutto 9/)).toBeInTheDocument()
+    expect(within(group).getByText('4,5')).toBeInTheDocument()
+    expect(within(group).getByText(/in tutto 9,5/)).toBeInTheDocument()
     expect(screen.getByText('Giornate senza approvazione per mese')).toBeInTheDocument()
   })
 
@@ -201,8 +201,8 @@ describe('DaysTab', () => {
           tariffa_reale: null,
           per_cliente: [],
           per_contratto: [],
-          senza_approvazione_nel_periodo: 0,
-          senza_approvazione_sempre: 0,
+          senza_approvazione_nel_periodo: '0.00',
+          senza_approvazione_sempre: '0.00',
         }),
       ),
     )
