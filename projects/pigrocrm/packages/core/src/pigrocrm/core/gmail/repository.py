@@ -400,14 +400,24 @@ class GmailRepository:
         return True
 
     def messages_for_entity(
-        self, entity_type: str, entity_id: UUID, *, limit: int
+        self, entity_type: str, entity_id: UUID, *, limit: int, newest_first: bool = False
     ) -> list[GmailMessage]:
         """Everything filed against one customer, person or deal.
 
         Ordered by thread and then by date, because the reader of a customer page is
         reading conversations rather than a flat mailbox: interleaving two threads by
         timestamp alone produces a page on which no exchange can be followed.
+
+        `newest_first` is the other reading: a flat list by date, newest first, so that the
+        `limit` cuts the oldest and not whichever threads sort last. It is what choosing the
+        message that approved something needs (REB-747), where the recent one is the one wanted
+        and a long history must not hide it.
         """
+        order = (
+            (GmailMessage.internal_date.desc(), GmailMessage.id)
+            if newest_first
+            else (GmailMessage.gmail_thread_id, GmailMessage.internal_date)
+        )
         return list(
             self.session.execute(
                 select(GmailMessage)
@@ -416,7 +426,7 @@ class GmailRepository:
                     GmailMessageLink.entity_type == entity_type,
                     GmailMessageLink.entity_id == entity_id,
                 )
-                .order_by(GmailMessage.gmail_thread_id, GmailMessage.internal_date)
+                .order_by(*order)
                 .limit(limit)
             )
             .scalars()

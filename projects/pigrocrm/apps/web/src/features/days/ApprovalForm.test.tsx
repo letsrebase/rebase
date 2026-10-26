@@ -191,9 +191,10 @@ describe('recording an approval', () => {
     expect(await screen.findByText(/Nessun messaggio ricevuto da questo cliente/)).toBeInTheDocument()
   })
 
-  it('lists the client’s messages newest first, and does not ask for them before the contract is known', async () => {
+  it('lists the client’s messages as the API ordered them, newest first, and does not ask before the contract is known', async () => {
     const OLDER = { ...MESSAGE, id: 'msg-old', subject: 'Messaggio vecchio', internal_date: '2026-01-05T09:00:00Z' }
-    serving([OLDER, MESSAGE])
+    // `ordine=recenti` is the API's: what comes back is already newest first.
+    serving([MESSAGE, OLDER])
     renderWithQuery(<ApprovalForm initialContractId={CONTRACT_ID} initialDayIds={['d1']} />)
     await screen.findByRole('radio', { name: /Re: giornate di marzo/ })
     const radios = within(screen.getByRole('list', { name: 'Messaggi del cliente' })).getAllByRole('radio')
@@ -202,7 +203,9 @@ describe('recording an approval', () => {
     const call = (vi.mocked(api.GET).mock.calls as unknown as [string, unknown][]).find(
       ([path]) => path === '/api/gmail/messages',
     )
-    expect(call?.[1]).toMatchObject({ params: { query: { entity_id: CUSTOMER_ID, limit: 200 } } })
+    expect(call?.[1]).toMatchObject({
+      params: { query: { entity_id: CUSTOMER_ID, limit: 200, ordine: 'recenti' } },
+    })
     const early = (
       vi.mocked(api.GET).mock.calls as unknown as [string, { params: { query: { entity_id: string } } }][]
     ).filter(([path, init]) => path === '/api/gmail/messages' && init.params.query.entity_id === '')

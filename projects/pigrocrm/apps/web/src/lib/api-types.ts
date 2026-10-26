@@ -31134,6 +31134,8 @@ export interface operations {
                 entity_type: "customer" | "person" | "deal";
                 entity_id: string;
                 limit?: number;
+                /** @description `conversazioni`: per conversazione, come la pagina di un cliente; `recenti`: dal più recente, perché il limite tagli i più vecchi */
+                ordine?: "conversazioni" | "recenti";
             };
             header?: never;
             path?: never;

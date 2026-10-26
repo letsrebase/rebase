@@ -48,24 +48,28 @@ export function useRecordApproval() {
 const MESSAGES_LIMIT = 200
 
 /**
- * The messages synced for one customer, newest first: the API lists a customer's mailbox
- * by thread so a conversation can be followed, which is the wrong order for choosing the
- * one that approved something, and it stops at its limit, so the ceiling is asked for. Only
- * read once a customer is known and the mailbox is connected.
+ * The messages synced for one customer, newest first, asked for in that order (`ordine=recenti`)
+ * and not sorted here: the API's default lists a mailbox by thread so a conversation can be
+ * followed, and it cuts at its limit, so a long history would fill the response and hide the
+ * recent email that approved the days; sorting what is left cannot bring it back. Only read
+ * once a customer is known and the mailbox is connected.
  */
 export function useCustomerMessages(customerId: string | undefined, enabled: boolean) {
   return useQuery({
     enabled: enabled && customerId !== undefined,
     queryKey: ['gmail', 'messages', 'customer', customerId ?? '', 'proof'],
-    queryFn: async (): Promise<GmailMessage[]> => {
-      const messages = await unwrap(
+    queryFn: (): Promise<GmailMessage[]> =>
+      unwrap(
         api.GET('/api/gmail/messages', {
           params: {
-            query: { entity_type: 'customer', entity_id: customerId ?? '', limit: MESSAGES_LIMIT },
+            query: {
+              entity_type: 'customer',
+              entity_id: customerId ?? '',
+              limit: MESSAGES_LIMIT,
+              ordine: 'recenti',
+            },
           },
         }),
-      )
-      return [...messages].sort((a, b) => b.internal_date.localeCompare(a.internal_date))
-    },
+      ),
   })
 }

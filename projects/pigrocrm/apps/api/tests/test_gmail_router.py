@@ -626,6 +626,47 @@ def test_the_messages_endpoint_returns_what_is_filed_against_an_entity(
     assert "nonce" not in response.text
 
 
+def test_the_messages_endpoint_can_read_newest_first_so_the_limit_cuts_the_oldest(
+    logged_in: TestClient, api_session: Session, admin_user: Any
+) -> None:
+    """Ordered by conversation, the cut falls on whichever threads sort last; for choosing
+    the message that approved something it has to fall on the oldest."""
+    account = _connected_account(api_session, admin_user.id)
+    customer_id = uuid4()
+    now = datetime.now(UTC)
+    # The old thread sorts first by id, so a thread-ordered limit of one keeps the old message.
+    for gmail_id, thread, age in (("old", "a-thread", 90), ("recent", "z-thread", 1)):
+        message = GmailMessage(
+            google_account_id=account.id,
+            gmail_message_id=gmail_id,
+            gmail_thread_id=thread,
+            direction="inbound",
+            from_address="ada@acme.it",
+            to_addresses=["io@example.it"],
+            cc_addresses=[],
+            subject=gmail_id,
+            snippet="",
+            internal_date=now - timedelta(days=age),
+            body_text="Ciao.",
+            attachments=[],
+        )
+        api_session.add(message)
+        api_session.flush()
+        api_session.add(
+            GmailMessageLink(
+                gmail_message_id=message.id, entity_type="customer", entity_id=customer_id
+            )
+        )
+    api_session.flush()
+    query = {"entity_type": "customer", "entity_id": str(customer_id), "limit": 1}
+
+    by_thread = logged_in.get("/api/gmail/messages", params=query)
+    newest = logged_in.get("/api/gmail/messages", params={**query, "ordine": "recenti"})
+
+    assert [row["gmail_message_id"] for row in by_thread.json()] == ["old"]
+    assert [row["gmail_message_id"] for row in newest.json()] == ["recent"]
+
+
 def test_the_messages_endpoint_bounds_its_limit(logged_in: TestClient) -> None:
     response = logged_in.get(
         "/api/gmail/messages",

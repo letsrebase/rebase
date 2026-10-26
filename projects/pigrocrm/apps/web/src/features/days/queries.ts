@@ -32,7 +32,9 @@ export function useWorkUnits(params: DaysListParams, options: { enabled?: boolea
               da: params.da,
               a: params.a,
               stato: params.stato,
-              azienda_id: selected ?? undefined,
+              // A contract names its own azienda: the sidebar's only narrows a read that does
+              // not, and both together would answer nothing for a contract of the other one.
+              azienda_id: params.contractId === undefined ? (selected ?? undefined) : undefined,
             },
           },
         }),
