@@ -2,6 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { api } from '@/lib/api'
+import { LegalEntityContext, type LegalEntityValue } from '@/lib/legalEntity'
 import { AvvisiPage } from './AvvisiPage'
 import { useUnreadCount } from './queries'
 import {
@@ -128,6 +129,31 @@ describe('the Avvisi page', () => {
       `/app/deal/${ROSSI_DEAL_ID}`,
     )
     expect(screen.getByRole('link', { name: 'Timer acceso da 11 ore' })).toHaveAttribute('href', '/app/hours')
+  })
+
+  it('selects the azienda a fiscal reminder is about when it is opened', async () => {
+    const AZIENDA = '8d1c2a10-0000-4000-8000-0000000000bb'
+    const select = vi.fn()
+    fakeReminders([
+      reminder({
+        key: 'ceiling_approaching:a1',
+        label: 'Soglia del forfettario vicina',
+        title: 'Soglia del forfettario vicina: Titolare',
+        entity: 'fiscal',
+        entity_id: AZIENDA,
+        severity: 'serious',
+      }),
+    ])
+    const value = { selected: null, select } as unknown as LegalEntityValue
+    renderWithQuery(
+      <LegalEntityContext value={value}>
+        <AvvisiPage />
+      </LegalEntityContext>,
+    )
+
+    await userEvent.setup().click(await screen.findByRole('link', { name: 'Titolare' }))
+
+    expect(select).toHaveBeenCalledWith(AZIENDA)
   })
 
   it('shows a reminder about an unknown kind of record, with no link', async () => {

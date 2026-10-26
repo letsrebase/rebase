@@ -14,6 +14,7 @@ import {
 import { Skeleton } from '@rebase/ui/skeleton'
 import { toast } from '@rebase/ui/sonner'
 import { toProblem } from '@/lib/api'
+import { useLegalEntity } from '@/lib/legalEntity'
 import {
   SEVERITIES,
   SNOOZE_OPTIONS,
@@ -135,6 +136,7 @@ export function AvvisiPage() {
 function ReminderRow({ reminder }: { reminder: Reminder }) {
   const severity = SEVERITIES.find((candidate) => candidate.id === reminder.severity)
   const link = recordLink(reminder)
+  const { select } = useLegalEntity()
   const open = isOpen(reminder)
   const subject = subjectOf(reminder)
 
@@ -149,6 +151,9 @@ function ReminderRow({ reminder }: { reminder: Reminder }) {
           {link ? (
             <Link
               {...link}
+              // A fiscal reminder is about one azienda and the dashboard shows the one the
+              // sidebar selected: opening it selects the azienda it is about.
+              onClick={reminder.entity === 'fiscal' ? () => select(reminder.entity_id) : undefined}
               className="underline-offset-4 outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50"
             >
               {subject}
