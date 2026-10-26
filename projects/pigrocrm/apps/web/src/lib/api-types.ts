@@ -33966,6 +33966,8 @@ export interface operations {
                 invoice_id?: string | null;
                 scade_entro?: string | null;
                 senza_scadenza?: boolean | null;
+                /** @description Solo le archiviate (per ripristinarle); di default, le vive */
+                archiviate?: boolean;
                 limit?: number;
                 cursor?: string | null;
                 /** @description created_at | scadenza */

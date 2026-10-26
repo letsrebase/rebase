@@ -73,7 +73,10 @@ class AttivitaRepository:
         )
 
     def list(self, query: AttivitaListQuery) -> list[Attivita]:
-        stmt = select(Attivita).where(Attivita.deleted_at.is_(None))
+        archived = (
+            Attivita.deleted_at.is_not(None) if query.archiviate else Attivita.deleted_at.is_(None)
+        )
+        stmt = select(Attivita).where(archived)
 
         if query.stato:
             stmt = stmt.where(Attivita.stato == query.stato)
