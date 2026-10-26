@@ -353,7 +353,7 @@ describe('AppShell', () => {
       '/app/settings/fields',
       '/app/settings/aziende',
       '/app/settings/gmail',
-      '/app/settings/automations',
+      '/app/settings/reminders',
     ])
   })
 
@@ -433,23 +433,93 @@ describe('AppShell', () => {
   })
 
   /**
-   * The Proposte queue (REB-750) is every role's to read, like the pages of the groups
-   * above: deciding is gated at the buttons and the service, not at the menu. It is the
-   * last top-level entry, after Token, and opens `/app/proposals`.
+   * The Avvisi page (REB-734) is every role's own list, so like Token it sits outside the
+   * admin-gated group: right after Token and right before Proposte, which stays the last
+   * top-level entry (REB-750) and opens `/app/proposals`.
    */
-  it.each(['admin', 'collaboratore', 'readonly'])('shows Proposte to a %s, right after Token', (ruolo) => {
+  it.each(['admin', 'collaboratore', 'readonly'])('shows Avvisi to a %s, between Token and Proposte', (ruolo) => {
     mockAuth.ruolo = ruolo
     renderShell()
     const links = sidebar().getAllByRole('link')
     const names = links.map((link) => link.textContent)
-    expect(names.indexOf('Proposte')).toBe(names.indexOf('Token') + 1)
+    expect(names.indexOf('Avvisi')).toBe(names.indexOf('Token') + 1)
+    expect(names.indexOf('Proposte')).toBe(names.indexOf('Avvisi') + 1)
+    expect(links[names.indexOf('Avvisi')]).toHaveAttribute('href', '/app/avvisi')
     expect(links[names.indexOf('Proposte')]).toHaveAttribute('href', '/app/proposals')
   })
 
-  it('keeps Proposte one click away in the collapsed icon rail', async () => {
+  it('keeps Avvisi and Proposte one click away in the collapsed icon rail', async () => {
     renderShell()
     await userEvent.click(screen.getByRole('button', { name: 'Comprimi il menu' }))
+    expect(sidebar().getByRole('link', { name: 'Avvisi' })).toHaveAttribute('href', '/app/avvisi')
     expect(sidebar().getByRole('link', { name: 'Proposte' })).toHaveAttribute('href', '/app/proposals')
+  })
+
+  /** What the API answers for the list: two open, one snoozed and one acknowledged. */
+  function answerReminders(statuses: Array<'open' | 'snoozed' | 'acknowledged'>) {
+    const list = statuses.map((status, index) => ({
+      key: `attivita_due:${index}`,
+      type: 'attivita_due',
+      label: 'Attività in scadenza',
+      severity: 'warning',
+      measure: 0,
+      title: `Attività ${index}`,
+      detail: '',
+      entity: 'attivita',
+      entity_id: `3f0c2a10-0000-4000-8000-00000000000${index}`,
+      customer_id: null,
+      status,
+      snoozed_until: status === 'snoozed' ? '2026-10-27' : null,
+      delivered_at: null,
+    }))
+    GET.mockImplementation((path: string) =>
+      Promise.resolve({ data: path === '/api/reminders' ? list : [], response: { status: 200 } }),
+    )
+  }
+
+  it('counts only the open reminders on the Avvisi entry, not the snoozed or acknowledged ones', async () => {
+    answerReminders(['open', 'snoozed', 'open', 'acknowledged'])
+    renderShell()
+    const entry = await sidebar().findByRole('link', { name: /Avvisi/ })
+    await waitFor(() => expect(entry).toHaveTextContent('2'))
+    expect(entry).toHaveAccessibleName('Avvisi, 2 da leggere')
+  })
+
+  it('draws no badge when nothing is open', async () => {
+    answerReminders(['snoozed', 'acknowledged'])
+    renderShell()
+    await waitFor(() => expect(GET).toHaveBeenCalledWith('/api/reminders'))
+    expect(sidebar().getByRole('link', { name: 'Avvisi' })).toHaveTextContent(/^Avvisi$/)
+  })
+
+  it('draws no badge when the list fails to load', async () => {
+    GET.mockImplementation((path: string) =>
+      Promise.resolve(
+        path === '/api/reminders'
+          ? { error: { detail: 'Il database non risponde.' }, response: { status: 500 } }
+          : { data: [], response: { status: 200 } },
+      ),
+    )
+    renderShell()
+    await waitFor(() => expect(GET).toHaveBeenCalledWith('/api/reminders'))
+    expect(sidebar().getByRole('link', { name: 'Avvisi' })).toHaveTextContent(/^Avvisi$/)
+  })
+
+  it('keeps the count on the icon in the collapsed rail, and in the link name', async () => {
+    answerReminders(['open', 'open', 'open'])
+    renderShell()
+    await userEvent.click(screen.getByRole('button', { name: 'Comprimi il menu' }))
+    const entry = await sidebar().findByRole('link', { name: 'Avvisi, 3 da leggere' })
+    expect(entry).toHaveAttribute('href', '/app/avvisi')
+    // The number itself is drawn on the icon's corner, not as a label beside it.
+    expect(within(entry).getByText('3')).toHaveClass('absolute')
+  })
+
+  it('caps a long count at 99+', async () => {
+    answerReminders(Array.from({ length: 120 }, () => 'open' as const))
+    renderShell()
+    const entry = await sidebar().findByRole('link', { name: /Avvisi/ })
+    await waitFor(() => expect(within(entry).getByText('99+')).toBeInTheDocument())
   })
 
   it('collapses to an icon rail: no group headers, every section still one click away', async () => {

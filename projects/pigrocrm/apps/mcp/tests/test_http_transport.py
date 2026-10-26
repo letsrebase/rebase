@@ -19,7 +19,7 @@ import pytest
 import pytest_asyncio
 from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamable_http_client
-from sqlalchemy import Engine, create_engine, delete, select, text
+from sqlalchemy import Engine, create_engine, delete, select, text, update
 
 from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.actor import Actor
@@ -30,6 +30,7 @@ from pigrocrm.core.auth.repository import UserRepository
 from pigrocrm.core.auth.schemas import UserCreate, UserUpdate
 from pigrocrm.core.auth.service import UserService
 from pigrocrm.core.config import Settings
+from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.db.sidecar import drop_database
 from pigrocrm.core.emitter.models import LegalEntity
@@ -72,6 +73,11 @@ def root_token(mcp_engine: Engine) -> Iterator[tuple[str, UUID]]:
             session.execute(delete(Activity).where(Activity.actor_id == user_id))
             session.execute(
                 delete(PersonalAccessToken).where(PersonalAccessToken.user_id == user_id)
+            )
+            # A customer the test's agent created is owned by the token's user (REB-773),
+            # and a user a customer points at cannot go: the customer stays, ownerless.
+            session.execute(
+                update(Customer).where(Customer.owner_id == user_id).values(owner_id=None)
             )
             session.execute(delete(User).where(User.id == user_id))
             session.commit()
@@ -606,6 +612,9 @@ def admin_root_token(mcp_engine: Engine) -> Iterator[tuple[str, UUID]]:
             session.execute(delete(PersonalAccessToken).where(PersonalAccessToken.user_id.in_(ids)))
             session.execute(delete(FiscalProfile))
             session.execute(delete(LegalEntity).where(LegalEntity.predefinita.is_(False)))
+            session.execute(
+                update(Customer).where(Customer.owner_id.in_(ids)).values(owner_id=None)
+            )
             session.execute(delete(User).where(User.id.in_(ids)))
             session.commit()
 
