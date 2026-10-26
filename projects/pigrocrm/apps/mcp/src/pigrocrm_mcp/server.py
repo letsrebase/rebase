@@ -367,6 +367,10 @@ def build_server(
     from pigrocrm_mcp.tools import register_entity_tools
 
     register_entity_tools(mcp, context, _guard)
+    # REB-732: the reminders' settings and the person's own acknowledge and snooze.
+    from pigrocrm_mcp.tools import reminders as reminder_tools
+
+    reminder_tools.register(mcp, context, _guard)
     # §10's four prompts, guarded by the same body the tools get and only a different
     # translation at the end (`_protocol_guard`: a prompt's refusal has to be an `MCPError`
     # to reach the client with its text on mcp 2.2). A prompt reads the
