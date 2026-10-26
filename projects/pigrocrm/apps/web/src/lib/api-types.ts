@@ -5636,8 +5636,8 @@ export interface components {
          * @description One calendar month of the days analysis.
          *
          *     `registrati` is the days that really happened (worked, worked without approval,
-         *     invoiced, paid, disputed); `media_precedente` is the mean of the three months before
-         *     this one, a quiet month counting as zero. `completo` is false for a
+         *     invoiced, paid, disputed, written off); `media_precedente` is the mean of the three
+         *     months before this one, a quiet month counting as zero. `completo` is false for a
          *     month that has not yet ended. `senza_approvazione` counts the days that slipped into
          *     «lavorato senza approvazione» in the month, by the moment of the transition, so a day
          *     since regularised still counts: it is history, not a figure about the present.
