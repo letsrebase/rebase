@@ -16,15 +16,18 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.contracts.models import Contract, RateCard
 from pigrocrm.core.customers.models import Customer
-from pigrocrm.core.errors import NotFound, ValidationFailed
+from pigrocrm.core.errors import AgentForbidden, NotFound, ValidationFailed
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
+from pigrocrm.core.invoices.schemas import InvoiceAnnul, InvoiceIssue
+from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm.core.storage.local import LocalFileStorage
 from pigrocrm.core.work_units.invoicing import (
     assemble_unbilled_work_units_into_new_invoice,
+    billable_days,
     bind_work_units,
     unbilled_work_unit_lines,
 )
-from pigrocrm.core.work_units.models import WorkUnit
+from pigrocrm.core.work_units.models import WorkUnit, WorkUnitTransition
 
 ADMIN = Actor(id=None, type="system", role="admin")
 
@@ -64,7 +67,17 @@ def _install_fiscal_and_emitter_profiles(session: Session) -> None:
 
 
 def _contract(db_session: Session) -> Contract:
-    customer = Customer(ragione_sociale=f"ACME {uuid4()}")
+    # Enough identity to appear on an issued document: some tests below issue the invoice.
+    customer = Customer(
+        ragione_sociale=f"ACME {uuid4()}",
+        partita_iva="12345678901",
+        codice_sdi="ABCDEFG",
+        indirizzo="Corso Italia 5",
+        cap="00100",
+        comune="Roma",
+        provincia="RM",
+        nazione="IT",
+    )
     db_session.add(customer)
     db_session.flush()
     contract = Contract(
@@ -230,13 +243,16 @@ def test_bind_work_units_sets_invoice_line_id_per_group(db_session: Session) -> 
     line_a = _bare_invoice_line(db_session, contract)
     line_b = _bare_invoice_line(db_session, contract)
 
-    bind_work_units(db_session, [[first.id], [second.id]], [line_a.id, line_b.id])
+    bind_work_units(db_session, [[first.id], [second.id]], [line_a.id, line_b.id], ADMIN)
     db_session.flush()
 
     db_session.refresh(first)
     db_session.refresh(second)
     assert first.invoice_line_id == line_a.id
     assert second.invoice_line_id == line_b.id
+    # The day reads «fatturato», not just linked: a day's page offers its moves from the
+    # state, and the one that keeps a billed day from being revoked is this.
+    assert first.stato == second.stato == "fatturato"
 
 
 # ---- assemble_unbilled_work_units_into_new_invoice, end to end ------------------------
@@ -270,6 +286,7 @@ def test_assemble_creates_an_invoice_line_through_replace_lines_and_binds_the_da
     db_session.refresh(second)
     assert first.invoice_line_id == lines[0].id
     assert second.invoice_line_id == lines[0].id
+    assert first.stato == second.stato == "fatturato"
 
 
 def test_assemble_never_bills_the_same_day_twice(
@@ -301,3 +318,189 @@ def test_assemble_raises_not_found_for_an_unknown_contract(
     _install_fiscal_and_emitter_profiles(db_session)
     with pytest.raises(NotFound):
         assemble_unbilled_work_units_into_new_invoice(db_session, local_storage, uuid4(), ADMIN)
+
+
+def test_assemble_takes_only_the_days_of_the_period_asked_for(
+    db_session: Session, local_storage: LocalFileStorage
+) -> None:
+    _install_fiscal_and_emitter_profiles(db_session)
+    contract = _contract(db_session)
+    _rate_card(db_session, contract)
+    october = _work_unit(db_session, contract, data=date(2026, 10, 7))
+    november = _work_unit(db_session, contract, data=date(2026, 11, 4))
+
+    invoice = assemble_unbilled_work_units_into_new_invoice(
+        db_session, local_storage, contract.id, ADMIN, date(2026, 10, 1), date(2026, 10, 31)
+    )
+
+    assert invoice.imponibile == Decimal("500.00")
+    db_session.refresh(october)
+    db_session.refresh(november)
+    assert (october.stato, november.stato) == ("fatturato", "lavorato")
+    assert november.invoice_line_id is None
+
+
+def test_an_agent_never_bills_a_contracts_days(
+    db_session: Session, local_storage: LocalFileStorage
+) -> None:
+    _install_fiscal_and_emitter_profiles(db_session)
+    contract = _contract(db_session)
+    _rate_card(db_session, contract)
+    day = _work_unit(db_session, contract)
+    agent = Actor(id=None, type="mcp", role="admin")
+
+    with pytest.raises(AgentForbidden):
+        assemble_unbilled_work_units_into_new_invoice(db_session, local_storage, contract.id, agent)
+
+    db_session.refresh(day)
+    assert (day.stato, day.invoice_line_id) == ("lavorato", None)
+
+
+# ---- billable_days: what the page shows before anybody presses the button ---------------
+
+
+def test_the_preview_is_the_invoice_the_button_would_make(
+    db_session: Session, local_storage: LocalFileStorage
+) -> None:
+    _install_fiscal_and_emitter_profiles(db_session)
+    contract = _contract(db_session)
+    _rate_card(db_session, contract)
+    _work_unit(db_session, contract, data=date(2026, 10, 7))
+    _work_unit(db_session, contract, data=date(2026, 10, 8), quantita=Decimal("0.50"))
+    _work_unit(db_session, contract, data=date(2026, 11, 3))
+    _work_unit(db_session, contract, data=date(2026, 11, 4), stato="proposto")
+
+    preview = billable_days(db_session, contract.id)
+
+    assert preview.fatturabile is True
+    assert preview.mesi == ["2026-10", "2026-11"]
+    assert [(r.mese, r.giornate, r.quantita, r.importo) for r in preview.righe] == [
+        ("2026-10", 2, Decimal("1.50"), Decimal("750.00")),
+        ("2026-11", 1, Decimal("1.00"), Decimal("500.00")),
+    ]
+    assert (preview.giornate, preview.quantita, preview.imponibile) == (
+        3,
+        Decimal("2.50"),
+        Decimal("1250.00"),
+    )
+
+    invoice = assemble_unbilled_work_units_into_new_invoice(
+        db_session, local_storage, contract.id, ADMIN
+    )
+    assert invoice.imponibile == preview.imponibile
+    # Billed: nothing left to show.
+    assert billable_days(db_session, contract.id).righe == []
+
+
+def test_the_preview_names_the_days_no_rate_card_covers_instead_of_refusing(
+    db_session: Session,
+) -> None:
+    contract = _contract(db_session)
+    _rate_card(db_session, contract, valido_da=date(2026, 1, 1), valido_a=date(2026, 2, 28))
+    _work_unit(db_session, contract, data=date(2026, 2, 3))
+    _work_unit(db_session, contract, data=date(2026, 3, 5))
+
+    preview = billable_days(db_session, contract.id)
+
+    assert preview.fatturabile is False
+    assert preview.senza_tariffa == [date(2026, 3, 5)]
+    assert [r.mese for r in preview.righe] == ["2026-02"]
+
+
+def test_the_preview_counts_the_days_worked_without_the_approval_the_contract_requires(
+    db_session: Session,
+) -> None:
+    contract = _contract(db_session)
+    contract.requires_prior_approval = True
+    db_session.flush()
+    _rate_card(db_session, contract)
+    _work_unit(db_session, contract, data=date(2026, 3, 5))  # no approval: redirected
+
+    preview = billable_days(db_session, contract.id)
+
+    assert preview.senza_approvazione == 1
+    assert preview.righe == []
+    assert preview.fatturabile is False
+
+
+def test_the_preview_of_an_unknown_contract_is_not_found(db_session: Session) -> None:
+    with pytest.raises(NotFound):
+        billable_days(db_session, uuid4())
+
+
+# ---- the days come back when the invoice they were on goes away -------------------------
+
+
+def _states_of(db_session: Session, work_unit: WorkUnit) -> list[str]:
+    return list(
+        db_session.scalars(
+            select(WorkUnitTransition.stato_nuovo)
+            .where(WorkUnitTransition.work_unit_id == work_unit.id)
+            .order_by(WorkUnitTransition.seq)
+        )
+    )
+
+
+def test_deleting_the_draft_gives_its_days_back(
+    db_session: Session, local_storage: LocalFileStorage
+) -> None:
+    _install_fiscal_and_emitter_profiles(db_session)
+    contract = _contract(db_session)
+    _rate_card(db_session, contract)
+    day = _work_unit(db_session, contract)
+    invoice = assemble_unbilled_work_units_into_new_invoice(
+        db_session, local_storage, contract.id, ADMIN
+    )
+
+    InvoiceService(db_session, local_storage).soft_delete(invoice.id, ADMIN)
+
+    db_session.refresh(day)
+    assert (day.stato, day.invoice_line_id) == ("lavorato", None)
+    # The history says why it came back: the dispute in the middle is the graph's only way
+    # home, not something anybody raised.
+    assert _states_of(db_session, day) == ["lavorato", "fatturato", "contestato", "lavorato"]
+    assert billable_days(db_session, contract.id).giornate == 1
+
+
+def test_annulling_the_invoice_gives_its_days_back(
+    db_session: Session, local_storage: LocalFileStorage
+) -> None:
+    _install_fiscal_and_emitter_profiles(db_session)
+    contract = _contract(db_session)
+    _rate_card(db_session, contract)
+    day = _work_unit(db_session, contract)
+    invoice = assemble_unbilled_work_units_into_new_invoice(
+        db_session, local_storage, contract.id, ADMIN
+    )
+    service = InvoiceService(db_session, local_storage)
+    service.issue(invoice.id, InvoiceIssue(), ADMIN)
+    db_session.refresh(day)
+    assert day.stato == "fatturato"
+
+    service.annul(invoice.id, InvoiceAnnul(motivo="importo errato"), ADMIN)
+
+    db_session.refresh(day)
+    assert (day.stato, day.invoice_line_id) == ("lavorato", None)
+
+
+def test_a_paid_day_stays_where_it_is_when_its_invoice_is_annulled(
+    db_session: Session, local_storage: LocalFileStorage
+) -> None:
+    _install_fiscal_and_emitter_profiles(db_session)
+    contract = _contract(db_session)
+    _rate_card(db_session, contract)
+    day = _work_unit(db_session, contract)
+    invoice = assemble_unbilled_work_units_into_new_invoice(
+        db_session, local_storage, contract.id, ADMIN
+    )
+    service = InvoiceService(db_session, local_storage)
+    service.issue(invoice.id, InvoiceIssue(), ADMIN)
+    db_session.refresh(day)
+    day.stato = "pagato"
+    db_session.flush()
+
+    service.annul(invoice.id, InvoiceAnnul(motivo="importo errato"), ADMIN)
+
+    db_session.refresh(day)
+    assert day.stato == "pagato"
+    assert day.invoice_line_id is not None

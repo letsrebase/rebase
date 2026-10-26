@@ -78,6 +78,9 @@ AGENT_FORBIDDEN_ACTIONS: frozenset[str] = frozenset(
         "reopen_period",
         # The bridge from hours to an invoice line, and the annual estimate.
         "bind_time_to_invoice",
+        # The same bridge from a contract's days (REB-751): choosing what goes on a draft
+        # decides what an issue will freeze, whatever the unit.
+        "bill_contract_days",
         "get_fiscal_estimate",
         # Asking Gmail who at a customer's domain one has written to. It spends the
         # owner's quota under the owner's consent, exactly as a backfill does, and the

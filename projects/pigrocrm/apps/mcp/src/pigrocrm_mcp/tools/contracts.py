@@ -18,6 +18,7 @@ from pigrocrm.core.contracts.service import (
     RateCardService,
     RenewalAssumptionService,
 )
+from pigrocrm.core.work_units.register import ContractRegisterService
 from pigrocrm_mcp.context import McpContext
 
 
@@ -61,6 +62,14 @@ def concentration_cap(
     return (
         ContractService(context.session)
         .concentration_cap(UUID(contract_id), context.actor, as_of, soglia)
+        .model_dump(mode="json")
+    )
+
+
+def register(context: McpContext, contract_id: str, da: date, a: date) -> dict[str, Any]:
+    return (
+        ContractRegisterService(context.session)
+        .build(UUID(contract_id), da, a, context.actor)
         .model_dump(mode="json")
     )
 

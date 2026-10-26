@@ -829,6 +829,19 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
 
     @mcp.tool()
     @guard
+    def get_contract_register(contract_id: str, da: str, a: str) -> dict[str, Any]:
+        """Il registro delle giornate fatturate di un contratto fra `da` e `a` (YYYY-MM-DD,
+        estremi inclusi): ogni giornata con la prova di approvazione che la regge (canale,
+        mittente, giorno di arrivo, id del messaggio) e il numero della fattura su cui sta,
+        e il totale. Una giornata senza approvazione resta nell'elenco con l'approvazione
+        vuota e `senza_approvazione` le conta. Sola lettura: il PDF e il CSV si scaricano
+        dalla pagina del contratto, mai da qui."""
+        return contracts.register(
+            context, contract_id, date.fromisoformat(da), date.fromisoformat(a)
+        )
+
+    @mcp.tool()
+    @guard
     def set_renewal_assumption(
         contract_id: str,
         probabilita: Probabilita,

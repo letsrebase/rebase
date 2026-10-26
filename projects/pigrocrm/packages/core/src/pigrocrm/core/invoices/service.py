@@ -123,6 +123,11 @@ from pigrocrm.core.invoices.totals import (
 )
 from pigrocrm.core.schemas import reject_cleared_columns, supplied_changes
 from pigrocrm.core.storage.base import DocumentStorage
+from pigrocrm.core.work_units.release import (
+    ANNULLED_INVOICE_REASON,
+    DELETED_DRAFT_REASON,
+    release_days_of_invoice,
+)
 
 ENTITY: EntityType = "invoice"
 ZERO = Decimal("0.00")
@@ -697,6 +702,8 @@ class InvoiceService:
             document.deleted_at = now
             self.activities.record(DOCUMENT_ENTITY, document.id, "deleted", actor)
         self.activities.record(ENTITY, invoice.id, "deleted", actor)
+        # The days billed on it are billable again (REB-751): the draft that held them is gone.
+        release_days_of_invoice(self.session, invoice.id, actor, DELETED_DRAFT_REASON)
         self.session.commit()
 
     def set_payment_state(self, invoice_id: UUID, data: PaymentState, actor: Actor) -> InvoiceRead:
@@ -2317,6 +2324,9 @@ class InvoiceService:
             actor,
             {"numero": invoice.numero, "anno": invoice.anno, "motivo": data.motivo},
         )
+        # The days billed on it are billable again, as the hours are: an annulled invoice
+        # keeps its number but not its revenue (REB-751).
+        release_days_of_invoice(self.session, invoice.id, actor, ANNULLED_INVOICE_REASON)
         self.session.commit()
         return self._read(invoice)
 

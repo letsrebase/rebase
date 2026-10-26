@@ -191,6 +191,15 @@ ROWS: list[Row] = [
         },
     ),
     Row("PATCH", "/api/contracts/{contract_id}/expenses/{expense_id}", body={}),
+    # --- contracts / billing days (REB-751, REB-752) ---------------------------------
+    # The draft is `require_admin` (the rung `bind_time_to_invoice` sits on); the register's
+    # PDF is a document written, so `require_write`. Both before any lookup.
+    Row("POST", "/api/contracts/{contract_id}/invoice-days", body={}, admin_only=True),
+    Row(
+        "POST",
+        "/api/contracts/{contract_id}/register/pdf",
+        params={"da": "2026-10-01", "a": "2026-10-31"},
+    ),
     # --- contracts / renewal assumption (REB-375): `require_write` -------------------
     Row(
         "PUT",

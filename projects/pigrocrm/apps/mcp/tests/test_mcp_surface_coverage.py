@@ -258,6 +258,8 @@ _INTERNE: dict[Method, str] = {
     "`sent_gmail_message_id`: colonne che nessuno schema accetta in ingresso perche' "
     "sono fatti, non input. Non prende `actor`, che e' la firma di \"non e' "
     "un'operazione che qualcuno compie\"",
+    ("ContractRegisterService", "variables_for"): "passo intermedio di render_pdf",
+    ("ContractRegisterService", "csv_filename"): "il nome del file che build_csv consegna",
     ("TimeReportService", "variables_for"): "passo intermedio di render_pdf/build_xlsx",
     ("UserService", "count"): "conta gli utenti per il bootstrap del primo admin",
     # REB-362: none of these three takes an actor -- the mechanical signature this
@@ -569,6 +571,8 @@ _BYTE: dict[Method, str] = {
     ("AnalyticsService", "build_year_csv"): "l'MCP restituisce URL, mai byte",
     ("DocumentService", "download"): "l'MCP restituisce URL, mai byte",
     ("InvoiceService", "download"): "l'MCP restituisce URL, mai byte",
+    ("ContractRegisterService", "build_csv"): "l'MCP restituisce URL, mai byte",
+    ("ContractRegisterService", "render_pdf"): "l'MCP restituisce URL, mai byte",
     ("TimeReportService", "build_xlsx"): "l'MCP restituisce URL, mai byte",
     # REB-758: the page sends the bytes of a FatturaPA file; an agent hands the same
     # file over as a document, which `review_invoice_import` and `confirm_invoice_import`
