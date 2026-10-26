@@ -32,6 +32,7 @@
  * `playwright.config.ts` runs `workers: 1, fullyParallel: false` against one database that
  * is never truncated between invocations.
  */
+import { readFileSync } from 'node:fs'
 import { expect, test, type Page } from '@playwright/test'
 import { ensureSpaceHasWork, loginAsAdmin, seedCycleFixture, seedDealWithRate } from './helpers'
 
@@ -289,9 +290,9 @@ test.describe('il ciclo completo — metà umana', () => {
     expect(condiviso).toContain(`&a=${a}`)
     await page.goto(condiviso.replace('/app?', '/app/?'))
     await expect(page.getByRole('group', { name: 'Ricavi incassati' })).toBeVisible()
-    // Three tabs since the Scadenziario joined them (REB-329); the operational one left
-    // the page on 2026-09-08.
-    await expect(page.getByRole('tab')).toHaveCount(3)
+    // Four tabs since the Anno joined them (REB-757, after the Scadenziario of REB-329);
+    // the operational one left the page on 2026-09-08.
+    await expect(page.getByRole('tab')).toHaveCount(4)
 
     await page.goto('/app/?tab=commerciale')
     await expect(page.getByText('Pipeline per stato')).toBeVisible()
@@ -313,5 +314,27 @@ test.describe('il ciclo completo — metà umana', () => {
     await expect(page.getByText(/^Stima fiscale \d{4}$/)).toBeVisible()
     await expect(page.getByText('Ricavi incassabili')).toBeVisible()
     await expect(page.getByRole('link', { name: /Apri la stima fiscale/i })).toHaveCount(0)
+    // The seeded azienda is a forfettario, so the room under its two ceilings is on the
+    // page, with the simulator under it (REB-755).
+    await expect(page.getByText(/^Soglie del forfettario \d{4}$/)).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Simula' })).toBeVisible()
+  })
+
+  test('la scheda Anno mostra il registro e propone il CSV per il commercialista', async ({
+    page,
+  }) => {
+    await loginAsAdmin(page)
+    await page.goto('/app/?tab=anno')
+    await expect(page.getByRole('tab', { name: 'Anno' })).toHaveAttribute('aria-selected', 'true')
+    await expect(page.getByText('Registro delle fatture emesse')).toBeVisible()
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      page.getByRole('link', { name: /Scarica il CSV per il commercialista/ }).click(),
+    ])
+    expect(download.suggestedFilename()).toMatch(/^registro-\d{4}-.+\.csv$/)
+    const path = await download.path()
+    expect(path).not.toBeNull()
+    // The byte-order mark an Italian-locale Excel needs to read the accents as UTF-8.
+    expect(readFileSync(path as string).subarray(0, 3)).toEqual(Buffer.from([0xef, 0xbb, 0xbf]))
   })
 })
