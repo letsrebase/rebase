@@ -399,7 +399,7 @@ def test_look_again_finds_a_person_who_joined_slack_after_the_connection(
 
 def test_two_users_never_share_one_slack_member(db_session: Session) -> None:
     admin = make_user(db_session, email="mario@example.it", nome="Mario")
-    twin = make_user(db_session, email="MARIO@example.it ".strip().lower() + ".old", nome="Gemello")
+    twin = make_user(db_session, email="mario.old@example.it", nome="Gemello")
     fake = FakeSlack()
     fake.add_member("mario@example.it", "UMARIO")
     fake.add_member(twin.email, "UMARIO")
@@ -604,3 +604,17 @@ def test_a_token_sealed_for_one_space_does_not_open_in_another(db_session: Sessi
     assert bot_token(workspace, uno) == BOT_TOKEN
     with pytest.raises(Conflict, match="PIGROCRM_SLACK_TOKEN_KEY"):
         bot_token(workspace, space_base_settings(slack_settings(), "studio-due"))
+
+
+def test_a_rotated_key_shows_on_the_page_before_any_action_fails(db_session: Session) -> None:
+    import base64
+
+    admin = make_user(db_session)
+    connect(db_session, FakeSlack(), admin)
+    rotated = slack_settings(slack_token_key=base64.b64encode(b"r" * 32).decode())
+    service = SlackService(db_session, settings=rotated, client=slack_client(FakeSlack()))
+
+    health = service.health(actor_of(admin))
+
+    assert health.problem is not None and "PIGROCRM_SLACK_TOKEN_KEY" in health.problem
+    assert _page(db_session, FakeSlack(), actor_of(admin)).problem is None

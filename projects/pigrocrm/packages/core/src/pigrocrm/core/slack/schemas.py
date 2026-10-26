@@ -76,6 +76,9 @@ class SlackHealth(BaseModel):
     configured: bool
     workspace: SlackWorkspaceRead | None
     members: list[SlackMemberRead] = Field(default_factory=list)
+    # A sentence, in Italian, when the connection looks live and cannot work: the token on the
+    # row does not open with this installation's key (a rotated `PIGROCRM_SLACK_TOKEN_KEY`).
+    problem: str | None = None
 
 
 class SlackMine(BaseModel):

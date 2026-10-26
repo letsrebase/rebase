@@ -78,10 +78,17 @@ class SlackService:
                     slack_email=link.slack_email if link is not None else None,
                 )
             )
+        problem: str | None = None
+        if workspace.status == "active":
+            try:
+                bot_token(workspace, self.settings)
+            except Conflict as unreadable:
+                problem = unreadable.details["reason"]
         return SlackHealth(
             configured=True,
             workspace=SlackWorkspaceRead.model_validate(workspace),
             members=members,
+            problem=problem,
         )
 
     def mine(self, actor: Actor) -> SlackMine:

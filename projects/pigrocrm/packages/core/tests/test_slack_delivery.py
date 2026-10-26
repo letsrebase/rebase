@@ -236,9 +236,7 @@ def test_quiet_hours_hold_slack_and_the_first_pass_after_them_sends(world: World
     world.attivita("Richiamare Rossi", days_late=3)
     # The attività is overdue by three days on the Saturday's date.
     with world.session() as session:
-        session.execute(
-            text("UPDATE attivita SET scadenza = :d"), {"d": date(2026, 11, 4)}
-        )
+        session.execute(text("UPDATE attivita SET scadenza = :d"), {"d": date(2026, 11, 4)})
         session.commit()
 
     held = world.pass_(today=saturday.date(), now=saturday)
@@ -293,9 +291,7 @@ def test_a_person_who_joined_slack_later_is_matched_in_the_pass_and_told_what_is
     # A day passes; Ada joins Slack; the unmatched row is old enough to be asked again.
     world.fake.members[ada_email] = ada_member
     with world.session() as session:
-        session.execute(
-            text("UPDATE slack_user_links SET checked_at = now() - interval '2 days'")
-        )
+        session.execute(text("UPDATE slack_user_links SET checked_at = now() - interval '2 days'"))
         session.commit()
     world.attivita("Richiamare Rossi")
 
@@ -493,9 +489,9 @@ def _choose_channel(world: World, channel_id: str | None = "C1") -> None:
     with world.session() as session:
         admin = session.get(User, world.admin)
         assert admin is not None
-        SlackService(
-            session, settings=world.settings, client=slack_client(world.fake)
-        ).set_channel(actor_of(admin), channel_id)
+        SlackService(session, settings=world.settings, client=slack_client(world.fake)).set_channel(
+            actor_of(admin), channel_id
+        )
 
 
 def test_a_space_wide_reminder_is_also_posted_to_the_chosen_channel_once(world: World) -> None:
@@ -562,9 +558,7 @@ def test_a_channel_post_climbs_with_the_severity_and_ends_with_the_cause(world: 
     _late_job(world)
     world.pass_()  # `serious`, three hours later `critical`
     with world.session() as session:
-        session.execute(
-            text("UPDATE reminder_job_run SET ran_at = now() - interval '4 hours'")
-        )
+        session.execute(text("UPDATE reminder_job_run SET ran_at = now() - interval '4 hours'"))
         session.commit()
 
     climbed = world.pass_()

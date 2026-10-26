@@ -341,6 +341,17 @@ _CREDENZIALI: dict[Method, str] = {
     ("GoogleDriveOAuthService", "disconnect"): "stessa ragione di "
     "`GmailOAuthService.disconnect`: revocare l'accesso a un servizio di terzi e' una "
     "decisione della persona",
+    ("SlackOAuthService", "start"): "stessa ragione di `GmailOAuthService.start` (REB-739): "
+    "l'installazione dell'app Slack si da' da un browser, non da un tool -- l'URL di "
+    "autorizzazione non e' percorribile da un agente",
+    ("SlackOAuthService", "complete"): "stessa ragione di `GmailOAuthService.complete`: il "
+    "`code` esiste solo dentro il redirect di Slack verso il callback, nessun agente puo' "
+    "averlo",
+    ("SlackOAuthService", "disconnect"): "stessa ragione di `GmailOAuthService.disconnect`: "
+    "togliere il workspace (e con lui il token del bot e gli abbinamenti) e' una decisione "
+    "della persona",
+    ("SlackOAuthService", "redirect_uri"): "e' l'URL fisso che Slack confronta con quelli "
+    "registrati sull'app, non un'operazione (REB-739)",
     ("GmailSyncService", "sync"): (
         "il consenso a leggere la casella e' della persona, e lo e' anche il momento in "
         "cui viene esercitato: `sync` va a prendere posta da un servizio terzo, sotto "
@@ -518,6 +529,32 @@ _CREDENZIALI: dict[Method, str] = {
 #    the configuration is. Exposing them would also mean an agent could rewrite the field
 #    definitions its own `describe_schema` output is derived from.
 _CONFIGURAZIONE: dict[Method, str] = {
+    ("SlackService", "rematch"): (
+        "Impostazioni → Slack (REB-739): richiede a Slack, con il token del bot dello "
+        "spazio, chi e' ciascun utente. Chi riceve un messaggio in un workspace di terzi lo "
+        "decide la persona dal pannello; l'agente legge lo stato con `describe_slack`"
+    ),
+    ("SlackService", "link"): (
+        "Impostazioni → Slack: dire a mano chi e' un utente in Slack cambia a chi arrivano "
+        "i suoi promemoria in un workspace di terzi; stessa ragione di `rematch`"
+    ),
+    ("SlackService", "unlink"): (
+        "Impostazioni → Slack: la strada di ritorno di `link`, stessa ragione"
+    ),
+    ("SlackService", "set_channel"): (
+        "Impostazioni → Slack: il canale in cui finiscono i promemoria dello spazio e' una "
+        "scelta dell'amministratore dal pannello, che prima ne ha letto l'elenco da Slack "
+        "(`channels`): stessa ragione di `rematch`"
+    ),
+    ("SlackService", "channels"): (
+        "Impostazioni → Slack: l'elenco dei canali che il selettore del pannello legge da "
+        "Slack, con il token del bot, per scegliere il canale (`set_channel`); non e' un "
+        "dato del CRM e un agente non sceglie il canale"
+    ),
+    ("SlackService", "mine"): (
+        "il suggerimento della pagina Notifiche («il tuo indirizzo non e' stato trovato su "
+        "Slack»): lo stesso fatto, per tutti gli utenti, lo legge `describe_slack`"
+    ),
     ("LegalEntityService", "set_default"): (
         "Impostazioni → Aziende: quale azienda e' la predefinita decide a chi vanno le "
         "letture implicite di tutto lo spazio (REB-616, spec 2026-10-03 §3); una scelta "

@@ -49,6 +49,12 @@ x-api-environment: &api-environment
   PIGROCRM_GOOGLE_APP_UNVERIFIED: ${PIGROCRM_GOOGLE_APP_UNVERIFIED:-false}
   # The root lends its Google client to every space without one (REB-394).
   PIGROCRM_GOOGLE_SHARED_CLIENT: ${PIGROCRM_GOOGLE_SHARED_CLIENT:-false}
+  # The Slack app (REB-739): one per installation, installed once per space. All three or
+  # none, as .env.example says; a space borrows the root's app and a key derived for it.
+  PIGROCRM_SLACK_CLIENT_ID: ${PIGROCRM_SLACK_CLIENT_ID:-}
+  PIGROCRM_SLACK_CLIENT_SECRET: ${PIGROCRM_SLACK_CLIENT_SECRET:-}
+  PIGROCRM_SLACK_TOKEN_KEY: ${PIGROCRM_SLACK_TOKEN_KEY:-}
+  PIGROCRM_SLACK_URL: ${PIGROCRM_SLACK_URL:-https://slack.com}
   PIGROCRM_ROOT_SLUG: ${PIGROCRM_ROOT_SLUG:-}
   # Lets the rebase hub read the list of spaces (ORB-142). Empty: no such route.
   PIGROCRM_REGISTRY_TOKEN: ${PIGROCRM_REGISTRY_TOKEN:-}
