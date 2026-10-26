@@ -5,6 +5,7 @@ import {
   Dialog,
   DialogContent,
   DialogFooter,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from '@rebase/ui/dialog'
@@ -76,6 +77,9 @@ export function AttivitaDialog({
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{attivita ? 'Modifica attività' : 'Nuova attività'}</DialogTitle>
+          <DialogDescription>
+            Scadenza, note, assegnatario e record collegato sono facoltativi.
+          </DialogDescription>
         </DialogHeader>
         <AttivitaForm
           attivita={attivita}

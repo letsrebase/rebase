@@ -150,6 +150,15 @@ describe('DataTable', () => {
     expect(onRowClick).not.toHaveBeenCalled()
   })
 
+  it('leaves Enter on a control inside a cell to that control', () => {
+    const onRowClick = vi.fn()
+    render(<DataTable columns={COLUMNS} data={DATA} onRowClick={onRowClick} />)
+    const inner = document.createElement('button')
+    rowFor('Beta SpA').appendChild(inner)
+    fireEvent.keyDown(inner, { key: 'Enter' })
+    expect(onRowClick).not.toHaveBeenCalled()
+  })
+
   /* Half behavioural, like every responsive assertion in this suite: jsdom does not load
      the stylesheet and lays nothing out, so the classes are what can be read. They are
      worth reading anyway, because the defect they guard was invisible *by construction* --

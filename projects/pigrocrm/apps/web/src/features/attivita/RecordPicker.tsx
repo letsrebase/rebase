@@ -38,7 +38,10 @@ export function RecordPicker({
 
   if (value !== null) {
     return (
-      <div className="flex items-center justify-between gap-2 border px-3 py-2 text-sm">
+      <div
+        id={id}
+        className="flex items-center justify-between gap-2 border px-3 py-2 text-sm"
+      >
         <span className="min-w-0 truncate">
           <span className="text-muted-foreground">{LINK_KIND_LABELS[value.kind]} · </span>
           {label ?? 'Caricamento…'}
@@ -68,6 +71,7 @@ export function RecordPicker({
     <div className="space-y-2">
       <Input
         id={id}
+        aria-label="Cerca un record da collegare"
         value={term}
         placeholder="Cerca un cliente, una persona, un deal o una fattura…"
         onChange={(event) => setTerm(event.target.value)}

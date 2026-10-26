@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import { DataTable, type DataTableFeatures } from '@/components/DataTable'
 import { FilterChips, FilterRow } from '@/components/FilterRow'
 import { PageHeader } from '@/components/PageHeader'
+import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { RowActions } from '@/components/RowActions'
 import { StatusPill, type StatusTone } from '@/components/StatusPill'
 import { Button } from '@rebase/ui/button'
@@ -109,7 +110,15 @@ function LinkFilter({
  * so working through a list is not a dialog per item; the archived ones are one chip
  * away, with «Ripristina» as the way back.
  */
-export function AttivitaPage({ openId }: { openId?: string }) {
+export function AttivitaPage({
+  openId,
+  onDismissOpen,
+}: {
+  openId?: string
+  /** Called when the dialog opened by `openId` is closed: the route takes `?apri=` off the
+   *  URL, so the same hit picked again is a new navigation and a refresh does not reopen. */
+  onDismissOpen?: () => void
+}) {
   const canWrite = useCanWrite()
   const assignees = useAssignees()
   const [stato, setStato] = useState<Stato | null>('aperta')
@@ -122,7 +131,6 @@ export function AttivitaPage({ openId }: { openId?: string }) {
   // Arrived from the global search with `?apri=<id>`: that row opens in its dialog. Read by
   // id and not looked up in the table, because the filters the page opens with (open, mine)
   // may well not include the very row somebody searched for.
-  const [dismissed, setDismissed] = useState<string | null>(null)
   const fromSearch = useAttivita(openId)
 
   const filters = useMemo(
@@ -295,15 +303,23 @@ export function AttivitaPage({ openId }: { openId?: string }) {
       </PageHeader>
 
       <div className="px-8 pb-8">
+        {fromSearch.isError && (
+          <div className="pb-4">
+            <QueryErrorBanner error={fromSearch.error} />
+          </div>
+        )}
         <DataTable
           columns={columns}
           data={list.items}
           isLoading={list.isLoading}
           isError={list.isError}
           error={list.error}
-          onRowClick={setEditing}
+          // A reader has no edit form to open: its buttons would only answer 403.
+          onRowClick={canWrite ? setEditing : undefined}
           emptyMessage={
-            archiviate ? 'Nessuna attività archiviata.' : 'Nessuna attività con questi filtri.'
+            archiviate
+              ? 'Nessuna attività archiviata con questi filtri.'
+              : 'Nessuna attività con questi filtri.'
           }
         />
         {list.hasMore && (
@@ -316,10 +332,10 @@ export function AttivitaPage({ openId }: { openId?: string }) {
       </div>
 
       <AttivitaDialog open={creating} onOpenChange={setCreating} />
-      {openId !== undefined && openId !== dismissed && fromSearch.data && (
+      {canWrite && openId !== undefined && fromSearch.data && (
         <AttivitaDialog
           open
-          onOpenChange={(open) => !open && setDismissed(openId)}
+          onOpenChange={(open) => !open && onDismissOpen?.()}
           attivita={fromSearch.data}
         />
       )}

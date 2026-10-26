@@ -39,7 +39,12 @@ export function toFilters(state: {
   }
   // «Scadute» is «due before today»: `scade_entro` is inclusive, so yesterday. The undated
   // are left out by the API itself, which is the point of the filter.
-  if (state.scadenza === 'scadute') filters.scade_entro = daysFromToday(-1)
+  // Overdue is an open commitment past its date (spec §3.2): a completed one is not late,
+  // so the chip implies `stato=aperta` whatever the state chips say.
+  if (state.scadenza === 'scadute') {
+    filters.scade_entro = daysFromToday(-1)
+    filters.stato = 'aperta'
+  }
   if (state.scadenza === 'settimana') filters.scade_entro = daysFromToday(7)
   if (state.scadenza === 'senza') filters.senza_scadenza = true
   if (state.link) Object.assign(filters, { [LINK_COLUMN[state.link.kind]]: state.link.id })

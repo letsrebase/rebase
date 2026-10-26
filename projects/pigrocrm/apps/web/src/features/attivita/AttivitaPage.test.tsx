@@ -70,11 +70,11 @@ function serve(items: unknown[]) {
   }) as never)
 }
 
-function renderPage(openId?: string) {
+function renderPage(openId?: string, onDismissOpen?: () => void) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={client}>
-      <AttivitaPage openId={openId} />
+      <AttivitaPage openId={openId} onDismissOpen={onDismissOpen} />
     </QueryClientProvider>,
   )
 }
@@ -108,6 +108,10 @@ describe('toFilters', () => {
     const yesterday = new Date()
     yesterday.setDate(yesterday.getDate() - 1)
     expect(toFilters({ ...base, scadenza: 'scadute' }).scade_entro).toBe(toIsoDate(yesterday))
+  })
+
+  it('keeps «scadute» to the open ones whatever the state chips say', () => {
+    expect(toFilters({ ...base, scadenza: 'scadute', stato: null }).stato).toBe('aperta')
   })
 
   it('names the linked record by the column of its kind', () => {
@@ -176,14 +180,17 @@ describe('AttivitaPage', () => {
       if (path === '/api/users') return ok([])
       throw new Error(`unexpected GET ${path}`)
     }) as never)
-    renderPage('found')
+    const onDismissOpen = vi.fn()
+    renderPage('found', onDismissOpen)
 
     const dialog = await screen.findByRole('dialog', { name: 'Modifica attività' })
     expect(within(dialog).getByLabelText('Titolo')).toHaveValue('Da cercare')
     // Closed, so the dialog offers the way back to open.
     expect(within(dialog).getByRole('button', { name: 'Riapri' })).toBeInTheDocument()
 
+    // Closing asks the route to take `?apri=` off the URL, so picking the same hit again
+    // is a new navigation and not a no-op.
     await userEvent.click(within(dialog).getByRole('button', { name: 'Annulla' }))
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    await waitFor(() => expect(onDismissOpen).toHaveBeenCalled())
   })
 })

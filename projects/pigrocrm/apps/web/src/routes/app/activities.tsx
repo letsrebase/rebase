@@ -1,13 +1,20 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { AttivitaPage } from '@/features/attivita/AttivitaPage'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 function AttivitaRoute() {
   const { apri } = Route.useSearch()
+  const navigate = useNavigate()
   // `key`: arriving with another id while the page is open is a remount, so the dialog
   // opens for it instead of staying dismissed from the previous one.
-  return <AttivitaPage key={apri ?? ''} openId={apri} />
+  return (
+    <AttivitaPage
+      key={apri ?? ''}
+      openId={apri}
+      onDismissOpen={() => void navigate({ to: '/app/activities', search: {}, replace: true })}
+    />
+  )
 }
 
 // Only `Route` is exported: a route file exporting anything else opts that route out of
