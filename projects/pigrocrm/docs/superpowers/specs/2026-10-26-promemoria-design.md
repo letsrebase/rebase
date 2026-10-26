@@ -173,6 +173,13 @@ owners of that customer's **open deals**; and when there are none, the space's o
 empty-set rule below). A card that gives the customer an owner of its own would replace
 this resolution; it is not in § 11 and is Lorenzo's to ask for when he signs the spec.
 
+**Superseded on 2026-10-26 (REB-773).** Lorenzo asked for the field, and the customer now has
+`owner_id`. The derivation above is the rule the migration used once to give the existing
+customers an owner (the owner of most of the open deals, the oldest deal's on a tie) and
+nothing reads it any more: a subject linked to a customer goes to the customer's owner, a
+subject linked to a deal to the deal's owner as well, and a customer nobody owns to the
+space's owner. `docs/design/DECISIONS.md` has the row.
+
 The set is deduplicated: one person who is both assignee and owner gets one reminder. A
 user who is archived or has no email address is dropped from the set, and the reminder
 keeps going to the others. A reminder whose set is empty goes to the space's owner, so a

@@ -20,6 +20,7 @@ const GET = api.GET as unknown as Mock
 const BASE_CUSTOMER: Customer = {
   id: 'c1',
   azienda_id: 'a-1',
+  owner_id: null,
   ragione_sociale: 'ACME Srl',
   partita_iva: null,
   codice_fiscale: null,
@@ -493,5 +494,85 @@ describe('the picker beside a custom field that happens to be named azienda_id (
     expect(body.custom_fields).toEqual({})
     // And the homonymous custom control never shows the picked id as its own value.
     expect(screen.getByLabelText('Codice azienda interno')).toHaveValue('')
+  })
+})
+
+describe('the «Responsabile» picker (REB-773)', () => {
+  const OWNERS = [
+    { id: 'u-1', nome: 'Giulia' },
+    { id: 'u-2', nome: 'Marco' },
+  ]
+
+  it('is not drawn without the people to choose from, and the body carries no owner', async () => {
+    const onSubmit = vi.fn()
+    renderWithClient(
+      <CustomerForm
+        title="Modifica cliente"
+        open
+        onOpenChange={() => {}}
+        customFields={[]}
+        initial={customerToFormValues({ ...BASE_CUSTOMER, owner_id: 'u-1' })}
+        onSubmit={onSubmit}
+      />,
+    )
+    expect(screen.queryByLabelText('Responsabile')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    expect(submitted(onSubmit)).not.toHaveProperty('owner_id')
+  })
+
+  it('shows the stored owner and sends nothing while it is unchanged', async () => {
+    const onSubmit = vi.fn()
+    renderWithClient(
+      <CustomerForm
+        title="Modifica cliente"
+        open
+        onOpenChange={() => {}}
+        customFields={[]}
+        owners={OWNERS}
+        initial={customerToFormValues({ ...BASE_CUSTOMER, owner_id: 'u-1' })}
+        onSubmit={onSubmit}
+      />,
+    )
+    expect(screen.getByLabelText('Responsabile')).toHaveTextContent('Giulia')
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    expect(submitted(onSubmit)).not.toHaveProperty('owner_id')
+  })
+
+  it('sends the person chosen instead', async () => {
+    const onSubmit = vi.fn()
+    renderWithClient(
+      <CustomerForm
+        title="Modifica cliente"
+        open
+        onOpenChange={() => {}}
+        customFields={[]}
+        owners={OWNERS}
+        initial={customerToFormValues({ ...BASE_CUSTOMER, owner_id: 'u-1' })}
+        onSubmit={onSubmit}
+      />,
+    )
+    await userEvent.click(screen.getByLabelText('Responsabile'))
+    await userEvent.click(await screen.findByRole('option', { name: 'Marco' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    expect(submitted(onSubmit).owner_id).toBe('u-2')
+  })
+
+  it('sends null for «Nessuno»', async () => {
+    const onSubmit = vi.fn()
+    renderWithClient(
+      <CustomerForm
+        title="Modifica cliente"
+        open
+        onOpenChange={() => {}}
+        customFields={[]}
+        owners={OWNERS}
+        initial={customerToFormValues({ ...BASE_CUSTOMER, owner_id: 'u-1' })}
+        onSubmit={onSubmit}
+      />,
+    )
+    await userEvent.click(screen.getByLabelText('Responsabile'))
+    await userEvent.click(await screen.findByRole('option', { name: 'Nessuno' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    expect(submitted(onSubmit).owner_id).toBeNull()
   })
 })

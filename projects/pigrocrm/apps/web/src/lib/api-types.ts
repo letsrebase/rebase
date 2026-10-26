@@ -5344,6 +5344,8 @@ export interface components {
             nazione: string;
             /** Azienda Id */
             azienda_id?: string | null;
+            /** Owner Id */
+            owner_id?: string | null;
             /** Email */
             email?: string | null;
             /** Telefono */
@@ -5401,6 +5403,8 @@ export interface components {
              * Format: uuid
              */
             azienda_id: string;
+            /** Owner Id */
+            owner_id: string | null;
             /** Ragione Sociale */
             ragione_sociale: string;
             /** Partita Iva */
@@ -5474,6 +5478,8 @@ export interface components {
             nazione?: string | null;
             /** Azienda Id */
             azienda_id?: string | null;
+            /** Owner Id */
+            owner_id?: string | null;
             /** Email */
             email?: string | null;
             /** Telefono */

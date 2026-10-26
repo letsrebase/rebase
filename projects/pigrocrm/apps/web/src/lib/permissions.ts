@@ -49,6 +49,8 @@ export const MIN_ROLE = {
   create_customer: 'collaboratore',
   update_customer: 'collaboratore',
   delete_customer: 'collaboratore',
+  // Who answers for a customer, and so who the reminders about it go to (REB-773).
+  change_customer_owner: 'admin',
   create_person: 'collaboratore',
   update_person: 'collaboratore',
   delete_person: 'collaboratore',
