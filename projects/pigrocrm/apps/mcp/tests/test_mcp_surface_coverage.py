@@ -570,6 +570,11 @@ _BYTE: dict[Method, str] = {
     ("DocumentService", "download"): "l'MCP restituisce URL, mai byte",
     ("InvoiceService", "download"): "l'MCP restituisce URL, mai byte",
     ("TimeReportService", "build_xlsx"): "l'MCP restituisce URL, mai byte",
+    # REB-758: the page sends the bytes of a FatturaPA file; an agent hands the same
+    # file over as a document, which `review_invoice_import` and `confirm_invoice_import`
+    # already read and write.
+    ("InvoiceService", "review_upload"): "l'MCP non porta mai byte: parte da un documento",
+    ("InvoiceService", "confirm_upload"): "l'MCP non porta mai byte: parte da un documento",
     ("TimeReportService", "render_pdf"): "l'MCP restituisce URL, mai byte",
 }
 

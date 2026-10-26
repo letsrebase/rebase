@@ -353,4 +353,21 @@ describe('the invoice list', () => {
     await screen.findByRole('columnheader', { name: 'Numero' })
     expect(screen.queryByRole('button', { name: /nuova fattura/i })).not.toBeInTheDocument()
   })
+
+  /** REB-758: «Importa» sits beside «Nuova fattura» and asks the same gate for its own
+   *  action, since the service answers the review and the write with a 403 below admin. */
+  it('offers «Importa» beside «Nuova fattura», and to nobody the gate refuses', async () => {
+    mockGet.mockImplementation((() => ok({ items: [], next_cursor: null })) as never)
+    renderList()
+    expect(await screen.findByRole('button', { name: 'Importa' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /nuova fattura/i })).toBeInTheDocument()
+  })
+
+  it('offers a person the gate refuses no «Importa»', async () => {
+    mockAuth.may = false
+    mockGet.mockImplementation((() => ok({ items: [], next_cursor: null })) as never)
+    renderList()
+    await screen.findByRole('columnheader', { name: 'Numero' })
+    expect(screen.queryByRole('button', { name: 'Importa' })).not.toBeInTheDocument()
+  })
 })

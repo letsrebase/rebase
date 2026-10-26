@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from '@rebase/ui/select'
 import { buildInvoiceColumns } from '@/features/invoices/columns'
+import { ImportInvoicesButton } from '@/features/invoices/ImportInvoicesDialog'
 import { LoadMoreInvoices } from '@/features/invoices/LoadMoreInvoices'
 import { NewProformaButton } from '@/features/invoices/NewProformaDialog'
 import { useLegalEntitiesToName } from '@/lib/legalEntity'
@@ -110,7 +111,12 @@ export function InvoicesList({ scadute }: { scadute?: boolean }) {
         icon={Receipt}
         title="Fatture"
         description="Una fattura si emette da un deal, da un cliente o da qui, creando una proforma da confermare ed emettere. Le proforma si distinguono dal riferimento al posto del numero: non sono documenti fiscali finché non vengono emesse."
-        actions={<NewProformaButton />}
+        actions={
+          <>
+            <ImportInvoicesButton />
+            <NewProformaButton />
+          </>
+        }
       >
         <FilterRow>
           <FilterChips
