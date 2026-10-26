@@ -43,8 +43,8 @@ async function seedContract(
   return id
 }
 
-test.describe('le giornate di contratto', () => {
-  test('una mezza giornata registrata dal form compare nelle giornate del contratto e sul calendario', async ({ page }) => {
+test.describe('contract days', () => {
+  test('a half day recorded from the form shows in the contract\'s days and on the calendar', async ({ page }) => {
     await loginAsAdmin(page)
     const titolo = `Giornate E2E ${Date.now()}`
     const contractId = await seedContract(page.request, { titolo, requiresPriorApproval: true })
@@ -74,7 +74,7 @@ test.describe('le giornate di contratto', () => {
     await expect(cell.getByText('senza approvazione')).toBeVisible()
   })
 
-  test('un giorno approvato si segna come lavorato e poi contestato, e la pagina mostra i due passaggi', async ({ page }) => {
+  test('an approved day is marked worked then contested, and its page shows the moves', async ({ page }) => {
     await loginAsAdmin(page)
     const titolo = `Ciclo E2E ${Date.now()}`
     const contractId = await seedContract(page.request, { titolo, requiresPriorApproval: false })
@@ -127,7 +127,7 @@ test.describe('le giornate di contratto', () => {
     await expect(page.getByText('Contestata').first()).toBeVisible()
   })
 
-  test('N dalla Home apre il form per registrare una giornata', async ({ page }) => {
+  test('N on the Home opens the form to record a day', async ({ page }) => {
     await loginAsAdmin(page)
     await seedContract(page.request, { titolo: `Home E2E ${Date.now()}`, requiresPriorApproval: false })
     await page.goto('/app')
@@ -137,7 +137,7 @@ test.describe('le giornate di contratto', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Registra una giornata' })).toBeVisible()
   })
 
-  test('l’approvazione di un cliente, con il suo testo come prova, porta i giorni a approvati', async ({ page }) => {
+  test('a client\'s approval with pasted text as its proof moves the days it covers', async ({ page }) => {
     await loginAsAdmin(page)
     const titolo = `Approvazione E2E ${Date.now()}`
     const contractId = await seedContract(page.request, { titolo, requiresPriorApproval: true })
@@ -176,7 +176,7 @@ test.describe('le giornate di contratto', () => {
     await expect(page.getByText('Confermo le giornate del mese').first()).toBeVisible()
   })
 
-  test('chiedere l’approvazione di tre date le registra come proposte e prepara la richiesta', async ({ page }) => {
+  test('asking for approval of three dates records them as proposed and prepares the request', async ({ page }) => {
     await loginAsAdmin(page)
     const titolo = `Richiesta E2E ${Date.now()}`
     const contractId = await seedContract(page.request, { titolo, requiresPriorApproval: true })
