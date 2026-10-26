@@ -1,4 +1,5 @@
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
+import { CustomerCorrespondents } from './CustomerCorrespondents'
 import { EmailThread } from './EmailThread'
 import { PendingDrafts } from './PendingDrafts'
 import { useGmailMessages, type GmailEntityType, type GmailMessageRead } from './queries'
@@ -48,6 +49,7 @@ export function EmailTab({
   return (
     <div className="space-y-6">
       <PendingDrafts entityType={entityType} entityId={entityId} />
+      {entityType === 'customer' ? <CustomerCorrespondents customerId={entityId} /> : null}
       <Correspondence entityType={entityType} entityId={entityId} />
     </div>
   )
