@@ -118,7 +118,7 @@ test.describe('le giornate di contratto', () => {
     const history = page.getByRole('region', { name: 'Cronologia' }).or(page.locator('section', { has: page.getByRole('heading', { name: 'Cronologia' }) }))
     await expect(history.getByText('Giornata svolta')).toBeVisible()
     await expect(history.getByText('Il cliente contesta le ore')).toBeVisible()
-    await expect(history.locator('time')).toHaveCount(3)
+    await expect(history.locator('time')).toHaveCount(4)
     await expect(page.getByText('Contestata').first()).toBeVisible()
   })
 
