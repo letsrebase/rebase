@@ -48,7 +48,11 @@ class SlackMatcher:
         if link is not None:
             if link.source == "manual":
                 return link
-            if link.source == "none" and not force and now - link.checked_at < RETRY_UNMATCHED_AFTER:
+            if (
+                link.source == "none"
+                and not force
+                and now - link.checked_at < RETRY_UNMATCHED_AFTER
+            ):
                 return link
         member = self.client.lookup_user_by_email(self.token, user.email)
         if member is None:

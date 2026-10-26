@@ -41,6 +41,7 @@ from pigrocrm.core.reminders.models import (
     ReminderSnooze,
     ReminderSummaryRun,
 )
+from pigrocrm.core.slack.models import SlackChannelPost
 
 # What identifies one delivery: `(key, user, channel, mode, period)`.
 DeliveryIdentity = tuple[str, UUID, str, str, date | None]
@@ -143,6 +144,13 @@ class ReminderLedger:
             # `RETURNING` and not `rowcount`, the way `gmail/repository.py` counts: the
             # DBAPI's row count is not typed on a generic result.
             deleted += len(self.session.execute(statement.returning(model.id)).all())
+        # The posts Slack's channel took end with the occurrence too (`SlackChannelPost`),
+        # so a cause that clears and returns is posted again. Not counted: they are
+        # not a person's rows.
+        posts = delete(SlackChannelPost).where(SlackChannelPost.type.in_(list(ran)))
+        if raised:
+            posts = posts.where(SlackChannelPost.key.not_in(list(raised)))
+        self.session.execute(posts)
         return deleted
 
     # -- the daily summary -------------------------------------------------------

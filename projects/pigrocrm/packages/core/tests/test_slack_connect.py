@@ -49,7 +49,9 @@ def test_start_sends_the_admin_to_slacks_authorize_page_with_the_bot_scopes(
     parsed = urlparse(url)
     query = parse_qs(parsed.query)
 
-    assert f"{parsed.scheme}://{parsed.netloc}{parsed.path}" == "https://slack.test/oauth/v2/authorize"
+    assert (
+        f"{parsed.scheme}://{parsed.netloc}{parsed.path}" == "https://slack.test/oauth/v2/authorize"
+    )
     assert query["client_id"] == [CLIENT_ID]
     assert query["scope"] == [",".join(SLACK_BOT_SCOPES)]
     assert query["redirect_uri"] == ["https://crm.example.it/api/slack/oauth/callback"]
@@ -403,7 +405,9 @@ def test_two_users_never_share_one_slack_member(db_session: Session) -> None:
     fake.add_member(twin.email, "UMARIO")
     connect(db_session, fake, admin)
 
-    states = {link.user_id: link.slack_user_id for link in db_session.scalars(select(SlackUserLink))}
+    states = {
+        link.user_id: link.slack_user_id for link in db_session.scalars(select(SlackUserLink))
+    }
     assert sorted(v or "" for v in states.values()) == ["", "UMARIO"]
 
 

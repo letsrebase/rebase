@@ -104,7 +104,9 @@ class SlackService:
         found = self._calling(workspace, lambda: self.client.list_channels(token))
         return [
             SlackChannelRead(
-                id=channel.id, name=channel.name, is_private=channel.is_private,
+                id=channel.id,
+                name=channel.name,
+                is_private=channel.is_private,
                 is_member=channel.is_member,
             )
             for channel in found

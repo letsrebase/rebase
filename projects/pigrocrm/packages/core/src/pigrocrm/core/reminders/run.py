@@ -46,7 +46,12 @@ from pigrocrm.core.reminders.channels import dispatcher_for
 from pigrocrm.core.reminders.engine import ReminderEngine
 from pigrocrm.core.reminders.jobs import REMINDER_PASS_JOB
 from pigrocrm.core.reminders.push import PushSender
+from pigrocrm.core.slack.client import SlackClient
 
+# The name `pigrocrm reminders` gives the root installation, which is no registry space:
+# `cli.ROOT_LABEL`, held equal by `test_cli_reminders.py`. A channel whose credentials are
+# per space is handed `None` for it, not this word.
+ROOT_LABEL = "root"
 # `pg_try_advisory_lock(int, int)`: a namespace of this project's own, as
 # `gmail/repository.py` and `customers/repository.py` do, and one key for this pass.
 REMINDERS_LOCK_NAMESPACE = 0x7093
@@ -69,6 +74,7 @@ class ReminderOutcome:
     # Messages the other channels sent (on a rehearsal, would have sent).
     pushes: int = 0
     emails: int = 0
+    slacks: int = 0
 
 
 class ReminderRun:
@@ -78,11 +84,13 @@ class ReminderRun:
         *,
         sender: EmailSender | None = None,
         pusher: PushSender | None = None,
+        slack: SlackClient | None = None,
     ) -> None:
-        """`sender` and `pusher` are the transports of the email and push channels; `None`
-        is a channel with no transport, which sends nothing and records nothing."""
+        """`sender`, `pusher` and `slack` are the transports of the email, push and Slack
+        channels; `None` is a channel with no transport, which sends nothing and records
+        nothing."""
         self.settings = settings
-        self.dispatcher = dispatcher_for(sender=sender, pusher=pusher)
+        self.dispatcher = dispatcher_for(sender=sender, pusher=pusher, slack=slack)
 
     def run_for_space(
         self,
@@ -149,6 +157,7 @@ class ReminderRun:
                 today=today,
                 now=now,
                 public_url=public_url,
+                slug=None if slug == ROOT_LABEL else slug,
             )
             if dry_run:
                 session.rollback()
@@ -160,6 +169,7 @@ class ReminderRun:
                     delivered=len(due),
                     pushes=planned.get("push", 0),
                     emails=planned.get("email", 0),
+                    slacks=planned.get("slack", 0),
                 )
             # The read transaction ends before the first network call.
             session.rollback()
@@ -175,4 +185,5 @@ class ReminderRun:
                 ended=result.ended,
                 pushes=result.sent.get("push", 0),
                 emails=result.sent.get("email", 0),
+                slacks=result.sent.get("slack", 0),
             )

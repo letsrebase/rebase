@@ -59,14 +59,19 @@ class SlackRepository:
         slack_email: str | None,
         now: datetime | None = None,
     ) -> SlackUserLink:
+        moment = now or datetime.now(UTC)
         link = self.link_for(user_id)
         if link is None:
             link = SlackUserLink(user_id=user_id, source=source)
             self.session.add(link)
+        if slack_user_id is None:
+            link.matched_at = None
+        elif link.slack_user_id != slack_user_id:
+            link.matched_at = moment
         link.source = source
         link.slack_user_id = slack_user_id
         link.slack_email = slack_email
-        link.checked_at = now or datetime.now(UTC)
+        link.checked_at = moment
         self.session.flush()
         return link
 

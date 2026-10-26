@@ -208,7 +208,8 @@ class SlackOAuthService:
         unknown, expired, replayed and foreign state are indistinguishable from outside
         (`gmail/oauth.py`)."""
         return Conflict(
-            SLACK_ENTITY, "questa autorizzazione non è più valida: ricomincia da Impostazioni → Slack"
+            SLACK_ENTITY,
+            "questa autorizzazione non è più valida: ricomincia da Impostazioni → Slack",
         )
 
     def _store(

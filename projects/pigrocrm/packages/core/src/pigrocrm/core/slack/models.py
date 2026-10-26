@@ -116,6 +116,9 @@ class SlackUserLink(Base, PrimaryKeyMixin, TimestampMixin):
     checked_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    # When this person became that Slack member, or none while unmatched: a reminder that
+    # reached their list before is backlog and is not sent to Slack (`reminders/slack.py`).
+    matched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
 
 class SlackChannelPost(Base, PrimaryKeyMixin, TimestampMixin):

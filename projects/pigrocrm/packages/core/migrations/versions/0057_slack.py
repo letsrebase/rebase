@@ -55,9 +55,7 @@ def upgrade() -> None:
         sa.Column("bot_user_id", sa.String(length=32), nullable=False),
         sa.Column("bot_token_ciphertext", sa.LargeBinary(), nullable=False),
         sa.Column("bot_token_nonce", sa.LargeBinary(), nullable=False),
-        sa.Column(
-            "scopes_granted", postgresql.JSONB(astext_type=sa.Text()), nullable=False
-        ),
+        sa.Column("scopes_granted", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column("status", sa.String(length=16), nullable=False),
         sa.Column("channel_id", sa.String(length=32), nullable=True),
         sa.Column("channel_name", sa.String(length=80), nullable=True),
@@ -92,6 +90,7 @@ def upgrade() -> None:
         sa.Column(
             "checked_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
         ),
+        sa.Column("matched_at", sa.DateTime(timezone=True), nullable=True),
         sa.PrimaryKeyConstraint("id"),
         sa.ForeignKeyConstraint(
             ["user_id"],
@@ -99,7 +98,9 @@ def upgrade() -> None:
             ondelete="CASCADE",
         ),
         sa.UniqueConstraint("user_id"),
-        sa.CheckConstraint("source IN ('email', 'manual', 'none')", name="ck_slack_user_links_source"),
+        sa.CheckConstraint(
+            "source IN ('email', 'manual', 'none')", name="ck_slack_user_links_source"
+        ),
         sa.CheckConstraint(
             "(source = 'none') = (slack_user_id IS NULL)", name="ck_slack_user_links_id_iff_found"
         ),

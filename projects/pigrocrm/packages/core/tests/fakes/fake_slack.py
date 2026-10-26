@@ -21,6 +21,8 @@ import json
 from dataclasses import dataclass, field
 from urllib.parse import parse_qs, urlparse
 
+from pigrocrm.core.slack.schemas import SLACK_BOT_SCOPES
+
 SLACK_URL = "https://slack.test"
 CLIENT_ID = "1111.2222"
 CLIENT_SECRET = "slack-client-secret-for-tests"
@@ -41,7 +43,7 @@ class FakeSlack:
     team_name: str = "Acme Test"
     bot_user_id: str = "UBOT"
     bot_token: str = BOT_TOKEN
-    scope: str = "chat:write,chat:write.public,im:write,users:read,users:read.email,channels:read,groups:read"
+    scope: str = ",".join(SLACK_BOT_SCOPES)
     # email (lower case) -> (slack user id, extra profile fields)
     members: dict[str, tuple[str, dict[str, object]]] = field(default_factory=dict)
     # channel id -> channel fields
@@ -97,12 +99,16 @@ class FakeSlack:
         path = urlparse(url).path
         assert path.startswith("/api/"), path
         method = path.removeprefix("/api/")
-        form = {k: v[0] for k, v in parse_qs((body or b"").decode(), keep_blank_values=True).items()}
+        form = {
+            k: v[0] for k, v in parse_qs((body or b"").decode(), keep_blank_values=True).items()
+        }
         auth = headers.get("Authorization", "")
         basic = None
         bearer = None
         if auth.startswith("Basic "):
-            client, _, secret = base64.b64decode(auth.removeprefix("Basic ")).decode().partition(":")
+            client, _, secret = (
+                base64.b64decode(auth.removeprefix("Basic ")).decode().partition(":")
+            )
             basic = (client, secret)
         elif auth.startswith("Bearer "):
             bearer = auth.removeprefix("Bearer ")
@@ -110,8 +116,10 @@ class FakeSlack:
 
         if self.fail_status:
             status = self.fail_status.pop(0)
-            return status, json.dumps({"ok": False, "error": "ratelimited"}).encode(), (
-                {"Retry-After": "1"} if status == 429 else {}
+            return (
+                status,
+                json.dumps({"ok": False, "error": "ratelimited"}).encode(),
+                ({"Retry-After": "1"} if status == 429 else {}),
             )
         queued = self.fail.get(method)
         if queued:
