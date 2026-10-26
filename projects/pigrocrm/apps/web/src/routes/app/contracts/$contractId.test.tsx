@@ -93,7 +93,7 @@ beforeEach(() => {
 })
 
 describe('ContractDetail', () => {
-  it('states the terms and the billing rules', async () => {
+  it('states the terms, the billing rules and the three sections of the page', async () => {
     mockApi(ok(CONTRACT))
     renderPage()
 
@@ -103,6 +103,7 @@ describe('ContractDetail', () => {
     expect(screen.getByText('60 giorni')).toBeInTheDocument()
     expect(screen.getByText('30 giorni fine mese')).toBeInTheDocument()
     expect(screen.getByText('Rimborsate fino a un tetto, tetto 500,00 €')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Tariffe' })).toBeInTheDocument()
   })
 
   it('offers Attiva, Stato and Modifica to a writer', async () => {
@@ -120,6 +121,9 @@ describe('ContractDetail', () => {
     await screen.findByRole('heading', { name: 'Sviluppo piattaforma' })
     expect(screen.queryByRole('button', { name: 'Attiva' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Modifica' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Nuova tariffa' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Nuova spesa' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Salva assunzione' })).not.toBeInTheDocument()
   })
 
   it('says the contract does not exist on a 404 and does not blame the network', async () => {
