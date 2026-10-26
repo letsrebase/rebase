@@ -144,8 +144,11 @@ export type UserRecord = components['schemas']['UserRead']
 type InvitationCreateBody = components['schemas']['InvitationCreate']
 type UserUpdateBody = components['schemas']['UserUpdate']
 
-export function useUsers() {
+export function useUsers(options: { enabled?: boolean } = {}) {
   return useQuery({
+    // `GET /api/users` is admin-only: a caller that is not one must not make the request
+    // and be answered with a 403 banner (the attività assignee picker).
+    enabled: options.enabled ?? true,
     queryKey: queryKeys.users,
     queryFn: () => unwrap(api.GET('/api/users')),
   })

@@ -1,4 +1,4 @@
-import { expect, test, type Locator } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 import { loginAsAdmin, seedDealWithRate } from './helpers'
 
 /**
@@ -9,6 +9,15 @@ import { loginAsAdmin, seedDealWithRate } from './helpers'
  */
 const closeDayPanel = (dialog: Locator) =>
   dialog.locator('[data-slot="dialog-footer"]').getByRole('button', { name: 'Chiudi' })
+
+/** «Nuova attività» from an open day panel: the full dialog, with the day prefilled. */
+async function addCommitmentFromDay(page: Page, panel: Locator, titolo: string) {
+  await panel.getByRole('button', { name: /Aggiungi un’attività per questo giorno/ }).click()
+  const form = page.getByRole('dialog').filter({ has: page.getByLabel('Titolo') })
+  await form.getByLabel('Titolo').fill(titolo)
+  await form.getByRole('button', { name: 'Aggiungi' }).click()
+  await expect(form).toBeHidden()
+}
 
 /**
  * Slice 10's definition of done, driven the way a person drives it: the menu entry under
@@ -108,8 +117,7 @@ test.describe('il calendario', () => {
     await page.getByRole('button', { name: CELLA_PRIMO }).click()
 
     const dialog = page.getByRole('dialog')
-    await dialog.getByRole('textbox', { name: 'Titolo della scadenza' }).fill(titolo)
-    await dialog.getByRole('button', { name: 'Aggiungi' }).click()
+    await addCommitmentFromDay(page, dialog, titolo)
     await expect(dialog.getByText(titolo)).toBeVisible()
     await closeDayPanel(dialog).click()
 
@@ -127,8 +135,7 @@ test.describe('il calendario', () => {
     await page.goto(`/app/calendar?mese=${MESE}`)
     await page.getByRole('button', { name: CELLA_PRIMO }).click()
     const dialog = page.getByRole('dialog')
-    await dialog.getByRole('textbox', { name: 'Titolo della scadenza' }).fill(titolo)
-    await dialog.getByRole('button', { name: 'Aggiungi' }).click()
+    await addCommitmentFromDay(page, dialog, titolo)
     await expect(dialog.getByText(titolo)).toBeVisible()
 
     // Two closures, two buttons: «Fatto» records the day, «Annulla» records that it

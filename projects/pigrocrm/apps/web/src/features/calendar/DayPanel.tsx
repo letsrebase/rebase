@@ -18,6 +18,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@rebase/ui/select'
+import { AttivitaDialog } from '@/features/attivita/AttivitaDialog'
+import { AttivitaMeta } from '@/features/attivita/AttivitaMeta'
 import { useDeals } from '@/features/deals/queries'
 import { useLogTime } from '@/features/time/queries'
 import { toProblem } from '@/lib/api'
@@ -27,7 +29,6 @@ import { GIORNATA, MEZZA, normaliseHours } from './hours'
 import {
   useCancelAttivita,
   useCompleteAttivita,
-  useCreateAttivita,
   type CalendarDay,
 } from './queries'
 
@@ -69,7 +70,7 @@ export function DayPanel({
           {canWrite && (
             <>
               <LogHours giorno={giorno} onProblem={setProblem} />
-              <NewCommitment giorno={giorno} onProblem={setProblem} />
+              <NewCommitment giorno={giorno} />
             </>
           )}
           {problem !== null && (
@@ -145,8 +146,11 @@ function Due({
       <ul className="space-y-2 text-sm">
         {attivita.map((item) => (
           <li key={item.id} className="flex items-center justify-between gap-3">
-            <span className={item.stato === 'aperta' ? undefined : 'line-through opacity-60'}>
-              {item.titolo}
+            <span className="flex min-w-0 flex-col gap-0.5">
+              <span className={item.stato === 'aperta' ? undefined : 'line-through opacity-60'}>
+                {item.titolo}
+              </span>
+              <AttivitaMeta attivita={item} />
             </span>
             {canWrite && item.stato === 'aperta' && (
               <span className="flex gap-2">
@@ -320,54 +324,22 @@ function LogHours({
   )
 }
 
-function NewCommitment({
-  giorno,
-  onProblem,
-}: {
-  giorno: string
-  onProblem: (message: string | null) => void
-}) {
-  const create = useCreateAttivita()
-  const [titolo, setTitolo] = useState('')
-
-  function submit() {
-    const trimmed = titolo.trim()
-    if (trimmed === '') return
-    onProblem(null)
-    create.mutate(
-      // `custom_fields` is required by the generated schema (the field has a default
-      // server-side, which openapi-typescript reads as «always present»), and an empty
-      // object is what «this commitment has none» is.
-      { titolo: trimmed, scadenza: giorno, custom_fields: {} },
-      {
-        onSuccess: () => {
-          toast.success('Scadenza aggiunta')
-          setTitolo('')
-        },
-        onError: (error) => onProblem(toProblem(error).detail),
-      },
-    )
-  }
-
+/**
+ * «Nuova attività» for this day: the full dialog (notes, assignee, linked record), with the
+ * day prefilled as the deadline. It used to be a one-line title box that could write
+ * nothing else, which is what the dialog replaced (REB-719).
+ */
+function NewCommitment({ giorno }: { giorno: string }) {
+  const [open, setOpen] = useState(false)
   return (
     <section aria-labelledby="nuova-scadenza" className="space-y-2 border-t pt-4">
       <h3 id="nuova-scadenza" className="text-sm font-medium">
-        Nuova scadenza
+        Nuova attività
       </h3>
-      <div className="flex gap-2">
-        <Input
-          placeholder="Che cosa scade"
-          value={titolo}
-          onChange={(event) => setTitolo(event.target.value)}
-          aria-label="Titolo della scadenza"
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') submit()
-          }}
-        />
-        <Button size="sm" disabled={titolo.trim() === '' || create.isPending} onClick={submit}>
-          Aggiungi
-        </Button>
-      </div>
+      <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
+        Aggiungi un’attività per questo giorno
+      </Button>
+      <AttivitaDialog open={open} onOpenChange={setOpen} defaults={{ scadenza: giorno }} />
     </section>
   )
 }
