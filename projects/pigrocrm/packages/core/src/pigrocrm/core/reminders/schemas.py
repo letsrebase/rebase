@@ -56,7 +56,7 @@ class ReminderTypeRead(BaseModel):
     subject: str
     audience: Literal["subject", "admins"]
     direction: Literal["since", "until"]
-    unit: Literal["days", "hours"]
+    unit: Literal["days", "hours", "minutes", "percent"]
     ladder: dict[Severity, int] = Field(description="Le soglie predefinite del tipo")
     daily: bool
 
@@ -73,7 +73,7 @@ class ReminderPreferenceWrite(BaseModel):
         default=None, description="I canali oltre all'app, che è sempre attiva"
     )
     ladder: dict[Severity, int] | None = Field(
-        default=None, description="Le soglie, in giorni o ore secondo il tipo"
+        default=None, description="Le soglie, in giorni, ore, minuti o percentuale secondo il tipo"
     )
     urgent_from: Severity | None = Field(default=None, description="Da quale gravità è urgente")
     email_mode: EmailMode | None = Field(

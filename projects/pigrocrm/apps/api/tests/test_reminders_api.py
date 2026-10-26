@@ -14,6 +14,9 @@ def test_the_catalogue_lists_the_types_with_their_default_ladders(logged_in: Tes
     by_key = {item["key"]: item for item in response.json()}
     assert by_key["attivita_overdue"]["ladder"] == {"serious": 1, "critical": 14}
     assert by_key["timer_running_long"]["unit"] == "hours"
+    assert by_key["ceiling_approaching"]["unit"] == "percent"
+    assert by_key["ceiling_approaching"]["audience"] == "admins"
+    assert by_key["job_late"]["unit"] == "minutes"
     assert by_key["attivita_due"]["direction"] == "until"
 
 

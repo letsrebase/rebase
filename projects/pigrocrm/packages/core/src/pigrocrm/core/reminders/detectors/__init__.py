@@ -14,6 +14,8 @@ from pigrocrm.core.reminders.detectors import (
     contracts,
     days,
     deals,
+    space,
+    space_fiscal,
     timers,
 )
 
@@ -25,4 +27,6 @@ DETECTORS: tuple[Detector, ...] = (
     *billing_contracts.DETECTORS,
     *contracts.DETECTORS,
     *days.DETECTORS,
+    *space_fiscal.DETECTORS,
+    *space.DETECTORS,
 )

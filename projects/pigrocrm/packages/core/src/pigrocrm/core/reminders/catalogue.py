@@ -15,7 +15,9 @@ the settings refuse a save that breaks that, in Italian (`validate_ladder`).
 
 **Timing and thresholds are one column.** Spec §5 lists «timing» (days) and «thresholds»
 (ratios, hours) apart; both are the same thing, the numbers of a ladder, told apart only by
-the type's `unit`, so a type stores one `ladder` and the unit says what its numbers mean.
+the type's `unit`, so a type stores one `ladder` and the unit says what its numbers mean:
+days, hours, minutes (a job that ran a quarter of an hour ago), or a whole **percent** of a
+limit (the ceiling's usage, 90 for 90%).
 """
 
 from __future__ import annotations
@@ -42,7 +44,7 @@ EmailMode = Literal["immediate", "summary"]
 EMAIL_MODES: tuple[EmailMode, ...] = ("immediate", "summary")
 
 Direction = Literal["since", "until"]
-Unit = Literal["days", "hours"]
+Unit = Literal["days", "hours", "minutes", "percent"]
 Audience = Literal["subject", "admins"]
 Ladder = dict[Severity, int]
 
@@ -276,6 +278,80 @@ REMINDER_TYPES: Mapping[str, ReminderType] = {
             direction="since",
             unit="days",
             ladder={"serious": 0},
+        ),
+        ReminderType(
+            key="ceiling_approaching",
+            label="Soglia del forfettario vicina",
+            description=(
+                "I ricavi incassati dell'anno si avvicinano alla soglia di ricavi del regime "
+                "forfettario: la soglia è in percentuale."
+            ),
+            subject="fiscal",
+            direction="since",
+            unit="percent",
+            ladder={"warning": 80, "serious": 90, "critical": 100},
+            audience="admins",
+        ),
+        ReminderType(
+            key="year_end_overrun_projected",
+            label="Soglia del forfettario superata a fine anno",
+            description=(
+                "La proiezione dell'anno (incassato, da incassare e bozze) supera la soglia di "
+                "ricavi del regime forfettario: la soglia è in percentuale."
+            ),
+            subject="fiscal",
+            direction="since",
+            unit="percent",
+            ladder={"serious": 105, "critical": 120},
+            audience="admins",
+        ),
+        ReminderType(
+            key="month_not_closed",
+            label="Mese non chiuso",
+            description=(
+                "Un mese è finito da giorni e non è stato chiuso, in uno spazio che chiude i mesi."
+            ),
+            subject="period",
+            direction="since",
+            unit="days",
+            ladder={"warning": 10, "serious": 20},
+            audience="admins",
+        ),
+        ReminderType(
+            key="proposal_pending",
+            label="Proposta in attesa",
+            description="Una proposta di un agente aspetta da giorni che qualcuno la decida.",
+            subject="proposal",
+            direction="since",
+            unit="days",
+            ladder={"warning": 3, "serious": 7, "critical": 14},
+            audience="admins",
+        ),
+        ReminderType(
+            key="connection_failing",
+            label="Collegamento Google in difficoltà",
+            description=(
+                "Gmail o Drive non funzionano: il consenso è stato revocato o è scaduto, "
+                "oppure la sincronizzazione di Gmail è ferma da ore."
+            ),
+            subject="google_connection",
+            direction="since",
+            unit="hours",
+            ladder={"serious": 3, "critical": 72},
+            audience="admins",
+        ),
+        ReminderType(
+            key="job_late",
+            label="Operazione pianificata in ritardo",
+            description=(
+                "Una operazione che gira da sola (la sincronizzazione di Gmail, il passaggio dei "
+                "promemoria) non parte da troppo tempo: i minuti sono dall'ultima esecuzione."
+            ),
+            subject="job",
+            direction="since",
+            unit="minutes",
+            ladder={"serious": 30, "critical": 180},
+            audience="admins",
         ),
     )
 }

@@ -79,7 +79,8 @@ def register(
         dello spazio (solo un amministratore). In `changes` va solo quello che cambia:
         `enabled`, `channels` (oltre all'app, che è sempre attiva: `push`, `slack`,
         `email`), `ladder` (le soglie, per esempio `{"serious": 1, "critical": 14}`, in
-        giorni o ore secondo il tipo, in ordine di gravità), `urgent_from`, `email_mode`;
+        giorni, ore, minuti o percentuale secondo il tipo, in ordine di gravità),
+        `urgent_from`, `email_mode`;
         per `general`, `quiet_hours` e `summary_hour`. Un campo `null` torna al valore che
         eredita. Risponde `null` quando non resta niente da sovrascrivere."""
         row = _preferences(context).write(
