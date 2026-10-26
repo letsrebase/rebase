@@ -3630,6 +3630,113 @@ export interface paths {
         patch: operations["update_api_contracts__contract_id__expenses__expense_id__patch"];
         trace?: never;
     };
+    "/api/contracts/{contract_id}/billable-days": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Billable Days
+         * @description Le giornate pronte da fatturare di un contratto, come le righe che metterebbero in una
+         *     bozza: `lavorato` e non ancora su una riga di fattura. Sola lettura.
+         */
+        get: operations["get_billable_days_api_contracts__contract_id__billable_days_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/contracts/{contract_id}/invoice-days": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Invoice Days
+         * @description Crea la bozza di fattura con le giornate pronte del contratto (o quelle fra `da` e `a`),
+         *     alle tariffe del contratto, e le segna `fatturato`. Non emette niente. Solo un
+         *     amministratore e mai un agente: scegliere cosa finisce su una bozza decide cosa
+         *     congelerà l'emissione.
+         */
+        post: operations["invoice_days_api_contracts__contract_id__invoice_days_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/contracts/{contract_id}/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Register
+         * @description Il registro delle giornate fatturate di un contratto nel periodo, ciascuna con la
+         *     prova di approvazione che la regge. Sola lettura.
+         */
+        get: operations["get_register_api_contracts__contract_id__register_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/contracts/{contract_id}/register/csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Register Csv
+         * @description Lo stesso registro come CSV (RFC 4180, UTF-8 con BOM). Una copia di lavoro che il
+         *     cliente filtra: si ricalcola a ogni richiesta e non si archivia, come l'XLSX delle ore.
+         */
+        get: operations["get_register_csv_api_contracts__contract_id__register_csv_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/contracts/{contract_id}/register/pdf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Render Register Pdf
+         * @description Il registro come PDF, archiviato come documento del cliente: si scarica dal documento
+         *     e si allega alla fattura. Rigenerarlo crea una nuova versione, non una sovrascrittura.
+         */
+        post: operations["render_register_pdf_api_contracts__contract_id__register_pdf_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/proposals": {
         parameters: {
             query?: never;
@@ -4470,6 +4577,73 @@ export interface components {
             esecuzioni: components["schemas"]["AutomationRun"][];
         };
         /**
+         * BillableDays
+         * @description The days of a contract that are ready to invoice, as the lines they would make.
+         *
+         *     `senza_tariffa` lists the dates no rate card covers: the draft is refused while there
+         *     is one (inventing a price is not this step's decision), and the page says which days to
+         *     fix. `senza_approvazione` counts the days worked without the approval the contract
+         *     requires, which are never gathered: they are the reason a month can look short.
+         */
+        BillableDays: {
+            /**
+             * Contract Id
+             * Format: uuid
+             */
+            contract_id: string;
+            /** Divisa */
+            divisa: string;
+            /** Righe */
+            righe: components["schemas"]["BillableLine"][];
+            /**
+             * Mesi
+             * @description I mesi AAAA-MM che hanno giornate pronte
+             */
+            mesi: string[];
+            /** Giornate */
+            giornate: number;
+            /** Quantita */
+            quantita: string;
+            /** Imponibile */
+            imponibile: string;
+            /** Senza Tariffa */
+            senza_tariffa: string[];
+            /** Senza Approvazione */
+            senza_approvazione: number;
+            /**
+             * Fatturabile
+             * @description C'è almeno una riga e ogni giornata ha la sua tariffa
+             */
+            fatturabile: boolean;
+        };
+        /**
+         * BillableLine
+         * @description One line the draft would carry: the days of one rate card in one month, priced at
+         *     that card, exactly as `unbilled_work_unit_lines` builds it.
+         */
+        BillableLine: {
+            /**
+             * Mese
+             * @description AAAA-MM
+             */
+            mese: string;
+            /** Descrizione */
+            descrizione: string;
+            /**
+             * Giornate
+             * @description Quante giornate copre la riga
+             */
+            giornate: number;
+            /** Quantita */
+            quantita: string;
+            /** Unita Misura */
+            unita_misura: string;
+            /** Prezzo Unitario */
+            prezzo_unitario: string;
+            /** Importo */
+            importo: string;
+        };
+        /**
          * BindTimeRequest
          * @description Which hours become invoice lines. `entry_ids` explicit rather than "everything
          *     billable": choosing *which* hours to invoice is a commercial decision, and a default
@@ -5273,6 +5447,34 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /** ContractRegister */
+        ContractRegister: {
+            /**
+             * Contract Id
+             * Format: uuid
+             */
+            contract_id: string;
+            /** Titolo */
+            titolo: string;
+            /** Cliente */
+            cliente: string;
+            /**
+             * Da
+             * Format: date
+             */
+            da: string;
+            /**
+             * A
+             * Format: date
+             */
+            a: string;
+            /** Voci */
+            voci: components["schemas"]["RegisterEntry"][];
+            /** Totale Quantita */
+            totale_quantita: string;
+            /** Senza Approvazione */
+            senza_approvazione: number;
         };
         /**
          * ContractStateChange
@@ -7511,6 +7713,17 @@ export interface components {
             };
         };
         /**
+         * InvoiceDaysRequest
+         * @description Which days to put on the draft: every ready day, or those in `[da, a]`, both
+         *     inclusive. A month is `da` the first and `a` the last.
+         */
+        InvoiceDaysRequest: {
+            /** Da */
+            da?: string | null;
+            /** A */
+            a?: string | null;
+        };
+        /**
          * InvoiceImport
          * @description A fattura issued by the previous system, declared field by field (spec 9 §3.3).
          *
@@ -9207,6 +9420,42 @@ export interface components {
             scadute: components["schemas"]["FatturaScaduta"][];
             /** Scadute Totale */
             scadute_totale: number;
+        };
+        /** RegisterApproval */
+        RegisterApproval: {
+            /** Canale */
+            canale: string;
+            /** Mittente */
+            mittente: string;
+            /**
+             * Ricevuto Il
+             * Format: date-time
+             */
+            ricevuto_il: string;
+            /** Message Id */
+            message_id: string | null;
+        };
+        /** RegisterEntry */
+        RegisterEntry: {
+            /**
+             * Work Unit Id
+             * Format: uuid
+             */
+            work_unit_id: string;
+            /**
+             * Data
+             * Format: date
+             */
+            data: string;
+            /** Quantita */
+            quantita: string;
+            /** Descrizione */
+            descrizione: string;
+            /** Stato */
+            stato: string;
+            /** Numero Fattura */
+            numero_fattura?: string | null;
+            approvazione?: components["schemas"]["RegisterApproval"] | null;
         };
         /**
          * RegisterGapIn
@@ -39179,6 +39428,625 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ContractExpenseRead"];
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_billable_days_api_contracts__contract_id__billable_days_get: {
+        parameters: {
+            query?: {
+                /** @description Dal giorno, incluso */
+                da?: string | null;
+                /** @description Al giorno, incluso */
+                a?: string | null;
+            };
+            header?: never;
+            path: {
+                contract_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillableDays"];
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    invoice_days_api_contracts__contract_id__invoice_days_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                contract_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InvoiceDaysRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvoiceRead"];
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_register_api_contracts__contract_id__register_get: {
+        parameters: {
+            query: {
+                /** @description Dal giorno, YYYY-MM-DD, incluso */
+                da: string;
+                /** @description Al giorno, YYYY-MM-DD, incluso */
+                a: string;
+            };
+            header?: never;
+            path: {
+                contract_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContractRegister"];
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_register_csv_api_contracts__contract_id__register_csv_get: {
+        parameters: {
+            query: {
+                /** @description Dal giorno, YYYY-MM-DD, incluso */
+                da: string;
+                /** @description Al giorno, YYYY-MM-DD, incluso */
+                a: string;
+            };
+            header?: never;
+            path: {
+                contract_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    render_register_pdf_api_contracts__contract_id__register_pdf_post: {
+        parameters: {
+            query: {
+                /** @description Dal giorno, YYYY-MM-DD, incluso */
+                da: string;
+                /** @description Al giorno, YYYY-MM-DD, incluso */
+                a: string;
+            };
+            header?: never;
+            path: {
+                contract_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentRead"];
                 };
             };
             /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
