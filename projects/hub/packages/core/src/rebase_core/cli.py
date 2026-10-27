@@ -20,6 +20,7 @@ from rebase_core.ai_verify import verify
 from rebase_core.campaigns.sender import campaign_sender_from_settings
 from rebase_core.campaigns.tick import run_tick
 from rebase_core.card_eval import format_report, named, results_of, run_eval, sample
+from rebase_core.card_judge import JUDGE_MAX_OUTPUT_TOKENS
 from rebase_core.cards import PROMPT_VERSION, PROMPT_VERSIONS, CardWriter
 from rebase_core.config import Settings, get_settings
 from rebase_core.contracts.fields import ContractFailed, Value, merge_data
@@ -349,9 +350,12 @@ def cards_eval(
         writer = TaskOverride(provider, model, effort, allow_disabled)
         if judge_provider is None or judge_model is None:
             judge_provider, judge_model = live.provider, live.model
-            judging = TaskOverride(judge_provider, judge_model, live.effort, allow_disabled)
+            judge_effort = live.effort
         else:
-            judging = TaskOverride(judge_provider, judge_model, None, allow_disabled)
+            judge_effort = None
+        judging = TaskOverride(
+            judge_provider, judge_model, judge_effort, allow_disabled, JUDGE_MAX_OUTPUT_TOKENS
+        )
         for name in dict.fromkeys((provider, judge_provider)):
             account = session.get(AiProvider, name)
             if not allow_disabled and (account is None or not account.enabled):

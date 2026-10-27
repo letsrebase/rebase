@@ -789,6 +789,23 @@ def test_wire_output_ceiling_is_the_tasks_unless_the_caller_asks_for_less(
     assert wire.body["max_tokens"] == 3000
 
 
+def test_wire_an_override_may_carry_its_own_output_ceiling_and_is_still_the_task(
+    opener: SessionOpener, wire: Wire
+) -> None:
+    """REB-842: the evaluation's judge answers eight verdicts and thinks first: it asks for
+    its own ceiling, above the card task's 2000, and is recorded and capped as the task."""
+    judge = TaskOverride("anthropic", MODEL, "medium", False, max_output_tokens=8000)
+
+    _wire_call(opener, override=judge, purpose="eval").complete(_request())
+    assert wire.body["max_tokens"] == 8000
+    # The caller's own smaller word still wins, and the task's ceiling is untouched.
+    _wire_call(opener, override=judge, purpose="eval").complete(_request(max_tokens=50))
+    assert wire.body["max_tokens"] == 50
+    _wire_call(opener).complete(_request())
+    assert wire.body["max_tokens"] == 2000
+    assert {(row.task, row.purpose) for row in _usage_rows(opener)} >= {("card", "eval")}
+
+
 def test_wire_effort_follows_the_task(opener: SessionOpener, wire: Wire) -> None:
     with opener() as session:
         session.execute(text("UPDATE ai_tasks SET effort = 'high' WHERE task = 'card'"))
