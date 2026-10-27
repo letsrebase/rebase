@@ -817,7 +817,13 @@ class TalentoRead(BaseModel):
 
     `tariffa_giornaliera` and `remoto` (REB-558) are a card's own two columns, the same
     ones `FreelancerRead` carries; a bare sign-up has neither, so both stay `None` for
-    a `lead` row."""
+    a `lead` row.
+
+    `posizione` is the card's own, and `ruolo`, `seniority`, `anni`, `competenze` and
+    `luogo` are read off Claude's anonymous card (REB-778), so an agent matching a
+    request reads what a person does from the list itself rather than one profile at a
+    time. The card's five are empty for a talent with no live anonymous card, and all six
+    for a lead."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -837,6 +843,12 @@ class TalentoRead(BaseModel):
     # sign-up has neither.
     vetted_at: datetime | None = None
     ha_scheda_anonima: bool = False
+    posizione: str | None = None
+    ruolo: str | None = None
+    seniority: str | None = None
+    anni: int | None = None
+    competenze: list[str] = Field(default_factory=list)
+    luogo: str | None = None
 
 
 class TalentoList(BaseModel):

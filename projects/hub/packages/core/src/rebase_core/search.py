@@ -21,7 +21,8 @@ outranks one that merely contains it somewhere in the middle.
 from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import ColumnElement, func, or_
+from sqlalchemy import ARRAY, ColumnElement, Text, and_, case, column, func, literal, or_, select
+from sqlalchemy.dialects.postgresql import JSONB
 
 # Bounded for the same reason every free-text field in this package is: an unbounded
 # term reaching `ILIKE` and `similarity()` on every row is a denial of service with
@@ -60,3 +61,32 @@ def similarity_score(columns: Sequence[Any], term: str) -> ColumnElement[float]:
     smaller than every real one only once every argument is `coalesce`d, so that is
     done per column before `greatest` sees them."""
     return func.greatest(*(func.coalesce(func.similarity(column, term), 0.0) for column in columns))
+
+
+def any_element_matches(array: Any, term: str) -> ColumnElement[bool]:
+    """Whether any string element of the JSONB `array` contains `term`,
+    case-insensitively, `%` and `_` taken for themselves. An element that is not a
+    string (a number, an object) never matches, the same way a reader of the card skips
+    it. Only an array is expanded: `jsonb_array_elements` raises on a string or an
+    object, which a card written by hand may hold, so the guard is inside the call, not
+    beside it in an `AND`, since SQL does not promise the order it runs in. A NULL
+    `array` has no element, so no match."""
+    only_an_array = case((func.jsonb_typeof(array) == "array", array))
+    elements = func.jsonb_array_elements(only_an_array).table_valued(column("value", JSONB))
+    element = elements.c.value
+    # `#>> '{}'` is the element's own text: a JSON string unquoted and unescaped.
+    as_text = element.op("#>>", return_type=Text)(literal([], ARRAY(Text)))
+    pattern = f"%{escape_like(term)}%"
+    return (
+        select(element)
+        .where(func.jsonb_typeof(element) == "string", as_text.ilike(pattern, escape="\\"))
+        .exists()
+    )
+
+
+def string_field_matches(field: Any, term: str) -> ColumnElement[bool]:
+    """Whether the JSONB `field` is a string that contains `term`, case-insensitively,
+    `%` and `_` taken for themselves. A number or an object there never matches, the
+    same way a reader of the card reads it as missing."""
+    pattern = f"%{escape_like(term)}%"
+    return and_(func.jsonb_typeof(field) == "string", field.astext.ilike(pattern, escape="\\"))

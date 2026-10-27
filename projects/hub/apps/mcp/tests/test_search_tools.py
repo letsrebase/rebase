@@ -6,6 +6,7 @@ import re
 from datetime import date
 from decimal import Decimal
 from typing import Any
+from uuid import UUID
 
 import pytest
 from mcp import Client
@@ -15,6 +16,7 @@ from test_tools import IVAN, PDF, _payload
 
 from rebase_core.companies import CompanyService
 from rebase_core.freelancers import FreelancerService
+from rebase_core.models import FreelancerCard
 from rebase_core.schemas import CompanyCreate, FreelancerCreate, SignupCreate
 from rebase_core.service import SignupService
 from rebase_mcp.server import build_server
@@ -207,6 +209,37 @@ async def test_a_cursor_minted_while_browsing_is_refused_once_searching(clean: A
         )
     assert replay.is_error
     assert "ordinamento" in replay.content[0].text
+
+
+async def test_skills_narrow_the_talent_list_and_ride_on_each_row(clean: Any) -> None:
+    """REB-778: matching a request is one call, the skills read off the row itself."""
+    ada = _card(clean, "Ada", "Lovelace", "ada@studio.it", "280")
+    _card(clean, "Bruno", "Neri", "bruno@studio.it", "450")
+    session = clean()
+    try:
+        session.add(
+            FreelancerCard(
+                freelancer_id=UUID(ada),
+                cv_sha256="0" * 64,
+                card={
+                    "ruolo": "Full stack",
+                    "competenze": ["SQL Server", "React"],
+                    "luogo": "Monza",
+                },
+            )
+        )
+        session.commit()
+    finally:
+        session.close()
+    async with _server(clean) as client:
+        found = _payload(
+            await client.call_tool("list_talenti", {"competenze": ["sql server", "react"]})
+        )
+        too_many = await client.call_tool("list_talenti", {"competenze": ["x"] * 11})
+    assert [item["email"] for item in found["items"]] == ["ada@studio.it"]
+    assert found["items"][0]["competenze"] == ["SQL Server", "React"]
+    assert found["items"][0]["luogo"] == "Monza"
+    assert too_many.is_error and "competenze" in too_many.content[0].text
 
 
 async def test_the_tool_descriptions_stay_italian(clean: Any) -> None:

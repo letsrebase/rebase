@@ -31,7 +31,7 @@ from datetime import datetime
 from uuid import UUID
 
 from pydantic import ValidationError
-from sqlalchemy import ColumnElement, and_, case, false, func, select
+from sqlalchemy import ColumnElement, and_, false, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -52,7 +52,7 @@ from rebase_core.models import (
 )
 from rebase_core.referrals import ReferralService
 from rebase_core.schemas import CvFile, TalentCloudGrantRead
-from rebase_core.search import escape_like
+from rebase_core.search import any_element_matches
 from rebase_core.team_builder import cloud_visible
 from rebase_core.team_schemas import Card, CloudTalentList, CloudTalentQuery, CloudTalentRead
 
@@ -324,16 +324,7 @@ def _filter_clauses(query: CloudTalentQuery) -> list[ColumnElement[bool]]:
             )
         clauses.append(Freelancer.remoto == query.modalita)
     if query.competenza:
-        # Only an array is expanded: `jsonb_array_elements_text` raises on a string or an
-        # object, which a card written by hand may hold. The guard is inside the call,
-        # not beside it in an `AND`, since SQL does not promise the order it runs in.
-        competenze = FreelancerCard.card["competenze"]
-        only_an_array = case((func.jsonb_typeof(competenze) == "array", competenze))
-        skills = func.jsonb_array_elements_text(only_an_array).table_valued("value")
-        pattern = f"%{escape_like(query.competenza)}%"
-        clauses.append(
-            select(skills.c.value).where(skills.c.value.ilike(pattern, escape="\\")).exists()
-        )
+        clauses.append(any_element_matches(FreelancerCard.card["competenze"], query.competenza))
     clauses.extend(_band_clauses(query))
     return clauses
 

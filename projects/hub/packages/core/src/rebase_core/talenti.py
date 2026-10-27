@@ -28,12 +28,13 @@ columns, where migration 0013's trigram indexes serve them, rather than on a `UN
 subquery a planner may or may not push a predicate through.
 """
 
+from collections.abc import Sequence
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, Select, Subquery, exists, func, select
+from sqlalchemy import ColumnElement, Select, Subquery, exists, func, or_, select
 from sqlalchemy.orm import Session, aliased, defer
 
 from rebase_core.freelancers import LEAD_STATE
@@ -47,7 +48,13 @@ from rebase_core.models import (
 )
 from rebase_core.pagination import SortSpec, decode_cursor, encode_cursor, keyset_predicate
 from rebase_core.schemas import TalentoList, TalentoOrigine, TalentoRead
-from rebase_core.search import escape_like, matches_any, similarity_score
+from rebase_core.search import (
+    any_element_matches,
+    escape_like,
+    matches_any,
+    similarity_score,
+    string_field_matches,
+)
 
 LIST_LIMIT_DEFAULT = 100
 LIST_LIMIT_MAX = 500
@@ -57,13 +64,17 @@ _ORIGIN_FORM: TalentoOrigine = "form"
 # admin draft it from research.
 _ORIGIN_BY_COMPILATA_DA: dict[str, TalentoOrigine] = {"persona": "wizard", "admin": "admin"}
 
-# Filters with no lead-side equivalent at all: `posizione`, `remoto`,
-# `tariffa_giornaliera` and the marketing `origine` are columns a bare sign-up simply
-# does not have (`Signup` carries none of them), so a non-empty value here can only
-# ever exclude every lead, and the lead query is skipped outright rather than issued
-# for a result that can only be empty. `has_cv` is handled separately, since
-# `has_cv=False` is a value every lead genuinely satisfies.
-_CARD_ONLY = ("posizione", "remoto", "tariffa_min", "tariffa_max", "origine")
+
+def _card_only_active(*values: object) -> bool:
+    """Whether any filter with no lead-side equivalent is set: `posizione`, `remoto`,
+    `tariffa_giornaliera` and the marketing `origine` are columns a bare sign-up simply
+    does not have (`Signup` carries none of them), and `competenze` and `luogo` read an
+    anonymous card a sign-up cannot have either, so a value here can only ever exclude
+    every lead, and the lead query is skipped outright rather than issued for a result
+    that can only be empty. `has_cv` is handled separately, since `has_cv=False` is a
+    value every lead genuinely satisfies. `None`, an empty string and an empty tuple are
+    unset."""
+    return any(value not in (None, "") and value != () for value in values)
 
 
 def _card_emails() -> Subquery:
@@ -92,7 +103,19 @@ def _signup_read(row: Signup) -> TalentoRead:
     )
 
 
-def _card_read(row: Freelancer, user: User, ha_scheda_anonima: bool) -> TalentoRead:
+def _card_text(card: dict[str, Any], key: str) -> str | None:
+    value = card.get(key)
+    return value if isinstance(value, str) else None
+
+
+def _card_read(row: Freelancer, user: User, card: object) -> TalentoRead:
+    """`card` is the row's `freelancer_cards.card` as stored: a JSON object for a live
+    anonymous card (REB-518), `None` for none and for one the writer retired after a
+    failure. Each field is taken only when it has the type the writer gives it, since a
+    card written by hand may hold anything, and a wrong one reads as missing."""
+    scheda = card if isinstance(card, dict) else {}
+    anni = scheda.get("anni")
+    competenze = scheda.get("competenze")
     return TalentoRead(
         id=row.id,
         nome=user.nome,
@@ -106,18 +129,52 @@ def _card_read(row: Freelancer, user: User, ha_scheda_anonima: bool) -> TalentoR
         tariffa_giornaliera=row.tariffa_giornaliera,
         remoto=row.remoto,
         vetted_at=row.vetted_at,
-        ha_scheda_anonima=ha_scheda_anonima,
+        ha_scheda_anonima=isinstance(card, dict),
+        posizione=row.posizione,
+        ruolo=_card_text(scheda, "ruolo"),
+        seniority=_card_text(scheda, "seniority"),
+        anni=anni if isinstance(anni, int) and not isinstance(anni, bool) else None,
+        competenze=(
+            [skill for skill in competenze if isinstance(skill, str)]
+            if isinstance(competenze, list)
+            else []
+        ),
+        luogo=_card_text(scheda, "luogo"),
     )
 
 
-def _has_anonymous_card() -> ColumnElement[bool]:
-    """Whether Claude's anonymous card of the row's freelancer exists (REB-518): a JSON
-    object, as `team_builder.cloud_visible` reads one, so a card the writer retired to
-    `NULL` after a failure is none."""
+def _names_skill(term: str) -> ColumnElement[bool]:
+    """Whether the row's freelancer names `term`, case-insensitively: in their own
+    position, or in the role, a skill or the summary of their anonymous card. Only a
+    JSON string on the card can match, the values `_card_read` keeps, so a match on the
+    role, the skills or the place is always one the row shows; a card that is not a
+    JSON object matches nothing.
+
+    The card is read through an alias: the listing joins `freelancer_cards` itself, and
+    a subquery on the same table would correlate to that join and lose its own FROM."""
+    scheda = aliased(FreelancerCard)
+    on_the_card = exists(
+        select(scheda.freelancer_id).where(
+            scheda.freelancer_id == Freelancer.id,
+            or_(
+                string_field_matches(scheda.card["ruolo"], term),
+                string_field_matches(scheda.card["sintesi"], term),
+                any_element_matches(scheda.card["competenze"], term),
+            ),
+        )
+    )
+    return or_(matches_any((Freelancer.posizione,), term), on_the_card)
+
+
+def _lives_in(place: str) -> ColumnElement[bool]:
+    """Whether the row's anonymous card places the freelancer in `place`, as a part of
+    its `luogo` («Monza» finds «Monza e Brianza»), a JSON string as `_names_skill` reads
+    one, through an alias for the same reason."""
+    scheda = aliased(FreelancerCard)
     return exists(
-        select(FreelancerCard.freelancer_id).where(
-            FreelancerCard.freelancer_id == Freelancer.id,
-            func.jsonb_typeof(FreelancerCard.card) == "object",
+        select(scheda.freelancer_id).where(
+            scheda.freelancer_id == Freelancer.id,
+            string_field_matches(scheda.card["luogo"], place),
         )
     )
 
@@ -135,6 +192,8 @@ def _card_stmt(
     con_accessi: bool | None,
     creato_da: datetime | None,
     creato_a: datetime | None,
+    competenze: Sequence[str],
+    luogo: str | None,
 ) -> Select[Freelancer, User]:
     """Every freelancer card, `stato` left for the caller to filter separately -- this
     statement backs both the listing and `_counts`' per-state `GROUP BY`, and the
@@ -167,6 +226,10 @@ def _card_stmt(
         stmt = stmt.where(Freelancer.created_at >= creato_da)
     if creato_a is not None:
         stmt = stmt.where(Freelancer.created_at <= creato_a)
+    for skill in competenze:
+        stmt = stmt.where(_names_skill(skill))
+    if luogo:
+        stmt = stmt.where(_lives_in(luogo))
     return stmt
 
 
@@ -228,6 +291,8 @@ class TalentiService:
         con_accessi: bool | None = None,
         creato_da: datetime | None = None,
         creato_a: datetime | None = None,
+        competenze: Sequence[str] | None = None,
+        luogo: str | None = None,
     ) -> TalentoList:
         """Every card and every bare sign-up as one row, newest-or-best-match first,
         `stato` `lead` for the bare ones.
@@ -236,15 +301,21 @@ class TalentiService:
         alone, any other value selects `Freelancer.stato == stato` (an unknown one is
         simply an empty list, like `FreelancerService.list_recent`'s own pass-through
         filter -- REB-285 does not change that), and `None` merges both. Every other
-        filter narrows both sides at once, except the five in `_CARD_ONLY`, which a
-        lead can never satisfy and so drop it from the merge outright, and `has_cv`,
+        filter narrows both sides at once, except the card-only ones
+        (`_card_only_active`), which a lead can never satisfy and so drop it from the
+        merge outright, and `has_cv`,
         which a lead satisfies only as `False`.
+
+        `competenze` keeps the cards that name every one of its terms (REB-778), each
+        in the position or in the anonymous card's role, skills or summary; `luogo`
+        keeps the cards whose anonymous card places them there. Blank terms are ignored.
         """
         limit = max(1, min(limit, LIST_LIMIT_MAX))
         term = (q or "").strip()
-        card_only_active = any(
-            value not in (None, "")
-            for value in (posizione, remoto, tariffa_min, tariffa_max, origine)
+        skills = tuple(skill.strip() for skill in competenze or () if skill.strip())
+        place = (luogo or "").strip() or None
+        card_only_active = _card_only_active(
+            posizione, remoto, tariffa_min, tariffa_max, origine, skills, place
         )
         wants_cards = stato is None or stato != LEAD_STATE
         wants_leads = (
@@ -271,6 +342,8 @@ class TalentiService:
                 con_accessi=con_accessi,
                 creato_da=creato_da,
                 creato_a=creato_a,
+                competenze=skills,
+                luogo=place,
             )
             if stato is not None:
                 stmt = stmt.where(Freelancer.stato == stato)
@@ -286,7 +359,12 @@ class TalentiService:
                 stmt = stmt.where(
                     keyset_predicate(sort_col, Freelancer.id, cursor_bound[0], cursor_bound[1])
                 )
-            stmt = stmt.add_columns(_has_anonymous_card().label("ha_scheda_anonima"))
+            # The anonymous card rides along whole (one row per freelancer, the primary
+            # key): its fields are what an agent matches a request on (REB-778), and a
+            # JSON object there is also what makes a live card (REB-518).
+            stmt = stmt.outerjoin(
+                FreelancerCard, FreelancerCard.freelancer_id == Freelancer.id
+            ).add_columns(FreelancerCard.card.label("scheda"))
             # A row reads `cv_size` and the file's name, never the PDF itself: a page of
             # 100 cards (or a campaign's whole list, P-REB-41) must not carry 100 CVs.
             rows = self.session.execute(
@@ -297,9 +375,7 @@ class TalentiService:
             for row in rows:
                 card, user = row[0], row[1]
                 sort_value = row.score if term else card.created_at
-                candidates.append(
-                    (sort_value, card.id, _card_read(card, user, row.ha_scheda_anonima))
-                )
+                candidates.append((sort_value, card.id, _card_read(card, user, row.scheda)))
 
         if wants_leads:
             lead_stmt = _lead_stmt(
@@ -348,6 +424,8 @@ class TalentiService:
             con_accessi=con_accessi,
             creato_da=creato_da,
             creato_a=creato_a,
+            competenze=skills,
+            luogo=place,
         )
         totale = sum(per_stato.values()) if stato is None else per_stato.get(stato, 0)
         return TalentoList(totale=totale, items=items, per_stato=per_stato, next_cursor=next_cursor)
@@ -366,6 +444,8 @@ class TalentiService:
         con_accessi: bool | None,
         creato_da: datetime | None,
         creato_a: datetime | None,
+        competenze: Sequence[str],
+        luogo: str | None,
     ) -> dict[str, int]:
         """How many rows sit in each state, `lead` included, with every filter but
         `stato` itself applied (REB-285) -- the numbers the admin area's tabs need
@@ -383,6 +463,8 @@ class TalentiService:
             con_accessi=con_accessi,
             creato_da=creato_da,
             creato_a=creato_a,
+            competenze=competenze,
+            luogo=luogo,
         )
         grouped = self.session.execute(
             card_stmt.with_only_columns(Freelancer.stato, func.count()).group_by(Freelancer.stato)
@@ -390,9 +472,8 @@ class TalentiService:
         by_state: dict[str, int] = {stato: count for stato, count in grouped}
         counts = {stato: by_state.get(stato, 0) for stato in FREELANCER_STATES}
 
-        card_only_active = any(
-            value not in (None, "")
-            for value in (posizione, remoto, tariffa_min, tariffa_max, origine)
+        card_only_active = _card_only_active(
+            posizione, remoto, tariffa_min, tariffa_max, origine, competenze, luogo
         )
         if card_only_active or has_cv is True:
             counts[LEAD_STATE] = 0
