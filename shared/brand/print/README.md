@@ -2,7 +2,7 @@
 
 The pieces rebase hands out on paper and skin: the business card and the stickers,
 the temporary tattoo among them. Each is an HTML page in millimetres, drawn in the
-picture system of the social carousels (`.claude/skills/social-content/`) and made
+picture system of the social carousels (`.agents/skills/social-content/`) and made
 lighter for print: a full ground, the field of tiles in a corner, Outfit, the brand
 colours, square corners. The pages read the lockup, the font and the echo logo from
 `shared/brand` itself, so a change there shows up in the next render. The QR code

@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="UTF-8" />
+    <title>rebase — copertina LinkedIn</title>
+    <!--
+      A LinkedIn cover on the same system as the slides: the field of tiles sweeping
+      from the lower left, one white box with the stepped shadow, the glyph and the
+      name, a claim and one line. The size comes from the query string, which
+      `render.mjs --size WxH` passes: 1584x396 for a person's profile (3168x792 for a
+      2x export), 1128x191 for a company page. Everything scales from the 396px
+      height, so the same file draws both. Copy it next to the deliverable with the
+      Outfit woff2 from `shared/brand/fonts`.
+    -->
+    <style>
+      @font-face { font-family: 'Outfit'; font-weight: 300 700; src: url('./outfit-variable-latin.woff2') format('woff2'); }
+      :root { --ink: #011936; --quiet: #465362; --paper: #f1f2f3; --gold: #f9dc5c; --melon: #ed254e; --cell: 12px; }
+      * { box-sizing: border-box; margin: 0; }
+      html, body { width: var(--w); height: var(--h); overflow: hidden; }
+      body { font-family: 'Outfit', ui-sans-serif, system-ui, sans-serif; color: var(--ink); }
+      .slide { position: relative; width: var(--w); height: var(--h); overflow: hidden; background-color: var(--paper);
+        background-image: linear-gradient(to right, rgba(1, 25, 54, 0.07) 1px, transparent 1px), linear-gradient(to bottom, rgba(1, 25, 54, 0.07) 1px, transparent 1px);
+        background-size: var(--cell) var(--cell); }
+      canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+      .box { position: absolute; top: 50%; transform: translateY(-50%); left: var(--box-left); width: var(--box-width);
+        background: #fff; border: var(--bw) solid var(--ink); box-shadow: var(--sh) var(--sh) 0 var(--ink); padding: var(--pad); display: grid; gap: var(--gap); }
+      .brand { display: flex; align-items: center; gap: 0.7em; font-weight: 500; color: var(--quiet); font-size: var(--brand); letter-spacing: 0.02em; }
+      .glyph { width: var(--g); height: var(--g); background: var(--ink); flex: none; margin-bottom: var(--g);
+        box-shadow: var(--g) 0 0 var(--gold), 0 var(--g) 0 var(--melon), var(--g) var(--g) 0 var(--ink); }
+      h1 { font-size: var(--h1); font-weight: 600; line-height: 1.05; letter-spacing: -0.03em; }
+      p { font-size: var(--p); color: var(--quiet); line-height: 1.35; }
+      .url { color: var(--melon); font-weight: 600; }
+    </style>
+  </head>
+  <body>
+    <section class="slide">
+      <canvas id="field"></canvas>
+      <main class="box">
+        <div class="brand"><span class="glyph"></span>rebase</div>
+        <h1>Freelance, ma non da soli.</h1>
+        <p>La community di chi fa software in proprio in Italia. <span class="url">letsrebase.com</span></p>
+      </main>
+    </section>
+    <script>
+      function hash(x, y) { var n = (x * 374761393 + y * 668265263) | 0; n = ((n ^ (n >>> 13)) * 1274126177) | 0; return ((n ^ (n >>> 16)) >>> 0) / 4294967296 }
+      function lerp(a, b, t) { return a + (b - a) * t }
+      function noise(x, y) { var x0 = Math.floor(x), y0 = Math.floor(y), fx = x - x0, fy = y - y0; fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy);
+        return lerp(lerp(hash(x0, y0), hash(x0 + 1, y0), fx), lerp(hash(x0, y0 + 1), hash(x0 + 1, y0 + 1), fx), fy) }
+      var q = new URLSearchParams(location.search)
+      var W = +q.get('w') || 1584, H = +q.get('h') || 396, seed = +q.get('seed') || 0
+      var r = document.documentElement.style
+      r.setProperty('--w', W + 'px'); r.setProperty('--h', H + 'px')
+      /* Every measure scales from the 396px cover; the box sits left of centre so the
+         profile photo, which LinkedIn lays over the lower left corner, does not cover it. */
+      var s = H / 396
+      r.setProperty('--cell', Math.round(12 * s) + 'px')
+      r.setProperty('--box-left', Math.round(W * 0.34) + 'px'); r.setProperty('--box-width', Math.round(W * 0.42) + 'px')
+      r.setProperty('--bw', Math.max(2, Math.round(3 * s)) + 'px'); r.setProperty('--sh', Math.round(10 * s) + 'px')
+      r.setProperty('--pad', Math.round(26 * s) + 'px ' + Math.round(30 * s) + 'px'); r.setProperty('--gap', Math.round(10 * s) + 'px')
+      r.setProperty('--brand', Math.round(16 * s) + 'px'); r.setProperty('--g', Math.round(6 * s) + 'px')
+      r.setProperty('--h1', Math.round(48 * s) + 'px'); r.setProperty('--p', Math.round(19 * s) + 'px')
+      var canvas = document.getElementById('field'), ctx = canvas.getContext('2d')
+      var dpr = 2; canvas.width = W * dpr; canvas.height = H * dpr; ctx.scale(dpr, dpr)
+      var cell = Math.round(12 * s), cols = Math.ceil(W / cell), rows = Math.ceil(H / cell)
+      var colours = ['#011936', '#f9dc5c', '#465362', '#ed254e']
+      for (var y = 0; y < rows; y++) for (var x = 0; x < cols; x++) {
+        var band = 1 - Math.abs((x / cols * 0.8 + y / rows * 1.3 - 1.05) * 1.5)
+        if (band <= 0) continue
+        var coarse = noise(x * 0.07 + seed, y * 0.12), fine = noise(x * 0.45 - seed, y * 0.45)
+        var v = (coarse * 0.6 + fine * 0.4) * band * 1.45
+        if (v < 0.36) continue
+        if (fine > 0.8 && v < 0.55) continue
+        var pick = v < 0.52 ? 0 : v < 0.6 ? 2 : v < 0.76 ? (fine > 0.55 ? 1 : 0) : 1
+        if (v > 0.5 && hash(x, y) > 0.985) pick = 3
+        ctx.fillStyle = colours[pick]
+        ctx.fillRect(x * cell + 1, y * cell + 1, cell - 2, cell - 2)
+      }
+    </script>
+  </body>
+</html>

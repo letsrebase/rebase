@@ -135,27 +135,28 @@ unassigned card's owner is not queryable without reading it.
 
 ## Reaching it
 
-Two skills in `.claude/skills/` carry this contract to the moment it is needed:
-`linear-ticket` (the calls, in order, with every field) and `linear-content` (how the
-words are written). This file stays the source; a disagreement between it and a skill is
-a bug in the skill.
+Two skills of the workflow kit (`.agents/skills/`, mirrored into `.claude/skills/`)
+carry this contract to the moment it is needed: `linear-ticket` (the calls, in order,
+with every field) and `linear-content` (how the words are written). They read this
+board's data from `.github/workflow.json`. This file stays the source; a disagreement
+between it and a skill is a bug in the skill.
 
-The MCP server is `linear-rebase`, enrolled per client outside this repository. It is
-the Linear surface to use: another Linear server on the same machine reaches another
-company's board, not this one. When `linear-rebase` is not in the session, the web app
-at `linear.app/letsrebase` is the fallback, as the `linear-ticket` skill says; a failing
-or wrong-workspace connector is never a reason to start work or open a PR without its
-card.
+The MCP server is `linear-rebase`, defined in the committed `.mcp.json` (Claude Code,
+omp) and `.codex/config.toml` (Codex) with no credential: each person signs in on their
+own Linear account the first time. A machine with several Linear workspaces signed in
+can reach another company's board through a server of any name, so the workspace is
+proved, not assumed. When `linear-rebase` is not in the session, the web app at
+`linear.app/letsrebase` is the fallback, as the `linear-ticket` skill says; a failing or
+wrong-workspace connector is never a reason to start work or open a PR without its card.
 
-Before your first write in a session, two read calls. `list_projects` or `list_issues`,
-to check the team name that comes back: two Linear workspaces are enrolled on this
-machine and the failure mode of picking the wrong one is filing a client's work in the
-wrong company's board. Then `get_user` with `"me"`, to learn **which of us this session
-writes as**, because the token belongs to one account and both of us run agents against
-this board. Keep its `id`, not the display name: ownership is decided by comparing that
-id against `assigneeId` and `createdById`, which is one string equality against a value
-that cannot be re-rendered. That account is what `assignee: "me"` means, what "yours"
-means everywhere below, and it is not necessarily the person who is talking to you.
+Before your first write in a session, two read calls. `get_workspace`, whose `url` must
+be `https://linear.app/letsrebase`: the failure mode of a wrong one is filing a client's
+work in the wrong company's board. Then `get_user` with `"me"`, to learn **which of us this session writes
+as**, because the sign-in belongs to one account and both of us run agents against this
+board. Keep its `id`, not the display name: ownership is decided by comparing that id
+against `assigneeId` and `createdById`, which is one string equality against a value that
+cannot be re-rendered. That account is what `assignee: "me"` means, what "yours" means
+everywhere below, and it is not necessarily the person who is talking to you.
 
 ## The loop
 
@@ -339,13 +340,11 @@ Applies to every project, milestone and issue title, and to the labels.
   filed for the sake of having one.
 - **English, first person, no em dashes**, same as every other repo-facing surface. See
   the Conventions section of the root `AGENTS.md`.
-- **A change to how this repository uses Linear reaches the client-repo template, or
-  it quietly stops being true off this board.** This file, and
-  `.claude/skills/linear-ticket`, `linear-content` and `pr-creation`, are the same
-  shape `tooling/client-repo-starter/template/` hands to a new client repo and the
-  shape `letsrebase/point` already copied at setup. See root `AGENTS.md` §
-  Conventions for the rule and `tooling/client-repo-starter/README.md` §
-  Retrofitting an existing repository for the fold-in procedure.
+- **How this board is worked is the workflow kit's, and the kit is shared.** The three
+  skills and the scripts come from `tooling/workflow-kit/`, also copied into the client
+  repositories and Lorenzo's personal ones; a change to them is made there and synced, as
+  the root `AGENTS.md` § Conventions says. What is this board's alone stays here and in
+  `.github/workflow.json`.
 
 ## Commits and issues
 

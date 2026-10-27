@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="UTF-8" />
+    <title>rebase — titolo del carosello (carosello LinkedIn)</title>
+    <!--
+      The social page system: the same shapes as the site (`projects/website`) and the
+      deck, so a slide reads as rebase before a word is read. Paper ground with the
+      24px grid, a field of tiles drawn per slide from a seed, white boxes with a
+      3px ink border and a stepped shadow, Outfit, the four brand colours and nothing
+      else, no rounded corner anywhere. Copy this file next to your deliverable, copy
+      `shared/brand/fonts/outfit-variable-latin.woff2` beside it, and edit the slides.
+      Render with `render.mjs` in this directory.
+    -->
+    <style>
+      @font-face { font-family: 'Outfit'; font-style: normal; font-weight: 300 700; src: url('./outfit-variable-latin.woff2') format('woff2'); }
+      /* The palette is shared/brand/palette.css, spelled out because a file opened as
+         a page resolves no @theme: ink = Prussian Blue, melon = Watermelon, gold =
+         Royal Gold, quiet = Charcoal Blue, paper = Paper. Change it there first. */
+      :root { --ink: #011936; --quiet: #465362; --paper: #f1f2f3; --gold: #f9dc5c; --melon: #ed254e; --grid: rgba(1, 25, 54, 0.07); --cell: 24px; --step: 14px; }
+      * { box-sizing: border-box; margin: 0; }
+      html, body { background: #ffffff; }
+      body { font-family: 'Outfit', ui-sans-serif, system-ui, sans-serif; color: var(--ink); font-weight: 300; -webkit-font-smoothing: antialiased; }
+      /* One square per page: 1080x1080, the format LinkedIn shows a document in. */
+      .slide { position: relative; width: 1080px; height: 1080px; overflow: hidden; background-color: var(--paper);
+        background-image: linear-gradient(to right, var(--grid) 1px, transparent 1px), linear-gradient(to bottom, var(--grid) 1px, transparent 1px);
+        background-size: var(--cell) var(--cell); margin-bottom: 40px; page-break-after: always; }
+      .slide canvas { position: absolute; inset: 0; width: 1080px; height: 1080px; }
+      .slide.dark { background-color: var(--ink); color: #fff; background-image: linear-gradient(to right, rgba(255,255,255,0.06) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.06) 1px, transparent 1px); }
+      .slide.dark canvas { opacity: 0.22; }
+      /* The header: the four-tile glyph and the name, lowercase, Outfit 500. */
+      .brand { position: absolute; left: 72px; top: 56px; display: flex; align-items: center; gap: 18px; font-size: 26px; font-weight: 500; }
+      .glyph { width: 12px; height: 12px; background: var(--ink); flex: none; margin: 0 12px 12px 0; box-shadow: 12px 0 0 var(--gold), 0 12px 0 var(--melon), 12px 12px 0 var(--ink); }
+      .dark .glyph { background: #fff; box-shadow: 12px 0 0 var(--gold), 0 12px 0 var(--melon), 12px 12px 0 #fff; }
+      .foot { position: absolute; left: 72px; right: 72px; bottom: 44px; display: flex; justify-content: space-between; font-size: 22px; color: var(--quiet); font-weight: 400; }
+      .foot span { background: var(--paper); padding: 4px 10px; }
+      .dark .foot { color: rgba(255,255,255,0.7); } .dark .foot span { background: transparent; }
+      .foot .n { font-weight: 600; }
+      /* Type: a kicker over a statement, a lead under it. Melon accents on paper, gold on ink. */
+      .kicker { color: var(--melon); font-weight: 600; font-size: 24px; letter-spacing: 0.12em; text-transform: uppercase; }
+      .dark .kicker { color: var(--gold); }
+      .accent { color: var(--melon); } .dark .accent { color: var(--gold); }
+      .pad { position: absolute; left: 72px; right: 72px; top: 140px; bottom: 120px; }
+      .box { position: absolute; background: #fff; border: 3px solid var(--ink); box-shadow: var(--step) var(--step) 0 var(--ink); }
+      .center { display: flex; flex-direction: column; justify-content: center; }
+      h1 { font-size: 124px; font-weight: 600; line-height: 0.96; letter-spacing: -0.035em; }
+      .statement { font-size: 76px; font-weight: 600; line-height: 1.04; letter-spacing: -0.03em; }
+      .lead { font-size: 32px; line-height: 1.35; color: var(--quiet); font-weight: 400; }
+      .dark .lead { color: rgba(255,255,255,0.78); }
+      .label { font-size: 30px; color: var(--quiet); font-weight: 400; line-height: 1.3; }
+      .dark .label { color: rgba(255,255,255,0.75); }
+      .label.accent { color: var(--melon); }
+      .dark .label.accent { color: var(--gold); }
+      .swipe { position: absolute; right: 72px; bottom: 44px; font-size: 22px; font-weight: 600; color: var(--melon); display: flex; align-items: center; gap: 12px; }
+      .swipe svg { width: 28px; height: 28px; }
+      /* Numbered rows: a number (or a time) on its own tile, the sentence beside it. */
+      .rows { display: flex; flex-direction: column; gap: 26px; }
+      .row { display: flex; align-items: stretch; background: #fff; border: 3px solid var(--ink); box-shadow: 10px 10px 0 var(--ink); color: var(--ink); }
+      .dark .row { box-shadow: 10px 10px 0 var(--gold); }
+      .row .n { flex: none; width: 96px; display: flex; align-items: center; justify-content: center; font-size: 46px; font-weight: 600; color: #fff; background: var(--ink); }
+      .row .n.gold { background: var(--gold); color: var(--ink); }
+      .row .n.melon { background: var(--melon); }
+      .row .n.wide { width: 172px; font-size: 32px; letter-spacing: -0.01em; line-height: 1.15; text-align: center; }
+      .row .t { padding: 24px 30px; font-size: 33px; font-weight: 500; line-height: 1.25; display: flex; flex-direction: column; justify-content: center; }
+      .row .t small { display: block; font-size: 25px; font-weight: 400; color: var(--quiet); margin-top: 6px; }
+      /* Hero numbers side by side. */
+      .tiles { display: flex; gap: 34px; }
+      .tile { flex: 1; background: #fff; border: 3px solid var(--ink); box-shadow: 12px 12px 0 var(--gold); padding: 30px 28px 26px; color: var(--ink); }
+      .tile .big { font-size: 150px; font-weight: 600; line-height: 0.9; letter-spacing: -0.04em; }
+      .tile .what { font-size: 28px; font-weight: 500; margin-top: 18px; line-height: 1.2; }
+      .tile.melon .big { color: var(--melon); }
+      /* One bar per item: one hue for the measure, the accent only on a called-out peak. */
+      .bars { display: flex; flex-direction: column; gap: 10px; }
+      .bar-row { display: flex; align-items: center; height: 46px; }
+      .bar-row .lbl { flex: none; width: 178px; font-size: 30px; font-weight: 500; }
+      .bar-row .bar { height: 30px; background: var(--ink); flex: none; }
+      .bar-row .val { margin-left: 16px; font-size: 28px; font-weight: 600; white-space: nowrap; }
+      .bar-row .peak { margin-left: 14px; font-size: 23px; font-weight: 500; color: var(--melon); white-space: nowrap; }
+      /* Cards for a recap, a screen redrawn as the visitor sees it, a call to action. */
+      .cards { display: flex; flex-direction: column; gap: 34px; }
+      .card { background: #fff; border: 3px solid var(--ink); box-shadow: 12px 12px 0 var(--ink); padding: 32px 36px; }
+      .card .who { font-size: 44px; font-weight: 600; letter-spacing: -0.02em; }
+      .card .what { font-size: 27px; color: var(--quiet); font-weight: 400; margin-top: 10px; line-height: 1.3; }
+      /* A wizard screen in the shape the engine draws (projects/hub/apps/web/src/wizard/
+         Wizard.tsx): the breadcrumb with «n di N», the progress bar, an optional aside,
+         the question, the controls, «Invio ↵ per continuare» beside «Avanti». The copy is
+         the page's own (pages/FreelancerWizard.tsx); nothing the product does not draw. */
+      .mock { background: #fff; border: 3px solid var(--ink); box-shadow: 12px 12px 0 var(--gold); padding: 30px 36px 34px; color: var(--ink); }
+      .mock .crumb { display: flex; justify-content: space-between; font-size: 20px; color: var(--quiet); font-weight: 500; }
+      .mock .progress { margin-top: 10px; height: 12px; border: 3px solid var(--ink); }
+      .mock .progress i { display: block; height: 100%; background: var(--ink); }
+      .mock .aside { margin-top: 22px; border-left: 6px solid var(--ink); background: var(--paper); padding: 10px 16px; font-size: 22px; line-height: 1.3; }
+      .mock .aside b { display: block; font-weight: 500; }
+      .mock .q { font-size: 46px; font-weight: 600; letter-spacing: -0.03em; margin-top: 24px; }
+      .mock .fields { display: flex; gap: 16px; margin-top: 18px; }
+      .mock .field { flex: 1; height: 60px; border: 3px solid var(--ink); display: flex; align-items: center; padding: 0 18px; font-size: 24px; color: #9aa3ad; }
+      .mock .actions { display: flex; justify-content: flex-end; align-items: center; gap: 18px; margin-top: 20px; font-size: 20px; color: var(--quiet); }
+      .mock .btn { display: inline-block; background: var(--melon); color: #fff; font-size: 24px; font-weight: 600; padding: 12px 28px; }
+      /* The source and the date of a number, once, under the element that shows it. */
+      .source { font-size: 22px; color: var(--quiet); font-weight: 400; margin-top: 22px; }
+      .dark .source { color: rgba(255,255,255,0.6); }
+      .cta { display: inline-block; background: var(--melon); color: #fff; font-size: 42px; font-weight: 600; padding: 22px 42px; border: 3px solid var(--ink); box-shadow: 12px 12px 0 var(--ink); }
+      .tag { display: inline-block; background: var(--ink); color: var(--gold); font-weight: 600; font-size: 22px; letter-spacing: 0.02em; padding: 10px 16px; font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
+    </style>
+  </head>
+  <body>
+
+    <!-- 1 · Cover: a box on the field, the kicker, the title in three short lines, one
+         lead in ink and one in quiet, the site at the bottom, «scorri» on the right. -->
+    <section class="slide" data-seed="5" data-band="diagonal">
+      <canvas></canvas>
+      <div class="box" style="left: 72px; right: 72px; top: 72px; bottom: 96px; padding: 56px 64px;">
+        <div class="brand" style="position: static;"><span class="glyph"></span>rebase</div>
+        <div class="center" style="height: 100%; margin-top: -56px;">
+          <p class="kicker">Kicker · cosa è questo</p>
+          <h1 style="margin-top: 30px; font-size: 108px;">Il titolo<br />in tre<br />righe.</h1>
+          <p class="lead" style="margin-top: 36px; font-size: 36px; color: var(--ink);">Una frase in inchiostro.</p>
+          <p class="lead" style="margin-top: 22px;">Una frase più lunga, in grigio, che dice cosa c'è nelle slide dopo.</p>
+        </div>
+        <p class="label" style="position: absolute; left: 64px; bottom: 48px; font-size: 24px;">letsrebase.com</p>
+      </div>
+      <div class="swipe" style="right: 100px; bottom: 132px;">scorri <svg viewBox="0 0 40 80" aria-hidden="true"><path d="M6 6 L34 40 L6 74" fill="none" stroke="#ed254e" stroke-width="9" stroke-linecap="square"/></svg></div>
+    </section>
+
+    <!-- 2 · A dark content slide: kicker, statement, three numbered rows. Alternate dark
+         and light slides for rhythm; the footer carries the site and «n / N». -->
+    <section class="slide dark" data-seed="21" data-band="topright">
+      <canvas></canvas>
+      <div class="brand"><span class="glyph"></span>rebase</div>
+      <div class="pad">
+        <p class="kicker">Kicker</p>
+        <p class="statement" style="margin-top: 22px; font-size: 66px;">Una frase<br />che afferma.</p>
+        <div class="rows" style="margin-top: 48px;">
+          <div class="row"><div class="n">1</div><div class="t">Prima cosa.<small>Una riga sotto, in grigio.</small></div></div>
+          <div class="row"><div class="n gold">2</div><div class="t">Seconda cosa.<small>Una riga sotto.</small></div></div>
+          <div class="row"><div class="n melon">3</div><div class="t">Terza cosa.<small>Una riga sotto.</small></div></div>
+        </div>
+      </div>
+      <div class="foot"><span>letsrebase.com</span><span class="n">2 / 4</span></div>
+    </section>
+
+    <!-- 3 · A screen of the product, redrawn in the engine's shape with the page's own
+         copy, and the source line a number carries. -->
+    <section class="slide" data-seed="29" data-band="topright">
+      <canvas></canvas>
+      <div class="brand"><span class="glyph"></span>rebase</div>
+      <div class="pad">
+        <p class="kicker">Kicker</p>
+        <p class="statement" style="margin-top: 22px; font-size: 66px;">Lo schermo<br />com'è davvero.</p>
+        <div class="mock" style="margin-top: 40px;">
+          <div class="crumb"><span>Entra in rebase</span><span>1 di 8</span></div>
+          <div class="progress"><i style="width: 0%;"></i></div>
+          <div class="aside"><b>rebase è la community di chi fa software in proprio in Italia.</b>8 domande, circa tre minuti: chi sei, cosa fai e quanto costi, così le aziende che cercano persone ti trovano.</div>
+          <p class="q">Come ti chiami?</p>
+          <div class="fields"><div class="field">Nome</div><div class="field">Cognome</div></div>
+          <div class="actions"><span>Invio ↵ per continuare</span><span class="btn">Avanti</span></div>
+        </div>
+        <p class="source">PostHog, 14 e 15 settembre 2026, persone vere.</p>
+      </div>
+      <div class="foot"><span>letsrebase.com</span><span class="n">3 / 4</span></div>
+    </section>
+
+    <!-- 4 · Close: the claim, one lead, the site and the call to action. -->
+    <section class="slide" data-seed="6" data-band="diagonal">
+      <canvas></canvas>
+      <div class="box" style="left: 72px; right: 72px; top: 72px; bottom: 96px; padding: 52px 64px; display: flex; flex-direction: column;">
+        <div class="brand" style="position: static;"><span class="glyph"></span>rebase</div>
+        <p class="kicker" style="margin-top: 70px;">Kicker di chiusura</p>
+        <h1 style="margin-top: 26px; font-size: 104px;">Freelance,<br />ma non da soli.</h1>
+        <p class="lead" style="margin-top: 30px; font-size: 30px;">La community di chi fa software in proprio in Italia. Progetti da aziende vere, strumenti per farsi pagare, persone che ci sono passate.</p>
+        <div style="margin-top: auto;">
+          <p class="label" style="font-size: 44px; font-weight: 600; color: var(--melon);">letsrebase.com</p>
+          <div class="cta" style="margin-top: 26px;">Entra in rebase</div>
+        </div>
+      </div>
+    </section>
+
+    <script>
+      /* --- The field of tiles, deterministic per slide (from the site's field.js).
+         `data-seed` changes the drawing, `data-band` where it sits: `diagonal` for a
+         boxed slide, `topright` or `bottomleft` for a slide whose text needs the
+         opposite corner free. Keep the field off the copy: a band under a paragraph
+         is the first thing to change when a slide reads badly. */
+      function hash(x, y) { var n = (x * 374761393 + y * 668265263) | 0; n = ((n ^ (n >>> 13)) * 1274126177) | 0; return ((n ^ (n >>> 16)) >>> 0) / 4294967296 }
+      function lerp(a, b, t) { return a + (b - a) * t }
+      function noise(x, y) { var x0 = Math.floor(x), y0 = Math.floor(y), fx = x - x0, fy = y - y0; fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy);
+        return lerp(lerp(hash(x0, y0), hash(x0 + 1, y0), fx), lerp(hash(x0, y0 + 1), hash(x0 + 1, y0 + 1), fx), fy) }
+      var bands = {
+        diagonal: function (u, v) { return 1 - Math.abs((u + v - 1) * 1.6) },
+        topright: function (u, v) { return (u - 0.35) * 1.3 - v * 0.9 },
+        bottomleft: function (u, v) { return (0.65 - u) * 1.3 - (1 - v) * 0.9 },
+      }
+      var colours = ['#011936', '#f9dc5c', '#465362', '#ed254e']
+      var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'))
+      slides.forEach(function (slide) {
+        var canvas = slide.querySelector('canvas'), ctx = canvas.getContext('2d')
+        var W = 1080, H = 1080, cell = 24, dpr = 2
+        canvas.width = W * dpr; canvas.height = H * dpr; ctx.scale(dpr, dpr)
+        var seed = +slide.dataset.seed || 0, band = bands[slide.dataset.band] || bands.diagonal
+        var dark = slide.classList.contains('dark')
+        var cols = Math.ceil(W / cell), rows = Math.ceil(H / cell)
+        for (var y = 0; y < rows; y++) for (var x = 0; x < cols; x++) {
+          var density = band(x / cols, y / rows)
+          if (density <= 0) continue
+          var coarse = noise(x * 0.07 + seed, y * 0.07 + seed * 0.3), fine = noise(x * 0.45 - seed, y * 0.45)
+          var v = (coarse * 0.6 + fine * 0.4) * density * 1.4
+          if (v < 0.36) continue
+          if (fine > 0.8 && v < 0.55) continue
+          var pick = v < 0.52 ? 0 : v < 0.6 ? 2 : v < 0.76 ? (fine > 0.55 ? 1 : 0) : 1
+          if (v > 0.5 && hash(x + seed, y) > 0.985) pick = 3
+          if (dark && pick === 0) continue
+          ctx.fillStyle = colours[pick]
+          ctx.fillRect(x * cell + 1, y * cell + 1, cell - 2, cell - 2)
+        }
+      })
+    </script>
+  </body>
+</html>

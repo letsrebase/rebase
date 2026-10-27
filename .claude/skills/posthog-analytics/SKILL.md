@@ -1,6 +1,7 @@
 ---
 name: posthog-analytics
-description: Use when a change touches what this monorepo sends to PostHog or reads from it: adding or renaming an event in the website, the CRM, the hub or the MCP servers, sending an event from an API server, counting signups, activations or funnel steps, answering «how many people did X», exposing a database table to PostHog's data warehouse, or diagnosing a sync that failed, a count that looks too low, or an event that never arrives. Triggers on «PostHog», «analytics», «funnel», «warehouse», «evento», «tracciamento», «quante persone», «sync failed», and on any new `*_POSTHOG_*` setting.
+description: >-
+  Use when a change touches what this monorepo sends to PostHog or reads from it: adding or renaming an event in the website, the CRM, the hub or the MCP servers, sending an event from an API server, counting signups, activations or funnel steps, answering «how many people did X», exposing a database table to PostHog's data warehouse, or diagnosing a sync that failed, a count that looks too low, or an event that never arrives. Triggers on «PostHog», «analytics», «funnel», «warehouse», «evento», «tracciamento», «quante persone», «sync failed», and on any new `*_POSTHOG_*` setting.
 ---
 
 # PostHog in this monorepo

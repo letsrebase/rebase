@@ -10,7 +10,8 @@ Every pull request that changes something a person could **do** also ends with a
 click by click, so a reviewer watches the flow instead of reconstructing it from two
 still frames and the diff.
 
-The `pr-creation` skill (`.claude/skills/pr-creation/SKILL.md`) asks for the section;
+The `pr-creation` skill (`.agents/skills/pr-creation/SKILL.md`, with this repository's
+steps in `docs/agents/pr-creation.md`) asks for the section;
 this file is how the picture and the video get made in this monorepo.
 
 ## What counts as a visible change

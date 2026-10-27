@@ -82,10 +82,13 @@ nothing when you are not. Narrow to one project by passing its paths as argument
 
 ## Verification: three tiers, and where each check lives
 
-1. **Local, before the PR exists**: `.github/preflight.json`. Everything expensive:
-   the full Python suite, Playwright, the images. `preflight --list` prints what your
-   diff selects before you trust it; `preflight --install-hook` runs it on push.
-2. **`pull_request`**: one cheap gate per project, scoped by `dorny/paths-filter`.
+1. **Local, before the PR exists**: `.github/preflight.json`, run by the workflow kit's
+   `python3 .github/kit/bin/preflight` (no install, Python 3.10 and git). Everything
+   expensive: the full Python suite, Playwright, the images. `--list` prints what your
+   diff selects before you trust it; `--install-hook` runs it on push.
+2. **`pull_request`**: one cheap gate per project, scoped by `dorny/paths-filter`, plus
+   the workflow kit's own job (`kit · check and PR lint`): the PR's title and body
+   against `.github/workflow.json`, and the kit's copy against its manifest.
 3. **`push` to `main`**: the heavy tier (the images), scoped by the
    same filters. It was unconditional until 2026-09-09, when the measurement said
    1,564 hosted minutes in eight days against a 2,000/month allowance on a private
@@ -244,10 +247,9 @@ the dry run (`gh workflow run snyk-weekly.yml -f dry_run=true`), are in
   step included, is a Linear card; in doubt, it is a Linear card, and only Ivan or
   Lorenzo opens a roadmap issue. A pull request may name the roadmap point it moves
   (`Roadmap: #297`) on the line right before its own `Linear: REB-N.` line, which
-  stays last so the check in `.claude/skills/pr-creation/` § Before `gh pr create`
-  still passes. `Closes #297` goes on that line only when merging that pull request
-  really finishes the whole roadmap point, which on a milestone's draft PR means
-  waiting for the card that finishes it.
+  stays last so `pr_lint.py`, a step of `ci`, still passes. `Closes #297` goes on
+  that line only when merging that pull request really finishes the whole roadmap
+  point, which on a milestone's draft PR means waiting for the card that finishes it.
 - **The weekly Snyk issue is the other kind, and only its workflow opens it.** When the
   Monday scan finds anything at medium or above, `snyk-weekly.yml` files a GitHub issue
   labelled `security`, the way Dependabot files an alert, and its twin Linear card,
@@ -341,20 +343,20 @@ the dry run (`gh workflow run snyk-weekly.yml -f dry_run=true`), are in
   the card; every comment, the closing evidence included, written before or right after
   the merge; `Canceled`; and the `In production` comment when a tag ships. An issue
   reference in a commit body is a pointer, not a link.
-- **A change to how this repository uses Linear reaches the client-repo template and
-  every repo already built from it, or it is a rule that quietly stops being true off
-  this board.** `docs/tracker.md`, `.claude/skills/linear-ticket`,
-  `.claude/skills/linear-content` and `.claude/skills/pr-creation` are the same shape
-  `tooling/client-repo-starter/template/` hands to a new client repo, and the shape
-  `letsrebase/point` (and any repo onboarded after it) already copied at setup. When
-  an edit to one of those four is not `rebase`-team-specific, fold the matching edit
-  into `tooling/client-repo-starter/template/` in the same pull request
-  (`.claude/skills/client-repo-onboarding/` § Keeping the template in step). For a
-  repository already onboarded, the fold cannot land in this PR: file a Linear issue
-  in that repository's own team, never in `rebase`'s, naming the drift, the same way
-  `tooling/client-repo-starter/README.md` § Retrofitting an existing repository
-  already asks for the fold's own PR. A lesson learned once and never carried over is
-  a lesson every future client repo, and `point` today, pays for again.
+- **The procedure for Linear, PRs and CI is the workflow kit, written once in
+  `tooling/workflow-kit/` and copied into every repository that uses it**: this one,
+  the client repositories built from `tooling/client-repo-starter/` (whose template still
+  carries older copies until REB-821 renders them from the kit), and Lorenzo's
+  personal repositories (`docs/design/DECISIONS.md`, 2026-10-27). The kit's skills
+  (`linear-ticket`, `linear-content`, `pr-creation`) and scripts read this
+  repository's data from `.github/workflow.json` and its own steps from `docs/agents/`.
+  A change to the kit is made in `tooling/workflow-kit/files/`, with `VERSION` bumped,
+  and this repository is re-synced in the same pull request (`python3
+  .github/kit/bin/kit.py sync --source tooling/workflow-kit`); `ci` fails when the copy
+  here differs from its manifest. Another repository picks the change up with its own
+  sync, in its own pull request; for a client repository already onboarded, file that
+  sync as a Linear issue in its own team, never in `rebase`'s. `docs/tracker.md` stays
+  this repository's own contract.
 
 Find the issue before you start, check it is yours, move it as you go, and close it
 only against evidence on the surface it is about. A defect you found and did not fix
@@ -362,14 +364,28 @@ gets filed before you finish.
 
 ## Skills an agent is handed
 
-`.claude/skills/` holds the procedures an agent needs at a precise moment, so they are
-not left to memory: `pr-creation` (branch, title, body, review and merge loop, the
-hand-off to Linear), `linear-ticket` (the board workflow in one `save_issue` call, the
-state changes, the API quirks) and `linear-content` (how an issue, a comment, a closing
-comment or a project update is written here). They point at this file,
-`docs/tracker.md`, `.github/PULL_REQUEST_TEMPLATE.md` and `docs/design/DECISIONS.md`
-and restate as little of them as they can: the documents are the contract, the skills
-are the order of operations, and where the two disagree the skill has the bug.
+Skills are written in `.agents/skills/`, which Codex and other agents read, and
+`kit.py sync` copies them into `.claude/skills/` for Claude Code; omp reads both and
+collapses the identical copies. Never edit `.claude/skills/`: `ci` fails on a mirror
+that differs. A copy and not a symlink, because Git for Windows checks a symlink out as
+a plain text file unless the machine is in Developer Mode with `core.symlinks` on.
+
+The workflow kit's three are `pr-creation` (branch, title, body, review and merge loop,
+the hand-off to Linear), `linear-ticket` (the board workflow in one `save_issue` call,
+the state changes, the API quirks) and `linear-content` (how an issue, a comment, a
+closing comment or a project update is written). This repository's own steps for them
+are in `docs/agents/` (the Greptile and CodeRabbit loop, milestone branches, releases),
+and its own skills sit beside them (`client-repo-onboarding`, `posthog-analytics`,
+`social-content`). They point at this file, `docs/tracker.md`, `.github/workflow.json`
+and `docs/design/DECISIONS.md` and restate as little of them as they can: the documents
+are the contract, the skills are the order of operations, and where the two disagree
+the skill has the bug.
+
+The Linear server is committed: `.mcp.json` (Claude Code, omp) and `.codex/config.toml`
+(Codex) define it with no credential, and each person signs in on their own account the
+first time (`/mcp` in Claude Code and omp, `codex mcp login linear-rebase`). The skills
+prove the workspace with `get_workspace` before writing, since one machine often has
+several Linear workspaces signed in.
 
 ## What a human decides, not you
 
