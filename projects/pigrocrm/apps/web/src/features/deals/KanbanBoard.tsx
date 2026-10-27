@@ -10,11 +10,13 @@ function Column({
   deals,
   onOpen,
   canDrag,
+  ownerName,
 }: {
   stage: Stage
   deals: Deal[]
   onOpen: (id: string) => void
   canDrag: boolean
+  ownerName?: (ownerId: string | null) => string | null
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: stage.id })
 
@@ -38,7 +40,13 @@ function Column({
           <p className="py-6 text-center text-sm text-muted-foreground">Nessun deal</p>
         ) : (
           deals.map((deal) => (
-            <KanbanCard key={deal.id} deal={deal} onOpen={onOpen} canDrag={canDrag} />
+            <KanbanCard
+              key={deal.id}
+              deal={deal}
+              onOpen={onOpen}
+              canDrag={canDrag}
+              ownerName={ownerName?.(deal.owner_id)}
+            />
           ))
         )}
       </div>
@@ -81,9 +89,18 @@ interface Props {
   /** See `KanbanCard`'s own doc. Defaults to `true` so the required test file
    *  (which never passes it) keeps exercising the normal, draggable board. */
   canDrag?: boolean
+  /** Names an owner for the card (REB-780); without it cards show no owner. */
+  ownerName?: (ownerId: string | null) => string | null
 }
 
-export function KanbanBoard({ stages, deals, onMove, onOpen, canDrag = true }: Props) {
+export function KanbanBoard({
+  stages,
+  deals,
+  onMove,
+  onOpen,
+  canDrag = true,
+  ownerName,
+}: Props) {
   // A small activation distance keeps a click on a card (to open it) from also
   // registering as a drag.
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
@@ -114,6 +131,7 @@ export function KanbanBoard({ stages, deals, onMove, onOpen, canDrag = true }: P
               deals={deals.filter((deal) => deal.pipeline_stage_id === stage.id)}
               onOpen={onOpen}
               canDrag={canDrag}
+              ownerName={ownerName}
             />
           ))}
       </div>

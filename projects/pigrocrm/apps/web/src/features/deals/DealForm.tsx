@@ -42,15 +42,18 @@ const NATIVE_FIELDS: FieldDefinition[] = [
   },
   { key: 'note', label: 'Note', type: 'textarea', required: false, options: [] },
 ]
-// `owner_id` -- `DealCreate`/`DealUpdate`'s other native column -- is deliberately
-// absent from this list: it is a foreign key to `users`, needing a user picker no
-// `FieldDefinition` type covers (the nine types are text/textarea/number/
-// currency/date/select/multiselect/checkbox/url -- lib/schema.ts's own
-// `FieldType`). `features/settings/queries.ts` has `useUsers` for Impostazioni's
-// own Utenti panel, but no owner-picker control built from it exists yet;
-// assigning an owner is left to whichever later slice adds one, the same way
-// `ore_preventivate`/`valore_preventivato` are written now but not read until
-// slice 4.
+// `owner_id` (REB-780) is the same kind of key as `customer_id`: an id drawn by its own
+// picker below `DynamicForm`, never a `FieldDefinition` (a `select` field would submit the
+// option's label). It is seeded by `dealToFormValues` apart from `NATIVE_FIELD_KEYS`.
+
+/** What the owner picker's «nessuno» option submits as: a `Select` item cannot hold `null`. */
+const NO_OWNER = '__nessuno'
+
+/** The people a deal may be handed to: the space's active members (REB-780). */
+export interface OwnerOption {
+  id: string
+  nome: string
+}
 
 const NATIVE_FIELD_KEYS = NATIVE_FIELDS.map((field) => field.key)
 
@@ -104,6 +107,7 @@ export function dealToFormValues(deal: Deal): DealFormValues {
   for (const key of NATIVE_FIELD_KEYS) {
     native[key] = (deal as unknown as Record<string, unknown>)[key]
   }
+  native.owner_id = deal.owner_id
   return { native, custom: { ...deal.custom_fields } }
 }
 
@@ -180,6 +184,12 @@ interface Props {
   busy?: boolean
   onSubmit: (values: Record<string, unknown>) => void
   title: string
+  /** The owner picker's people: the space's active members. Without it no control is
+   *  drawn and no `owner_id` is sent. */
+  owners?: OwnerOption[]
+  /** Who a new deal belongs to when the picker is left alone: the signed-in person, which
+   *  is what the server does with an omitted `owner_id` (REB-780). */
+  defaultOwnerId?: string | null
 }
 
 export function DealForm({
@@ -191,6 +201,8 @@ export function DealForm({
   busy,
   onSubmit,
   title,
+  owners,
+  defaultOwnerId,
 }: Props) {
   const [values, setValues] = useState<DealFormValues>(initial ?? DEFAULT_CREATE_VALUES)
   // `initial`'s absence is what "Nuovo deal" means, exactly like `CustomerForm`/
@@ -198,6 +210,9 @@ export function DealForm({
   // Cliente picker" decision and the "which DynamicForm mode" decision can never
   // disagree with each other or with what `initial` actually says.
   const isCreate = initial === undefined
+  // `undefined`: the picker was not touched, so a create shows the default and sends nothing.
+  const chosenOwner = values.native.owner_id as string | null | undefined
+  const shownOwner = chosenOwner === undefined && isCreate ? (defaultOwnerId ?? null) : chosenOwner
 
   // Same "reset synchronously when `open` toggles" pattern as `CustomerForm`/
   // `PersonForm`, for the identical reason: this component stays mounted across
@@ -231,7 +246,7 @@ export function DealForm({
     for (const [key, value] of Object.entries(values.native)) {
       // `customer_id` cannot follow the plain-native-column rule below -- see the
       // dedicated handling just after this loop for why.
-      if (key === 'customer_id') continue
+      if (key === 'customer_id' || key === 'owner_id') continue
       if (!isBlank(value)) {
         native[key] = value
       } else if (!isBlank(initial?.native[key])) {
@@ -261,6 +276,12 @@ export function DealForm({
     if (isCreate) {
       const customerId = values.native.customer_id as string | null | undefined
       if (customerId) native.customer_id = customerId
+    }
+
+    // Only what was changed: re-sending an unchanged owner would be refused the day that
+    // person is deactivated. `null` takes the owner away.
+    if (owners !== undefined && chosenOwner !== undefined && chosenOwner !== initial?.native.owner_id) {
+      native.owner_id = chosenOwner
     }
 
     const custom: Record<string, unknown> = {}
@@ -308,6 +329,36 @@ export function DealForm({
           problem={problem}
           mode={isCreate ? 'create' : 'edit'}
         />
+
+        {owners !== undefined ? (
+          <div className="space-y-2">
+            <Label htmlFor="deal-owner">Responsabile</Label>
+            <Select
+              value={shownOwner ?? NO_OWNER}
+              onValueChange={(value) =>
+                setValues((previous) => ({
+                  ...previous,
+                  native: { ...previous.native, owner_id: value === NO_OWNER ? null : value },
+                }))
+              }
+            >
+              <SelectTrigger id="deal-owner" className="w-full">
+                <SelectValue placeholder="Seleziona…" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_OWNER}>Nessuno</SelectItem>
+                {owners.map((person) => (
+                  <SelectItem key={person.id} value={person.id}>
+                    {person.nome}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-sm text-muted-foreground">
+              Chi riceve i promemoria su questo deal.
+            </p>
+          </div>
+        ) : null}
 
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>

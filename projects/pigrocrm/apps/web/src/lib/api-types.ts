@@ -836,6 +836,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/users/directory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Directory
+         * @description The active members' names, for the owner and assignee pickers (REB-780).
+         */
+        get: operations["directory_api_users_directory_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/users/invites": {
         parameters: {
             query?: never;
@@ -11943,6 +11963,20 @@ export interface components {
             /** Costo Orario Default */
             costo_orario_default?: number | string | null;
         };
+        /**
+         * MemberRead
+         * @description What any member may know of a colleague (REB-780): enough to name an owner or an
+         *     assignee and to pick one, and nothing else (no email, role or rates).
+         */
+        MemberRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Nome */
+            nome: string;
+        };
         /** UserRead */
         UserRead: {
             /**
@@ -19148,6 +19182,26 @@ export interface operations {
                         [key: string]: unknown;
                     };
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    directory_api_users_directory_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberRead"][];
                 };
             };
         };

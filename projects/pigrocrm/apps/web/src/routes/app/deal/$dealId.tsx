@@ -14,6 +14,7 @@ import { Skeleton } from '@rebase/ui/skeleton'
 import { EconomicsTab } from '@/features/analytics/EconomicsTab'
 import { useCustomer } from '@/features/customers/queries'
 import { useLegalEntity } from '@/lib/legalEntity'
+import { useMemberDirectory } from '@/features/users/directory'
 import { DealForm, dealToFormValues } from '@/features/deals/DealForm'
 import { DealStageBar } from '@/features/deals/DealStageBar'
 import { displayNative, formatDate, formatHours, formatMoney } from '@/features/deals/columns'
@@ -133,6 +134,7 @@ export function DealDetail() {
   const { data: deal, isLoading, isError, error } = useDeal(dealId)
   const stages = useStages()
   const update = useUpdateDeal(dealId)
+  const directory = useMemberDirectory()
   const remove = useDeleteDeal()
   const move = useMoveDeal()
   // Shares the shell banner's cached health row -- see `useGmailConfigured`.
@@ -290,6 +292,7 @@ export function DealDetail() {
               <Card className="lg:col-span-1">
                 <CardContent className="space-y-5 pt-6">
                   <Section title="Riepilogo">
+                    <Row label="Responsabile" value={directory.nameOf(deal.owner_id) ?? '—'} />
                     <Row label="Valore previsto" value={formatMoney(deal.valore_previsto)} />
                     <Row label="Probabilità" value={`${deal.probabilita}%`} />
                     <Row label="Chiusura prevista" value={formatDate(deal.data_chiusura_prevista)} />
@@ -361,6 +364,7 @@ export function DealDetail() {
         open={editing}
         onOpenChange={setEditing}
         customFields={custom}
+        owners={directory.members}
         initial={dealToFormValues(deal)}
         problem={problem}
         busy={update.isPending}

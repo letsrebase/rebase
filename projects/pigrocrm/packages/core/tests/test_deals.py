@@ -8,6 +8,7 @@ from sqlalchemy import event
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.auth.models import User
 from pigrocrm.core.auth.schemas import UserCreate
 from pigrocrm.core.auth.service import UserService
 from pigrocrm.core.customers.schemas import CustomerCreate
@@ -1046,3 +1047,58 @@ def test_find_by_marker_is_the_live_deal_carrying_it_under_any_customer(
     )
     found = repo.find_by_marker(marker)
     assert found is not None and (found.id, found.customer_id) == (ours.id, other.id)
+
+
+# --- REB-780: the owner a deal is born with, and who it may be handed to ------------
+
+
+def test_a_deal_is_owned_by_its_creator_unless_the_request_names_somebody(
+    db_session: Session, customer_id, stages, owner_id
+) -> None:
+    service = DealService(db_session)
+    mine = Actor(id=owner_id, type="user", role="collaboratore")
+
+    own = service.create(DealCreate(nome="Mio", customer_id=customer_id), mine)
+    assert own.owner_id == owner_id
+
+    # The actor of a job has no user id: nobody owns what it creates.
+    assert service.create(DealCreate(nome="Job", customer_id=customer_id), ADMIN).owner_id is None
+
+
+def test_a_member_may_hand_a_deal_to_a_colleague_and_take_the_owner_away(
+    db_session: Session, customer_id, stages, owner_id
+) -> None:
+    service = DealService(db_session)
+    mine = Actor(id=owner_id, type="user", role="collaboratore")
+    colleague = User(email="collega@example.test", password_hash="x", nome="C", ruolo="admin")
+    db_session.add(colleague)
+    db_session.flush()
+
+    deal = service.create(DealCreate(nome="X", customer_id=customer_id), mine)
+    moved = service.update(deal.id, DealUpdate(owner_id=colleague.id), mine)
+    assert moved.owner_id == colleague.id
+
+    cleared = service.update(deal.id, DealUpdate(owner_id=None), mine)
+    assert cleared.owner_id is None
+
+
+def test_a_deactivated_person_cannot_be_given_a_deal_but_may_keep_one(
+    db_session: Session, customer_id, stages
+) -> None:
+    service = DealService(db_session)
+    gone = User(
+        email="andata@example.test", password_hash="x", nome="A", ruolo="admin", attivo=False
+    )
+    db_session.add(gone)
+    db_session.flush()
+
+    with pytest.raises(ValidationFailed):
+        service.create(DealCreate(nome="X", customer_id=customer_id, owner_id=gone.id), ADMIN)
+
+    deal = service.create(DealCreate(nome="Y", customer_id=customer_id), ADMIN)
+    row = DealRepository(db_session).get(deal.id)
+    assert row is not None
+    row.owner_id = gone.id  # owned before the person left
+    db_session.flush()
+    again = service.update(deal.id, DealUpdate(owner_id=gone.id, nome="Y2"), ADMIN)
+    assert again.owner_id == gone.id and again.nome == "Y2"
