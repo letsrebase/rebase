@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -632,7 +632,7 @@ class Comment(Base, PrimaryKeyMixin):
 
 # ---- what an admin overrode, cleared, deleted or restored, and when --------------------
 
-ADMIN_ACTION_ENTITY_TYPES = ("freelancer", "company", "match", "freelancer_fiscal")
+ADMIN_ACTION_ENTITY_TYPES = ("freelancer", "company", "match", "freelancer_fiscal", "ai_config")
 # `overridden` covers both "set" and "clear" -- clearing is setting a field to its empty
 # value, and `rebase_core.audit.field_changes` records the same `changed`/`before`/`after`
 # shape either way. `cleared` is only for the one thing that shape must never carry: the
@@ -644,6 +644,10 @@ ADMIN_ACTION_ENTITY_TYPES = ("freelancer", "company", "match", "freelancer_fisca
 # changed and never their values: a tax identifier is not copied into this table.
 # REB-509 adds `vetted`, on entity type `freelancer`: «Vetted» flips `Freelancer.vetted_at`
 # on or off, not a field an "overridden"/"cleared" pair already describes.
+# REB-830 adds the model providers' trail, on entity type `ai_config` (one fixed id:
+# the entity is the configuration, not a row): `ai_key` (its payload says «chiave
+# sostituita» and the last four characters, never the key), `ai_task`, `ai_price` and
+# `ai_switch` (a provider turned on or off), the last three with the before and after.
 # REB-498 adds `pigro_link` on `match`: an admin's «Riprova su Pigro», its payload the
 # outcome (`esito`) and the CRM's sentence (`errore`). REB-517 adds `talents_contacted`,
 # on entity type `team_request`: «Contatta i talenti» and «Rimanda», with how many talents
@@ -664,6 +668,10 @@ ADMIN_ACTION_KINDS = (
     "vetted",
     "pigro_link",
     "talents_contacted",
+    "ai_key",
+    "ai_task",
+    "ai_price",
+    "ai_switch",
 )
 
 
@@ -1369,3 +1377,138 @@ class ReferralSettings(Base, PrimaryKeyMixin, TimestampMixin):
         Numeric(RATE_DIGITS, RATE_PLACES), nullable=False, default=Decimal("0.30")
     )
     updated_by: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
+
+
+# The model providers and the tasks they answer (REB-830): «Modelli AI» in the admin
+# area, the Pydantic AI seam in `llm.py`. A provider is one of these three and a task one
+# of these two; the database repeats both lists as `CHECK`s. The efforts are the one
+# reasoning knob every provider maps in its own words (`llm.build_model`).
+AI_PROVIDERS = ("anthropic", "openai", "google")
+AI_TASKS = ("card", "team_proposal")
+AI_EFFORTS = ("low", "medium", "high")
+# Why a call ran (`ai_usage.purpose`): a real one, an admin's «Prova», an evaluation run.
+# All three consume the cap of the task they ran as.
+AI_USAGE_PURPOSES = ("run", "prova", "eval")
+
+
+class AiProvider(Base):
+    """One model provider's account: the API key encrypted at rest (AES-256-GCM,
+    `rebase_core.secrets`) in `key_ciphertext` and `key_nonce`, and `key_last4`, the only
+    part of it that is ever shown again. Write-only: nothing reads the key back to a
+    person, and no column here holds it in clear. `enabled` is the switch: a provider
+    off is never called, whatever a task says."""
+
+    __tablename__ = "ai_providers"
+
+    provider: Mapped[str] = mapped_column(String(20), primary_key=True)
+    key_ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary, default=None)
+    key_nonce: Mapped[bytes | None] = mapped_column(LargeBinary, default=None)
+    key_last4: Mapped[str | None] = mapped_column(String(4), default=None)
+    saved_by: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
+    saved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    __table_args__ = (
+        CheckConstraint(
+            "provider IN ('anthropic', 'openai', 'google')", name="ck_ai_providers_provider"
+        ),
+        CheckConstraint(
+            "(key_ciphertext IS NULL) = (key_nonce IS NULL)", name="ck_ai_providers_key_pair"
+        ),
+    )
+
+
+class AiTask(Base):
+    """What answers one task (`card`, `team_proposal`): provider, free-text model name,
+    reasoning effort where the provider has one, the output ceiling, and an optional
+    daily cap in euros that stops the task's calls for the rest of the day. The two rows
+    are seeded by migration 0035; `rebase ai-seed` points them at the old Anthropic
+    settings."""
+
+    __tablename__ = "ai_tasks"
+
+    task: Mapped[str] = mapped_column(String(20), primary_key=True)
+    provider: Mapped[str] = mapped_column(ForeignKey("ai_providers.provider"), nullable=False)
+    model: Mapped[str] = mapped_column(String(CARD_MODEL_MAX_LENGTH), nullable=False)
+    effort: Mapped[str | None] = mapped_column(String(10), default=None)
+    max_output_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
+    daily_cap_eur: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), default=None)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        CheckConstraint("task IN ('card', 'team_proposal')", name="ck_ai_tasks_task"),
+        CheckConstraint("max_output_tokens > 0", name="ck_ai_tasks_max_output_tokens"),
+        CheckConstraint(
+            "daily_cap_eur IS NULL OR daily_cap_eur >= 0", name="ck_ai_tasks_daily_cap"
+        ),
+    )
+
+
+class AiPrice(Base):
+    """What one model costs, in euro per million tokens, as an admin entered it: no
+    exchange rate lives in code. `thinking_eur_per_mtok` is `NULL` when the provider
+    bills thinking like output, `cache_read_eur_per_mtok` when it has no cheaper rate for
+    cached input. A task whose model has no row here is not callable
+    (`AiConfigService.can_call`): an unpriced call is never recorded as free."""
+
+    __tablename__ = "ai_prices"
+
+    provider: Mapped[str] = mapped_column(String(20), primary_key=True)
+    model: Mapped[str] = mapped_column(String(CARD_MODEL_MAX_LENGTH), primary_key=True)
+    input_eur_per_mtok: Mapped[Decimal] = mapped_column(Numeric(12, 4), nullable=False)
+    output_eur_per_mtok: Mapped[Decimal] = mapped_column(Numeric(12, 4), nullable=False)
+    thinking_eur_per_mtok: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), default=None)
+    cache_read_eur_per_mtok: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), default=None)
+
+    __table_args__ = (
+        CheckConstraint(
+            "provider IN ('anthropic', 'openai', 'google')", name="ck_ai_prices_provider"
+        ),
+        CheckConstraint(
+            "input_eur_per_mtok >= 0 AND output_eur_per_mtok >= 0 "
+            "AND (thinking_eur_per_mtok IS NULL OR thinking_eur_per_mtok >= 0) "
+            "AND (cache_read_eur_per_mtok IS NULL OR cache_read_eur_per_mtok >= 0)",
+            name="ck_ai_prices_not_negative",
+        ),
+    )
+
+
+class AiUsage(Base, PrimaryKeyMixin):
+    """One model call, whatever came of it: `task` is the configured task whose daily cap
+    the call consumes, `purpose` why it ran (`AI_USAGE_PURPOSES`), `provider` and `model`
+    what actually answered (an evaluation run may differ from the task's own). `cost_eur`
+    is `NULL`, and `priced` false, when no price row existed for the model: the call is
+    counted and shown as unpriced, never as free. `freelancer_id` is the person a card
+    call was about, `NULL` for the others and after the person is deleted."""
+
+    __tablename__ = "ai_usage"
+
+    at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    task: Mapped[str] = mapped_column(String(20), nullable=False)
+    purpose: Mapped[str] = mapped_column(String(20), nullable=False, default="run")
+    provider: Mapped[str] = mapped_column(String(20), nullable=False)
+    model: Mapped[str] = mapped_column(String(CARD_MODEL_MAX_LENGTH), nullable=False)
+    input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    thinking_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    cache_read_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    cost_eur: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), default=None)
+    priced: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    freelancer_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("freelancers.id", ondelete="SET NULL"), default=None
+    )
+
+    __table_args__ = (
+        Index("ix_ai_usage_task_at", "task", "at"),
+        CheckConstraint("task IN ('card', 'team_proposal')", name="ck_ai_usage_task"),
+        CheckConstraint("purpose IN ('run', 'prova', 'eval')", name="ck_ai_usage_purpose"),
+        CheckConstraint("priced = (cost_eur IS NOT NULL)", name="ck_ai_usage_priced"),
+    )

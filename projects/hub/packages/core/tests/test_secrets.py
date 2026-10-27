@@ -51,8 +51,8 @@ def test_missing_key_refused() -> None:
     "value",
     [
         "not base64 at all!",
-        base64.b64encode(os.urandom(16)).decode(),
-        base64.b64encode(os.urandom(33)).decode(),
+        base64.b64encode(bytes(16)).decode(),
+        base64.b64encode(bytes(33)).decode(),
     ],
 )
 def test_key_that_is_not_32_bytes_of_base64_refused_without_echo(value: str) -> None:
