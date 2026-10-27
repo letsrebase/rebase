@@ -998,9 +998,10 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
     # are the *only* write path from an agent onto a document already archived by
     # any door (`import_drive_file`, a direct upload, or a mail attachment archived
     # the same way) -- they write a `proposals` row, never a `Contract`/`WorkUnit`
-    # directly. `accept_proposal`/`reject_proposal` are the confirm half: accepting
-    # creates the real row(s) in one transaction with the proposal's own decision,
-    # and a `'giornata'` accept never leaves a day at `'proposto'`.
+    # directly. Accepting and rejecting are the confirm half and are NOT tools
+    # (REB-806): the same agent that read the untrusted mail would otherwise propose
+    # and decide in one turn. They live on the REST/web surface, as a person's act;
+    # `Actor.require_person` refuses any agent credential there too.
 
     @mcp.tool()
     @guard
@@ -1167,30 +1168,6 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
                 limit=cast(int, limit),
             ),
         )
-
-    @mcp.tool()
-    @guard
-    def accept_proposal(
-        proposal_id: str, deciso_da: str, campi_accettati: dict[str, Any] | None = None
-    ) -> dict[str, Any]:
-        """Accetta una proposta: crea il contratto (con la sua prima scheda
-        tariffaria) o l'approvazione e il work_unit approvato che descrive, in
-        un'unica transazione -- mai una giornata lasciata `'proposto'`.
-        `campi_accettati` corregge uno o più campi prima di scrivere; omesso,
-        scrive esattamente ciò che la proposta conteneva (`campi_proposti` non
-        viene mai sovrascritto). `deciso_da` è chi ha deciso."""
-        return proposals.accept(
-            context, proposal_id, {"deciso_da": deciso_da, "campi_accettati": campi_accettati}
-        )
-
-    @mcp.tool()
-    @guard
-    def reject_proposal(
-        proposal_id: str, deciso_da: str, motivo: str | None = None
-    ) -> dict[str, Any]:
-        """Rifiuta una proposta: non crea nulla, scrive solo il proprio stato.
-        `motivo` finisce nella timeline, non su un campo della proposta."""
-        return proposals.reject(context, proposal_id, {"deciso_da": deciso_da, "motivo": motivo})
 
     # ---- the day ledger, read only ------------------------------------------
     #
