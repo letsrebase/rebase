@@ -184,7 +184,9 @@ def test_put_task_validates_provider_and_effort(client: TestClient, admin: User)
     }
     assert client.put(f"{BASE}/tasks/card", json={**body, "provider": "nope"}).status_code == 422
     assert client.put(f"{BASE}/tasks/card", json={**body, "effort": "extreme"}).status_code == 422
-    assert client.put(f"{BASE}/tasks/card", json={**body, "max_output_tokens": 0}).status_code == 422
+    assert (
+        client.put(f"{BASE}/tasks/card", json={**body, "max_output_tokens": 0}).status_code == 422
+    )
     assert client.put(f"{BASE}/tasks/nope", json=body).status_code == 404
 
 
@@ -201,7 +203,9 @@ def test_prova_returns_answer_latency_cost_with_stub_model(
     assert Decimal(body["cost_eur"]) > 0
 
 
-def test_prova_error_message_has_no_key(client: TestClient, admin: User, stub: dict[str, Any]) -> None:
+def test_prova_error_message_has_no_key(
+    client: TestClient, admin: User, stub: dict[str, Any]
+) -> None:
     client.put(f"{BASE}/providers/anthropic/key", json={"key": SECRET})
     stub["fail"] = True
     response = client.post(f"{BASE}/tasks/card/prova")

@@ -10,8 +10,8 @@ from rebase_api.deps import SessionDep
 from rebase_api.ratelimit import RETRY_AFTER_SECONDS
 from rebase_api.routers import (
     admin,
-    ai,
     admin_team,
+    ai,
     campaigns,
     cloud,
     companies,

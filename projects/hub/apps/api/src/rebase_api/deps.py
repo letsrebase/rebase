@@ -201,6 +201,7 @@ def get_prova_call(settings: SettingsDep) -> Callable[[str], LlmCall]:
 
 
 ProvaCallDep = Annotated[Callable[[str], LlmCall], Depends(get_prova_call)]
+
 # The proposals running now in this process (spec § 5): one semaphore for the process,
 # sized by `REBASE_TEAM_BUILDER_CONCURRENCY` when the first proposal arrives. A proposal
 # holds a worker thread for the seconds Claude takes, on the pool the member area and
