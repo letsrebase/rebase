@@ -682,3 +682,28 @@ def test_an_automatic_match_never_overwrites_a_correction_made_while_slack_answe
     link = SlackMatcher(repo, racing, BOT_TOKEN).match_user(admin, force=True)
 
     assert (link.source, link.slack_user_id) == ("manual", "UOTHER")
+
+
+def test_a_person_is_not_told_slack_works_when_the_token_cannot_be_opened(
+    db_session: Session,
+) -> None:
+    import base64
+
+    admin = make_user(db_session, email="mario@example.it")
+    fake = FakeSlack()
+    fake.add_member("mario@example.it", "UMARIO")
+    connect(db_session, fake, admin)
+    rotated = slack_settings(slack_token_key=base64.b64encode(b"r" * 32).decode())
+
+    assert (
+        SlackService(db_session, settings=rotated, client=slack_client(fake))
+        .mine(actor_of(admin))
+        .connected
+        is False
+    )
+    assert (
+        SlackService(db_session, settings=slack_settings(), client=slack_client(fake))
+        .mine(actor_of(admin))
+        .connected
+        is True
+    )

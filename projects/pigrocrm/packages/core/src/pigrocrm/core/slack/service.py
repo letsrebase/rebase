@@ -99,6 +99,12 @@ class SlackService:
         workspace = self.repo.active_workspace() if configured else None
         if workspace is None or actor.id is None:
             return SlackMine(configured=configured, connected=False, team_name=None, matched=False)
+        try:
+            bot_token(workspace, self.settings)
+        except Conflict:
+            # A key that does not open the token is a workspace that reaches nobody, and the
+            # person is told so, not that Slack works (the admin's page says why).
+            return SlackMine(configured=True, connected=False, team_name=None, matched=False)
         link = self.repo.link_for(actor.id)
         return SlackMine(
             configured=True,
