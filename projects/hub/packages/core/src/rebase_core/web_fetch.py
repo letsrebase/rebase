@@ -21,8 +21,14 @@ stranger's say-so. What this module refuses, in order:
 
 The connection is made to the address that was checked, with the host name kept for the
 TLS handshake and the `Host` header, so a name that answers differently the second time
-cannot walk the request to a private address after the check (DNS rebinding). The two
-seams, `Transport` and `Resolver`, are what the tests replace: no test opens a socket.
+cannot walk the request to a private address after the check (DNS rebinding). If the
+first address does not accept the connection, the next checked one is tried. The two
+seams, `Transport` and `Resolver`, are what the tests replace.
+
+`FETCH_TIMEOUT_SECONDS` is one wall-clock budget for a whole `fetch()`: name resolution,
+`robots.txt`, every hop, the TLS handshake, the headers and the body. Every blocking read
+is given only what is left of it, so a server that answers one byte at a time cannot
+outlast it.
 
 `rebase_core.http` is not reused because its seam follows no redirect at all and sends to
 whatever host the URL names; this one must stop at every hop and look again.
@@ -33,18 +39,20 @@ import ipaddress
 import re
 import socket
 import ssl
+import threading
 import time
-import urllib.robotparser
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Buffer, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from html.parser import HTMLParser
-from typing import Literal
+from typing import Literal, cast
 from urllib.parse import urljoin, urlsplit
 
 from rebase_core.http import USER_AGENT
 
 FETCH_MAX_BYTES = 1_048_576
 FETCH_TIMEOUT_SECONDS = 10
+# One address that does not answer must not eat the whole budget before the next is tried.
+CONNECT_TIMEOUT_SECONDS = 5
 MAX_LINKS_PER_PERSON = 8
 MAX_REDIRECTS = 3
 # A page's text is cut here, after extraction: a megabyte of HTML can hold a megabyte of
@@ -56,6 +64,7 @@ ROBOTS_AGENT = "rebase-hub"
 FetchStatus = Literal["ok", "unreadable", "blocked", "robots", "too_large", "error"]
 
 _REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
+_GONE_STATUSES = frozenset({404, 410})
 _TEXT_TYPES = ("text/html", "application/xhtml+xml", "text/plain")
 
 
@@ -90,6 +99,10 @@ Transport = Callable[[PinnedRequest], RawResponse]
 Resolver = Callable[[str], Sequence[str]]
 
 
+class ConnectFailed(OSError):
+    """The checked address did not accept the connection: the next one may be tried."""
+
+
 def is_blocked_host(host: str) -> bool:
     """LinkedIn (`linkedin.com` and every subdomain) is out of card generation."""
     name = host.strip().rstrip(".").lower()
@@ -105,8 +118,12 @@ def is_public_address(address: str) -> bool:
     if isinstance(ip, ipaddress.IPv6Address):
         if ip.ipv4_mapped is not None:
             return is_public_address(str(ip.ipv4_mapped))
-        # NAT64 (64:ff9b::/96) and 6to4 (2002::/16) carry an IPv4 address inside.
         packed = ip.packed
+        # IPv4-compatible (::/96, deprecated: `::127.0.0.1`) and site-local (fec0::/10,
+        # deprecated) addresses are never a place to fetch from.
+        if packed[:12] == bytes(12) or (packed[0] == 0xFE and packed[1] & 0xC0 == 0xC0):
+            return False
+        # NAT64 (64:ff9b::/96) and 6to4 (2002::/16) carry an IPv4 address inside.
         if packed[:12] == bytes.fromhex("0064ff9b0000000000000000"):
             return is_public_address(str(ipaddress.IPv4Address(packed[12:])))
         if packed[:2] == bytes.fromhex("2002"):
@@ -115,38 +132,84 @@ def is_public_address(address: str) -> bool:
 
 
 def socket_resolver(host: str) -> list[str]:
-    """Every address the system resolver gives for `host` (port 443)."""
+    """Every address the system resolver gives for `host` (port 443). It has no timeout
+    of its own: `SafeFetcher` waits for it only as long as the fetch has left."""
     infos = socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)
     return list(dict.fromkeys(str(info[4][0]) for info in infos))
 
 
+def _remaining(deadline: float) -> float:
+    """What is left of the budget, or a `TimeoutError` when it is spent."""
+    left = deadline - time.monotonic()
+    if left <= 0:
+        raise TimeoutError("fetch deadline")
+    return left
+
+
+class _DeadlineSSLSocket(ssl.SSLSocket):
+    """A TLS socket whose every receive is given only what is left of the budget, so
+    the headers and the body cannot be dripped past it."""
+
+    deadline = float("inf")
+
+    def recv_into(self, buffer: Buffer, nbytes: int | None = None, flags: int = 0) -> int:
+        self.settimeout(_remaining(self.deadline))
+        return super().recv_into(buffer, nbytes, flags)
+
+
 class _PinnedHTTPSConnection(http.client.HTTPSConnection):
     """An HTTPS connection to a fixed address that still verifies the certificate for,
-    and sends `Host:` as, the name the URL carried."""
+    and sends `Host:` as, the name the URL carried, all within `deadline`."""
 
-    def __init__(self, host: str, ip: str, port: int, timeout: float) -> None:
-        super().__init__(host, port, timeout=timeout, context=ssl.create_default_context())
+    def __init__(
+        self, host: str, ip: str, port: int, deadline: float, context: ssl.SSLContext
+    ) -> None:
+        context.sslsocket_class = _DeadlineSSLSocket
+        super().__init__(host, port, context=context)
         self._ip = ip
+        self._deadline = deadline
 
     def connect(self) -> None:
-        sock = socket.create_connection((self._ip, self.port), self.timeout)
-        self.sock = self._context.wrap_socket(sock, server_hostname=self.host)  # type: ignore[attr-defined]
+        try:
+            sock = socket.create_connection(
+                (self._ip, self.port),
+                min(_remaining(self._deadline), CONNECT_TIMEOUT_SECONDS),
+            )
+        except OSError as failure:
+            raise ConnectFailed(str(failure)) from failure
+        # The handshake and the request are one call each, bounded by what is left.
+        sock.settimeout(_remaining(self._deadline))
+        tls = cast(
+            _DeadlineSSLSocket,
+            self._context.wrap_socket(sock, server_hostname=self.host),  # type: ignore[attr-defined]
+        )
+        tls.deadline = self._deadline
+        self.sock = tls
 
 
-def pinned_transport(request: PinnedRequest) -> RawResponse:
-    """The production `Transport`: HTTPS to the checked address, the whole read bounded
-    by `request.timeout` and `request.max_bytes`."""
+def pinned_transport(
+    request: PinnedRequest, *, context: ssl.SSLContext | None = None
+) -> RawResponse:
+    """The production `Transport`: HTTPS to the checked address, the whole exchange (connect,
+    handshake, headers, body) bounded by `request.timeout` and the body by
+    `request.max_bytes`. `context` is for tests that trust a throw-away certificate;
+    production uses the system trust store."""
     deadline = time.monotonic() + request.timeout
-    connection = _PinnedHTTPSConnection(request.host, request.ip, request.port, request.timeout)
+    connection = _PinnedHTTPSConnection(
+        request.host,
+        request.ip,
+        request.port,
+        deadline,
+        context or ssl.create_default_context(),
+    )
     try:
         connection.request("GET", request.target, headers=dict(request.headers))
         response = connection.getresponse()
         chunks: list[bytes] = []
         size = 0
         while size <= request.max_bytes:
-            if time.monotonic() > deadline:
-                raise TimeoutError("fetch deadline")
-            chunk = response.read(min(65_536, request.max_bytes + 1 - size))
+            _remaining(deadline)
+            chunk = response.read1(min(65_536, request.max_bytes + 1 - size))
             if not chunk:
                 break
             chunks.append(chunk)
@@ -262,6 +325,66 @@ class _Refused(Exception):
         self.status: FetchStatus = status
 
 
+class _RobotsRules:
+    """The rules of a `robots.txt` that apply to us, read per RFC 9309: the group naming
+    our product token, else the `*` group; `*` is a wildcard and a trailing `$` an end
+    anchor; the longest matching rule wins and `Allow` beats `Disallow` on a tie. The
+    standard library's parser knows neither wildcards nor anchors."""
+
+    def __init__(self, text: str) -> None:
+        groups: list[tuple[list[str], list[tuple[bool, str, bool, int]]]] = []
+        reading_agents = False
+        for raw in text.splitlines():
+            field, separator, value = raw.split("#", 1)[0].partition(":")
+            if not separator:
+                continue
+            field, value = field.strip().lower(), value.strip()
+            if field == "user-agent":
+                if not reading_agents:
+                    groups.append(([], []))
+                groups[-1][0].append(value.lower())
+                reading_agents = True
+            elif field in ("allow", "disallow"):
+                reading_agents = False
+                if groups and value:  # an empty rule says nothing
+                    anchored = value.endswith("$")
+                    pattern = value[:-1] if anchored else value
+                    groups[-1][1].append((field == "allow", pattern, anchored, len(value)))
+        token = ROBOTS_AGENT.lower()
+        named = [g for g in groups if any(a and a != "*" and a in token for a in g[0])]
+        chosen = named or [g for g in groups if "*" in g[0]]
+        self._rules = [rule for _agents, rules in chosen for rule in rules]
+
+    def allows(self, target: str) -> bool:
+        best: tuple[int, bool] | None = None
+        for allow, pattern, anchored, length in self._rules:
+            if _robots_match(pattern, anchored, target) and (
+                best is None or (length, allow) > best
+            ):
+                best = (length, allow)
+        return best is None or best[1]
+
+
+def _robots_match(pattern: str, anchored: bool, target: str) -> bool:
+    """`pattern` (`*` is any run of characters) at the start of `target`, and at its end
+    too when `anchored`. Greedy, so linear-ish: a hostile file cannot make it backtrack."""
+    parts = pattern.split("*")
+    if not target.startswith(parts[0]):
+        return False
+    position = len(parts[0])
+    if len(parts) == 1:
+        return not anchored or len(target) == position
+    for part in parts[1:-1]:
+        found = target.find(part, position)
+        if found < 0:
+            return False
+        position = found + len(part)
+    last = parts[-1]
+    if anchored:
+        return len(target) - len(last) >= position and target.endswith(last)
+    return target.find(last, position) >= 0
+
+
 class SafeFetcher:
     def __init__(
         self,
@@ -273,17 +396,18 @@ class SafeFetcher:
 
     def fetch(self, url: str) -> FetchResult:
         """One page as text, or why it is not. Never raises for a bad link or a bad
-        host: the outcome is the `status`."""
+        host: the outcome is the `status`. The whole call, robots file and every hop
+        included, is bounded by `FETCH_TIMEOUT_SECONDS`; running out is `error`."""
         deadline = time.monotonic() + FETCH_TIMEOUT_SECONDS
-        resolved: dict[str, str] = {}
-        robots: dict[str, urllib.robotparser.RobotFileParser | _Refused] = {}
+        resolved: dict[str, list[str]] = {}
+        robots: dict[str, _RobotsRules | _Refused] = {}
         current = url.strip()
         try:
             for _hop in range(MAX_REDIRECTS + 1):
                 host, target = self._check(current)
-                ip = self._pin(host, resolved)
-                self._allowed_by_robots(host, target, ip, robots, resolved, deadline)
-                response = self._get(host, ip, target, deadline)
+                addresses = self._pin(host, resolved, deadline)
+                self._allowed_by_robots(host, target, addresses, robots, resolved, deadline)
+                response = self._get(host, addresses, target, deadline)
                 if response.status in _REDIRECT_STATUSES:
                     location = response.headers.get("location")
                     if not location:
@@ -312,70 +436,104 @@ class SafeFetcher:
             target = f"{target}?{parts.query}"
         return host, target
 
-    def _pin(self, host: str, resolved: dict[str, str]) -> str:
-        """The one checked address this fetch will use for `host`: every address the name
-        resolves to must be public, and the same one serves the robots file and the page."""
+    def _resolve(self, host: str, deadline: float) -> Sequence[str]:
+        """The resolver's answer, waited for only as long as the fetch has left: the
+        system resolver has no timeout, so it runs on a daemon thread that is abandoned
+        when the budget is spent."""
+        outcome: list[Sequence[str] | Exception] = []
+
+        def work() -> None:
+            try:
+                outcome.append(self._resolver(host))
+            except Exception as failure:
+                outcome.append(failure)
+
+        thread = threading.Thread(target=work, daemon=True)
+        thread.start()
+        thread.join(max(deadline - time.monotonic(), 0))
+        if not outcome:
+            raise _Refused("error")
+        answer = outcome[0]
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    def _pin(self, host: str, resolved: dict[str, list[str]], deadline: float) -> list[str]:
+        """The checked addresses this fetch will use for `host`: every address the name
+        resolves to must be public, and the same answer serves the robots file and the
+        page (the first that accepts a connection is tried first from then on)."""
         if host in resolved:
             return resolved[host]
         try:
             ipaddress.ip_address(host)
             addresses: Sequence[str] = [host]
         except ValueError:
-            addresses = self._resolver(host)
+            addresses = self._resolve(host, deadline)
         if not addresses or not all(is_public_address(address) for address in addresses):
             raise _Refused("blocked")
-        resolved[host] = addresses[0]
-        return addresses[0]
+        resolved[host] = list(addresses)
+        return resolved[host]
 
-    def _get(self, host: str, ip: str, target: str, deadline: float) -> RawResponse:
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            raise _Refused("error")
-        return self._transport(
-            PinnedRequest(
-                host=host,
-                ip=ip,
-                port=443,
-                target=target,
-                headers={
-                    "User-Agent": USER_AGENT,
-                    "Accept": "text/html,text/plain;q=0.9",
-                    # No compressed body: its size would be known only after the bomb.
-                    "Accept-Encoding": "identity",
-                },
-                timeout=min(remaining, FETCH_TIMEOUT_SECONDS),
-                max_bytes=FETCH_MAX_BYTES,
-            )
-        )
+    def _get(self, host: str, addresses: list[str], target: str, deadline: float) -> RawResponse:
+        """One GET to the first checked address that accepts a connection. Only a failed
+        connect moves on to the next address; a failure after that is the answer."""
+        failure: OSError = ConnectFailed("no address")
+        for position, ip in enumerate(addresses):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise _Refused("error")
+            try:
+                response = self._transport(
+                    PinnedRequest(
+                        host=host,
+                        ip=ip,
+                        port=443,
+                        target=target,
+                        headers={
+                            "User-Agent": USER_AGENT,
+                            "Accept": "text/html,text/plain;q=0.9",
+                            # No compressed body: its size would be known only after the bomb.
+                            "Accept-Encoding": "identity",
+                        },
+                        timeout=min(remaining, FETCH_TIMEOUT_SECONDS),
+                        max_bytes=FETCH_MAX_BYTES,
+                    )
+                )
+            except ConnectFailed as refused_connection:
+                failure = refused_connection
+                continue
+            if position:
+                addresses.insert(0, addresses.pop(position))
+            return response
+        raise failure
 
     def _allowed_by_robots(
         self,
         host: str,
         target: str,
-        ip: str,
-        cache: dict[str, urllib.robotparser.RobotFileParser | _Refused],
-        resolved: dict[str, str],
+        addresses: list[str],
+        cache: dict[str, _RobotsRules | _Refused],
+        resolved: dict[str, list[str]],
         deadline: float,
     ) -> None:
         if host not in cache:
-            cache[host] = self._read_robots(host, ip, resolved, deadline)
+            cache[host] = self._read_robots(host, addresses, resolved, deadline)
         entry = cache[host]
         if isinstance(entry, _Refused):
             raise entry
-        if not entry.can_fetch(ROBOTS_AGENT, target):
+        if not entry.allows(target):
             raise _Refused("robots")
 
     def _read_robots(
-        self, host: str, ip: str, resolved: dict[str, str], deadline: float
-    ) -> urllib.robotparser.RobotFileParser | _Refused:
+        self, host: str, addresses: list[str], resolved: dict[str, list[str]], deadline: float
+    ) -> _RobotsRules | _Refused:
         """`robots.txt` at the host's root. A redirect (`example.com` to `www.`) is followed
-        through the same checks as a page; a missing file (any 4xx) allows everything; one
-        the host fails to serve (5xx, a network error, a loop) disallows everything, as
-        RFC 9309 asks."""
-        parser = urllib.robotparser.RobotFileParser()
+        through the same checks as a page; a missing file (404, 410, any other 4xx but 429)
+        allows everything; one the host fails to serve (429, 5xx, a network error, a loop)
+        disallows everything for this pass, as RFC 9309 asks. A spent budget is `error`."""
         current = f"https://{host}/robots.txt"
         try:
-            response = self._get(host, ip, "/robots.txt", deadline)
+            response = self._get(host, addresses, "/robots.txt", deadline)
             for _hop in range(MAX_REDIRECTS):
                 if response.status not in _REDIRECT_STATUSES:
                     break
@@ -384,22 +542,25 @@ class SafeFetcher:
                     return _Refused("robots")
                 current = urljoin(current, location)
                 next_host, next_target = self._check(current)
-                next_ip = self._pin(next_host, resolved)
-                response = self._get(next_host, next_ip, next_target, deadline)
-        except (OSError, http.client.HTTPException):
-            return _Refused("robots")
+                next_addresses = self._pin(next_host, resolved, deadline)
+                response = self._get(next_host, next_addresses, next_target, deadline)
+        except (OSError, http.client.HTTPException) as failure:
+            spent = isinstance(failure, TimeoutError) or time.monotonic() >= deadline
+            return _Refused("error" if spent else "robots")
         except _Refused as refused:
             # A robots file that redirects somewhere forbidden is not a licence to fetch.
             return _Refused("robots" if refused.status == "blocked" else refused.status)
-        if 400 <= response.status < 500:
-            parser.parse([])
-            return parser
+        if 400 <= response.status < 500 and response.status != 429:
+            return _RobotsRules("")
         if response.status != 200 or len(response.body) > FETCH_MAX_BYTES:
             return _Refused("robots")
-        parser.parse(response.body.decode("utf-8", errors="replace").splitlines())
-        return parser
+        return _RobotsRules(response.body.decode("utf-8", errors="replace"))
 
     def _read(self, response: RawResponse, url: str) -> FetchResult:
+        if response.status in _GONE_STATUSES:
+            # The page is not there any more: «unreadable», so what was stored for it is
+            # replaced instead of kept for ever. A 5xx or a network error stays `error`.
+            return FetchResult("unreadable", final_url=url)
         if response.status != 200:
             return FetchResult("error", final_url=url)
         if len(response.body) > FETCH_MAX_BYTES:
