@@ -52,7 +52,7 @@ def _create_payload(customer_id: object, **overrides: object) -> ContractCreate:
         "tipo_rinnovo": "nessuno",
         "preavviso_disdetta_giorni": 30,
         "cadenza_fatturazione": "mensile",
-        "politica_spese": {"tipo": "non_rimborsabile"},
+        "politica_spese": {"kind": "non_rimborsabile"},
     }
     payload.update(overrides)
     return ContractCreate(**payload)  # type: ignore[arg-type]
@@ -914,3 +914,23 @@ def test_a_rate_card_of_another_contract_is_not_found(db_session: Session) -> No
 
     with pytest.raises(NotFound):
         rate_cards.update(other.id, card.id, RateCardUpdate(importo=Decimal("1.00")), ADMIN)
+
+
+@pytest.mark.parametrize(
+    "policy",
+    [
+        {},
+        {"mode": "rimborsabili"},
+        {"tipo": "non_rimborsabile"},
+        {"kind": "rimborsabile_con_tetto"},
+        {"kind": "rimborsabile", "importo_tetto": "500.00"},
+    ],
+)
+def test_an_expense_policy_the_trigger_cannot_read_is_refused_on_create(
+    db_session: Session, policy: dict[str, object]
+) -> None:
+    import pydantic
+
+    customer = _customer(db_session)
+    with pytest.raises(pydantic.ValidationError, match="politica_spese"):
+        _create_payload(customer.id, politica_spese=policy)

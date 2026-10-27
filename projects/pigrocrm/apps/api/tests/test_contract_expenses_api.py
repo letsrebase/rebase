@@ -143,3 +143,20 @@ def test_the_openapi_document_describes_the_new_routes(logged_in: TestClient) ->
     assert "post" in paths["/api/contracts/{contract_id}/expenses"]
     assert "get" in paths["/api/contracts/{contract_id}/expenses"]
     assert "patch" in paths["/api/contracts/{contract_id}/expenses/{expense_id}"]
+
+
+def test_create_refuses_a_malformed_expense_policy_with_422(logged_in: TestClient) -> None:
+    response = logged_in.post(
+        "/api/contracts",
+        json={
+            "customer_id": _customer_id(logged_in),
+            "titolo": "Consulenza",
+            "inizio": "2026-01-01",
+            "tipo_rinnovo": "nessuno",
+            "preavviso_disdetta_giorni": 30,
+            "cadenza_fatturazione": "mensile",
+            "politica_spese": {"mode": "rimborsabili"},
+        },
+    )
+    assert response.status_code == 422, response.text
+    assert "politica_spese.kind" in response.text

@@ -31,7 +31,7 @@ def _contract(db_session: Session, customer: Customer, **overrides: object) -> C
         "tipo_rinnovo": "nessuno",
         "preavviso_disdetta_giorni": 30,
         "cadenza_fatturazione": "mensile",
-        "politica_spese": {"tipo": "non_rimborsabile"},
+        "politica_spese": {"kind": "non_rimborsabile"},
     }
     payload.update(overrides)
     contract = Contract(**payload)  # type: ignore[arg-type]

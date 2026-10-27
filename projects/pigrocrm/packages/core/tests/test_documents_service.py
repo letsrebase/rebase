@@ -234,7 +234,7 @@ def test_list_filters_by_contract_and_a_reowned_document_moves_lists(
         tipo_rinnovo="nessuno",
         preavviso_disdetta_giorni=30,
         cadenza_fatturazione="mensile",
-        politica_spese={"tipo": "non_rimborsabile"},
+        politica_spese={"kind": "non_rimborsabile"},
     )
     db_session.add(contract)
     db_session.flush()

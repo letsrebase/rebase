@@ -104,7 +104,7 @@ def _seed(session: Session, azienda: UUID, tag: str, stage: PipelineStage) -> Ro
         tipo_rinnovo="nessuno",
         preavviso_disdetta_giorni=30,
         cadenza_fatturazione="mensile",
-        politica_spese={"tipo": "non_rimborsabile"},
+        politica_spese={"kind": "non_rimborsabile"},
         custom_fields={},
     )
     document = Document(
