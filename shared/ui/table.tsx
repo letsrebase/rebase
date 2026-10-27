@@ -13,20 +13,12 @@ import { cn } from "./cn"
  *
  * `label` is the region's accessible name, the one thing a screen reader says when the
  * focus lands on it («Trattamento fiscale, regione»); a caller names what the box holds.
- * The prop is required, so a caller states a name or states that it has none (`Table`
- * does, when it is given neither `scrollLabel` nor `aria-label`); without one the box is
- * still focusable and scrolls, and it is not announced as a region, since a region with
- * no name is noise.
+ * Without a `label` the box is still focusable and scrolls, and it is not announced as a
+ * region, since a region with no name is noise.
  *
- * `Table` is this around a `<table>`. It is exported on its own for the few tables that
- * are hand-written markup (a chart's table of values, a grid of inputs) and so cannot be
- * `Table`, yet scroll just the same (REB-782).
+ * `Table` is this around a `<table>`.
  */
-function ScrollRegion({
-  label,
-  className,
-  ...props
-}: Omit<React.ComponentProps<"div">, "aria-label"> & { label: string | undefined }) {
+function ScrollBox({ label, className, ...props }: ScrollBoxProps) {
   const container = React.useRef<HTMLDivElement>(null)
   const [scrolls, setScrolls] = React.useState(false)
 
@@ -63,8 +55,20 @@ function ScrollRegion({
   )
 }
 
+type ScrollBoxProps = Omit<React.ComponentProps<"div">, "aria-label"> & { label?: string }
+
 /**
- * The container is a `ScrollRegion`, named by `scrollLabel`. A table that already carries
+ * `ScrollBox` for a hand-written table (a chart's table of values, a week grid) that
+ * cannot be `Table` yet scrolls just the same (REB-782). The name is required, so a
+ * table of this kind cannot be left unnamed; `Table`, which may have neither
+ * `scrollLabel` nor `aria-label`, uses the box directly.
+ */
+function ScrollRegion({ label, ...props }: Omit<ScrollBoxProps, "label"> & { label: string }) {
+  return <ScrollBox label={label} {...props} />
+}
+
+/**
+ * The container is a `ScrollBox`, named by `scrollLabel`. A table that already carries
  * an `aria-label` of its own lends it when no `scrollLabel` is given.
  */
 function Table({
@@ -73,13 +77,13 @@ function Table({
   ...props
 }: React.ComponentProps<"table"> & { scrollLabel?: string }) {
   return (
-    <ScrollRegion data-slot="table-container" label={scrollLabel ?? props["aria-label"]}>
+    <ScrollBox data-slot="table-container" label={scrollLabel ?? props["aria-label"]}>
       <table
         data-slot="table"
         className={cn("w-full caption-bottom text-sm", className)}
         {...props}
       />
-    </ScrollRegion>
+    </ScrollBox>
   )
 }
 
