@@ -172,7 +172,8 @@ def member(client: TestClient, api_session: Session, sender: RecordingSender) ->
     assert client.get("/api/hub/me").json()["role"] == "member"
     yield row
     api_session.rollback()
-    api_session.execute(text("DELETE FROM users"))
+    for table in ("admin_tokens", "freelancers", "users"):
+        api_session.execute(text(f"DELETE FROM {table}"))
     api_session.commit()
 
 

@@ -30,7 +30,7 @@ PROVA_MAX_TOKENS = 64
 
 
 class KeyBody(BaseModel):
-    model_config = ConfigDict(extra="forbid", repr=False)
+    model_config = ConfigDict(extra="forbid")
 
     key: str = Field(min_length=1, max_length=512, repr=False)
 
