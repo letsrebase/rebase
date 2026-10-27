@@ -23,6 +23,7 @@ from rebase_core.models import User
 from rebase_core.schemas import FreelancerCreate
 
 BASE = "/api/hub/admin/card-eval"
+SOME_ID = UUID("00000000-0000-4000-8000-000000000836")
 CARD = {
     "ruolo": "Product designer",
     "anni": 6,
@@ -98,9 +99,9 @@ def _profile(session: Session, admin: User) -> UUID:
 
 ROUTES = [
     ("get", BASE, None),
-    ("put", f"{BASE}/{uuid4()}", CARD),
-    ("post", f"{BASE}/{uuid4()}/accept", {}),
-    ("post", f"{BASE}/runs/{uuid4()}/ratings", {"ratings": {}}),
+    ("put", f"{BASE}/{SOME_ID}", CARD),
+    ("post", f"{BASE}/{SOME_ID}/accept", {}),
+    ("post", f"{BASE}/runs/{SOME_ID}/ratings", {"ratings": {}}),
 ]
 
 
