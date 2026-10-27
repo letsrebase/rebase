@@ -9,7 +9,7 @@ import { admin, ApiError, type FreelancerCard, type Scheda } from '@/lib/api'
 import { bandLabel } from '@/lib/bands'
 import { REMOTO_LABELS, SENIORITY_LABELS, formatDateTime, formatExperience } from '@/lib/format'
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
+export function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <>
       <dt className="text-muted-foreground">{label}</dt>
