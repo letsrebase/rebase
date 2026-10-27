@@ -4,13 +4,14 @@ the board's rules.
 
     LINEAR_API_KEY=... python3 .github/kit/bin/linear_audit.py [--hours 24] [--summary FILE]
 
-Read-only: it never writes to Linear. It audits only `tracker.team` of
-`.github/workflow.json`, after proving the key belongs to `tracker.workspace`, and it
-reports card identifiers and project names, never card titles or bodies, so its output is
-safe in the log of a public repository.
+Read-only: it never writes to Linear. It audits only the team whose key is
+`tracker.prefix` in `.github/workflow.json`, after proving the key belongs to
+`tracker.workspace`, and it reports card identifiers and project names, never card titles
+or bodies, so its output is safe in the log of a public repository.
 
 A card (open, or created in the last `--hours` whatever its state, because a card filed
-and closed inside one run never shows among the open ones):
+and closed inside one run never shows among the open ones), unless its title starts with
+one of `tracker.audit_skip_titles` (a card a workflow files by itself, outside these rules):
 
 - a project, a milestone, a priority;
 - exactly one label of `tracker.labels.type` and exactly one of `tracker.labels.area`;
@@ -36,7 +37,7 @@ import os
 import sys
 import urllib.error
 import urllib.request
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 CONFIG = Path(".github/workflow.json")
@@ -108,7 +109,8 @@ def project_findings(p: dict, now: datetime) -> list[str]:
     held = bool(last and last["body"].lstrip().lower().startswith("held open"))
     if p["state"] != "completed" and p["any"]["nodes"] and not p["open"]["nodes"] and not held:
         return [
-            "every card is Done or Canceled: complete it with a closing update, "
+            "every card is Done or Canceled: complete it with a closing update (cancel it "
+            "when nothing in it shipped), "
             "or post one starting «Held open:»"
         ]
 
@@ -139,7 +141,7 @@ def audit(key: str, cfg: dict, hours: int) -> tuple[list[str], list[str]]:
     if org != tracker.get("workspace"):
         raise AuditError(f"the key belongs to workspace {org}, not {tracker.get('workspace')}")
     team = tracker["prefix"]
-    now = datetime.now(UTC)
+    now = datetime.now(timezone.utc)  # noqa: UP017 - the kit runs on 3.10, datetime.UTC is 3.11
     window_start = now - timedelta(hours=hours)
 
     issues_q = f"""query($after: String, $f: IssueFilter) {{ issues(first: 100, after: $after,
@@ -151,7 +153,10 @@ def audit(key: str, cfg: dict, hours: int) -> tuple[list[str], list[str]]:
         for issue in paged(key, issues_q, "issues", {"f": f}):
             seen[issue["identifier"]] = issue
     cards = []
+    skip = tuple(tracker.get("audit_skip_titles") or [])
     for ident in sorted(seen, key=lambda i: int(i.split("-")[1])):
+        if skip and seen[ident]["title"].startswith(skip):
+            continue
         problems = card_findings(seen[ident], tracker.get("labels", {}), window_start)
         if problems:
             cards.append(f"{ident}: {', '.join(problems)}")

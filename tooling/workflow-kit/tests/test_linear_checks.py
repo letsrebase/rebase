@@ -3,7 +3,7 @@ import json
 import sys
 import unittest
 from contextlib import redirect_stdout
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -14,11 +14,16 @@ import linear_audit  # noqa: E402
 import linear_gate  # noqa: E402
 
 
+def stdin(text: str) -> io.TextIOWrapper:
+    """Bytes in UTF-8 behind a cp1252 text layer, as on a Windows machine's default locale."""
+    return io.TextIOWrapper(io.BytesIO(text.encode("utf-8")), encoding="cp1252")
+
+
 def gate(tool_name: str, tool_input: dict) -> str | None:
     """The deny reason the gate prints for this call, or None when it lets it through."""
     out = io.StringIO()
-    payload = json.dumps({"tool_name": tool_name, "tool_input": tool_input})
-    with mock.patch("sys.stdin", io.StringIO(payload)), redirect_stdout(out):
+    payload = json.dumps({"tool_name": tool_name, "tool_input": tool_input}, ensure_ascii=False)
+    with mock.patch("sys.stdin", stdin(payload)), redirect_stdout(out):
         linear_gate.main()
     text = out.getvalue()
     return json.loads(text)["hookSpecificOutput"]["permissionDecisionReason"] if text else None
@@ -34,9 +39,7 @@ class Gate(unittest.TestCase):
         self.assertIsNone(gate("mcp__linear_rebase_save_issue", args))
 
     def test_dashes_escapes_headings_and_selling_words_are_refused(self):
-        self.assertIn(
-            "em or en dash", gate("mcp__linear__save_comment", {"body": "Done \u2014 mostly."})
-        )
+        self.assertIn("em dash", gate("mcp__linear__save_comment", {"body": "Done \u2014 mostly."}))
         self.assertIn("\\n escape", gate("mcp__linear__save_comment", {"body": "one\\ntwo"}))
         self.assertIn(
             "# headings", gate("mcp__linear__save_issue", {"description": "## Observed\nslow"})
@@ -73,15 +76,36 @@ class Gate(unittest.TestCase):
         self.assertIsNone(gate("mcp__linear__list_issues", {"query": "x \u2014 y"}))
         self.assertIsNone(gate("mcp__notion__save_page", {"body": "x \u2014 y"}))
 
+    def test_what_the_rules_leave_alone(self):
+        ok = {
+            "body": "**Observed.** «Lui ha detto: sì \u2014 certo, robust», on 2026-10-27.\n\n"
+            "**Needed.** Two\u2013three items, \u2713 checked.\n\n"
+            "~~~\n# not a heading \u2014 inside a fence\n~~~\n\n**Done when.** It loads.",
+            "issueId": "REB-1",
+        }
+        self.assertIsNone(gate("mcp__linear__save_comment", ok))
+
+    def test_abbreviations_do_not_count_as_sentences(self):
+        body = "Shipped the list, e.g. Stripe checkout. On track. Next is search."
+        self.assertIsNone(gate("mcp__linear__save_status_update", {"body": body}))
+        self.assertIn(
+            "4 sentences",
+            gate("mcp__linear__save_status_update", {"body": body + " Then billing."}),
+        )
+
+    def test_an_unclosed_fence_is_code_to_the_end(self):
+        body = "**Observed.** Log:\n```\nERROR \u2014 boom"
+        self.assertIsNone(gate("mcp__linear__save_comment", {"body": body}))
+
     def test_garbage_fails_open(self):
         out = io.StringIO()
-        with mock.patch("sys.stdin", io.StringIO("not json")), redirect_stdout(out):
+        with mock.patch("sys.stdin", stdin("not json")), redirect_stdout(out):
             self.assertEqual(linear_gate.main(), 0)
         self.assertEqual(out.getvalue(), "")
 
 
 LABELS = {"type": ["feature", "fix"], "area": ["area:web", "area:api"]}
-NOW = datetime(2026, 10, 27, 12, tzinfo=UTC)
+NOW = datetime(2026, 10, 27, 12, tzinfo=timezone.utc)  # noqa: UP017 - datetime.UTC is 3.11
 
 
 def card(**overrides) -> dict:
@@ -123,6 +147,32 @@ class AuditCards(unittest.TestCase):
         self.assertEqual(
             linear_audit.card_findings(new, LABELS, self.window), ["no **Done when.** line"]
         )
+
+    def test_a_card_whose_title_is_skipped_is_not_audited(self):
+        snyk = card(identifier="REB-2", title="Fix the Snyk findings of the week of 2026-10-26")
+        snyk.update(project=None, projectMilestone=None)
+        lost = card(identifier="REB-3", project=None)
+        cfg = {
+            "tracker": {
+                "kind": "linear",
+                "workspace": "acme",
+                "prefix": "REB",
+                "labels": LABELS,
+                "audit_skip_titles": ["Fix the Snyk findings of the week of"],
+            }
+        }
+
+        def paged(key, query, root, variables):
+            return [snyk, lost] if root == "issues" else []
+
+        org = {"organization": {"urlKey": "acme"}}
+        with (
+            mock.patch.object(linear_audit, "graphql", return_value=org),
+            mock.patch.object(linear_audit, "paged", side_effect=paged),
+        ):
+            cards, projects = linear_audit.audit("key", cfg, 24)
+        self.assertEqual(cards, ["REB-3: no project"])
+        self.assertEqual(projects, [])
 
 
 def project(**overrides) -> dict:

@@ -31,6 +31,8 @@ permissions:
 jobs:
   audit:
     name: linear · board audit
+    # A fork's schedule would run without the secret and fail every morning.
+    if: github.repository == 'letsrebase/rebase'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

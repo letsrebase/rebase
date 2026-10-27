@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"$CLAUDE_PROJECT_DIR/.github/kit/bin/linear_gate.py\""
+            "command": "py=$(command -v python3 || command -v python) && \"$py\" \"$CLAUDE_PROJECT_DIR/.github/kit/bin/linear_gate.py\""
           }
         ]
       }

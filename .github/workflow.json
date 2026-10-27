@@ -7,6 +7,7 @@
     "prefix": "REB",
     "language": "English",
     "contract": "docs/tracker.md",
+    "audit_skip_titles": ["Fix the Snyk findings of the week of"],
     "labels": {
       "type": ["fix", "feature", "refactor", "chore", "docs", "test", "ci", "design", "security", "spike"],
       "area": ["area:web", "area:api", "area:core", "area:mcp", "area:hub", "area:infra", "area:ci", "area:website", "area:brand", "area:repo"]

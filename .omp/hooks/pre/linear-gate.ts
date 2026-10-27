@@ -40,8 +40,10 @@ export default function linearGate(pi: HookApi): void {
 					encoding: "utf8",
 					timeout: 5000,
 				});
-				if (run.error) continue;
-				if (run.status !== 0 || !run.stdout.trim()) return undefined;
+				// The gate always exits 0; anything else is a broken interpreter (the Windows
+				// Store's python3 stub), so the next one is tried.
+				if (run.error || run.status !== 0) continue;
+				if (!run.stdout.trim()) return undefined;
 				const reason = denyReason(run.stdout);
 				return reason ? { block: true, reason } : undefined;
 			}

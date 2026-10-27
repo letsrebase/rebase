@@ -48,7 +48,10 @@ CLAUDE_HOOK = {
     "hooks": [
         {
             "type": "command",
-            "command": 'python3 "$CLAUDE_PROJECT_DIR/.github/kit/bin/linear_gate.py"',
+            # Claude Code runs hooks through a POSIX shell (Git Bash on Windows), where
+            # `python3` is often missing and `python` is the interpreter.
+            "command": "py=$(command -v python3 || command -v python) && "
+            '"$py" "$CLAUDE_PROJECT_DIR/.github/kit/bin/linear_gate.py"',
         }
     ],
 }
@@ -346,15 +349,26 @@ def claude_settings(repo: Path) -> dict:
     return data if isinstance(data, dict) else {}
 
 
+def pre_tool_use(settings: dict) -> list:
+    """settings.hooks.PreToolUse, refusing a shape Claude Code would not read either."""
+    hooks = settings.get("hooks", {})
+    if not isinstance(hooks, dict):
+        raise ConfigError(f"{CLAUDE_SETTINGS}: `hooks` is an object")
+    entries = hooks.get("PreToolUse", [])
+    if not isinstance(entries, list):
+        raise ConfigError(f"{CLAUDE_SETTINGS}: `hooks.PreToolUse` is a list")
+    return entries
+
+
 def has_claude_hook(repo: Path) -> bool:
-    entries = claude_settings(repo).get("hooks", {}).get("PreToolUse", [])
-    return isinstance(entries, list) and CLAUDE_HOOK in entries
+    return CLAUDE_HOOK in pre_tool_use(claude_settings(repo))
 
 
 def ensure_claude_hook(repo: Path) -> None:
     if has_claude_hook(repo):
         return
     settings = claude_settings(repo)
+    pre_tool_use(settings)
     hooks = settings.setdefault("hooks", {})
     entries = hooks.setdefault("PreToolUse", [])
     # an older copy of the kit's entry (same matcher) is replaced, not duplicated
@@ -366,7 +380,8 @@ def ensure_claude_hook(repo: Path) -> None:
     entries.append(CLAUDE_HOOK)
     path = repo / CLAUDE_SETTINGS
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8", newline="\n")
+    text = json.dumps(settings, indent=2, ensure_ascii=False) + "\n"
+    path.write_text(text, encoding="utf-8", newline="\n")
     print(f"added the Linear gate hook to {CLAUDE_SETTINGS.as_posix()}")
 
 

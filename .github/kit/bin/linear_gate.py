@@ -11,7 +11,8 @@ does not understand passes: a hook that fails closed blocks work it was never ab
 
 The rules are the ones the linear-content skill states and a machine can check:
 
-- no em or en dash, no `\\n` escape where a real newline belongs, no emoji;
+- no em dash, no `\\n` escape where a real newline belongs, no emoji (text in «guillemets»
+  and in code is exempt from every rule);
 - none of the selling words the skill names, and no "not just X but Y";
 - an issue or project body, a comment and an update use bold lead words, not `#`
   headings (a document may have headings);
@@ -39,10 +40,15 @@ WRITE_TOOLS = (
 )
 TEXT_KEYS = ("title", "description", "body", "summary", "content", "name")
 SELLING = ("robust", "seamless", "powerful", "leverage", "delve")
-EMOJI_RE = re.compile("[\U0001f300-\U0001faff\u2600-\u27bf\U0001f000-\U0001f2ff]")
+# Pictographs only: a check mark or a ballot box (U+2610, U+2713) is text, not an emoji.
+EMOJI_RE = re.compile("[\U0001f000-\U0001faff\u2b50\u2b55\u2705\u274c\u2728\u26a0\u26a1]")
 HEADING_RE = re.compile(r"^ {0,3}#{1,6} \S", re.MULTILINE)
-FENCE_RE = re.compile(r"```.*?```", re.DOTALL)
+# A fence of backticks or tildes, closed by the same marker or by the end of the text.
+FENCE_RE = re.compile(r"(```|~~~).*?(?:\1|\Z)", re.DOTALL)
 CODE_RE = re.compile(r"`[^`\n]*`")
+# Words quoted in «guillemets» are the asker's, in their language: the rules do not apply.
+QUOTE_RE = re.compile(r"«[^»]*»")
+ABBREVIATIONS_RE = re.compile(r"\b(e\.g|i\.e|etc|approx|vs|cf)\.", re.IGNORECASE)
 
 
 def tool_of(name: str) -> str | None:
@@ -67,11 +73,11 @@ def texts(tool_input: dict) -> dict[str, str]:
 
 def prose(text: str) -> str:
     """The text with code blocks and inline code removed: rules are about prose."""
-    return CODE_RE.sub("", FENCE_RE.sub("", text))
+    return QUOTE_RE.sub("", CODE_RE.sub("", FENCE_RE.sub("", text)))
 
 
 def sentences(text: str) -> int:
-    flat = " ".join(prose(text).split())
+    flat = " ".join(ABBREVIATIONS_RE.sub(r"\1", prose(text)).split())
     return len([s for s in re.split(r"(?<=[.!?])\s+(?=[A-Z0-9*«\"(])", flat) if s.strip()])
 
 
@@ -80,8 +86,8 @@ def check(tool: str, tool_input: dict) -> list[str]:
     fields = texts(tool_input)
     for key, text in fields.items():
         plain = prose(text)
-        if "\u2014" in plain or "\u2013" in plain:
-            problems.append(f"{key}: no em or en dash; use a comma, a colon or a full stop")
+        if "\u2014" in plain:
+            problems.append(f"{key}: no em dash; use a comma, a colon or a full stop")
         if "\\n" in plain:
             problems.append(f"{key}: a literal \\n escape; send real newlines")
         if EMOJI_RE.search(plain):
@@ -112,7 +118,9 @@ def check(tool: str, tool_input: dict) -> list[str]:
 
 def main() -> int:
     try:
-        payload = json.loads(sys.stdin.read() or "{}")
+        # The payload is UTF-8 whatever the locale says (cp1252 on many Windows machines,
+        # where an em dash would otherwise decode as three other characters).
+        payload = json.loads(sys.stdin.buffer.read().decode("utf-8") or "{}")
         tool = tool_of(str(payload.get("tool_name") or ""))
         tool_input = payload.get("tool_input")
         if tool is None or not isinstance(tool_input, dict):
