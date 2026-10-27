@@ -221,6 +221,8 @@ async def test_the_import_and_the_gaps_take_the_azienda_they_are_for(
     )
     mcp_session.add_all([second, customer])
     mcp_session.flush()
+    customer.azienda_id = second.id
+    mcp_session.flush()
     FiscalProfileService(mcp_session).upsert(
         FiscalProfileUpsert(codice_regime="RF19"),
         Actor(id=None, type="system", role="admin"),

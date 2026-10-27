@@ -226,6 +226,19 @@ def test_the_import_and_the_gaps_are_keyed_by_the_azienda_named(
     )
     assert saved.status_code == 200, saved.text
 
+    second_customer = logged_in.post(
+        "/api/customers",
+        json={"ragione_sociale": "Acme Ltd", "nazione": "GB", "azienda_id": str(second.id)},
+    ).json()
+    refused = logged_in.post(
+        "/api/invoices/import",
+        params={"azienda_id": str(second.id)},
+        json=_body(customer["id"], 1, "2026-05-05"),
+    )
+    assert refused.status_code == 422, refused.text
+    assert "altra azienda" in refused.text
+    assert logged_in.get("/api/invoices").json()["items"] == []
+
     default = logged_in.post("/api/invoices/import", json=_body(customer["id"], 1, "2026-05-05"))
     assert default.status_code == 201, default.text
     assert default.json()["fattura"]["azienda_id"] == emitter["id"]
@@ -233,7 +246,7 @@ def test_the_import_and_the_gaps_are_keyed_by_the_azienda_named(
     other = logged_in.post(
         "/api/invoices/import",
         params={"azienda_id": str(second.id)},
-        json=_body(customer["id"], 1, "2026-05-05"),
+        json=_body(second_customer["id"], 1, "2026-05-05"),
     )
     assert other.status_code == 201, other.text
     assert other.json()["fattura"]["azienda_id"] == str(second.id)
@@ -242,7 +255,7 @@ def test_the_import_and_the_gaps_are_keyed_by_the_azienda_named(
     third = logged_in.post(
         "/api/invoices/import",
         params={"azienda_id": str(second.id)},
-        json=_body(customer["id"], 3, "2026-06-05"),
+        json=_body(second_customer["id"], 3, "2026-06-05"),
     )
     assert third.status_code == 201, third.text
     assert third.json()["buchi_non_dichiarati"] == [2]
