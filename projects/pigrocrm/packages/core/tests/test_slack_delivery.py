@@ -230,13 +230,20 @@ def test_a_space_that_turned_slack_off_by_default_does_not_send_either(world: Wo
 
 def test_quiet_hours_hold_slack_and_the_first_pass_after_them_sends(world: World) -> None:
     # The default window: the weekend. A Saturday, then the Monday after it.
-    saturday = datetime(2026, 11, 7, 12, 0, tzinfo=UTC)
-    monday = datetime(2026, 11, 9, 12, 0, tzinfo=UTC)
+    # Both after the real now, whatever day the suite runs: a pass that lists a reminder
+    # before the connection was made would be announcing backlog, which Slack does not.
+    ahead = datetime.now(UTC) + timedelta(days=1)
+    saturday = (ahead + timedelta(days=(5 - ahead.weekday()) % 7)).replace(
+        hour=12, minute=0, second=0, microsecond=0
+    )
+    monday = saturday + timedelta(days=2)
     world.connect()
     world.attivita("Richiamare Rossi", days_late=3)
     # The attività is overdue by three days on the Saturday's date.
     with world.session() as session:
-        session.execute(text("UPDATE attivita SET scadenza = :d"), {"d": date(2026, 11, 4)})
+        session.execute(
+            text("UPDATE attivita SET scadenza = :d"), {"d": saturday.date() - timedelta(days=3)}
+        )
         session.commit()
 
     held = world.pass_(today=saturday.date(), now=saturday)
