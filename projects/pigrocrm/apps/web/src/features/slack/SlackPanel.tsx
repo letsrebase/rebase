@@ -171,12 +171,17 @@ function Connected({
         </div>
       ) : null}
       {problem ? (
-        <p
+        <div
           role="alert"
-          className="border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          className="space-y-2 border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
         >
-          {problem}
-        </p>
+          <p>{problem}</p>
+          {/* Reconnecting the same workspace keeps the matches made by hand; disconnecting
+              first would drop them. */}
+          <Button asChild variant="outline" size="sm">
+            <a href={SLACK_OAUTH_START}>Ricollega Slack</a>
+          </Button>
+        </div>
       ) : null}
 
       <section aria-labelledby="slack-users" className="space-y-3">

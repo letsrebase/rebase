@@ -321,6 +321,11 @@ describe('SlackPanel', () => {
     renderPanel()
 
     expect(await screen.findByText(/non è decifrabile/)).toBeInTheDocument()
+    // Reconnecting keeps the matches made by hand; disconnecting first would drop them.
+    expect(screen.getByRole('link', { name: 'Ricollega Slack' })).toHaveAttribute(
+      'href',
+      '/api/slack/oauth/start',
+    )
   })
 
   it('asks before disconnecting, says what is lost, and refreshes after', async () => {

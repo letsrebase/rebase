@@ -55,6 +55,10 @@ class SlackMatcher:
             ):
                 return link
         member = self.client.lookup_user_by_email(self.token, user.email)
+        # An admin may have said who this person is while Slack was answering: that stands.
+        current = self.repo.fresh_link_for(user.id)
+        if current is not None and current.source == "manual":
+            return current
         if member is None:
             return self.repo.upsert_link(
                 user.id, source="none", slack_user_id=None, slack_email=None, now=now

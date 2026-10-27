@@ -45,6 +45,15 @@ class SlackRepository:
             select(SlackUserLink).where(SlackUserLink.user_id == user_id)
         ).scalar_one_or_none()
 
+    def fresh_link_for(self, user_id: UUID) -> SlackUserLink | None:
+        """`link_for`, read from the database again: what another session saved while this
+        one waited for Slack."""
+        return self.session.execute(
+            select(SlackUserLink)
+            .where(SlackUserLink.user_id == user_id)
+            .execution_options(populate_existing=True)
+        ).scalar_one_or_none()
+
     def link_of_slack_user(self, slack_user_id: str) -> SlackUserLink | None:
         return self.session.execute(
             select(SlackUserLink).where(SlackUserLink.slack_user_id == slack_user_id)

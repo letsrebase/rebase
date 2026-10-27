@@ -640,7 +640,6 @@ def test_the_line_counts_slack_beside_push_and_email_only_when_it_sent(
 def test_a_write_a_channel_asked_for_that_fails_loses_only_itself(db_session: Session) -> None:
     from pigrocrm.core.reminders.dispatch import ChannelResult
     from pigrocrm.core.reminders.engine import Evaluation, ReminderEngine
-    from pigrocrm.core.reminders.ledger import ReminderLedger
 
     def refused(session: Session) -> None:
         for _ in range(2):  # the second insert breaks the unique key
@@ -658,10 +657,16 @@ def test_a_write_a_channel_asked_for_that_fails_loses_only_itself(db_session: Se
     )
 
     assert result.raised == 0
-    ledger = ReminderLedger(db_session)
-    assert ledger.last_run("reminders") is not None  # the pass's own write stands
-    assert ledger.last_run("kept") is not None  # a later hook still runs
-    assert ledger.last_run("duplicated") is None  # and the one that failed left nothing
+
+    def ran(job: str) -> bool:
+        return (
+            db_session.scalar(select(ReminderJobRun.id).where(ReminderJobRun.job == job))
+            is not None
+        )
+
+    assert ran("reminders")  # the pass's own write stands
+    assert ran("kept")  # a later hook still runs
+    assert not ran("duplicated")  # and the one that failed left nothing
 
 
 # --- the findings of the reviewers on the first round ------------------------------------

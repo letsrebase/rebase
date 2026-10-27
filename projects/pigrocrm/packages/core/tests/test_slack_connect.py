@@ -649,3 +649,36 @@ def test_access_denied_on_one_call_is_a_refusal_not_a_dead_token(db_session: Ses
         service.set_channel(actor_of(admin), "C1")
     db_session.refresh(workspace)
     assert workspace.status == "active"
+
+
+def test_an_automatic_match_never_overwrites_a_correction_made_while_slack_answered(
+    db_session: Session,
+) -> None:
+    from pigrocrm.core.slack.matching import SlackMatcher
+    from pigrocrm.core.slack.repository import SlackRepository
+
+    admin = make_user(db_session, email="mario@example.it", nome="Mario")
+    fake = FakeSlack()
+    fake.add_member("mario@example.it", "UMARIO")
+    fake.add_member("m.rossi@acme.example", "UOTHER")
+    connect(db_session, fake, admin)
+    repo = SlackRepository(db_session)
+
+    class Racing(type(slack_client(fake))):  # type: ignore[misc]
+        """Slack answers, and meanwhile another admin fixes the person by hand."""
+
+        def lookup_user_by_email(self, token: str, email: str):  # type: ignore[no-untyped-def]
+            member = super().lookup_user_by_email(token, email)
+            repo.upsert_link(
+                admin.id,
+                source="manual",
+                slack_user_id="UOTHER",
+                slack_email="m.rossi@acme.example",
+            )
+            return member
+
+    racing = Racing(fake_url := "https://slack.test", http=fake.http, sleep=lambda _: None)
+    assert fake_url
+    link = SlackMatcher(repo, racing, BOT_TOKEN).match_user(admin, force=True)
+
+    assert (link.source, link.slack_user_id) == ("manual", "UOTHER")
