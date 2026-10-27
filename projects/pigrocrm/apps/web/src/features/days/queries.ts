@@ -1,8 +1,7 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, unwrap } from '@/lib/api'
+import { api, fetchWithRefresh, toProblem, unwrap } from '@/lib/api'
 import { useLegalEntity } from '@/lib/legalEntity'
 import { queryKeys } from '@/lib/query'
-import { tenantPrefix } from '@/lib/tenant'
 import type { Contract } from '@/features/contracts/queries'
 import type { WorkUnitCreateBody, WorkUnitRow, WorkUnitStato } from './labels'
 
@@ -215,11 +214,28 @@ export function useMoveDay(workUnitId: string) {
 }
 
 /**
- * Where the dispute bundle of a day is downloaded from (REB-759). A plain URL, not a fetch,
- * like the year's CSV: the browser saves the ZIP itself and the bytes never pass through
- * JavaScript. Same-origin, so the session cookie travels with it, and the space's prefix is
- * part of the path.
+ * Downloads the dispute bundle of a day (REB-759) through `fetchWithRefresh`, as a document is:
+ * a bare link would fail with «Autenticazione richiesta» once the access cookie has expired
+ * while a valid refresh cookie sits in the jar. The server's own `Content-Disposition` names
+ * the file; this hands the blob to the browser and releases the object URL.
  */
-export function disputeBundleUrl(workUnitId: string): string {
-  return `${tenantPrefix}/api/work-units/${encodeURIComponent(workUnitId)}/dispute-bundle`
+export async function downloadDisputeBundle(workUnitId: string): Promise<void> {
+  const response = await fetchWithRefresh(
+    `/api/work-units/${encodeURIComponent(workUnitId)}/dispute-bundle`,
+  )
+  if (!response.ok) {
+    const payload: unknown = await response.json().catch(() => null)
+    throw toProblem(payload, response.status)
+  }
+  const url = URL.createObjectURL(await response.blob())
+  const anchor = document.createElement('a')
+  anchor.href = url
+  // Empty `download` keeps the server's own file name.
+  anchor.download = ''
+  // Snyk Code javascript/DOMXSS here is a false positive: the href is a blob: URL made just
+  // above, never a script URL.
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  URL.revokeObjectURL(url)
 }

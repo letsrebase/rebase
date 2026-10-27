@@ -79,6 +79,12 @@ def _iso(moment: datetime) -> str:
     return moment.isoformat(timespec="seconds")
 
 
+def _actor_label(attore: dict[str, object]) -> str:
+    """Who acted, as stored: the kind and, when there is one, the id of the person or token."""
+    kind = str(attore.get("kind", "sistema"))
+    return f"{kind} {attore['id']}" if attore.get("id") else kind
+
+
 def _approval_reference(detail: WorkUnitDetail) -> list[str]:
     approval = detail.approval
     if approval is None:
@@ -176,7 +182,7 @@ def render_summary(session: Session, detail: WorkUnitDetail, source_line: str) -
             "Storico della giornata",
             [
                 f"{_iso(t.created_at)}  {t.stato_precedente or '-'} -> {t.stato_nuovo}  "
-                f"({t.attore.get('kind', 'sistema')})  {t.motivo}"
+                f"({_actor_label(t.attore)})  {t.motivo}"
                 for t in detail.transizioni
             ],
         ),
@@ -202,7 +208,7 @@ def build_dispute_bundle(
             content, _, filename = DocumentService(session, storage).download(
                 approval.document_id, None, actor
             )
-        except (NotFound, Conflict, ValidationFailed):
+        except (NotFound, Conflict, ValidationFailed, OSError):
             source_line = f"Il file originale di «{title}» non è leggibile dall'archivio."
         else:
             entry = safe_entry_name(filename, f"document-{approval.document_id}")

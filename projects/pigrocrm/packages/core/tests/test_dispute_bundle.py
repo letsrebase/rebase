@@ -29,7 +29,7 @@ from pigrocrm.core.work_units.dispute_bundle import build_dispute_bundle, safe_e
 from pigrocrm.core.work_units.invoicing import assemble_unbilled_work_units_into_new_invoice
 from pigrocrm.core.work_units.models import WorkUnit
 from pigrocrm.core.work_units.schemas import ApprovalRecord
-from pigrocrm.core.work_units.service import ApprovalService
+from pigrocrm.core.work_units.service import ApprovalService, WorkUnitService
 
 WRITER = Actor(id=uuid4(), type="user", role="collaboratore")
 ADMIN = Actor(id=None, type="system", role="admin")
@@ -245,6 +245,35 @@ def test_a_storage_that_refuses_the_file_is_said_so_in_the_summary(
     archive = _open(content)
     assert archive.namelist() == ["summary.txt"]
     assert "non è leggibile dall'archivio" in archive.read("summary.txt").decode()
+
+
+def test_a_file_the_disk_cannot_read_is_said_so_too(
+    db_session: Session, local_storage: LocalFileStorage, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    contract = _contract(db_session)
+    proposed = _day(db_session, contract, date(2026, 3, 2), "proposto")
+    _approve(db_session, local_storage, contract, [proposed])
+
+    def deny(*_: object, **__: object) -> bytes:
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(local_storage, "get", deny)
+
+    _, content = build_dispute_bundle(db_session, local_storage, proposed.id, READER)
+
+    assert "non è leggibile dall'archivio" in _open(content).read("summary.txt").decode()
+
+
+def test_the_log_names_who_acted(db_session: Session, local_storage: LocalFileStorage) -> None:
+    contract = _contract(db_session)
+    proposed = _day(db_session, contract, date(2026, 3, 2), "proposto")
+    approval_actor = Actor(id=uuid4(), type="user", role="collaboratore")
+    _approve(db_session, local_storage, contract, [proposed])
+    WorkUnitService(db_session).move(proposed.id, "lavorato", approval_actor, "Lavorata")
+
+    _, content = build_dispute_bundle(db_session, local_storage, proposed.id, READER)
+
+    assert f"human {approval_actor.id}" in _open(content).read("summary.txt").decode()
 
 
 def test_the_invoice_line_the_day_landed_on_is_in_the_summary(

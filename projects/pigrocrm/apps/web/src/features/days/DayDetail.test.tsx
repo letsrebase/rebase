@@ -1,13 +1,14 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { api } from '@/lib/api'
+import { api, fetchWithRefresh } from '@/lib/api'
+import { toast } from '@rebase/ui/sonner'
 import { DayDetail } from './DayDetail'
 import { DAY_ID, detail, ok, refused, renderWithQuery } from './testing'
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>()
-  return { ...actual, api: { GET: vi.fn(), POST: vi.fn() } }
+  return { ...actual, api: { GET: vi.fn(), POST: vi.fn() }, fetchWithRefresh: vi.fn() }
 })
 
 vi.mock('@tanstack/react-router', () => ({
@@ -193,15 +194,36 @@ describe('a day’s page', () => {
     expect(await screen.findByText('Giornata non trovata.')).toBeInTheDocument()
   })
 
-  it('offers the dispute bundle of the day, to a reader as well as to a writer', async () => {
+  it('downloads the dispute bundle through the session-refreshing fetch, for a reader too', async () => {
     auth.ruolo = 'readonly'
     serving(detail({ stato: 'contestato', azioni: [] }))
+    vi.mocked(fetchWithRefresh).mockResolvedValue({
+      ok: true,
+      blob: () => Promise.resolve(new Blob(['zip'])),
+    } as Response)
+    URL.createObjectURL = vi.fn(() => 'blob:x')
+    URL.revokeObjectURL = vi.fn()
     renderWithQuery(<DayDetail workUnitId={DAY_ID} />)
 
-    const link = await screen.findByRole('link', { name: 'Scarica il fascicolo' })
-    expect(link).toHaveAttribute('href', `/api/work-units/${DAY_ID}/dispute-bundle`)
-    expect(
-      screen.getByRole('heading', { name: 'Fascicolo per la contestazione' }),
-    ).toBeInTheDocument()
+    await userEvent.click(await screen.findByRole('button', { name: 'Scarica il fascicolo' }))
+
+    await waitFor(() =>
+      expect(fetchWithRefresh).toHaveBeenCalledWith(`/api/work-units/${DAY_ID}/dispute-bundle`),
+    )
+    await waitFor(() => expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:x'))
+  })
+
+  it('says why when the bundle cannot be downloaded', async () => {
+    serving(detail({ stato: 'contestato', azioni: [] }))
+    vi.mocked(fetchWithRefresh).mockResolvedValue(
+      new Response(JSON.stringify({ title: 'x', status: 404, detail: 'work_unit non trovato' }), {
+        status: 404,
+      }),
+    )
+    renderWithQuery(<DayDetail workUnitId={DAY_ID} />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Scarica il fascicolo' }))
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalled())
   })
 })

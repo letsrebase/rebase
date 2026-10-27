@@ -30,7 +30,7 @@ import {
   type WorkUnitDetail,
   type WorkUnitStato,
 } from './labels'
-import { disputeBundleUrl, useMoveDay, useWorkUnit } from './queries'
+import { downloadDisputeBundle, useMoveDay, useWorkUnit } from './queries'
 
 /**
  * `/app/days/$workUnitId`: one day, with its state, the approval it rests on, the log of
@@ -284,6 +284,7 @@ function Approval({ day }: { day: WorkUnitDetail }) {
  * collected while the approval is at hand.
  */
 function Dossier({ day }: { day: WorkUnitDetail }) {
+  const [busy, setBusy] = useState(false)
   return (
     <section aria-labelledby="day-bundle" className="space-y-3">
       <h2 id="day-bundle" className="font-semibold">
@@ -296,15 +297,21 @@ function Dossier({ day }: { day: WorkUnitDetail }) {
           ? 'Questa giornata non ha un’approvazione: non c’è un originale da allegare.'
           : 'Ci mette dentro anche l’originale archiviato su cui poggia l’approvazione, così com’è arrivato.'}
       </p>
-      <Button asChild variant="outline" size="sm">
-        <a
-          // Snyk Code javascript/DOMXSS here is a false positive: always a same-origin path
-          // under /api/work-units/, the id URL-encoded.
-          href={disputeBundleUrl(day.id)}
-        >
-          <Download className="mr-2 size-4" aria-hidden="true" />
-          Scarica il fascicolo
-        </a>
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={busy}
+        onClick={() => {
+          setBusy(true)
+          downloadDisputeBundle(day.id)
+            .catch((error: unknown) =>
+              toast.error(toProblem(error).detail ?? 'Non riesco a scaricare il fascicolo.'),
+            )
+            .finally(() => setBusy(false))
+        }}
+      >
+        <Download className="mr-2 size-4" aria-hidden="true" />
+        Scarica il fascicolo
       </Button>
     </section>
   )
