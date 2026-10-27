@@ -107,4 +107,10 @@ describe('reasonLabel', () => {
   it('shows a reason a person typed as they typed it', () => {
     expect(reasonLabel('Il cliente ha contestato le ore')).toBe('Il cliente ha contestato le ore')
   })
+
+  it('shows a reason named like an object property as typed', () => {
+    for (const reason of ['constructor', '__proto__', 'toString']) {
+      expect(reasonLabel(reason)).toBe(reason)
+    }
+  })
 })

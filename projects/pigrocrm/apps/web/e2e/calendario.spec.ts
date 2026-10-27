@@ -116,7 +116,7 @@ test.describe('il calendario', () => {
     { width: 390, height: 844 },
     { width: 1440, height: 900 },
   ]) {
-    test(`un giorno con venti scadenze si scorre dentro il pannello a ${viewport.width}px`, async ({
+    test(`a day with twenty deadlines scrolls inside the panel at ${viewport.width}px`, async ({
       page,
     }) => {
       await page.setViewportSize(viewport)

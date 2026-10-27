@@ -24,7 +24,7 @@ export const RULE_LABELS: Record<string, string> = {
 }
 
 export function ruleLabel(regola: string): string {
-  return RULE_LABELS[regola] ?? humaniseKey(regola)
+  return (Object.hasOwn(RULE_LABELS, regola) ? RULE_LABELS[regola] : undefined) ?? humaniseKey(regola)
 }
 
 /** `Template.tipo`: the four kinds a person creates and the three the product ships. */
@@ -39,7 +39,7 @@ export const TEMPLATE_TYPE_LABELS: Record<string, string> = {
 }
 
 export function templateTypeLabel(tipo: string): string {
-  return TEMPLATE_TYPE_LABELS[tipo] ?? humaniseKey(tipo)
+  return (Object.hasOwn(TEMPLATE_TYPE_LABELS, tipo) ? TEMPLATE_TYPE_LABELS[tipo] : undefined) ?? humaniseKey(tipo)
 }
 
 /** The `code` of a seeded cost category (`SEED_CATEGORIES`), which reports match on. */
@@ -52,5 +52,5 @@ export const COST_CATEGORY_CODE_LABELS: Record<string, string> = {
 }
 
 export function costCategoryCodeLabel(code: string): string {
-  return COST_CATEGORY_CODE_LABELS[code] ?? humaniseKey(code)
+  return (Object.hasOwn(COST_CATEGORY_CODE_LABELS, code) ? COST_CATEGORY_CODE_LABELS[code] : undefined) ?? humaniseKey(code)
 }

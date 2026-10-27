@@ -45,4 +45,10 @@ describe('the settings label maps', () => {
     expect(templateTypeLabel('contratto_quadro')).toBe('Contratto quadro')
     expect(costCategoryCodeLabel('formazione')).toBe('Formazione')
   })
+
+  it('does not read a key named like an object property as a label', () => {
+    expect(ruleLabel('constructor')).toBe(humaniseKey('constructor'))
+    expect(templateTypeLabel('__proto__')).toBe(humaniseKey('__proto__'))
+    expect(costCategoryCodeLabel('toString')).toBe(humaniseKey('toString'))
+  })
 })

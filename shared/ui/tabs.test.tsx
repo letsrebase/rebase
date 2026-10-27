@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './tabs'
 
@@ -131,5 +131,21 @@ describe('Tabs', () => {
       </Tabs>,
     )
     expect(screen.getByRole('tab', { name: 'A' })).not.toHaveAttribute('aria-controls')
+  })
+
+  it('runs the cleanup a caller\'s callback ref returns', () => {
+    const cleanup = vi.fn()
+    const { unmount } = render(
+      <Tabs value="a">
+        <TabsList>
+          <TabsTrigger value="a" ref={() => cleanup}>
+            A
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>,
+    )
+    expect(cleanup).not.toHaveBeenCalled()
+    unmount()
+    expect(cleanup).toHaveBeenCalledTimes(1)
   })
 })

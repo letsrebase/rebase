@@ -134,7 +134,7 @@ const REASON_LABELS: Record<string, string> = {
 }
 
 export function reasonLabel(motivo: string): string {
-  return REASON_LABELS[motivo] ?? motivo
+  return (Object.hasOwn(REASON_LABELS, motivo) ? REASON_LABELS[motivo] : undefined) ?? motivo
 }
 
 /** Who made a move, as the log's `attore` says it. */
@@ -187,7 +187,7 @@ const UNITA_PHRASES: Record<string, string> = {
 
 /** The unit a rate card prices by, as the words after the figure: «al giorno», «all’ora». */
 export function unitaLabel(unita: string): string {
-  return UNITA_PHRASES[unita] ?? `per ${unita}`
+  return (Object.hasOwn(UNITA_PHRASES, unita) ? UNITA_PHRASES[unita] : undefined) ?? `per ${unita}`
 }
 
 /** The cell's contribution to its accessible name: how many days, and any flagged one. */

@@ -89,8 +89,16 @@ function TabsTrigger({
     <TabsPrimitive.Trigger
       ref={(node) => {
         own.current = node
-        if (typeof ref === "function") ref(node)
-        else if (ref) ref.current = node
+        // React 19 runs the cleanup a callback ref returns instead of calling it with
+        // null, so the caller's own cleanup is kept and run, or null is handed over.
+        const cleanup = typeof ref === "function" ? ref(node) : undefined
+        if (ref && typeof ref !== "function") ref.current = node
+        return () => {
+          own.current = null
+          if (typeof cleanup === "function") cleanup()
+          else if (typeof ref === "function") ref(null)
+          else if (ref) ref.current = null
+        }
       }}
       data-slot="tabs-trigger"
       className={cn(
