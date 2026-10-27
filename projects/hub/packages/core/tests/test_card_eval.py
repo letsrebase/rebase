@@ -654,3 +654,24 @@ def test_eval_spend_stops_at_the_tasks_daily_cap_and_says_why(
 
     assert stub.built == []
     assert run.summary["complete"] is False and run.summary["stopped"] == CAP_REACHED
+
+
+def test_fifteen_profiles_are_drafted_corrected_accepted_and_measured(clean: Session) -> None:
+    """The whole path on a test database (the card's «Done when»): fifteen people drafted
+    as `bozza`, an admin accepts them, and one run reports the agreement and the cost."""
+    admin = _admin(clean)
+    people = [_person(clean, f"persona{index}@studio.it", f"Cognome{index}") for index in range(15)]
+    service = CardEvalService(clean)
+    drafts = RecordingCall([card_response() for _ in people])
+    for person in people:
+        service.ensure(person, "senza date")
+        draft_expected(clean, person, drafts)
+
+    assert [profile.status for profile in service.list().profiles] == ["bozza"] * 15
+    for person in people:
+        service.accept(admin, person)
+    run = _run(clean, RecordingCall([card_response() for _ in people]))
+
+    assert (run.summary["ran"], run.summary["anni_ok"], run.summary["guard_clean"]) == (15, 15, 15)
+    report = format_report(run)
+    assert report.count("senza date") == 15
