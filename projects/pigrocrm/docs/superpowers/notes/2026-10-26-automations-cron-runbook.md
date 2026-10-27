@@ -96,6 +96,23 @@ reads. Every line is printed either way, and one space's failure never stops the
 **Rotation.** Three lines of about forty characters per space per day: a year of ten spaces
 is some 400 KB, and doing nothing about it is fine.
 
+### Where a run leaves its mark (REB-764)
+
+After each space a real run writes the space's `automations` row in `reminder_job_run`: the
+time of the run when it ended, or the exception's type and the time of the attempt when the
+space failed (the last good time stays where it was). A rehearsal writes nothing, and a
+space the run cannot reach cannot be written to, so its row stops moving. A run that worked
+but whose row cannot be written prints `<space>: orologio non scritto (<Type>)` on `stderr`
+and exits 1, like any other line there, so the ping does not go out. Impostazioni →
+Esecuzioni shows it, and the reminder `job_late` is raised when the last good run is older
+than 26 hours: the line runs once a day, with two hours of slack for a slow host. The ping
+above still watches the host from outside, which is what catches a cron that never starts.
+To read it by hand:
+
+```
+docker compose --env-file ../../.env exec -T db psql -U pigrocrm -d <the space's database> -c "select job, ran_at, failed_at, failure from reminder_job_run where job = 'automations'"
+```
+
 ## 4. Why a second run opens nothing, and when the next one does
 
 `uq_attivita_regola_aperta` is a unique index over the open, live attività of a rule and its

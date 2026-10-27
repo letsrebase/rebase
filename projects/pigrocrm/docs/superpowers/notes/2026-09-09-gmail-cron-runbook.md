@@ -213,6 +213,26 @@ essere lì` rather than `… non è una casella collegata`.
 | `registro degli spazi non raggiungibile (…)` | The registry does not answer: no space was visited, the root was | Check the database and the `PIGROCRM_*` of the `.env`, then run the line by hand |
 | `… non è fra le caselle degli spazi letti (…): uno spazio non è stato letto, e potrebbe essere lì` | `--email` matched no mailbox among the installations read, and at least one was not read | Fix what the `saltato` or `registro` line above says, then run the line again |
 
+### The space's clock (REB-764)
+
+After the mailboxes of a space have each had their cycle, the run writes one row in that
+space's own database, `reminder_job_run`, job `gmail-sync`: the time of the last run that
+ended, or, when a mailbox refused its cycle, the name of the exception that stopped it
+(`CredentialRevoked`, `ConsentExpired`, ...: never the sentence the `stderr` line carries,
+which names the mailbox) and the time of the attempt; the last good time stays where it was. Impostazioni → Esecuzioni
+reads it, and says «Non configurata» for a space with no connected mailbox, which prints
+nothing and records nothing. A run narrowed with `--email` writes nothing, since it did not
+visit the space's other mailboxes. A space the run cannot reach (a database that does not
+answer) cannot be written to: its row simply stops moving and reads «In ritardo» after
+thirty minutes. A cycle that worked but whose row cannot be written is a line on `stderr`
+(`<space>: orologio non scritto (<Type>)`) and exit 1, like any other line there. A stalled sync is raised as the reminder `connection_failing`, which reads
+the mailbox's own `last_sync_at`, and not as `job_late`: one cause, one reminder. To read
+the row by hand:
+
+```
+docker compose --env-file ../../.env exec -T db psql -U pigrocrm -d <the space's database> -c "select job, ran_at, failed_at, failure from reminder_job_run"
+```
+
 ## 3. Il banner smette di prevedere
 
 `GoogleAccountService.health` legge `consent_expires_at` **solo** quando
@@ -316,6 +336,19 @@ it to every space as well.
 
 When the registry cannot be reached, the full run still sends the root:
 `registro degli spazi non raggiungibile (…)` is followed by the `root:` line.
+
+### The space's clock (REB-764)
+
+A real run writes the space's `digest` row in `reminder_job_run` after each space: the time
+of the run when the space ended in `inviato`, `vuoto`, `già inviato` or `nessun destinatario`
+(the run ended, whether or not there was mail to send), and the machine word of the
+`saltato` line (`invio_rifiutato`, `titolare_mancante`, ...) with the time of the attempt when
+it ended in `saltato`, or the exception's type when it failed before that. A rehearsal
+(`--dry-run`) writes nothing. A row that cannot be written is one line on `stderr`
+(`<space>: orologio non scritto (<Type>)`), and the exit status stays 0 as always. Impostazioni → Esecuzioni shows it, and the reminder `job_late`
+is raised for a space whose last good run is older than eight days (Tuesday morning without
+a Monday run), which is what the digest's own table row cannot say: it holds a row only for
+a week that really went out.
 
 ### Rimandare una settimana
 
