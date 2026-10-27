@@ -443,10 +443,12 @@ scheda e il team builder», that tells the people they belong to. The key is no 
 `website-v*` tag that carries the section goes first, and **`rebase ai-seed` (the moment a
 provider has a key and is on) and `REBASE_CARDS_LOOP=on` both come after it**. The other
 way round, CVs reach a provider while the privacy page still says nothing of it. Nor
-enable OpenAI or Google in «Modelli AI» before the processors check of the design (the
-notice lists them, a data-processing agreement exists with each, no-training and retention
-terms are checked): the page lets an admin do it today, and doing it sends CVs to a
-processor the notice does not name.
+enable OpenAI or Google in «Modelli AI» before the notice is updated to name them as
+processors (REB-841: «La tua scheda e il team builder» names Anthropic only, with the SCCs of
+its DPA, and `privacy.test.ts` holds that no other provider is named), a data-processing
+agreement exists with each, and no-training and retention terms are checked: the page lets an
+admin do it today, and doing it sends CVs and source text to a processor the notice does not
+name.
 
 **The talent cloud** (milestone D, REB-517 to REB-521) shows the same cards by name to a
 company rebase admitted. «Apri il talent cloud» on a company request's page in «Aziende»
@@ -590,9 +592,10 @@ for «Scheda anonima», which shows `fonti` as «secondo il modello».
   merge or erasure removes all of it at once (`sources.py`).
 - **Every source is off by default, on `GET /api/hub/admin/ai` and in «Modelli AI», «Fonti»:**
   `github` and `links` (`ai_sources`, `PUT /api/hub/admin/ai/sources/{kind}/enabled`, an
-  `ai_switch` entry; turning one off deletes its stored text at once). **They stay off in
-  production until Lorenzo and Ivan confirm that the privacy notice covers reading what people
-  linked**: the text of a GitHub profile and of a page is personal data the person did not hand us
+  `ai_switch` entry; turning one off deletes its stored text at once). **They may be
+  switched on in production once the `website-v*` tag that carries the sources paragraph of
+  «La tua scheda e il team builder» is live (REB-841: GitHub and the pages of the links are read,
+  sent to Anthropic, stored and refetched weekly)**: the text of a GitHub profile and of a page is personal data the person did not hand us
   directly. Step 6 of the plan, once it does: switch `github` on in the preview, run
   `rebase sources-refetch`, then `rebase cards-eval` with the same provider and model as the
   Phase 2 baseline, `--baseline` the id of that last version 1 run (the default baseline is a run

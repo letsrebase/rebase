@@ -2,9 +2,9 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-// The privacy page's section on the team builder (REB-515, REB-516): what it must say
-// about Anthropic, and what it must not claim. The seam asks the API for global
-// inference, so the page makes no claim about where the processing happens.
+// The privacy page's section on the team builder (REB-515, REB-516, REB-841): what it
+// must say about Anthropic and the sources read, and that the data may leave the EU
+// (the API runs global inference).
 const html = readFileSync(resolve(__dirname, 'privacy.html'), 'utf8')
 
 function section(title: string): string {
@@ -25,15 +25,36 @@ describe('the privacy page on the team builder', () => {
     expect(text).toContain('https://www.anthropic.com/privacy')
   })
 
-  it('says what leaves: the CV text and the visitor description, never the rate', () => {
+  it("says what is read and sent: the CV, the role, GitHub, the links and the hub's facts, never LinkedIn or the rate", () => {
     expect(text).toContain('il testo del tuo CV')
+    expect(text).toContain('il ruolo che hai indicato nel profilo')
+    expect(text).toContain('senza il nome del cliente')
+    expect(text).toContain('La tariffa e il modo in cui lavori non servono a scriverla')
+    expect(text).toContain('i repository pubblici')
+    expect(text).toContain('le pagine pubbliche dei link')
+    expect(text).toContain('Non leggiamo LinkedIn')
+    expect(text).toContain('dietro un accesso')
     expect(text).toContain('mai la tariffa stessa')
   })
 
-  it('makes no claim about where the inference happens', () => {
-    expect(text).not.toContain('Unione Europea')
-    expect(text).not.toContain('Spazio economico europeo')
-    expect(text).not.toMatch(/inferenza/i)
+  it('says plainly that the data may leave the EU, and the safeguard', () => {
+    expect(text).toContain("possono uscire dall'Unione Europea")
+    expect(text).toContain('clausole contrattuali standard')
+    expect(text).toContain('https://www.anthropic.com/legal/data-processing-addendum')
+  })
+
+  it('names no other model provider: OpenAI and Google are off (hub AGENTS.md)', () => {
+    expect(text).not.toMatch(/OpenAI|Gemini|Google/)
+    expect(text).toContain('Non mandiamo questi dati a nessun altro fornitore di modelli')
+  })
+
+  it('says what is stored, for how long, and how to object', () => {
+    expect(text).toContain('un\'impronta (hash)')
+    expect(text).toContain('una volta a settimana')
+    expect(text).toContain('quando lo togli')
+    expect(text).toContain('quando cancelli il profilo')
+    expect(text).toContain('Ti puoi opporre in ogni momento')
+    expect(text).toContain('ciao@letsrebase.com')
   })
 })
 
