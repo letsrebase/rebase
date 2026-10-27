@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
 import { CeilingPanel } from './CeilingPanel'
@@ -89,9 +89,15 @@ function failed(error: unknown, status: number) {
   return Promise.resolve({ error, response: new Response(null, { status }) }) as never
 }
 
+/** The contracts list is asked by every panel, for the contracts that cap a customer's
+ *  share: an azienda with none is the default, so only the tests about caps say otherwise. */
 function route(handlers: Record<string, () => unknown>) {
+  const all: Record<string, () => unknown> = {
+    '/api/contracts': () => ok({ items: [], next_cursor: null }),
+    ...handlers,
+  }
   vi.mocked(api.GET).mockImplementation(((path: string) => {
-    const handler = handlers[path]
+    const handler = all[path]
     if (!handler) throw new Error(`unexpected GET ${path}`)
     return handler()
   }) as never)
@@ -238,7 +244,7 @@ describe('CeilingPanel, «ci sta?»', () => {
 
     await waitFor(() =>
       expect(api.GET).toHaveBeenCalledWith('/api/analytics/ceilings/simulate', {
-        params: { query: { valore_preventivato: '20000.00', anno: 2027 } },
+        params: { query: { valore_preventivato: '20000.00', data_prevista: '2027-03-15', anno: 2027 } },
       }),
     )
   })
@@ -337,7 +343,14 @@ describe('CeilingPanel, «ci sta?»', () => {
 
     await waitFor(() =>
       expect(api.GET).toHaveBeenCalledWith('/api/analytics/ceilings/simulate', {
-        params: { query: { ore_preventivate: '100', tariffa_oraria: '80.5', anno: 2026 } },
+        params: {
+          query: {
+            ore_preventivate: '100',
+            tariffa_oraria: '80.5',
+            data_prevista: '2026-12-31',
+            anno: 2026,
+          },
+        },
       }),
     )
   })
@@ -427,7 +440,7 @@ describe('CeilingPanel, simulating a deal', () => {
 
     await waitFor(() =>
       expect(api.GET).toHaveBeenCalledWith('/api/analytics/ceilings/simulate', {
-        params: { query: { valore_preventivato: '12000.00', anno: 2026 } },
+        params: { query: { valore_preventivato: '12000.00', data_prevista: '2026-12-31', anno: 2026 } },
       }),
     )
     expect(await screen.findByText('Ci sta.')).toBeInTheDocument()
@@ -481,5 +494,227 @@ describe('CeilingPanel, one per azienda in «Tutte»', () => {
     expect(importi[0]!.id).not.toBe(importi[1]!.id)
     await user.click(screen.getAllByText('Importo')[1]!)
     expect(importi[1]).toHaveFocus()
+  })
+})
+
+describe('CeilingPanel, the cap on a customer’s share', () => {
+  const CAPPED = {
+    id: 'k1',
+    titolo: 'Piattaforma ACME',
+    stato: 'attivo',
+    azienda_id: 'a1',
+    divisa: 'EUR',
+    tetto_quota_cliente: '50.00',
+  }
+  const UNCAPPED = { ...CAPPED, id: 'k2', titolo: 'Manutenzione Beta', tetto_quota_cliente: null }
+  const contracts = (...items: unknown[]) => () => ok({ items, next_cursor: null })
+
+  const CAP = {
+    contract_id: 'k1',
+    titolo: 'Piattaforma ACME',
+    customer_id: 'cu1',
+    divisa: 'EUR',
+    periodo_da: '2026-03-01',
+    periodo_a: '2027-02-28',
+    tetto: 0.5,
+    ricavi_cliente_attuali: '30000.00',
+    ricavi_totali_attuali: '100000.00',
+    quota_attuale: 0.3,
+    ricavi_cliente_simulati: '50000.00',
+    ricavi_totali_simulati: '120000.00',
+    quota_simulata: 0.5333,
+    rientra: false,
+  }
+
+  async function chooseContract(user: UserEvent) {
+    await user.click(await screen.findByRole('combobox', { name: 'Contratto con un tetto' }))
+    await user.click(screen.getByRole('option', { name: /piattaforma acme/i }))
+  }
+
+  it('draws only the simulator, under its own heading, for an azienda with no ceilings but a capped contract', async () => {
+    route({
+      '/api/analytics/ceilings': () => ok(headroom([])),
+      '/api/contracts': contracts(CAPPED, UNCAPPED),
+    })
+    renderPanel()
+
+    expect(await screen.findByText('Tetti dei contratti')).toBeInTheDocument()
+    expect(screen.queryByText(/soglie del forfettario/i)).not.toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: RICAVI.etichetta })).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Ci sta?' })).toBeInTheDocument()
+    expect(api.GET).toHaveBeenCalledWith('/api/contracts', {
+      params: { query: expect.objectContaining({ stato: 'attivo' }) },
+    })
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('combobox', { name: 'Contratto con un tetto' }))
+    expect(screen.getByRole('option', { name: /piattaforma acme · tetto 50%/i })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: /manutenzione beta/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: 'Nessun contratto' })).not.toBeInTheDocument()
+  })
+
+  it('asks for a contract before it asks the server anything when there is nothing else to read', async () => {
+    route({
+      '/api/analytics/ceilings': () => ok(headroom([])),
+      '/api/contracts': contracts(CAPPED),
+    })
+    renderPanel()
+    const user = userEvent.setup()
+
+    await user.type(await screen.findByLabelText('Importo'), '20000')
+    await user.click(screen.getByRole('button', { name: 'Simula' }))
+
+    expect(await screen.findByText('Scegli un contratto con un tetto.')).toBeInTheDocument()
+    expect(api.GET).not.toHaveBeenCalledWith('/api/analytics/ceilings/simulate', expect.anything())
+  })
+
+  it('sends the contract and the date with the estimate, and shows the cap block alone', async () => {
+    route({
+      '/api/analytics/ceilings': () => ok(headroom([])),
+      '/api/analytics/ceilings/simulate': () =>
+        ok({ ...simulation({ soglie: [] }), tetto_contratto: CAP }),
+      '/api/contracts': contracts(CAPPED),
+    })
+    renderPanel()
+    const user = userEvent.setup()
+
+    await chooseContract(user)
+    await user.type(screen.getByLabelText('Importo'), '20000')
+    await user.click(screen.getByRole('button', { name: 'Simula' }))
+
+    await waitFor(() =>
+      expect(api.GET).toHaveBeenCalledWith('/api/analytics/ceilings/simulate', {
+        params: {
+          query: {
+            valore_preventivato: '20000',
+            data_prevista: '2026-12-31',
+            contract_id: 'k1',
+            anno: 2026,
+          },
+        },
+      }),
+    )
+    const block = await screen.findByRole('group', { name: 'Tetto di Piattaforma ACME' })
+    expect(within(block).getByText(/anno dal 01\/03\/2026 al 28\/02\/2027/)).toBeInTheDocument()
+    expect(within(block).getByText('Non ci sta')).toBeInTheDocument()
+    expect(
+      within(block).getByText('Il cliente passerebbe dal 30% al 53,33% dei ricavi, tetto 50%.'),
+    ).toBeInTheDocument()
+    expect(within(block).getByTestId('bar-fill')).toHaveStyle({ width: '53.33%' })
+    expect(within(block).getByTestId('bar-mark')).toHaveStyle({ left: '50.00%' })
+    expect(screen.getByText('Non ci sta.')).toBeInTheDocument()
+    expect(screen.queryByText('Rientra')).not.toBeInTheDocument()
+  })
+
+  it('says the cap fits when the server says the share stays under it', async () => {
+    route({
+      '/api/analytics/ceilings': () => ok(headroom([])),
+      '/api/analytics/ceilings/simulate': () =>
+        ok({
+          ...simulation({ soglie: [] }),
+          tetto_contratto: { ...CAP, quota_simulata: 0.42, rientra: true },
+        }),
+      '/api/contracts': contracts(CAPPED),
+    })
+    renderPanel()
+    const user = userEvent.setup()
+
+    await chooseContract(user)
+    await user.type(screen.getByLabelText('Importo'), '20000')
+    await user.click(screen.getByRole('button', { name: 'Simula' }))
+
+    expect(await screen.findByText('Ci sta.')).toBeInTheDocument()
+    expect(screen.getByText('Ci sta')).toBeInTheDocument()
+  })
+
+  it('does not say «Ci sta.» from the ceilings alone when the contract’s cap would be reached', async () => {
+    route({
+      '/api/analytics/ceilings': () => ok(headroom()),
+      '/api/analytics/ceilings/simulate': () => ok({ ...simulation(), tetto_contratto: CAP }),
+      '/api/contracts': contracts(CAPPED),
+    })
+    renderPanel()
+    await screen.findByRole('group', { name: RICAVI.etichetta })
+    const user = userEvent.setup()
+
+    // With ceilings the heading is the forfettario's and the contract is optional.
+    expect(screen.getByText('Soglie del forfettario 2026')).toBeInTheDocument()
+    await user.click(await screen.findByRole('combobox', { name: 'Contratto con un tetto' }))
+    expect(screen.getByRole('option', { name: 'Nessun contratto' })).toBeInTheDocument()
+    await user.click(screen.getByRole('option', { name: /piattaforma acme/i }))
+    await user.type(screen.getByLabelText('Importo'), '20000')
+    await user.click(screen.getByRole('button', { name: 'Simula' }))
+
+    expect(await screen.findByText('Non ci sta.')).toBeInTheDocument()
+    expect(screen.queryByText('Ci sta.')).not.toBeInTheDocument()
+    expect(screen.getAllByText('Rientra')).toHaveLength(2)
+    expect(screen.getByText('Non ci sta')).toBeInTheDocument()
+  })
+
+  it('simulates the ceilings alone when no contract is chosen, as before', async () => {
+    route({
+      '/api/analytics/ceilings': () => ok(headroom()),
+      '/api/analytics/ceilings/simulate': () => ok(simulation()),
+      '/api/contracts': contracts(CAPPED),
+    })
+    renderPanel()
+    await screen.findByRole('group', { name: RICAVI.etichetta })
+    const user = userEvent.setup()
+
+    await user.type(screen.getByLabelText('Importo'), '20000')
+    await user.click(screen.getByRole('button', { name: 'Simula' }))
+
+    expect(await screen.findByText('Ci sta.')).toBeInTheDocument()
+    expect(api.GET).toHaveBeenCalledWith('/api/analytics/ceilings/simulate', {
+      params: {
+        query: { valore_preventivato: '20000', data_prevista: '2026-12-31', anno: 2026 },
+      },
+    })
+    expect(screen.queryByRole('group', { name: /^Tetto di/ })).not.toBeInTheDocument()
+  })
+
+  it('offers no contract picker when no active contract has a cap', async () => {
+    route({
+      '/api/analytics/ceilings': () => ok(headroom()),
+      '/api/contracts': contracts(UNCAPPED),
+    })
+    renderPanel()
+    await screen.findByRole('group', { name: RICAVI.etichetta })
+
+    expect(screen.queryByRole('combobox', { name: 'Contratto con un tetto' })).not.toBeInTheDocument()
+  })
+
+  it('draws nothing with no pack ceilings and no contract that caps a share', async () => {
+    route({
+      '/api/analytics/ceilings': () => ok(headroom([])),
+      '/api/contracts': contracts(UNCAPPED),
+    })
+    const { container } = renderPanel()
+
+    await waitFor(() => expect(api.GET).toHaveBeenCalledWith('/api/contracts', expect.anything()))
+    await waitFor(() => expect(container).toBeEmptyDOMElement())
+    expect(screen.queryByText('Tetti dei contratti')).not.toBeInTheDocument()
+    expect(screen.queryByText(/ci sta/i)).not.toBeInTheDocument()
+  })
+
+  it('says the contracts could not be read beside the ceilings, instead of hiding the picker', async () => {
+    route({
+      '/api/analytics/ceilings': () => ok(headroom()),
+      '/api/contracts': () => failed({ detail: 'Contratti non disponibili' }, 500),
+    })
+    renderPanel()
+
+    expect(await screen.findByText(/Soglie del forfettario/)).toBeInTheDocument()
+    expect(await screen.findByText(/contratti non disponibili/i)).toBeInTheDocument()
+  })
+
+  it('says why the contracts could not be read, when there is nothing else to show', async () => {
+    route({
+      '/api/analytics/ceilings': () => ok(headroom([])),
+      '/api/contracts': () => failed({ detail: 'Contratti non disponibili' }, 500),
+    })
+    renderPanel()
+
+    expect(await screen.findByText(/contratti non disponibili/i)).toBeInTheDocument()
   })
 })

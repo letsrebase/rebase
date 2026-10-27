@@ -163,9 +163,11 @@ def test_each_azienda_keeps_its_own_fiscal_profile(
     assert saved.status_code == 200, saved.text
     other = logged_in.put(
         f"/api/aziende/{second}/fiscal-profile",
-        json={"codice_regime": "RF01", "aliquota_iva_default": "22.00", "natura_default": None},
+        json={"pack_id": "it-standard"},
     )
     assert other.status_code == 200, other.text
+    assert other.json()["pack_id"] == "it-standard"
+    assert other.json()["aliquota_iva_default"] == "22.00"
     assert logged_in.get(f"/api/aziende/{first}/fiscal-profile").json()["codice_regime"] == "RF19"
     assert logged_in.get(f"/api/aziende/{second}/fiscal-profile").json()["codice_regime"] == "RF01"
 

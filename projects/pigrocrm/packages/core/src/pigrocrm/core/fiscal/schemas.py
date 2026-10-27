@@ -14,14 +14,14 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from pigrocrm.core.fiscal.pack import PACK_IT_FLAT_RATE, PACK_NON_IT
+from pigrocrm.core.fiscal.pack import PACK_IT_FLAT_RATE, PACK_IT_STANDARD, PACK_NON_IT
 from pigrocrm.core.validation import SafeStr
 
 # The packs a profile may point at (REB-619): `pack.py` owns them, this is the shape
 # the API and MCP accept. A `Literal` and not a free string, so a typo is refused by
 # the schema instead of reaching `resolve_pack`'s `KeyError` at the first emission.
-PackId = Literal["it-flat-rate", "non-it"]
-assert set(get_args(PackId)) == {PACK_IT_FLAT_RATE, PACK_NON_IT}  # noqa: S101
+PackId = Literal["it-flat-rate", "it-standard", "non-it"]
+assert set(get_args(PackId)) == {PACK_IT_FLAT_RATE, PACK_IT_STANDARD, PACK_NON_IT}  # noqa: S101
 
 # `RF01`..`RF19`, the codes FPR12's own `RegimeFiscaleType` enumerates. `.fullmatch`
 # is what the callers use, never `.match` with `$`: "RF19\n" is five characters and
@@ -93,6 +93,13 @@ DEFAULT_COEFFICIENTE_REDDITIVITA = Decimal("67.00")
 DEFAULT_ALIQUOTA_IMPOSTA_SOSTITUTIVA = Decimal("5.00")
 DEFAULT_ALIQUOTA_INPS = Decimal("26.07")
 
+# The ordinary regime (REB-760): `RF01` is FPR12's code for it, and 22% is the standard VAT
+# rate (art. 16, comma 1, DPR 633/1972), the profile's proposed default and never a
+# constant of an invoice: a line takes the rate it is given. The same figure mastro's
+# `it-standard` pack carries as its `defaultTreatment`.
+CODICE_REGIME_ORDINARIO = "RF01"
+DEFAULT_ALIQUOTA_IVA_ORDINARIA = Decimal("22.00")
+
 # A percentage: `Numeric(5, 2)` alone would accept `999.99`, and a rate outside 0..100 is
 # not a rate. `decimal_places` matters as much -- `1.005` would otherwise be rounded by
 # Postgres into a value nobody asked for.
@@ -146,24 +153,33 @@ class FiscalProfileUpsert(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def _foreign_defaults(cls, data: Any) -> Any:
-        """On the `non-it` pack a key the caller leaves out is empty, not the
-        forfettario's (REB-619): `natura_default` «N2.2», the bollo on and the three
-        income parameters are Italian facts, and a foreign profile saved with them would
-        be refused («una natura con un'aliquota diversa da zero») or, worse, would have
-        the fiscal estimate compute Italian taxes. The rule lives here, where the API
-        and MCP deserialise, and not only in the SPA's form."""
-        if isinstance(data, dict) and data.get("pack_id") == PACK_NON_IT:
-            data = dict(data)
-            for key, value in (
-                ("natura_default", None),
-                ("riferimento_normativo", None),
-                ("applica_bollo", False),
-                ("coefficiente_redditivita", None),
-                ("aliquota_imposta_sostitutiva", None),
-                ("aliquota_inps", None),
-            ):
-                data.setdefault(key, value)
+    def _pack_defaults(cls, data: Any) -> Any:
+        """A key the caller leaves out defaults to the pack's own value, not the
+        forfettario's: `natura_default` «N2.2», the bollo on and the three income
+        parameters are the forfettario's facts, and a profile on another pack saved with
+        them would be refused («una natura con un'aliquota diversa da zero») or, worse,
+        would have the fiscal estimate compute the forfettario's taxes for an azienda it
+        does not apply to. `non-it` (REB-619) is empty of all of them; `it-standard`
+        (REB-760) is the ordinary regime, `RF01` at the standard VAT rate. The rule lives
+        here, where the API and MCP deserialise, and not only in the SPA's form."""
+        if not isinstance(data, dict):
+            return data
+        pack_id = data.get("pack_id")
+        if pack_id not in (PACK_NON_IT, PACK_IT_STANDARD):
+            return data
+        data = dict(data)
+        if pack_id == PACK_IT_STANDARD:
+            data.setdefault("codice_regime", CODICE_REGIME_ORDINARIO)
+            data.setdefault("aliquota_iva_default", DEFAULT_ALIQUOTA_IVA_ORDINARIA)
+        for key, value in (
+            ("natura_default", None),
+            ("riferimento_normativo", None),
+            ("applica_bollo", False),
+            ("coefficiente_redditivita", None),
+            ("aliquota_imposta_sostitutiva", None),
+            ("aliquota_inps", None),
+        ):
+            data.setdefault(key, value)
         return data
 
     # Optional in the schema and required by the service on an Italian pack
@@ -264,10 +280,12 @@ class FiscalProfileRead(BaseModel):
 
 
 __all__ = [
+    "CODICE_REGIME_ORDINARIO",
     "CODICE_REGIME_RE",
     "PackId",
     "DEFAULT_ALIQUOTA_IMPOSTA_SOSTITUTIVA",
     "DEFAULT_ALIQUOTA_INPS",
+    "DEFAULT_ALIQUOTA_IVA_ORDINARIA",
     "DEFAULT_COEFFICIENTE_REDDITIVITA",
     "DEFAULT_IMPORTO_BOLLO",
     "DEFAULT_RIFERIMENTO_NORMATIVO",

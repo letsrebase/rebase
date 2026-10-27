@@ -10,13 +10,19 @@ ceiling engine and a rivalsa line need: no `TaxTreatment`/`resolveTaxTreatment`
 machinery, since `FiscalProfile.natura_default`/`aliquota_iva_default` already solve
 that problem for the one regime this product supports.
 
-One shipped pack, `IT_FLAT_RATE_PACK`, the currently-in-force version
+Three shipped packs. `IT_FLAT_RATE_PACK` is the forfettario, the currently-in-force version
 (`it-flat-rate.ts`'s `effectiveFrom: '2023-01-01'`, not the pre-2023
 `itFlatRatePackV0`, since PigroCRM has no history to reconcile against an older
-regime). `FiscalProfile.pack_id`/`pack_version` is the pointer to *which* pack
+regime). `IT_STANDARD_PACK` is Italy's ordinary regime (mastro's `it-standard.ts`):
+no revenue ceiling and no statutory charge, because the forfettario's thresholds and
+its rivalsa are facts of that regime alone. `NON_IT_PACK` is mastro's `generic` pack
+under the name this product gave it (REB-619): a company outside Italy, no ceiling,
+no charge, no national invoice format; there is no second no-ceiling pack beside it,
+since one that declared nothing and did nothing else would only be a duplicate.
+`FiscalProfile.pack_id`/`pack_version` is the pointer to *which* pack
 governs -- a plain string pair, no historicisation, matching `FiscalProfile`'s own
 un-historicised shape -- read once by the ceiling service at evaluation time. A
-future second pack is a new module and a new registry entry here, never a branch on
+further pack is a new module and a new registry entry here, never a branch on
 `FiscalProfile.codice_regime` inside the ceiling or rivalsa logic (mastro's own
 invariant 1: no country-specific logic outside a jurisdiction pack).
 """
@@ -27,9 +33,10 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Final, Literal
 
-# The two pack ids, as literals so a schema can name them in a `Literal` type
+# The pack ids, as literals so a schema can name them in a `Literal` type
 # (`fiscal/schemas.py::PackId`) and a profile cannot point at a pack that does not exist.
 PACK_IT_FLAT_RATE: Final = "it-flat-rate"
+PACK_IT_STANDARD: Final = "it-standard"
 PACK_NON_IT: Final = "non-it"
 
 # The only basis this pack's ceilings use today -- mastro's `cash_received_calendar_year`
@@ -118,6 +125,10 @@ class FiscalPack:
     version: str
     ceilings: tuple[Ceiling, ...]
     charges: tuple[StatutoryCharge, ...]
+    # Whether the pack's regime has the income estimate (`analytics/fiscal.py`): the
+    # forfettario's coefficient, substitute tax and INPS. No other pack has one, and the
+    # economic overview draws no estimate for them instead of a card of zeros (REB-760).
+    stima_reddito: bool = False
 
     def charge(self, charge_id: str) -> StatutoryCharge:
         for charge in self.charges:
@@ -190,6 +201,7 @@ IT_FLAT_RATE_PACK = FiscalPack(
         ),
     ),
     charges=(RIVALSA_INPS,),
+    stima_reddito=True,
 )
 
 # A company established outside Italy (REB-619, spec 2026-10-03 §1.3): no ceiling,
@@ -199,8 +211,19 @@ IT_FLAT_RATE_PACK = FiscalPack(
 # are never FatturaPA, so `codice_regime` is `NULL` on a profile that points here.
 NON_IT_PACK = FiscalPack(id=PACK_NON_IT, version="1", ceilings=(), charges=())
 
+# Italy's ordinary regime, RF01 (mastro's `it-standard.ts`: `ceilings: []`, `charges: []`).
+# No ceiling, because the 85,000 and 100,000 euro thresholds are the forfettario's
+# (l. 190/2014, commi 54 and 71) and an ordinary azienda is held to neither. No statutory
+# charge either, as in mastro: the rivalsa INPS this product ships is the forfettario's
+# zero-VAT line, and on an ordinary invoice the surcharge would take VAT and join the
+# taxable base, a rule this product has not been given, so a contract's
+# `applies_social_charge` election adds no line here (`rivalsa_line_for_contract`).
+# The regime strategy (`fiscal/regime.py::ORDINARIO`) is selected by this pack's id.
+IT_STANDARD_PACK = FiscalPack(id=PACK_IT_STANDARD, version="1", ceilings=(), charges=())
+
 _PACKS: dict[tuple[str, str], FiscalPack] = {
     (IT_FLAT_RATE_PACK.id, IT_FLAT_RATE_PACK.version): IT_FLAT_RATE_PACK,
+    (IT_STANDARD_PACK.id, IT_STANDARD_PACK.version): IT_STANDARD_PACK,
     (NON_IT_PACK.id, NON_IT_PACK.version): NON_IT_PACK,
 }
 
@@ -208,8 +231,7 @@ _PACKS: dict[tuple[str, str], FiscalPack] = {
 def resolve_pack(pack_id: str, pack_version: str) -> FiscalPack:
     """The pack `FiscalProfile.pack_id`/`pack_version` points at, or `KeyError`
     naming the pair -- the one place a pack is looked up by its identity, mirroring
-    mastro's own registry (`registry.ts`) trimmed to a plain dict, since this port
-    ships exactly one pack."""
+    mastro's own registry (`registry.ts`) trimmed to a plain dict."""
 
     try:
         return _PACKS[(pack_id, pack_version)]
@@ -227,8 +249,10 @@ def known_charge_markers() -> frozenset[str]:
 
 __all__ = [
     "IT_FLAT_RATE_PACK",
+    "IT_STANDARD_PACK",
     "NON_IT_PACK",
     "PACK_IT_FLAT_RATE",
+    "PACK_IT_STANDARD",
     "PACK_NON_IT",
     "RIVALSA_INPS",
     "RIVALSA_INPS_CHARGE_ID",

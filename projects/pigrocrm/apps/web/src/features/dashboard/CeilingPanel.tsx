@@ -3,6 +3,9 @@ import { RadioGroup } from 'radix-ui'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { StatusPill } from '@/components/StatusPill'
 import { useDeals, useStages, type Deal } from '@/features/deals/queries'
+import { formatCapPercent } from '@/features/contracts/labels'
+import { useCappedContracts, type Contract } from '@/features/contracts/queries'
+import { formatDate } from '@/features/invoices/format'
 import { useLegalEntity } from '@/lib/legalEntity'
 import { toProblem } from '@/lib/api'
 import { Button } from '@rebase/ui/button'
@@ -20,6 +23,9 @@ import {
   type CeilingStatus,
 } from './queries'
 import { simulatorRequest, yearOfIso, type SimulatorFields } from './simulatorInput'
+
+/** A share the server computed (0..1) as the percentage it is: never scaled here. */
+const sharePercent = new Intl.NumberFormat('it-IT', { style: 'percent', maximumFractionDigits: 2 })
 
 /**
  * What crossing a ceiling does, in the words the regime uses. Keyed on the API's closed
@@ -173,16 +179,59 @@ function DealPicker({
   )
 }
 
+/**
+ * The contract's cap read against the addition: the customer's share of the azienda's
+ * invoiced revenue over the contract's anniversary year, before and after, with the cap
+ * on the same bar. Every figure is the server's (`tetto_contratto`); this prints them.
+ */
+function CapVerdict({ cap }: { cap: NonNullable<CeilingSimulation['tetto_contratto']> }) {
+  return (
+    <div role="group" aria-label={`Tetto di ${cap.titolo}`} className="space-y-1.5">
+      <p className="flex flex-wrap items-baseline justify-between gap-2 text-sm">
+        <span className="font-medium">
+          Tetto del contratto «{cap.titolo}» · anno dal {formatDate(cap.periodo_da)} al{' '}
+          {formatDate(cap.periodo_a)}
+        </span>
+        <StatusPill tone={cap.rientra ? 'ink' : 'danger'}>
+          {cap.rientra ? 'Ci sta' : 'Non ci sta'}
+        </StatusPill>
+      </p>
+      <div className="flex items-center gap-3">
+        <Meter
+          ratio={cap.quota_simulata}
+          tone={FILL_TONE}
+          color={fill(!cap.rientra, null)}
+          mark={cap.tetto}
+        />
+        <span className="shrink-0 text-sm tabular-nums text-muted-foreground">
+          {sharePercent.format(cap.tetto)}
+        </span>
+      </div>
+      <p className="text-sm">
+        Il cliente passerebbe dal {sharePercent.format(cap.quota_attuale)} al{' '}
+        {sharePercent.format(cap.quota_simulata)} dei ricavi, tetto {sharePercent.format(cap.tetto)}.
+      </p>
+    </div>
+  )
+}
+
+/**
+ * The answer to «ci sta?». The overall verdict is the conjunction of every ceiling and of
+ * the contract's cap: a pack ceiling with room left must not say «Ci sta.» over a cap the
+ * addition would reach. With no ceilings (the ordinary regime) the cap is all there is.
+ */
 function Verdict({ simulation }: { simulation: CeilingSimulation }) {
-  if (simulation.soglie.length === 0) return null
-  const fits = simulation.soglie.every((ceiling) => ceiling.rientra)
+  const cap = simulation.tetto_contratto ?? null
+  if (simulation.soglie.length === 0 && cap === null) return null
+  const fits = simulation.soglie.every((ceiling) => ceiling.rientra) && (cap === null || cap.rientra)
   return (
     <div className="space-y-2 border-t pt-4">
       <p className="text-base font-semibold">
         {fits ? 'Ci sta.' : 'Non ci sta.'}{' '}
         <span className="font-normal">
-          Aggiungendo {money(simulation.aggiunta_sintetica)} ai ricavi incassati del{' '}
-          {simulation.anno}:
+          {simulation.soglie.length > 0
+            ? `Aggiungendo ${money(simulation.aggiunta_sintetica)} ai ricavi incassati del ${simulation.anno}:`
+            : `Aggiungendo ${money(simulation.aggiunta_sintetica)} ai ricavi del cliente:`}
         </span>
       </p>
       <ul className="space-y-3">
@@ -218,7 +267,63 @@ function Verdict({ simulation }: { simulation: CeilingSimulation }) {
             ) : null}
           </li>
         ))}
+        {cap !== null ? (
+          <li>
+            <CapVerdict cap={cap} />
+          </li>
+        ) : null}
       </ul>
+    </div>
+  )
+}
+
+const NO_CONTRACT = '__nessuno__'
+
+/**
+ * The active contracts of the azienda that cap the customer's share, to read the same
+ * addition against. Optional beside the ceilings; the only thing to ask when the azienda
+ * has none (`required`).
+ */
+function ContractPicker({
+  id,
+  contracts,
+  value,
+  required,
+  onSelect,
+}: {
+  id: string
+  contracts: Contract[]
+  value: string
+  required: boolean
+  onSelect: (id: string) => void
+}) {
+  const chosen = contracts.find((contract) => contract.id === value)
+  return (
+    <div className="space-y-1">
+      <Select
+        value={value}
+        onValueChange={(next) => onSelect(next === NO_CONTRACT ? '' : next)}
+      >
+        <SelectTrigger id={id} className="w-full" aria-label="Contratto con un tetto">
+          <SelectValue placeholder={required ? 'Scegli un contratto' : 'Nessun contratto'} />
+        </SelectTrigger>
+        <SelectContent>
+          {required ? null : <SelectItem value={NO_CONTRACT}>Nessun contratto</SelectItem>}
+          {contracts.map((contract) => (
+            <SelectItem key={contract.id} value={contract.id}>
+              {contract.titolo}
+              {contract.tetto_quota_cliente === null
+                ? ''
+                : ` · tetto ${formatCapPercent(contract.tetto_quota_cliente)}`}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {chosen ? (
+        <p className="text-xs text-muted-foreground">
+          Letto sull’anno di anniversario del contratto che contiene la data dell’incasso.
+        </p>
+      ) : null}
     </div>
   )
 }
@@ -234,13 +339,29 @@ const SOURCES = [
  * (or hours and a rate) typed here; the date is when the money would arrive, because the
  * ceiling counts what is collected in a calendar year, and its year is the year asked.
  *
+ * A contract with a cap on the customer's share (REB-761) can be chosen too: the same
+ * addition and date are then read against that cap, over the contract's own anniversary
+ * year. Where the azienda has no ceilings (`hasCeilings` false) the cap is the only thing
+ * to read, so the contract is required.
+ *
  * Asks on «Simula», not on every keystroke, and keeps the answer only while it is on
  * screen. The server does the sums (REB-373); this form translates what an Italian
  * keyboard produces into the decimal the API reads and prints what comes back.
  */
-function Simulator({ anno, aziendaId }: { anno: number; aziendaId?: string }) {
+function Simulator({
+  anno,
+  aziendaId,
+  hasCeilings,
+  contracts,
+}: {
+  anno: number
+  aziendaId?: string
+  hasCeilings: boolean
+  contracts: Contract[]
+}) {
   const [source, setSource] = useState<SimulatorFields['source']>('importo')
   const [dealId, setDealId] = useState('')
+  const [contractId, setContractId] = useState('')
   const attempts = useRef(0)
   const latestDeal = useRef<Deal | null>(null)
   const trackDeal = useCallback((current: Deal | null) => {
@@ -280,12 +401,16 @@ function Simulator({ anno, aziendaId }: { anno: number; aziendaId?: string }) {
       ore,
       tariffa,
       deal: dealId === '' ? null : latestDeal.current,
+      data,
+      contractId,
     })
+    const missingContract = !hasCeilings && contractId === ''
     const year = yearOfIso(data)
-    if (!request.ok || year === null) {
+    if (!request.ok || year === null || missingContract) {
       setErrors({
         ...(request.ok ? {} : request.errors),
         ...(year === null ? { data: 'Scegli una data tra il 2000 e il 2200.' } : {}),
+        ...(missingContract ? { contratto: 'Scegli un contratto con un tetto.' } : {}),
       })
       setAsked(null)
       return
@@ -300,8 +425,9 @@ function Simulator({ anno, aziendaId }: { anno: number; aziendaId?: string }) {
       <div>
         <h3 className="font-semibold">Ci sta?</h3>
         <p className="text-sm text-muted-foreground">
-          Aggiungi ai ricavi incassati dell’anno la stima di un lavoro e guarda se resti sotto le
-          soglie. Non viene salvato niente.
+          {hasCeilings
+            ? 'Aggiungi ai ricavi incassati dell’anno la stima di un lavoro e guarda se resti sotto le soglie. Non viene salvato niente.'
+            : 'Aggiungi ai ricavi del cliente la stima di un lavoro e guarda se resta sotto il tetto del contratto. Non viene salvato niente.'}
         </p>
       </div>
 
@@ -382,6 +508,20 @@ function Simulator({ anno, aziendaId }: { anno: number; aziendaId?: string }) {
         </div>
       )}
 
+      {contracts.length > 0 ? (
+        <div className="space-y-2">
+          <Label htmlFor={`${uid}-contratto`}>Contratto con un tetto</Label>
+          <ContractPicker
+            id={`${uid}-contratto`}
+            contracts={contracts}
+            value={contractId}
+            required={!hasCeilings}
+            onSelect={edit(setContractId)}
+          />
+          {errors.contratto ? <FieldError>{errors.contratto}</FieldError> : null}
+        </div>
+      ) : null}
+
       <div className="flex flex-wrap items-end gap-3">
         <div className="space-y-2">
           <Label htmlFor={`${uid}-data`}>Incasso previsto il</Label>
@@ -393,7 +533,11 @@ function Simulator({ anno, aziendaId }: { anno: number; aziendaId?: string }) {
             className="w-44"
             aria-invalid={errors.data ? true : undefined}
           />
-          <p className="text-xs text-muted-foreground">Conta l’anno solare dell’incasso.</p>
+          <p className="text-xs text-muted-foreground">
+            {hasCeilings
+              ? 'Conta l’anno solare dell’incasso.'
+              : 'Conta l’anno di anniversario del contratto che contiene questa data.'}
+          </p>
           {errors.data ? <FieldError>{errors.data}</FieldError> : null}
         </div>
         <Button type="submit" disabled={simulation.isFetching}>
@@ -425,12 +569,15 @@ function FieldError({ children }: { children: string }) {
 /**
  * Room left under each ceiling of the forfettario, and the «ci sta?» simulator under it
  * (REB-755). What the server answers decides everything: an azienda the thresholds do not
- * apply to (the ordinary regime, a company abroad) gets an empty list and this draws
- * nothing at all, not an empty box that says it has nothing.
+ * apply to (the ordinary regime, a company abroad) gets an empty list of ceilings. It then
+ * draws only the simulator, under «Tetti dei contratti», when one of its active contracts
+ * caps the customer's share (REB-761), and nothing at all when none does, not an empty box
+ * that says it has nothing.
  *
  * Beside the estimate, one azienda's and read from its own `anno`, which is the year the
  * dashboard's period names. In «tutte» the tab draws one panel per azienda, and one without
- * a profile (the estimate card says so once) or without ceilings draws nothing.
+ * a profile (the estimate card says so once) or with neither ceilings nor capped contracts
+ * draws nothing.
  */
 export function CeilingPanel({
   anno,
@@ -449,6 +596,7 @@ export function CeilingPanel({
   // azienda a question typed for the old one.
   const { selected } = useLegalEntity()
   const azienda = aziendaId ?? selected
+  const capped = useCappedContracts(azienda)
 
   if (headroom.isError) {
     // No profile (404): the estimate card above already says so, in the place that owns
@@ -457,29 +605,55 @@ export function CeilingPanel({
     return <QueryErrorBanner error={headroom.error} />
   }
   if (headroom.isLoading || !headroom.data) return <Skeleton className="h-48 w-full" />
-  if (headroom.data.soglie.length === 0) return null
+  const hasCeilings = headroom.data.soglie.length > 0
+  const contracts = capped.data ?? []
+  if (!hasCeilings) {
+    // Without ceilings there is only the contracts' caps to show: wait for them, say why
+    // they could not be read, and draw nothing when no active contract has one.
+    if (capped.isPending) return <Skeleton className="h-48 w-full" />
+    if (capped.isError) return <QueryErrorBanner error={capped.error} />
+    if (contracts.length === 0) return null
+  }
 
   return (
     <Card>
       <CardContent className="space-y-4 pt-6">
         <div>
           <h2 className="font-semibold">
-            Soglie del forfettario {anno}
+            {hasCeilings ? `Soglie del forfettario ${anno}` : 'Tetti dei contratti'}
             {titolo ? ` · ${titolo}` : ''}
           </h2>
-          <p className="text-sm text-muted-foreground">
-            Contano gli incassi dell’anno solare, rivalsa compresa: è quanto resta da incassare
-            prima di ciascuna soglia.
-          </p>
+          {hasCeilings ? (
+            <p className="text-sm text-muted-foreground">
+              Contano gli incassi dell’anno solare, rivalsa compresa: è quanto resta da incassare
+              prima di ciascuna soglia.
+            </p>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Alcuni contratti attivi limitano la quota del cliente sui ricavi fatturati
+              dell’azienda, sull’anno di anniversario del contratto.
+            </p>
+          )}
         </div>
-        <div className="divide-y">
-          {headroom.data.soglie.map((ceiling) => (
-            <CeilingRow key={ceiling.id} ceiling={ceiling} />
-          ))}
-        </div>
+        {hasCeilings ? (
+          <div className="divide-y">
+            {headroom.data.soglie.map((ceiling) => (
+              <CeilingRow key={ceiling.id} ceiling={ceiling} />
+            ))}
+          </div>
+        ) : null}
+        {/* With ceilings the page still draws; a contracts read that failed must not look like
+            «no contract has a cap», or «Ci sta» would be answered from the ceilings alone. */}
+        {hasCeilings && capped.isError ? <QueryErrorBanner error={capped.error} /> : null}
         {/* Keyed on the year so a new period starts the form over: a date typed for 2026
             means nothing against 2027's room. */}
-        <Simulator key={`${anno}:${azienda ?? ''}`} anno={anno} aziendaId={aziendaId} />
+        <Simulator
+          key={`${anno}:${azienda ?? ''}`}
+          anno={anno}
+          aziendaId={aziendaId}
+          hasCeilings={hasCeilings}
+          contracts={contracts}
+        />
       </CardContent>
     </Card>
   )

@@ -244,6 +244,23 @@ def test_a_contract_without_an_end_date_or_archived_is_not_expiring(world: World
     assert evaluation.reminders == ()
 
 
+def test_a_renewed_contract_is_neither_expiring_nor_in_its_renewal_window(world: World) -> None:
+    """REB-763: once a successor exists the renewal is decided, so neither the end nor the
+    deadline of the contract it replaces is a thing to be reminded of; its successor, which
+    ends a year later, raises nothing yet."""
+    renewing = _renewing(world, 20)
+    assert world.severity("contract_expiring", renewing.id) is not None
+    assert world.severity("renewal_window_open", renewing.id) is not None
+
+    successor = world.contract(inizio=renewing.fine + timedelta(days=1), fine=_ahead(500))
+    successor.contratto_precedente_id = renewing.id
+    world.session.flush()
+
+    assert world.severity("contract_expiring", renewing.id) is None
+    assert world.severity("renewal_window_open", renewing.id) is None
+    assert world.severity("contract_expiring", successor.id) is None
+
+
 def test_contract_expiring_reads_the_end_date_each_pass(world: World) -> None:
     contract = world.contract(fine=_ahead(20))
     assert world.severity("contract_expiring", contract.id) == "serious"

@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { toast } from '@rebase/ui/sonner'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
+import { StatusPill } from '@/components/StatusPill'
 import { Button } from '@rebase/ui/button'
 import { Card, CardContent } from '@rebase/ui/card'
 import { Input } from '@rebase/ui/input'
@@ -34,12 +35,26 @@ function addMonths(iso: string, months: number): string {
   return toIsoDate(new Date(year ?? 0, (month ?? 1) - 1 + months, day ?? 1))
 }
 
-function Figure({ label, value, hint }: { label: string; value: string; hint?: string }) {
+function Figure({
+  label,
+  value,
+  hint,
+  aside,
+}: {
+  label: string
+  value: string
+  hint?: string
+  /** What sits on the figure's line, after the value: a cap and where the figure stands. */
+  aside?: ReactNode
+}) {
   return (
     <div>
       <dt className="text-sm text-muted-foreground">{label}</dt>
       <dd>
-        <span className="text-lg font-semibold tabular-nums">{value}</span>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span className="text-lg font-semibold tabular-nums">{value}</span>
+          {aside}
+        </div>
         {hint !== undefined && <p className="text-xs text-muted-foreground">{hint}</p>}
       </dd>
     </div>
@@ -255,6 +270,19 @@ export function RenewalSection({ contract }: { contract: Contract }) {
                         label={`Anno dal ${formatDate(concentration.data.periodo_da)} al ${formatDate(concentration.data.periodo_a)}${concentration.data.valute.length > 1 ? ` (${row.divisa})` : ''}`}
                         value={share.format(row.quota)}
                         hint={`${formatAmount(row.ricavi_cliente, row.divisa)} su ${formatAmount(row.ricavi_totali, row.divisa)} fatturati`}
+                        aside={
+                          concentration.data.soglia_da_contratto &&
+                          concentration.data.soglia != null ? (
+                            <>
+                              <span className="text-sm text-muted-foreground">
+                                Tetto {share.format(concentration.data.soglia)}
+                              </span>
+                              <StatusPill tone={row.superata ? 'danger' : 'ink'}>
+                                {row.superata ? 'Tetto raggiunto' : 'Sotto il tetto'}
+                              </StatusPill>
+                            </>
+                          ) : undefined
+                        }
                       />
                     ))}
                   </dl>

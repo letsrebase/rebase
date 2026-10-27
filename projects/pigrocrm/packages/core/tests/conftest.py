@@ -516,14 +516,9 @@ def rf01_fiscal_profile(db_session: Session) -> None:
     from pigrocrm.core.fiscal.service import FiscalProfileService
 
     FiscalProfileService(db_session).upsert(
-        FiscalProfileUpsert(
-            codice_regime="RF01",
-            aliquota_iva_default=Decimal("22.00"),
-            # `None` on both, and required to be: the ordinary regime pairs no `Natura`
-            # with a non-zero rate, and `FiscalProfileService._check` refuses the pair.
-            natura_default=None,
-            riferimento_normativo=None,
-        ),
+        # The ordinary regime's own pack (REB-760), which proposes `RF01`, 22% and no
+        # `Natura`: the ordinary regime pairs none with a non-zero rate.
+        FiscalProfileUpsert(pack_id="it-standard"),
         Actor(id=None, type="system", role="admin"),
     )
 

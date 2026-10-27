@@ -1,4 +1,5 @@
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -1726,3 +1727,193 @@ def test_0051_adds_the_invitation_mail_columns_and_its_downgrade_drops_them(
         assert _invitation_mail_columns(url) == set()
         upgrade(config, "0051")
         assert _invitation_mail_columns(url) == mail
+
+
+def test_0058_repoints_an_ordinary_profile_at_its_own_pack_and_clears_the_forfettarios_figures(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-760 over real rows planted at 0057: an `RF01` profile left on the forfettario's
+    pack with its coefficients, and a forfettario beside it. The first moves to
+    `it-standard` with the forfettario's figures and the bollo cleared; the second is
+    untouched; the downgrade points the first back."""
+    ordinary, forfettario = (
+        "00000000-0000-7000-8000-0000000000b1",
+        "00000000-0000-7000-8000-0000000000b2",
+    )
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0057")
+        engine: Engine = create_engine(url)
+        with engine.begin() as connection:
+            for azienda, nome, regime, rate, bollo, params in (
+                (ordinary, "ordinaria", "RF01", "22.00", "true", ("67.00", "5.00", "26.07")),
+                (forfettario, "forfettaria", "RF19", "0.00", "true", ("78.00", "5.00", "26.07")),
+            ):
+                connection.execute(
+                    text(
+                        """
+                        INSERT INTO emitter_profile (id, nome, predefinita, attiva,
+                            ragione_sociale, nazione, created_at, updated_at)
+                        VALUES (:id, :nome, false, true, :nome, 'IT', now(), now())
+                        """
+                    ),
+                    {"id": azienda, "nome": nome},
+                )
+                connection.execute(
+                    text(
+                        f"""
+                        INSERT INTO fiscal_profile (id, azienda_id, codice_regime,
+                            aliquota_iva_default, applica_bollo, soglia_bollo, importo_bollo,
+                            condizioni_pagamento, modalita_pagamento, giorni_scadenza,
+                            coefficiente_redditivita, aliquota_imposta_sostitutiva,
+                            aliquota_inps, natura_default, riferimento_normativo, pack_id,
+                            pack_version, created_at, updated_at)
+                        VALUES (gen_random_uuid(), :azienda, :regime, :rate, {bollo}, 77.47,
+                            2.00, 'TP02', 'MP05', 30, :c, :s, :i, 'N2.2', 'L. 190/2014',
+                            'it-flat-rate', '1', now(), now())
+                        """
+                    ),
+                    {
+                        "azienda": azienda,
+                        "regime": regime,
+                        "rate": rate,
+                        "c": params[0],
+                        "s": params[1],
+                        "i": params[2],
+                    },
+                )
+        engine.dispose()
+
+        def read() -> dict[str, tuple[Any, ...]]:
+            engine = create_engine(url)
+            try:
+                with engine.connect() as connection:
+                    rows = connection.execute(
+                        text(
+                            "SELECT azienda_id::text, pack_id, applica_bollo, "
+                            "coefficiente_redditivita, aliquota_imposta_sostitutiva, "
+                            "aliquota_inps, natura_default, riferimento_normativo "
+                            "FROM fiscal_profile"
+                        )
+                    ).all()
+                return {row[0]: tuple(row[1:]) for row in rows}
+            finally:
+                engine.dispose()
+
+        upgrade(config, "0058")
+        after = read()
+        assert after[ordinary] == ("it-standard", False, None, None, None, None, None)
+        assert after[forfettario] == (
+            "it-flat-rate",
+            True,
+            Decimal("78.00"),
+            Decimal("5.00"),
+            Decimal("26.07"),
+            "N2.2",
+            "L. 190/2014",
+        )
+
+        downgrade(config, "0057")
+        assert read()[ordinary][0] == "it-flat-rate"
+        assert read()[forfettario][0] == "it-flat-rate"
+
+
+def _cap_shape(url: str) -> tuple[set[str], set[str]]:
+    engine: Engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            columns = set(
+                connection.execute(
+                    text(
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_name = 'contracts' AND column_name = 'tetto_quota_cliente'"
+                    )
+                ).scalars()
+            )
+            checks = set(
+                connection.execute(
+                    text(
+                        "SELECT conname FROM pg_constraint "
+                        "WHERE conname = 'ck_contracts_tetto_quota_cliente_range'"
+                    )
+                ).scalars()
+            )
+        return columns, checks
+    finally:
+        engine.dispose()
+
+
+def test_0059_adds_the_share_cap_column_and_its_range_check_both_ways(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-761: one nullable column and one CHECK, no backfill, both ways."""
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0058")
+        assert _cap_shape(url) == (set(), set())
+        upgrade(config, "0059")
+        assert _cap_shape(url) == (
+            {"tetto_quota_cliente"},
+            {"ck_contracts_tetto_quota_cliente_range"},
+        )
+        downgrade(config, "0058")
+        assert _cap_shape(url) == (set(), set())
+        upgrade(config, "0059")
+        assert _cap_shape(url)[1] == {"ck_contracts_tetto_quota_cliente_range"}
+
+
+def _clause_notes_shape(url: str) -> tuple[set[str], bool, set[str]]:
+    engine: Engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            columns = set(
+                connection.execute(
+                    text(
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_name = 'clause_notes'"
+                    )
+                ).scalars()
+            )
+            forced = bool(
+                connection.execute(
+                    text("SELECT relforcerowsecurity FROM pg_class WHERE relname = 'clause_notes'")
+                ).scalar()
+            )
+            policies = set(
+                connection.execute(
+                    text("SELECT policyname FROM pg_policies WHERE tablename = 'clause_notes'")
+                ).scalars()
+            )
+        return columns, forced, policies
+    finally:
+        engine.dispose()
+
+
+def test_0060_creates_clause_notes_under_the_aziende_policy_and_its_downgrade_drops_it(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-762: one table keyed on a contract, with the row-level policy every table that
+    reaches an azienda carries, forced; no backfill, both ways."""
+    columns = {
+        "id",
+        "contract_id",
+        "riferimento_clausola",
+        "testo_letterale",
+        "interpretazione_adottata",
+        "note",
+        "created_at",
+        "updated_at",
+    }
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0059")
+        assert _clause_notes_shape(url) == (set(), False, set())
+        upgrade(config, "0060")
+        assert _clause_notes_shape(url) == (columns, True, {"ambito_azienda"})
+        downgrade(config, "0059")
+        assert _clause_notes_shape(url) == (set(), False, set())
+        upgrade(config, "0060")
+        assert _clause_notes_shape(url)[0] == columns

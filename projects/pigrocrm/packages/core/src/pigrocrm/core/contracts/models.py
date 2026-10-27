@@ -61,9 +61,8 @@ class Contract(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     purpose -- its exact value set is the implementing issue's own concern to pin
     against real engagements, not invented here (spec §3's own note).
 
-    `contratto_precedente_id` is the renewal chain (`contract.ts:244-261`) and is
-    deliberately left unset by this spike: nothing here writes it. The column exists
-    so a later, dedicated renewal-automation issue has somewhere to write.
+    `contratto_precedente_id` is the renewal chain (`contract.ts:244-261`): written only
+    by `ContractService.renew` (REB-763), unique, so a contract is renewed once.
     """
 
     __tablename__ = "contracts"
@@ -103,6 +102,12 @@ class Contract(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     applies_social_charge: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
+    # REB-761: the share of the azienda's invoiced revenue its customer must not reach over this
+    # contract's own anniversary year, as a percentage the way its owner reads it
+    # (`50.00`, the `FiscalProfile` rates' own shape), `NULL` for no cap. A clause of the
+    # contract and not of the regime (mastro's invariant 2): it survives a change of pack.
+    # What it is compared with is `ContractService.concentration_cap`'s share.
+    tetto_quota_cliente: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), default=None)
     # mastro's `ExpensePolicy` (`contract.ts:90-99`), kept as a tagged JSONB union
     # rather than flattened: unlike payment terms, this one genuinely needs a payload
     # (a cap amount) on only one of its variants. Not deeply validated here -- the
@@ -136,6 +141,12 @@ class Contract(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
             name="ck_contracts_preavviso_rinnovo_required",
         ),
         CheckConstraint("fine IS NULL OR inizio <= fine", name="ck_contracts_fine_ordered"),
+        # A cap of 0 forbids the customer and one of 100 never binds: neither is a clause.
+        CheckConstraint(
+            "tetto_quota_cliente IS NULL "
+            "OR (tetto_quota_cliente > 0 AND tetto_quota_cliente < 100)",
+            name="ck_contracts_tetto_quota_cliente_range",
+        ),
         Index("ix_contracts_custom_fields", "custom_fields", postgresql_using="gin"),
         # Residuo R9: one `(column, id)` B-tree per key CONTRACT_SORTS admits.
         Index("ix_contracts_created_at_id", "created_at", "id"),
@@ -248,3 +259,32 @@ class RenewalAssumption(Base, PrimaryKeyMixin, TimestampMixin):
             "volume_atteso >= 0", name="ck_renewal_assumptions_volume_atteso_non_negative"
         ),
     )
+
+
+class ClauseNote(Base, PrimaryKeyMixin, TimestampMixin):
+    """A reading of one clause of a contract, written down next to the words it was read
+    from -- mastro's `clause_note` (`clause-note.ts`), REB-762.
+
+    A real clause sometimes admits more than one honest reading (a renewal clause that is
+    both «ends unless the client elects to renew» and «either party may refuse renewal
+    with notice»), and the system must not pretend to know which governs. This is where
+    the interpretation actually adopted lives, with the verbatim text it came from, so a
+    later dispute rereads a decision instead of re-guessing one. It is read with the
+    contract (`ContractDetail.note_clausole`), so an agent that opens the contract sees
+    what the person decided about its clauses.
+
+    Owned by its contract, like a rate card: no `SoftDeleteMixin` and no delete, a wrong
+    note is corrected by editing it. `riferimento_clausola` is free text, since numbering
+    follows whatever convention the contract itself uses.
+    """
+
+    __tablename__ = "clause_notes"
+
+    contract_id: Mapped[UUID] = mapped_column(
+        ForeignKey("contracts.id"), nullable=False, index=True
+    )
+    # e.g. "Art. 8.3 Rinnovo".
+    riferimento_clausola: Mapped[str] = mapped_column(String(200), nullable=False)
+    testo_letterale: Mapped[str] = mapped_column(Text, nullable=False)
+    interpretazione_adottata: Mapped[str] = mapped_column(Text, nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, default=None)

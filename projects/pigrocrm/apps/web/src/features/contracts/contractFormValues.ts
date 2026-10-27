@@ -26,6 +26,9 @@ export interface ContractFormValues {
   divisa: string
   requires_prior_approval: boolean
   applies_social_charge: boolean
+  /** The customer's cap on its share of the azienda's invoiced revenue, as a percentage
+   *  string («50» or «50.00»); blank means no cap. */
+  tetto_quota_cliente: string
   spese_kind: ExpensePolicyKind
   spese_tetto: string
   spese_preautorizzazione: boolean
@@ -48,6 +51,7 @@ export function defaultContractFormValues(): ContractFormValues {
     divisa: 'EUR',
     requires_prior_approval: false,
     applies_social_charge: false,
+    tetto_quota_cliente: '',
     spese_kind: 'non_rimborsabile',
     spese_tetto: '',
     spese_preautorizzazione: false,
@@ -72,6 +76,7 @@ export function contractToFormValues(contract: Contract): ContractFormValues {
     divisa: contract.divisa,
     requires_prior_approval: contract.requires_prior_approval,
     applies_social_charge: contract.applies_social_charge,
+    tetto_quota_cliente: contract.tetto_quota_cliente ?? '',
     spese_kind: policy?.kind ?? 'non_rimborsabile',
     spese_tetto: policy?.importo_tetto ?? '',
     spese_preautorizzazione: policy?.richiede_preautorizzazione ?? false,
@@ -126,6 +131,10 @@ export function toContractBody(
     divisa: values.divisa.trim().toUpperCase(),
     requires_prior_approval: values.requires_prior_approval,
     applies_social_charge: values.applies_social_charge,
+    tetto_quota_cliente:
+      values.tetto_quota_cliente.trim() === ''
+        ? null
+        : values.tetto_quota_cliente.trim().replace(',', '.'),
     politica_spese: policy,
     note: values.note.trim() === '' ? null : values.note,
   }

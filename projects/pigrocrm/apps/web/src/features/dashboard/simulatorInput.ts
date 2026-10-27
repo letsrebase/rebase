@@ -56,12 +56,23 @@ export type SimulatorFields = {
     ore_preventivate: string | null
     tariffa_oraria: string | null
   } | null
+  /** The day the money arrives, `YYYY-MM-DD`. Sent whenever it is given: the server reads
+   *  the year of a contract's cap from it, and the ceilings' year from `anno`. */
+  data?: string
+  /** A contract with a cap on the customer's share, to read the addition against too. */
+  contractId?: string | null
 }
 
 export type SimulatorRequest =
   | {
       ok: true
-      input: { valore_preventivato?: string; ore_preventivate?: string; tariffa_oraria?: string }
+      input: {
+        valore_preventivato?: string
+        ore_preventivate?: string
+        tariffa_oraria?: string
+        data_prevista?: string
+        contract_id?: string
+      }
     }
   | { ok: false; errors: Partial<Record<'valore' | 'ore' | 'tariffa' | 'deal' | 'form', string>> }
 
@@ -70,7 +81,7 @@ export type SimulatorRequest =
  * a value, or hours with a rate: the two shapes `CeilingSimulationQuery` takes, and the
  * value wins when both are given, as it does on the server.
  */
-export function simulatorRequest(fields: SimulatorFields): SimulatorRequest {
+function estimateRequest(fields: SimulatorFields): SimulatorRequest {
   if (fields.source === 'deal') {
     const deal = fields.deal
     if (deal === null) return { ok: false, errors: { deal: 'Scegli un deal.' } }
@@ -103,6 +114,23 @@ export function simulatorRequest(fields: SimulatorFields): SimulatorRequest {
   return {
     ok: false,
     errors: { form: 'Scrivi un importo, oppure le ore e la tariffa oraria.' },
+  }
+}
+
+/**
+ * The estimate's request with the day and the contract the person chose put on it, so one
+ * press of «Simula» asks the ceilings and the contract's cap about the same addition.
+ */
+export function simulatorRequest(fields: SimulatorFields): SimulatorRequest {
+  const request = estimateRequest(fields)
+  if (!request.ok) return request
+  return {
+    ok: true,
+    input: {
+      ...request.input,
+      ...(fields.data ? { data_prevista: fields.data } : {}),
+      ...(fields.contractId ? { contract_id: fields.contractId } : {}),
+    },
   }
 }
 

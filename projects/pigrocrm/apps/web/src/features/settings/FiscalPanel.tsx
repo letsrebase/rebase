@@ -31,18 +31,21 @@ interface FiscalField {
     | 'aliquota_inps'
   label: string
   hint?: string
-  /** Read by an Italian regime only: hidden, and sent empty, on «Estero» (REB-621). */
-  italian?: boolean
+  /** The regimes that read the field; every regime when absent. A field a regime does not
+   *  read is hidden, and sent empty where the server refuses a value (REB-621, REB-760). */
+  shownFor?: readonly Regime[]
 }
 
 /**
- * The regime choice (REB-621, spec 2026-10-03 §1.3): the two Italian codes the server
- * implements and the `non-it` pack, which has no FatturaPA code at all. A select and
- * not the free RF field this panel had: `resolve_regime` refuses every other code
- * anyway («non implementato»), so a free field only offered ways to be refused.
+ * The regime choice (REB-621, spec 2026-10-03 §1.3; REB-760): the two Italian codes the
+ * server implements, each on the pack of its own (`it-flat-rate` for the forfettario,
+ * `it-standard` for the ordinary regime), and the `non-it` pack, which has no FatturaPA
+ * code at all. A select and not the free RF field this panel had: `resolve_regime`
+ * refuses every other code anyway («non implementato»), so a free field only offered
+ * ways to be refused.
  */
 type Regime = 'RF19' | 'RF01' | 'estero'
-type PackId = 'it-flat-rate' | 'non-it'
+type PackId = 'it-flat-rate' | 'it-standard' | 'non-it'
 
 const REGIMI: readonly { value: Regime; label: string }[] = [
   { value: 'RF19', label: 'Forfettario (RF19)' },
@@ -50,9 +53,23 @@ const REGIMI: readonly { value: Regime; label: string }[] = [
   { value: 'estero', label: 'Estero: nessun regime italiano' },
 ]
 
-function regimeOf(values: { pack_id: PackId; codice_regime: string }): Regime {
+/** The ordinary regime's standard VAT rate (art. 16 DPR 633/1972), the one the server
+ *  proposes for `it-standard` and the panel offers when the regime is picked. */
+const ORDINARY_RATE = '22.00'
+
+const PACK_OF: Record<Regime, PackId> = {
+  RF19: 'it-flat-rate',
+  RF01: 'it-standard',
+  estero: 'non-it',
+}
+
+function regimeOf(values: { pack_id: PackId }): Regime {
   if (values.pack_id === 'non-it') return 'estero'
-  return values.codice_regime === 'RF01' ? 'RF01' : 'RF19'
+  return values.pack_id === 'it-standard' ? 'RF01' : 'RF19'
+}
+
+function isPackId(value: string): value is PackId {
+  return value === 'it-flat-rate' || value === 'it-standard' || value === 'non-it'
 }
 
 /**
@@ -79,11 +96,17 @@ const FIELDS: readonly FiscalField[] = [
   // Natura and riferimento stay on «Estero» too: a foreign company whose untaxed line
   // must carry a legal mention names it here, and the server requires a natura beside
   // a zero rate whoever issues (`invoice_lines`' own rule). Emptied when the regime
-  // turns foreign, since «N2.2» is the forfettario's.
-  { name: 'natura_default', label: 'Natura', hint: 'Obbligatoria quando l’aliquota è 0' },
-  { name: 'riferimento_normativo', label: 'Riferimento normativo' },
-  { name: 'soglia_bollo', label: 'Soglia bollo', italian: true },
-  { name: 'importo_bollo', label: 'Importo bollo', italian: true },
+  // turns foreign, since «N2.2» is the forfettario's. The ordinary regime taxes every
+  // line and carries neither.
+  {
+    name: 'natura_default',
+    label: 'Natura',
+    hint: 'Obbligatoria quando l’aliquota è 0',
+    shownFor: ['RF19', 'estero'],
+  },
+  { name: 'riferimento_normativo', label: 'Riferimento normativo', shownFor: ['RF19', 'estero'] },
+  { name: 'soglia_bollo', label: 'Soglia bollo', shownFor: ['RF19'] },
+  { name: 'importo_bollo', label: 'Importo bollo', shownFor: ['RF19'] },
   { name: 'condizioni_pagamento', label: 'Condizioni di pagamento', hint: 'TP02' },
   { name: 'modalita_pagamento', label: 'Modalità di pagamento', hint: 'MP05' },
   { name: 'giorni_scadenza', label: 'Giorni di scadenza' },
@@ -92,23 +115,24 @@ const FIELDS: readonly FiscalField[] = [
   // are what the fiscal estimate divides the year's takings by -- but they live on the
   // same single row, so this is the only screen that can ever set them. Percentages,
   // the way their owner reads them off a commercialista's letter: `67`, not `0.67`.
+  // The forfettario's arithmetic alone: no other regime has an estimate.
   {
     name: 'coefficiente_redditivita',
     label: 'Coefficiente di redditività',
     hint: 'La quota dei ricavi che diventa reddito imponibile, secondo il codice ATECO',
-    italian: true,
+    shownFor: ['RF19'],
   },
   {
     name: 'aliquota_imposta_sostitutiva',
     label: 'Aliquota imposta sostitutiva',
     hint: 'Sostituisce IRPEF e addizionali: 5% nei primi cinque anni, poi 15%',
-    italian: true,
+    shownFor: ['RF19'],
   },
   {
     name: 'aliquota_inps',
     label: 'Aliquota INPS',
     hint: 'I contributi previdenziali calcolati sul reddito imponibile',
-    italian: true,
+    shownFor: ['RF19'],
   },
 ]
 
@@ -166,20 +190,29 @@ function valuesFrom(profile: FiscalProfile): Values {
     values[field.name] = stored === null || stored === undefined ? '' : String(stored)
   }
   values.applica_bollo = profile.applica_bollo
-  values.pack_id = profile.pack_id === 'non-it' ? 'non-it' : 'it-flat-rate'
+  values.pack_id = isPackId(profile.pack_id) ? profile.pack_id : 'it-flat-rate'
   values.codice_regime = profile.codice_regime ?? ''
   return values
 }
 
 /**
  * What a save sends. The same fifteen keys whichever the regime, because the PUT is a
- * full replace and a key left out is a key the server defaults; on «Estero» the ones an
- * Italian regime reads go explicitly empty, since the server's own defaults for them
- * are the forfettario's («N2.2», the bollo on, the ATECO coefficient) and a foreign
- * profile that carried them would be refused or, worse, would estimate Italian taxes.
+ * full replace and a key left out is a key the server defaults; on any regime but the
+ * forfettario the ones only it reads go explicitly empty, since the server's own
+ * defaults for them are the forfettario's («N2.2», the bollo on, the ATECO coefficient)
+ * and a profile that carried them would be refused or, worse, would estimate the
+ * forfettario's taxes. «Estero» also has no code and keeps its natura; the ordinary
+ * regime sends `RF01` and no natura, since it taxes every line.
  */
 function bodyFrom(values: Values): Record<string, unknown> {
-  const { pack_id, codice_regime, ...rest } = values
+  const { pack_id, codice_regime, ...fields } = values
+  // The bollo amounts are hidden outside the forfettario and the server still wants
+  // decimals for them: a blank left from an edit under another regime goes as the default.
+  const rest = {
+    ...fields,
+    soglia_bollo: fields.soglia_bollo.trim() || '77.47',
+    importo_bollo: fields.importo_bollo.trim() || '2.00',
+  }
   if (pack_id === 'non-it') {
     return {
       ...rest,
@@ -187,6 +220,19 @@ function bodyFrom(values: Values): Record<string, unknown> {
       codice_regime: null,
       natura_default: rest.natura_default || null,
       riferimento_normativo: rest.riferimento_normativo || null,
+      applica_bollo: false,
+      coefficiente_redditivita: null,
+      aliquota_imposta_sostitutiva: null,
+      aliquota_inps: null,
+    }
+  }
+  if (pack_id === 'it-standard') {
+    return {
+      ...rest,
+      pack_id,
+      codice_regime: 'RF01',
+      natura_default: null,
+      riferimento_normativo: null,
       applica_bollo: false,
       coefficiente_redditivita: null,
       aliquota_imposta_sostitutiva: null,
@@ -264,9 +310,9 @@ function FiscalForm({ aziendaId, profile }: { aziendaId: string; profile: Fiscal
   const [stale, setStale] = useState<StalePhase>('none')
   const [adopt, setAdopt] = useState(false)
   const [reloading, setReloading] = useState(false)
-  // What «Estero» empties, kept aside while the choice is unsaved: a person who looks
-  // at the foreign form and comes back finds their natura, declaration and bollo
-  // switch as they were, not the blanks a save would have written.
+  // What leaving the forfettario empties, kept aside while the choice is unsaved: a
+  // person who looks at another regime and comes back finds their natura, declaration
+  // and bollo switch as they were, not the blanks a save would have written.
   const [kept, setKept] = useState<Pick<
     Values,
     'natura_default' | 'riferimento_normativo' | 'applica_bollo'
@@ -337,14 +383,16 @@ function FiscalForm({ aziendaId, profile }: { aziendaId: string; profile: Fiscal
   // pure (React runs it twice in StrictMode), and the previous shape set `kept` from
   // inside one while reading `kept` from a stale closure.
   function pickRegime(regime: Regime) {
+    const leaving = regimeOf(values)
+    if (regime === leaving) return
+    if (leaving === 'RF19') {
+      setKept({
+        natura_default: values.natura_default,
+        riferimento_normativo: values.riferimento_normativo,
+        applica_bollo: values.applica_bollo,
+      })
+    }
     if (regime === 'estero') {
-      if (values.pack_id !== 'non-it') {
-        setKept({
-          natura_default: values.natura_default,
-          riferimento_normativo: values.riferimento_normativo,
-          applica_bollo: values.applica_bollo,
-        })
-      }
       // The forfettario's natura and declaration mean nothing abroad; the bollo is an
       // Italian duty. Emptied here so the foreign save never carries them.
       change({
@@ -356,20 +404,58 @@ function FiscalForm({ aziendaId, profile }: { aziendaId: string; profile: Fiscal
       })
       return
     }
-    const restored = values.pack_id === 'non-it' && kept ? kept : {}
-    change({ ...restored, pack_id: 'it-flat-rate', codice_regime: regime })
+    if (regime === 'RF01') {
+      // The ordinary regime taxes every line: no natura, no declaration, no bollo, and a
+      // zero rate is refused, so the forfettario's 0.00 becomes the standard 22.00.
+      const zeroRate = !/[1-9]/.test(values.aliquota_iva_default)
+      change({
+        pack_id: 'it-standard',
+        codice_regime: 'RF01',
+        natura_default: '',
+        riferimento_normativo: '',
+        applica_bollo: false,
+        ...(zeroRate ? { aliquota_iva_default: ORDINARY_RATE } : {}),
+      })
+      return
+    }
+    // Back to the forfettario: what it kept, or its own defaults, and the zero rate it
+    // alone allows. The income parameters a profile on another pack has not got come
+    // back as the server's defaults, to read and amend.
+    const defaults = emptyValues()
+    const restored = kept ?? {
+      natura_default: defaults.natura_default,
+      riferimento_normativo: defaults.riferimento_normativo,
+      applica_bollo: defaults.applica_bollo,
+    }
+    const blank = (name: FiscalField['name']) => values[name].trim() === ''
+    change({
+      ...restored,
+      pack_id: PACK_OF.RF19,
+      codice_regime: 'RF19',
+      aliquota_iva_default: '0.00',
+      ...(blank('soglia_bollo') ? { soglia_bollo: defaults.soglia_bollo } : {}),
+      ...(blank('importo_bollo') ? { importo_bollo: defaults.importo_bollo } : {}),
+      ...(blank('coefficiente_redditivita')
+        ? { coefficiente_redditivita: defaults.coefficiente_redditivita }
+        : {}),
+      ...(blank('aliquota_imposta_sostitutiva')
+        ? { aliquota_imposta_sostitutiva: defaults.aliquota_imposta_sostitutiva }
+        : {}),
+      ...(blank('aliquota_inps') ? { aliquota_inps: defaults.aliquota_inps } : {}),
+    })
   }
 
   const fieldError = problem ? fieldErrorFrom(problem) : null
   const regime = regimeOf(values)
   const abroad = regime === 'estero'
-  const visible = FIELDS.filter((field) => !(abroad && field.italian))
+  const forfettario = regime === 'RF19'
+  const visible = FIELDS.filter((field) => field.shownFor?.includes(regime) ?? true)
   // A refusal that names a field this regime does not show (a bollo value sent from
   // hidden state) has nowhere to land: it goes to the banner, never nowhere.
   const rendered = new Set<string>([
     'codice_regime',
     ...visible.map((field) => field.name),
-    ...(abroad ? [] : ['applica_bollo']),
+    ...(forfettario ? ['applica_bollo'] : []),
   ])
   const bannered = problem && (!fieldError || !rendered.has(fieldError.field))
 
@@ -408,7 +494,9 @@ function FiscalForm({ aziendaId, profile }: { aziendaId: string; profile: Fiscal
             <p className="text-muted-foreground text-xs">
               {abroad
                 ? 'Un’azienda con sede all’estero: niente fattura elettronica, niente bollo.'
-                : 'Il codice che la fattura elettronica dichiara allo SdI.'}
+                : forfettario
+                  ? 'Il codice che la fattura elettronica dichiara allo SdI.'
+                  : 'IVA su ogni riga, nessuna soglia del forfettario, nessun bollo.'}
             </p>
           )}
         </div>
@@ -439,7 +527,7 @@ function FiscalForm({ aziendaId, profile }: { aziendaId: string; profile: Fiscal
         ))}
       </div>
 
-      {abroad ? null : (
+      {forfettario ? (
         <label className="flex items-center gap-2 text-sm">
           <input
             type="checkbox"
@@ -449,7 +537,7 @@ function FiscalForm({ aziendaId, profile }: { aziendaId: string; profile: Fiscal
           />
           Applica il bollo virtuale sopra la soglia
         </label>
-      )}
+      ) : null}
 
       <div className="flex justify-end">
         <Button onClick={submit} disabled={save.isPending}>

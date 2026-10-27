@@ -17,6 +17,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from pigrocrm.core.contracts.schemas import ContractCapSimulation
 from pigrocrm.core.fiscal.pack import CeilingConsequence
 
 # Mirrors `Deal`'s own Numeric(p, s) column widths (`deals/models.py`), the same
@@ -382,7 +383,12 @@ class CeilingSimulationQuery(BaseModel):
     deal is ever saved. `valore_preventivato` is the synthetic addition directly
     when typed; with only `ore_preventivate` and `tariffa_oraria` set, the service
     derives it as their product, the same two columns `budget_vs_actual` already
-    reads plus the one it does not."""
+    reads plus the one it does not.
+
+    `contract_id` (REB-761) names a contract whose cap on its customer's share the same
+    addition is also read against, over the contract's own anniversary year containing
+    `data_prevista` (the day the money is expected, today when absent): the addition goes
+    to that contract's customer. The pack's ceilings are asked either way."""
 
     ore_preventivate: Decimal | None = Field(
         default=None, max_digits=CEILING_ORE_MAX_DIGITS, decimal_places=CEILING_DECIMAL_PLACES, ge=0
@@ -399,6 +405,8 @@ class CeilingSimulationQuery(BaseModel):
         decimal_places=CEILING_FACTOR_DECIMAL_PLACES,
         ge=0,
     )
+    contract_id: UUID | None = None
+    data_prevista: date | None = None
 
 
 class CeilingSimulationResult(BaseModel):
@@ -428,6 +436,9 @@ class CeilingSimulation(BaseModel):
     pack_version: str
     aggiunta_sintetica: Decimal = Field(max_digits=12, decimal_places=2)
     soglie: list[CeilingSimulationResult]
+    # The cap of the contract the request named, read against the same addition; `None`
+    # when it named none (REB-761).
+    tetto_contratto: ContractCapSimulation | None = None
 
 
 class YearTotals(BaseModel):

@@ -2201,7 +2201,7 @@ export interface paths {
          * @description Il simulatore "ci sta?" (REB-352 §1.4): la stima di un deal non ancora vinto,
          *     aggiunta ai ricavi reali e rivalutata su ogni soglia attiva, senza salvare
          *     nulla. Serve `valore_preventivato`, oppure `ore_preventivate` insieme a
-         *     `tariffa_oraria`.
+         *     `tariffa_oraria`. Con `contract_id` risponde anche sul tetto di quel contratto.
          */
         get: operations["simulate_ceiling_api_analytics_ceilings_simulate_get"];
         put?: never;
@@ -3510,7 +3510,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get */
+        /**
+         * Get
+         * @description Il contratto con le sue note sulle clausole (REB-762) e, se è stato rinnovato,
+         *     l'id di chi lo rinnova (REB-763).
+         */
         get: operations["get_api_contracts__contract_id__get"];
         put?: never;
         post?: never;
@@ -3532,6 +3536,29 @@ export interface paths {
         put?: never;
         /** Set State */
         post: operations["set_state_api_contracts__contract_id__state_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/contracts/{contract_id}/renew": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Renew
+         * @description Rinnova il contratto (REB-763): il successore ha gli stessi termini, comincia il
+         *     giorno dopo la fine di questo e dura quanto durava, salvo `inizio`, `fine` o `durata`.
+         *     Le schede tariffarie che arrivano al nuovo termine passano con lui; le sue restano
+         *     dove sono. Un contratto si rinnova una volta (409) e solo se ha una fine (422).
+         */
+        post: operations["renew_api_contracts__contract_id__renew_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3605,6 +3632,45 @@ export interface paths {
         head?: never;
         /** Update Rate Card */
         patch: operations["update_rate_card_api_contracts__contract_id__rate_cards__rate_card_id__patch"];
+        trace?: never;
+    };
+    "/api/contracts/{contract_id}/clause-notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Clause Notes */
+        get: operations["list_clause_notes_api_contracts__contract_id__clause_notes_get"];
+        put?: never;
+        /**
+         * Create Clause Note
+         * @description Una lettura di una clausola: il riferimento, il testo letterale e l'interpretazione
+         *     adottata (REB-762).
+         */
+        post: operations["create_clause_note_api_contracts__contract_id__clause_notes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/contracts/{contract_id}/clause-notes/{note_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Clause Note */
+        patch: operations["update_clause_note_api_contracts__contract_id__clause_notes__note_id__patch"];
         trace?: never;
     };
     "/api/contracts/{contract_id}/renewal-assumption": {
@@ -5190,6 +5256,7 @@ export interface components {
             aggiunta_sintetica: string;
             /** Soglie */
             soglie: components["schemas"]["CeilingSimulationResult"][];
+            tetto_contratto?: components["schemas"]["ContractCapSimulation"] | null;
         };
         /**
          * CeilingSimulationResult
@@ -5257,6 +5324,68 @@ export interface components {
             livello_allerta: string | null;
             /** Utilizzo */
             utilizzo: number;
+        };
+        /**
+         * ClauseNoteCreate
+         * @description A reading of one clause: where it is (`riferimento_clausola`, «Art. 8.3 Rinnovo»),
+         *     what it says word for word (`testo_letterale`) and what the person decided it means
+         *     (`interpretazione_adottata`). `note` is anything else worth keeping beside them.
+         */
+        ClauseNoteCreate: {
+            /** Riferimento Clausola */
+            riferimento_clausola: string;
+            /** Testo Letterale */
+            testo_letterale: string;
+            /** Interpretazione Adottata */
+            interpretazione_adottata: string;
+            /** Note */
+            note?: string | null;
+        };
+        /** ClauseNoteRead */
+        ClauseNoteRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Contract Id
+             * Format: uuid
+             */
+            contract_id: string;
+            /** Riferimento Clausola */
+            riferimento_clausola: string;
+            /** Testo Letterale */
+            testo_letterale: string;
+            /** Interpretazione Adottata */
+            interpretazione_adottata: string;
+            /** Note */
+            note: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * ClauseNoteUpdate
+         * @description A partial patch: the three required fields may be changed and never emptied, `note`
+         *     is cleared with an explicit `null`.
+         */
+        ClauseNoteUpdate: {
+            /** Riferimento Clausola */
+            riferimento_clausola?: string | null;
+            /** Testo Letterale */
+            testo_letterale?: string | null;
+            /** Interpretazione Adottata */
+            interpretazione_adottata?: string | null;
+            /** Note */
+            note?: string | null;
         };
         /** ClosedInPeriod */
         ClosedInPeriod: {
@@ -5350,6 +5479,58 @@ export interface components {
             buchi_non_dichiarati?: number[] | null;
         };
         /**
+         * ContractCapSimulation
+         * @description REB-761: the «ci sta?» simulator's answer for one contract's cap. The customer's
+         *     share of the azienda's invoiced revenue over the contract's own anniversary year
+         *     containing `data_prevista`, before and after a synthetic addition that goes entirely
+         *     to this customer: both the customer's revenue and the total grow by it, which is why
+         *     the share moves less than the addition. In the contract's own currency, since a cap
+         *     compares one currency with itself (REB-776). `rientra` is the share staying under the
+         *     cap, which it must not reach: the same reading `ConcentrationFigures.superata` has.
+         */
+        ContractCapSimulation: {
+            /**
+             * Contract Id
+             * Format: uuid
+             */
+            contract_id: string;
+            /** Titolo */
+            titolo: string;
+            /**
+             * Customer Id
+             * Format: uuid
+             */
+            customer_id: string;
+            /** Divisa */
+            divisa: string;
+            /**
+             * Periodo Da
+             * Format: date
+             */
+            periodo_da: string;
+            /**
+             * Periodo A
+             * Format: date
+             */
+            periodo_a: string;
+            /** Tetto */
+            tetto: number;
+            /** Ricavi Cliente Attuali */
+            ricavi_cliente_attuali: string;
+            /** Ricavi Totali Attuali */
+            ricavi_totali_attuali: string;
+            /** Quota Attuale */
+            quota_attuale: number;
+            /** Ricavi Cliente Simulati */
+            ricavi_cliente_simulati: string;
+            /** Ricavi Totali Simulati */
+            ricavi_totali_simulati: string;
+            /** Quota Simulata */
+            quota_simulata: number;
+            /** Rientra */
+            rientra: boolean;
+        };
+        /**
          * ContractConcentrationCap
          * @description REB-352 §1.5's contract-anchored concentration cap: one engagement's own
          *     share of total invoiced revenue over the anniversary year containing `as_of`,
@@ -5363,12 +5544,13 @@ export interface components {
          *     invoice at all answers one row in the contract's currency, all zero, so a reader
          *     never gets an empty list for a quiet year.
          *
-         *     `soglia` is never persisted: no threshold column exists on `contracts` yet (a
-         *     future ceiling entity's own concern, REB-361), so a caller names the share it
-         *     wants checked against, per REB-352 §5 item 4's "would this fit" reading -- a
-         *     live comparison with no persistence required. Each row's `superata` mirrors
-         *     mastro's own `crossed` (`ceiling.ts:257`) and stays `None` until a `soglia` is
-         *     supplied.
+         *     `soglia` is the share each row is compared with, in [0, 1]. A caller may name one,
+         *     per REB-352 §5 item 4's "would this fit" reading: a live comparison, never stored.
+         *     Without one it is the contract's own cap (`Contract.tetto_quota_cliente`, REB-761,
+         *     divided by 100), and `soglia_da_contratto` says so, so a reader can tell the clause
+         *     from a figure somebody tried. Each row's `superata` mirrors mastro's own `crossed`
+         *     (`ceiling.ts:257`: the share reaching the cap) and stays `None` when neither a
+         *     `soglia` nor a cap exists.
          */
         ContractConcentrationCap: {
             /**
@@ -5393,15 +5575,19 @@ export interface components {
             periodo_a: string;
             /** Soglia */
             soglia?: number | null;
+            /**
+             * Soglia Da Contratto
+             * @default false
+             */
+            soglia_da_contratto: boolean;
             /** Valute */
             valute: components["schemas"]["ConcentrationFigures"][];
         };
         /**
          * ContractCreate
          * @description `contratto_precedente_id` and `stato` are deliberately absent: the renewal
-         *     chain is left unset by this spike (spec §3's own note), and a new contract
-         *     always starts life as `bozza` -- `ContractService.set_state` is what moves it
-         *     on.
+         *     chain is written only by `ContractService.renew`, and a new contract always starts
+         *     life as `bozza` -- `ContractService.set_state` is what moves it on.
          */
         ContractCreate: {
             /**
@@ -5448,6 +5634,8 @@ export interface components {
              * @default false
              */
             applies_social_charge: boolean;
+            /** Tetto Quota Cliente */
+            tetto_quota_cliente?: number | string | null;
             /** Politica Spese */
             politica_spese: {
                 [key: string]: unknown;
@@ -5495,6 +5683,89 @@ export interface components {
              * Format: date
              */
             data: string;
+        };
+        /**
+         * ContractDetail
+         * @description A contract as its page and an agent read it: the row, the clause notes written
+         *     against it (REB-762) and the contract that renewed it, if one did (REB-763). Only
+         *     `ContractService.detail` builds one, so a list of contracts stays one query: the
+         *     notes and the successor are asked for the one contract being opened.
+         */
+        ContractDetail: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Customer Id
+             * Format: uuid
+             */
+            customer_id: string;
+            /**
+             * Azienda Id
+             * Format: uuid
+             */
+            azienda_id: string;
+            /** Titolo */
+            titolo: string;
+            /**
+             * Inizio
+             * Format: date
+             */
+            inizio: string;
+            /** Fine */
+            fine: string | null;
+            /** Tipo Rinnovo */
+            tipo_rinnovo: string;
+            /** Preavviso Rinnovo Giorni */
+            preavviso_rinnovo_giorni: number | null;
+            /** Preavviso Disdetta Giorni */
+            preavviso_disdetta_giorni: number;
+            /** Giorni Pagamento */
+            giorni_pagamento: number | null;
+            /** Pagamento Fine Mese */
+            pagamento_fine_mese: boolean | null;
+            /** Cadenza Fatturazione */
+            cadenza_fatturazione: string;
+            /** Divisa */
+            divisa: string;
+            /** Requires Prior Approval */
+            requires_prior_approval: boolean;
+            /** Applies Social Charge */
+            applies_social_charge: boolean;
+            /** Tetto Quota Cliente */
+            tetto_quota_cliente: string | null;
+            /** Politica Spese */
+            politica_spese: {
+                [key: string]: unknown;
+            };
+            /** Stato */
+            stato: string;
+            /** Contratto Precedente Id */
+            contratto_precedente_id: string | null;
+            /** Note */
+            note: string | null;
+            /** Custom Fields */
+            custom_fields: {
+                [key: string]: unknown;
+            };
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Contratto Successivo Id */
+            contratto_successivo_id: string | null;
+            /** Note Clausole */
+            note_clausole: components["schemas"]["ClauseNoteRead"][];
+            /** Note Clausole Totale */
+            note_clausole_totale: number;
         };
         /** ContractEmailAttachment */
         ContractEmailAttachment: {
@@ -5822,6 +6093,8 @@ export interface components {
             requires_prior_approval: boolean;
             /** Applies Social Charge */
             applies_social_charge: boolean;
+            /** Tetto Quota Cliente */
+            tetto_quota_cliente: string | null;
             /** Politica Spese */
             politica_spese: {
                 [key: string]: unknown;
@@ -5876,6 +6149,22 @@ export interface components {
             senza_approvazione: number;
         };
         /**
+         * ContractRenew
+         * @description The renewal of a contract (REB-763): its terms stay and its dates move. All three
+         *     fields are optional, and with none the successor starts the day after the contract
+         *     ends and lasts as long as it did. `fine` and `durata` are two ways to say the end,
+         *     so naming both is refused instead of one silently winning.
+         */
+        ContractRenew: {
+            /** Inizio */
+            inizio?: string | null;
+            /** Fine */
+            fine?: string | null;
+            durata?: components["schemas"]["RenewalDuration"] | null;
+            /** Titolo */
+            titolo?: string | null;
+        };
+        /**
          * ContractStateChange
          * @description The one way a contract's `stato` changes. Any state to any other, never to the
          *     state it already has: mastro's own editor offers the whole select, and a contract
@@ -5923,6 +6212,8 @@ export interface components {
             requires_prior_approval?: boolean | null;
             /** Applies Social Charge */
             applies_social_charge?: boolean | null;
+            /** Tetto Quota Cliente */
+            tetto_quota_cliente?: number | string | null;
             /** Politica Spese */
             politica_spese?: {
                 [key: string]: unknown;
@@ -7699,7 +7990,7 @@ export interface components {
              * @default it-flat-rate
              * @enum {string}
              */
-            pack_id: "it-flat-rate" | "non-it";
+            pack_id: "it-flat-rate" | "it-standard" | "non-it";
             /**
              * Aliquota Iva Default
              * @default 0.00
@@ -10345,6 +10636,20 @@ export interface components {
              * Format: date
              */
             orizzonte_al: string;
+        };
+        /**
+         * RenewalDuration
+         * @description How long the renewed term lasts, counted from its first day: `{"conteggio": 12,
+         *     "unita": "mesi"}` from 1 January ends on 31 December.
+         */
+        RenewalDuration: {
+            /** Conteggio */
+            conteggio: number;
+            /**
+             * Unita
+             * @enum {string}
+             */
+            unita: "giorni" | "settimane" | "mesi" | "anni";
         };
         /**
          * ReportDeal
@@ -29525,6 +29830,10 @@ export interface operations {
                 ore_preventivate?: number | string | null;
                 valore_preventivato?: number | string | null;
                 tariffa_oraria?: number | string | null;
+                /** @description Un contratto con un tetto sulla quota del cliente (REB-761): la stessa aggiunta è letta anche contro il suo tetto, sull'anno di anniversario del contratto che contiene `data_prevista`, in `tetto_contratto`. */
+                contract_id?: string | null;
+                /** @description Il giorno in cui arriva il ricavo, YYYY-MM-DD; assente, oggi. */
+                data_prevista?: string | null;
                 /** @description L'azienda per cui calcolare: obbligatoria quando lo spazio ne ha più di una (una risposta 422 nomina `azienda_id`), altrimenti è l'unica e si può omettere. */
                 azienda_id?: string | null;
             };
@@ -38834,7 +39143,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ContractRead"];
+                    "application/json": components["schemas"]["ContractDetail"];
                 };
             };
             /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
@@ -39076,6 +39385,129 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContractRead"];
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    renew_api_contracts__contract_id__renew_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                contract_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContractRenew"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -39693,6 +40125,372 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RateCardRead"];
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_clause_notes_api_contracts__contract_id__clause_notes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                contract_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClauseNoteRead"][];
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_clause_note_api_contracts__contract_id__clause_notes_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                contract_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClauseNoteCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClauseNoteRead"];
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_clause_note_api_contracts__contract_id__clause_notes__note_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                contract_id: string;
+                note_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClauseNoteUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClauseNoteRead"];
                 };
             };
             /** @description Permesso negato: l'actor non ha il ruolo richiesto. */

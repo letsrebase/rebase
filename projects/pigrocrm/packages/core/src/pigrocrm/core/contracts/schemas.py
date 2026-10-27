@@ -6,6 +6,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from pigrocrm.core.contracts.models import Contract
+from pigrocrm.core.contracts.renewal import RenewalUnit
 from pigrocrm.core.db import CURSOR_MAX_LENGTH, SortDirection, SortSpec, SortWhitelist
 from pigrocrm.core.validation import SafeStr
 
@@ -31,6 +32,11 @@ IMPORTO_MAX_DIGITS = 12
 ORE_MINIME_MAX_DIGITS = 6
 FRAZIONE_MAX_DIGITS = 4
 DECIMAL_PLACES = 2
+
+# `tetto_quota_cliente` mirrors `Contract.tetto_quota_cliente`'s Numeric(5, 2): a
+# percentage strictly between 0 and 100 (the CHECK says why), two decimals as the rates on
+# `FiscalProfile` have.
+TETTO_MAX_DIGITS = 5
 
 EXPENSE_POLICY_KINDS: tuple[str, ...] = (
     "non_rimborsabile",
@@ -74,9 +80,8 @@ Frazione = Annotated[Decimal, Field(max_digits=FRAZIONE_MAX_DIGITS, decimal_plac
 
 class ContractCreate(BaseModel):
     """`contratto_precedente_id` and `stato` are deliberately absent: the renewal
-    chain is left unset by this spike (spec §3's own note), and a new contract
-    always starts life as `bozza` -- `ContractService.set_state` is what moves it
-    on."""
+    chain is written only by `ContractService.renew`, and a new contract always starts
+    life as `bozza` -- `ContractService.set_state` is what moves it on."""
 
     customer_id: UUID
     titolo: SafeStr = Field(max_length=TITOLO_MAX_LENGTH)
@@ -94,6 +99,11 @@ class ContractCreate(BaseModel):
     divisa: SafeStr = Field(default="EUR", max_length=DIVISA_MAX_LENGTH)
     requires_prior_approval: bool = False
     applies_social_charge: bool = False
+    # REB-761: the share of the azienda's invoiced revenue this customer must not reach
+    # over the contract's own anniversary year, as a percentage (`50.00`). Absent, no cap.
+    tetto_quota_cliente: Decimal | None = Field(
+        default=None, max_digits=TETTO_MAX_DIGITS, decimal_places=DECIMAL_PLACES, gt=0, lt=100
+    )
     # mastro's ExpensePolicy (contract.ts:90-99), kept as an open tagged JSONB union
     # -- see models.py's Contract.politica_spese for why this is not deeply
     # validated here.
@@ -132,6 +142,9 @@ class ContractUpdate(BaseModel):
     divisa: SafeStr | None = Field(default=None, max_length=DIVISA_MAX_LENGTH)
     requires_prior_approval: bool | None = None
     applies_social_charge: bool | None = None
+    tetto_quota_cliente: Decimal | None = Field(
+        default=None, max_digits=TETTO_MAX_DIGITS, decimal_places=DECIMAL_PLACES, gt=0, lt=100
+    )
     politica_spese: dict[str, Any] | None = None
     note: SafeStr | None = None
     custom_fields: dict[str, Any] | None = None
@@ -140,6 +153,36 @@ class ContractUpdate(BaseModel):
     @classmethod
     def _expense_policy_is_readable(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
         return None if value is None else check_expense_policy(value)
+
+
+class RenewalDuration(BaseModel):
+    """How long the renewed term lasts, counted from its first day: `{"conteggio": 12,
+    "unita": "mesi"}` from 1 January ends on 31 December."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    conteggio: int = Field(ge=1, le=1200)
+    unita: RenewalUnit
+
+
+class ContractRenew(BaseModel):
+    """The renewal of a contract (REB-763): its terms stay and its dates move. All three
+    fields are optional, and with none the successor starts the day after the contract
+    ends and lasts as long as it did. `fine` and `durata` are two ways to say the end,
+    so naming both is refused instead of one silently winning."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    inizio: date | None = None
+    fine: date | None = None
+    durata: RenewalDuration | None = None
+    titolo: SafeStr | None = Field(default=None, min_length=1, max_length=TITOLO_MAX_LENGTH)
+
+    @model_validator(mode="after")
+    def _one_way_to_say_the_end(self) -> "ContractRenew":
+        if self.fine is not None and self.durata is not None:
+            raise ValueError("fine e durata sono due modi di dire la stessa cosa: indicane uno")
+        return self
 
 
 class ContractStateChange(BaseModel):
@@ -172,6 +215,7 @@ class ContractRead(BaseModel):
     divisa: str
     requires_prior_approval: bool
     applies_social_charge: bool
+    tetto_quota_cliente: Decimal | None
     politica_spese: dict[str, Any]
     stato: str
     contratto_precedente_id: UUID | None
@@ -306,12 +350,13 @@ class ContractConcentrationCap(BaseModel):
     invoice at all answers one row in the contract's currency, all zero, so a reader
     never gets an empty list for a quiet year.
 
-    `soglia` is never persisted: no threshold column exists on `contracts` yet (a
-    future ceiling entity's own concern, REB-361), so a caller names the share it
-    wants checked against, per REB-352 §5 item 4's "would this fit" reading -- a
-    live comparison with no persistence required. Each row's `superata` mirrors
-    mastro's own `crossed` (`ceiling.ts:257`) and stays `None` until a `soglia` is
-    supplied.
+    `soglia` is the share each row is compared with, in [0, 1]. A caller may name one,
+    per REB-352 §5 item 4's "would this fit" reading: a live comparison, never stored.
+    Without one it is the contract's own cap (`Contract.tetto_quota_cliente`, REB-761,
+    divided by 100), and `soglia_da_contratto` says so, so a reader can tell the clause
+    from a figure somebody tried. Each row's `superata` mirrors mastro's own `crossed`
+    (`ceiling.ts:257`: the share reaching the cap) and stays `None` when neither a
+    `soglia` nor a cap exists.
     """
 
     contract_id: UUID
@@ -319,7 +364,113 @@ class ContractConcentrationCap(BaseModel):
     periodo_da: date
     periodo_a: date
     soglia: float | None = None
+    soglia_da_contratto: bool = False
     valute: list[ConcentrationFigures]
+
+
+class ContractCapSimulation(BaseModel):
+    """REB-761: the «ci sta?» simulator's answer for one contract's cap. The customer's
+    share of the azienda's invoiced revenue over the contract's own anniversary year
+    containing `data_prevista`, before and after a synthetic addition that goes entirely
+    to this customer: both the customer's revenue and the total grow by it, which is why
+    the share moves less than the addition. In the contract's own currency, since a cap
+    compares one currency with itself (REB-776). `rientra` is the share staying under the
+    cap, which it must not reach: the same reading `ConcentrationFigures.superata` has.
+    """
+
+    contract_id: UUID
+    titolo: str
+    customer_id: UUID
+    divisa: str
+    periodo_da: date
+    periodo_a: date
+    # The contract's cap as a share in [0, 1] (`tetto_quota_cliente` / 100).
+    tetto: float
+    ricavi_cliente_attuali: Decimal = Field(max_digits=12, decimal_places=2)
+    ricavi_totali_attuali: Decimal = Field(max_digits=12, decimal_places=2)
+    quota_attuale: float
+    ricavi_cliente_simulati: Decimal = Field(max_digits=12, decimal_places=2)
+    ricavi_totali_simulati: Decimal = Field(max_digits=12, decimal_places=2)
+    quota_simulata: float
+    rientra: bool
+
+
+# ---- clause notes (REB-762) ---------------------------------------------------------
+
+RIFERIMENTO_CLAUSOLA_MAX_LENGTH = 200
+CLAUSE_TEXT_MAX_LENGTH = 20_000
+
+
+def _not_blank(value: str | None) -> str | None:
+    """A reading made of spaces is no reading: `min_length` counts them."""
+    if value is not None and not value.strip():
+        raise ValueError("non può essere vuoto")
+    return value
+
+
+class ClauseNoteCreate(BaseModel):
+    """A reading of one clause: where it is (`riferimento_clausola`, «Art. 8.3 Rinnovo»),
+    what it says word for word (`testo_letterale`) and what the person decided it means
+    (`interpretazione_adottata`). `note` is anything else worth keeping beside them."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    riferimento_clausola: SafeStr = Field(min_length=1, max_length=RIFERIMENTO_CLAUSOLA_MAX_LENGTH)
+    testo_letterale: SafeStr = Field(min_length=1, max_length=CLAUSE_TEXT_MAX_LENGTH)
+    interpretazione_adottata: SafeStr = Field(min_length=1, max_length=CLAUSE_TEXT_MAX_LENGTH)
+    note: SafeStr | None = Field(default=None, max_length=CLAUSE_TEXT_MAX_LENGTH)
+
+    _required_text_is_not_blank = field_validator(
+        "riferimento_clausola", "testo_letterale", "interpretazione_adottata"
+    )(_not_blank)
+
+
+class ClauseNoteUpdate(BaseModel):
+    """A partial patch: the three required fields may be changed and never emptied, `note`
+    is cleared with an explicit `null`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    riferimento_clausola: SafeStr | None = Field(
+        default=None, min_length=1, max_length=RIFERIMENTO_CLAUSOLA_MAX_LENGTH
+    )
+    testo_letterale: SafeStr | None = Field(
+        default=None, min_length=1, max_length=CLAUSE_TEXT_MAX_LENGTH
+    )
+    interpretazione_adottata: SafeStr | None = Field(
+        default=None, min_length=1, max_length=CLAUSE_TEXT_MAX_LENGTH
+    )
+    note: SafeStr | None = Field(default=None, max_length=CLAUSE_TEXT_MAX_LENGTH)
+
+    _required_text_is_not_blank = field_validator(
+        "riferimento_clausola", "testo_letterale", "interpretazione_adottata"
+    )(_not_blank)
+
+
+class ClauseNoteRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    contract_id: UUID
+    riferimento_clausola: str
+    testo_letterale: str
+    interpretazione_adottata: str
+    note: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ContractDetail(ContractRead):
+    """A contract as its page and an agent read it: the row, the clause notes written
+    against it (REB-762) and the contract that renewed it, if one did (REB-763). Only
+    `ContractService.detail` builds one, so a list of contracts stays one query: the
+    notes and the successor are asked for the one contract being opened."""
+
+    contratto_successivo_id: UUID | None
+    # The latest 50, oldest first. `note_clausole_totale` is how many the contract has: when
+    # it is more than the list, the rest is in the notes' own list (`list_clause_notes`).
+    note_clausole: list[ClauseNoteRead]
+    note_clausole_totale: int
 
 
 # ---- renewal assumptions and the projected figure (REB-375) -----------------------

@@ -1,9 +1,11 @@
+from copy import deepcopy
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import update
+from sqlalchemy import func, select, update
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -13,7 +15,8 @@ from pigrocrm.core.analytics.repository import AnalyticsRepository
 from pigrocrm.core.contract_expenses.models import ContractExpense
 from pigrocrm.core.contracts import projection
 from pigrocrm.core.contracts.dates import anniversary_year_bounds
-from pigrocrm.core.contracts.models import Contract, RateCard, RenewalAssumption
+from pigrocrm.core.contracts.models import ClauseNote, Contract, RateCard, RenewalAssumption
+from pigrocrm.core.contracts.renewal import RenewalRefused, carried_cards, renewed_term
 from pigrocrm.core.contracts.repository import (
     ContractRepository,
     RateCardRepository,
@@ -21,14 +24,20 @@ from pigrocrm.core.contracts.repository import (
 )
 from pigrocrm.core.contracts.schemas import (
     CONTRACT_SORTS,
+    ClauseNoteCreate,
+    ClauseNoteRead,
+    ClauseNoteUpdate,
     ConcentrationFigures,
+    ContractCapSimulation,
     ContractConcentrationCap,
     ContractCreate,
+    ContractDetail,
     ContractListQuery,
     ContractPage,
     ContractProjectionQuery,
     ContractProjectionRead,
     ContractRead,
+    ContractRenew,
     ContractStateChange,
     ContractUpdate,
     RateCardCreate,
@@ -44,12 +53,48 @@ from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.fields.schemas import EntityType
 from pigrocrm.core.fields.service import FieldDefinitionService
 from pigrocrm.core.fields.validator import validate_custom_fields
+from pigrocrm.core.money import round_money
 from pigrocrm.core.schemas import reject_cleared_columns, supplied_changes
 
 # Typed as the fields module's own EntityType (not a bare `str`), matching
 # CustomerService.ENTITY/DealService.ENTITY exactly -- see those classes for why a
 # plain `str` would fail mypy strict at `specs_for`'s own call site.
 ENTITY: EntityType = "contract"
+
+
+# The currency a simulated addition is in: a deal's estimate carries none, and deals are
+# estimated in euros (`Deal.valore_preventivato`).
+SIMULATION_DIVISA = "EUR"
+
+# How many clause notes `ContractService.detail` carries, the latest ones.
+DETAIL_NOTES_LIMIT = 50
+
+# The columns a renewal does not copy from the contract it renews: the row's own identity
+# and bookkeeping, the term (which the renewal decides), the state (the successor is
+# `attivo`, whatever the contract it renews was) and the link back.
+_NOT_RENEWED = frozenset(
+    {
+        "id",
+        "created_at",
+        "updated_at",
+        "deleted_at",
+        "inizio",
+        "fine",
+        "stato",
+        "contratto_precedente_id",
+    }
+)
+
+
+def _share(tetto: Decimal) -> float:
+    """A cap stored as a percentage (`50.00`) as the share in [0, 1] every `quota` is."""
+    return float(tetto / 100)
+
+
+def _quota(ricavi_cliente: Decimal, ricavi_totali: Decimal) -> float:
+    """The customer's share of the total, `0.0` when there is nothing to scale against:
+    the same reading every `quota` on this schema carries."""
+    return float(ricavi_cliente / ricavi_totali) if ricavi_totali > 0 else 0.0
 
 
 def check_payment_terms_together(payload: dict[str, Any]) -> None:
@@ -146,6 +191,40 @@ class ContractService:
             raise NotFound(ENTITY, contract_id)
         return ContractRead.model_validate(contract)
 
+    def detail(self, contract_id: UUID, actor: Actor) -> ContractDetail:
+        """`get`, with what hangs off the one contract: its clause notes, oldest first, and
+        the contract that renewed it. What the contract page opens and `get_contract`
+        answers, so an agent reads the person's decisions about the clauses with the
+        terms they are about."""
+        contract = self.repo.get(contract_id)
+        if contract is None:
+            raise NotFound(ENTITY, contract_id)
+        # The latest `DETAIL_NOTES_LIMIT`, oldest first: each note can run to pages, and a
+        # contract that holds more is read in full through the notes' own list.
+        latest = self.session.scalars(
+            select(ClauseNote)
+            .where(ClauseNote.contract_id == contract_id)
+            .order_by(ClauseNote.created_at.desc(), ClauseNote.id.desc())
+            .limit(DETAIL_NOTES_LIMIT)
+        )
+        notes = reversed(list(latest))
+        totale = self.session.scalar(
+            select(func.count())
+            .select_from(ClauseNote)
+            .where(ClauseNote.contract_id == contract_id)
+        )
+        return ContractDetail(
+            **ContractRead.model_validate(contract).model_dump(),
+            contratto_successivo_id=self.session.scalar(
+                select(Contract.id).where(
+                    Contract.contratto_precedente_id == contract_id,
+                    Contract.deleted_at.is_(None),
+                )
+            ),
+            note_clausole=[ClauseNoteRead.model_validate(note) for note in notes],
+            note_clausole_totale=totale or 0,
+        )
+
     def update(self, contract_id: UUID, data: ContractUpdate, actor: Actor) -> ContractRead:
         """A partial patch. The cross-field rules run on the merged row, so a call that
         moves `tipo_rinnovo` to `tacito` without a notice is refused, and so is one that
@@ -240,6 +319,123 @@ class ContractService:
         self.session.commit()
         return ContractRead.model_validate(contract)
 
+    def renew(self, contract_id: UUID, data: ContractRenew, actor: Actor) -> ContractRead:
+        """REB-763: the contract that renews `contract_id`. The successor carries the
+        contract's terms as they stand (every column but the ones named in
+        `_NOT_RENEWED`, so a column added later travels by default instead of silently
+        resetting on every renewal) on the renewed term (`renewal.renewed_term`), is
+        `attivo`, and is linked back through `contratto_precedente_id`. The rate cards
+        that reach the new term go across with the validity they have on it
+        (`renewal.carried_cards`); the contract's own cards are not touched, so the history
+        of what was charged stays on the contract it was charged under.
+
+        Not carried, because each is a fact about the term that is ending: the renewal
+        assumption (a belief about revenue beyond *that* term), the expenses and the days,
+        and the clause notes, which read the words of a signed document that the renewed
+        term may have replaced. The contract it renews keeps its `stato`: nothing here
+        decides that a term is over.
+
+        A contract renews once (the unique key on the link is the database's own word, the
+        check below the sentence the person reads) and only when it has an end to renew
+        from.
+        """
+        actor.require_write("renew_contract")
+        contract = self.repo.get_locked(contract_id)
+        if contract is None:
+            raise NotFound(ENTITY, contract_id)
+        existing = self.session.scalar(
+            select(Contract.id).where(Contract.contratto_precedente_id == contract_id)
+        )
+        if existing is not None:
+            raise Conflict(
+                ENTITY,
+                "il contratto è già stato rinnovato",
+                contract_id=str(contract_id),
+                successor_id=str(existing),
+            )
+        try:
+            inizio, fine = renewed_term(
+                inizio=contract.inizio,
+                fine=contract.fine,
+                nuovo_inizio=data.inizio,
+                nuova_fine=data.fine,
+                durata=None if data.durata is None else (data.durata.conteggio, data.durata.unita),
+            )
+        except RenewalRefused as refused:
+            raise ValidationFailed(
+                ENTITY, refused.field, str(refused), expected=refused.expected
+            ) from refused
+        # The azienda of the customer as it is now, as `create` takes it, and never a
+        # deactivated one: a customer moved since the contract began renews on the azienda
+        # it has moved to, and an archived customer has nothing to renew for.
+        customer = self.customers.get(contract.customer_id)
+        if customer is None:
+            raise NotFound("customer", contract.customer_id)
+        azienda_id = LegalEntityService(self.session).inherited(customer.azienda_id, ENTITY)
+
+        carried = {
+            column.key: deepcopy(getattr(contract, column.key))
+            for column in sa_inspect(Contract).column_attrs
+            if column.key not in _NOT_RENEWED
+        }
+        if data.titolo is not None:
+            carried["titolo"] = data.titolo
+        carried["azienda_id"] = azienda_id
+        successor = Contract(
+            **carried,
+            inizio=inizio,
+            fine=fine,
+            stato="attivo",
+            contratto_precedente_id=contract.id,
+        )
+        try:
+            self.session.add(successor)
+            self.session.flush()
+        except IntegrityError as exc:
+            # Two renewals racing: the lock above makes the second read the first's row, so
+            # this is the unique key as a last resort.
+            self.session.rollback()
+            raise Conflict(
+                ENTITY, "il contratto è già stato rinnovato", contract_id=str(contract_id)
+            ) from exc
+        for card, valido_da, valido_a in carried_cards(
+            RateCardRepository(self.session).list_for_contract(contract.id), inizio
+        ):
+            self.session.add(
+                RateCard(
+                    contract_id=successor.id,
+                    valido_da=valido_da,
+                    valido_a=valido_a,
+                    tipo=card.tipo,
+                    importo=card.importo,
+                    unita=card.unita,
+                    frazioni_ammesse=list(card.frazioni_ammesse),
+                    ore_minime=card.ore_minime,
+                    periodo_erogazione=card.periodo_erogazione,
+                )
+            )
+        self.session.flush()
+        self.activities.record(
+            ENTITY,
+            successor.id,
+            "created",
+            actor,
+            {"titolo": successor.titolo, "rinnova": str(contract.id)},
+        )
+        self.activities.record(
+            ENTITY,
+            contract.id,
+            "renewed",
+            actor,
+            {
+                "successore": str(successor.id),
+                "inizio": inizio.isoformat(),
+                "fine": fine.isoformat(),
+            },
+        )
+        self.session.commit()
+        return ContractRead.model_validate(successor)
+
     def concentration_cap(
         self,
         contract_id: UUID,
@@ -250,22 +446,17 @@ class ContractService:
         """REB-352 §1.5: one engagement's own share of total invoiced revenue over
         the anniversary year containing `as_of` (today, in the emitter's own zone,
         when not given). Read-only, like every other figure `AnalyticsService`
-        exposes -- no `require_write`. `soglia` is a caller-supplied share in [0, 1];
-        `superata` stays `None` until one is given, the same "no persistence
-        required" reading REB-352 §5 item 4 gives the ceiling simulator.
+        exposes -- no `require_write`. `soglia` is a caller-supplied share in [0, 1]
+        and is never stored; without one the share is compared with the contract's own
+        cap when it has one (REB-761), and `superata` stays `None` when it has neither.
         """
         contract = self.repo.get(contract_id)
         if contract is None:
             raise NotFound(ENTITY, contract_id)
-        reference = as_of if as_of is not None else today_local()
-        if reference < contract.inizio:
-            raise ValidationFailed(
-                ENTITY,
-                "as_of",
-                "precede l'inizio del contratto",
-                expected=f">= {contract.inizio.isoformat()}",
-            )
-        periodo_da, periodo_a = anniversary_year_bounds(contract.inizio, reference)
+        periodo_da, periodo_a = self._anniversary_window(contract, as_of)
+        soglia_da_contratto = soglia is None and contract.tetto_quota_cliente is not None
+        if soglia is None and contract.tetto_quota_cliente is not None:
+            soglia = _share(contract.tetto_quota_cliente)
         # Within the contract's own azienda (REB-630, spec 2026-10-03 §1.9): a share of
         # revenue is a share of one azienda's revenue, and the contract names which.
         # Per currency, never converted (REB-776): the contract's own `divisa` says what
@@ -277,7 +468,7 @@ class ContractService:
             revenue = [(contract.divisa, Decimal("0.00"), Decimal("0.00"))]
         valute = []
         for divisa, ricavi_cliente, ricavi_totali in revenue:
-            quota = float(ricavi_cliente / ricavi_totali) if ricavi_totali > 0 else 0.0
+            quota = _quota(ricavi_cliente, ricavi_totali)
             valute.append(
                 ConcentrationFigures(
                     divisa=divisa,
@@ -293,8 +484,87 @@ class ContractService:
             periodo_da=periodo_da,
             periodo_a=periodo_a,
             soglia=soglia,
+            soglia_da_contratto=soglia_da_contratto,
             valute=valute,
         )
+
+    def simulate_cap(
+        self, contract_id: UUID, aggiunta: Decimal, data_prevista: date | None, actor: Actor
+    ) -> ContractCapSimulation:
+        """REB-761: the contract's cap against its customer's share after a synthetic
+        addition, the «ci sta?» simulator's own reading (`AnalyticsService.simulate_ceiling`
+        calls this when it is given a contract). The addition is revenue of this customer
+        on the anniversary year containing `data_prevista` (today when not given), so it
+        raises the customer's figure and the total together. Nothing is written.
+
+        A contract with no cap has nothing to be checked against, and says so naming the
+        field instead of answering that everything fits.
+        """
+        contract = self.repo.get(contract_id)
+        if contract is None:
+            raise NotFound(ENTITY, contract_id)
+        if contract.tetto_quota_cliente is None:
+            raise ValidationFailed(
+                ENTITY,
+                "tetto_quota_cliente",
+                "il contratto non ha un tetto sulla quota del cliente",
+                expected="un contratto con un tetto, da impostare sul contratto",
+            )
+        if contract.divisa != SIMULATION_DIVISA:
+            # The addition is a deal's estimate, in the currency deals are estimated in; added
+            # to the revenue of a contract in another one it would be a sum of two currencies.
+            raise ValidationFailed(
+                ENTITY,
+                "divisa",
+                f"il simulatore ragiona in {SIMULATION_DIVISA}: il contratto è in "
+                f"{contract.divisa}",
+                expected=f"un contratto in {SIMULATION_DIVISA}",
+            )
+        # A contract that has not started (a fresh renewal) is asked about its first year:
+        # the cap is read where the clause begins, and the simulation still answers.
+        reference = data_prevista if data_prevista is not None else today_local()
+        periodo_da, periodo_a = self._anniversary_window(contract, max(reference, contract.inizio))
+        revenue = self.analytics.revenue_for_customer_in_window(
+            contract.customer_id, periodo_da, periodo_a, azienda_id=contract.azienda_id
+        )
+        cliente, totale = next(
+            ((c, t) for divisa, c, t in revenue if divisa == contract.divisa),
+            (Decimal("0.00"), Decimal("0.00")),
+        )
+        tetto = _share(contract.tetto_quota_cliente)
+        quota_simulata = _quota(cliente + aggiunta, totale + aggiunta)
+        return ContractCapSimulation(
+            contract_id=contract.id,
+            titolo=contract.titolo,
+            customer_id=contract.customer_id,
+            divisa=contract.divisa,
+            periodo_da=periodo_da,
+            periodo_a=periodo_a,
+            tetto=tetto,
+            ricavi_cliente_attuali=cliente,
+            ricavi_totali_attuali=totale,
+            quota_attuale=_quota(cliente, totale),
+            ricavi_cliente_simulati=round_money(cliente + aggiunta),
+            ricavi_totali_simulati=round_money(totale + aggiunta),
+            quota_simulata=quota_simulata,
+            rientra=quota_simulata < tetto,
+        )
+
+    @staticmethod
+    def _anniversary_window(
+        contract: Contract, as_of: date | None, field: str = "as_of"
+    ) -> tuple[date, date]:
+        """The anniversary year of `contract` that contains `as_of` (today when not given):
+        the window a cap resets on, never the calendar year."""
+        reference = as_of if as_of is not None else today_local()
+        if reference < contract.inizio:
+            raise ValidationFailed(
+                ENTITY,
+                field,
+                "precede l'inizio del contratto",
+                expected=f">= {contract.inizio.isoformat()}",
+            )
+        return anniversary_year_bounds(contract.inizio, reference)
 
     # `list` is defined LAST in this class on purpose -- see ContractRepository.list's
     # own comment for the Python 3.13 annotation-evaluation reason.
@@ -471,6 +741,73 @@ class RateCardService:
         return [
             RateCardRead.model_validate(card) for card in self.repo.list_for_contract(contract_id)
         ]
+
+
+class ClauseNoteService:
+    """The readings of a contract's clauses (REB-762): written, corrected and listed, never
+    deleted (see `ClauseNote`). Each write is on the contract's timeline, with the clause it
+    is about and not the words, which can run to pages."""
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+        self.contracts = ContractRepository(session)
+        self.activities = ActivityService(session)
+
+    def _contract(self, contract_id: UUID) -> Contract:
+        contract = self.contracts.get(contract_id)
+        if contract is None:
+            raise NotFound(ENTITY, contract_id)
+        return contract
+
+    def create(self, contract_id: UUID, data: ClauseNoteCreate, actor: Actor) -> ClauseNoteRead:
+        actor.require_write("create_clause_note")
+        self._contract(contract_id)
+        note = ClauseNote(**data.model_dump(), contract_id=contract_id)
+        self.session.add(note)
+        self.session.flush()
+        self.activities.record(
+            ENTITY,
+            contract_id,
+            "clause_note_added",
+            actor,
+            {"riferimento_clausola": note.riferimento_clausola},
+        )
+        self.session.commit()
+        return ClauseNoteRead.model_validate(note)
+
+    def update(
+        self, contract_id: UUID, note_id: UUID, data: ClauseNoteUpdate, actor: Actor
+    ) -> ClauseNoteRead:
+        actor.require_write("update_clause_note")
+        self._contract(contract_id)
+        note = self.session.get(ClauseNote, note_id)
+        if note is None or note.contract_id != contract_id:
+            raise NotFound("clause_note", note_id)
+        changes = supplied_changes(data)
+        reject_cleared_columns("clause_note", ClauseNote, changes)
+        if not changes:
+            return ClauseNoteRead.model_validate(note)
+        for key, value in changes.items():
+            setattr(note, key, value)
+        self.session.flush()
+        self.activities.record(
+            ENTITY,
+            contract_id,
+            "clause_note_updated",
+            actor,
+            {"riferimento_clausola": note.riferimento_clausola, "changed": sorted(changes)},
+        )
+        self.session.commit()
+        return ClauseNoteRead.model_validate(note)
+
+    def list_for_contract(self, contract_id: UUID, actor: Actor) -> list[ClauseNoteRead]:
+        self._contract(contract_id)
+        notes = self.session.scalars(
+            select(ClauseNote)
+            .where(ClauseNote.contract_id == contract_id)
+            .order_by(ClauseNote.created_at, ClauseNote.id)
+        )
+        return [ClauseNoteRead.model_validate(note) for note in notes]
 
 
 class RenewalAssumptionService:

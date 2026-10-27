@@ -4,9 +4,12 @@ from uuid import UUID
 
 from pigrocrm.core.contract_emails.service import ContractEmailService
 from pigrocrm.core.contracts.schemas import (
+    ClauseNoteCreate,
+    ClauseNoteUpdate,
     ContractCreate,
     ContractListQuery,
     ContractProjectionQuery,
+    ContractRenew,
     ContractStateChange,
     ContractUpdate,
     RateCardCreate,
@@ -14,6 +17,7 @@ from pigrocrm.core.contracts.schemas import (
     RenewalAssumptionUpsert,
 )
 from pigrocrm.core.contracts.service import (
+    ClauseNoteService,
     ContractProjectionService,
     ContractService,
     RateCardService,
@@ -34,7 +38,7 @@ def create(context: McpContext, data: dict[str, Any]) -> dict[str, Any]:
 def get(context: McpContext, contract_id: str) -> dict[str, Any]:
     return (
         ContractService(context.session)
-        .get(UUID(contract_id), context.actor)
+        .detail(UUID(contract_id), context.actor)
         .model_dump(mode="json")
     )
 
@@ -153,5 +157,38 @@ def project_revenue(
     return (
         ContractProjectionService(context.session)
         .project(UUID(contract_id), query, context.actor)
+        .model_dump(mode="json")
+    )
+
+
+def create_clause_note(
+    context: McpContext, contract_id: str, data: dict[str, Any]
+) -> dict[str, Any]:
+    return (
+        ClauseNoteService(context.session)
+        .create(UUID(contract_id), ClauseNoteCreate(**data), context.actor)
+        .model_dump(mode="json")
+    )
+
+
+def update_clause_note(
+    context: McpContext, contract_id: str, note_id: str, data: dict[str, Any]
+) -> dict[str, Any]:
+    return (
+        ClauseNoteService(context.session)
+        .update(UUID(contract_id), UUID(note_id), ClauseNoteUpdate(**data), context.actor)
+        .model_dump(mode="json")
+    )
+
+
+def list_clause_notes(context: McpContext, contract_id: str) -> list[dict[str, Any]]:
+    notes = ClauseNoteService(context.session).list_for_contract(UUID(contract_id), context.actor)
+    return [note.model_dump(mode="json") for note in notes]
+
+
+def renew(context: McpContext, contract_id: str, data: dict[str, Any]) -> dict[str, Any]:
+    return (
+        ContractService(context.session)
+        .renew(UUID(contract_id), ContractRenew(**data), context.actor)
         .model_dump(mode="json")
     )

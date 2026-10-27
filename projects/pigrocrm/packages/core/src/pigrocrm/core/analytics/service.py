@@ -1,6 +1,5 @@
 import calendar
 from collections import defaultdict
-from dataclasses import replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from uuid import UUID
@@ -46,6 +45,7 @@ from pigrocrm.core.analytics.year_csv import render_year_csv, year_csv_filename
 from pigrocrm.core.config import get_settings
 from pigrocrm.core.contracts.dates import irrevocability_window_end, renewal_deadline
 from pigrocrm.core.contracts.repository import ContractRepository
+from pigrocrm.core.contracts.service import ContractService
 from pigrocrm.core.db import today_local
 from pigrocrm.core.deals.repository import DealRepository
 from pigrocrm.core.emitter.service import LegalEntityService
@@ -58,12 +58,10 @@ from pigrocrm.core.fiscal.ceiling import (
 )
 from pigrocrm.core.fiscal.pack import (
     PACK_IT_FLAT_RATE,
-    FiscalPack,
     known_charge_markers,
     resolve_pack,
 )
-from pigrocrm.core.fiscal.regime import FORFETTARIO, resolve_regime
-from pigrocrm.core.fiscal.schemas import FiscalProfileRead
+from pigrocrm.core.fiscal.regime import frozen_pack_id
 from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
 from pigrocrm.core.invoices.pdf import dichiarazione_bollo_virtuale
@@ -159,23 +157,6 @@ def _ceiling_usage(ricavi: Decimal, soglia: Decimal) -> float:
     once crossed): the one number a progress bar needs, computed here because the
     browser adds and divides nothing (§6). Four places, as `RevenueByCustomer.quota`."""
     return round(float(ricavi / soglia), 4)
-
-
-def _applicable_pack(profile: FiscalProfileRead) -> FiscalPack:
-    """The pack whose ceilings an azienda is held to: its own on the forfettario, and
-    none on any other regime.
-
-    The 85,000 and 100,000 euro thresholds are a fact about the forfettario (l. 190/2014,
-    commi 54 and 71). `FiscalProfile.pack_id` names the Italian pack for the ordinary
-    regime too, because that is the only pack there is; read through it, an `RF01`
-    azienda was told how much room it had left under a ceiling it is not subject to.
-    Until REB-760 gives the ordinary regime a pack of its own, the regime decides here,
-    and the pack is returned without its ceilings so nothing downstream has to know.
-    """
-    pack = resolve_pack(profile.pack_id, profile.pack_version)
-    if resolve_regime(profile.codice_regime, profile.pack_id) is FORFETTARIO:
-        return pack
-    return replace(pack, ceilings=())
 
 
 def _ceiling_status_read(status: CeilingStatus) -> CeilingStatusRead:
@@ -528,7 +509,7 @@ class AnalyticsService:
         """
         azienda = LegalEntityService(self.session).require_single(azienda_id, entity=ENTITY)
         profile = FiscalProfileService(self.session).get(actor, azienda.id)
-        pack = _applicable_pack(profile)
+        pack = resolve_pack(profile.pack_id, profile.pack_version)
         return CeilingHeadroom(
             anno=anno,
             azienda_id=azienda.id,
@@ -555,10 +536,15 @@ class AnalyticsService:
         deal's own estimate, read raw off its own three columns rather than by
         `deal_id`, so nothing has to be saved to ask the question. The azienda
         resolves as in `ceiling_headroom` (REB-630).
+
+        With a `contract_id` (REB-761) the same addition is also read against that
+        contract's cap on its customer's share, in `tetto_contratto`: a clause of the
+        contract and not of the pack, so it is answered whatever the regime, and the
+        contract has to be of the azienda the simulation is for.
         """
         azienda = LegalEntityService(self.session).require_single(azienda_id, entity=ENTITY)
         profile = FiscalProfileService(self.session).get(actor, azienda.id)
-        pack = _applicable_pack(profile)
+        pack = resolve_pack(profile.pack_id, profile.pack_version)
         aggiunta = _synthetic_addition(query)
         risultati: list[CeilingSimulationResult] = []
         for prima in evaluate_pack(pack, self.session, anno, azienda.id):
@@ -579,6 +565,19 @@ class AnalyticsService:
                     livello_allerta_simulato=dopo.livello_allerta,
                 )
             )
+        tetto = None
+        if query.contract_id is not None:
+            contratto = ContractService(self.session).get(query.contract_id, actor)
+            if contratto.azienda_id != azienda.id:
+                raise ValidationFailed(
+                    ENTITY,
+                    "contract_id",
+                    "il contratto è di un'altra azienda",
+                    expected=f"un contratto di {azienda.nome}",
+                )
+            tetto = ContractService(self.session).simulate_cap(
+                query.contract_id, aggiunta, query.data_prevista, actor
+            )
         return CeilingSimulation(
             anno=anno,
             azienda_id=azienda.id,
@@ -586,6 +585,7 @@ class AnalyticsService:
             pack_version=pack.version,
             aggiunta_sintetica=aggiunta,
             soglie=risultati,
+            tetto_contratto=tetto,
         )
 
     def year_overview(
@@ -747,7 +747,8 @@ class AnalyticsService:
                     data_incasso=invoice.data_incasso,
                 )
             )
-            regime = (fiscale.get("codice_regime"), fiscale.get("pack_id") or PACK_IT_FLAT_RATE)
+            codice = fiscale.get("codice_regime")
+            regime = (codice, frozen_pack_id(codice, fiscale.get("pack_id") or PACK_IT_FLAT_RATE))
             count, total = regimi.get(regime, (0, ZERO_MONEY))
             regimi[regime] = (count + 1, total + invoice.imponibile)
             for line in lines_by_invoice[invoice.id]:
@@ -964,7 +965,9 @@ class AnalyticsService:
         if actor.role == "admin":
             try:
                 titolare = LegalEntityService(self.session).single(azienda_id)
-                if titolare is not None:
+                # Only a regime with an income estimate has one to show: an ordinary or a
+                # foreign azienda gets the cash alone, not a card of zeros (REB-760).
+                if titolare is not None and self._has_income_estimate(titolare.id, actor):
                     # The money the taxes are computed on is the azienda's own, never
                     # the page's: in «tutte» with one active azienda `cassa` still adds
                     # up a deactivated azienda's receipts, which must not reach the
@@ -1006,6 +1009,12 @@ class AnalyticsService:
             netto_effettivo=netto,
             netto_proiettato=netto_proiettato,
         )
+
+    def _has_income_estimate(self, azienda_id: UUID, actor: Actor) -> bool:
+        """Whether the azienda's pack carries the income estimate; `NotFound` without a
+        profile, as `get_fiscal_estimate` answers."""
+        profile = FiscalProfileService(self.session).get(actor, azienda_id)
+        return resolve_pack(profile.pack_id, profile.pack_version).stima_reddito
 
     def get_fiscal_estimate(
         self,

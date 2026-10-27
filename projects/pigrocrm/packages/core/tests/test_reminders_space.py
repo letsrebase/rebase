@@ -147,12 +147,7 @@ def space(db_session: Session) -> Space:
 
 def _ordinary(space: Space) -> None:
     FiscalProfileService(space.session).upsert(
-        FiscalProfileUpsert(
-            codice_regime="RF01",
-            aliquota_iva_default=Decimal("22.00"),
-            natura_default=None,
-            riferimento_normativo=None,
-        ),
+        FiscalProfileUpsert(pack_id="it-standard"),
         _admin(),
     )
 

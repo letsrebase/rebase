@@ -106,20 +106,32 @@ export function Meter({
   ratio,
   tone = 1,
   color,
+  mark,
 }: {
   /** 0..1, computed by the server. Clamped here, never derived here. */
   ratio: number
   tone?: number
   color?: string
+  /** 0..1, computed by the server: a hairline across the track where a limit sits, for a
+   *  bar whose own scale is a share and not a use of that limit. */
+  mark?: number
 }) {
   return (
-    <div className="h-2 min-w-24 flex-1 bg-muted">
+    <div className="relative h-2 min-w-24 flex-1 bg-muted">
       <div
         data-testid="bar-fill"
         aria-hidden="true"
         className="h-2"
         style={{ width: widthPercent(ratio), backgroundColor: color ?? toneColor(tone) }}
       />
+      {mark !== undefined && (
+        <div
+          data-testid="bar-mark"
+          aria-hidden="true"
+          className="absolute -inset-y-1 w-0.5 bg-foreground"
+          style={{ left: widthPercent(mark) }}
+        />
+      )}
     </div>
   )
 }

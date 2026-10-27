@@ -178,7 +178,19 @@ ROWS: list[Row] = [
     ),
     Row("PATCH", "/api/contracts/{contract_id}", body={"titolo": "Matrice 2"}),
     Row("POST", "/api/contracts/{contract_id}/state", body={"stato": "attivo"}),
+    Row("POST", "/api/contracts/{contract_id}/renew", body={}),
     Row("PATCH", "/api/contracts/{contract_id}/rate-cards/{rate_card_id}", body={}),
+    # --- contracts / clause notes (REB-762): `require_write` (contracts/service.py) ---
+    Row(
+        "POST",
+        "/api/contracts/{contract_id}/clause-notes",
+        body={
+            "riferimento_clausola": "Art. 8.3 Rinnovo",
+            "testo_letterale": "Il contratto si rinnova salvo disdetta.",
+            "interpretazione_adottata": "Rinnovo tacito, disdetta a 60 giorni.",
+        },
+    ),
+    Row("PATCH", "/api/contracts/{contract_id}/clause-notes/{note_id}", body={}),
     # --- contracts / expenses (REB-360): `require_write` (contract_expenses/service.py)
     Row(
         "POST",

@@ -270,8 +270,8 @@ export function EconomicTab({
                 the server's own words, and offers the settings screen when that is the
                 answer. */}
             <p className="mt-1 text-sm">
-              Non disponibile qui: serve un profilo fiscale configurato e un account
-              amministratore.
+              Non disponibile qui: serve un profilo fiscale del regime forfettario e un
+              account amministratore. Gli altri regimi non hanno una stima in PigroCRM.
             </p>
           </div>
         )}

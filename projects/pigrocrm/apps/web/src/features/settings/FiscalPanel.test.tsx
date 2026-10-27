@@ -59,6 +59,20 @@ const FOREIGN = {
   aliquota_inps: null,
 }
 
+const ORDINARY = {
+  ...PROFILE,
+  id: 'f-3',
+  pack_id: 'it-standard',
+  codice_regime: 'RF01',
+  aliquota_iva_default: '22.00',
+  natura_default: null,
+  riferimento_normativo: null,
+  applica_bollo: false,
+  coefficiente_redditivita: null,
+  aliquota_imposta_sostitutiva: null,
+  aliquota_inps: null,
+}
+
 function renderPanel() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
@@ -324,13 +338,15 @@ describe('FiscalPanel', () => {
     expect(screen.getByLabelText('Natura')).toHaveValue('')
     expect(screen.queryByLabelText('Soglia bollo')).not.toBeInTheDocument()
     expect(screen.queryByLabelText(/Applica il bollo/)).not.toBeInTheDocument()
-    // And back to an Italian regime: the hidden fields return with what the stored
-    // foreign profile had (the threshold it kept, the switch off, no coefficient),
-    // never the panel's defaults.
-    await userEvent.selectOptions(screen.getByLabelText('Regime'), 'RF01')
+    // And back to the forfettario: the figures only it reads return as the server's own
+    // defaults where the foreign profile has none (no coefficient, no declaration), with
+    // the zero rate it alone allows, never a blank to be refused.
+    await userEvent.selectOptions(screen.getByLabelText('Regime'), 'RF19')
     expect(screen.getByLabelText('Soglia bollo')).toHaveValue('77.47')
-    expect(screen.getByLabelText('Coefficiente di redditività')).toHaveValue('')
-    expect(screen.getByLabelText(/Applica il bollo/)).not.toBeChecked()
+    expect(screen.getByLabelText('Coefficiente di redditività')).toHaveValue('67.00')
+    expect(screen.getByLabelText('Aliquota IVA predefinita')).toHaveValue('0.00')
+    expect(screen.getByLabelText('Natura')).toHaveValue('N2.2')
+    expect(screen.getByLabelText(/Applica il bollo/)).toBeChecked()
   })
 
   it('shows a refusal that names a hidden field in the banner, never nowhere', async () => {
@@ -367,14 +383,75 @@ describe('FiscalPanel', () => {
 
   it('sends the Italian code the choice names', async () => {
     vi.mocked(api.GET).mockImplementation(() => ok(PROFILE))
-    vi.mocked(api.PUT).mockImplementation(() => ok({ ...PROFILE, codice_regime: 'RF01' }))
+    vi.mocked(api.PUT).mockImplementation(() => ok(ORDINARY))
     renderPanel()
 
     await waitFor(() => expect(screen.getByLabelText('Regime')).toHaveValue('RF19'))
     await userEvent.selectOptions(screen.getByLabelText('Regime'), 'RF01')
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
     await waitFor(() => expect(api.PUT).toHaveBeenCalled())
-    expect(bodyOfSave()).toMatchObject({ pack_id: 'it-flat-rate', codice_regime: 'RF01' })
+    // The ordinary regime is a pack of its own (REB-760), with the standard rate proposed
+    // in place of the forfettario's zero and nothing only the forfettario carries.
+    expect(bodyOfSave()).toMatchObject({
+      pack_id: 'it-standard',
+      codice_regime: 'RF01',
+      aliquota_iva_default: '22.00',
+      natura_default: null,
+      riferimento_normativo: null,
+      applica_bollo: false,
+      coefficiente_redditivita: null,
+      aliquota_imposta_sostitutiva: null,
+      aliquota_inps: null,
+    })
+  })
+
+  it('sends the default bollo amounts when they were blanked before leaving the forfettario', async () => {
+    vi.mocked(api.GET).mockImplementation(() => ok(PROFILE))
+    vi.mocked(api.PUT).mockImplementation(() => ok(ORDINARY))
+    renderPanel()
+
+    await waitFor(() => expect(screen.getByLabelText('Regime')).toHaveValue('RF19'))
+    await userEvent.clear(screen.getByLabelText('Soglia bollo'))
+    await userEvent.clear(screen.getByLabelText('Importo bollo'))
+    await userEvent.selectOptions(screen.getByLabelText('Regime'), 'RF01')
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    await waitFor(() => expect(api.PUT).toHaveBeenCalled())
+    expect(bodyOfSave()).toMatchObject({ soglia_bollo: '77.47', importo_bollo: '2.00' })
+  })
+
+  it('shows an ordinary profile as «Ordinario» with only the fields it reads', async () => {
+    vi.mocked(api.GET).mockImplementation(() => ok(ORDINARY))
+    renderPanel()
+
+    await waitFor(() => expect(screen.getByLabelText('Regime')).toHaveValue('RF01'))
+    expect(screen.getByLabelText('Aliquota IVA predefinita')).toHaveValue('22.00')
+    expect(screen.getByLabelText('IBAN')).toBeInTheDocument()
+    // No natura, no declaration, no bollo and none of the forfettario's estimate.
+    for (const label of [
+      'Natura',
+      'Riferimento normativo',
+      'Soglia bollo',
+      'Importo bollo',
+      'Coefficiente di redditività',
+      'Aliquota imposta sostitutiva',
+      'Aliquota INPS',
+    ]) {
+      expect(screen.queryByLabelText(label)).not.toBeInTheDocument()
+    }
+    expect(screen.queryByLabelText(/Applica il bollo/)).not.toBeInTheDocument()
+    expect(screen.getByText(/nessuna soglia del forfettario/)).toBeInTheDocument()
+  })
+
+  it('goes from the ordinary regime back to the forfettario with its own defaults', async () => {
+    vi.mocked(api.GET).mockImplementation(() => ok(ORDINARY))
+    renderPanel()
+
+    await waitFor(() => expect(screen.getByLabelText('Regime')).toHaveValue('RF01'))
+    await userEvent.selectOptions(screen.getByLabelText('Regime'), 'RF19')
+    expect(screen.getByLabelText('Aliquota IVA predefinita')).toHaveValue('0.00')
+    expect(screen.getByLabelText('Natura')).toHaveValue('N2.2')
+    expect(screen.getByLabelText('Aliquota INPS')).toHaveValue('26.07')
+    expect(screen.getByLabelText(/Applica il bollo/)).toBeChecked()
   })
 
   /**
@@ -451,7 +528,7 @@ describe('FiscalPanel', () => {
    * moves twice.
    */
   it('does not reseed itself when the query refetches after a save', async () => {
-    const saved = { ...PROFILE, codice_regime: 'RF01', updated_at: '2026-08-21T09:00:00Z' }
+    const saved = { ...ORDINARY, updated_at: '2026-08-21T09:00:00Z' }
     vi.mocked(api.GET).mockImplementationOnce(() => ok(PROFILE)).mockImplementation(() => ok(saved))
     vi.mocked(api.PUT).mockImplementation(() => ok(saved))
     renderPanel()

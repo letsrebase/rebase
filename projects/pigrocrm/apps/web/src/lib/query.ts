@@ -143,6 +143,7 @@ export const queryKeys = {
   contractRateCards: (id: string) => ['contract', id, 'rate-cards'] as const,
   contractExpenses: (id: string) => ['contract', id, 'expenses'] as const,
   contractAssumption: (id: string) => ['contract', id, 'assumption'] as const,
+  contractClauseNotes: (id: string) => ['contract', id, 'clause-notes'] as const,
   contractProjection: (id: string, params?: unknown) =>
     ['contract', id, 'projection', params ?? {}] as const,
   contractConcentration: (id: string) => ['contract', id, 'concentration'] as const,

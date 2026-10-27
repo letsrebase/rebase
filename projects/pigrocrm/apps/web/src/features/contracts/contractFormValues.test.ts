@@ -22,6 +22,7 @@ const CONTRACT: Contract = {
   divisa: 'EUR',
   requires_prior_approval: true,
   applies_social_charge: false,
+  tetto_quota_cliente: null,
   politica_spese: { kind: 'rimborsabile_con_tetto', importo_tetto: '500.00' },
   stato: 'attivo',
   contratto_precedente_id: null,
@@ -32,6 +33,44 @@ const CONTRACT: Contract = {
 }
 
 const nothingRendered = () => false
+
+describe('toContractBody, the cap on the customer’s share', () => {
+  it('sends null on create when the box is blank, and the typed percentage otherwise', () => {
+    const base = { ...defaultContractFormValues(), titolo: 'Manutenzione', inizio: '2026-11-01' }
+    expect(toContractBody(base, undefined, nothingRendered)).toMatchObject({
+      tetto_quota_cliente: null,
+    })
+    expect(
+      toContractBody({ ...base, tetto_quota_cliente: ' 50,5 ' }, undefined, nothingRendered),
+    ).toMatchObject({ tetto_quota_cliente: '50.5' })
+  })
+
+  it('reads the stored percentage into the box, and a missing one as blank', () => {
+    expect(contractToFormValues({ ...CONTRACT, tetto_quota_cliente: '50.00' }).tetto_quota_cliente).toBe(
+      '50.00',
+    )
+    expect(contractToFormValues(CONTRACT).tetto_quota_cliente).toBe('')
+  })
+
+  it('sends only the cap when only the cap changed', () => {
+    const initial = contractToFormValues({ ...CONTRACT, tetto_quota_cliente: '50.00' })
+    expect(toContractBody({ ...initial, tetto_quota_cliente: '40' }, initial, nothingRendered)).toEqual({
+      tetto_quota_cliente: '40',
+    })
+  })
+
+  it('clears the cap with null when the box is emptied on edit', () => {
+    const initial = contractToFormValues({ ...CONTRACT, tetto_quota_cliente: '50.00' })
+    expect(toContractBody({ ...initial, tetto_quota_cliente: '' }, initial, nothingRendered)).toEqual({
+      tetto_quota_cliente: null,
+    })
+  })
+
+  it('does not resend a cap nobody touched', () => {
+    const initial = contractToFormValues({ ...CONTRACT, tetto_quota_cliente: '50.00' })
+    expect(toContractBody(initial, initial, nothingRendered)).toEqual({})
+  })
+})
 
 describe('toContractBody', () => {
   it('sends every field on create, with the payment terms null when they follow the customer', () => {

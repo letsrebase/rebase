@@ -116,19 +116,10 @@ def test_headroom_states_how_much_of_each_ceiling_is_used(db_session: Session) -
 
 
 def test_an_ordinary_regime_azienda_has_no_forfettario_ceiling(db_session: Session) -> None:
-    """The 85,000 and 100,000 euro thresholds belong to the forfettario. An `RF01`
-    azienda is still on the Italian pack (the only one with a name), and used to be told
-    how much room it had left under a ceiling it is not subject to: now `soglie` is
-    empty, for the room and for the simulator alike, and nothing is raised."""
-    FiscalProfileService(db_session).upsert(
-        FiscalProfileUpsert(
-            codice_regime="RF01",
-            aliquota_iva_default=Decimal("22.00"),
-            natura_default=None,
-            riferimento_normativo=None,
-        ),
-        ADMIN,
-    )
+    """The 85,000 and 100,000 euro thresholds belong to the forfettario. An azienda on
+    the ordinary regime points at `it-standard` (REB-760), which declares no ceiling:
+    `soglie` is empty, for the room and for the simulator alike, and nothing is raised."""
+    FiscalProfileService(db_session).upsert(FiscalProfileUpsert(pack_id="it-standard"), ADMIN)
     _paid_invoice(db_session, numero=1, anno=ANNO, imponibile=Decimal("90000.00"))
 
     service = AnalyticsService(db_session)
@@ -138,7 +129,7 @@ def test_an_ordinary_regime_azienda_has_no_forfettario_ceiling(db_session: Sessi
     )
 
     assert headroom.soglie == []
-    assert headroom.pack_id == IT_FLAT_RATE_PACK.id
+    assert headroom.pack_id == "it-standard"
     assert simulation.soglie == []
     assert simulation.aggiunta_sintetica == Decimal("20000.00")
 

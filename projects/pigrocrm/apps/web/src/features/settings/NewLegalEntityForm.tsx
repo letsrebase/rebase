@@ -119,10 +119,10 @@ function fiscalBody(values: Values): Record<string, unknown> {
   }
   if (values.regime === 'RF01') {
     return {
-      pack_id: 'it-flat-rate',
+      pack_id: 'it-standard',
       codice_regime: 'RF01',
       aliquota_iva_default,
-      natura_default,
+      natura_default: null,
       riferimento_normativo: null,
       coefficiente_redditivita: null,
       aliquota_imposta_sostitutiva: null,
@@ -321,25 +321,27 @@ export function NewLegalEntityForm({
             </p>
           )}
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="nuova-natura_default">Natura</Label>
-          <Input
-            id="nuova-natura_default"
-            value={values.natura_default}
-            disabled={create.isPending}
-            aria-invalid={fieldError?.field === 'natura_default' ? true : undefined}
-            onChange={(event) =>
-              setValues((previous) => ({ ...previous, natura_default: event.target.value }))
-            }
-          />
-          {fieldError?.field === 'natura_default' ? (
-            <p className="text-destructive text-sm">{fieldError.message}</p>
-          ) : (
-            <p className="text-muted-foreground text-xs">
-              Obbligatoria con aliquota 0, da lasciare vuota con un’aliquota diversa da zero.
-            </p>
-          )}
-        </div>
+        {values.regime === 'RF01' ? null : (
+          <div className="space-y-2">
+            <Label htmlFor="nuova-natura_default">Natura</Label>
+            <Input
+              id="nuova-natura_default"
+              value={values.natura_default}
+              disabled={create.isPending}
+              aria-invalid={fieldError?.field === 'natura_default' ? true : undefined}
+              onChange={(event) =>
+                setValues((previous) => ({ ...previous, natura_default: event.target.value }))
+              }
+            />
+            {fieldError?.field === 'natura_default' ? (
+              <p className="text-destructive text-sm">{fieldError.message}</p>
+            ) : (
+              <p className="text-muted-foreground text-xs">
+                Obbligatoria con aliquota 0, da lasciare vuota con un’aliquota diversa da zero.
+              </p>
+            )}
+          </div>
+        )}
         <div className="space-y-2">
           <Label htmlFor="nuova-iban">IBAN</Label>
           <Input

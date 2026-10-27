@@ -160,3 +160,16 @@ export function formatAmount(value: string, divisa: string): string {
 export function currencySign(divisa: string): string {
   return divisa === 'EUR' ? '€' : divisa
 }
+
+const capPercent = new Intl.NumberFormat('it-IT', {
+  style: 'unit',
+  unit: 'percent',
+  maximumFractionDigits: 2,
+})
+
+/** A contract's cap on the customer's share («50.00», a percentage as the API stores it)
+ *  as the page prints it. Intl reads the decimal string itself, so nothing is parsed or
+ *  scaled here: the figure on screen is the one the server holds. */
+export function formatCapPercent(value: string): string {
+  return capPercent.format(value as `${number}`)
+}

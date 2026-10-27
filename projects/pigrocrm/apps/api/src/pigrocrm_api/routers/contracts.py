@@ -7,13 +7,18 @@ from fastapi import APIRouter, Query, status
 from pigrocrm.core.activities.schemas import ActivityRead
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.contracts.schemas import (
+    ClauseNoteCreate,
+    ClauseNoteRead,
+    ClauseNoteUpdate,
     ContractConcentrationCap,
     ContractCreate,
+    ContractDetail,
     ContractListQuery,
     ContractPage,
     ContractProjectionQuery,
     ContractProjectionRead,
     ContractRead,
+    ContractRenew,
     ContractStateChange,
     ContractUpdate,
     RateCardCreate,
@@ -23,6 +28,7 @@ from pigrocrm.core.contracts.schemas import (
     RenewalAssumptionUpsert,
 )
 from pigrocrm.core.contracts.service import (
+    ClauseNoteService,
     ContractProjectionService,
     ContractService,
     RateCardService,
@@ -67,9 +73,11 @@ def list_contracts(
     return ContractService(session).list(query, actor)
 
 
-@router.get("/{contract_id}", response_model=ContractRead)
-def get(contract_id: UUID, session: SessionDep, actor: ActorDep) -> ContractRead:
-    return ContractService(session).get(contract_id, actor)
+@router.get("/{contract_id}", response_model=ContractDetail)
+def get(contract_id: UUID, session: SessionDep, actor: ActorDep) -> ContractDetail:
+    """Il contratto con le sue note sulle clausole (REB-762) e, se è stato rinnovato,
+    l'id di chi lo rinnova (REB-763)."""
+    return ContractService(session).detail(contract_id, actor)
 
 
 @router.patch("/{contract_id}", response_model=ContractRead)
@@ -84,6 +92,19 @@ def set_state(
     contract_id: UUID, data: ContractStateChange, session: SessionDep, actor: ActorDep
 ) -> ContractRead:
     return ContractService(session).set_state(contract_id, data, actor)
+
+
+@router.post(
+    "/{contract_id}/renew", response_model=ContractRead, status_code=status.HTTP_201_CREATED
+)
+def renew(
+    contract_id: UUID, data: ContractRenew, session: SessionDep, actor: ActorDep
+) -> ContractRead:
+    """Rinnova il contratto (REB-763): il successore ha gli stessi termini, comincia il
+    giorno dopo la fine di questo e dura quanto durava, salvo `inizio`, `fine` o `durata`.
+    Le schede tariffarie che arrivano al nuovo termine passano con lui; le sue restano
+    dove sono. Un contratto si rinnova una volta (409) e solo se ha una fine (422)."""
+    return ContractService(session).renew(contract_id, data, actor)
 
 
 @router.get("/{contract_id}/timeline", response_model=list[ActivityRead])
@@ -145,6 +166,37 @@ def update_rate_card(
 @router.get("/{contract_id}/rate-cards", response_model=list[RateCardRead])
 def list_rate_cards(contract_id: UUID, session: SessionDep, actor: ActorDep) -> list[RateCardRead]:
     return RateCardService(session).list_for_contract(contract_id, actor)
+
+
+@router.post(
+    "/{contract_id}/clause-notes",
+    response_model=ClauseNoteRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_clause_note(
+    contract_id: UUID, data: ClauseNoteCreate, session: SessionDep, actor: ActorDep
+) -> ClauseNoteRead:
+    """Una lettura di una clausola: il riferimento, il testo letterale e l'interpretazione
+    adottata (REB-762)."""
+    return ClauseNoteService(session).create(contract_id, data, actor)
+
+
+@router.patch("/{contract_id}/clause-notes/{note_id}", response_model=ClauseNoteRead)
+def update_clause_note(
+    contract_id: UUID,
+    note_id: UUID,
+    data: ClauseNoteUpdate,
+    session: SessionDep,
+    actor: ActorDep,
+) -> ClauseNoteRead:
+    return ClauseNoteService(session).update(contract_id, note_id, data, actor)
+
+
+@router.get("/{contract_id}/clause-notes", response_model=list[ClauseNoteRead])
+def list_clause_notes(
+    contract_id: UUID, session: SessionDep, actor: ActorDep
+) -> list[ClauseNoteRead]:
+    return ClauseNoteService(session).list_for_contract(contract_id, actor)
 
 
 @router.put("/{contract_id}/renewal-assumption", response_model=RenewalAssumptionRead)

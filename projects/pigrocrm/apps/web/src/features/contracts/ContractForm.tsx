@@ -70,6 +70,7 @@ const DRAWN_FIELDS = [
   'pagamento_fine_mese',
   'cadenza_fatturazione',
   'divisa',
+  'tetto_quota_cliente',
   'politica_spese',
   'note',
 ]
@@ -357,6 +358,24 @@ export function ContractForm({ open, onOpenChange, customerId, contract, onSaved
               Applica la rivalsa INPS in fattura
             </Label>
           </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="contract-tetto-quota">Tetto sulla quota del cliente (%)</Label>
+          <Input
+            id="contract-tetto-quota"
+            inputMode="decimal"
+            placeholder="50"
+            value={values.tetto_quota_cliente}
+            onChange={(event) => set('tetto_quota_cliente', event.target.value)}
+            aria-invalid={fieldError?.field === 'tetto_quota_cliente'}
+            aria-describedby="contract-tetto-quota-hint"
+          />
+          <p id="contract-tetto-quota-hint" className="text-xs text-muted-foreground">
+            La quota del cliente sui ricavi fatturati dell’azienda che non deve raggiungere, sull’anno di
+            anniversario del contratto. Vuoto se non c’è un tetto.
+          </p>
+          {errorOn('tetto_quota_cliente')}
         </div>
 
         <div className="space-y-3">

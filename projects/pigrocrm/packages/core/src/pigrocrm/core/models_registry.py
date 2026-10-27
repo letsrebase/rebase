@@ -13,7 +13,12 @@ from pigrocrm.core.auth.refresh_models import RefreshToken  # noqa: F401
 from pigrocrm.core.automations.models import AutomationConfig  # noqa: F401
 from pigrocrm.core.contract_emails.models import ContractEmailTemplate  # noqa: F401
 from pigrocrm.core.contract_expenses.models import ContractExpense  # noqa: F401
-from pigrocrm.core.contracts.models import Contract, RateCard, RenewalAssumption  # noqa: F401
+from pigrocrm.core.contracts.models import (  # noqa: F401
+    ClauseNote,
+    Contract,
+    RateCard,
+    RenewalAssumption,
+)
 from pigrocrm.core.customers.models import Customer  # noqa: F401
 from pigrocrm.core.deals.models import Deal  # noqa: F401
 from pigrocrm.core.digest.models import Digest  # noqa: F401

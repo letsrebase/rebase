@@ -150,6 +150,10 @@ export type CeilingSimulationInput = {
   valore_preventivato?: string
   ore_preventivate?: string
   tariffa_oraria?: string
+  /** The day the revenue arrives, `YYYY-MM-DD`: the year the contract's cap is read over. */
+  data_prevista?: string
+  /** A contract with a cap on the customer's share, to read the same addition against. */
+  contract_id?: string
 }
 
 /**

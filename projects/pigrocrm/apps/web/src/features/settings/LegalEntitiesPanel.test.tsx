@@ -180,7 +180,7 @@ describe('LegalEntitiesPanel, «Nuova azienda»', () => {
     // beside a non-zero rate) and none of the forfettario's three income parameters,
     // which the server would otherwise default and the estimate would compute from.
     expect(init.body.fiscal_profile).toEqual({
-      pack_id: 'it-flat-rate',
+      pack_id: 'it-standard',
       codice_regime: 'RF01',
       aliquota_iva_default: '22.00',
       natura_default: null,
@@ -198,7 +198,7 @@ describe('LegalEntitiesPanel, «Nuova azienda»', () => {
     vi.mocked(api.POST).mockResolvedValue(ok(azienda('a-4', 'zero')))
     await user.type(within(form).getByLabelText('Nome breve *'), 'zero')
     await user.type(within(form).getByLabelText('Ragione sociale *'), 'Zero S.r.l.')
-    await user.selectOptions(within(form).getByLabelText('Regime'), 'RF01')
+    await user.selectOptions(within(form).getByLabelText('Regime'), 'estero')
     // Picking the regime proposes its rate and empties the natura; both stay editable.
     expect(within(form).getByLabelText('Natura')).toHaveValue('')
     await user.clear(within(form).getByLabelText('Aliquota IVA predefinita'))
@@ -211,10 +211,18 @@ describe('LegalEntitiesPanel, «Nuova azienda»', () => {
       { body: { fiscal_profile: Record<string, unknown> } },
     ]
     expect(init.body.fiscal_profile).toMatchObject({
-      codice_regime: 'RF01',
+      pack_id: 'non-it',
+      codice_regime: null,
       aliquota_iva_default: '0.00',
       natura_default: 'N3.5',
     })
+  })
+
+  it('has no natura to offer the ordinary regime, which taxes every line', async () => {
+    const { user, form } = await openTheForm()
+    expect(within(form).getByLabelText('Natura')).toBeInTheDocument()
+    await user.selectOptions(within(form).getByLabelText('Regime'), 'RF01')
+    expect(within(form).queryByLabelText('Natura')).not.toBeInTheDocument()
   })
 
   it('puts a refusal under the field it names and keeps the form open', async () => {
