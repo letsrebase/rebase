@@ -235,7 +235,7 @@ describe('EconomicTab', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       /ruolo in questo spazio è «collaboratore»: la stima fiscale è riservata a «amministratore»/,
     )
-    const paths = vi.mocked(api.GET).mock.calls.map(([path]) => path)
+    const paths = (vi.mocked(api.GET).mock.calls as unknown as GetCall[]).map(([path]) => path)
     expect(paths).not.toContain('/api/analytics/fiscal')
   })
 
