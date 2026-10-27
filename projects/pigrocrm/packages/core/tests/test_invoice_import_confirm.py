@@ -443,6 +443,35 @@ def test_a_refusal_in_a_later_file_leaves_the_earlier_files_unwritten(
     assert _invoice_count(db_session) == before
 
 
+def test_the_automatic_match_never_attaches_a_customer_of_another_azienda(
+    db_session: Session, local_storage: LocalFileStorage
+) -> None:
+    """The same tax id on file under another azienda is not this invoice's customer:
+    the review does not propose it, and a confirmation that creates the counterparty
+    makes one on the azienda the file landed on instead of reusing the other's."""
+    service = _svc(db_session, local_storage)
+    other = LegalEntity(
+        ragione_sociale="Acme Ltd", partita_iva="IE6388047V", nazione="IE", predefinita=False
+    )
+    db_session.add(other)
+    db_session.flush()
+    foreign = _customer(db_session, azienda_id=other.id, partita_iva=CLIENTE_PIVA)
+    document_id = _document(db_session, local_storage, _fixture(CONSULENZA), owner=foreign)
+
+    [reviewed] = service.review_import([document_id], ADMIN)
+    assert reviewed.outcome == "needs_customer_confirmation"
+    assert reviewed.matched_customer_id is None
+
+    [row] = service.confirm_import(document_id, ADMIN, create_customer=True)
+
+    assert row.outcome == "imported"
+    assert row.fattura is not None
+    assert row.fattura.customer_id != foreign.id
+    created = db_session.get(Customer, row.fattura.customer_id)
+    assert created is not None
+    assert created.azienda_id == row.azienda_id
+
+
 def test_create_customer_makes_exactly_one_new_customer_for_a_brand_new_counterpartys_batch(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:

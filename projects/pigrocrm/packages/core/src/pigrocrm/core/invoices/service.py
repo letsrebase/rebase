@@ -1557,7 +1557,7 @@ class InvoiceService:
                 self._check_import_customer(customer_id, azienda, invoice.cliente)
             resolved_customer_id = customer_id
             if resolved_customer_id is None:
-                resolved_customer_id = match_customer(self.session, invoice.cliente)
+                resolved_customer_id = match_customer(self.session, invoice.cliente, azienda.id)
             # Not cached in `created_customers` yet: `self.session.rollback()` below
             # would revert this insert in the database while leaving a Python-level
             # cache entry pointing at an id that no longer exists, so a later invoice

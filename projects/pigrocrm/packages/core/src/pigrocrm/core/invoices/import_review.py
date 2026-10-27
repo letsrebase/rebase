@@ -175,10 +175,17 @@ def register_lookup(
     return lambda azienda: existing_for(session, invoice, azienda.id)
 
 
-def match_customer(session: Session, cliente: ParsedInvoiceParty) -> UUID | None:
+def match_customer(
+    session: Session, cliente: ParsedInvoiceParty, azienda_id: UUID | None = None
+) -> UUID | None:
+    """The customer on file for `cliente`, by tax id, among those of `azienda_id` when
+    given: an invoice written on one azienda's register attaches only to that azienda's
+    customers (REB-783)."""
     piva = normalise_fiscal_id(cliente.partita_iva)
     cf = normalise_fiscal_id(cliente.codice_fiscale)
-    customer = CustomerRepository(session).match_by_fiscal_id(partita_iva=piva, codice_fiscale=cf)
+    customer = CustomerRepository(session).match_by_fiscal_id(
+        partita_iva=piva, codice_fiscale=cf, azienda_id=azienda_id
+    )
     return customer.id if customer is not None else None
 
 
@@ -283,7 +290,9 @@ def review_invoices(
         matched_customer_id: UUID | None = None
         mappature_giorni: list[WorkUnitDayMappingProposal | None] | None = None
         if outcome == "ready":
-            matched_customer_id = match_customer(session, invoice.cliente)
+            matched_customer_id = match_customer(
+                session, invoice.cliente, azienda.id if azienda is not None else None
+            )
             if matched_customer_id is None:
                 outcome = "needs_customer_confirmation"
             else:

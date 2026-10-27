@@ -42,7 +42,11 @@ class CustomerRepository:
         return customer
 
     def match_by_fiscal_id(
-        self, *, partita_iva: str | None, codice_fiscale: str | None
+        self,
+        *,
+        partita_iva: str | None,
+        codice_fiscale: str | None,
+        azienda_id: UUID | None = None,
     ) -> Customer | None:
         """Exact match against a normalised `partita_iva`/`codice_fiscale` -- the same
         two columns `list`'s own fuzzy `ilike` search already reads (`:42-45` below),
@@ -53,7 +57,9 @@ class CustomerRepository:
         classify_direction`'s own two-channel comparison: neither identifier alone is
         reliable, since either side is free to have populated only one of the two.
         `None` when neither identifier is given (nothing to match on) or neither
-        matches an active customer.
+        matches an active customer. `azienda_id` narrows the match to the customers of one
+        azienda, which is what an invoice written on that azienda's register can attach to
+        (REB-783); `None` looks across all of them.
         """
         if partita_iva is None and codice_fiscale is None:
             return None
@@ -63,6 +69,8 @@ class CustomerRepository:
         if codice_fiscale is not None:
             conditions.append(Customer.codice_fiscale == codice_fiscale)
         stmt = select(Customer).where(Customer.deleted_at.is_(None), or_(*conditions))
+        if azienda_id is not None:
+            stmt = stmt.where(Customer.azienda_id == azienda_id)
         return self.session.execute(stmt).scalars().first()
 
     def find_by_name(self, ragione_sociale: str) -> Customer | None:
