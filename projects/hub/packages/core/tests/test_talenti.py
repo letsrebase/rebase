@@ -9,7 +9,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from rebase_core.errors import ValidationFailed
+from rebase_core.errors import NotFound, ValidationFailed
 from rebase_core.freelancers import FreelancerService
 from rebase_core.models import FreelancerCard, Login, User
 from rebase_core.schemas import (
@@ -494,3 +494,350 @@ def test_luogo_matches_part_of_the_card_place(clean: Session) -> None:
     assert [item.email for item in found.items] == ["ada@studio.it"]
     assert found.per_stato["lead"] == 0
     assert talenti.list_recent(luogo="%").totale == 0
+
+
+# ---- REB-798: `origine` is the value the row shows ------------------------------------
+
+
+def _three_channels(session: Session) -> dict[str, str]:
+    """One wizard card (page `home`), one admin-drafted card (page `pigrocrm`) and one
+    lead, by address."""
+    FreelancerService(session).apply(
+        _application("wizard@studio.it", utm=SignupUtm(origine="home")),
+        PDF,
+        "cv.pdf",
+        "application/pdf",
+    )
+    ricerca = _signup(session, "admin@studio.it")
+    FreelancerService(session).draft_from_signup(ricerca, _draft(), "Claude")
+    session.execute(
+        text("UPDATE freelancers SET origine = 'pigrocrm' WHERE compilata_da = 'admin'")
+    )
+    session.commit()
+    _signup(session, "lead@studio.it")
+    return {"wizard": "wizard@studio.it", "admin": "admin@studio.it", "form": "lead@studio.it"}
+
+
+@pytest.mark.parametrize("origine", ["form", "wizard", "admin"])
+def test_origine_filters_the_value_each_row_shows(clean: Session, origine: str) -> None:
+    emails = _three_channels(clean)
+    listed = TalentiService(clean).list_recent(origine=origine)
+    assert [item.email for item in listed.items] == [emails[origine]]
+    assert {item.origine for item in listed.items} == {origine}
+    assert listed.totale == 1
+    # the unfiltered list shows each of the three values, so the filter is the row.
+    assert {item.origine for item in TalentiService(clean).list_recent().items} == {
+        "form",
+        "wizard",
+        "admin",
+    }
+
+
+def test_origine_counts_follow_the_filter_on_both_sides(clean: Session) -> None:
+    _three_channels(clean)
+    talenti = TalentiService(clean)
+    assert talenti.list_recent(origine="form").per_stato["lead"] == 1
+    assert talenti.list_recent(origine="form").per_stato["nuovo"] == 0
+    assert talenti.list_recent(origine="wizard").per_stato["lead"] == 0
+    assert talenti.list_recent(origine="wizard").per_stato["nuovo"] == 1
+
+
+def test_pagina_origine_is_the_marketing_page_the_old_origine_filter_was(clean: Session) -> None:
+    emails = _three_channels(clean)
+    talenti = TalentiService(clean)
+    assert [i.email for i in talenti.list_recent(pagina_origine="home").items] == [emails["wizard"]]
+    assert [i.email for i in talenti.list_recent(pagina_origine="pigrocrm").items] == [
+        emails["admin"]
+    ]
+    assert talenti.list_recent(pagina_origine="home").per_stato["lead"] == 0
+    both = talenti.list_recent(origine="admin", pagina_origine="home")
+    assert both.items == [] and both.totale == 0
+
+
+def test_an_unknown_origine_is_refused_instead_of_answering_nobody(clean: Session) -> None:
+    with pytest.raises(ValidationFailed, match="form, wizard, admin"):
+        TalentiService(clean).list_recent(origine="home")
+
+
+# ---- REB-798: the row of one freelancer is the list's row -----------------------------
+
+
+def test_row_for_freelancer_is_the_row_the_list_shows(clean: Session) -> None:
+    ada = _apply(clean, "ada@studio.it", tariffa_giornaliera=Decimal("320"))
+    _with_card(
+        clean,
+        ada,
+        {
+            "ruolo": "Data engineer",
+            "seniority": "senior",
+            "anni": 9,
+            "competenze": ["SQL Server"],
+            "settori": ["fintech", 3],
+            "lingue": ["inglese"],
+            "luogo": "Monza",
+            "sintesi": "Costruisce pipeline.",
+        },
+    )
+    listed = next(i for i in TalentiService(clean).list_recent().items if i.id == ada)
+    single = TalentiService(clean).row_for_freelancer(ada)
+    assert single == listed
+    assert (single.settori, single.lingue, single.sintesi) == (
+        ["fintech"],
+        ["inglese"],
+        "Costruisce pipeline.",
+    )
+    assert single.fascia is not None and single.fascia.min <= 320 * 1.3 <= (
+        single.fascia.max or 10**6
+    )
+
+
+def test_row_for_freelancer_of_an_unknown_id_is_not_found(clean: Session) -> None:
+    with pytest.raises(NotFound):
+        TalentiService(clean).row_for_freelancer(UUID(int=7))
+
+
+# ---- REB-801: card filters, sort and the cursor ----------------------------------------
+
+
+def _profile(
+    session: Session,
+    email: str,
+    *,
+    rate: str | None,
+    seniority: str | None,
+    anni: object = None,
+    settori: list[str] | None = None,
+    lingue: list[str] | None = None,
+    nome: str = "Ada",
+) -> UUID:
+    extra: dict[str, object] = {"nome": nome}
+    if rate is not None:
+        extra["tariffa_giornaliera"] = Decimal(rate)
+    freelancer = _apply(session, email, **extra)
+    if rate is None:
+        session.execute(
+            text("UPDATE freelancers SET tariffa_giornaliera = NULL WHERE id = :id"),
+            {"id": freelancer},
+        )
+        session.commit()
+    card: dict[str, object] = {"ruolo": "Dev", "settori": settori or [], "lingue": lingue or []}
+    if seniority is not None:
+        card["seniority"] = seniority
+    if anni is not None:
+        card["anni"] = anni
+    _with_card(session, freelancer, card)
+    return freelancer
+
+
+def _emails(listed: object) -> list[str]:
+    return [item.email for item in listed.items]  # type: ignore[attr-defined]
+
+
+def test_seniority_takes_any_of_the_levels_and_refuses_an_unknown_one(clean: Session) -> None:
+    _profile(clean, "j@studio.it", rate="200", seniority="junior", anni=1)
+    _profile(clean, "s@studio.it", rate="400", seniority="senior", anni=7)
+    _profile(clean, "l@studio.it", rate="600", seniority="lead", anni=12)
+    _profile(clean, "x@studio.it", rate="300", seniority=None)
+    _signup(clean, "lead@studio.it")
+    talenti = TalentiService(clean)
+    assert _emails(talenti.list_recent(seniority=["senior"])) == ["s@studio.it"]
+    assert sorted(_emails(talenti.list_recent(seniority=["Senior", "lead"]))) == [
+        "l@studio.it",
+        "s@studio.it",
+    ]
+    found = talenti.list_recent(seniority=["lead"])
+    assert found.per_stato["lead"] == 0 and found.totale == 1
+    with pytest.raises(ValidationFailed, match="junior, mid, senior, lead"):
+        talenti.list_recent(seniority=["guru"])
+
+
+def test_the_admins_level_beats_the_cards_in_the_row_the_filters_and_the_ranking(
+    clean: Session,
+) -> None:
+    """REB-799: an admin's seniority and years are what the row shows and what the
+    seniority and anni filters and the anni sort read, each on its own; a card with no
+    dated years reads uncertain until an admin gives the seniority."""
+    corrected = _profile(clean, "fix@studio.it", rate="300", seniority="lead", anni=3)
+    clean.execute(
+        text("UPDATE freelancers SET seniority_admin = 'mid', anni_admin = 6 WHERE id = :id"),
+        {"id": corrected},
+    )
+    _profile(clean, "plain@studio.it", rate="300", seniority="senior", anni=9)
+    undated = _profile(clean, "undated@studio.it", rate="300", seniority="mid")
+    clean.commit()
+    talenti = TalentiService(clean)
+
+    rows = {row.email: row for row in talenti.list_recent().items}
+    assert (rows["fix@studio.it"].seniority, rows["fix@studio.it"].anni) == ("mid", 6)
+    assert rows["fix@studio.it"].seniority_incerta is False
+    assert (rows["plain@studio.it"].seniority, rows["plain@studio.it"].anni) == ("senior", 9)
+    assert (rows["undated@studio.it"].seniority, rows["undated@studio.it"].anni) == ("mid", None)
+    assert rows["undated@studio.it"].seniority_incerta is True
+
+    assert _emails(talenti.list_recent(seniority=["mid"])) == ["undated@studio.it", "fix@studio.it"]
+    assert _emails(talenti.list_recent(seniority=["lead"])) == []
+    assert _emails(talenti.list_recent(anni_min=6, anni_max=6)) == ["fix@studio.it"]
+    assert _emails(talenti.list_recent(anni_max=3)) == []
+    ranked = talenti.list_recent(ordina="anni_desc")
+    assert _emails(ranked) == ["plain@studio.it", "fix@studio.it"]
+
+    clean.execute(
+        text("UPDATE freelancers SET seniority_admin = 'senior' WHERE id = :id"), {"id": undated}
+    )
+    clean.commit()
+    [after] = [row for row in talenti.list_recent().items if row.email == "undated@studio.it"]
+    assert (after.seniority, after.seniority_incerta) == ("senior", False)
+
+
+def test_anni_min_and_max_are_inclusive_and_skip_a_card_with_no_years(clean: Session) -> None:
+    for email, anni in (("a@studio.it", 2), ("b@studio.it", 5), ("c@studio.it", 8)):
+        _profile(clean, email, rate="300", seniority="mid", anni=anni)
+    _profile(clean, "nan@studio.it", rate="300", seniority="mid", anni="otto")
+    # The row shows no years for a number that is not whole, so neither filter nor sort
+    # may meet it.
+    _profile(clean, "half@studio.it", rate="300", seniority="mid", anni=5.5)
+    _profile(clean, "none@studio.it", rate="300", seniority="mid")
+    talenti = TalentiService(clean)
+    assert sorted(_emails(talenti.list_recent(anni_min=5))) == ["b@studio.it", "c@studio.it"]
+    assert _emails(talenti.list_recent(anni_max=2)) == ["a@studio.it"]
+    assert _emails(talenti.list_recent(anni_min=5, anni_max=5)) == ["b@studio.it"]
+    assert talenti.list_recent(anni_min=0).totale == 3
+
+
+def test_settori_and_lingue_need_every_term_in_some_element(clean: Session) -> None:
+    _profile(
+        clean,
+        "ada@studio.it",
+        rate="300",
+        seniority="senior",
+        settori=["Fintech", "Sanità"],
+        lingue=["Inglese (C1)", "Italiano"],
+    )
+    _profile(
+        clean,
+        "bob@studio.it",
+        rate="300",
+        seniority="senior",
+        settori=["Retail"],
+        lingue=["Italiano"],
+    )
+    _signup(clean, "lead@studio.it")
+    talenti = TalentiService(clean)
+    assert _emails(talenti.list_recent(settori=["fintech"])) == ["ada@studio.it"]
+    assert _emails(talenti.list_recent(settori=["fintech", "sanit"])) == ["ada@studio.it"]
+    assert talenti.list_recent(settori=["fintech", "retail"]).items == []
+    assert _emails(talenti.list_recent(lingue=["inglese"])) == ["ada@studio.it"]
+    assert sorted(_emails(talenti.list_recent(lingue=["italiano"]))) == [
+        "ada@studio.it",
+        "bob@studio.it",
+    ]
+    assert talenti.list_recent(settori=["fintech"]).per_stato["lead"] == 0
+
+
+def test_scheda_tells_a_live_card_from_a_failed_one_and_from_none(clean: Session) -> None:
+    live = _apply(clean, "live@studio.it", nome="Live")
+    _with_card(clean, live, {"ruolo": "Dev"})
+    failed = _apply(clean, "failed@studio.it", nome="Failed")
+    clean.add(FreelancerCard(freelancer_id=failed, error="no_text", error_cv_sha256="1" * 64))
+    outage = _apply(clean, "outage@studio.it", nome="Outage")
+    clean.add(
+        FreelancerCard(freelancer_id=outage, card={"ruolo": "Dev"}, cv_sha256="2" * 64, error="x")
+    )
+    clean.commit()
+    _apply(clean, "none@studio.it", nome="None")
+    talenti = TalentiService(clean)
+    assert sorted(_emails(talenti.list_recent(scheda="presente"))) == [
+        "live@studio.it",
+        "outage@studio.it",
+    ]
+    assert _emails(talenti.list_recent(scheda="fallita")) == ["failed@studio.it"]
+    assert _emails(talenti.list_recent(scheda="assente")) == ["none@studio.it"]
+    with pytest.raises(ValidationFailed, match="presente, assente, fallita"):
+        talenti.list_recent(scheda="rotta")
+
+
+@pytest.mark.parametrize("ordina", ["tariffa_asc", "tariffa_desc", "anni_asc", "anni_desc"])
+def test_ordina_ranks_by_rate_or_years_and_the_cursor_walks_it_whole(
+    clean: Session, ordina: str
+) -> None:
+    """`a` and `c` share a rate, `a` and `b` share years: a page of one cuts every tie,
+    and the walk still meets each row once, in the order the whole list has. A card
+    with no value to rank by, and every lead, is left out of the ranking and of its
+    counts."""
+    _profile(clean, "a@studio.it", rate="450.10", seniority="mid", anni=4)
+    _profile(clean, "b@studio.it", rate="300", seniority="mid", anni=4)
+    _profile(clean, "c@studio.it", rate="450.10", seniority="mid", anni=9)
+    _profile(clean, "d@studio.it", rate="800", seniority="mid", anni=0)
+    _profile(clean, "norate@studio.it", rate=None, seniority="mid", anni=3)
+    _profile(clean, "noanni@studio.it", rate="100", seniority="mid", anni="molti")
+    _signup(clean, "lead@studio.it")
+    talenti = TalentiService(clean)
+    by_rate = ordina.startswith("tariffa")
+
+    whole = talenti.list_recent(ordina=ordina)
+    ranked = ["a", "b", "c", "d", "noanni" if by_rate else "norate"]
+    assert sorted(_emails(whole)) == sorted(f"{name}@studio.it" for name in ranked)
+    values = [
+        float(item.tariffa_giornaliera or 0) if by_rate else float(item.anni or 0)
+        for item in whole.items
+    ]
+    assert values == sorted(values, reverse=ordina.endswith("desc"))
+    assert whole.per_stato["lead"] == 0
+    assert whole.totale == len(whole.items) == 5
+
+    walked: list[str] = []
+    cursor: str | None = None
+    while True:
+        page = talenti.list_recent(limit=1, ordina=ordina, cursor=cursor)
+        walked += _emails(page)
+        cursor = page.next_cursor
+        if cursor is None:
+            break
+    assert walked == _emails(whole)
+
+
+def test_ordina_recenti_overrides_the_search_order_and_a_cursor_keeps_its_own_order(
+    clean: Session,
+) -> None:
+    _profile(clean, "ada@studio.it", rate="300", seniority="mid", anni=1)
+    _profile(clean, "ada2@studio.it", rate="200", seniority="mid", anni=2, nome="Adalberto")
+    talenti = TalentiService(clean)
+    newest_first = talenti.list_recent(q="ada", ordina="recenti")
+    assert _emails(newest_first) == ["ada2@studio.it", "ada@studio.it"]
+    by_rate = talenti.list_recent(limit=1, ordina="tariffa_asc")
+    assert by_rate.next_cursor is not None
+    with pytest.raises(ValidationFailed, match="altro ordinamento"):
+        talenti.list_recent(limit=1, ordina="anni_asc", cursor=by_rate.next_cursor)
+    # the same value in the other direction is another order too: replayed, its
+    # `(value, id) > ...` would skip and repeat rows.
+    with pytest.raises(ValidationFailed, match="altro ordinamento"):
+        talenti.list_recent(limit=1, ordina="tariffa_desc", cursor=by_rate.next_cursor)
+    with pytest.raises(ValidationFailed, match="recenti, tariffa_asc"):
+        talenti.list_recent(ordina="a_caso")
+
+
+def test_a_blank_filter_is_no_filter_on_both_sides_of_the_merge(clean: Session) -> None:
+    _apply(clean, "ada@studio.it")
+    _signup(clean, "lead@studio.it")
+    blank = TalentiService(clean).list_recent(
+        origine=" ", pagina_origine="", scheda="", ordina="  ", seniority=[" "], settori=[""]
+    )
+    assert sorted(_emails(blank)) == ["ada@studio.it", "lead@studio.it"]
+
+
+def test_the_filters_and_the_sort_compose_in_one_call(clean: Session) -> None:
+    """«senior, 5+ years, English, under 400 a day, cheapest first»."""
+    _profile(clean, "a@studio.it", rate="380", seniority="senior", anni=6, lingue=["Inglese"])
+    _profile(clean, "b@studio.it", rate="350", seniority="senior", anni=9, lingue=["Inglese"])
+    _profile(clean, "c@studio.it", rate="500", seniority="senior", anni=9, lingue=["Inglese"])
+    _profile(clean, "d@studio.it", rate="300", seniority="mid", anni=9, lingue=["Inglese"])
+    _profile(clean, "e@studio.it", rate="300", seniority="senior", anni=2, lingue=["Inglese"])
+    _profile(clean, "f@studio.it", rate="300", seniority="senior", anni=9, lingue=["Francese"])
+    found = TalentiService(clean).list_recent(
+        seniority=["senior"],
+        anni_min=5,
+        lingue=["inglese"],
+        tariffa_max=Decimal("400"),
+        ordina="tariffa_asc",
+    )
+    assert _emails(found) == ["b@studio.it", "a@studio.it"]

@@ -3,10 +3,11 @@ and writes what a company may know of the profile without a name, and the team
 builder's engine reads nothing else about a talent.
 
 One call per CV, never two, but for a card that gives the person's gender away, asked
-once more and then written whatever the answer (REB-574): the card keeps the SHA-256 of
+once more and then failed if it still does (REB-574, REB-802): the card keeps the SHA-256 of
 the file it came from, and a failure that is the CV's own -- a refusal, an answer cut at
 `max_tokens`, a body that is not the card, a card that names the person or carries an
-address, a scan with no text -- keeps the hash of the file that failed, so neither the
+address, a card that still gives the gender away after its rewrite, a scan with no text
+-- keeps the hash of the file that failed, so neither the
 same CV nor the same broken one is sent and paid for again until the bytes change, or
 until an admin asks with «Rigenera scheda» (`force`). The provider down is not the CV's
 fault: the row says so, no hash is kept, and the next write, or the next `rebase
@@ -25,6 +26,11 @@ Claude was writing gets nothing stored for it; `FreelancerService.clear_cv` take
 same row lock (its `UPDATE`) before it deletes the card, so the two cannot interleave
 into a card for a CV that is gone.
 
+The card's `anni` is `None` when the CV dates no role, and its seniority is brought inside
+the year bands the prompt states (`card_level.banded`, REB-799). An admin's own seniority
+and years sit on `freelancers` (`seniority_admin`, `anni_admin`), so a regenerated or
+retired card never erases them, and `read` answers the card with them over it.
+
 Who calls it: the wizard and the member's CV upload, after their response, through
 `write_after_response` in a session of its own; the admin's two routes; `rebase
 cards-refresh`, for the backlog; and `FreelancerService.clear_cv`, whose `delete` runs
@@ -40,12 +46,14 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
+from pydantic import ValidationError
 from sqlalchemy import delete, func, null, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from rebase_core.audit import utcnow
 from rebase_core.bands import band_for
+from rebase_core.card_level import banded, card_read
 from rebase_core.cv_text import CvText
 from rebase_core.db import SessionOpener
 from rebase_core.errors import LlmUnavailable, NotFound
@@ -69,14 +77,11 @@ CARD_SCHEMA = {
     key: value for key, value in Card.model_json_schema().items() if key != "description"
 }
 
-Failure = Literal["no_text", "refusal", "max_tokens", "shape", "identifying", "unavailable"]
-# `warned`: written, with the gender still showing after the one rewrite (REB-574);
-# `warned_outage`: the same, the first card, because the rewrite met an outage, which
-# stops a batch as any outage does.
+Failure = Literal[
+    "no_text", "refusal", "max_tokens", "shape", "identifying", "gendered", "unavailable"
+]
 Outcome = Literal[
     "written",
-    "warned",
-    "warned_outage",
     "failed",
     "unavailable",
     "unchanged",
@@ -103,6 +108,7 @@ _FAILURES: dict[Failure, str] = {
     "max_tokens": "La risposta di Claude si è interrotta prima della fine della scheda.",
     "shape": "La risposta di Claude non era una scheda valida.",
     "identifying": "La scheda cita la persona o un indirizzo.",
+    "gendered": "La scheda rivela il genere della persona anche dopo la riscrittura.",
     # True of every outage, the backlog's (asked again by the next run) and a
     # «Rigenera scheda» on the card's own CV (whose card stays) alike; a new CV's
     # previous card is retired meanwhile, and comes back with the next answer.
@@ -168,11 +174,12 @@ def _identifies(card: Card, cognome: str, nome: str = "") -> bool:
 
 # What gives a card's person away as a woman (REB-574): Italian writes the gender into
 # the role, the participle and the pronoun, and in a catalogue of a few dozen people
-# that is one more hint of who they are. A hit costs a second call, so the guard reads
-# only what can refer to the person, whole words in any case. The feminine role nouns
-# a CV turns into, one by one rather than by the ending, which is also «matrice»,
-# «attrice», «calcolatrice», «stessa» and «commessa»; «lei»; «la candidata»; and a role
-# with no gender of its own given one by «una» or «un'» («una senior», «un'analista»).
+# that is one more hint of who they are. A hit costs a second call, and a card still
+# gendered after it is a failure (REB-802), so the guard reads only what can refer to the
+# person, whole words in any case. The feminine role nouns a CV turns into, one by one
+# rather than by the ending, which is also «matrice», «attrice», «calcolatrice», «stessa»
+# and «commessa»; «lei»; «la candidata»; and a role with no gender of its own given one
+# by «una» or «un'» («una senior», «un'analista»).
 _HER = re.compile(
     r"\b(?:"
     r"sviluppatrice|programmatrice|progettatrice|amministratrice|coordinatrice"
@@ -200,18 +207,28 @@ _HER_PARTICIPLE = re.compile(
 )
 
 
+def _stored_gendered(stored: Any) -> bool:
+    """Whether a card as stored gives the gender away: `False` for none, and for one that
+    is no longer a card, which is not this guard's to judge."""
+    try:
+        return bool(_gendered(Card.model_validate(stored)))
+    except ValidationError:
+        return False
+
+
 def _gendered(card: Card) -> list[str]:
     """What `_HER` and `_HER_PARTICIPLE` find in the card's role, summary, skills and
     sectors, in lower case, each once, in the order written; empty for a card that tells
     nothing of the gender. `luogo` and `lingue` are a place and languages, never the
     person's.
 
-    A net under the prompt's rule, not the rule, and not a gate: a hit asks for one
-    rewrite, and the card is written whatever it answers. So it misses what it is not
-    sure of, a feminine form not listed («è stata», «brava») or a word between the
-    article and the role («una backend developer»); and a participle after a feminine
-    subject that is not the person, «la piattaforma è certificata» or the rare «una
-    startup, specializzata in pagamenti», is a hit, one call for nothing."""
+    The gate under the prompt's rule (REB-802): a hit asks for one rewrite, and a card
+    still hit after it is failed, never written. So it misses what it is not sure of, a
+    feminine form not listed («è stata», «brava») or a word between the article and the
+    role («una backend developer»); and a participle after a feminine subject that is
+    not the person, «la piattaforma è certificata» or the rare «una startup,
+    specializzata in pagamenti», is a hit, which the rewrite is told to change and an
+    admin's «Rigenera scheda» asks again for."""
     found: list[tuple[int, str]] = []
     for value in (card.ruolo, card.sintesi, *card.competenze, *card.settori):
         spots = [(hit.start(), hit.group()) for hit in _HER.finditer(value)]
@@ -233,11 +250,18 @@ You receive the position the freelancer gave on their profile and the text of th
 CV. Answer with the card alone, in the JSON schema you are given:
 
 - ruolo: the professional role, as a short title (for example "Backend developer").
-- seniority: junior, mid, senior or lead, from the years of professional experience \
-and the responsibility the CV shows; lead only for someone who leads people or a \
-technical area.
 - anni: the years of professional experience in the role's field, a whole number \
-between 0 and 60.
+between 0 and 60, counted only from roles the CV dates: add up the dated periods \
+(a role still going ends today), overlapping roles counted once and the gaps between \
+roles left out, not the span from the first start to the last end; studies, theses, \
+internships under three months and undated projects left out. null, never a guess, \
+when the CV dates no professional role at all.
+- seniority: junior, mid, senior or lead, by these bands of anni: junior under 3 \
+years, mid from 3 to 5, senior from 6 up. lead is senior from 8 years up when the CV \
+states that the person leads people or a technical area (reporting lines, a team, a \
+technical direction); a founder or a "Fractional CTO" title alone is not leadership, \
+and a lead never has fewer than 8 years. When anni is null, give seniority as your \
+reading of the responsibility the CV shows (never lead): it is shown as uncertain.
 - competenze: at most 20 skills, technologies and methods, the most relevant first, \
 each a few words.
 - settori: at most 10 industries the person worked in (for example "fintech", \
@@ -256,7 +280,8 @@ organisation they worked for, any link, email address or phone number: describe 
 employer by its industry instead ("una banca", "una startup fintech").
 - Name a place only in luogo: ruolo, sintesi, competenze and settori name no city, \
 region or country.
-- Use only what the CV says: never invent a skill, a sector, a language or a year.
+- Use only what the CV says: never invent a skill, a sector, a language or a year; a \
+year you cannot read from a date in the CV is null.
 - La scheda non rivela mai il genere della persona. Il soggetto è sempre «il profilo», \
 e aggettivi e participi si accordano con «profilo», al maschile singolare \
 («specializzato», «esperto»); il ruolo è scritto in una forma che non ha genere \
@@ -316,7 +341,8 @@ def neutral_retry(request: LlmRequest, answer: str) -> LlmRequest:
 def _card_from(response: LlmResponse, cognome: str, nome: str = "") -> Card | Failure:
     """The card, or the kind of failure: `stop_reason` is read before the body, as the
     seam hands it over (`llm.py`), and a card that validates is still refused if it
-    names the person or carries an address."""
+    names the person or carries an address. Its seniority is brought inside the year
+    bands (`card_level.banded`, REB-799) before anything reads it."""
     if response.stop_reason == "refusal":
         return "refusal"
     if response.stop_reason == "max_tokens":
@@ -327,7 +353,7 @@ def _card_from(response: LlmResponse, cognome: str, nome: str = "") -> Card | Fa
         card = Card.model_validate(json.loads(response.text))
     except ValueError:  # `json.JSONDecodeError` and Pydantic's `ValidationError` alike
         return "shape"
-    return "identifying" if _identifies(card, cognome, nome) else card
+    return "identifying" if _identifies(card, cognome, nome) else banded(card)
 
 
 class CardWriter:
@@ -363,10 +389,10 @@ class CardWriter:
         The batch stops at the first outage (`LlmUnavailable`), counted as not done: a
         run of 429s would otherwise walk the whole batch for nothing, and the CVs after
         it are simply the next run's. A run with nothing written and nothing failed is
-        the backlog done. A card written with the gender still showing after its rewrite
-        counts as written, and among `gender_warnings` too (REB-574); when that rewrite
-        met an outage, the card is written and the batch stops after it all the same.
-        `stopped` says the batch ended at an outage."""
+        the backlog done. A card still giving the gender away after its rewrite counts as
+        failed (REB-802), and its CV is not tried again until it changes; an outage on
+        that rewrite is an outage like any other. `stopped` says the batch ended at an
+        outage."""
         if self.llm is None:
             return CardsRefreshed(written=0, failed=0)
         digest = func.encode(func.sha256(Freelancer.cv_bytes), "hex")
@@ -383,22 +409,18 @@ class CardWriter:
             .order_by(Freelancer.created_at, Freelancer.id)
             .limit(limit)
         ).all()
-        written = failed = warned = 0
+        written = failed = 0
         stopped = False
         for freelancer_id in stale:
             outcome = self._write(freelancer_id, force=False)
-            if outcome in ("written", "warned", "warned_outage"):
+            if outcome == "written":
                 written += 1
             elif outcome in ("failed", "unavailable"):
                 failed += 1
-            if outcome in ("warned", "warned_outage"):
-                warned += 1
-            if outcome in ("unavailable", "warned_outage"):
+            if outcome == "unavailable":
                 stopped = True
                 break
-        return CardsRefreshed(
-            written=written, failed=failed, gender_warnings=warned, stopped=stopped
-        )
+        return CardsRefreshed(written=written, failed=failed, stopped=stopped)
 
     def delete(self, freelancer_id: UUID) -> None:
         """The card goes with the CV. Not committed here: `clear_cv` commits it with the
@@ -421,16 +443,24 @@ class CardWriter:
                 model=None,
                 generated_at=None,
                 error=None,
+                seniority_admin=row.seniority_admin,
+                anni_admin=row.anni_admin,
             )
         return FreelancerCardRead(
             freelancer_id=freelancer_id,
-            card=Card.model_validate(stored.card) if stored.card is not None else None,
+            card=(
+                card_read(stored.card, row.seniority_admin, row.anni_admin)
+                if stored.card is not None
+                else None
+            ),
             modalita=row.remoto,
             fascia=band_for(row.tariffa_giornaliera),
             cv_sha256=stored.cv_sha256,
             model=stored.model,
             generated_at=stored.generated_at,
             error=stored.error,
+            seniority_admin=row.seniority_admin,
+            anni_admin=row.anni_admin,
         )
 
     # ---- helpers ---------------------------------------------------------------------
@@ -470,26 +500,26 @@ class CardWriter:
             return self._fail(freelancer_id, digest, card)
         model = response.model
         input_tokens, output_tokens = response.input_tokens, response.output_tokens
-        warned = outage = False
         if _gendered(card) and response.text is not None:
-            # One rewrite, never a gate (REB-574): the card already names no one, no
-            # place and no id, and a failure would park the person out of the catalogue
-            # for a hint. The rewrite when it is a card; otherwise, a refusal, a bad
-            # shape, a card that names the person or an outage, the first card. The row
-            # counts the tokens of both calls. An outage is still an outage: the outcome
-            # says so, and a batch stops after this CV (`refresh_stale`).
+            # One rewrite, then a gate (REB-574, REB-802): a card that still gives the
+            # gender away is failed, never written, with its sentence beside the old
+            # card if the CV's own had one. The row keeps the hash of the CV that failed,
+            # so the same bytes are not paid for again until an admin asks with «Rigenera
+            # scheda». A rewrite that is a refusal, a bad shape or a card that names the
+            # person leaves the first card in hand, still gendered. An outage on the
+            # rewrite is the provider's, as on the first call: no hash, asked again.
             logger.info("card for freelancer %s gave the gender away: asked again", freelancer_id)
             try:
-                again: LlmResponse | None = self.llm.complete(neutral_retry(request, response.text))
+                again = self.llm.complete(neutral_retry(request, response.text))
             except LlmUnavailable:
-                again, outage = None, True
-            if again is not None:
-                input_tokens += again.input_tokens
-                output_tokens += again.output_tokens
-                rewritten = _card_from(again, cognome, nome)
-                if isinstance(rewritten, Card):
-                    card, model = rewritten, again.model
-            warned = bool(_gendered(card))
+                return self._fail(freelancer_id, digest, "unavailable")
+            input_tokens += again.input_tokens
+            output_tokens += again.output_tokens
+            rewritten = _card_from(again, cognome, nome)
+            if isinstance(rewritten, Card):
+                card, model = rewritten, again.model
+            if _gendered(card):
+                return self._fail(freelancer_id, digest, "gendered")
         saved = self._save(
             freelancer_id,
             digest,
@@ -506,9 +536,6 @@ class CardWriter:
         )
         if not saved:
             return "superseded"
-        if warned:
-            logger.warning("card for freelancer %s written with a gender warning", freelancer_id)
-            return "warned_outage" if outage else "warned"
         return "written"
 
     def _fail(self, freelancer_id: UUID, digest: str, kind: Failure) -> Outcome:
@@ -516,10 +543,19 @@ class CardWriter:
         the provider's: an outage keeps nothing that would stop the next attempt. Every
         failure, an outage too, retires a card written from another CV than the one
         that just failed (`_save`): the person replaced that CV, and its card must not
-        stay in the catalogue until Claude answers again. A card of the same CV stays."""
+        stay in the catalogue until Claude answers again. A card of the same CV stays,
+        except, after a `gendered` failure, one that itself gives the gender away (a card
+        written before REB-802 turned the guard into a gate): the catalogue would go on
+        showing it to companies beside an error nobody reads there."""
         outage = kind == "unavailable"
         values = {"error": _FAILURES[kind], "error_cv_sha256": None if outage else digest}
-        if not self._save(freelancer_id, digest, values, retire_other=True):
+        if not self._save(
+            freelancer_id,
+            digest,
+            values,
+            retire_other=True,
+            retire_gendered=kind == "gendered",
+        ):
             return "superseded"
         logger.warning("card for freelancer %s not written: %s", freelancer_id, kind)
         return "unavailable" if outage else "failed"
@@ -531,6 +567,7 @@ class CardWriter:
         values: dict[str, Any],
         *,
         retire_other: bool = False,
+        retire_gendered: bool = False,
     ) -> bool:
         """One upsert of the given columns, and only if the freelancer's CV is still the
         one `digest` was taken from: re-read under the row's lock, which `clear_cv`'s and
@@ -538,7 +575,8 @@ class CardWriter:
         writing is never given a card, or a failure, that is not its own. `False` when
         it was, with nothing written. `retire_other` also empties the card columns when
         the stored card came from another CV: read under the same lock, since every
-        writer of this row holds it. Two writes racing on one CV (a double «Rigenera
+        writer of this row holds it; `retire_gendered` does the same for a stored card of
+        this very CV that `_gendered` flags. Two writes racing on one CV (a double «Rigenera
         scheda») both land, the later one last, rather than the second failing on the
         primary key."""
         current = self.session.scalar(
@@ -550,14 +588,17 @@ class CardWriter:
             self.session.commit()
             logger.info("card for freelancer %s not written: the CV changed", freelancer_id)
             return False
-        if retire_other:
-            written_from = self.session.scalar(
-                select(FreelancerCard.cv_sha256).where(
+        if retire_other or retire_gendered:
+            stored = self.session.execute(
+                select(FreelancerCard.cv_sha256, FreelancerCard.card).where(
                     FreelancerCard.freelancer_id == freelancer_id
                 )
-            )
-            if written_from is not None and written_from != digest:
-                values = {**_RETIRED, **values}
+            ).one_or_none()
+            if stored is not None:
+                written_from, written = stored
+                other = retire_other and written_from is not None and written_from != digest
+                if other or (retire_gendered and _stored_gendered(written)):
+                    values = {**_RETIRED, **values}
         insert = pg_insert(FreelancerCard).values(freelancer_id=freelancer_id, **values)
         self.session.execute(
             insert.on_conflict_do_update(

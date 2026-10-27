@@ -220,6 +220,11 @@ def _filtered(session: Session, raw: dict[str, Any]) -> list[Candidate]:
 
 
 def _from_talenti(session: Session, params: dict[str, Any]) -> list[Candidate]:
+    # The stored filters call the marketing page `origine`, as they did before the list
+    # gave that name to the channel a row shows (REB-798); the list's own name for it is
+    # `pagina_origine`, and stored campaigns are replayed without a data migration.
+    if "origine" in params:
+        params["pagina_origine"] = params.pop("origine")
     service = TalentiService(session)
     rows: list[TalentoRead] = []
     cursor: str | None = None

@@ -161,11 +161,13 @@ class ProposalAccept(BaseModel):
     read; supplied when they correct a field first. Either way it is what
     `ProposalService.accept` stores on `campi_accettati` and what actually builds the
     `Contract`/`WorkUnit` -- never `campi_proposti` itself, per spec §10's "kept
-    separately... never overwritten"."""
+    separately... never overwritten".
+
+    There is no `deciso_da`: who decided is the authenticated actor, read by the service,
+    never a field a caller (or an agent steered by an email) gets to write (REB-806)."""
 
     model_config = ConfigDict(extra="forbid")
 
-    deciso_da: SafeStr = Field(min_length=1)
     campi_accettati: dict[str, Any] | None = None
 
 
@@ -177,5 +179,4 @@ class ProposalReject(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    deciso_da: SafeStr = Field(min_length=1)
     motivo: SafeStr | None = None

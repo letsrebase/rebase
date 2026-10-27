@@ -9,6 +9,7 @@ from pigrocrm.core.people.schemas import PersonListQuery
 from pigrocrm.core.people.service import PersonService
 from pigrocrm.core.timetracking.service import TimeEntryService
 from pigrocrm_mcp.context import McpContext
+from pigrocrm_mcp.provenance import PROVENIENZA_TESTO_LIBERO
 
 
 def _timeline_lines(context: McpContext, entity: str, entity_id: UUID) -> list[str]:
@@ -21,7 +22,7 @@ def _timeline_lines(context: McpContext, entity: str, entity_id: UUID) -> list[s
 def _custom_lines(custom_fields: dict[str, object]) -> list[str]:
     if not custom_fields:
         return []
-    return ["", "## Campi personalizzati", ""] + [
+    return ["", "## Campi personalizzati", "", f"_Provenienza: {PROVENIENZA_TESTO_LIBERO}_", ""] + [
         f"- **{key}**: {value}" for key, value in sorted(custom_fields.items())
     ]
 
@@ -95,7 +96,14 @@ def render_customer(context: McpContext, customer_id: UUID) -> str:
     lines += _custom_lines(customer.custom_fields)
     lines += ["", "## Timeline", ""] + _timeline_lines(context, "customer", customer_id)
     if customer.note:
-        lines += ["", "## Note", "", customer.note]
+        lines += [
+            "",
+            "## Note",
+            "",
+            f"_Provenienza: {PROVENIENZA_TESTO_LIBERO}_",
+            "",
+            customer.note,
+        ]
     return "\n".join(lines)
 
 
@@ -117,7 +125,7 @@ def render_person(context: McpContext, person_id: UUID) -> str:
     lines += _custom_lines(person.custom_fields)
     lines += ["", "## Timeline", ""] + _timeline_lines(context, "person", person_id)
     if person.note:
-        lines += ["", "## Note", "", person.note]
+        lines += ["", "## Note", "", f"_Provenienza: {PROVENIENZA_TESTO_LIBERO}_", "", person.note]
     return "\n".join(lines)
 
 
@@ -189,5 +197,5 @@ def render_deal(context: McpContext, deal_id: UUID) -> str:
 
     lines += ["", "## Timeline", ""] + _timeline_lines(context, "deal", deal_id)
     if deal.note:
-        lines += ["", "## Note", "", deal.note]
+        lines += ["", "## Note", "", f"_Provenienza: {PROVENIENZA_TESTO_LIBERO}_", "", deal.note]
     return "\n".join(lines)

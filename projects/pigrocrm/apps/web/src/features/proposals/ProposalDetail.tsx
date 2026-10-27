@@ -17,7 +17,7 @@ import { Loader } from '@rebase/ui/loader'
 import { toast } from '@rebase/ui/sonner'
 import { Textarea } from '@rebase/ui/textarea'
 import { toProblem } from '@/lib/api'
-import { useAuth, useCanWrite } from '@/lib/auth'
+import { useCanWrite } from '@/lib/auth'
 import { Confidence, ProposalStatoPill, ProposalSubject } from './ProposalBits'
 import { decisionLine, describeProposal, type Proposal } from './fields'
 import { useAcceptProposal, useProposal, useProposalTimeline, useRejectProposal } from './queries'
@@ -61,23 +61,18 @@ export function ProposalDetail({ proposalId }: { proposalId: string }) {
 function Loaded({ proposal }: { proposal: Proposal }) {
   const description = describeProposal(proposal)
   const canWrite = useCanWrite()
-  const { user } = useAuth()
   const navigate = useNavigate()
   const accept = useAcceptProposal(proposal.id)
   const reject = useRejectProposal(proposal.id)
   const [rejecting, setRejecting] = useState(false)
   const [reason, setReason] = useState('')
   const pending = proposal.stato === 'in_attesa'
-  // The decision is recorded against a name a person reads, not a user id: `deciso_da` is
-  // free text on the proposal and shows in the decided list. `||`, not `??`: an empty name
-  // would be refused by the API as a decision nobody made.
-  const decidedBy = user?.nome || user?.email || ''
 
   const backToQueue = () => void navigate({ to: '/app/proposals', search: { stato: 'in_attesa' } })
 
   const onAccept = () => {
     accept.mutate(
-      { deciso_da: decidedBy },
+      {},
       {
         onSuccess: () => {
           toast.success(
@@ -93,7 +88,7 @@ function Loaded({ proposal }: { proposal: Proposal }) {
 
   const onReject = () => {
     reject.mutate(
-      { deciso_da: decidedBy, motivo: reason.trim() === '' ? null : reason.trim() },
+      { motivo: reason.trim() === '' ? null : reason.trim() },
       {
         onSuccess: () => {
           setRejecting(false)

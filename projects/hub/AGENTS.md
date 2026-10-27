@@ -86,7 +86,7 @@ running the core service the admin area runs, with the calling admin as the acto
 - `contact_team_talents`: «Contatta i talenti», or with `only_silent` «Rimanda a chi non ha risposto».
 - `set_team_request_status`: «Segna come contattata», «Chiudi», with an optional note.
 - `propose_team`: the engine as the admin (`origine` `admin`), outside the daily cap.
-- `get_freelancer_card`, `regenerate_freelancer_card`: the anonymous card, and «Rigenera scheda».
+- `get_freelancer_card`, `regenerate_freelancer_card`: the anonymous card, and «Rigenera scheda». The card's `seniority` and `anni` are the admin's when `override_freelancer` set them (`seniority`, `anni`), Claude's otherwise; `anni` is `null` and `seniority_incerta` true when the CV dates no role (REB-799).
 - `set_freelancer_vetted`: «Segna come verificato» and «Togli la verifica».
 - `grant_talent_cloud`, `revoke_talent_cloud`, `list_talent_cloud_grants`: the cloud's grants.
 
@@ -96,6 +96,43 @@ anonymous card's `ruolo`, `seniority`, `anni`, `competenze` and `luogo`, and the
 filters by `competenze` (every term, in the position or the card's role, skills or
 summary) and by `luogo`, so an agent matches a request in one call instead of one
 `get_talento` per profile.
+
+**`origine` is the value a row shows** (REB-798): `form` (a bare sign-up), `wizard` (the
+person filled the card) or `admin` (drafted from research), derived from
+`compilata_da`. The filter `origine` takes exactly those three and refuses anything
+else (a value that selects nobody read like «no such people» before). The marketing page
+a person started from (`home`, `pigrocrm`, `Freelancer.origine`) is `pagina_origine`, in
+the list service, `GET /api/hub/talent`, the admin Talenti filter, and as its own key in
+`get_talento`. A stored campaign filter still calls that page `origine` (no data
+migration): `campaigns/audience.py` maps it on replay. `get_talento` is the list's row
+for that person (`TalentiService.row_for_freelancer`, one builder `talenti.card_fields`
+for both) laid over the admin detail, so a card has `settori`, `lingue`, `sintesi` and
+`fascia` there without `get_freelancer_card`; a test compares every `TalentoRead` field
+of `get_talento` with the list row.
+
+**`list_talenti` is for ranking a request** (REB-801). Beside `competenze` and `luogo` it
+filters by `seniority` (any of junior/mid/senior/lead), `anni_min`/`anni_max`, `settori`
+and `lingue` (every term, a substring of one element, like `competenze`) and `scheda`
+(`presente`; `fallita` when Claude recorded a failure and there is no live card;
+`assente` for neither); a value outside the allowed ones is an error, not an empty list.
+`ordina` is `recenti`, `tariffa_asc|desc` or `anni_asc|desc`: the cursor then carries
+that value and the id under the whole `ordina` as its key (`SortSpec("tariffa_asc",
+"float")`, so a cursor cannot be replayed in the other direction), and a row with nothing to
+rank by (every lead, a card with no rate or no years) is left out of the list **and of
+`totale`/`per_stato`**, so the order stays one sorted query and not a merge with a
+nullable key. A cursor from another order or another `q` is refused. `anni` ranks and
+filters only a whole JSON number, the one the row shows.
+The tool answers a **short row** (`id`, `nome`, `cognome`, `stato`, `ruolo`, `seniority`,
+`anni`, `tariffa_giornaliera`, `luogo`, five `competenze`, `sintesi` cut to 160
+characters; empty keys left out) and no address. `campi` names the fields wanted, whole
+(`["email", "settori"]`), and `["tutti"]` is the whole `TalentoRead` row. The page is
+compact JSON text with no structured copy: the server's usual dict return sends the page
+twice, once indented by two spaces. Fifty short rows are about 25 KB where the old full
+row was about 55 KB, and a call now answers 50 rows by default (it was 100) and 200 at
+most (it was 500; the service itself still allows 500 for the campaign audiences). The
+shape lives in `apps/mcp/src/rebase_mcp/talenti_view.py`. The admin Talenti screen and
+`GET /api/hub/talent` change in `origine`/`pagina_origine`, and their rows gain
+`settori`, `lingue`, `sintesi` and `fascia`.
 
 The campaigns are read-only over MCP (P-REB-41 phase 2), so an agent reports on a
 campaign without a terminal:
@@ -218,7 +255,7 @@ line, «N campagne, M inviate, S saltate, F fallite». `campagne` is how many du
 campaigns this pass touched, and `inviate` and `saltate` are recipients this pass
 actually sent to or skipped. `fallite` are rows this pass marked `fallita`: a mail
 Resend refused outright (a 422, say), a row whose third attempt failed too (a timeout,
-a 429 or a 5xx leaves the row `in_coda` for the next pass, with the same
+a bare 429 or a 5xx leaves the row `in_coda` for the next pass, with the same
 `Idempotency-Key`), and a row whose checks or render raised, marked rather than let it
 wedge every campaign after it (controller ruling R14). A 401 or 403 (a revoked or
 restricted key, a domain Resend no longer sends for) marks no row: the pass stops that
@@ -230,6 +267,24 @@ fermo: Resend rifiuta l'invio: controlla la chiave e il dominio del mittente» (
 lista non si legge») instead of «Parte il…» until the first mail that leaves clears it.
 The one sentence covers both causes of a 401/403, since only the status is kept. No
 address and no key ever appears in these lines or anywhere else in the logs.
+
+**A daily ceiling holds the rest of a long list for the next day** (REB-779). Resend's
+free plan sends `REBASE_RESEND_DAILY_QUOTA` (default 100) mails a day, and the magic
+link and the member mails use the same key. A campaign may send that less
+`REBASE_CAMPAIGN_DAILY_RESERVE` (default 20, kept for the magic links, the member
+mails and the campaign test mails, which are not rows and are not counted), so 80.
+`campaign_room` (`rebase_core.campaigns.tick`) counts the `campaign_recipients`
+sent since midnight in Rome by `inviata_at`, across every campaign; right before
+each mail, at zero the pass stops that campaign with its rows still `in_coda` and no
+attempt counted, and stores «limite di N mail al giorno raggiunto: il resto parte il
+DD/MM dalle 00:00 (ora di Roma)» as the stop (`fermo_motivo`), so «Campagne», the
+campaign's page, `list_campagne` and `get_campagna` say when the rest leaves. The
+first pass after midnight in Rome sends it and clears the note. A 429 whose body
+names `daily_quota_exceeded` or `monthly_quota_exceeded` (a sender outcome of its own,
+`quota`) is the same stop: no attempt is spent and the row is tried again next pass,
+since Resend's day is a UTC day, which starts one or two hours after Rome's midnight:
+in that window the ceiling has reset while Resend's count has not, so a campaign may
+spend the reserve until the 429 stops it. A bare 429 is still a retry that counts.
 
 **The same pass stamps what each mail led to** (P-REB-41 phase 2, `rebase_core.campaigns.outcome`).
 For every row sent in the last 30 days and still missing a stamp, it writes `entrato_at`
@@ -386,10 +441,26 @@ counts under «non riuscite» and is the next run's, so a run that keeps printin
 schede scritte, 1 non riuscite, fermato: Claude non disponibile» is Claude not
 answering, not a CV. «Rigenera scheda» on
 the talent's page asks again for one. A card whose Italian gives the person's gender away
-(`_gendered` in `cards.py`, a net under the prompt's rule, not a gate) is asked for once
-more and then written whatever the answer, never parked: one still gendered adds «N con
-avviso di genere» to the run's line and `written with a gender warning` to the log; an
-outage on the rewrite writes the first card and still stops the batch (REB-574).
+(`_gendered` in `cards.py`, the gate under the prompt's rule) is asked for once more, and
+one still gendered after it is not written: the card read shows the error «La scheda
+rivela il genere della persona anche dopo la riscrittura», the run counts it under «non
+riuscite», and the CV is not asked again until it changes or an admin asks with «Rigenera
+scheda»; an outage on the rewrite is an outage like any other (REB-574, REB-802).
+
+**The card's level is banded, and an admin can overrule it** (REB-799). The prompt gives
+`anni` from dated roles only, `null` when the CV dates none, and the bands: junior under
+3 years, mid 3 to 5, senior 6 and up, lead only from 8 years with leadership the CV
+states. `card_level.banded` enforces the same numbers on the answer (the seniority is the
+band's, `lead` kept only with `LEAD_FROM` years, and never without years), so the two are
+held together by `test_the_prompt_states_the_bands_the_parser_enforces`. A card with
+`anni` null keeps Claude's reading of the responsibility and is `seniority_incerta`. The
+admin's seniority and years are `freelancers.seniority_admin` and `anni_admin` (migration
+0034), set by `override_freelancer` or «Correggi il livello» on the card, audited and
+revertable like every override, kept by a regenerate, and applied wherever the card is
+read through `card_level.card_read` (the card read, the cloud and its seniority filter,
+the team builder's catalogue and proposals) or `card_level.level` for a reader that has
+the card's JSON only. Never read `Card.seniority` or `Card.anni` off a stored card
+without them.
 
 **Every «Proponi il team» is a row, answered or not** (migration 0028, Ivan 2026-09-29:
 «salvare tutte le richieste dopo il click proponi team anche se non ancora

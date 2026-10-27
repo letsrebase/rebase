@@ -30,9 +30,10 @@ from uuid import UUID
 from mcp.server import MCPServer
 from mcp.server.context import ServerMiddleware
 from mcp.server.mcpserver.exceptions import ToolError
+from mcp.types import CallToolResult
 from pydantic import BaseModel
 from pydantic import ValidationError as PydanticValidationError
-from sqlalchemy import exists, func, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from rebase_core.admin_tokens import AdminRead
@@ -49,7 +50,7 @@ from rebase_core.contracts.render import Renderer
 from rebase_core.engagements import EngagementService
 from rebase_core.errors import DomainError, NotFound, ValidationFailed
 from rebase_core.fiscal import FiscalService
-from rebase_core.freelancers import LEAD_STATE, FreelancerService
+from rebase_core.freelancers import FreelancerService
 from rebase_core.http import HttpCall
 from rebase_core.llm import LlmCall
 from rebase_core.logins import LoginService
@@ -63,7 +64,7 @@ from rebase_core.matches import (
     require_live_document,
     require_live_match,
 )
-from rebase_core.models import Freelancer, FreelancerCard, Signup, User
+from rebase_core.models import Freelancer, Signup, User
 from rebase_core.perks import PerkService
 from rebase_core.pigro import PigroRegistry, PigroUnavailable
 from rebase_core.regimes import OCCASIONALE, Regime
@@ -73,12 +74,11 @@ from rebase_core.schemas import (
     FreelancerOverride,
     FreelancerRead,
     StatusChange,
-    TalentoRead,
 )
 from rebase_core.search import SEARCH_MAX_LENGTH
 from rebase_core.service import LIST_LIMIT_DEFAULT
 from rebase_core.signing import SigningFactory, SigningService
-from rebase_core.talenti import TalentiService
+from rebase_core.talenti import TalentiService, signup_read
 from rebase_core.team_builder import (
     LIST_LIMIT_DEFAULT as TEAM_PROPOSAL_LIST_LIMIT_DEFAULT,
 )
@@ -93,6 +93,9 @@ from rebase_core.team_schemas import (
     TeamRequestRead,
     TeamRequestSummary,
 )
+from rebase_mcp.talenti_view import LIST_LIMIT_DEFAULT as TALENTI_LIMIT_DEFAULT
+from rebase_mcp.talenti_view import LIST_LIMIT_MAX as TALENTI_LIMIT_MAX
+from rebase_mcp.talenti_view import compact_result, row_fields, talenti_page
 
 SessionFactory = sessionmaker[Session]
 # Who is calling: resolved by the transport, read by the tools that sign something.
@@ -219,13 +222,14 @@ def _search_term(value: str | None) -> str | None:
 SKILL_TERMS_MAX = 10
 
 
-def _skill_terms(values: list[str] | None) -> list[str] | None:
-    """`competenze` bounded like `q`: at most `SKILL_TERMS_MAX` terms, each within
+def _skill_terms(values: list[str] | None, field: str = "competenze") -> list[str] | None:
+    """`competenze` (or `settori`, `lingue`, `seniority`: `field` names the one being
+    read) bounded like `q`: at most `SKILL_TERMS_MAX` terms, each within
     `SEARCH_MAX_LENGTH`."""
     if values is None:
         return None
     if len(values) > SKILL_TERMS_MAX:
-        raise ToolError(f"competenze: al massimo {SKILL_TERMS_MAX} termini")
+        raise ToolError(f"{field}: al massimo {SKILL_TERMS_MAX} termini")
     for value in values:
         _search_term(value)
     return values
@@ -347,7 +351,7 @@ def build_server(
 
     @mcp.tool()
     def list_talenti(
-        limit: int = LIST_LIMIT_DEFAULT,
+        limit: int = TALENTI_LIMIT_DEFAULT,
         stato: str | None = None,
         q: str | None = None,
         cursor: str | None = None,
@@ -356,6 +360,7 @@ def build_server(
         tariffa_min: str | None = None,
         tariffa_max: str | None = None,
         origine: str | None = None,
+        pagina_origine: str | None = None,
         utm_source: str | None = None,
         has_cv: bool | None = None,
         con_accessi: bool | None = None,
@@ -363,44 +368,84 @@ def build_server(
         creato_a: str | None = None,
         competenze: list[str] | None = None,
         luogo: str | None = None,
-    ) -> dict[str, Any]:
+        seniority: list[str] | None = None,
+        anni_min: int | None = None,
+        anni_max: int | None = None,
+        settori: list[str] | None = None,
+        lingue: list[str] | None = None,
+        scheda: str | None = None,
+        ordina: str | None = None,
+        campi: list[str] | None = None,
+    ) -> CallToolResult:
         """I talenti come li vede la schermata «Talenti» dell'area admin: le schede
         freelance e le iscrizioni senza scheda in un'unica lista, `stato` `lead` per
-        le seconde, ognuna con id, nome, cognome, email, LinkedIn, stato, origine e
-        data. Una scheda porta anche tariffa, modalità, `posizione` e, dalla scheda
-        anonima di Claude, `ruolo`, `seniority`, `anni`, `competenze` e `luogo`: per
-        valutare chi fa al caso di una richiesta basta questa lista, senza aprire i
-        profili uno a uno. Dal più recente, o dal più pertinente quando `q` restringe.
-        L'`id` di una riga va a `get_talento`, che per un lead risponde la riga stessa;
-        la scheda di un lead si crea con `create_freelancer_from_signup`.
-        `q` cerca nome, cognome, email e posizione; `competenze` tiene le schede che
-        nominano ogni termine dato (per esempio `["SQL Server", "React"]`) nella
-        posizione o nel ruolo, nelle competenze o nella sintesi della scheda anonima;
-        `luogo` filtra per il luogo della scheda anonima (`"Milano"`); `posizione`
-        filtra per ruolo, `remoto` per disponibilità (remoto/ibrido/in_sede),
+        le seconde. Ogni riga è corta (`id`, `nome`, `cognome`, `stato` e, dalla scheda
+        anonima di Claude, `ruolo`, `seniority`, `anni`, `tariffa_giornaliera`, `luogo`,
+        le prime cinque `competenze` e la `sintesi` accorciata; una chiave senza valore
+        manca): per valutare chi fa al caso di una richiesta basta questa lista, e una
+        pagina di cinquanta righe pesa circa 25 KB. `seniority` e `anni` sono quelli che
+        un admin ha corretto (`override_freelancer`) se ci sono; senza `anni` e con
+        `seniority_incerta` vera il CV non data nessun ruolo e il livello è solo una
+        lettura delle responsabilità. `campi` sceglie i campi per nome e
+        dà solo quelli (con `id`), interi: `["email", "settori", "lingue", "fascia"]`,
+        con `competenze` e `sintesi` intere se le nomini; `["tutti"]` dà la riga
+        completa, con `email`, `linkedin_url`, `origine`, `utm_source`, `created_at`,
+        `vetted_at`, `ha_scheda_anonima`, `posizione`. Dal più recente, o dal più
+        pertinente quando `q` restringe. L'`id` di una riga va a `get_talento`, che per un
+        lead risponde la riga stessa; la scheda di un lead si crea con
+        `create_freelancer_from_signup`.
+
+        Filtri, tutti insieme: `q` cerca nome, cognome, email e posizione; `competenze`
+        tiene le schede che nominano ogni termine dato (per esempio `["SQL Server",
+        "React"]`) nella posizione o nel ruolo, nelle competenze o nella sintesi della
+        scheda anonima; `seniority` quelle con uno dei livelli dati (`junior`, `mid`,
+        `senior`, `lead`); `anni_min` e `anni_max` per anni di esperienza della scheda
+        (estremi compresi); `settori` e `lingue` per i settori e le lingue della scheda
+        (ogni termine deve comparire, come `competenze`: `["fintech"]`,
+        `["inglese"]`); `luogo` per il luogo della scheda (`"Milano"`); `posizione` per
+        il ruolo dichiarato; `remoto` per disponibilità (remoto/ibrido/in_sede);
         `tariffa_min` e `tariffa_max` per tariffa a giornata (stringa, «500», «450.50»
-        o all'italiana «1.500», «1.234,50»); `origine` per canale della riga
-        (form/wizard/admin), `utm_source` per campagna, `has_cv` per le schede con o
-        senza CV, `con_accessi` per chi è entrato almeno una volta nella sua area,
-        `creato_da` e `creato_a` per data di creazione (ISO 8601, anche solo
-        `AAAA-MM-GG`). Chi non ha ancora una scheda anonima non ha un luogo, quindi
-        `luogo` non lo trova; `competenze` lo cerca comunque nella sua posizione. I
-        filtri che una riga nuda non ha
-        (posizione, competenze, luogo, remoto, tariffa, origine, `has_cv=true`)
-        escludono i lead. `per_stato` conta con ogni filtro tranne `stato`, `totale` con
-        tutti. `next_cursor` è il cursore opaco della pagina successiva, `None`
-        all'ultima: ripassalo in `cursor` insieme agli stessi parametri, un cursore
-        nato con un'altra `q` è rifiutato. Solo lettura."""
+        o all'italiana «1.500», «1.234,50»); `origine` per come è nata la riga (`form`
+        iscrizione senza scheda, `wizard` compilata dalla persona, `admin` scritta da un
+        admin da una ricerca), `pagina_origine` per la pagina del sito da cui è partita
+        (`home`, `pigrocrm`); `utm_source` per campagna; `scheda` per lo stato della
+        scheda anonima (`presente`; `fallita` se Claude non è riuscito a scriverla;
+        `assente` se non c'è e non ha fallito, per esempio senza CV); `has_cv` per le
+        schede con o senza CV; `con_accessi` per chi è entrato almeno una volta nella sua
+        area; `creato_da` e `creato_a` per data di creazione (ISO 8601, anche solo
+        `AAAA-MM-GG`). Un valore non ammesso per `origine`, `seniority`, `scheda`,
+        `ordina` o `campi` è un errore, non una lista vuota. I filtri che una riga nuda
+        non ha (posizione, competenze, luogo, seniority, anni, settori, lingue, scheda,
+        remoto, tariffa, `pagina_origine`, `origine` `wizard` o `admin`, `has_cv=true`)
+        escludono i lead; `origine=form` esclude invece ogni scheda.
+
+        `ordina`: `recenti` (più nuovi prima, anche se `q` cerca), `tariffa_asc`,
+        `tariffa_desc`, `anni_asc`, `anni_desc`. Ordinando per tariffa o per anni
+        restano solo le schede che quel valore ce l'hanno (niente lead, niente schede
+        senza tariffa o senza anni), e `totale` e `per_stato` contano quelle. Senza
+        `ordina`: dal più recente, o dal più pertinente quando `q` cerca.
+
+        `limit` è di 50 righe se non lo dai e di 200 al massimo. `per_stato` conta con
+        ogni filtro tranne `stato`, `totale` con tutti. `next_cursor` è il cursore opaco
+        della pagina successiva, `None` all'ultima: ripassalo in `cursor` insieme agli
+        stessi parametri (anche `ordina`: un cursore nato con un altro ordine o con
+        un'altra `q` è rifiutato). Solo lettura."""
         term = _search_term(q)
         skills = _skill_terms(competenze)
+        sectors = _skill_terms(settori, "settori")
+        languages = _skill_terms(lingue, "lingue")
+        levels = _skill_terms(seniority, "seniority")
         place = _search_term(luogo)
         created_from = _moment(creato_da, "creato_da")
         created_to = _moment(creato_a, "creato_a")
         rate_from = _number(tariffa_min, "tariffa_min")
         rate_to = _number(tariffa_max, "tariffa_max")
-        return _run(
-            lambda s: TalentiService(s).list_recent(
-                limit=limit,
+
+        def call(session: Session) -> CallToolResult:
+            # The fields first: a misspelt name costs no query.
+            fields = row_fields(campi)
+            page = TalentiService(session).list_recent(
+                limit=max(1, min(limit, TALENTI_LIMIT_MAX)),
                 stato=stato,
                 q=term,
                 cursor=cursor,
@@ -409,6 +454,7 @@ def build_server(
                 tariffa_min=rate_from,
                 tariffa_max=rate_to,
                 origine=origine,
+                pagina_origine=pagina_origine,
                 utm_source=utm_source,
                 has_cv=has_cv,
                 con_accessi=con_accessi,
@@ -416,39 +462,47 @@ def build_server(
                 creato_a=created_to,
                 competenze=skills,
                 luogo=place,
+                seniority=levels,
+                anni_min=anni_min,
+                anni_max=anni_max,
+                settori=sectors,
+                lingue=languages,
+                scheda=scheda,
+                ordina=ordina,
             )
-        )
+            return compact_result(talenti_page(page.model_dump(mode="json"), fields))
+
+        return _call(call)
 
     def _freelancer_talento(session: Session, freelancer_id: UUID) -> dict[str, Any]:
         """`get_talento`'s answer for a card: `FreelancerDetail`
-        (`FreelancerService.get`), plus `ha_scheda_anonima` (REB-518, spec § 8), which
-        that schema does not carry -- only `TalentoRead` (`list_talenti`) does. The
-        same test `talenti._card_read` applies to the list: a card the writer retired to
-        SQL `NULL` after a failure is none."""
+        (`FreelancerService.get`) with the row `list_talenti` shows for the same person
+        laid over it (`TalentiService.row_for_freelancer`, REB-798): the same `origine`
+        (how the row was born: `wizard` or `admin`), the card's own fields and
+        `ha_scheda_anonima`, which the detail schema does not carry. What the detail
+        called `origine`, the marketing page, is `pagina_origine` here, as it is a
+        filter of the list."""
         detail = FreelancerService(session, settings, http).get(freelancer_id)
-        has_card = session.scalar(
-            select(
-                exists().where(
-                    FreelancerCard.freelancer_id == freelancer_id,
-                    func.jsonb_typeof(FreelancerCard.card) == "object",
-                )
-            )
-        )
-        return {**detail.model_dump(mode="json"), "ha_scheda_anonima": bool(has_card)}
+        row = TalentiService(session).row_for_freelancer(freelancer_id)
+        shown = detail.model_dump(mode="json")
+        return {**shown, **row.model_dump(mode="json"), "pagina_origine": shown["origine"]}
 
     @mcp.tool()
     def get_talento(talento_id: str) -> dict[str, Any]:
-        """Un talento, per id: la riga che `list_talenti` mostra, letta una per una.
-        Per una scheda freelance risponde il dettaglio completo della schermata admin
-        (REB-284), lo stesso che legge «Dettaglio talento»: i dati della persona con
-        lo stato, le note e il thread dei `commenti`, l'attribuzione dell'iscrizione
-        `iscrizione_utm`, gli ultimi accessi e gli ultimi download della guida, e lo
-        spazio Pigro quando l'indirizzo ne ha uno. Per un'iscrizione senza scheda
-        risponde la riga nuda, `stato` `lead`, da cui la scheda si crea con
-        `create_freelancer_from_signup`; un id la cui email ha ormai una scheda
-        risponde la scheda, come la lista. Ogni riga con una scheda porta anche
-        `vetted_at` (REB-518, `None` se non verificato) e `ha_scheda_anonima`, se Claude
-        ne ha scritta una da proporre nel team builder. Solo lettura."""
+        """Un talento, per id: la riga che `list_talenti` mostra, letta una per una, con
+        tutti i suoi campi (anche `settori`, `lingue`, `sintesi` e `fascia`, la banda di
+        prezzo per il cliente). Per una scheda freelance risponde il dettaglio completo
+        della schermata admin (REB-284), lo stesso che legge «Dettaglio talento»: i dati
+        della persona con lo stato, le note e il thread dei `commenti`, l'attribuzione
+        dell'iscrizione `iscrizione_utm`, gli ultimi accessi e gli ultimi download della
+        guida, e lo spazio Pigro quando l'indirizzo ne ha uno. `origine` è quella della
+        lista (`wizard` o `admin`); la pagina del sito da cui è partita la persona
+        (`home`, `pigrocrm`) è `pagina_origine`. Per un'iscrizione senza scheda risponde
+        la riga nuda, `stato` `lead`, da cui la scheda si crea con
+        `create_freelancer_from_signup`; un id la cui email ha ormai una scheda risponde
+        la scheda, come la lista. Ogni riga con una scheda porta anche `vetted_at`
+        (REB-518, `None` se non verificato) e `ha_scheda_anonima`, se Claude ne ha
+        scritta una da proporre nel team builder. Solo lettura."""
         key = UUID(talento_id)
 
         def call(session: Session) -> dict[str, Any]:
@@ -466,17 +520,7 @@ def build_server(
             ).first()
             if holder is not None:
                 return _freelancer_talento(session, holder[0])
-            return TalentoRead(
-                id=signup.id,
-                nome=signup.nome,
-                cognome=signup.cognome,
-                email=signup.email,
-                linkedin_url=signup.linkedin_url,
-                stato=LEAD_STATE,
-                origine="form",
-                utm_source=signup.utm_source,
-                created_at=signup.created_at,
-            ).model_dump(mode="json")
+            return signup_read(signup).model_dump(mode="json")
 
         return _call(call)
 
@@ -539,6 +583,8 @@ def build_server(
         stato: str | None = None,
         note: str | None = None,
         compilata_da: str | None = None,
+        seniority: str | None = None,
+        anni: str | None = None,
     ) -> dict[str, Any]:
         """Scrive o svuota qualsiasi campo del profilo oltre a stato e note: nome,
         cognome e profilo LinkedIn (sull'identità condivisa in `users`), tariffa,
@@ -546,9 +592,13 @@ def build_server(
         (persona/admin). Ogni parametro omesso resta com'era; una stringa vuota svuota
         il campo dove è ammesso (tariffa, posizione, LinkedIn, note, modalità di
         lavoro), altrove è rifiutata perché il campo non può restare senza un valore.
-        `links` sostituisce l'intera lista, `[]` la svuota. Ogni modifica reale finisce
-        nel registro di `get_freelancer_audit`, con il valore prima e dopo; per
-        annullarla c'è `revert_freelancer_action`."""
+        `links` sostituisce l'intera lista, `[]` la svuota. `seniority` (junior, mid,
+        senior o lead) e `anni` (0-60) correggono il livello che la scheda anonima
+        dichiara: la parola dell'admin vince su quella di Claude in ogni lettura
+        (`list_talenti`, `get_talento`, `get_freelancer_card`, il cloud, il team
+        builder) e sopravvive a «Rigenera scheda»; la stringa vuota la toglie. Ogni
+        modifica reale finisce nel registro di `get_freelancer_audit`, con il valore
+        prima e dopo; per annullarla c'è `revert_freelancer_action`."""
         kwargs: dict[str, Any] = {}
         if nome is not None:
             kwargs["nome"] = _supplied_text(nome)
@@ -574,6 +624,10 @@ def build_server(
             kwargs["note"] = _supplied_text(note)
         if compilata_da is not None:
             kwargs["compilata_da"] = _supplied_text(compilata_da)
+        if seniority is not None:
+            kwargs["seniority_admin"] = _supplied_text(seniority)
+        if anni is not None:
+            kwargs["anni_admin"] = _integer(anni, "anni")
         override = FreelancerOverride(**kwargs)
         return _run(
             lambda s: FreelancerService(s).override(UUID(freelancer_id), override, admin().id)
@@ -617,8 +671,13 @@ def build_server(
         entrambe lette al volo, mai memorizzate sulla scheda; `cv_sha256`, `model` e
         `generated_at` di quando è stata scritta. `card` è `None` finché nessun CV ha
         ancora prodotto una scheda; `error` l'ultimo motivo per cui non c'è, o per cui
-        quella che c'è è più vecchia del CV attuale. Solo lettura; per riscriverla c'è
-        `regenerate_freelancer_card`."""
+        quella che c'è è più vecchia del CV attuale. `seniority` e `anni` sono quelli
+        effettivi: la correzione dell'admin (`seniority_admin`, `anni_admin`, da
+        `override_freelancer`) se c'è, altrimenti quelli di Claude; `anni` è `None` quando
+        il CV non data nessun ruolo, e `seniority_incerta` dice allora che la seniority
+        è solo una lettura delle responsabilità. Una scheda che dopo la riscrittura
+        rivela ancora il genere non viene scritta: `error` lo dice. Solo lettura; per
+        riscriverla c'è `regenerate_freelancer_card`."""
         return _run(lambda s: CardWriter(s, None).read(UUID(freelancer_id)))
 
     @mcp.tool()
@@ -628,7 +687,8 @@ def build_server(
         Un fallimento di Claude risponde comunque la scheda precedente con `error`,
         come lo mostra la pagina. Senza una chiave di Claude configurata risponde che
         il team builder è spento, invece di lasciare la scheda com'era fingendo di
-        averla riscritta."""
+        averla riscritta. Il livello che l'admin ha corretto (`override_freelancer`,
+        `seniority` e `anni`) resta com'è."""
         if llm is None:
             # `CardWriter.write` itself has no opinion on a missing key -- it just
             # answers the card unchanged, `list_pigro_spaces`'s own precondition,
@@ -1045,7 +1105,8 @@ def build_server(
         - nome, oggetto e stato (bozza, programmata, in_invio, inviata, annullata);
         - quando parte o è partita (`programmata_per`, `inviata_at`);
         - se l'invio è fermo, da quando e perché (`fermo_at`, `fermo_motivo`), finché
-          non parte la prossima mail;
+          non parte la prossima mail (anche quando il limite giornaliero di mail ferma
+          il resto della lista: `fermo_motivo` dice il giorno in cui riparte);
         - l'azione che misura: entrato, cv, scheda_completa, profilo_creato o
           richiesta_aggiornata, oppure clic quando il bottone porta a un link;
         - in `conteggi` quante sono state inviate, saltate, fallite, consegnate,

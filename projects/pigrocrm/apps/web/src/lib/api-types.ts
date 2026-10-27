@@ -10129,10 +10129,11 @@ export interface components {
          *     `ProposalService.accept` stores on `campi_accettati` and what actually builds the
          *     `Contract`/`WorkUnit` -- never `campi_proposti` itself, per spec §10's "kept
          *     separately... never overwritten".
+         *
+         *     There is no `deciso_da`: who decided is the authenticated actor, read by the service,
+         *     never a field a caller (or an agent steered by an email) gets to write (REB-806).
          */
         ProposalAccept: {
-            /** Deciso Da */
-            deciso_da: string;
             /** Campi Accettati */
             campi_accettati?: {
                 [key: string]: unknown;
@@ -10240,8 +10241,6 @@ export interface components {
          *     who and when.
          */
         ProposalReject: {
-            /** Deciso Da */
-            deciso_da: string;
             /** Motivo */
             motivo?: string | null;
         };

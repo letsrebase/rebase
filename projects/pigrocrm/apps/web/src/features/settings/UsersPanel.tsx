@@ -120,6 +120,12 @@ export function UsersPanel() {
   const [scopeOf, setScopeOf] = useState<UserRecord | null>(null)
   const [scopeAziende, setScopeAziende] = useState<string[]>([])
   const [scopeProblem, setScopeProblem] = useState<ProblemDetail | null>(null)
+  // The member whose name is being corrected (REB-796): a space's founder is stored
+  // under whatever the signup form asked for, often the space's own name, and that is
+  // the name every assignee and owner picker then shows.
+  const [renameOf, setRenameOf] = useState<UserRecord | null>(null)
+  const [renameNome, setRenameNome] = useState('')
+  const [renameProblem, setRenameProblem] = useState<ProblemDetail | null>(null)
   const byId = (id: string) => azienda.byId(id)
 
   const users = useUsers()
@@ -172,6 +178,27 @@ export function UsersPanel() {
           setScopeOf(null)
         },
         onError: (error) => setScopeProblem(toProblem(error)),
+      },
+    )
+  }
+
+  function openRename(user: UserRecord) {
+    setRenameProblem(null)
+    setRenameOf(user)
+    setRenameNome(user.nome)
+  }
+
+  function saveRename() {
+    if (!renameOf) return
+    setRenameProblem(null)
+    update.mutate(
+      { userId: renameOf.id, body: { nome: renameNome.trim() } },
+      {
+        onSuccess: () => {
+          toast.success('Nome aggiornato')
+          setRenameOf(null)
+        },
+        onError: (error) => setRenameProblem(toProblem(error)),
       },
     )
   }
@@ -300,6 +327,11 @@ export function UsersPanel() {
           <RowActions
             label={`Azioni per ${user.nome}`}
             items={[
+              {
+                label: 'Rinomina…',
+                disabled: update.isPending,
+                onSelect: () => openRename(user),
+              },
               ...(showScope
                 ? [
                     {
@@ -533,6 +565,40 @@ export function UsersPanel() {
               disabled={invite.isPending || (several && inviteAziende.length === 0)}
             >
               {invite.isPending ? 'Invio…' : 'Invia invito'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={renameOf !== null} onOpenChange={(next) => !next && setRenameOf(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Nome di {renameOf?.nome}</DialogTitle>
+            <DialogDescription>
+              È il nome che compare nei selettori di assegnatario e responsabile e nello storico.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="rename-nome">Nome</Label>
+            <Input
+              id="rename-nome"
+              aria-invalid={renameProblem !== null}
+              aria-describedby={renameProblem ? 'rename-nome-error' : undefined}
+              value={renameNome}
+              onChange={(event) => setRenameNome(event.target.value)}
+            />
+            {renameProblem && (
+              <p id="rename-nome-error" role="alert" className="text-sm text-destructive">
+                {renameProblem.detail}
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setRenameOf(null)}>
+              Annulla
+            </Button>
+            <Button onClick={saveRename} disabled={update.isPending || renameNome.trim() === ''}>
+              {update.isPending ? 'Salvataggio…' : 'Salva'}
             </Button>
           </DialogFooter>
         </DialogContent>
