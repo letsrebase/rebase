@@ -697,6 +697,17 @@ describe('CeilingPanel, the cap on a customer’s share', () => {
     expect(screen.queryByText(/ci sta/i)).not.toBeInTheDocument()
   })
 
+  it('says the contracts could not be read beside the ceilings, instead of hiding the picker', async () => {
+    route({
+      '/api/analytics/ceilings': () => ok(headroom()),
+      '/api/contracts': () => failed({ detail: 'Contratti non disponibili' }, 500),
+    })
+    renderPanel()
+
+    expect(await screen.findByText(/Soglie del forfettario/)).toBeInTheDocument()
+    expect(await screen.findByText(/contratti non disponibili/i)).toBeInTheDocument()
+  })
+
   it('says why the contracts could not be read, when there is nothing else to show', async () => {
     route({
       '/api/analytics/ceilings': () => ok(headroom([])),

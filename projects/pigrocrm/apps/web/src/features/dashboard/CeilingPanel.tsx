@@ -642,6 +642,9 @@ export function CeilingPanel({
             ))}
           </div>
         ) : null}
+        {/* With ceilings the page still draws; a contracts read that failed must not look like
+            «no contract has a cap», or «Ci sta» would be answered from the ceilings alone. */}
+        {hasCeilings && capped.isError ? <QueryErrorBanner error={capped.error} /> : null}
         {/* Keyed on the year so a new period starts the form over: a date typed for 2026
             means nothing against 2027's room. */}
         <Simulator
