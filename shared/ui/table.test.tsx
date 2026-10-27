@@ -1,7 +1,7 @@
 import { act, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './table'
+import { ScrollRegion, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './table'
 
 /**
  * The container of a table is a keyboard-reachable scroll region while the table
@@ -137,5 +137,44 @@ describe('Table container', () => {
     const container = renderTable({ scrollLabel: 'Trattamento fiscale' })
 
     expect(container).not.toHaveAttribute('tabindex')
+  })
+})
+
+describe('ScrollRegion', () => {
+  it('names a hand-written table while it overflows, for the tables that cannot be `Table`', () => {
+    render(
+      <ScrollRegion label="Ore della settimana per deal">
+        <table>
+          <tbody>
+            <tr>
+              <td>Acme</td>
+            </tr>
+          </tbody>
+        </table>
+      </ScrollRegion>,
+    )
+
+    act(() => notify())
+
+    const region = screen.getByRole("region", { name: "Ore della settimana per deal" })
+    expect(region).toHaveAttribute("tabindex", "0")
+    expect(region).toHaveAttribute("data-slot", "scroll-region")
+  })
+
+  it('stays out of the tab order when its content fits, and keeps the classes it is given', () => {
+    widths = { scroll: 200, client: 200 }
+    const { container } = render(
+      <ScrollRegion label="Valori" className="border">
+        <table />
+      </ScrollRegion>,
+    )
+
+    act(() => notify())
+
+    const region = container.firstElementChild!
+    expect(region).not.toHaveAttribute("tabindex")
+    expect(region).not.toHaveAttribute("role")
+    expect(region.className).toContain("border")
+    expect(region.className).toContain("overflow-x-auto")
   })
 })

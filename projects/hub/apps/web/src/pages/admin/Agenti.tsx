@@ -194,7 +194,7 @@ export function AdminAgenti() {
           ) : (
             <>
               <div className="overflow-x-auto overflow-y-hidden border border-border bg-card">
-                <Table>
+                <Table scrollLabel="I tuoi token">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Token</TableHead>

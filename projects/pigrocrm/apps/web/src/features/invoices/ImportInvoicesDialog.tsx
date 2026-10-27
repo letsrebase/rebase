@@ -379,7 +379,7 @@ function ReviewPanel({
       ) : null}
 
       <div className="max-h-[40vh] overflow-y-auto border">
-        <Table>
+        <Table scrollLabel="Fatture del file">
           <TableHeader className="sticky top-0 bg-popover">
             <TableRow>
               <TableHead>Fattura</TableHead>

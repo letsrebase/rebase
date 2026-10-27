@@ -90,6 +90,7 @@ export function CustomersPage({ initialSearch }: { initialSearch: string }) {
 
       <div className="px-8 pb-8">
         <DataTable
+          label="Clienti"
           columns={columns}
           data={customers.data?.items ?? []}
           isLoading={customers.isLoading}

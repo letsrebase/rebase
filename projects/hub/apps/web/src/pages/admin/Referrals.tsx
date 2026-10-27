@@ -415,7 +415,7 @@ export function AdminReferrals() {
         <>
           <div className="px-6 pt-6 pb-6">
             <div className="overflow-x-auto overflow-y-hidden border border-border bg-card">
-              <Table>
+              <Table scrollLabel="Referral">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Segnalato</TableHead>

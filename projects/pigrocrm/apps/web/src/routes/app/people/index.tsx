@@ -188,6 +188,7 @@ export function PeoplePage({
 
       <div className="px-8 pb-8">
         <DataTable
+          label="Persone"
           columns={columns}
           data={people.data?.items ?? []}
           isLoading={people.isLoading}

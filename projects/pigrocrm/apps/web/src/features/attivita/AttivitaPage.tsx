@@ -299,6 +299,7 @@ export function AttivitaPage({
           </div>
         )}
         <DataTable
+          label="Attività"
           columns={columns}
           data={list.items}
           isLoading={list.isLoading}

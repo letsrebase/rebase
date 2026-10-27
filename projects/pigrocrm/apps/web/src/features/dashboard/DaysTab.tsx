@@ -3,6 +3,7 @@ import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { statoLabel } from '@/features/days/labels'
 import { Skeleton } from '@rebase/ui/skeleton'
 import {
+  ScrollRegion,
   Table,
   TableBody,
   TableCell,
@@ -97,7 +98,7 @@ function StackedMonths({ months }: { months: DaysMonth[] }) {
       </ul>
       <details className="mt-3 text-sm">
         <summary className="cursor-pointer text-xs text-muted-foreground">Tabella dei valori</summary>
-        <div className="mt-2 overflow-x-auto">
+        <ScrollRegion label="Valori delle giornate per mese e per stato" className="mt-2">
           <table className="w-full text-xs">
             <thead>
               <tr className="text-left text-muted-foreground">
@@ -130,7 +131,7 @@ function StackedMonths({ months }: { months: DaysMonth[] }) {
               ))}
             </tbody>
           </table>
-        </div>
+        </ScrollRegion>
       </details>
     </figure>
   )
@@ -138,7 +139,7 @@ function StackedMonths({ months }: { months: DaysMonth[] }) {
 
 function RateTable({ rows, first }: { rows: DaysRate[]; first: string }) {
   return (
-    <Table>
+    <Table scrollLabel={`Tariffa reale per ${first.toLowerCase()}`}>
       <TableHeader>
         <TableRow>
           <TableHead>{first}</TableHead>

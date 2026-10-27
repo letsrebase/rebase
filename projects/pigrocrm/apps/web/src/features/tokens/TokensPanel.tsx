@@ -195,6 +195,7 @@ export function TokensPanel() {
         </p>
 
         <DataTable
+          label="Token"
           columns={columns}
           data={tokens.data ?? []}
           isLoading={tokens.isLoading}

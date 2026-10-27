@@ -169,6 +169,7 @@ export function InvoicesList({ scadute }: { scadute?: boolean }) {
         )}
 
         <DataTable
+          label="Fatture"
           columns={columns}
           data={invoices.items}
           isLoading={invoices.isLoading}

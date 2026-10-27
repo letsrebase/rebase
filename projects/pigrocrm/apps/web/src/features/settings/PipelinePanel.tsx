@@ -184,6 +184,7 @@ export function PipelinePanel() {
       </div>
 
       <DataTable
+        label="Stati della pipeline"
         columns={columns}
         data={stages.data ?? []}
         isLoading={stages.isLoading}

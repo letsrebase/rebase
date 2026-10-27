@@ -64,6 +64,7 @@ export function CostsPanel({ dealId }: { dealId?: string }) {
       </div>
 
       <DataTable
+        label="Costi"
         columns={buildCostColumns(all, customFields)}
         data={costs.data?.items ?? []}
         isLoading={costs.isLoading}

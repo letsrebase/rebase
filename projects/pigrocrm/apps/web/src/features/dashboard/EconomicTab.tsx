@@ -49,9 +49,15 @@ function byLegalEntity(rows: ConcentrationRow[]): { aziendaId: string; rows: Con
   return groups
 }
 
-function ConcentrationTable({ rows }: { rows: ConcentrationRow[] }) {
+function ConcentrationTable({
+  rows,
+  label = 'Concentrazione dei ricavi per cliente',
+}: {
+  rows: ConcentrationRow[]
+  label?: string
+}) {
   return (
-    <Table>
+    <Table scrollLabel={label}>
       <TableHeader>
         <TableRow>
           <TableHead>Cliente</TableHead>
@@ -320,7 +326,12 @@ export function EconomicTab({
               <h3 className="text-sm font-medium text-muted-foreground">
                 {byId(group.aziendaId)?.nome ?? 'Azienda non più attiva'}
               </h3>
-              <ConcentrationTable rows={group.rows} />
+              <ConcentrationTable
+                rows={group.rows}
+                label={`Concentrazione dei ricavi per cliente, ${
+                  byId(group.aziendaId)?.nome ?? 'Azienda non più attiva'
+                }`}
+              />
             </div>
           ))
         ) : (

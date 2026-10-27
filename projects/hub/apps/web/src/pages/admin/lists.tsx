@@ -452,7 +452,7 @@ export function AdminTalenti() {
              padding the raw `th`/`td` used to type is the primitive's own. */}
           <div className="px-6 pt-6 pb-6">
             <div className="overflow-x-auto overflow-y-hidden border border-border bg-card">
-              <Table>
+              <Table scrollLabel="Talenti">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Chi</TableHead>
@@ -1313,7 +1313,7 @@ export function AdminCompanies() {
         <>
           <div className="px-6 pt-6 pb-6">
             <div className="overflow-x-auto overflow-y-hidden border border-border bg-card">
-              <Table>
+              <Table scrollLabel="Aziende">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Azienda</TableHead>

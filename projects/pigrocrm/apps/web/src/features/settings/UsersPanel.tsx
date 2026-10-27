@@ -433,6 +433,7 @@ export function UsersPanel() {
       </div>
 
       <DataTable
+        label="Utenti"
         columns={columns}
         data={users.data ?? []}
         isLoading={users.isLoading}
@@ -444,6 +445,7 @@ export function UsersPanel() {
       <div>
         <h3 className="mb-2 font-semibold">Inviti in attesa</h3>
         <DataTable
+          label="Inviti in attesa"
           columns={inviteColumns}
           data={invites.data ?? []}
           isLoading={invites.isLoading}

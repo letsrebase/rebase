@@ -271,6 +271,7 @@ export function TemplatesPanel() {
       </div>
 
       <DataTable
+        label="Template"
         columns={columns}
         data={templates.data?.items ?? []}
         isLoading={templates.isLoading}

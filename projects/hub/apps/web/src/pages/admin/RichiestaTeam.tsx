@@ -151,7 +151,7 @@ function RequestPage({ request }: { request: TeamRequest }) {
           <p className="text-sm text-muted-foreground">Nessun talento in questa richiesta.</p>
         ) : (
           <div className="overflow-x-auto overflow-y-hidden border border-border bg-card">
-            <Table>
+            <Table scrollLabel="Talenti del team">
               <TableHeader>
                 <TableRow>
                   <TableHead>Talento</TableHead>

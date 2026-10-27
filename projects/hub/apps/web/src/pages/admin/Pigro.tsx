@@ -84,7 +84,7 @@ export function AdminPigro() {
         <>
           <div className="px-6 pt-6 pb-6">
             <div className="overflow-x-auto overflow-y-hidden border border-border bg-card">
-              <Table>
+              <Table scrollLabel="Istanze Pigro">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Spazio</TableHead>

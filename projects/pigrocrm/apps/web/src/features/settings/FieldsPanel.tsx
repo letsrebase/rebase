@@ -284,6 +284,7 @@ export function FieldsPanel() {
       </div>
 
       <DataTable
+        label="Campi personalizzati"
         columns={columns}
         data={fields.data ?? []}
         isLoading={fields.isLoading}

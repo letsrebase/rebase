@@ -157,6 +157,7 @@ export function DealsList({
         )}
 
         <DataTable
+          label="Deal"
           columns={columns}
           data={deals.data?.items ?? []}
           isLoading={deals.isLoading}

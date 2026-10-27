@@ -72,6 +72,10 @@ export type DataTableFeatures = typeof features
 interface DataTableProps<T extends RowData> {
   columns: ColumnDef<DataTableFeatures, T>[]
   data: T[]
+  /** What the table holds («Clienti»): the name of its scroll region while it overflows,
+   *  which is what a screen reader says when the focus lands on it (REB-782). Required, so
+   *  a new list cannot ship without one. */
+  label: string
   isLoading?: boolean
   /** True when the query behind `data` failed. Distinct from an empty `data`
    *  array on purpose -- see this function's own docstring. */
@@ -113,6 +117,7 @@ const LOADING_ROW_COUNT = 5
 export function DataTable<T extends RowData>({
   columns,
   data,
+  label,
   isLoading,
   isError,
   error,
@@ -175,7 +180,7 @@ export function DataTable<T extends RowData>({
       data-slot="data-table"
       className="overflow-x-auto overflow-y-hidden border border-border bg-card"
     >
-      <Table>
+      <Table scrollLabel={label}>
         <TableHeader>
           {table.getHeaderGroups().map((group) => (
             <TableRow key={group.id}>
