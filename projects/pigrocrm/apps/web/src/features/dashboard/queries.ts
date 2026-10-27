@@ -118,14 +118,19 @@ export function useEconomicOverview(anno: number, base: CashBase) {
  * names none. In «tutte» on a space with several aziende the economic tab asks once
  * per azienda, by id, because the server has no space-wide estimate to give (spec
  * §1.9); with one azienda nothing is sent and the server resolves it alone.
+ *
+ * `enabled` false sends nothing at all (REB-788): the estimate is an administrator's
+ * read, and a role the table in `lib/permissions.ts` refuses it must not ask and take
+ * a 403 for the answer.
  */
-export function useFiscalEstimate(anno: number, aziendaId?: string | null) {
+export function useFiscalEstimate(anno: number, aziendaId?: string | null, enabled = true) {
   const { selected } = useLegalEntity()
   const azienda = aziendaId === undefined ? selected : aziendaId
   const query = azienda === null ? { anno } : { anno, azienda_id: azienda }
   return useQuery({
     queryKey: queryKeys.fiscalEstimate(anno, azienda),
     queryFn: () => unwrap(api.GET('/api/analytics/fiscal', { params: { query } })),
+    enabled,
   })
 }
 

@@ -2,6 +2,14 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+// REB-788: the panels read the role (the estimate is an administrator's), so the tests
+// say which role is signed in; the default is the one that may read everything.
+const session = vi.hoisted(() => ({ ruolo: 'admin' as 'admin' | 'collaboratore' | 'readonly' }))
+vi.mock('@/lib/auth', () => ({
+  useAuth: () => ({ user: { ruolo: session.ruolo } }),
+  useCan: () => session.ruolo === 'admin',
+}))
 import { EconomicTab } from './EconomicTab'
 import type { CashMonth } from './queries'
 import { api } from '@/lib/api'
@@ -175,6 +183,7 @@ function renderTab(periodo = PERIODO, base: 'competenza' | 'incasso' = 'competen
 }
 
 beforeEach(() => {
+  session.ruolo = 'admin'
   vi.mocked(api.GET).mockReset()
 })
 
@@ -216,6 +225,18 @@ describe('EconomicTab', () => {
     })
     expect(screen.getByRole('radio', { name: 'Incasso' })).toHaveAttribute('aria-checked', 'true')
     expect(screen.getByText(/Vista economica 2026 per incasso/)).toBeInTheDocument()
+  })
+
+  it('asks a collaboratore for no fiscal estimate and says it is reserved, with no 403 to log', async () => {
+    session.ruolo = 'collaboratore'
+    vi.mocked(api.GET).mockImplementation(byPath(RESPONSE) as never)
+    renderTab()
+    await screen.findByRole('figure', { name: 'Andamento economico 2026' })
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      /ruolo in questo spazio è «collaboratore»: la stima fiscale è riservata a «amministratore»/,
+    )
+    const paths = vi.mocked(api.GET).mock.calls.map(([path]) => path)
+    expect(paths).not.toContain('/api/analytics/fiscal')
   })
 
   it('tells the reader the tax block is on the money whatever the charts read by', async () => {

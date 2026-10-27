@@ -10,6 +10,14 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+// REB-788: the panels read the role (the estimate is an administrator's), so the tests
+// say which role is signed in; the default is the one that may read everything.
+const session = vi.hoisted(() => ({ ruolo: 'admin' as 'admin' | 'collaboratore' | 'readonly' }))
+vi.mock('@/lib/auth', () => ({
+  useAuth: () => ({ user: { ruolo: session.ruolo } }),
+  useCan: () => session.ruolo === 'admin',
+}))
 import { DashboardPage } from './DashboardPage'
 import type { DashboardSearch } from './search'
 import { api } from '@/lib/api'
@@ -131,6 +139,7 @@ function renderPage(search = SEARCH) {
 }
 
 beforeEach(() => {
+  session.ruolo = 'admin'
   vi.mocked(api.GET).mockReset()
   vi.mocked(api.GET).mockImplementation(
     ((path: string) =>

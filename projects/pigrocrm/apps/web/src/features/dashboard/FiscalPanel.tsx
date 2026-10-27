@@ -4,6 +4,8 @@ import { Card, CardContent } from '@rebase/ui/card'
 import { Skeleton } from '@rebase/ui/skeleton'
 import { NOT_COMPUTABLE, formatPercent } from '@/features/analytics/format'
 import { toProblem } from '@/lib/api'
+import { useAuth, useCan } from '@/lib/auth'
+import { roleLabel } from '@/lib/roles'
 import { money as euro } from './format'
 import { useFiscalEstimate } from './queries'
 
@@ -92,7 +94,22 @@ export function FiscalPanel({
    *  estimate is an administrator's, and one banner per azienda would say it again. */
   quiet?: boolean
 }) {
-  const estimate = useFiscalEstimate(anno, aziendaId)
+  const allowed = useCan('get_fiscal_estimate')
+  const { user } = useAuth()
+  const estimate = useFiscalEstimate(anno, aziendaId, allowed)
+
+  // The estimate is `get_fiscal_estimate`, an admin read: a role the table refuses it
+  // is told so without the request being made (REB-788), in the sentence a 403 would
+  // have produced. In «tutte» the cards above already say it, so nothing is drawn.
+  if (!allowed) {
+    if (quiet || user === null) return null
+    return (
+      <p role="alert" className="text-muted-foreground">
+        Il tuo ruolo in questo spazio è «{roleLabel(user.ruolo)}»: la stima fiscale è
+        riservata a «{roleLabel('admin')}».
+      </p>
+    )
+  }
 
   if (estimate.isError) {
     if (quiet && [403, 404].includes(toProblem(estimate.error).status)) return null
