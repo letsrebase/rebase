@@ -58,24 +58,13 @@ from rebase_core.cv_text import CvText
 from rebase_core.db import SessionOpener
 from rebase_core.errors import LlmUnavailable, NotFound
 from rebase_core.freelancers import ENTITY, FreelancerService
-from rebase_core.llm import LlmCall, LlmRequest, LlmResponse
+from rebase_core.llm import LlmCall, LlmMessage, LlmRequest, LlmResponse
 from rebase_core.models import Freelancer, FreelancerCard, User
 from rebase_core.team_schemas import Card, CardsRefreshed, FreelancerCardRead
 
 logger = logging.getLogger(__name__)
 
-# A card is a few hundred tokens of JSON; the rest is room for adaptive thinking
-# (global-constraints.md: 2000 for a card, 8000 for a proposal).
-CARD_MAX_TOKENS = 2000
 NO_TEXT = "Il CV non ha testo leggibile."
-
-# `Card`'s own schema: the seam (`AnthropicCall.complete`) strips what the
-# structured-output API refuses, and `Card.model_validate` enforces all of it on the
-# answer. Without the root `description`, which is `Card`'s docstring, written for
-# whoever maintains it rather than for the model.
-CARD_SCHEMA = {
-    key: value for key, value in Card.model_json_schema().items() if key != "description"
-}
 
 Failure = Literal[
     "no_text", "refusal", "max_tokens", "shape", "identifying", "gendered", "unavailable"
@@ -294,18 +283,18 @@ something else."""
 
 def card_prompt(cv: CvText, posizione: str | None) -> LlmRequest:
     """System: what an anonymous card is and its rules; user: the profile's position and
-    the CV's text; the schema: `CARD_SCHEMA`. No `cache_control`: the system text is far
-    below the smallest prefix Claude caches, and one CV is read once."""
+    the CV's text; the answer: `Card`. No cached block: the system text is far below the
+    smallest prefix a provider caches, and one CV is read once. The output ceiling is the
+    `card` task's (`ai_tasks`, «Modelli AI»)."""
     cut = " (cut short: the file is longer than what follows)" if cv.troncato else ""
     user = (
         f"Position on the profile: {posizione or 'not given'}\n\n"
         f"The CV's text{cut}:\n<cv>\n{cv.testo}\n</cv>"
     )
     return LlmRequest(
-        system=[{"type": "text", "text": _SYSTEM}],
-        messages=[{"role": "user", "content": [{"type": "text", "text": user}]}],
-        json_schema=CARD_SCHEMA,
-        max_tokens=CARD_MAX_TOKENS,
+        system=_SYSTEM,
+        messages=[LlmMessage(role="user", text=user)],
+        output_model=Card,
     )
 
 
@@ -316,23 +305,18 @@ NEUTRAL_AGAIN = (
 
 
 def neutral_retry(request: LlmRequest, answer: str) -> LlmRequest:
-    """`request` once more, with the gendered card `answer` as Claude's turn and the
+    """`request` once more, with the gendered card `answer` as the model's turn and the
     correction as the next user turn, naming the words `_gendered` found; the same
-    system, schema and `max_tokens`. It resends the CV, so the retry costs about as much
-    as the first call."""
+    system and answer shape. It resends the CV, so the retry costs about as much as the
+    first call."""
     found = _gendered(Card.model_validate(json.loads(answer)))
     words = ", ".join(f"«{word}»" for word in found)
     return request.model_copy(
         update={
             "messages": [
                 *request.messages,
-                {"role": "assistant", "content": [{"type": "text", "text": answer}]},
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": f"{NEUTRAL_AGAIN} Parole da cambiare: {words}."}
-                    ],
-                },
+                LlmMessage(role="assistant", text=answer),
+                LlmMessage(role="user", text=f"{NEUTRAL_AGAIN} Parole da cambiare: {words}."),
             ]
         }
     )
@@ -340,25 +324,24 @@ def neutral_retry(request: LlmRequest, answer: str) -> LlmRequest:
 
 def _card_from(response: LlmResponse, cognome: str, nome: str = "") -> Card | Failure:
     """The card, or the kind of failure: `stop_reason` is read before the body, as the
-    seam hands it over (`llm.py`), and a card that validates is still refused if it
-    names the person or carries an address. Its seniority is brought inside the year
-    bands (`card_level.banded`, REB-799) before anything reads it."""
+    seam hands it over (`llm.py`), which has already validated it as `Card` (every limit
+    of the model bites there); a card that validates is still refused if it names the
+    person or carries an address. Its seniority is brought inside the year bands
+    (`card_level.banded`, REB-799) before anything reads it."""
     if response.stop_reason == "refusal":
         return "refusal"
     if response.stop_reason == "max_tokens":
         return "max_tokens"
-    if response.text is None:
-        return "shape"
-    try:
-        card = Card.model_validate(json.loads(response.text))
-    except ValueError:  # `json.JSONDecodeError` and Pydantic's `ValidationError` alike
+    card = response.parsed
+    if not isinstance(card, Card):
         return "shape"
     return "identifying" if _identifies(card, cognome, nome) else banded(card)
 
 
 class CardWriter:
-    """`llm` is `None` without a key (`call_from_settings`): then nothing is written and
-    every read answers the row as it stands."""
+    """`llm` is `None` when no model is configured for the `card` task
+    (`call_for_task`): then nothing is written and every read answers the row as it
+    stands."""
 
     def __init__(
         self,
@@ -499,7 +482,9 @@ class CardWriter:
         if not isinstance(card, Card):
             return self._fail(freelancer_id, digest, card)
         model = response.model
-        input_tokens, output_tokens = response.input_tokens, response.output_tokens
+        input_tokens = response.input_tokens
+        # What was billed as output, thinking included, as the row has always counted it.
+        output_tokens = response.output_tokens + response.thinking_tokens
         if _gendered(card) and response.text is not None:
             # One rewrite, then a gate (REB-574, REB-802): a card that still gives the
             # gender away is failed, never written, with its sentence beside the old
@@ -514,7 +499,7 @@ class CardWriter:
             except LlmUnavailable:
                 return self._fail(freelancer_id, digest, "unavailable")
             input_tokens += again.input_tokens
-            output_tokens += again.output_tokens
+            output_tokens += again.output_tokens + again.thinking_tokens
             rewritten = _card_from(again, cognome, nome)
             if isinstance(rewritten, Card):
                 card, model = rewritten, again.model

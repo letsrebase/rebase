@@ -382,9 +382,18 @@ those cards into a team (`rebase_core.team_builder`), which a company files with
 (`projects/website`, REB-676) asks the same `POST /api/hub/team/proposals` and sends the
 visitor to `/hub/team?proposta=<id>` for the whole team, which the page reads back with
 `GET /api/hub/team/proposals/{id}` (REB-675, spec § 3.2 addendum). Both calls go through one seam,
-`rebase_core.llm`, with inference global (the API offers `global` or `us`; EU
-residency would take Vertex AI or Bedrock in an EU region, not decided); the tests
-hand a `RecordingCall` and never reach Anthropic.
+`rebase_core.llm` (`AiCall`, on Pydantic AI; REB-831): which provider, model, effort and
+output ceiling answer a task, and the provider's key, are read from the database on every
+call («Modelli AI», `ai_tasks`), never from the environment, and every call writes its
+usage (`ai_usage`). It refuses before any network when the task's daily euro cap is spent,
+its model has no price, or its provider is off or has no key. The Anthropic path keeps what
+the hub always sent: the `server-side-fallback-2026-07-01` beta with `fallbacks="default"`,
+inference global (`inference_geo`; the API offers `global` or `us`, EU residency would take
+Vertex AI or Bedrock in an EU region, not decided), adaptive thinking at the task's effort,
+`cache_control` on the team builder's catalogue block, and the schema through the SDK's
+`transform_schema`; `anthropic_model.py` teaches Pydantic AI the `fallback` block such a
+response carries (`test_llm.py` drives it over a mocked wire). The tests hand a
+`RecordingCall` and never reach a provider.
 
 **The privacy page goes out before the hub.** From the first card on, CVs go to
 Anthropic, and it is letsrebase.com/privacy, in «La tua scheda e il team builder», that
@@ -403,28 +412,31 @@ talent the availability question, answered with a click that posts on
 rebase» on their card. **On production the talents' mail of spec § 4.4 goes out before
 the first grant**: every freelancer with a card is told, by a campaign from «Campagne»,
 what their card says, that the public builder shows it without their name, and that the
-companies rebase admits see their profile by name with the CV. **The `mcp` service now
-uses the Anthropic and the Resend keys** as `api` does: `propose_team` and
-`regenerate_freelancer_card` call Claude, `contact_team_talents` and
-`grant_talent_cloud` send mail. Recreate it beside `api` whenever either key changes;
-without them those tools answer as the admin area does (the builder off, sending not
-active here, the cloud opened with no mail).
+companies rebase admits see their profile by name with the CV. **The `mcp` service uses
+«Modelli AI» and the Resend key** as `api` does: `propose_team` and
+`regenerate_freelancer_card` call the configured model (asked on each call, so a model
+configured while it runs applies at once), `contact_team_talents` and
+`grant_talent_cloud` send mail. Recreate it beside `api` when the Resend key changes;
+without a model or a mail key those tools answer as the admin area does (the builder off,
+sending not active here, the cloud opened with no mail).
 
-**The key** is `REBASE_ANTHROPIC_API_KEY`, in production's and the preview's
-`${DEPLOY_PATH}/.env`, never in the repository; recreate `api` and `mcp` after setting
-it (`docker compose -p rebase --env-file "${DEPLOY_PATH}/.env" up -d api mcp` from
-`projects/hub`, `-p rebase-preview` on the preview). Without it no card is written
-and `POST /api/hub/team/proposals` answers 503 «Il team builder è spento.»; nothing
-else of the hub changes. `REBASE_TEAM_BUILDER_ENABLED=false` is the switch that turns
-the proposals off with the key still there: the same 503, while cards go on being
-written and requests already filed stay in «Richieste team».
+**The key** is saved in «Modelli AI», encrypted, never in the repository or the
+environment (see «Model provider keys» below); the old `REBASE_ANTHROPIC_API_KEY` and
+`REBASE_TEAM_BUILDER_MODEL` are read once, by `rebase ai-seed`, and are no longer settings
+nor passed to the containers. Nothing needs recreating when a key or a model changes: the
+next call reads it. With no model configured for a task (task or provider off, no key) no
+card is written and `POST /api/hub/team/proposals` answers 503 «Il team builder è
+spento.»; a task whose daily cap is spent answers the visitor 503 «Troppe richieste in
+questo momento»; nothing else of the hub changes. `REBASE_TEAM_BUILDER_ENABLED=false` is
+the switch that turns the proposals off with the model still there: the same 503, while
+cards go on being written and requests already filed stay in «Richieste team».
 
 **The backlog is `rebase cards-refresh`.** A card is written after the wizard or a CV
 upload, so the CVs already on file need it too: since REB-552 the `cards` service runs
 it once an hour, up to 50 cards. The loop itself is gated by `REBASE_CARDS_LOOP`
 (`.env`, default `off`), no Python setting: production keeps it `off` until the talents'
-mail of spec § 4.4 has gone out, so a deploy that already carries the key never sends a
-CV to Anthropic before that mail, then sets it `on` and runs `docker compose up -d
+mail of spec § 4.4 has gone out, so a deploy that already has a model configured never sends a
+CV to a provider before that mail, then sets it `on` and runs `docker compose up -d
 cards` to recreate the service. The first run after the key lands is still by hand,
 before the loop is switched on:
 `docker compose -p rebase --env-file /opt/hub/.env exec api uv run --no-sync rebase
@@ -658,9 +670,17 @@ provider key and «Modelli AI» says so.
 1. Add `REBASE_SECRETS_KEY=<openssl rand -base64 32>` to the host `.env` (root-only),
    next to the existing `REBASE_ANTHROPIC_API_KEY` and `REBASE_TEAM_BUILDER_MODEL`.
    Keep a copy in the password manager: losing it loses every stored provider key.
-2. Deploy.
-3. Inside the api container: `docker compose -p rebase exec api rebase ai-seed
-   --eur-per-usd <rate>`. It moves the old key and model into the tables (key sealed,
+2. Deploy. From here until step 3 no model is configured: no card is written and the
+   builder answers 503 «Il team builder è spento.» (the old variables are no longer
+   passed to the containers), so do step 3 right after.
+3. In a one-off api container, handing it the two old values from the host `.env` without
+   putting the key in a command line (REB-831):
+   `REBASE_ANTHROPIC_API_KEY="$(sed -n 's/^REBASE_ANTHROPIC_API_KEY=//p' /opt/hub/.env)"
+   REBASE_TEAM_BUILDER_MODEL="$(sed -n 's/^REBASE_TEAM_BUILDER_MODEL=//p' /opt/hub/.env)"
+   docker compose -p rebase --env-file /opt/hub/.env run --rm -e REBASE_ANTHROPIC_API_KEY
+   -e REBASE_TEAM_BUILDER_MODEL api rebase ai-seed --eur-per-usd <rate>` (the model
+   defaults to `claude-opus-5` when the line is not there; `-p rebase-preview --env-file
+   /opt/hub-preview/.env` on the preview). It moves the old key and model into the tables (key sealed,
    `anthropic` on, both tasks on the model) and writes the Claude prices in euros from
    claude.com/pricing (USD per million tokens, read 2026-10-27: opus-5 5/25/0.50,
    opus-5-5 4/20/0.20, thinking billed as output). `<rate>` is **euros per one dollar**,

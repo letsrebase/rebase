@@ -39,7 +39,7 @@ from fastapi import (
 from pydantic import ValidationError
 
 from rebase_api.deps import (
-    LlmDep,
+    CardLlmDep,
     SenderDep,
     SessionDep,
     SessionOpenerDep,
@@ -99,7 +99,7 @@ def apply(
     tracker: TrackerDep,
     settings: SettingsDep,
     sender: SenderDep,
-    llm: LlmDep,
+    llm: CardLlmDep,
     open_session: SessionOpenerDep,
     nome: Annotated[str, Form()],
     cognome: Annotated[str, Form()],

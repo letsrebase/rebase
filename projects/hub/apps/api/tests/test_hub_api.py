@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from rebase_api.deps import get_llm, get_sender, get_session_opener, get_tracker
+from rebase_api.deps import get_card_llm, get_sender, get_session_opener, get_tracker
 from rebase_api.ratelimit import SIGNUPS_PER_MINUTE
 from rebase_core.analytics import APPLICATION_COMPLETED, Tracker
 from rebase_core.llm import LlmRequest, LlmResponse, RecordingCall
@@ -505,7 +505,7 @@ def test_the_wizard_schedules_the_card_write(
     assert response.json() == {"ok": True}
 
     assert len(llm.requests) == 1
-    assert "Ada Lovelace, backend developer" in llm.requests[0].messages[0]["content"][0]["text"]
+    assert "Ada Lovelace, backend developer" in llm.requests[0].messages[0].text
     row = api_session.execute(text("SELECT cv_sha256, card, error FROM freelancer_cards")).one()
     assert (row.cv_sha256, row.card, row.error) == (hashlib.sha256(CV).hexdigest(), CARD, None)
 
@@ -539,7 +539,7 @@ def test_the_completion_event_is_not_held_behind_the_card(
 ) -> None:
     _clean(api_session)
     claude = _AfterTheEvent(tracked)
-    client.app.dependency_overrides[get_llm] = lambda: claude  # type: ignore[attr-defined]
+    client.app.dependency_overrides[get_card_llm] = lambda: claude  # type: ignore[attr-defined]
 
     response = client.post(
         "/api/hub/freelancers", data=_form(), files={"cv": ("Ada CV.pdf", CV, "application/pdf")}
@@ -560,7 +560,7 @@ def test_without_a_key_the_wizard_writes_no_card_and_opens_no_session(
         opened.append(True)
         return nullcontext(api_session)
 
-    client.app.dependency_overrides[get_llm] = lambda: None  # type: ignore[attr-defined]
+    client.app.dependency_overrides[get_card_llm] = lambda: None  # type: ignore[attr-defined]
     client.app.dependency_overrides[get_session_opener] = lambda: opener  # type: ignore[attr-defined]
     response = client.post(
         "/api/hub/freelancers", data=_form(), files={"cv": ("Ada CV.pdf", CV, "application/pdf")}

@@ -12,6 +12,7 @@ wire. Everything about gating and recording runs against a stub Pydantic AI mode
 through `model_factory`.
 """
 
+import asyncio
 import base64
 import json
 import logging
@@ -84,7 +85,6 @@ def _request(**changes: Any) -> LlmRequest:
         "system": RULES,
         "messages": [LlmMessage(role="user", text=USER_TEXT)],
         "output_model": Scheda,
-        "max_tokens": 2000,
     }
     return LlmRequest(**{**fields, **changes})
 
@@ -492,6 +492,17 @@ def test_override_without_a_price_or_with_the_provider_off_is_refused(
     assert stub.built == []
 
 
+def test_a_caller_inside_a_running_loop_still_gets_its_answer(opener: SessionOpener) -> None:
+    """The MCP's tools are sync functions run by an event loop; `asyncio.run` alone
+    refuses to start there."""
+    stub = Stub()
+
+    async def tool() -> LlmResponse:
+        return _call(opener, stub).complete(_request())
+
+    assert asyncio.run(tool()).parsed == Scheda(riassunto="Sviluppatore backend", anni=7)
+
+
 # ---- build_model ------------------------------------------------------------------------
 
 
@@ -657,8 +668,8 @@ def test_wire_carries_every_anthropic_feature_the_call_always_had(
     assert "maintains" not in json.dumps(body["output_config"])
     assert '"maxLength"' not in json.dumps(body["output_config"])  # a key, not a note
     assert body["model"] == MODEL
-    assert body["max_tokens"] == 2000
-    assert request.headers["x-api-key"] == API_KEY
+    assert body["max_tokens"] == 2000  # the seeded ceiling of the card task
+    assert request.headers["authorization"] == f"Bearer {API_KEY}"  # how SDK 2.x sends a key
     # Text goes as the caller wrote it: one system block, one user message.
     assert body["system"] == [{"type": "text", "text": RULES}]
     assert body["messages"] == [{"role": "user", "content": [{"type": "text", "text": USER_TEXT}]}]
@@ -704,6 +715,21 @@ def test_wire_carries_a_neutral_retry_as_a_second_turn(opener: SessionOpener, wi
         ("assistant", ANSWER),
         ("user", "Riscrivila."),
     ]
+
+
+def test_wire_output_ceiling_is_the_tasks_unless_the_caller_asks_for_less(
+    opener: SessionOpener, wire: Wire
+) -> None:
+    with opener() as session:
+        session.execute(text("UPDATE ai_tasks SET max_output_tokens = 3000 WHERE task = 'card'"))
+        session.commit()
+
+    _wire_call(opener).complete(_request())
+    assert wire.body["max_tokens"] == 3000
+    _wire_call(opener).complete(_request(max_tokens=50))
+    assert wire.body["max_tokens"] == 50
+    _wire_call(opener).complete(_request(max_tokens=90_000))
+    assert wire.body["max_tokens"] == 3000
 
 
 def test_wire_effort_follows_the_task(opener: SessionOpener, wire: Wire) -> None:
@@ -814,4 +840,4 @@ def test_recording_call_answers_in_order_and_keeps_requests() -> None:
 
     assert recording.complete(_request()) == first
     assert recording.complete(_request(max_tokens=10)) == second
-    assert [request.max_tokens for request in recording.requests] == [2000, 10]
+    assert [request.max_tokens for request in recording.requests] == [None, 10]

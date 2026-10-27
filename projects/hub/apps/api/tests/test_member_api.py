@@ -591,7 +591,7 @@ def test_replacing_the_cv_schedules_the_card_write(
     assert replaced.status_code == 200, replaced.text
 
     assert len(llm.requests) == 1
-    assert "staff engineer a Torino" in llm.requests[0].messages[0]["content"][0]["text"]
+    assert "staff engineer a Torino" in llm.requests[0].messages[0].text
     row = api_session.execute(text("SELECT cv_sha256, error FROM freelancer_cards")).one()
     assert (row.cv_sha256, row.error) == (hashlib.sha256(cv).hexdigest(), None)
 

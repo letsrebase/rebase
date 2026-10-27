@@ -245,6 +245,10 @@ def _supplied_text(raw: str) -> str | None:
     return raw or None
 
 
+# A model seam asked on each tool call, `None` when no model is configured for the task.
+LlmSource = Callable[[], LlmCall | None]
+
+
 def build_server(
     factory: SessionFactory,
     admin: AdminProvider,
@@ -254,7 +258,8 @@ def build_server(
     middleware: Sequence[ServerMiddleware[Any]] | None = None,
     renderer: Renderer | None = None,
     signing: SigningFactory | None = None,
-    llm: LlmCall | None = None,
+    card_llm: LlmSource | None = None,
+    team_llm: LlmSource | None = None,
     sender: EmailSender | None = None,
     engagements: EngagementsFactory | None = None,
 ) -> MCPServer:
@@ -270,10 +275,12 @@ def build_server(
     `FakeRenderer` and a service over fakes. Without them a contract is not written and
     a send answers that signing is not active here, as the admin area does.
 
-    `llm` is the Claude seam (REB-508, `call_from_settings`) `propose_team` and
-    `regenerate_freelancer_card` call, `None` without a key -- then, as the admin area
-    already does, they refuse with the team builder's own sentence rather than a
-    silent no-op; `sender` is the availability mails' and the talent cloud's
+    `team_llm` and `card_llm` answer the model seam (REB-508, `call_for_task`) for
+    `propose_team` and `regenerate_freelancer_card`, asked on each call because an admin
+    can configure a model in «Modelli AI» while this server runs; `None` from either
+    (no model configured for that task) -- then, as the admin area already does, the
+    tool refuses with the team builder's own sentence rather than a silent no-op;
+    `sender` is the availability mails' and the talent cloud's
     (`sender_from_settings`), `None` without a mail key. A test hands `RecordingCall`
     and `RecordingSender`, the same way `mail.py`'s own tests do.
 
@@ -689,6 +696,7 @@ def build_server(
         il team builder è spento, invece di lasciare la scheda com'era fingendo di
         averla riscritta. Il livello che l'admin ha corretto (`override_freelancer`,
         `seniority` e `anni`) resta com'è."""
+        llm = card_llm() if card_llm is not None else None
         if llm is None:
             # `CardWriter.write` itself has no opinion on a missing key -- it just
             # answers the card unchanged, `list_pigro_spaces`'s own precondition,
@@ -1010,9 +1018,9 @@ def build_server(
             previous_id=UUID(previous_id) if previous_id else None,
         )
         return _run(
-            lambda s: TeamBuilder(s, llm, team_settings()).propose(
-                data, origine="admin", user_id=admin().id
-            )
+            lambda s: TeamBuilder(
+                s, team_llm() if team_llm is not None else None, team_settings()
+            ).propose(data, origine="admin", user_id=admin().id)
         )
 
     @mcp.tool()

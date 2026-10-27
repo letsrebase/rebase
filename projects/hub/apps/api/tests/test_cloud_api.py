@@ -18,7 +18,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select, text, update
 from sqlalchemy.orm import Session
 
-from rebase_api.deps import get_clock, get_llm
+from rebase_api.deps import get_clock, get_team_llm
 from rebase_api.ratelimit import reset_rate_limit
 from rebase_core.cloud import TalentCloudService
 from rebase_core.companies import CompanyService
@@ -35,6 +35,7 @@ from rebase_core.models import (
     User,
 )
 from rebase_core.schemas import CompanyCreate
+from rebase_core.team_builder import ProposalAnswer
 from rebase_core.team_requests import CLOUD_CLOSED_FOR_PROPOSAL
 
 PDF = b"%PDF-1.7\n1 0 obj<<>>endobj\n%%EOF\n"
@@ -79,7 +80,7 @@ def _settings(client: TestClient, **overrides: Any) -> None:
 
 
 def _llm(client: TestClient, call: Any) -> None:
-    client.app.dependency_overrides[get_llm] = lambda: call  # type: ignore[attr-defined]
+    client.app.dependency_overrides[get_team_llm] = lambda: call  # type: ignore[attr-defined]
 
 
 def _clock(client: TestClient, now: datetime) -> None:
@@ -237,6 +238,7 @@ def proposal_response() -> LlmResponse:
     }
     return LlmResponse(
         text=json.dumps(body),
+        parsed=ProposalAnswer.model_validate(body),
         stop_reason="end_turn",
         refusal_category=None,
         model=MODEL,

@@ -8,11 +8,13 @@ are written straight into the tables, since what is under test is what the engin
 from them, not how a card is written (`test_cards.py`).
 """
 
+import hashlib
 import json
 import logging
 from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from types import SimpleNamespace
 from typing import Any
 from uuid import UUID
 
@@ -32,21 +34,28 @@ from rebase_core.errors import (
     TeamBuilderOff,
     ValidationFailed,
 )
-from rebase_core.llm import UNAVAILABLE_SENTENCE, LlmRequest, LlmResponse, RecordingCall
+from rebase_core.llm import (
+    UNAVAILABLE_SENTENCE,
+    LlmMessage,
+    LlmRequest,
+    LlmResponse,
+    RecordingCall,
+    _parameters,
+)
 from rebase_core.models import Freelancer, FreelancerCard, TeamProposal, TeamRequest, User
 from rebase_core.team_builder import (
+    BUSY_SENTENCE,
     NO_FIT_SENTENCE,
     OFF_SENTENCE,
     PLACE_WITHHELD_REASON,
     PLACE_WITHHELD_RIASSUNTO,
     PLACE_WITHHELD_SUMMARY,
-    PROPOSAL_MAX_TOKENS,
-    PROPOSAL_SCHEMA,
+    ProposalAnswer,
     TeamBuilder,
     catalogue_lines,
     cloud_visible,
+    proposal_prompt,
 )
-from rebase_core.team_caps import BUSY_SENTENCE
 from rebase_core.team_schemas import CardRead, TeamProposalCreate
 
 NOW = datetime(2026, 9, 26, 9, 30, tzinfo=UTC)
@@ -126,8 +135,14 @@ def proposal_response(
         "luogo": {"locale": locale, "dove": dove},
         "team": team if team is not None else [],
     }
+    answer = None if stop_reason == "refusal" else (text if text is not None else json.dumps(body))
+    try:
+        parsed = ProposalAnswer.model_validate_json(answer) if answer is not None else None
+    except ValueError:  # as `AiCall`: a body that is not the shape has no `parsed`
+        parsed = None
     return LlmResponse(
-        text=None if stop_reason == "refusal" else (text if text is not None else json.dumps(body)),
+        text=answer,
+        parsed=parsed,
         stop_reason=stop_reason,
         refusal_category=refusal_category,
         model=MODEL,
@@ -195,7 +210,7 @@ def _positions(session: Session) -> dict[UUID, str]:
 
 
 def _user_text(request: LlmRequest) -> str:
-    return "\n".join(block["text"] for message in request.messages for block in message["content"])
+    return "\n".join(message.text for message in request.messages)
 
 
 def _builder(
@@ -411,20 +426,73 @@ def test_engine_maps_the_answer_to_freelancers(clean: Session) -> None:
     }
     assert read.model_dump(mode="json")["economia"]["giorno"] == {"min": 900, "max": 1150}
 
-    # One call, shaped for a proposal: the rules, then the catalogue as a cached block.
+    # One call, shaped for a proposal: the rules, then the catalogue as a cached block, and
+    # an answer of `ProposalAnswer`, closed at every level, every property required, with
+    # no docstring on it for the schema to carry to the model. The ceiling is the
+    # `team_proposal` task's.
     [request] = llm.requests
-    assert request.max_tokens == PROPOSAL_MAX_TOKENS == 8000
-    assert request.json_schema == PROPOSAL_SCHEMA
-    assert PROPOSAL_SCHEMA["additionalProperties"] is False
-    assert PROPOSAL_SCHEMA["required"] == ["riassunto", "luogo", "team"]
-    assert "description" not in json.dumps(PROPOSAL_SCHEMA)  # no docstring reaches Claude
-    rules, catalogue = request.system
-    assert "cache_control" not in rules
-    assert catalogue["cache_control"] == {"type": "ephemeral"}
-    assert catalogue_lines(clean)[0] in catalogue["text"]
-    assert "Italian" in rules["text"]
-    assert DESCRIZIONE not in rules["text"] + catalogue["text"]
+    assert request.output_model is ProposalAnswer
+    assert request.max_tokens is None
+    schema = ProposalAnswer.model_json_schema()
+    assert schema["additionalProperties"] is False
+    assert schema["required"] == ["riassunto", "luogo", "team"]
+    assert "description" not in json.dumps(schema)
+    rules, catalogue = request.system, request.system_cached
+    assert catalogue is not None
+    assert catalogue_lines(clean)[0] in catalogue
+    assert "Italian" in rules
+    assert DESCRIZIONE not in rules + catalogue
     assert DESCRIZIONE in _user_text(request)
+
+
+def test_proposal_prompt_is_byte_identical_in_substance_to_before() -> None:
+    """REB-831 moved the proposal onto the provider-neutral request: the model still reads
+    the same words, in the same blocks. Taken from the version before it (`proposal_prompt`
+    of 1ccb4167, run on these inputs): the rules by their hash, the catalogue block, the
+    user turn on «Rigenera» with a number and a note, the empty catalogue, and the schema."""
+    member = UUID("00000000-0000-0000-0000-000000000001")
+    previous = SimpleNamespace(
+        riassunto="Un team di due", team=[{"freelancer_id": str(member), "ruolo": "Backend"}]
+    )
+    description = "Un portale clienti per un'assicurazione che vuole gestire i sinistri online"
+
+    request = proposal_prompt(
+        "t1: backend, senior",
+        TeamProposalCreate(descrizione=description, nota="togli il designer", persone=3),
+        previous,  # type: ignore[arg-type]
+        positions=[member],
+    )
+
+    assert hashlib.sha256(request.system.encode()).hexdigest() == (
+        "0728091ef3a44d4e0491cb09dc830d018d6f140aa50d6fab2b87bfd790918924"
+    )
+    assert request.system_cached == "The catalogue:\nt1: backend, senior"
+    assert [(m.role, m.text) for m in request.messages] == [
+        (
+            "user",
+            "The project's description:\n<descrizione>\n" + description + "\n</descrizione>"
+            "\n\nThe visitor wants a team of exactly 3 people."
+            "\n\nYou already proposed a team for this project, and the visitor asks for "
+            "another one. Your previous proposal (people no longer in the catalogue are "
+            "left out):\n<proposta_precedente>\nriassunto: Un team di due\nteam:\n- t1: "
+            "Backend\n</proposta_precedente>"
+            "\n\nThe visitor's note:\n<nota>\ntogli il designer\n</nota>\nFollow the "
+            "note, and keep what it does not ask to change.",
+        )
+    ]
+    empty = proposal_prompt("", TeamProposalCreate(descrizione=description), None)
+    assert empty.system_cached == "The catalogue:\n(empty: no freelancer has a card yet)"
+    assert empty.messages == [
+        LlmMessage(
+            role="user",
+            text="The project's description:\n<descrizione>\n" + description + "\n</descrizione>",
+        )
+    ]
+    schema = _parameters(request).output_object
+    assert schema is not None
+    assert hashlib.sha256(json.dumps(schema.json_schema, sort_keys=True).encode()).hexdigest() == (
+        "25135283e23511e59d89e9b22b365c693f67206a7fc6581bd569ef1d8a765409"
+    )
 
 
 def test_the_catalogue_block_is_the_same_for_two_calls(clean: Session) -> None:
@@ -1046,7 +1114,7 @@ def test_regenerate_carries_the_previous_team_and_note(clean: Session) -> None:
     assert "t3: Product designer" in turn  # t2 then
     assert "Tech lead" not in turn  # no longer in the catalogue
     assert "togli il designer" in turn
-    assert llm.requests[1].system[0] == llm.requests[0].system[0]  # the rules never move
+    assert llm.requests[1].system == llm.requests[0].system  # the rules never move
     rows = _rows(clean)
     assert [(r.previous_id, r.nota) for r in rows] == [
         (None, None),
@@ -1551,10 +1619,10 @@ def test_the_number_of_people_reaches_the_prompt_only_when_asked(clean: Session)
     assert "The visitor wants a team of exactly 3 people." in _user_text(llm.requests[2])
     # The number is a sentence of the user turn: the cached system prefix never moves.
     assert llm.requests[2].system == llm.requests[0].system
-    assert "The visitor wants a team of exactly N" in llm.requests[0].system[0]["text"]
+    assert "The visitor wants a team of exactly N" in llm.requests[0].system
     # Place is a preference, never an exclusion (REB-598): the rule says so in as many
     # words, and the old sentence is gone.
-    rules = llm.requests[0].system[0]["text"]
+    rules = llm.requests[0].system
     assert "excludes nobody" in rules and "propose nobody" not in rules
     assert "a null modalita is unknown, never remote" in rules
     # The event tells the asked number from the proposed one, and the row keeps the

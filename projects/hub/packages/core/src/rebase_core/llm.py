@@ -27,7 +27,8 @@ the HTTP status, nothing else.
 
 import asyncio
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol, cast
 from uuid import UUID
@@ -108,13 +109,16 @@ class LlmRequest(BaseModel):
     prefix for every visitor. `messages` alternate from `user`. `output_model` is the
     shape of the answer, the one place a limit (`max_length`, `ge`) is enforced: the
     provider is given the schema, and `AiCall` validates what comes back with the model
-    itself. A docstring on it is for whoever maintains it and never goes to the model."""
+    itself. A docstring on it is for whoever maintains it and never goes to the model.
+    The output ceiling is the task's (`ai_tasks.max_output_tokens`, set in «Modelli AI»);
+    `max_tokens` is a ceiling of the caller's own, below it, for a call that needs less
+    (the «Prova» probe)."""
 
     system: str
     system_cached: str | None = None
     messages: list[LlmMessage]
     output_model: type[BaseModel]
-    max_tokens: int
+    max_tokens: int | None = None
 
 
 class LlmResponse(BaseModel):
@@ -238,6 +242,19 @@ def _parameters(request: LlmRequest) -> ModelRequestParameters:
     )
 
 
+def _run[T](call: Coroutine[Any, Any, T]) -> T:
+    """The coroutine to its end, on a loop of its own that closes after it, with the
+    provider's HTTP client: the model is built per call, so nothing outlives the loop it ran
+    on. A caller already inside a running loop (a sync MCP tool is run by one) cannot start
+    a second in its own thread, so the call runs in a thread of its own and waits there."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(call)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, call).result()
+
+
 def _stop_reason(response: ModelResponse) -> str:
     """Anthropic's own words where the provider has them, since the callers read
     `refusal` and `max_tokens`; the others' finish reasons are mapped onto the same two."""
@@ -280,15 +297,14 @@ class AiCall:
         self._model_factory = model_factory
 
     def complete(self, request: LlmRequest) -> LlmResponse:
-        provider, model, effort, key = self._resolve()
+        provider, model, effort, ceiling, key = self._resolve()
         model_instance, model_settings = self._model_factory(provider, model, key, effort)
-        settings = {**model_settings, "max_tokens": request.max_tokens}
+        max_tokens = ceiling if request.max_tokens is None else min(request.max_tokens, ceiling)
+        settings = {**model_settings, "max_tokens": max_tokens}
         if request.system_cached is not None:
             settings.update(_CACHE_SYSTEM)
         try:
-            # A loop of its own per call, closed after it with the provider's HTTP client:
-            # the model is built per call, so nothing outlives the loop it ran on.
-            answer = asyncio.run(
+            answer = _run(
                 model_request(
                     model_instance,
                     _history(request),
@@ -302,8 +318,9 @@ class AiCall:
             raise LlmUnavailable(UNAVAILABLE_SENTENCE) from None
         return self._response(request, provider, answer)
 
-    def _resolve(self) -> tuple[str, str, str | None, str]:
-        """The provider, model, effort and key this call goes out with, or the refusal."""
+    def _resolve(self) -> tuple[str, str, str | None, int, str]:
+        """The provider, model, effort, output ceiling and key this call goes out with, or
+        the refusal."""
         with self._session_factory() as session:
             service = AiConfigService(session, self._settings)
             row = session.get(AiTask, self._task)
@@ -330,7 +347,7 @@ class AiCall:
                 raise LlmNotConfigured(error.message) from None
             if key is None:
                 raise LlmNotConfigured(NO_KEY)
-            return provider, model, effort, key
+            return provider, model, effort, row.max_output_tokens, key
 
     @staticmethod
     def _can_call_override(

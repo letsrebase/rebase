@@ -20,7 +20,7 @@ from rebase_core.cli import main
 from rebase_core.config import Settings
 from rebase_core.engagements import EngagementService
 from rebase_core.http import urllib_engagements_call
-from rebase_core.llm import AnthropicCall
+from rebase_core.llm import RecordingCall
 from rebase_core.signing import SweepResult
 from rebase_core.team_schemas import CardsRefreshed
 
@@ -164,23 +164,31 @@ class _FakeCardWriter:
         return self.result
 
 
+_CARD_CALL = RecordingCall([])
+_TASKS_ASKED: list[str] = []
+
+
+def _configured_card_task(opener: object, settings: Settings, task: str) -> RecordingCall:
+    """`call_for_task` with a model configured: the seam itself is `test_llm.py`'s."""
+    _TASKS_ASKED.append(task)
+    return _CARD_CALL
+
+
 def test_cards_refresh_prints_the_counts(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """One batch of `--limit` per run, the oldest first (`refresh_stale`), so the
     operator runs it again until it prints «0 schede scritte»."""
     _FakeCardWriter.instances = []
-    monkeypatch.setattr(
-        cli,
-        "get_settings",
-        lambda: Settings(anthropic_api_key="sk-ant-test-not-a-real-key", _env_file=None),  # type: ignore[call-arg]
-    )
+    monkeypatch.setattr(cli, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
+    monkeypatch.setattr(cli, "call_for_task", _configured_card_task)
     monkeypatch.setattr(cli, "CardWriter", _FakeCardWriter)
 
     assert main(["cards-refresh", "--limit", "10"]) == 0
 
     [writer] = _FakeCardWriter.instances
-    assert isinstance(writer.llm, AnthropicCall)
+    assert writer.llm is _CARD_CALL
+    assert _TASKS_ASKED[-1] == "card"
     assert writer.limits == [10]
     assert capsys.readouterr().out.strip() == "3 schede scritte, 1 non riuscite"
 
@@ -210,11 +218,8 @@ def test_cards_refresh_says_the_stop(
     «0 schede scritte, 0 non riuscite» still says the backlog is done. A card still
     gendered after its rewrite is among the «non riuscite» (REB-802)."""
     _FakeCardWriter.instances = []
-    monkeypatch.setattr(
-        cli,
-        "get_settings",
-        lambda: Settings(anthropic_api_key="sk-ant-test-not-a-real-key", _env_file=None),  # type: ignore[call-arg]
-    )
+    monkeypatch.setattr(cli, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
+    monkeypatch.setattr(cli, "call_for_task", _configured_card_task)
     monkeypatch.setattr(cli, "CardWriter", _FakeCardWriter)
     monkeypatch.setattr(_FakeCardWriter, "result", result)
 
@@ -223,18 +228,22 @@ def test_cards_refresh_says_the_stop(
     assert capsys.readouterr().out.strip() == line
 
 
-def test_cards_refresh_without_a_key_says_so_and_writes_nothing(
+def test_cards_refresh_names_modelli_ai_when_no_task_configured(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Without a key a run would print «0 schede scritte» for ever: it says why instead."""
+    """With no model configured for the card task a run would print «0 schede scritte» for
+    ever: it says why instead, and where to fix it."""
     _FakeCardWriter.instances = []
     monkeypatch.setattr(cli, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
+    monkeypatch.setattr(cli, "call_for_task", lambda opener, settings, task: None)
     monkeypatch.setattr(cli, "CardWriter", _FakeCardWriter)
 
     assert main(["cards-refresh"]) == 1
 
     assert _FakeCardWriter.instances == []
-    assert "REBASE_ANTHROPIC_API_KEY" in capsys.readouterr().err
+    assert capsys.readouterr().err.strip() == (
+        "Nessun modello configurato per le schede: apri «Modelli AI»."
+    )
 
 
 # ---- ai-seed / ai-rotate-secrets (REB-832) ----------------------------------------------

@@ -19,7 +19,7 @@ import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable, MutableMapping
-from contextlib import asynccontextmanager
+from contextlib import AbstractContextManager, asynccontextmanager, closing
 from typing import Any
 
 import anyio
@@ -35,7 +35,7 @@ from rebase_core.db import create_engine_from_settings, session_factory
 from rebase_core.engagements import EngagementService
 from rebase_core.errors import DomainError
 from rebase_core.http import HttpCall, urllib_call, urllib_engagements_call
-from rebase_core.llm import call_from_settings
+from rebase_core.llm import call_for_task
 from rebase_core.mail import EmailSender, sender_from_settings
 from rebase_core.signing import signing_from_settings
 from rebase_mcp.actor import ADMIN_STATE_KEY, AdminFromRequest, request_admin
@@ -77,6 +77,10 @@ class McpHttpApp:
         http = urllib_engagements_call if self._http is urllib_call else self._http
         return EngagementService(session, self._settings, http, sender=self._sender)
 
+    def _open(self) -> AbstractContextManager[Session]:
+        """A session for the model seam, which reads «Modelli AI» on each call."""
+        return closing(self._factory()())
+
     def _server(self) -> ASGIApp:
         if self._app is None:
             renderer = ContractRenderer()
@@ -90,7 +94,8 @@ class McpHttpApp:
                 middleware=[AdminFromRequest()],
                 renderer=renderer,
                 signing=signing_from_settings(settings, renderer),
-                llm=call_from_settings(settings),
+                card_llm=lambda: call_for_task(self._open, settings, "card"),
+                team_llm=lambda: call_for_task(self._open, settings, "team_proposal"),
                 sender=self._sender,
                 engagements=self.engagements,
             )

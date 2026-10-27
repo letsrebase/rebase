@@ -68,12 +68,15 @@ from rebase_core.card_level import card_read
 from rebase_core.config import Settings
 from rebase_core.errors import (
     DomainError,
+    LlmCapReached,
+    LlmNotConfigured,
     LlmUnavailable,
     NotFound,
+    TeamBuilderBusy,
     TeamBuilderOff,
     ValidationFailed,
 )
-from rebase_core.llm import UNAVAILABLE_SENTENCE, LlmCall, LlmRequest, LlmResponse
+from rebase_core.llm import UNAVAILABLE_SENTENCE, LlmCall, LlmMessage, LlmRequest, LlmResponse
 from rebase_core.models import (
     POSIZIONE_MAX_LENGTH,
     TEAM_PROPOSAL_ERRORS,
@@ -100,10 +103,10 @@ from rebase_core.validation import SafeStr
 logger = logging.getLogger(__name__)
 
 ENTITY = "team_proposal"
-# A team is a few hundred tokens of JSON; the rest is room for adaptive thinking over
-# the whole catalogue (global-constraints.md: 8000 for a proposal, 2000 for a card).
-PROPOSAL_MAX_TOKENS = 8000
 OFF_SENTENCE = "Il team builder è spento."
+# The one sentence both caps answer (spec § 3.2, `team_caps.py`), and a task whose daily
+# euro cap is spent (`LlmCapReached`): a visitor does the same thing either way.
+BUSY_SENTENCE = "Troppe richieste in questo momento: riprova tra un minuto."
 # The summary of a proposal with nobody in it, when the hub rather than the model is the
 # one who knows (spec § 3.2: «an empty team and the summary's sentence»): the catalogue
 # is empty, so nobody was asked, or the checks dropped everyone the model chose, so its
@@ -189,12 +192,6 @@ class ProposalAnswer(BaseModel):
     riassunto: SafeStr = Field(min_length=1, max_length=1500)
     luogo: ProposedPlace
     team: list[ProposedMember] = Field(max_length=15)
-
-
-# `ProposalAnswer`'s own schema, as it stands: the seam (`AnthropicCall.complete`) passes
-# it through the SDK's `transform_schema`, and `ProposalAnswer.model_validate` enforces
-# every limit on the answer.
-PROPOSAL_SCHEMA = ProposalAnswer.model_json_schema()
 
 
 # ---- the catalogue ---------------------------------------------------------------------
@@ -368,11 +365,11 @@ def proposal_prompt(
     *,
     positions: Sequence[UUID] = (),
 ) -> LlmRequest:
-    """System: the rules, then the catalogue as a second block with `cache_control`, so
-    both stay the same prefix for every visitor. User: the description, the number of
-    people when the visitor picked one, and, on «Rigenera», the previous summary, the
-    previous team by its current `positions`, and the note. The schema:
-    `PROPOSAL_SCHEMA`."""
+    """System: the rules, then the catalogue as a second, cached block, so both stay the
+    same prefix for every visitor. User: the description, the number of people when the
+    visitor picked one, and, on «Rigenera», the previous summary, the previous team by
+    its current `positions`, and the note. The answer: `ProposalAnswer`. The output
+    ceiling is the `team_proposal` task's (`ai_tasks`, «Modelli AI»)."""
     parts = [f"The project's description:\n<descrizione>\n{data.descrizione}\n</descrizione>"]
     if data.persone is not None:
         parts.append(_size_line(data.persone))
@@ -386,17 +383,10 @@ def proposal_prompt(
     elif previous is not None:
         parts.append("The visitor left no note.")
     return LlmRequest(
-        system=[
-            {"type": "text", "text": _RULES},
-            {
-                "type": "text",
-                "text": _catalogue_block(catalogue),
-                "cache_control": {"type": "ephemeral"},
-            },
-        ],
-        messages=[{"role": "user", "content": [{"type": "text", "text": "\n\n".join(parts)}]}],
-        json_schema=PROPOSAL_SCHEMA,
-        max_tokens=PROPOSAL_MAX_TOKENS,
+        system=_RULES,
+        system_cached=_catalogue_block(catalogue),
+        messages=[LlmMessage(role="user", text="\n\n".join(parts))],
+        output_model=ProposalAnswer,
     )
 
 
@@ -412,21 +402,19 @@ def _answer_from(response: LlmResponse) -> ProposalAnswer:
     if response.stop_reason == "max_tokens":
         logger.warning("team proposal not written: max_tokens")
         raise LlmUnavailable(UNAVAILABLE_SENTENCE)
-    try:
-        if response.text is None:
-            raise ValueError("no text")
-        return ProposalAnswer.model_validate(json.loads(response.text))
-    except ValueError:  # `json.JSONDecodeError` and Pydantic's `ValidationError` alike
+    if not isinstance(response.parsed, ProposalAnswer):
         logger.warning("team proposal not written: the answer is not the shape")
-    raise LlmUnavailable(UNAVAILABLE_SENTENCE)
+        raise LlmUnavailable(UNAVAILABLE_SENTENCE)
+    return response.parsed
 
 
 # ---- the engine ------------------------------------------------------------------------
 
 
 class TeamBuilder:
-    """`llm` is `None` without a key (`call_from_settings`), and then, as with the
-    switch off, `propose` refuses with `TeamBuilderOff`; `get` needs neither."""
+    """`llm` is `None` when no model is configured for the `team_proposal` task
+    (`call_for_task`), and then, as with the switch off, `propose` refuses with
+    `TeamBuilderOff`; `get` needs neither."""
 
     def __init__(
         self,
@@ -510,6 +498,12 @@ class TeamBuilder:
             except Exception:
                 self.session.rollback()
                 logger.exception("team proposal attempt not kept")
+            # What «Modelli AI» says about the task is for an admin; a visitor gets the
+            # sentence of the switch off or of the daily cap, the two states these are.
+            if isinstance(exc, LlmNotConfigured):
+                raise TeamBuilderOff(OFF_SENTENCE) from None
+            if isinstance(exc, LlmCapReached):
+                raise TeamBuilderBusy(BUSY_SENTENCE) from None
             raise
         team, bands = self._team(answer, positions)
         riassunto = answer.riassunto
@@ -694,7 +688,10 @@ class TeamBuilder:
         no call was made (every count 0, `model` empty); `at` is the proposal's instant."""
         day, month = team_bands(bands)
         input_tokens = response.input_tokens if response is not None else 0
-        output_tokens = response.output_tokens if response is not None else 0
+        # Thinking is billed as output and the row has always counted it there.
+        output_tokens = (
+            response.output_tokens + response.thinking_tokens if response is not None else 0
+        )
         row = TeamProposal(
             descrizione=data.descrizione,
             nota=data.nota,

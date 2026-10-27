@@ -21,7 +21,7 @@ from rebase_core.db import SessionOpener, create_engine_from_settings, session_f
 from rebase_core.documenso import DocumensoClient, client_from_settings
 from rebase_core.engagements import EngagementService
 from rebase_core.http import HttpCall, urllib_call, urllib_engagements_call
-from rebase_core.llm import LlmCall, call_from_settings
+from rebase_core.llm import LlmCall, call_for_task
 from rebase_core.mail import EmailSender, sender_from_settings
 from rebase_core.members import MemberService
 from rebase_core.schemas import MeRead
@@ -193,15 +193,6 @@ def get_campaign_sender(settings: SettingsDep) -> CampaignSender | None:
 CampaignSenderDep = Annotated[CampaignSender | None, Depends(get_campaign_sender)]
 
 
-def get_llm(settings: SettingsDep) -> LlmCall | None:
-    """The Claude seam (REB-508), or `None` without a key: the anonymous card is then
-    not written (REB-510). A dependency, so a test hands a `RecordingCall` the way it
-    hands `RecordingSender` for the mail."""
-    return call_from_settings(settings)
-
-
-LlmDep = Annotated[LlmCall | None, Depends(get_llm)]
-
 # The proposals running now in this process (spec § 5): one semaphore for the process,
 # sized by `REBASE_TEAM_BUILDER_CONCURRENCY` when the first proposal arrives. A proposal
 # holds a worker thread for the seconds Claude takes, on the pool the member area and
@@ -317,6 +308,25 @@ def get_session_opener() -> SessionOpener:
 SessionOpenerDep = Annotated[SessionOpener, Depends(get_session_opener)]
 
 
+def get_card_llm(settings: SettingsDep, opener: SessionOpenerDep) -> LlmCall | None:
+    """The model seam for the anonymous card (REB-510, REB-831), or `None` when no model
+    is configured for the `card` task in «Modelli AI»: the card is then not written. A
+    dependency, so a test hands a `RecordingCall` the way it hands `RecordingSender` for
+    the mail."""
+    return call_for_task(opener, settings, "card")
+
+
+def get_team_llm(settings: SettingsDep, opener: SessionOpenerDep) -> LlmCall | None:
+    """The same seam for the team proposal (REB-508, REB-831): `None` when no model is
+    configured for the `team_proposal` task, and the builder answers as with the switch
+    off."""
+    return call_for_task(opener, settings, "team_proposal")
+
+
+CardLlmDep = Annotated[LlmCall | None, Depends(get_card_llm)]
+TeamLlmDep = Annotated[LlmCall | None, Depends(get_team_llm)]
+
+
 def get_clock() -> Callable[[], datetime]:
     """The team builder's «now» (REB-581): the clock a proposal is stamped with and the
     daily cap counts from (`team_caps.require_daily_room`), one for both. A dependency so
@@ -329,7 +339,11 @@ ClockDep = Annotated[Callable[[], datetime], Depends(get_clock)]
 
 
 def get_team_builder(
-    session: SessionDep, llm: LlmDep, settings: SettingsDep, tracker: TrackerDep, clock: ClockDep
+    session: SessionDep,
+    llm: TeamLlmDep,
+    settings: SettingsDep,
+    tracker: TrackerDep,
+    clock: ClockDep,
 ) -> TeamBuilder:
     """The engine (REB-511) for this request: the Claude seam, `None` without a key, the
     tracker that counts the proposal and the clock that stamps it."""

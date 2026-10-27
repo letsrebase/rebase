@@ -12,6 +12,7 @@ import json
 from typing import Any
 
 from rebase_core.llm import LlmResponse
+from rebase_core.team_schemas import Card
 
 MODEL = "claude-opus-5"
 
@@ -65,11 +66,17 @@ def card_response(
     input_tokens: int = 1200,
     output_tokens: int = 180,
 ) -> LlmResponse:
-    """Claude's answer as `AnthropicCall` hands it over: `card` as the JSON body, or
-    `text` verbatim for a body that is not one."""
+    """The model's answer as `AiCall` hands it over: `card` as the JSON body, or `text`
+    verbatim for a body that is not one. `parsed` is the body validated as `Card`, as
+    `AiCall` does it, and `None` when it is not one."""
     body = text if text is not None else json.dumps(card if card is not None else CARD)
+    try:
+        parsed = Card.model_validate_json(body) if stop_reason == "end_turn" else None
+    except ValueError:
+        parsed = None
     return LlmResponse(
         text=None if stop_reason == "refusal" else body,
+        parsed=parsed,
         stop_reason=stop_reason,
         refusal_category="cyber" if stop_reason == "refusal" else None,
         model=MODEL,

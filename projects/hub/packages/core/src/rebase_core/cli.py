@@ -6,6 +6,7 @@ import binascii
 import os
 import sys
 from collections.abc import Sequence
+from contextlib import closing
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 
@@ -31,7 +32,7 @@ from rebase_core.documenso import client_from_settings
 from rebase_core.errors import DocumensoFailed, DomainError
 from rebase_core.freelancers import freelancer_read
 from rebase_core.http import HttpCall
-from rebase_core.llm import call_from_settings
+from rebase_core.llm import call_for_task
 from rebase_core.mail import CardSummary, EmailSender, sender_from_settings, welcome_mail
 from rebase_core.models import USER_ROLES, Freelancer, Signup, User
 from rebase_core.secrets import KEY_BYTES
@@ -224,20 +225,22 @@ def cards_refresh(limit: int) -> int:
     until it changes, so the runs end; a batch that met an outage stops there, counts it
     among «non riuscite», says «fermato: Claude non disponibile» and leaves it and the
     rest to the next run. A card still giving the gender away after its rewrite is among
-    «non riuscite» (REB-802), and not tried again until its CV changes. Without a key it
-    says so, rather than printing «0 schede scritte» for ever."""
+    «non riuscite» (REB-802), and not tried again until its CV changes. Without a model
+    configured for the `card` task it says so, rather than printing «0 schede scritte» for
+    ever."""
     if limit < 1:
         print("--limit deve essere almeno 1.", file=sys.stderr)
         return 2
     settings = get_settings()
-    llm = call_from_settings(settings)
+    open_session = session_factory(create_engine_from_settings(settings))
+    llm = call_for_task(lambda: closing(open_session()), settings, "card")
     if llm is None:
         print(
-            "Nessuna chiave per Claude: serve REBASE_ANTHROPIC_API_KEY.",
+            "Nessun modello configurato per le schede: apri «Modelli AI».",
             file=sys.stderr,
         )
         return 1
-    session = session_factory(create_engine_from_settings(settings))()
+    session = open_session()
     try:
         result = CardWriter(session, llm).refresh_stale(limit)
     finally:
@@ -251,8 +254,8 @@ def cards_refresh(limit: int) -> int:
 
 def ai_seed(eur_per_usd: str) -> int:
     """`rebase ai-seed --eur-per-usd 0.92`: once, moves `REBASE_ANTHROPIC_API_KEY` and
-    `REBASE_TEAM_BUILDER_MODEL` (read from the environment: the Settings fields go in
-    REB-833) into «Modelli AI»: the key sealed, `anthropic` on, both tasks on that model,
+    `REBASE_TEAM_BUILDER_MODEL` (read from the environment: the Settings fields are gone,
+    REB-831) into «Modelli AI»: the key sealed, `anthropic` on, both tasks on that model,
     and the prices of the Claude models in euros at `--eur-per-usd` (EUR per 1 USD, the
     inverse of the ECB's quote). Prints the hint of the key, never the key (REB-832)."""
     try:

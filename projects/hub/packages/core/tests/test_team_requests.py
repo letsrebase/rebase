@@ -46,7 +46,8 @@ from rebase_core.models import (
     TeamRequestTalent,
     User,
 )
-from rebase_core.team_caps import BUSY_SENTENCE, proposals_today, require_daily_room
+from rebase_core.team_builder import BUSY_SENTENCE
+from rebase_core.team_caps import proposals_today, require_daily_room
 from rebase_core.team_requests import (
     ALREADY_CONTACTED,
     ALREADY_REQUESTED,

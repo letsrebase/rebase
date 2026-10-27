@@ -47,22 +47,21 @@ x-api-environment: &api-environment
   REBASE_RESEND_DAILY_QUOTA: ${REBASE_RESEND_DAILY_QUOTA:-100}
   REBASE_CAMPAIGN_DAILY_RESERVE: ${REBASE_CAMPAIGN_DAILY_RESERVE:-20}
   REBASE_RESEND_WEBHOOK_SECRET: ${REBASE_RESEND_WEBHOOK_SECRET:-}
-  # Claude, the team builder's seam (llm.py, REB-508): the card and the proposal. Empty
-  # key: no card is written and the builder answers 503.
-  REBASE_ANTHROPIC_API_KEY: ${REBASE_ANTHROPIC_API_KEY:-}
+  # The card and the proposal go through the provider chosen in «Modelli AI» (llm.py,
+  # REB-831), whose key is in the database. No model configured for a task: no card is
+  # written and the builder answers 503.
   # The AES-256-GCM key «Modelli AI» seals each provider's API key with (secrets.py,
   # REB-829), and a read-only GitHub token for the card's GitHub source. Both may be empty.
   REBASE_SECRETS_KEY: ${REBASE_SECRETS_KEY:-}
   REBASE_GITHUB_TOKEN: ${REBASE_GITHUB_TOKEN:-}
-  REBASE_TEAM_BUILDER_MODEL: ${REBASE_TEAM_BUILDER_MODEL:-claude-opus-5}
   REBASE_TEAM_BUILDER_ENABLED: ${REBASE_TEAM_BUILDER_ENABLED:-true}
   # Proposals at once in this process, and a day: past either, 503 «Troppe richieste».
   # Not empty defaults: an int field fails at start-up on an empty value.
   REBASE_TEAM_BUILDER_CONCURRENCY: ${REBASE_TEAM_BUILDER_CONCURRENCY:-4}
   REBASE_TEAM_BUILDER_DAILY_CAP: ${REBASE_TEAM_BUILDER_DAILY_CAP:-300}
   # The `cards` service's hourly loop (REB-552), no Python setting: whether it actually
-  # calls `cards-refresh`, so a deploy that already carries REBASE_ANTHROPIC_API_KEY
-  # does not send CVs to Anthropic before the talents' mail (AGENTS.md, "The team
+  # calls `cards-refresh`, so a deploy that already has a model configured
+  # does not send CVs to a provider before the talents' mail (AGENTS.md, "The team
   # builder") has gone out. Set `off` in production until then, `on` once it has, and
   # `docker compose up -d cards` to recreate the service.
   REBASE_CARDS_LOOP: ${REBASE_CARDS_LOOP:-off}
@@ -175,12 +174,12 @@ services:
     # than a day. A loop, never a one-shot, for the same reason as `campaigns`:
     # `_deploy-compose.yml` fails a deploy on any container not `running`. Gated by
     # `REBASE_CARDS_LOOP` (`.env`, default `off`: a deploy on a host whose `.env` says nothing writes no card), no Python setting: a deploy that
-    # already carries REBASE_ANTHROPIC_API_KEY must not start sending CVs to Anthropic
+    # already has a model configured must not start sending CVs to a provider
     # before the talents' mail (AGENTS.md, "The team builder") has gone out, so
     # production sets `REBASE_CARDS_LOOP=off` first and only turns it `on`
     # (`docker compose up -d cards` to recreate the service) once the mail has. Off,
     # the loop logs that it skipped and sleeps. Harmless too without
-    # REBASE_ANTHROPIC_API_KEY: the command prints why and exits 1, and the loop just
+    # a model configured for the card task: the command prints why and exits 1, and the loop just
     # sleeps an hour before trying again. Harmless too with nothing stale to write: no
     # call is made and the command prints «0 schede scritte, 0 non riuscite», so a
     # quiet hour costs nothing. One run is at most 50 cards, so a bad hour (a key gone

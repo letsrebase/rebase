@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from rebase_api.deps import get_http_call, get_llm, get_sender
+from rebase_api.deps import get_card_llm, get_http_call, get_sender
 from rebase_core.config import Settings, get_settings
 from rebase_core.http import MAX_BODY_BYTES
 from rebase_core.llm import RecordingCall
@@ -932,7 +932,7 @@ def test_an_admin_reads_and_regenerates_the_anonymous_card(
 
     # A refusal keeps the card and says so; the next «Rigenera» ignores the failed hash.
     refusing = RecordingCall([card_response(stop_reason="refusal"), card_response()])
-    client.app.dependency_overrides[get_llm] = lambda: refusing  # type: ignore[attr-defined]
+    client.app.dependency_overrides[get_card_llm] = lambda: refusing  # type: ignore[attr-defined]
     refused = client.post(f"/api/hub/freelancers/{freelancer_id}/card").json()
     assert refused["card"] == {**CARD, "seniority_incerta": False} and refused["error"]
     retried = client.post(f"/api/hub/freelancers/{freelancer_id}/card").json()
@@ -950,7 +950,7 @@ def test_regenerating_without_a_key_is_the_team_builders_503(
     card unchanged as if it had been written again."""
     _login(client, sender)
     freelancer_id = _apply_with_text(client)
-    client.app.dependency_overrides[get_llm] = lambda: None  # type: ignore[attr-defined]
+    client.app.dependency_overrides[get_card_llm] = lambda: None  # type: ignore[attr-defined]
 
     refused = client.post(f"/api/hub/freelancers/{freelancer_id}/card")
 

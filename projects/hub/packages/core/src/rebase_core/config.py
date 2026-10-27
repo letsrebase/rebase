@@ -127,17 +127,11 @@ class Settings(BaseSettings):
     # The `whsec_` secret Resend shows for this environment's webhook (spec § 6.1).
     # Empty: the webhook answers 503 and delivery, bounces and complaints are not read.
     resend_webhook_secret: str = ""
-    # --- Claude: the team builder's seam (`llm.py`, REB-508) --------------------------
-    # `AnthropicCall`'s key, for its two callers: the anonymous card (spec § 5.1) and the
-    # team proposal (spec § 3.4). Empty: `call_from_settings` answers `None` and each
-    # caller refuses with its own sentence, the same shape as `resend_api_key` and
-    # `documenso_api_token`. `repr=False` so the key never shows up in a logged
-    # `Settings()` or a stack trace, unlike the other secrets above -- this one is new
-    # enough to start the habit the rest never had.
-    anthropic_api_key: str = Field(default="", repr=False)
-    team_builder_model: str = "claude-opus-5"
-    # Off switches the feature without touching the key above: the two callers read it,
-    # this file only declares it.
+    # --- The team builder (`team_builder.py`, REB-508) --------------------------------
+    # Which model answers, and its key, are not settings: they live in «Modelli AI»
+    # (`ai_config.py`, `llm.py`), saved by an admin and read from the database per call.
+    # Off switches the feature without touching the model configuration: the two callers
+    # read it, this file only declares it.
     team_builder_enabled: bool = True
     # How many proposals the API process runs at once (spec § 5): the next one answers
     # 503 «Troppe richieste» at once rather than queue on the thread pool the member

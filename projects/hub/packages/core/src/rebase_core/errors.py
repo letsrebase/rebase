@@ -68,22 +68,22 @@ class LlmUnavailable(DomainError):
 
 class LlmCapReached(LlmUnavailable):
     """The task's daily euro cap is spent (`ai_config.py`): the call was refused before
-    any network. `message` is the sentence «Modelli AI» shows for the task."""
-
-    code = "llm_cap_reached"
+    any network. `message` is the sentence «Modelli AI» shows for the task. The same `code`
+    as its parent, so the places that key on it (`TEAM_PROPOSAL_ERRORS`, the API's
+    handler) treat it as the outage it is for a visitor."""
 
 
 class LlmNotConfigured(LlmUnavailable):
     """The task cannot be called as configured: off, its provider off or without a key,
     no price for its model, or a saved key that does not open. Refused before any
-    network; `message` is the sentence that says which, never key text."""
-
-    code = "llm_not_configured"
+    network; `message` is the sentence that says which, never key text. The `code` of its
+    parent, as `LlmCapReached`."""
 
 
 class TeamBuilderOff(DomainError):
     """The team builder cannot run in this environment: `REBASE_TEAM_BUILDER_ENABLED` is
-    false, or no `REBASE_ANTHROPIC_API_KEY` is configured at all (spec § 3.2, § 5).
+    false, or no model is configured for the `team_proposal` task in «Modelli AI» (spec
+    § 3.2, § 5).
     `message` is «Il team builder è spento.», the same sentence for either reason -- a
     visitor gets nothing useful from knowing which. A 503, the same shape
     `SigningUnavailable` already gives an environment missing Documenso or a mail
