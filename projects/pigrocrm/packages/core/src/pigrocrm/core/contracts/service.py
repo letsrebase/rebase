@@ -62,6 +62,9 @@ from pigrocrm.core.schemas import reject_cleared_columns, supplied_changes
 ENTITY: EntityType = "contract"
 
 
+# How many clause notes `ContractService.detail` carries, the latest ones.
+DETAIL_NOTES_LIMIT = 50
+
 # The columns a renewal does not copy from the contract it renews: the row's own identity
 # and bookkeeping, the term (which the renewal decides), the state (the successor is
 # `attivo`, whatever the contract it renews was) and the link back.
@@ -192,11 +195,15 @@ class ContractService:
         contract = self.repo.get(contract_id)
         if contract is None:
             raise NotFound(ENTITY, contract_id)
-        notes = self.session.scalars(
+        # The latest `DETAIL_NOTES_LIMIT`, oldest first: each note can run to pages, and a
+        # contract that holds more is read in full through the notes' own list.
+        latest = self.session.scalars(
             select(ClauseNote)
             .where(ClauseNote.contract_id == contract_id)
-            .order_by(ClauseNote.created_at, ClauseNote.id)
+            .order_by(ClauseNote.created_at.desc(), ClauseNote.id.desc())
+            .limit(DETAIL_NOTES_LIMIT)
         )
+        notes = reversed(list(latest))
         return ContractDetail(
             **ContractRead.model_validate(contract).model_dump(),
             contratto_successivo_id=self.session.scalar(
@@ -493,7 +500,10 @@ class ContractService:
                 "il contratto non ha un tetto sulla quota del cliente",
                 expected="un contratto con un tetto, da impostare sul contratto",
             )
-        periodo_da, periodo_a = self._anniversary_window(contract, data_prevista, "data_prevista")
+        # A contract that has not started (a fresh renewal) is asked about its first year:
+        # the cap is read where the clause begins, and the simulation still answers.
+        reference = data_prevista if data_prevista is not None else today_local()
+        periodo_da, periodo_a = self._anniversary_window(contract, max(reference, contract.inizio))
         revenue = self.analytics.revenue_for_customer_in_window(
             contract.customer_id, periodo_da, periodo_a, azienda_id=contract.azienda_id
         )

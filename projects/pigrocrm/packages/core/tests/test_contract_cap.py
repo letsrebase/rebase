@@ -233,15 +233,22 @@ def test_a_contract_without_a_cap_cannot_be_simulated(db_session: Session) -> No
     assert excinfo.value.details["field"] == "tetto_quota_cliente"
 
 
-def test_the_simulator_refuses_a_day_before_the_contract_and_an_unknown_contract(
+def test_a_contract_that_has_not_started_is_simulated_on_its_first_year(
     db_session: Session,
 ) -> None:
+    """A fresh renewal carries its cap and is offered by the picker: asking about a day
+    before it starts answers on its first anniversary year instead of failing the whole
+    simulation."""
     _, contract = _world(db_session)
-    with pytest.raises(ValidationFailed) as excinfo:
-        ContractService(db_session).simulate_cap(
-            contract.id, Decimal("1.00"), date(2026, 1, 1), ADMIN
-        )
-    assert excinfo.value.details["field"] == "data_prevista"
+
+    result = ContractService(db_session).simulate_cap(
+        contract.id, Decimal("1.00"), date(2026, 1, 1), ADMIN
+    )
+
+    assert (result.periodo_da, result.periodo_a) == (date(2026, 3, 10), date(2027, 3, 9))
+
+
+def test_an_unknown_contract_is_not_simulated(db_session: Session) -> None:
     with pytest.raises(NotFound):
         ContractService(db_session).simulate_cap(uuid4(), Decimal("1.00"), None, ADMIN)
 

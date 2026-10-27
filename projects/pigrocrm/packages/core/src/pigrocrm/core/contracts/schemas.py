@@ -467,6 +467,7 @@ class ContractDetail(ContractRead):
     notes and the successor are asked for the one contract being opened."""
 
     contratto_successivo_id: UUID | None
+    # The latest 50, oldest first; the notes' own list answers for all of them.
     note_clausole: list[ClauseNoteRead]
 
 

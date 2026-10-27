@@ -147,3 +147,24 @@ def test_a_note_written_or_corrected_is_on_the_contracts_timeline(db_session: Se
     assert [e.kind for e in entries][:2] == ["clause_note_updated", "clause_note_added"]
     assert entries[1].payload == {"riferimento_clausola": "Art. 8.3 Rinnovo"}
     assert "testo_letterale" not in str(entries[1].payload)
+
+
+def test_the_contract_carries_only_the_latest_notes_and_the_list_has_them_all(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pigrocrm.core.contracts import service as contracts_service
+
+    monkeypatch.setattr(contracts_service, "DETAIL_NOTES_LIMIT", 2)
+    contract_id = _contract_id(db_session)
+    service = ClauseNoteService(db_session)
+    for number in (1, 2, 3):
+        service.create(
+            contract_id,
+            RINNOVO.model_copy(update={"riferimento_clausola": f"Art. {number}"}),
+            ADMIN,
+        )
+
+    detail = ContractService(db_session).detail(contract_id, ADMIN)
+
+    assert [n.riferimento_clausola for n in detail.note_clausole] == ["Art. 2", "Art. 3"]
+    assert len(service.list_for_contract(contract_id, ADMIN)) == 3
