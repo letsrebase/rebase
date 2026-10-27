@@ -34,6 +34,7 @@ FREE_TEXT_KEYS: frozenset[str] = frozenset(
         "oggetto",
         "corpo",
         "payload",
+        "etichetta",
     }
 )
 
