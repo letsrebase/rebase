@@ -149,11 +149,15 @@ class LlmCall(Protocol):
 @dataclass(frozen=True)
 class TaskOverride:
     """A call made as a task but answered by another provider or model, for an evaluation
-    run (REB-834): the task's daily cap is still the one it consumes."""
+    run (REB-834): the task's daily cap is still the one it consumes. `allow_disabled`
+    lets an evaluation reach a provider that is switched off (`rebase cards-eval
+    --allow-disabled`, REB-835): it sends CVs there, so it is explicit, and it still needs
+    the key and the model's price."""
 
     provider: str
     model: str
     effort: str | None = None
+    allow_disabled: bool = False
 
 
 ModelFactory = Callable[[str, str, str, str | None], tuple[Model, ModelSettings]]
@@ -340,7 +344,9 @@ class AiCall:
                     self._override.model,
                     self._override.effort,
                 )
-                allowed, reason = self._can_call_override(service, row, provider, model)
+                allowed, reason = self._can_call_override(
+                    service, row, provider, model, self._override.allow_disabled
+                )
             if not allowed:
                 message = reason or TASK_OFF
                 if message == CAP_REACHED:
@@ -356,7 +362,7 @@ class AiCall:
 
     @staticmethod
     def _can_call_override(
-        service: AiConfigService, row: AiTask, provider: str, model: str
+        service: AiConfigService, row: AiTask, provider: str, model: str, allow_disabled: bool
     ) -> tuple[bool, str | None]:
         """The task's own cap, then the same checks for the provider and model the call
         will really go to."""
@@ -366,7 +372,7 @@ class AiCall:
         if session.get(AiPrice, (provider, model)) is None:
             return False, NO_PRICE
         account = session.get(AiProvider, provider)
-        if account is None or not account.enabled:
+        if account is None or not (account.enabled or allow_disabled):
             return False, PROVIDER_OFF
         if account.key_ciphertext is None:
             return False, NO_KEY

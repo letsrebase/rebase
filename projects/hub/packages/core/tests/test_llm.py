@@ -508,6 +508,37 @@ def test_override_without_a_price_or_with_the_provider_off_is_refused(
     assert stub.built == []
 
 
+def test_override_may_reach_a_disabled_provider_only_when_the_evaluation_says_so(
+    opener: SessionOpener,
+) -> None:
+    """`--allow-disabled` (REB-835): the switch-off is the one check it lifts; the key and
+    the price are still needed."""
+    with opener() as session:
+        admin = session.scalars(select(User)).one()
+        service = AiConfigService(session, _settings())
+        service.upsert_price(admin.id, "anthropic", "claude-opus-5-5", Decimal("5"), Decimal("25"))
+        service.upsert_price(admin.id, "openai", "gpt-5", Decimal("5"), Decimal("25"))
+        service.set_provider_enabled(admin.id, "anthropic", False)
+    stub = Stub()
+
+    with pytest.raises(LlmNotConfigured):
+        _call(opener, stub, override=TaskOverride("anthropic", "claude-opus-5-5")).complete(
+            _request()
+        )
+    assert stub.built == []
+    allowed = TaskOverride("anthropic", "claude-opus-5-5", allow_disabled=True)
+    _call(opener, stub, override=allowed, purpose="eval").complete(_request())
+    assert len(stub.built) == 1
+    with pytest.raises(LlmNotConfigured):  # no price: still refused
+        _call(
+            opener, stub, override=TaskOverride("anthropic", "claude-unpriced", None, True)
+        ).complete(_request())
+    with pytest.raises(LlmNotConfigured):  # no key: still refused
+        _call(opener, stub, override=TaskOverride("openai", "gpt-5", None, True)).complete(
+            _request()
+        )
+
+
 def test_a_caller_inside_a_running_loop_still_gets_its_answer(opener: SessionOpener) -> None:
     """The MCP's tools are sync functions run by an event loop; `asyncio.run` alone
     refuses to start there."""

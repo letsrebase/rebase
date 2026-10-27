@@ -16,6 +16,7 @@ from rebase_api.routers import (
     admin_team,
     ai,
     campaigns,
+    card_eval,
     cloud,
     companies,
     documenso,
@@ -125,6 +126,7 @@ def create_app() -> FastAPI:
     app.include_router(companies.router)
     app.include_router(admin.router)
     app.include_router(ai.router)
+    app.include_router(card_eval.router)
     app.include_router(matches.router)
     app.include_router(documenso.router)
     app.include_router(members.router)

@@ -42,6 +42,7 @@ import json
 import logging
 import re
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
@@ -51,6 +52,7 @@ from sqlalchemy import delete, func, null, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
+from rebase_core.ai_config import TASK_OFF
 from rebase_core.audit import utcnow
 from rebase_core.bands import band_for
 from rebase_core.card_level import banded, card_read
@@ -65,6 +67,11 @@ from rebase_core.team_schemas import Card, CardsRefreshed, FreelancerCardRead
 logger = logging.getLogger(__name__)
 
 NO_TEXT = "Il CV non ha testo leggibile."
+
+# The version of the prompt and of the rules above it (`_SYSTEM`, the guards): a card
+# says which one wrote it, and an evaluation run which one it measured. Version 1 is
+# the prompt of REB-799 and REB-802.
+PROMPT_VERSION = 1
 
 Failure = Literal[
     "no_text", "refusal", "max_tokens", "shape", "identifying", "gendered", "unavailable"
@@ -103,6 +110,12 @@ _FAILURES: dict[Failure, str] = {
     # previous card is retired meanwhile, and comes back with the next answer.
     "unavailable": "Claude non ha risposto: «Rigenera scheda» riprova.",
 }
+
+
+def failure_sentence(kind: Failure) -> str:
+    """The sentence of ours that stands for a kind of failure, never the model's words."""
+    return _FAILURES[kind]
+
 
 # A link or an address in a card (spec § 2.1: no link). A scheme, not the bare word
 # `http`, which is also a skill («HTTP/2», «REST/HTTP») a backend developer's card lists.
@@ -338,6 +351,21 @@ def _card_from(response: LlmResponse, cognome: str, nome: str = "") -> Card | Fa
     return "identifying" if _identifies(card, cognome, nome) else banded(card)
 
 
+@dataclass(frozen=True)
+class Composed:
+    """What `CardWriter.compose` made of one CV: the `card`, or the kind of `failure`
+    when there is none (`no_text` has no model), and the tokens every call of it billed.
+    `output_tokens` is without the thinking tokens, which are `thinking_tokens`."""
+
+    card: Card | None
+    failure: Failure | None
+    model: str
+    provider: str
+    input_tokens: int
+    output_tokens: int
+    thinking_tokens: int
+
+
 class CardWriter:
     """`llm` is `None` when no model is configured for the `card` task
     (`call_for_task`): then nothing is written and every read answers the row as it
@@ -448,6 +476,70 @@ class CardWriter:
 
     # ---- helpers ---------------------------------------------------------------------
 
+    def compose(self, freelancer_id: UUID) -> Composed:
+        """What the model makes of the person's CV, with nothing stored: the prompt, the
+        call, the card and the guards (it names the person, carries an address, gives the
+        gender away), and for a card that does, the one rewrite. `_write` saves what this
+        returns; the evaluation set (`card_eval`) measures it without ever touching a live
+        card.
+
+        The session is committed before the call: Claude takes seconds, and no pooled
+        connection or lock waits on it. A call the seam refuses or that finds the provider
+        down raises `LlmUnavailable` (or `LlmCapReached`, `LlmNotConfigured`), for the
+        caller to read, as the first call and the rewrite alike. A failure of the CV or of
+        the card is a `Composed` with `failure` set."""
+        llm = self.llm
+        if llm is None:
+            raise LlmNotConfigured(TASK_OFF)
+        row = self._freelancer(freelancer_id)
+        cv = FreelancerService(self.session).cv_text(freelancer_id)
+        if not cv.testo.strip():
+            return Composed(None, "no_text", "", "", 0, 0, 0)
+        owner = self.session.get(User, row.user_id)
+        cognome = owner.cognome if owner is not None else ""
+        nome = owner.nome if owner is not None else ""
+        request = card_prompt(cv, row.posizione)
+        # Claude takes seconds: the transaction ends here, so no pooled connection and
+        # no lock waits on it. `_save` opens the next one.
+        self.session.commit()
+        response = llm.complete(request)
+        card = _card_from(response, cognome, nome)
+        if not isinstance(card, Card):
+            return Composed(
+                None,
+                card,
+                response.model,
+                response.provider,
+                response.input_tokens,
+                response.output_tokens,
+                response.thinking_tokens,
+            )
+        model, provider = response.model, response.provider
+        input_tokens = response.input_tokens
+        output_tokens = response.output_tokens
+        thinking_tokens = response.thinking_tokens
+        if _gendered(card) and response.text is not None:
+            # One rewrite, then a gate (REB-574, REB-802): a card that still gives the
+            # gender away is failed, never written, with its sentence beside the old
+            # card if the CV's own had one. The row keeps the hash of the CV that failed,
+            # so the same bytes are not paid for again until an admin asks with «Rigenera
+            # scheda». A rewrite that is a refusal, a bad shape or a card that names the
+            # person leaves the first card in hand, still gendered. An outage on the
+            # rewrite is the provider's, as on the first call: no hash, asked again.
+            logger.info("card for freelancer %s gave the gender away: asked again", freelancer_id)
+            again = llm.complete(neutral_retry(request, response.text))
+            input_tokens += again.input_tokens
+            output_tokens += again.output_tokens
+            thinking_tokens += again.thinking_tokens
+            rewritten = _card_from(again, cognome, nome)
+            if isinstance(rewritten, Card):
+                card, model, provider = rewritten, again.model, again.provider
+            if _gendered(card):
+                return Composed(
+                    None, "gendered", model, provider, input_tokens, output_tokens, thinking_tokens
+                )
+        return Composed(card, None, model, provider, input_tokens, output_tokens, thinking_tokens)
+
     def _write(self, freelancer_id: UUID, *, force: bool) -> Outcome:
         row = self._freelancer(freelancer_id)
         if row.cv_bytes is None:
@@ -464,56 +556,24 @@ class CardWriter:
             and digest in (stored.cv_sha256, stored.error_cv_sha256)
         ):
             return "unchanged"
-        cv = FreelancerService(self.session).cv_text(freelancer_id)
-        if not cv.testo.strip():
-            return self._fail(freelancer_id, digest, "no_text")
-        owner = self.session.get(User, row.user_id)
-        cognome = owner.cognome if owner is not None else ""
-        nome = owner.nome if owner is not None else ""
-        request = card_prompt(cv, row.posizione)
-        # Claude takes seconds: the transaction ends here, so no pooled connection and
-        # no lock waits on it. `_save` opens the next one.
-        self.session.commit()
         try:
-            response = self.llm.complete(request)
+            composed = self.compose(freelancer_id)
         except LlmUnavailable as exc:
             return self._unanswered(freelancer_id, digest, exc)
-        card = _card_from(response, cognome, nome)
-        if not isinstance(card, Card):
-            return self._fail(freelancer_id, digest, card)
-        model = response.model
-        input_tokens = response.input_tokens
-        # What was billed as output, thinking included, as the row has always counted it.
-        output_tokens = response.output_tokens + response.thinking_tokens
-        if _gendered(card) and response.text is not None:
-            # One rewrite, then a gate (REB-574, REB-802): a card that still gives the
-            # gender away is failed, never written, with its sentence beside the old
-            # card if the CV's own had one. The row keeps the hash of the CV that failed,
-            # so the same bytes are not paid for again until an admin asks with «Rigenera
-            # scheda». A rewrite that is a refusal, a bad shape or a card that names the
-            # person leaves the first card in hand, still gendered. An outage on the
-            # rewrite is the provider's, as on the first call: no hash, asked again.
-            logger.info("card for freelancer %s gave the gender away: asked again", freelancer_id)
-            try:
-                again = self.llm.complete(neutral_retry(request, response.text))
-            except LlmUnavailable as exc:
-                return self._unanswered(freelancer_id, digest, exc)
-            input_tokens += again.input_tokens
-            output_tokens += again.output_tokens + again.thinking_tokens
-            rewritten = _card_from(again, cognome, nome)
-            if isinstance(rewritten, Card):
-                card, model = rewritten, again.model
-            if _gendered(card):
-                return self._fail(freelancer_id, digest, "gendered")
+        if composed.card is None:
+            assert composed.failure is not None
+            return self._fail(freelancer_id, digest, composed.failure)
         saved = self._save(
             freelancer_id,
             digest,
             {
                 "cv_sha256": digest,
-                "card": card.model_dump(mode="json"),
-                "model": model,
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens,
+                "card": composed.card.model_dump(mode="json"),
+                "model": composed.model,
+                "input_tokens": composed.input_tokens,
+                # What was billed as output, thinking included, as the row has always
+                # counted it.
+                "output_tokens": composed.output_tokens + composed.thinking_tokens,
                 "generated_at": self.now(),
                 "error": None,
                 "error_cv_sha256": None,
