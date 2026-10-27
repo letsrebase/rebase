@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   formatDate,
+  formatInvoiceHeading,
   formatInvoiceNumber,
   formatMoney,
   formatPeriod,
@@ -53,6 +54,24 @@ describe('formatQuantity and formatRate', () => {
   it('shows a rate as a percentage', () => {
     expect(formatRate('0.00')).toBe('0%')
     expect(formatRate('22.00')).toBe('22%')
+  })
+})
+
+describe('formatInvoiceHeading', () => {
+  it('is the number or the reference when there is one', () => {
+    expect(formatInvoiceHeading({ anno: 2026, numero: 7, riferimento: null, tipo: 'fattura' })).toBe('2026/7')
+    expect(
+      formatInvoiceHeading({ anno: null, numero: null, riferimento: 'PROV-2026-0007', tipo: 'proforma' }),
+    ).toBe('PROV-2026-0007')
+  })
+
+  it('names a draft that has no number instead of printing the dash', () => {
+    expect(formatInvoiceHeading({ anno: null, numero: null, riferimento: null, tipo: 'fattura' })).toBe(
+      'Bozza di fattura',
+    )
+    expect(formatInvoiceHeading({ anno: null, numero: null, riferimento: null, tipo: 'proforma' })).toBe(
+      'Proforma',
+    )
   })
 })
 

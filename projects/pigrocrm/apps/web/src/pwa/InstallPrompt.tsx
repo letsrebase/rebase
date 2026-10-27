@@ -25,7 +25,7 @@ export function InstallPrompt() {
   return (
     <div
       role="status"
-      className="bg-popover text-popover-foreground ring-foreground/10 fixed inset-x-4 bottom-4 z-50 flex items-center justify-between gap-4 rounded-xl p-4 text-sm shadow-lg ring-1 sm:left-auto sm:max-w-md"
+      className="bg-popover text-popover-foreground flex flex-none items-center justify-between gap-4 border-t p-3 text-sm"
     >
       <p>
         {prompt.showAndroidPrompt

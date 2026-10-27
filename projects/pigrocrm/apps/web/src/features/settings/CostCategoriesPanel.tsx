@@ -24,6 +24,7 @@ import {
   useUnarchiveCostCategory,
   useUpdateCostCategory,
 } from './queries.timetracking'
+import { costCategoryCodeLabel } from './labels'
 
 /**
  * One row, its own component, because the rename mutation is built from the category's
@@ -108,7 +109,7 @@ function CategoryRow({
       {/* The code, beside the name and never in a control: it is the category's
           identity, the thing a report or an import keys on, and the reason renaming is
           safe at all. A seeded category has one; one created here does not. */}
-      <code className="text-xs text-muted-foreground">{category.code ?? '—'}</code>
+      <code className="text-xs text-muted-foreground">{category.code ? costCategoryCodeLabel(category.code) : '—'}</code>
       {/* The state through the one pill every state in the product goes through
           (design spec §4): `muted`, because archiving claims nothing and the other
           half of the pair is one click away in the row's own menu. Only on an archived

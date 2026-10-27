@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   decimalStringFromScaled,
+  formatItalianQuantity,
+  italianiseDecimals,
   scaledFromDecimalString,
   sumDecimalStrings,
 } from './decimal'
@@ -59,5 +61,26 @@ describe('decimalStringFromScaled', () => {
     for (const value of ['0.00', '0.07', '12.30', '-4.05', '999.99']) {
       expect(decimalStringFromScaled(scaledFromDecimalString(value, 2), 2)).toBe(value)
     }
+  })
+})
+
+describe('formatItalianQuantity', () => {
+  it('drops the zeros nobody reads', () => {
+    expect(formatItalianQuantity('2.00')).toBe('2')
+    expect(formatItalianQuantity('0.50')).toBe('0,5')
+    expect(formatItalianQuantity('4.25')).toBe('4,25')
+    expect(formatItalianQuantity('24.00')).toBe('24')
+    expect(formatItalianQuantity('0.00')).toBe('0')
+    expect(formatItalianQuantity('1000.50')).toBe('1.000,5')
+    expect(formatItalianQuantity('-0.50')).toBe('-0,5')
+  })
+})
+
+describe('italianiseDecimals', () => {
+  it('rewrites the figures of a sentence and nothing else', () => {
+    expect(italianiseDecimals('Attività ottobre 2026 - 2.00 giorno')).toBe('Attività ottobre 2026 - 2 giorno')
+    expect(italianiseDecimals('Attività ottobre 2026 - 0.50 giorno')).toBe('Attività ottobre 2026 - 0,5 giorno')
+    expect(italianiseDecimals('fattura 2026/1 del 29/07/2026, 3 giorni')).toBe('fattura 2026/1 del 29/07/2026, 3 giorni')
+    expect(italianiseDecimals('versione 1.2.3')).toBe('versione 1.2.3')
   })
 })

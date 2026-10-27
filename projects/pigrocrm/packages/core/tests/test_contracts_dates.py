@@ -25,7 +25,7 @@ def _contract(**overrides: object) -> Contract:
         "preavviso_rinnovo_giorni": None,
         "fine": None,
         "cadenza_fatturazione": "mensile",
-        "politica_spese": {"tipo": "non_rimborsabile"},
+        "politica_spese": {"kind": "non_rimborsabile"},
     }
     payload.update(overrides)
     return Contract(**payload)  # type: ignore[arg-type]

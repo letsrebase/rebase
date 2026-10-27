@@ -198,9 +198,26 @@ describe('CalendarPage', () => {
     renderPage()
     await screen.findByRole('grid')
 
-    expect(screen.getByRole('button', { name: '14/09/2026: 8.00 ore' })).toBeInTheDocument()
-    expect(screen.getByText('8.00 h')).toBeInTheDocument()
-    expect(screen.getByText(/Ore del mese/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '14/09/2026: 8 ore' })).toBeInTheDocument()
+    expect(screen.getByText('8 h')).toBeInTheDocument()
+    expect(screen.getByText(/Ore del mese/)).toHaveTextContent('Ore del mese: 8')
+  })
+
+  it('is an ARIA grid of rows, column headers and cells, each cell holding its button', async () => {
+    // `aria-required-children`: a grid owns rows and rows own cells; a button directly
+    // under the grid is what axe refused on the merged trunk.
+    routeGet()
+    renderPage()
+    const grid = await screen.findByRole('grid')
+
+    const rows = within(grid).getAllByRole('row')
+    expect(within(rows[0] as HTMLElement).getAllByRole('columnheader').map((cell) => cell.textContent)).toEqual(
+      ['lun', 'mar', 'mer', 'gio', 'ven', 'sab', 'dom'],
+    )
+    for (const row of rows.slice(1)) expect(within(row).getAllByRole('gridcell')).toHaveLength(7)
+    for (const cell of within(grid).getAllByRole('gridcell')) {
+      expect(within(cell).getAllByRole('button')).toHaveLength(1)
+    }
   })
 
   it('shows an undated commitment under the grid and in no cell', async () => {
@@ -274,7 +291,7 @@ describe('CalendarPage', () => {
     const ore = screen.getByRole('textbox', { name: 'Ore' })
     await userEvent.clear(ore)
     await userEvent.type(ore, '3.5')
-    await userEvent.click(screen.getByRole('button', { name: 'Registra 3.5 h' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Registra 3,5 h' }))
 
     await waitFor(() => expect(api.POST).toHaveBeenCalled())
     expect(postedBody().body).toMatchObject({ ore: '3.5' })
@@ -288,7 +305,7 @@ describe('CalendarPage', () => {
     const ore = screen.getByRole('textbox', { name: 'Ore' })
     await userEvent.clear(ore)
     await userEvent.type(ore, '7,5')
-    await userEvent.click(screen.getByRole('button', { name: 'Registra 7.5 h' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Registra 7,5 h' }))
 
     await waitFor(() => expect(api.POST).toHaveBeenCalled())
     expect(postedBody().body).toMatchObject({ ore: '7.5' })
@@ -397,7 +414,7 @@ describe('CalendarPage', () => {
     expect(cell.getAttribute('aria-label')).toContain('2 giornate, 1 senza approvazione')
     expect(screen.getAllByText('senza approvazione')).toHaveLength(1)
     // An empty date has no such line.
-    expect(screen.getByRole('button', { name: '14/09/2026: 8.00 ore' }).textContent).not.toContain('senza approvazione')
+    expect(screen.getByRole('button', { name: '14/09/2026: 8 ore' }).textContent).not.toContain('senza approvazione')
 
     await userEvent.click(cell)
     const dialog = await screen.findByRole('dialog')

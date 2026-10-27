@@ -1,6 +1,17 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+// REB-788: the panels read the role (the estimate is an administrator's), so the tests
+// say which role is signed in; the default is the one that may read everything.
+const session = vi.hoisted(() => ({ ruolo: 'admin' as 'admin' | 'collaboratore' | 'readonly' }))
+vi.mock('@/lib/auth', async () => {
+  const { can } = await import('@/lib/permissions')
+  return {
+    useAuth: () => ({ user: { ruolo: session.ruolo } }),
+    useCan: (action: Parameters<typeof can>[1]) => can(session.ruolo, action),
+  }
+})
 import { api } from '@/lib/api'
 import { FiscalPanel } from './FiscalPanel'
 
@@ -55,6 +66,7 @@ function renderPanel(anno = 2026) {
 }
 
 beforeEach(() => {
+  session.ruolo = 'admin'
   vi.mocked(api.GET).mockReset()
 })
 
@@ -173,6 +185,17 @@ describe('FiscalPanel', () => {
     expect(alert).not.toHaveTextContent(/requires one of/)
     expect(screen.queryByRole('note')).not.toBeInTheDocument()
     expect(screen.queryByText(/reddito netto/i)).not.toBeInTheDocument()
+  })
+
+  it('does not ask a collaboratore for the estimate at all (REB-788)', async () => {
+    session.ruolo = 'collaboratore'
+    vi.mocked(api.GET).mockImplementation(() => ok(estimate()))
+    renderPanel()
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      /ruolo in questo spazio è «collaboratore»: la stima fiscale è riservata a «amministratore»/,
+    )
+    expect(api.GET).not.toHaveBeenCalled()
   })
 
   it('asks for the year it was given, never for the one on the clock', async () => {

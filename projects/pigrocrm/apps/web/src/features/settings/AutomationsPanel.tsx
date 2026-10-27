@@ -7,6 +7,7 @@ import {
 } from '@/features/dashboard/queries'
 import { cn } from '@rebase/ui/cn'
 import { Input } from '@rebase/ui/input'
+import { ruleLabel } from './labels'
 import { useState } from 'react'
 
 /**
@@ -205,7 +206,7 @@ export function AutomationsPanel() {
                     is an open value by project, so this map will fall behind the backend one
                     day and a blank line would hide the run entirely. */}
                 <span className="font-medium">{KINDS[run.kind] ?? run.kind}</span>
-                {run.regola && <span className="text-muted-foreground"> · {run.regola}</span>}
+                {run.regola && <span className="text-muted-foreground"> · {ruleLabel(run.regola)}</span>}
                 {typeof run.payload.titolo === 'string' && (
                   <span className="text-muted-foreground"> · {run.payload.titolo}</span>
                 )}

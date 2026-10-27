@@ -3,6 +3,7 @@ import { CalendarPlus } from 'lucide-react'
 import { Button } from '@rebase/ui/button'
 import { cn } from '@rebase/ui/cn'
 import { useCanWrite } from '@/lib/auth'
+import { formatItalianQuantity } from '@/lib/decimal'
 import { DayStatePill } from './DayStatePill'
 import { HALF_DAY, FULL_DAY, quantitaLabel, statoLabel, statoTone, type CalendarWorkUnit } from './labels'
 
@@ -21,7 +22,7 @@ const TONE_CLASS = {
 function shortQuantity(quantita: string): string {
   if (quantita === FULL_DAY) return '1 g'
   if (quantita === HALF_DAY) return '½ g'
-  return `${quantita.replace(/\.?0+$/, '').replace('.', ',')} g`
+  return `${formatItalianQuantity(quantita)} g`
 }
 
 /**

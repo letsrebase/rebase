@@ -2,6 +2,17 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+// REB-788: the panels read the role (the estimate is an administrator's), so the tests
+// say which role is signed in; the default is the one that may read everything.
+const session = vi.hoisted(() => ({ ruolo: 'admin' as 'admin' | 'collaboratore' | 'readonly' }))
+vi.mock('@/lib/auth', async () => {
+  const { can } = await import('@/lib/permissions')
+  return {
+    useAuth: () => ({ user: { ruolo: session.ruolo } }),
+    useCan: (action: Parameters<typeof can>[1]) => can(session.ruolo, action),
+  }
+})
 import { EconomicTab } from './EconomicTab'
 import type { CashMonth } from './queries'
 import { api } from '@/lib/api'
@@ -175,6 +186,7 @@ function renderTab(periodo = PERIODO, base: 'competenza' | 'incasso' = 'competen
 }
 
 beforeEach(() => {
+  session.ruolo = 'admin'
   vi.mocked(api.GET).mockReset()
 })
 
@@ -216,6 +228,18 @@ describe('EconomicTab', () => {
     })
     expect(screen.getByRole('radio', { name: 'Incasso' })).toHaveAttribute('aria-checked', 'true')
     expect(screen.getByText(/Vista economica 2026 per incasso/)).toBeInTheDocument()
+  })
+
+  it('asks a collaboratore for no fiscal estimate and says it is reserved, with no 403 to log', async () => {
+    session.ruolo = 'collaboratore'
+    vi.mocked(api.GET).mockImplementation(byPath(RESPONSE) as never)
+    renderTab()
+    await screen.findByRole('figure', { name: 'Andamento economico 2026' })
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      /ruolo in questo spazio è «collaboratore»: la stima fiscale è riservata a «amministratore»/,
+    )
+    const paths = (vi.mocked(api.GET).mock.calls as unknown as GetCall[]).map(([path]) => path)
+    expect(paths).not.toContain('/api/analytics/fiscal')
   })
 
   it('tells the reader the tax block is on the money whatever the charts read by', async () => {
@@ -341,7 +365,7 @@ describe('EconomicTab', () => {
     }
     // The revenue row, addressed by the hint only it carries: its own label shares an
     // element with that hint, and its figure is also the «Ricavi incassati» card's.
-    expect(screen.getByText(/fatture emesse nell'anno/)).toBeInTheDocument()
+    expect(screen.getByText(/fatture emesse nell’anno/)).toBeInTheDocument()
     expect(screen.getByText('67,00 %')).toBeInTheDocument()
     expect(screen.getByText('691,06 €')).toBeInTheDocument()
     expect(screen.getByText('16.514,54 €')).toBeInTheDocument()
@@ -454,7 +478,7 @@ describe('EconomicTab', () => {
     expect(rows[1]).toHaveTextContent('33,3%')
     // A different figure from `per_cliente`'s receivables exposure, in words as well as
     // in data: this table answers a different question and says so.
-    expect(screen.getByText(/non l'esposizione residua di «Da incassare»/)).toBeInTheDocument()
+    expect(screen.getByText(/Non è l’esposizione residua di «Da incassare»/)).toBeInTheDocument()
   })
 
   it('says so, rather than rendering an empty table, when nobody was invoiced this year', async () => {
@@ -464,7 +488,7 @@ describe('EconomicTab', () => {
     renderTab()
     await screen.findByRole('group', { name: 'Ricavi incassati' })
     const heading = screen.getByRole('heading', { name: 'Concentrazione clienti' })
-    expect(screen.getByText('Nessuna fattura emessa nell\'anno.')).toBeInTheDocument()
+    expect(screen.getByText('Nessuna fattura emessa nell’anno.')).toBeInTheDocument()
     expect(heading.closest('section')?.querySelector('table')).toBeNull()
   })
 

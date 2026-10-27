@@ -87,6 +87,19 @@ export function formatInvoiceNumber(
 }
 
 /**
+ * The heading of an invoice's own page. A draft has no number yet and no reference (the
+ * register hands the number out at emission), and the dash that stands for «nothing» in a
+ * table cell is a poor name for a page, so it is called what it is.
+ */
+export function formatInvoiceHeading(
+  invoice: Pick<Invoice, 'anno' | 'numero' | 'riferimento' | 'tipo'>,
+): string {
+  const label = formatInvoiceNumber(invoice)
+  if (label !== EMPTY) return label
+  return invoice.tipo === 'proforma' ? 'Proforma' : 'Bozza di fattura'
+}
+
+/**
  * The sum of the line totals, for the editor's live preview only.
  *
  * The authoritative totals are the ones the API stored; this exists so the editor can

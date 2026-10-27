@@ -201,7 +201,7 @@ function GeneralBlock({ scope, data }: { scope: Scope; data: Preferences }) {
             />
             <Label htmlFor={`${id}-attive`}>Ore di silenzio</Label>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Label htmlFor={`${id}-dalle`}>Dalle</Label>
             <Input
               id={`${id}-dalle`}

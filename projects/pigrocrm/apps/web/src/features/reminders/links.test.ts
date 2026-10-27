@@ -47,6 +47,12 @@ describe('subjectOf', () => {
     ).toBe('Mandare il preventivo ad Acme')
   })
 
+  it('starts the subject with a capital: the API writes an invoice as «fattura 2026/1»', () => {
+    expect(
+      subjectOf({ label: 'Fattura scaduta', title: 'Fattura scaduta: fattura 2026/1 · Acme Srl' }),
+    ).toBe('Fattura 2026/1 · Acme Srl')
+  })
+
   it('shows a title that does not start that way whole, and never an empty one', () => {
     expect(subjectOf({ label: 'Timer', title: 'Timer acceso da 11 ore' })).toBe('Timer acceso da 11 ore')
     expect(subjectOf({ label: 'Deal fermo', title: 'Deal fermo: ' })).toBe('Deal fermo: ')

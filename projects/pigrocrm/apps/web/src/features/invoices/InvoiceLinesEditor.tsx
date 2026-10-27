@@ -8,7 +8,7 @@ import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { ScrollRegion } from '@rebase/ui/table'
 import { toProblem, type ProblemDetail } from '@/lib/api'
 import { emptyLine, type DraftLine } from './lineDraft'
-import { formatMoney, sumLineTotals } from './format'
+import { formatMoney, formatQuantity, sumLineTotals } from './format'
 import { useReplaceLines, type Invoice, type InvoiceLine, type InvoiceLineInput } from './queries'
 
 function draftFrom(line: InvoiceLine): DraftLine {
@@ -95,7 +95,7 @@ export function InvoiceLinesEditor({
             {lines.map((line) => (
               <tr key={line.id} className="border-t">
                 <td className="py-2">{line.descrizione}</td>
-                <td className="py-2">{line.quantita}</td>
+                <td className="py-2">{formatQuantity(line.quantita)}</td>
                 <td className="py-2">{line.unita_misura ?? '—'}</td>
                 <td className="py-2">{formatMoney(line.prezzo_unitario)}</td>
                 <td className="py-2 text-right">{formatMoney(line.prezzo_totale)}</td>
@@ -178,7 +178,7 @@ export function InvoiceLinesEditor({
         </div>
       ))}
 
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <Button
           variant="outline"
           size="sm"
@@ -188,7 +188,7 @@ export function InvoiceLinesEditor({
           Aggiungi riga
         </Button>
 
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           {/* Explicitly a preview. The authoritative totals are the ones the API
               stored -- `sumLineTotals` adds integer cents purely so the editor can
               show a running figure before saving, and the label is what stops anyone

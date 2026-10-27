@@ -26,6 +26,7 @@ import { useLogTime } from '@/features/time/queries'
 import { toProblem } from '@/lib/api'
 import { useAuth, useCanWrite } from '@/lib/auth'
 import { formatIsoDateItalian } from '@/lib/dates'
+import { formatItalianQuantity } from '@/lib/decimal'
 import { GIORNATA, MEZZA, normaliseHours } from './hours'
 import type { CalendarDay } from './queries'
 
@@ -56,12 +57,14 @@ export function DayPanel({
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-lg">
+      {/* REB-792: the dialog is as tall as the window at most and its middle row scrolls, so
+          a date with many rows keeps every one reachable and the header and «Chiudi» in view. */}
+      <DialogContent className="max-h-[calc(100%-2rem)] grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{formatIsoDateItalian(giorno)}</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-5">
+        <div className="min-h-0 space-y-5 overflow-y-auto">
           <Worked data={data} />
           <PanelDays giorno={giorno} days={data?.giornate ?? []} />
           <Due data={data} />
@@ -71,18 +74,20 @@ export function DayPanel({
               <NewCommitment giorno={giorno} />
             </>
           )}
+        </div>
+
+        <div className="space-y-3">
           {problem !== null && (
             <p role="alert" className="text-sm text-destructive">
               {problem}
             </p>
           )}
+          <DialogFooter>
+            <Button variant="outline" onClick={onClose}>
+              Chiudi
+            </Button>
+          </DialogFooter>
         </div>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Chiudi
-          </Button>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   )
@@ -94,7 +99,7 @@ function Worked({ data }: { data: CalendarDay | undefined }) {
   return (
     <section aria-labelledby="ore-del-giorno" className="space-y-1">
       <h3 id="ore-del-giorno" className="text-sm font-medium">
-        Ore ({data?.ore})
+        Ore ({data ? formatItalianQuantity(data.ore) : ''})
       </h3>
       <ul className="space-y-1 text-sm">
         {righe.map((riga) => (
@@ -103,7 +108,7 @@ function Worked({ data }: { data: CalendarDay | undefined }) {
               {riga.cliente ? `${riga.cliente} · ` : ''}
               {riga.deal_nome}
             </span>
-            <span className="tabular-nums">{riga.ore} h</span>
+            <span className="tabular-nums">{formatItalianQuantity(riga.ore)} h</span>
           </li>
         ))}
       </ul>
@@ -242,7 +247,7 @@ function LogHours({
           disabled={dealId === '' || valide === null || log.isPending}
           onClick={() => submit(ore)}
         >
-          Registra {valide ?? '—'} h
+          Registra {valide === null ? '—' : formatItalianQuantity(valide)} h
         </Button>
         <Button
           size="sm"

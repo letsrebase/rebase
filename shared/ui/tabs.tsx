@@ -59,12 +59,53 @@ function TabsList({
   )
 }
 
+/* Radix writes `aria-controls` on every trigger, pointing at the panel it would
+   render, but a strip of links or a filter strip has no `TabsContent` at all: the
+   attribute then names an element that is not in the page, which axe reports as
+   critical (`aria-valid-attr-value`). The trigger keeps
+   the id Radix gave it and puts it back on the element only while that panel exists,
+   checked after every commit because the panels come and go with the active value. */
+function useAriaControlsOnlyWhenMounted(ref: React.RefObject<HTMLElement | null>) {
+  const radixId = React.useRef<string | null>(null)
+  React.useLayoutEffect(() => {
+    const element = ref.current
+    if (!element) return
+    radixId.current = element.getAttribute("aria-controls") ?? radixId.current
+    const id = radixId.current
+    if (!id) return
+    if (document.getElementById(id)) element.setAttribute("aria-controls", id)
+    else element.removeAttribute("aria-controls")
+  })
+}
+
 function TabsTrigger({
   className,
+  ref,
   ...props
 }: React.ComponentProps<typeof TabsPrimitive.Trigger>) {
+  const own = React.useRef<HTMLButtonElement | null>(null)
+  useAriaControlsOnlyWhenMounted(own)
+  // Stable per caller ref: an inline callback changes identity on every render, and React
+  // would detach and re-attach it each time.
+  const setRef = React.useCallback(
+    (node: HTMLButtonElement | null) => {
+      own.current = node
+      // React 19 runs the cleanup a callback ref returns instead of calling it with
+      // null, so the caller's own cleanup is kept and run, or null is handed over.
+      const cleanup = typeof ref === "function" ? ref(node) : undefined
+      if (ref && typeof ref !== "function") ref.current = node
+      return () => {
+        own.current = null
+        if (typeof cleanup === "function") cleanup()
+        else if (typeof ref === "function") ref(null)
+        else if (ref) ref.current = null
+      }
+    },
+    [ref]
+  )
   return (
     <TabsPrimitive.Trigger
+      ref={setRef}
       data-slot="tabs-trigger"
       className={cn(
         /* `-mb-px` pulls the trigger's own bottom border onto the list's hairline, so

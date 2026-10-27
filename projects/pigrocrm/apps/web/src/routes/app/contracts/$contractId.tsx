@@ -103,7 +103,7 @@ export function ContractDetail() {
           </>
         }
         overview={
-          <div className="grid gap-6 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             <Card>
               <CardContent className="pt-6">
                 <h2 className="mb-3 font-semibold">Termini</h2>

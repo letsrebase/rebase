@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './tabs'
 
@@ -73,5 +73,79 @@ describe('Tabs', () => {
       </Tabs>,
     )
     expect(screen.getByText('Promemoria')).toBeInTheDocument()
+  })
+
+  /** REB-789: Radix names the panel on every trigger and mounts only the active one,
+   *  so the inactive trigger (and every trigger of a strip with no panels) pointed at
+   *  an element that is not in the page. */
+  it('points aria-controls only at panels that are in the page', () => {
+    renderTabs()
+    const active = screen.getByRole('tab', { name: 'Fatture' })
+    const withoutPanel = screen.getByRole('tab', { name: 'Solleciti' })
+    const id = active.getAttribute('aria-controls')!
+    expect(document.getElementById(id)).toBe(screen.getByText('Elenco'))
+    expect(withoutPanel).not.toHaveAttribute('aria-controls')
+  })
+
+  it('keeps aria-controls on a trigger whose panel is mounted hidden', () => {
+    render(
+      <Tabs defaultValue="a">
+        <TabsList>
+          <TabsTrigger value="a">A</TabsTrigger>
+          <TabsTrigger value="b">B</TabsTrigger>
+        </TabsList>
+        <TabsContent value="a">Pannello A</TabsContent>
+        <TabsContent value="b">Pannello B</TabsContent>
+      </Tabs>,
+    )
+    const b = screen.getByRole('tab', { name: 'B' })
+    expect(document.getElementById(b.getAttribute('aria-controls')!)).not.toBeNull()
+  })
+
+  it('drops aria-controls when a panel goes away and restores it when it returns', () => {
+    const strip = (withPanel: boolean) => (
+      <Tabs defaultValue="a">
+        <TabsList>
+          <TabsTrigger value="a">A</TabsTrigger>
+        </TabsList>
+        {withPanel && <TabsContent value="a">Pannello A</TabsContent>}
+      </Tabs>
+    )
+    const { rerender } = render(strip(true))
+    const a = screen.getByRole('tab', { name: 'A' })
+    expect(a).toHaveAttribute('aria-controls')
+    rerender(strip(false))
+    expect(a).not.toHaveAttribute('aria-controls')
+    rerender(strip(true))
+    expect(document.getElementById(a.getAttribute('aria-controls')!)).not.toBeNull()
+  })
+
+  it('drops aria-controls on a link trigger (asChild) with no panel', () => {
+    render(
+      <Tabs value="a">
+        <TabsList>
+          <TabsTrigger value="a" asChild>
+            <a href="/a">A</a>
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>,
+    )
+    expect(screen.getByRole('tab', { name: 'A' })).not.toHaveAttribute('aria-controls')
+  })
+
+  it('runs the cleanup a caller\'s callback ref returns', () => {
+    const cleanup = vi.fn()
+    const { unmount } = render(
+      <Tabs value="a">
+        <TabsList>
+          <TabsTrigger value="a" ref={() => cleanup}>
+            A
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>,
+    )
+    expect(cleanup).not.toHaveBeenCalled()
+    unmount()
+    expect(cleanup).toHaveBeenCalledTimes(1)
   })
 })

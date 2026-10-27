@@ -111,6 +111,11 @@ class ContractCreate(BaseModel):
     note: SafeStr | None = None
     custom_fields: dict[str, Any] = {}
 
+    @field_validator("politica_spese")
+    @classmethod
+    def _expense_policy_is_readable(cls, value: dict[str, Any]) -> dict[str, Any]:
+        return check_expense_policy(value)
+
     @model_validator(mode="after")
     def _fine_not_before_inizio(self) -> "ContractCreate":
         if self.fine is not None and self.fine < self.inizio:

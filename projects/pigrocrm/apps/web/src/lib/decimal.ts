@@ -71,3 +71,37 @@ export function sumDecimalStrings(
   }
   return decimalStringFromScaled(total, scale)
 }
+
+const DECIMAL_STRING = /^(-?)(\d+)(?:\.(\d+))?$/
+
+/** `1234567` -> `1.234.567`: the thousands separator written in, because the ICU default
+ *  withholds it below five digits and a figure must not change shape at 10000. */
+function withThousands(whole: string): string {
+  return whole.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+}
+
+/**
+ * A decimal string for a *quantity* (hours, days), with the comma for the decimal point and
+ * the dot for thousands: trailing zeros after the point are dropped
+ * and so is a point left bare, so `"2.00"` reads «2», `"0.50"` «0,5» and `"4.25"` «4,25».
+ * A count of days with a «,00» behind it reads like a price. Money does not come through
+ * here: a price keeps its two places.
+ */
+export function formatItalianQuantity(value: string): string {
+  const match = DECIMAL_STRING.exec(value)
+  if (match === null) return value
+  const [, sign = '', whole = '', fraction = ''] = match
+  const kept = fraction.replace(/0+$/, '')
+  const figure = `${withThousands(whole)}${kept === '' ? '' : `,${kept}`}`
+  return figure === '0' ? '0' : `${sign}${figure}`
+}
+
+/**
+ * Every plain decimal inside a sentence the API wrote («Attività ottobre 2026 - 2.00
+ * giorno») as the Italian quantity. A word, a date («2026/1», «29/07/2026») or an
+ * integer has no «digits.digits» in it and is left alone, so the sentence the server
+ * stores and sends is never edited, only the way it is shown.
+ */
+export function italianiseDecimals(text: string): string {
+  return text.replace(/(?<![\d.,])\d+\.\d+(?![\d.])/g, (figure) => formatItalianQuantity(figure))
+}
