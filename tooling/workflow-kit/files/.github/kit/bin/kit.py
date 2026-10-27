@@ -275,11 +275,15 @@ def pending_losses(repo: Path, files: Path, mirrored: dict[str, str]) -> list[st
         elif entry.is_dir() and entry.name in kit_skills:
             if tree(entry) != tree(files / AGENTS_SKILLS / entry.name):
                 print(f"replacing {rel} with the kit's {entry.name}")
-        elif entry.is_dir() and (agents / entry.name).is_dir():
-            theirs = tree(agents / entry.name)
+        elif entry.is_dir():
+            # Still in .agents: compare with it. Gone from .agents (deleted or renamed
+            # there): every file must still be what the last sync mirrored.
+            theirs = tree(agents / entry.name) if (agents / entry.name).is_dir() else {}
+            was_mirrored = any(key.startswith(f"{entry.name}/") for key in mirrored)
+            if not theirs and not was_mirrored:
+                continue  # never mirrored: migrated to .agents below, nothing lost
             for name, digest_ in tree(entry).items():
-                key = f"{entry.name}/{name}"
-                if digest_ not in (theirs.get(name), mirrored.get(key)):
+                if digest_ not in (theirs.get(name), mirrored.get(f"{entry.name}/{name}")):
                     out.append(f"{rel}/{name}: edited here, not in {AGENTS_SKILLS.as_posix()}")
     return out
 

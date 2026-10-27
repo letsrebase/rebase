@@ -103,6 +103,15 @@ class KitSyncAndCheck(unittest.TestCase):
         self.assertFalse((self.repo / ".agents/skills/own-skill").exists())
         self.assertFalse((self.repo / ".claude/skills/own-skill").exists())
 
+    def test_an_edit_left_in_a_deleted_skills_mirror_is_not_discarded_silently(self):
+        shutil.rmtree(self.repo / ".agents/skills/own-skill")
+        write(
+            self.repo / ".claude/skills/own-skill/SKILL.md", "---\nname: own-skill\n---\nedited\n"
+        )
+        with self.assertRaises(kit.ConfigError):
+            kit.sync(self.repo, KIT)
+        self.assertTrue((self.repo / ".claude/skills/own-skill/SKILL.md").is_file())
+
     def test_the_template_ends_with_a_card_line_the_lint_refuses(self):
         text = (self.repo / ".github/PULL_REQUEST_TEMPLATE.md").read_text(encoding="utf-8")
         self.assertTrue(text.rstrip().endswith("Linear: ABC-<number>."))
