@@ -362,7 +362,7 @@ describe('EconomicTab', () => {
     }
     // The revenue row, addressed by the hint only it carries: its own label shares an
     // element with that hint, and its figure is also the «Ricavi incassati» card's.
-    expect(screen.getByText(/fatture emesse nell'anno/)).toBeInTheDocument()
+    expect(screen.getByText(/fatture emesse nell’anno/)).toBeInTheDocument()
     expect(screen.getByText('67,00 %')).toBeInTheDocument()
     expect(screen.getByText('691,06 €')).toBeInTheDocument()
     expect(screen.getByText('16.514,54 €')).toBeInTheDocument()
@@ -475,7 +475,7 @@ describe('EconomicTab', () => {
     expect(rows[1]).toHaveTextContent('33,3%')
     // A different figure from `per_cliente`'s receivables exposure, in words as well as
     // in data: this table answers a different question and says so.
-    expect(screen.getByText(/non l'esposizione residua di «Da incassare»/)).toBeInTheDocument()
+    expect(screen.getByText(/Non è l’esposizione residua di «Da incassare»/)).toBeInTheDocument()
   })
 
   it('says so, rather than rendering an empty table, when nobody was invoiced this year', async () => {
@@ -485,7 +485,7 @@ describe('EconomicTab', () => {
     renderTab()
     await screen.findByRole('group', { name: 'Ricavi incassati' })
     const heading = screen.getByRole('heading', { name: 'Concentrazione clienti' })
-    expect(screen.getByText('Nessuna fattura emessa nell\'anno.')).toBeInTheDocument()
+    expect(screen.getByText('Nessuna fattura emessa nell’anno.')).toBeInTheDocument()
     expect(heading.closest('section')?.querySelector('table')).toBeNull()
   })
 

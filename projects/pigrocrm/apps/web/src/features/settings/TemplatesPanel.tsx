@@ -38,6 +38,7 @@ import {
   useDeactivateTemplate,
   useUpdateTemplate,
 } from './queries'
+import { templateTypeLabel } from './labels'
 
 const TIPI = [
   { value: 'offerta', label: 'Offerta' },
@@ -206,7 +207,7 @@ export function TemplatesPanel() {
     {
       header: 'Tipo',
       id: 'tipo',
-      accessorFn: (row) => TIPI.find((entry) => entry.value === row.tipo)?.label ?? row.tipo,
+      accessorFn: (row) => templateTypeLabel(row.tipo),
     },
     {
       header: 'Variabili',

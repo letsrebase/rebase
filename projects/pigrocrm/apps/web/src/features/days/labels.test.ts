@@ -4,6 +4,7 @@ import {
   STATO_LABELS,
   STATO_TONE,
   actorLabel,
+  reasonLabel,
   activeRateCard,
   allowsFraction,
   cellDaysLabel,
@@ -95,5 +96,15 @@ describe('unitaLabel', () => {
     expect(unitaLabel('anno')).toBe('all’anno')
     expect(unitaLabel('forfait')).toBe('a forfait')
     expect(unitaLabel('settimana')).toBe('per settimana')
+  })
+})
+
+describe('reasonLabel', () => {
+  it('words the key the service writes when a day is recorded', () => {
+    expect(reasonLabel('creazione')).toBe('Giornata registrata')
+  })
+
+  it('shows a reason a person typed as they typed it', () => {
+    expect(reasonLabel('Il cliente ha contestato le ore')).toBe('Il cliente ha contestato le ore')
   })
 })

@@ -78,7 +78,7 @@ describe('DaysToInvoiceSection', () => {
     vi.mocked(api.GET).mockImplementation((() => ok(days())) as never)
     renderSection()
 
-    expect(await screen.findByText('Attività ottobre 2026 - 1.50 giorno')).toBeInTheDocument()
+    expect(await screen.findByText('Attività ottobre 2026 - 1,5 giorno')).toBeInTheDocument()
     expect(screen.getByText('2 giornate a 500,00 € per giorno')).toBeInTheDocument()
     expect(screen.getByText('750,00 €')).toBeInTheDocument()
     expect(screen.getByText('1.250,00 €')).toBeInTheDocument()
@@ -111,7 +111,7 @@ describe('DaysToInvoiceSection', () => {
 
     await userEvent.click(await screen.findByRole('combobox', { name: 'Periodo' }))
     await userEvent.click(await screen.findByRole('option', { name: 'ottobre 2026' }))
-    await waitFor(() => expect(screen.queryByText(NOVEMBER.descrizione)).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByText('Attività novembre 2026 - 1 giorno')).not.toBeInTheDocument())
     await userEvent.click(screen.getByRole('button', { name: 'Crea la bozza di fattura' }))
 
     expect(api.POST).toHaveBeenCalledWith(
@@ -176,7 +176,7 @@ describe('DaysToInvoiceSection', () => {
     vi.mocked(api.GET).mockImplementation((() => ok(days())) as never)
     renderSection()
 
-    expect(await screen.findByText(OCTOBER.descrizione)).toBeInTheDocument()
+    expect(await screen.findByText('Attività ottobre 2026 - 1,5 giorno')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Crea la bozza di fattura' })).not.toBeInTheDocument()
   })
 })

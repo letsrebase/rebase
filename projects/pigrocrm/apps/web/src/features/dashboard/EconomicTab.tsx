@@ -304,12 +304,12 @@ export function EconomicTab({
       <section className="space-y-2">
         <h2 className="text-sm font-medium">Concentrazione clienti</h2>
         <p className="text-sm text-muted-foreground">
-          La quota di ciascun cliente sui ricavi fatturati nell'anno -- non
-          l'esposizione residua di «Da incassare» nella scheda scadenze, che risponde a
+          La quota di ciascun cliente sui ricavi fatturati nell’anno. Non è
+          l’esposizione residua di «Da incassare» nella scheda scadenze, che risponde a
           una domanda diversa (chi deve di più oggi).
         </p>
         {concentrazione_clienti.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Nessuna fattura emessa nell'anno.</p>
+          <p className="text-sm text-muted-foreground">Nessuna fattura emessa nell’anno.</p>
         ) : perAzienda ? (
           // One table per azienda, each share of that azienda's own revenue: a
           // customer who is a third of one azienda reads as a third, never as a tenth

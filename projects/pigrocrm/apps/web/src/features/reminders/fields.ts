@@ -46,13 +46,19 @@ export function isOpen(reminder: Reminder): boolean {
  * The title without the kind it starts with. The API writes every title as «<label>:
  * <subject>» (`Attività scaduta: Mandare il preventivo ad Acme`) and sends the label on
  * its own as well, and the row draws the label above the title, so repeating it in the
- * title would say it twice. A title that does not start that way is shown whole.
+ * title would say it twice. A title that does not start that way is shown whole. The
+ * first letter is capitalised either way.
  */
 export function subjectOf(reminder: Pick<Reminder, 'label' | 'title'>): string {
   const prefix = `${reminder.label}: `
-  return reminder.title.startsWith(prefix) && reminder.title.length > prefix.length
-    ? reminder.title.slice(prefix.length)
-    : reminder.title
+  const subject =
+    reminder.title.startsWith(prefix) && reminder.title.length > prefix.length
+      ? reminder.title.slice(prefix.length)
+      : reminder.title
+  // A sentence starts with a capital, and the API writes the subject of an invoice
+  // reminder as «fattura 2026/1 · Acme» because it also builds it into longer texts
+  // where it is mid-sentence. The row is a line of its own.
+  return subject.charAt(0).toLocaleUpperCase('it-IT') + subject.slice(1)
 }
 
 /**

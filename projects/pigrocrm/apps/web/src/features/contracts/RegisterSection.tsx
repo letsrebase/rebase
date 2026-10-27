@@ -18,6 +18,7 @@ import {
 import { formatDate } from '@/features/invoices/format'
 import { useCan } from '@/lib/auth'
 import { toIsoMonth } from '@/lib/dates'
+import { formatItalianQuantity } from '@/lib/decimal'
 import {
   monthBounds,
   registerCsvUrl,
@@ -131,7 +132,7 @@ export function RegisterSection({ contractId }: { contractId: string }) {
                 {register.data.voci.map((entry) => (
                   <TableRow key={entry.work_unit_id}>
                     <TableCell>{formatDate(entry.data)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{entry.quantita}</TableCell>
+                    <TableCell className="text-right tabular-nums">{formatItalianQuantity(entry.quantita)}</TableCell>
                     <TableCell>{entry.descrizione}</TableCell>
                     <TableCell>{STATE_LABEL[entry.stato] ?? entry.stato}</TableCell>
                     <TableCell>{entry.numero_fattura ?? 'Bozza'}</TableCell>
@@ -140,7 +141,7 @@ export function RegisterSection({ contractId }: { contractId: string }) {
                 ))}
               </TableBody>
             </Table>
-            <p className="text-right font-semibold">Totale: {register.data.totale_quantita}</p>
+            <p className="text-right font-semibold">Totale: {formatItalianQuantity(register.data.totale_quantita)}</p>
             {register.data.senza_approvazione > 0 && (
               <p className="text-sm text-muted-foreground">
                 {register.data.senza_approvazione === 1

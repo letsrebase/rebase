@@ -26,6 +26,7 @@ import {
   ACTIONS,
   actorLabel,
   quantitaLabel,
+  reasonLabel,
   statoLabel,
   type WorkUnitDetail,
   type WorkUnitStato,
@@ -340,7 +341,7 @@ function History({ day }: { day: WorkUnitDetail }) {
             <p className="text-muted-foreground">
               <time dateTime={step.created_at}>{formatOccurredAt(step.created_at)}</time>, {actorLabel(step.attore).toLowerCase()}
             </p>
-            <p>{step.motivo}</p>
+            <p>{reasonLabel(step.motivo)}</p>
           </li>
         ))}
       </ol>

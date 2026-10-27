@@ -11,6 +11,7 @@ import { Skeleton } from '@rebase/ui/skeleton'
 import { formatDate } from '@/features/invoices/format'
 import { useCan } from '@/lib/auth'
 import { formatIsoMonthYear } from '@/lib/dates'
+import { italianiseDecimals } from '@/lib/decimal'
 import { monthBounds, useBillableDays, useInvoiceDays } from './billingQueries'
 import { formatAmount } from './labels'
 
@@ -99,7 +100,7 @@ export function DaysToInvoiceSection({ contractId, divisa }: { contractId: strin
                       className="flex items-center justify-between gap-4 py-3"
                     >
                       <div className="min-w-0">
-                        <p className="font-medium">{riga.descrizione}</p>
+                        <p className="font-medium">{italianiseDecimals(riga.descrizione)}</p>
                         <p className="text-sm text-muted-foreground">
                           {plural(riga.giornate, 'giornata', 'giornate')} a{' '}
                           {formatAmount(riga.prezzo_unitario, divisa)} per {riga.unita_misura}

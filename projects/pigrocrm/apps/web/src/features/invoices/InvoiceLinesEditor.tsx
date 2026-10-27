@@ -7,7 +7,7 @@ import { Label } from '@rebase/ui/label'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { toProblem, type ProblemDetail } from '@/lib/api'
 import { emptyLine, type DraftLine } from './lineDraft'
-import { formatMoney, sumLineTotals } from './format'
+import { formatMoney, formatQuantity, sumLineTotals } from './format'
 import { useReplaceLines, type Invoice, type InvoiceLine, type InvoiceLineInput } from './queries'
 
 function draftFrom(line: InvoiceLine): DraftLine {
@@ -94,7 +94,7 @@ export function InvoiceLinesEditor({
             {lines.map((line) => (
               <tr key={line.id} className="border-t">
                 <td className="py-2">{line.descrizione}</td>
-                <td className="py-2">{line.quantita}</td>
+                <td className="py-2">{formatQuantity(line.quantita)}</td>
                 <td className="py-2">{line.unita_misura ?? '—'}</td>
                 <td className="py-2">{formatMoney(line.prezzo_unitario)}</td>
                 <td className="py-2 text-right">{formatMoney(line.prezzo_totale)}</td>

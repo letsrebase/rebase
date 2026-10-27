@@ -1,5 +1,5 @@
 import type { StatusTone } from '@/components/StatusPill'
-import { scaledFromDecimalString } from '@/lib/decimal'
+import { formatItalianQuantity, scaledFromDecimalString } from '@/lib/decimal'
 import type { components } from '@/lib/api-types'
 
 /**
@@ -123,6 +123,20 @@ export const ACTIONS: Partial<Record<WorkUnitStato, ActionSpec>> = {
   },
 }
 
+/**
+ * The reason a transition carries, as the log shows it. A person writes the other ones
+ * (a refusal, a dispute) and they are shown as written; `creazione` is the one the
+ * service writes itself when a day is recorded (`WorkUnitService.record`), a key and not
+ * a sentence, so it has its words here.
+ */
+const REASON_LABELS: Record<string, string> = {
+  creazione: 'Giornata registrata',
+}
+
+export function reasonLabel(motivo: string): string {
+  return REASON_LABELS[motivo] ?? motivo
+}
+
 /** Who made a move, as the log's `attore` says it. */
 export function actorLabel(attore: WorkUnitTransition['attore']): string {
   switch (attore.kind) {
@@ -145,7 +159,7 @@ export function quantitaLabel(quantita: string): string {
   const scaled = scaledFromDecimalString(quantita, 2)
   if (scaled === 100) return 'Giornata intera'
   if (scaled === 50) return 'Mezza giornata'
-  return `${quantita.replace(/\.?0+$/, '').replace('.', ',')} giornate`
+  return `${formatItalianQuantity(quantita)} giornate`
 }
 
 /** The rate card whose validity range contains `data` (ISO dates compare as strings). */

@@ -14,7 +14,7 @@ import { InvoicePdfPreview } from '@/features/invoices/InvoicePdfPreview'
 import { InvoiceStateBadge } from '@/features/invoices/InvoiceStateBadge'
 import {
   formatDate,
-  formatInvoiceNumber,
+  formatInvoiceHeading,
   formatMoney,
   formatPeriod,
   formatPurchaseOrder,
@@ -74,7 +74,7 @@ export function InvoiceDetail() {
   return (
     <EntityDetailLayout
       icon={Receipt}
-      title={formatInvoiceNumber(row)}
+      title={formatInvoiceHeading(row)}
       // The causale, and from the second azienda on who issued it (REB-626).
       subtitle={
         [row.causale, emessaDa ? `Emessa da ${emessaDa}` : undefined]

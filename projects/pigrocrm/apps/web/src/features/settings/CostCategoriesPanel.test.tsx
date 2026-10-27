@@ -110,7 +110,7 @@ describe('CostCategoriesPanel', () => {
     const [first, second] = screen.getAllByRole('listitem')
     expect(within(first as HTMLElement).getByRole('textbox')).toHaveValue('Consulenza esterna')
     expect(within(second as HTMLElement).getByRole('textbox')).toHaveValue('Software e licenze')
-    expect(screen.getByText('consulenza_esterna')).toBeInTheDocument()
+    expect(screen.getByText('Consulenza esterna')).toBeInTheDocument()
   })
 
   /**

@@ -158,7 +158,7 @@ export function FiscalPanel({
           <Row
             label="Ricavi incassabili"
             value={money(data.ricavi)}
-            hint="fatture emesse nell'anno"
+            hint="fatture emesse nell’anno"
           />
           <Row
             label="Coefficiente di redditività"
