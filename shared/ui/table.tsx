@@ -38,8 +38,9 @@ function ScrollRegion({
     const measure = () => setScrolls(node.scrollWidth > node.clientWidth)
     const observer = new ResizeObserver(measure)
     observer.observe(node)
-    // The content's own width moves with what it holds, the box's with the card.
-    if (node.firstElementChild) observer.observe(node.firstElementChild)
+    // The content's own width moves with what it holds, the box's with the card; a chart's
+    // figure and its table of values sit side by side in one region, so every child counts.
+    for (const child of node.children) observer.observe(child)
     return () => observer.disconnect()
   }, [])
 

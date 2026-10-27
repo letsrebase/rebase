@@ -177,4 +177,20 @@ describe('ScrollRegion', () => {
     expect(region.className).toContain("border")
     expect(region.className).toContain("overflow-x-auto")
   })
+
+  it('watches every child of the region, so a table beside a chart is measured too', () => {
+    const { container } = render(
+      <ScrollRegion label="Andamento">
+        <svg />
+        <table />
+      </ScrollRegion>,
+    )
+    const region = container.firstElementChild!
+
+    expect(observe.mock.calls.map(([node]) => node)).toEqual([
+      region,
+      region.children[0],
+      region.children[1],
+    ])
+  })
 })
