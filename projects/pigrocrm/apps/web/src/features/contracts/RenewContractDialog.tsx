@@ -127,6 +127,19 @@ export function RenewContractDialog({ open, onOpenChange, contract }: DialogProp
 
   function submit() {
     setProblem(null)
+    // An end date chosen and left blank is not «same duration»: the person did not pick
+    // that, so the dialog asks instead of renewing for a term they never named.
+    if (values.mode === 'data' && values.fine === '') {
+      setProblem({
+        type: 'about:blank',
+        title: 'Dati non validi',
+        status: 422,
+        detail: 'Scegli la data di fine, oppure «Stessa durata».',
+        code: 'validation_failed',
+        field: 'fine',
+      } as ProblemDetail)
+      return
+    }
     renew.mutate(toBody(values), {
       onSuccess: (successor) => {
         onOpenChange(false)
@@ -157,7 +170,7 @@ export function RenewContractDialog({ open, onOpenChange, contract }: DialogProp
         <DialogHeader>
           <DialogTitle>Rinnova il contratto</DialogTitle>
           <DialogDescription>
-            {contract.fine === null
+            {contract.fine === null || values.inizio !== ''
               ? 'Il nuovo contratto ha gli stessi termini.'
               : `Il nuovo contratto ha gli stessi termini e comincia il ${formatDate(dayAfter(contract.fine))}.`}
           </DialogDescription>

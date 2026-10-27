@@ -302,7 +302,7 @@ describe('EconomicTab', () => {
     renderTab()
     await screen.findByRole('group', { name: 'Ricavi incassati' })
     expect(screen.queryByRole('group', { name: 'Totale da saldare' })).toBeNull()
-    expect(screen.getByText(/serve un profilo fiscale configurato/)).toBeInTheDocument()
+    expect(screen.getByText(/serve un profilo fiscale del regime forfettario/)).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /stima fiscale/i })).toBeNull()
   })
 

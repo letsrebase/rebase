@@ -125,6 +125,10 @@ class FiscalPack:
     version: str
     ceilings: tuple[Ceiling, ...]
     charges: tuple[StatutoryCharge, ...]
+    # Whether the pack's regime has the income estimate (`analytics/fiscal.py`): the
+    # forfettario's coefficient, substitute tax and INPS. No other pack has one, and the
+    # economic overview draws no estimate for them instead of a card of zeros (REB-760).
+    stima_reddito: bool = False
 
     def charge(self, charge_id: str) -> StatutoryCharge:
         for charge in self.charges:
@@ -197,6 +201,7 @@ IT_FLAT_RATE_PACK = FiscalPack(
         ),
     ),
     charges=(RIVALSA_INPS,),
+    stima_reddito=True,
 )
 
 # A company established outside Italy (REB-619, spec 2026-10-03 §1.3): no ceiling,

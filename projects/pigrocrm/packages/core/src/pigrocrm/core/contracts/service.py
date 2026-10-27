@@ -348,8 +348,13 @@ class ContractService:
             raise ValidationFailed(
                 ENTITY, refused.field, str(refused), expected=refused.expected
             ) from refused
-        # A deactivated azienda keeps its history readable and gets nothing new.
-        LegalEntityService(self.session).inherited(contract.azienda_id, ENTITY)
+        # The azienda of the customer as it is now, as `create` takes it, and never a
+        # deactivated one: a customer moved since the contract began renews on the azienda
+        # it has moved to, and an archived customer has nothing to renew for.
+        customer = self.customers.get(contract.customer_id)
+        if customer is None:
+            raise NotFound("customer", contract.customer_id)
+        azienda_id = LegalEntityService(self.session).inherited(customer.azienda_id, ENTITY)
 
         carried = {
             column.key: deepcopy(getattr(contract, column.key))
@@ -358,6 +363,7 @@ class ContractService:
         }
         if data.titolo is not None:
             carried["titolo"] = data.titolo
+        carried["azienda_id"] = azienda_id
         successor = Contract(
             **carried,
             inizio=inizio,

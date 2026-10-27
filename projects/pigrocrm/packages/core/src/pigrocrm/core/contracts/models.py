@@ -102,7 +102,7 @@ class Contract(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     applies_social_charge: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
-    # REB-761: the most one customer may be of the azienda's invoiced revenue over this
+    # REB-761: the share of the azienda's invoiced revenue its customer must not reach over this
     # contract's own anniversary year, as a percentage the way its owner reads it
     # (`50.00`, the `FiscalProfile` rates' own shape), `NULL` for no cap. A clause of the
     # contract and not of the regime (mastro's invariant 2): it survives a change of pack.

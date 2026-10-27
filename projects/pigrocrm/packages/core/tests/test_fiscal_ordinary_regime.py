@@ -193,3 +193,16 @@ def test_an_ordinary_azienda_has_no_ceiling_and_no_forfettario_estimate(
     assert estimate.imposta_sostitutiva is None
     assert estimate.contributi is None
     assert estimate.totale_dovuto is None
+
+
+def test_the_economic_overview_draws_no_estimate_for_a_regime_without_one(
+    service: InvoiceService, db_session: Session
+) -> None:
+    """The cash is shown and the forfettario's cards are not: an ordinary azienda gets no
+    card of zeros where the estimate would be, while the forfettario keeps its own."""
+    overview = AnalyticsService(db_session).economic_overview(ANNO, ADMIN)
+    assert overview.fiscale is None and overview.fiscale_proiettato is None
+    assert overview.netto_effettivo is None
+
+    FiscalProfileService(db_session).upsert(FiscalProfileUpsert(codice_regime="RF19"), ADMIN)
+    assert AnalyticsService(db_session).economic_overview(ANNO, ADMIN).fiscale is not None

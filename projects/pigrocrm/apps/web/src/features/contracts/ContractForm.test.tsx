@@ -69,7 +69,7 @@ describe('ContractForm, the cap on the customer’s share', () => {
     const box = await screen.findByLabelText('Tetto sulla quota del cliente (%)')
     expect(box).toHaveValue('')
     expect(
-      screen.getByText(/La quota massima del cliente sui ricavi fatturati dell’azienda/),
+      screen.getByText(/La quota del cliente sui ricavi fatturati dell’azienda che non deve raggiungere/),
     ).toBeInTheDocument()
   })
 

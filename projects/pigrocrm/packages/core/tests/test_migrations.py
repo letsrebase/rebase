@@ -1767,10 +1767,11 @@ def test_0057_repoints_an_ordinary_profile_at_its_own_pack_and_clears_the_forfet
                             aliquota_iva_default, applica_bollo, soglia_bollo, importo_bollo,
                             condizioni_pagamento, modalita_pagamento, giorni_scadenza,
                             coefficiente_redditivita, aliquota_imposta_sostitutiva,
-                            aliquota_inps, pack_id, pack_version, created_at, updated_at)
+                            aliquota_inps, natura_default, riferimento_normativo, pack_id,
+                            pack_version, created_at, updated_at)
                         VALUES (gen_random_uuid(), :azienda, :regime, :rate, {bollo}, 77.47,
-                            2.00, 'TP02', 'MP05', 30, :c, :s, :i, 'it-flat-rate', '1',
-                            now(), now())
+                            2.00, 'TP02', 'MP05', 30, :c, :s, :i, 'N2.2', 'L. 190/2014',
+                            'it-flat-rate', '1', now(), now())
                         """
                     ),
                     {
@@ -1791,7 +1792,8 @@ def test_0057_repoints_an_ordinary_profile_at_its_own_pack_and_clears_the_forfet
                     rows = connection.execute(
                         text(
                             "SELECT azienda_id::text, pack_id, applica_bollo, "
-                            "coefficiente_redditivita, aliquota_imposta_sostitutiva, aliquota_inps "
+                            "coefficiente_redditivita, aliquota_imposta_sostitutiva, "
+                            "aliquota_inps, natura_default, riferimento_normativo "
                             "FROM fiscal_profile"
                         )
                     ).all()
@@ -1801,13 +1803,15 @@ def test_0057_repoints_an_ordinary_profile_at_its_own_pack_and_clears_the_forfet
 
         upgrade(config, "0057")
         after = read()
-        assert after[ordinary] == ("it-standard", False, None, None, None)
+        assert after[ordinary] == ("it-standard", False, None, None, None, None, None)
         assert after[forfettario] == (
             "it-flat-rate",
             True,
             Decimal("78.00"),
             Decimal("5.00"),
             Decimal("26.07"),
+            "N2.2",
+            "L. 190/2014",
         )
 
         downgrade(config, "0056")

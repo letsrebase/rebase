@@ -965,7 +965,9 @@ class AnalyticsService:
         if actor.role == "admin":
             try:
                 titolare = LegalEntityService(self.session).single(azienda_id)
-                if titolare is not None:
+                # Only a regime with an income estimate has one to show: an ordinary or a
+                # foreign azienda gets the cash alone, not a card of zeros (REB-760).
+                if titolare is not None and self._has_income_estimate(titolare.id, actor):
                     # The money the taxes are computed on is the azienda's own, never
                     # the page's: in «tutte» with one active azienda `cassa` still adds
                     # up a deactivated azienda's receipts, which must not reach the
@@ -1007,6 +1009,12 @@ class AnalyticsService:
             netto_effettivo=netto,
             netto_proiettato=netto_proiettato,
         )
+
+    def _has_income_estimate(self, azienda_id: UUID, actor: Actor) -> bool:
+        """Whether the azienda's pack carries the income estimate; `NotFound` without a
+        profile, as `get_fiscal_estimate` answers."""
+        profile = FiscalProfileService(self.session).get(actor, azienda_id)
+        return resolve_pack(profile.pack_id, profile.pack_version).stima_reddito
 
     def get_fiscal_estimate(
         self,

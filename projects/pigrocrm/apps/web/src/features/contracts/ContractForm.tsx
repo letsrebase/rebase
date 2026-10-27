@@ -372,7 +372,7 @@ export function ContractForm({ open, onOpenChange, customerId, contract, onSaved
             aria-describedby="contract-tetto-quota-hint"
           />
           <p id="contract-tetto-quota-hint" className="text-xs text-muted-foreground">
-            La quota massima del cliente sui ricavi fatturati dell’azienda, sull’anno di
+            La quota del cliente sui ricavi fatturati dell’azienda che non deve raggiungere, sull’anno di
             anniversario del contratto. Vuoto se non c’è un tetto.
           </p>
           {errorOn('tetto_quota_cliente')}

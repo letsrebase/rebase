@@ -76,6 +76,23 @@ def renewed_term(
     when that was whole months and the new start is a 1st, else the same number of days.
     A contract with no end has no expiry to renew from.
     """
+    try:
+        return _renewed_term(inizio, fine, nuovo_inizio, nuova_fine, durata)
+    except (OverflowError, ValueError) as error:
+        if isinstance(error, RenewalRefused):
+            raise
+        raise RenewalRefused(
+            "fine", "la data cade fuori dall'intervallo ammesso", "una data prima del 9999"
+        ) from error
+
+
+def _renewed_term(
+    inizio: date,
+    fine: date | None,
+    nuovo_inizio: date | None,
+    nuova_fine: date | None,
+    durata: tuple[int, RenewalUnit] | None,
+) -> tuple[date, date]:
     if fine is None:
         raise RenewalRefused(
             "fine",

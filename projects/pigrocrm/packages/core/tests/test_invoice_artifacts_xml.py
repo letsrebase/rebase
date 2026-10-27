@@ -198,13 +198,7 @@ def test_a_regenerated_export_is_byte_identical_to_the_original(
     original, _, _ = service.download(invoice_id, "xml", ADMIN)
 
     FiscalProfileService(service.session).upsert(
-        FiscalProfileUpsert(
-            codice_regime="RF01",
-            aliquota_iva_default=Decimal("22.00"),
-            natura_default=None,
-            riferimento_normativo=None,
-            giorni_scadenza=60,
-        ),
+        FiscalProfileUpsert(pack_id="it-standard", giorni_scadenza=60),
         ADMIN,
     )
     LegalEntityService(service.session).upsert_default(

@@ -99,7 +99,7 @@ class ContractCreate(BaseModel):
     divisa: SafeStr = Field(default="EUR", max_length=DIVISA_MAX_LENGTH)
     requires_prior_approval: bool = False
     applies_social_charge: bool = False
-    # REB-761: the largest share of the azienda's invoiced revenue this customer may be
+    # REB-761: the share of the azienda's invoiced revenue this customer must not reach
     # over the contract's own anniversary year, as a percentage (`50.00`). Absent, no cap.
     tetto_quota_cliente: Decimal | None = Field(
         default=None, max_digits=TETTO_MAX_DIGITS, decimal_places=DECIMAL_PLACES, gt=0, lt=100
