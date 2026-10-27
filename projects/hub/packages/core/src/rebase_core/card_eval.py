@@ -325,8 +325,9 @@ def draft_expected(session: Session, freelancer_id: UUID, llm: LlmCall) -> EvalP
 # ---- measuring a provider, a model or a prompt against the accepted profiles ---------------
 
 # What is a failure of the guards, not of the model or the CV: a card that names the person
-# or carries an address, or that still gives the gender away after its one rewrite.
-GUARD_FAILURES = ("identifying", "gendered")
+# or carries an address, that still names an account, a repository, a site or an employer, or
+# that still gives the gender away after its one rewrite.
+GUARD_FAILURES = ("identifying", "source_identifying", "gendered")
 # The three measures a rule can take, and the order the report shows them in.
 MEASURES = ("anni_ok", "seniority_ok", "guard_clean")
 ANNI_TOLERANCE = 1

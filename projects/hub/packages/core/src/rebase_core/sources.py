@@ -43,8 +43,10 @@ from sqlalchemy.orm import Session
 
 from rebase_core.ai_config import AI_CONFIG_ENTITY, AI_CONFIG_ENTITY_ID
 from rebase_core.audit import AdminActionService, field_changes, utcnow
+from rebase_core.config import get_settings
 from rebase_core.errors import NotFound, ValidationFailed
 from rebase_core.github_source import GithubSource, github_login_from_links
+from rebase_core.http import urllib_call
 from rebase_core.models import AI_SOURCE_KINDS, AiSource, Freelancer, FreelancerSource
 from rebase_core.web_fetch import (
     MAX_LINKS_PER_PERSON,
@@ -110,6 +112,24 @@ def candidate_links(links: list[str]) -> list[str]:
             continue
         kept.append(url)
     return kept[:MAX_LINKS_PER_PERSON]
+
+
+def link_hostnames(links: list[str]) -> list[str]:
+    """The hostnames of every web address a person gave, each once, whether or not it is
+    read as a page (a LinkedIn one is not, and is still theirs): what the anonymity guard
+    keeps out of a card. The GitHub site itself names no one; the account does
+    (`github_login_of`)."""
+    hosts: dict[str, None] = {}
+    for link in links:
+        url = _normalise(link)
+        if url is not None and (host := _host(url)) and host not in _GITHUB_HOSTS:
+            hosts.setdefault(host, None)
+    return list(hosts)
+
+
+def github_login_of(links: list[str]) -> str | None:
+    """The GitHub account a person's links name, whether or not the source is on."""
+    return github_login_from_links([url for link in links if (url := _normalise(link))])
 
 
 def _normalise(link: object) -> str | None:
@@ -390,3 +410,11 @@ class SourceService:
             .values(freelancer_id=freelancer_id, kind=read.kind, ref=read.ref, **values)
             .on_conflict_do_update(constraint="uq_freelancer_sources_ref", set_=values)
         )
+
+
+def default_source_service(session: Session) -> SourceService:
+    """The production service: the safe fetcher and GitHub over the real network, with
+    the hub's optional token. Nothing is read until a switch is on and a refetch asks."""
+    return SourceService(
+        session, SafeFetcher(), GithubSource(urllib_call, get_settings().github_token)
+    )

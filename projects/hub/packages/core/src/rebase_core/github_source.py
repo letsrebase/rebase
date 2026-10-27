@@ -147,6 +147,21 @@ class GithubSnapshot:
         return "\n".join(lines)
 
 
+_LISTED_REPO = re.compile(r"^- (?P<name>[A-Za-z0-9._-]+)(?: \[(?P<marks>[^\]]*)\])?", re.MULTILINE)
+
+
+def owned_repo_names(text: str) -> list[str]:
+    """The names of the repositories a stored GitHub source (`normalised_text`) lists as
+    the person's own: every one but the forks, which are somebody else's project and
+    carry its name (`django`), not the person's. What the anonymity guard compares a card
+    against, read back from the text rather than stored twice."""
+    return [
+        hit["name"]
+        for hit in _LISTED_REPO.finditer(text)
+        if "fork" not in (hit["marks"] or "").split(", ")
+    ]
+
+
 def _recent_first(timestamp: str | None) -> float:
     """A sort key that puts the most recently pushed first."""
     parsed = _parse_time(timestamp)

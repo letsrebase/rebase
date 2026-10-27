@@ -56,6 +56,11 @@ class HubFacts:
     matches: list[MatchFact] = field(default_factory=list)
     completed_months: int = 0
 
+    @property
+    def empty(self) -> bool:
+        """Nothing to tell the model: no override and no engagement that started."""
+        return not self.seniority_admin and self.anni_admin is None and not self.matches
+
     def text(self) -> str:
         """The source as the model reads it: the admin's override first, as a fact that
         outranks any reading of the other sources, then the engagements."""
@@ -80,7 +85,7 @@ class HubFacts:
     def hash_material(self) -> str:
         """`text()` without what moves by itself: the months of an engagement still
         `in corso` grow every month and would mark the card stale each time."""
-        if not self.seniority_admin and self.anni_admin is None and not self.matches:
+        if self.empty:
             return ""
         return "\n".join(
             [

@@ -11,8 +11,8 @@ typed so a different line stays a valid file.
 import json
 from typing import Any
 
+from rebase_core.card_draft import FONTI_FIELDS, CardDraft
 from rebase_core.llm import LlmResponse
-from rebase_core.team_schemas import Card
 
 MODEL = "claude-opus-5"
 
@@ -29,6 +29,10 @@ CARD: dict[str, Any] = {
         "API in Python e infrastruttura AWS."
     ),
 }
+
+
+# What the model says supported each field when the CV is all it read.
+FONTI: dict[str, list[str]] = {name: ["cv"] for name in FONTI_FIELDS}
 
 
 def text_pdf(line: str) -> bytes:
@@ -65,13 +69,26 @@ def card_response(
     stop_reason: str = "end_turn",
     input_tokens: int = 1200,
     output_tokens: int = 180,
+    fonti: dict[str, list[str]] | None = None,
+    employers: list[str] | None = None,
 ) -> LlmResponse:
-    """The model's answer as `AiCall` hands it over: `card` as the JSON body, or `text`
-    verbatim for a body that is not one. `parsed` is the body validated as `Card`, as
-    `AiCall` does it, and `None` when it is not one."""
-    body = text if text is not None else json.dumps(card if card is not None else CARD)
+    """The model's answer as `AiCall` hands it over under prompt version 2: `card` inside
+    the private draft (`fonti` and `employers` beside it), or `text` verbatim for a body
+    that is not one. `parsed` is the body validated as `CardDraft`, as `AiCall` does it,
+    and `None` when it is not one."""
+    body = (
+        text
+        if text is not None
+        else json.dumps(
+            {
+                "card": card if card is not None else CARD,
+                "fonti": fonti if fonti is not None else FONTI,
+                "employers": employers or [],
+            }
+        )
+    )
     try:
-        parsed = Card.model_validate_json(body) if stop_reason == "end_turn" else None
+        parsed = CardDraft.model_validate_json(body) if stop_reason == "end_turn" else None
     except ValueError:
         parsed = None
     return LlmResponse(
