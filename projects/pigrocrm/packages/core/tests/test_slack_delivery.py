@@ -584,3 +584,32 @@ def test_a_post_the_channel_refused_is_tried_again(world: World) -> None:
     assert first.slacks == 0  # neither the admin's message nor the post got through
     with world.session() as session:
         assert session.scalars(select(SlackChannelPost)).all() == []
+
+
+# --- the command's line ------------------------------------------------------------------
+
+
+def test_the_roots_label_is_the_one_the_command_uses() -> None:
+    import pigrocrm.core.cli as cli
+    from pigrocrm.core.reminders import run
+
+    assert run.ROOT_LABEL == cli.ROOT_LABEL
+
+
+def test_the_line_counts_slack_beside_push_and_email_only_when_it_sent(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import pigrocrm.core.cli as cli
+    from pigrocrm.core.reminders.run import ReminderOutcome
+
+    cli._stampa_promemoria(
+        ReminderOutcome("root", "eseguito", raised=3, delivered=2, ended=0, slacks=2, emails=1),
+        dry_run=False,
+    )
+    cli._stampa_promemoria(
+        ReminderOutcome("root", "eseguito", raised=3, delivered=2, ended=0), dry_run=True
+    )
+
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0] == "root: promemoria 3, nuovi 2, chiusi 0, slack 2, email 1"
+    assert lines[1] == "root: promemoria 3, nuovi 2, chiusi 0 (prova)"

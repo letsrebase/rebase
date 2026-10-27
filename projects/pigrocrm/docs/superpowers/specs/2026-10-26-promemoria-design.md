@@ -267,8 +267,17 @@ not nothing.
 - A reminder goes to the user as a **direct message**. A space may name **one channel**
   for the space-wide reminders (admins only types), in addition to the admins' messages.
 - Buttons to complete or snooze from Slack are a later card, not this spec.
-- Slack's distribution rules for an app installed in several workspaces are REB-739's to
-  read and write down before it builds; nothing here depends on them.
+- Slack's distribution rules for an app installed in several workspaces are written down
+  in `docs/superpowers/notes/2026-10-27-slack-app-runbook.md` (REB-739): unlisted public
+  distribution, with the manifest and the redirect URL per host.
+
+**As built (REB-739, REB-740; `docs/design/DECISIONS.md`, 2026-10-27).** One message per
+person per pass carries every reminder of theirs that is due (at most twenty), and only
+those that reached their list after they were matched, so connecting a workspace does not
+send the backlog. The space's channel follows the **space's** defaults and quiet hours, not a
+person's, and has a ledger of its own, `slack_channel_posts`. A person Slack does not know is
+looked up again after a day. The agent reads the connection with `describe_slack` and writes
+nothing.
 
 ## 7. Two levels of preference
 

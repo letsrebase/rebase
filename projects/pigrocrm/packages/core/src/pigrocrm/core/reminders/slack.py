@@ -126,7 +126,7 @@ def _body(lines: list[_Line], public_url: str, header: str, footer: bool) -> str
             title = f"<{url}|{title}>"
         row = f"• *{_SEVERITY_WORD[line.severity]}* · {title}"
         if reminder.detail:
-            row += f" — {escape(reminder.detail)}"
+            row += f": {escape(reminder.detail)}"
         rows.append(row)
     parts = [header, *rows]
     if footer and public_url:
