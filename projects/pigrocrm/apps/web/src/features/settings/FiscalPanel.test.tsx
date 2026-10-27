@@ -405,6 +405,20 @@ describe('FiscalPanel', () => {
     })
   })
 
+  it('sends the default bollo amounts when they were blanked before leaving the forfettario', async () => {
+    vi.mocked(api.GET).mockImplementation(() => ok(PROFILE))
+    vi.mocked(api.PUT).mockImplementation(() => ok(ORDINARY))
+    renderPanel()
+
+    await waitFor(() => expect(screen.getByLabelText('Regime')).toHaveValue('RF19'))
+    await userEvent.clear(screen.getByLabelText('Soglia bollo'))
+    await userEvent.clear(screen.getByLabelText('Importo bollo'))
+    await userEvent.selectOptions(screen.getByLabelText('Regime'), 'RF01')
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    await waitFor(() => expect(api.PUT).toHaveBeenCalled())
+    expect(bodyOfSave()).toMatchObject({ soglia_bollo: '77.47', importo_bollo: '2.00' })
+  })
+
   it('shows an ordinary profile as «Ordinario» with only the fields it reads', async () => {
     vi.mocked(api.GET).mockImplementation(() => ok(ORDINARY))
     renderPanel()

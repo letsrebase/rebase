@@ -205,7 +205,14 @@ function valuesFrom(profile: FiscalProfile): Values {
  * regime sends `RF01` and no natura, since it taxes every line.
  */
 function bodyFrom(values: Values): Record<string, unknown> {
-  const { pack_id, codice_regime, ...rest } = values
+  const { pack_id, codice_regime, ...fields } = values
+  // The bollo amounts are hidden outside the forfettario and the server still wants
+  // decimals for them: a blank left from an edit under another regime goes as the default.
+  const rest = {
+    ...fields,
+    soglia_bollo: fields.soglia_bollo.trim() || '77.47',
+    importo_bollo: fields.importo_bollo.trim() || '2.00',
+  }
   if (pack_id === 'non-it') {
     return {
       ...rest,
