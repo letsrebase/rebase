@@ -801,6 +801,32 @@ def test_wire_fallback_block_is_read_as_the_model_that_answered(
     assert response.model == "claude-opus-5-5"
     [row] = _usage_rows(opener)
     assert row.model == "claude-opus-5-5"
+    # No price row for the fallback model: priced as `claude-opus-5`, the one asked for.
+    assert row.priced is True and row.cost_eur is not None and row.cost_eur > 0
+
+
+def test_an_answer_from_an_unpriced_model_still_spends_the_daily_cap(
+    opener: SessionOpener, wire: Wire
+) -> None:
+    """Review of #666, Major 2: a fallback model or a dated alias with no price row used to
+    be recorded unpriced, cost NULL, so the cap never moved."""
+    with opener() as session:
+        task = session.get(AiTask, "card")
+        assert task is not None
+        task.daily_cap_eur = Decimal("0.01")
+        session.commit()
+    wire._handler = lambda request: httpx2.Response(
+        200, json=_beta_message(model="claude-opus-5-20261001")
+    )
+
+    response = _wire_call(opener).complete(_request())
+
+    assert response.model == "claude-opus-5-20261001"
+    [row] = _usage_rows(opener)
+    assert (row.model, row.priced) == ("claude-opus-5-20261001", True)
+    assert row.cost_eur == Decimal("0.012000")
+    with pytest.raises(LlmCapReached):
+        _wire_call(opener).complete(_request())
 
 
 def test_wire_outage_is_llm_unavailable_without_key_or_prompt_in_the_log(

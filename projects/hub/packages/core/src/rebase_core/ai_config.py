@@ -333,9 +333,15 @@ class AiConfigService:
         thinking_tokens: int = 0,
         cache_read_tokens: int = 0,
         freelancer_id: UUID | None = None,
+        priced_as: str | None = None,
     ) -> AiUsage:
         """Writes one call's row and commits it on its own, so a failure further up never
-        loses what was spent. `input_tokens` is the input that was not read from a cache;
+        loses what was spent. `model` is what answered, as shown; the price is its row's,
+        or `priced_as`'s when it has none (a fallback model or a dated alias that answered
+        a call the task's own, priced model was asked for: it must still spend the cap).
+        Cache writes are inside `input_tokens` and billed at the input price, as the seam
+        counts them; a premium write rate would be a column of its own. `input_tokens` is the
+        input that was not read from a cache;
         `cache_read_tokens` is billed at the cache price, or at the input price when the
         model has none. Thinking tokens are billed at the thinking price, or at the output
         price when it is null. A model with no price row is recorded `priced = false`, cost
@@ -345,6 +351,8 @@ class AiConfigService:
         if purpose not in AI_USAGE_PURPOSES:
             raise ValidationFailed("ai_usage", "purpose", f"scopo sconosciuto: {purpose}")
         price = self.session.get(AiPrice, (provider, model))
+        if price is None and priced_as is not None:
+            price = self.session.get(AiPrice, (provider, priced_as))
         cost: Decimal | None = None
         if price is not None:
             cost = (

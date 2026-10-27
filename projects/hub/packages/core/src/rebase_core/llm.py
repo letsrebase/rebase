@@ -318,7 +318,7 @@ class AiCall:
             status = error.status_code if isinstance(error, ModelHTTPError) else None
             logger.warning("%s %s: status %s", provider, type(error).__name__, status)
             raise LlmUnavailable(UNAVAILABLE_SENTENCE) from None
-        return self._response(request, provider, answer)
+        return self._response(request, provider, model, answer)
 
     def _resolve(self) -> tuple[str, str, str | None, int, str]:
         """The provider, model, effort, output ceiling and key this call goes out with, or
@@ -369,7 +369,9 @@ class AiCall:
             return False, NO_KEY
         return True, None
 
-    def _response(self, request: LlmRequest, provider: str, answer: ModelResponse) -> LlmResponse:
+    def _response(
+        self, request: LlmRequest, provider: str, configured: str, answer: ModelResponse
+    ) -> LlmResponse:
         stop_reason = _stop_reason(answer)
         details = answer.provider_details or {}
         usage = answer.usage
@@ -387,6 +389,9 @@ class AiCall:
                 thinking_tokens=thinking,
                 cache_read_tokens=usage.cache_read_tokens,
                 freelancer_id=self._freelancer_id,
+                # The model that answered may be a fallback or a dated alias with no price
+                # row: the call is then priced as the one asked for, so it spends the cap.
+                priced_as=configured,
             )
         refused = stop_reason == "refusal"
         text = None if refused else (answer.text or None)
