@@ -177,7 +177,7 @@ export function InvoiceLinesEditor({
         </div>
       ))}
 
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <Button
           variant="outline"
           size="sm"
@@ -187,7 +187,7 @@ export function InvoiceLinesEditor({
           Aggiungi riga
         </Button>
 
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           {/* Explicitly a preview. The authoritative totals are the ones the API
               stored -- `sumLineTotals` adds integer cents purely so the editor can
               show a running figure before saving, and the label is what stops anyone

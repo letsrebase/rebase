@@ -213,7 +213,7 @@ export function TimerBar({
           if (timer) patch({ deal_id: value === NO_DEAL ? null : value })
         }}
       >
-        <SelectTrigger className="w-64" aria-label="Deal">
+        <SelectTrigger className="w-64 max-w-full" aria-label="Deal">
           <SelectValue placeholder="Deal" />
         </SelectTrigger>
         <SelectContent>
@@ -276,7 +276,7 @@ export function TimerBar({
           </Button>
         </div>
       ) : (
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Input
             aria-label="Ore"
             inputMode="decimal"

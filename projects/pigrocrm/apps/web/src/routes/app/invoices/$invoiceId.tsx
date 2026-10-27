@@ -97,7 +97,7 @@ export function InvoiceDetail() {
         // Half and half from a wide screen (ORB-30): the numbers on the left as they
         // were, the document itself on the right. Below that width the preview follows
         // the data, since the numbers are what a phone came for.
-        <div className="grid gap-8 xl:grid-cols-2">
+        <div className="grid grid-cols-1 gap-8 xl:grid-cols-2">
           <div className="space-y-8">
             {/* A deleted draft has no page: back to the list, which the mutation has already
                 invalidated. */}

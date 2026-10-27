@@ -301,8 +301,10 @@ export function ExpensesSection({ contractId, divisa }: { contractId: string; di
             {(expenses.data ?? []).map((expense) => {
               const standing = expenseStanding(expense)
               return (
-                <li key={expense.id} className="flex items-center gap-4 py-3">
-                  <div className="min-w-0 flex-1">
+                <li key={expense.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3">
+                  {/* A text column no narrower than 11rem: below it the amount and the pencil
+                      drop to a line of their own instead of squeezing the words over each other. */}
+                  <div className="min-w-44 flex-1">
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                       <span className="font-medium">{expense.descrizione}</span>
                       <StatusPill tone={standing.tone}>{standing.label}</StatusPill>

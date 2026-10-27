@@ -446,8 +446,10 @@ export function RateCardsSection({ contractId, divisa }: { contractId: string; d
               const pill = STANDING_PILL[standing(card, today)]
               const extra = details(card)
               return (
-                <li key={card.id} className="flex items-center gap-4 py-3">
-                  <div className="min-w-0 flex-1">
+                <li key={card.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3">
+                  {/* A text column no narrower than 11rem: below it the amount and the pencil
+                      drop to a line of their own instead of squeezing the words over each other. */}
+                  <div className="min-w-44 flex-1">
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                       <span className="font-medium">{validity(card)}</span>
                       <StatusPill tone={pill.tone}>{pill.label}</StatusPill>
