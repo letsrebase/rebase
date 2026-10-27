@@ -1745,13 +1745,17 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         e mostra alla persona il riepilogo completo chiedendo conferma prima di salvare.
 
         `dati` ha la forma di `FiscalProfileUpsert`: `pack_id` (`it-flat-rate`, il
-        default, per un'azienda italiana; `non-it` per una con sede all'estero, che non
-        ha `codice_regime`, non applica il bollo e non ha i parametri del forfettario:
-        lasciali fuori e restano vuoti), `codice_regime` (`RF19` per il
-        forfettario), `coefficiente_redditivita`, `aliquota_imposta_sostitutiva` e
-        `aliquota_inps` in percentuale, `modalita_pagamento` (codice SdI, `MP05` per il
-        bonifico), `giorni_scadenza`, `iban`, e i parametri IVA e bollo che per un
-        forfettario restano ai default. Solo un admin.
+        default, per un forfettario con `codice_regime` `RF19`; `it-standard` per il
+        regime ordinario, con `codice_regime` `RF01`, l'IVA al 22% se non indichi
+        un'altra aliquota, nessuna natura, nessun bollo, nessuna soglia del forfettario e
+        nessuno dei parametri del forfettario; `non-it` per un'azienda con sede
+        all'estero, che non ha `codice_regime`, non applica il bollo e non ha i parametri
+        del forfettario: lasciali fuori e restano vuoti; un codice con il pacchetto
+        dell'altro regime viene rifiutato), `coefficiente_redditivita`,
+        `aliquota_imposta_sostitutiva` e `aliquota_inps` in percentuale (solo
+        forfettario), `modalita_pagamento` (codice SdI, `MP05` per il bonifico),
+        `giorni_scadenza`, `iban`, e i parametri IVA e bollo che per un forfettario
+        restano ai default. Solo un admin.
         """
         return invoices.update_fiscal_profile(context, dati, azienda_id)
 
@@ -1768,7 +1772,8 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         `dati` ha la forma di `update_azienda` piu' `nome` obbligatorio (il nome breve
         mostrato nel selettore e nelle liste: «studio rossi», «rebase ltd»). `profilo_fiscale`
         ha la forma di `update_fiscal_profile`: `pack_id` `it-flat-rate` con `codice_regime`
-        per un'azienda italiana, `non-it` per una con sede all'estero, che non ha regime,
+        `RF19` per un forfettario, `it-standard` con `RF01` per il regime ordinario,
+        `non-it` per un'azienda con sede all'estero, che non ha regime,
         non applica il bollo e, con aliquota IVA zero, richiede una `natura_default`. Un
         profilo che le regole fiscali rifiutano fa rifiutare tutta la chiamata: nessuna
         azienda nasce senza profilo. Un dato fiscale che non ti e' stato dato non si
