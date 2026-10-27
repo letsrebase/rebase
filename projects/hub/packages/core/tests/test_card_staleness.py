@@ -369,12 +369,19 @@ def test_weekly_refetch_makes_no_model_call(clean: Session) -> None:
 def test_a_second_start_while_one_runs_pays_for_nothing(clean: Session, hub_engine: Engine) -> None:
     """Two sessions, as two processes would be: while the first start is inside its model
     call, a second start, and an admin's «Rigenera scheda» on the card being written, find
-    it taken and make no call. The first click is then the only one that paid."""
+    it taken and make no call. The first click is then the only one that paid. (An earlier
+    version of this test chose the second write's card with an unordered `SELECT`, which is
+    the card in flight only when the heap happens to be in the list's order: on another run
+    it was a card still waiting, whose write the claim rightly lets through.)"""
     people = _cards(clean)
     _backdate(clean, 1)
     admin = _admin(clean)
     second_llm = _answers(5)
     seen: dict[str, Any] = {}
+    # The card the first start is writing when `meanwhile` runs: the first of the list, in
+    # the list's own order. Not "any card": the claim is per person, and «Rigenera scheda»
+    # on another card that is still waiting is a different, legitimate write.
+    in_flight = CardWriter(clean, None).stale_cards()[0].freelancer_id
 
     def meanwhile() -> None:
         other = session_factory(hub_engine)()
@@ -382,9 +389,7 @@ def test_a_second_start_while_one_runs_pays_for_nothing(clean: Session, hub_engi
             writer = CardWriter(other, second_llm, now=lambda: NOW)
             seen["running"] = writer.regeneration_running()
             seen["start"] = writer.regenerate_stale(admin, 5)
-            first = other.scalars(select(FreelancerCard.freelancer_id)).first()
-            assert first is not None
-            writer.write(first, force=True)
+            writer.write(in_flight, force=True)
         finally:
             other.close()
 
