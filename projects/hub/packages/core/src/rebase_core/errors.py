@@ -66,6 +66,21 @@ class LlmUnavailable(DomainError):
     code = "llm_unavailable"
 
 
+class LlmCapReached(LlmUnavailable):
+    """The task's daily euro cap is spent (`ai_config.py`): the call was refused before
+    any network. `message` is the sentence «Modelli AI» shows for the task."""
+
+    code = "llm_cap_reached"
+
+
+class LlmNotConfigured(LlmUnavailable):
+    """The task cannot be called as configured: off, its provider off or without a key,
+    no price for its model, or a saved key that does not open. Refused before any
+    network; `message` is the sentence that says which, never key text."""
+
+    code = "llm_not_configured"
+
+
 class TeamBuilderOff(DomainError):
     """The team builder cannot run in this environment: `REBASE_TEAM_BUILDER_ENABLED` is
     false, or no `REBASE_ANTHROPIC_API_KEY` is configured at all (spec § 3.2, § 5).
