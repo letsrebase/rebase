@@ -3,7 +3,9 @@ from uuid import UUID
 
 from pigrocrm.core.deals.schemas import DealCreate, DealListQuery, DealUpdate
 from pigrocrm.core.deals.service import DealService
+from pigrocrm.core.errors import ValidationFailed
 from pigrocrm_mcp.context import McpContext
+from pigrocrm_mcp.tools.changes import refuse_empty, report
 
 
 def create(context: McpContext, data: dict[str, Any]) -> dict[str, Any]:
@@ -15,8 +17,12 @@ def create(context: McpContext, data: dict[str, Any]) -> dict[str, Any]:
 
 
 def update(context: McpContext, deal_id: str, data: dict[str, Any]) -> dict[str, Any]:
-    result = DealService(context.session).update(UUID(deal_id), DealUpdate(**data), context.actor)
-    return result.model_dump(mode="json")
+    service = DealService(context.session)
+    identifier = UUID(deal_id)
+    changes = DealUpdate(**data)
+    refuse_empty(data)
+    before = service.get(identifier, context.actor)
+    return report(before, service.update(identifier, changes, context.actor))
 
 
 def get(context: McpContext, deal_id: str) -> dict[str, Any]:
@@ -34,8 +40,33 @@ def search(context: McpContext, query: DealListQuery) -> dict[str, Any]:
     }
 
 
-def move(context: McpContext, deal_id: str, stage_id: str) -> dict[str, Any]:
-    result = DealService(context.session).move_stage(UUID(deal_id), UUID(stage_id), context.actor)
+def move(
+    context: McpContext, deal_id: str, stage_id: str | None, pipeline_stage_id: str | None
+) -> dict[str, Any]:
+    """`stage_id` is the tool's name for the destination and `pipeline_stage_id` the deal's
+    own field for it (REB-808): an agent that has just read a deal says the second."""
+    given = {value for value in (stage_id, pipeline_stage_id) if value}
+    if len(given) > 1:
+        raise ValidationFailed(
+            "input",
+            "stage_id",
+            "`stage_id` e `pipeline_stage_id` indicano due stati diversi",
+            expected="uno solo dei due, o lo stesso identificativo in entrambi",
+        )
+    if not given:
+        raise ValidationFailed(
+            "input",
+            "stage_id",
+            "campo obbligatorio mancante",
+            expected=(
+                "l'identificativo dello stato di destinazione, in `stage_id` o "
+                "`pipeline_stage_id`; gli stati sono in `list_pipeline_stages`"
+            ),
+        )
+    (destination,) = given
+    result = DealService(context.session).move_stage(
+        UUID(deal_id), UUID(destination), context.actor
+    )
     return result.model_dump(mode="json")
 
 

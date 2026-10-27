@@ -568,3 +568,22 @@ async def test_no_tool_prepares_a_payment_reminder(gmail_server: Any) -> None:
 
     assert not [name for name in names if "reminder" in name and not name.startswith("list_")]
     assert not [name for name in names if "sollecit" in name]
+
+
+async def test_a_malformed_gmail_message_id_gets_the_same_guidance_as_every_other_id(
+    gmail_server, connected_account
+) -> None:
+    """REB-808: `get_gmail_message` and `list_gmail_messages` took a `UUID`, which the SDK
+    checked ahead of the guard and answered in pydantic's English."""
+    async with Client(gmail_server) as client:
+        message = await client.call_tool("get_gmail_message", {"message_id": "non-un-uuid"})
+        listing = await client.call_tool(
+            "list_gmail_messages", {"entity_type": "customer", "entity_id": "non-un-uuid"}
+        )
+
+    for result in (message, listing):
+        assert result.is_error
+        text = result.content[0].text
+        assert "errors.pydantic.dev" not in text
+        assert "non è un identificativo valido" in text
+        assert "Valore atteso" in text

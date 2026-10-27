@@ -25,11 +25,13 @@ from pigrocrm.core.invoices.schemas import (
     InvoiceCreate,
     InvoiceLineIn,
     InvoiceListQuery,
+    InvoiceRead,
     InvoiceUpdate,
     PaymentState,
 )
 from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm_mcp.context import McpContext
+from pigrocrm_mcp.tools.changes import refuse_nothing_given, report
 
 # Three tables used to live here: which operations are forbidden, which public methods
 # are simply unexposed and why, and which method backs which tool name. They are gone,
@@ -101,7 +103,9 @@ def create_proforma(context: McpContext, data: dict[str, Any]) -> dict[str, Any]
     )
 
 
-def _require_proforma(service: InvoiceService, invoice_id: UUID, context: McpContext) -> None:
+def _require_proforma(
+    service: InvoiceService, invoice_id: UUID, context: McpContext
+) -> InvoiceRead:
     invoice = service.get(invoice_id, context.actor)
     if invoice.tipo != "proforma":
         raise Conflict(
@@ -110,6 +114,7 @@ def _require_proforma(service: InvoiceService, invoice_id: UUID, context: McpCon
             tipo=invoice.tipo,
             stato=invoice.stato,
         )
+    return invoice
 
 
 def replace_proforma_lines(
@@ -147,9 +152,20 @@ def update_proforma(
     `InvoiceUpdate`, so an agent cannot blank a period or a date by omission. Clearing a
     period is the application's, where the two ends are one control.
     """
+    refuse_nothing_given(
+        causale=causale,
+        data_emissione=data_emissione,
+        data_scadenza=data_scadenza,
+        competenza_da=competenza_da,
+        competenza_a=competenza_a,
+        ordine_numero=ordine_numero,
+        ordine_data=ordine_data,
+        ordine_cig=ordine_cig,
+        ordine_cup=ordine_cup,
+    )
     service = _invoices(context)
     identifier = UUID(invoice_id)
-    _require_proforma(service, identifier, context)
+    before = _require_proforma(service, identifier, context)
     supplied: dict[str, Any] = {
         key: value
         for key, value in {
@@ -170,7 +186,7 @@ def update_proforma(
     # "not passed" from "clear it" -- and a keyword argument defaulted to `None` would be
     # set to `None`, which on this schema means clear.
     changes = InvoiceUpdate.model_validate(supplied)
-    return service.update(identifier, changes, context.actor).model_dump(mode="json")
+    return report(before, service.update(identifier, changes, context.actor))
 
 
 def confirm_proforma(context: McpContext, invoice_id: str) -> dict[str, Any]:
@@ -391,8 +407,8 @@ def update_azienda(
     thing a person asks the assistant they just connected is to set it (REB-188), and
     a prompt written for a one-azienda space keeps working."""
     # Spelled as `LegalEntityService(...)` on each call rather than bound to a local:
-    # `test_mcp_surface_coverage.py` resolves receivers by name across the whole
-    # module, and `service` is the name this file binds to `InvoiceService`.
+    # `test_mcp_surface_coverage.py` resolves receivers per function, so a local would be
+    # read too; this stays as written because it reads the same either way.
     # The two image flags `describe_azienda` answers are read-only facts, not columns:
     # dropped here so the read can be handed back whole, as the tool's own docstring
     # prescribes, without `LegalEntityUpsert` refusing them as extra keys.

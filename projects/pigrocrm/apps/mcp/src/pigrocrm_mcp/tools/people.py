@@ -4,6 +4,7 @@ from uuid import UUID
 from pigrocrm.core.people.schemas import PersonCreate, PersonListQuery, PersonUpdate
 from pigrocrm.core.people.service import PersonService
 from pigrocrm_mcp.context import McpContext
+from pigrocrm_mcp.tools.changes import refuse_empty, report
 
 
 def create(context: McpContext, data: dict[str, Any]) -> dict[str, Any]:
@@ -15,10 +16,12 @@ def create(context: McpContext, data: dict[str, Any]) -> dict[str, Any]:
 
 
 def update(context: McpContext, person_id: str, data: dict[str, Any]) -> dict[str, Any]:
-    result = PersonService(context.session).update(
-        UUID(person_id), PersonUpdate(**data), context.actor
-    )
-    return result.model_dump(mode="json")
+    service = PersonService(context.session)
+    identifier = UUID(person_id)
+    changes = PersonUpdate(**data)
+    refuse_empty(data)
+    before = service.get(identifier, context.actor)
+    return report(before, service.update(identifier, changes, context.actor))
 
 
 def get(context: McpContext, person_id: str) -> dict[str, Any]:
