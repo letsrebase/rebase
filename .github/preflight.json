@@ -419,6 +419,7 @@
         ".agents/**",
         ".claude/**",
         ".github/kit/**",
+        ".omp/hooks/**",
         ".github/workflow.json",
         ".github/PULL_REQUEST_TEMPLATE.md",
         "tooling/workflow-kit/**"

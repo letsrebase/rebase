@@ -31,6 +31,7 @@ import argparse
 import hashlib
 import json
 import shutil
+import subprocess
 import sys
 import textwrap
 from pathlib import Path
@@ -40,6 +41,21 @@ CONFIG = Path(".github/workflow.json")
 TEMPLATE = Path(".github/PULL_REQUEST_TEMPLATE.md")
 AGENTS_SKILLS = Path(".agents/skills")
 CLAUDE_SKILLS = Path(".claude/skills")
+CLAUDE_SETTINGS = Path(".claude/settings.json")
+# Claude Code's wiring of .github/kit/bin/linear_gate.py. The rest of settings.json is the
+# repository's own: sync adds this entry when it is missing and leaves every other key alone.
+CLAUDE_HOOK = {
+    "matcher": "mcp__.*[Ll]inear.*",
+    "hooks": [
+        {
+            "type": "command",
+            # Claude Code runs hooks through a POSIX shell (Git Bash on Windows), where
+            # `python3` is often missing and `python` is the interpreter.
+            "command": "py=$(command -v python3 || command -v python) && "
+            '"$py" "$CLAUDE_PROJECT_DIR/.github/kit/bin/linear_gate.py"',
+        }
+    ],
+}
 
 DEFAULT_HINTS = {
     "What this changes": (
@@ -195,6 +211,7 @@ def sync(repo: Path, source: Path, force: bool = False) -> int:
     if not files.is_dir() or not version_file.is_file():
         raise ConfigError(f"{source} is not a workflow kit (no files/ or VERSION)")
     cfg = load_config(repo)
+    pre_tool_use(claude_settings(repo))  # a malformed settings.json is refused before any write
     managed: dict[str, str] = {}
 
     previous = read_manifest(repo)
@@ -226,6 +243,7 @@ def sync(repo: Path, source: Path, force: bool = False) -> int:
 
     migrate_claude_only_skills(repo, previous.get("mirror", {}))
     mirror(repo / AGENTS_SKILLS, repo / CLAUDE_SKILLS)
+    ensure_claude_hook(repo)
 
     manifest = {
         "kit": "letsrebase/rebase:tooling/workflow-kit",
@@ -322,6 +340,64 @@ def mirror(src: Path, dst: Path) -> None:
             out.write_bytes((src / rel).read_bytes())
 
 
+def claude_settings(repo: Path) -> dict:
+    path = repo / CLAUDE_SETTINGS
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ConfigError(f"{CLAUDE_SETTINGS} is not valid JSON: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ConfigError(f"{CLAUDE_SETTINGS} is a JSON object")
+    return data
+
+
+def pre_tool_use(settings: dict) -> list:
+    """settings.hooks.PreToolUse, refusing a shape Claude Code would not read either."""
+    hooks = settings.get("hooks", {})
+    if not isinstance(hooks, dict):
+        raise ConfigError(f"{CLAUDE_SETTINGS}: `hooks` is an object")
+    entries = hooks.get("PreToolUse", [])
+    if not isinstance(entries, list):
+        raise ConfigError(f"{CLAUDE_SETTINGS}: `hooks.PreToolUse` is a list")
+    return entries
+
+
+def has_claude_hook(repo: Path) -> bool:
+    return CLAUDE_HOOK in pre_tool_use(claude_settings(repo))
+
+
+def ensure_claude_hook(repo: Path) -> None:
+    if has_claude_hook(repo):
+        return
+    settings = claude_settings(repo)
+    pre_tool_use(settings)
+    hooks = settings.setdefault("hooks", {})
+    entries = hooks.setdefault("PreToolUse", [])
+    # The kit owns only its own command: an older copy of it is replaced, and any other
+    # hook a person put under the same matcher stays where it was.
+    kept = []
+    for e in entries:
+        if isinstance(e, dict) and e.get("matcher") == CLAUDE_HOOK["matcher"]:
+            own = [
+                h
+                for h in e.get("hooks") or []
+                if not (isinstance(h, dict) and "linear_gate.py" in str(h.get("command", "")))
+            ]
+            if not own:
+                continue
+            e = {**e, "hooks": own}
+        kept.append(e)
+    entries[:] = kept
+    entries.append(CLAUDE_HOOK)
+    path = repo / CLAUDE_SETTINGS
+    path.parent.mkdir(parents=True, exist_ok=True)
+    text = json.dumps(settings, indent=2, ensure_ascii=False) + "\n"
+    path.write_text(text, encoding="utf-8", newline="\n")
+    print(f"added the Linear gate hook to {CLAUDE_SETTINGS.as_posix()}")
+
+
 def read_manifest(repo: Path) -> dict:
     path = repo / MANIFEST
     if not path.is_file():
@@ -354,6 +430,10 @@ def check(repo: Path) -> list[str]:
     if template.is_file() and normalized(template).decode("utf-8") != render_template(cfg):
         findings.append(
             f"{TEMPLATE.as_posix()}: does not match {CONFIG.as_posix()}; run kit.py sync"
+        )
+    if not has_claude_hook(repo):
+        findings.append(
+            f"{CLAUDE_SETTINGS.as_posix()}: the kit's Linear gate hook is missing; run kit.py sync"
         )
 
     claude_dir = repo / CLAUDE_SKILLS
@@ -414,7 +494,15 @@ def main(argv: list[str] | None = None) -> int:
     repo = args.repo.resolve()
     try:
         if args.command == "sync":
-            return sync(repo, args.source.resolve(), force=args.force)
+            source = args.source.resolve()
+            newer = source / "files" / ".github" / "kit" / "bin" / "kit.py"
+            if newer.is_file() and newer.read_bytes() != Path(__file__).read_bytes():
+                # The source's kit.py knows what this copy does not (a new managed file,
+                # a changed settings entry), so it does the sync: an old copy would copy
+                # the new files in and still write the old entry.
+                rest = argv if argv is not None else sys.argv[1:]
+                return subprocess.run([sys.executable, str(newer), *rest], check=False).returncode
+            return sync(repo, source, force=args.force)
         if args.command == "template":
             sys.stdout.write(render_template(load_config(repo)))
             return 0

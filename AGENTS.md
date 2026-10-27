@@ -196,6 +196,17 @@ repository secrets, `SNYK_TOKEN` and `LINEAR_API_KEY`; how to set and rotate the
 the dry run (`gh workflow run snyk-weekly.yml -f dry_run=true`), are in
 `tooling/snyk-weekly/README.md`.
 
+**The daily Linear audit is a sixth thing, read-only and not a status check.** Every
+morning at 06:20 UTC `.github/workflows/linear-audit.yml` runs the workflow kit's
+`linear_audit.py` against team `rebase` with the same `LINEAR_API_KEY`: cards without a
+project, a milestone, a priority, one type and one area label, a title under 80
+characters or (filed in the last day) a `**Done when.**` line, and projects owing an
+update or the Completed state. It prints identifiers and project names only, since the
+run log is public; a red run is the list to fix. Before any of that, in Claude Code and
+omp, the kit's Linear gate refuses a card, comment or update that breaks the
+`linear-content` rules a machine can check (`.claude/settings.json`,
+`.omp/hooks/pre/linear-gate.ts`).
+
 ## Conventions
 
 - **Conventional Commits**, in English, in the first person, written the way a person

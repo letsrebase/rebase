@@ -3,6 +3,7 @@ import io
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -169,6 +170,78 @@ class KitSyncAndCheck(unittest.TestCase):
         target.write_text("an older pr-creation\n", encoding="utf-8")
         with contextlib.redirect_stdout(io.StringIO()):
             kit.sync(self.repo, KIT)
+        self.assertEqual(kit.check(self.repo), [])
+
+
+class ClaudeHook(unittest.TestCase):
+    def setUp(self):
+        self.repo = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.repo)
+        cfg = json.loads((KIT / "workflow.example.json").read_text(encoding="utf-8"))
+        write(self.repo / ".github/workflow.json", json.dumps(cfg))
+
+    def sync(self):
+        with contextlib.redirect_stdout(io.StringIO()):
+            kit.sync(self.repo, KIT)
+
+    def test_sync_adds_the_gate_and_keeps_the_repositorys_own_settings(self):
+        own = {
+            "permissions": {"allow": ["Bash(ls)"]},
+            "hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": []}]},
+        }
+        write(self.repo / ".claude/settings.json", json.dumps(own))
+        self.sync()
+        path = self.repo / ".claude/settings.json"
+        settings = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(settings["permissions"], own["permissions"])
+        self.assertEqual(
+            settings["hooks"]["PreToolUse"], [own["hooks"]["PreToolUse"][0], kit.CLAUDE_HOOK]
+        )
+        self.sync()
+        settings = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(len(settings["hooks"]["PreToolUse"]), 2)
+        self.assertEqual(kit.check(self.repo), [])
+
+    def test_check_reports_a_removed_gate(self):
+        self.sync()
+        write(self.repo / ".claude/settings.json", "{}")
+        self.assertTrue(any("Linear gate hook is missing" in f for f in kit.check(self.repo)))
+
+    def test_a_persons_hook_under_the_kits_matcher_survives_a_resync(self):
+        mine = {"type": "command", "command": "echo audited"}
+        old_gate = {"type": "command", "command": "python3 .github/kit/bin/linear_gate.py"}
+        entry = {"matcher": kit.CLAUDE_HOOK["matcher"], "hooks": [old_gate, mine]}
+        write(self.repo / ".claude/settings.json", json.dumps({"hooks": {"PreToolUse": [entry]}}))
+        self.sync()
+        settings = json.loads((self.repo / ".claude/settings.json").read_text(encoding="utf-8"))
+        self.assertEqual(
+            settings["hooks"]["PreToolUse"],
+            [{"matcher": kit.CLAUDE_HOOK["matcher"], "hooks": [mine]}, kit.CLAUDE_HOOK],
+        )
+
+    def test_a_malformed_settings_file_is_refused_before_anything_is_written(self):
+        write(self.repo / ".claude/settings.json", json.dumps({"hooks": []}))
+        with self.assertRaises(kit.ConfigError):
+            self.sync()
+        self.assertFalse((self.repo / ".github/kit").exists())
+
+    def test_an_old_copy_syncs_through_the_sources_kit_py(self):
+        # A repository's kit.py is the one an agent runs; when it predates a change to the
+        # gate's entry, the sync must still write the new entry, not its own old one.
+        self.sync()
+        old = self.repo / ".github/kit/bin/kit.py"
+        old.write_text(
+            old.read_text(encoding="utf-8").replace("linear_gate.py", "old_gate.py"),
+            encoding="utf-8",
+        )
+        stale = dict(kit.CLAUDE_HOOK, hooks=[{"type": "command", "command": "python3 old.py"}])
+        write(self.repo / ".claude/settings.json", json.dumps({"hooks": {"PreToolUse": [stale]}}))
+        run = subprocess.run(
+            [sys.executable, str(old), "--repo", str(self.repo), "sync", "--source", str(KIT)],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(run.returncode, 0, run.stderr)
         self.assertEqual(kit.check(self.repo), [])
 
 

@@ -1,0 +1,43 @@
+# REB-820: the daily audit of this repository's Linear team, read-only.
+#
+# What the board owes is in docs/tracker.md: every card in a project and a milestone, with
+# a priority, one type label and one area label, a title under 80 characters and, when it
+# was filed in the last day, a **Done when.** line; every project an update when it starts,
+# when cards close and when it completes. Until this ran here, the only check of it was a
+# script on Lorenzo's devbox, so nobody else saw its findings. The script is the workflow
+# kit's (.github/kit/bin/linear_audit.py): it proves the key belongs to the workspace in
+# .github/workflow.json, audits only that team, and prints card identifiers and project
+# names, never a card's title or body, because this repository's run logs are public.
+#
+# It never writes to Linear. A red run is the report: the summary lists what to fix, and
+# the next morning's run is the check that it was fixed. Not a status check, so nothing it
+# says blocks a merge. LINEAR_API_KEY is the repository secret the weekly Snyk report
+# already uses (tooling/snyk-weekly/README.md says how it is set and rotated).
+name: Linear audit
+
+on:
+  # 06:20 UTC, after the night's work is filed and before the day starts in Italy.
+  schedule:
+    - cron: '20 6 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: linear-audit
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: linear · board audit
+    # A fork's schedule would run without the secret and fail every morning.
+    if: github.repository == 'letsrebase/rebase'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Audit the team in .github/workflow.json
+        env:
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+        run: python3 .github/kit/bin/linear_audit.py --hours 24 --summary "$GITHUB_STEP_SUMMARY"

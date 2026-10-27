@@ -1,19 +1,22 @@
 {
   "kit": "letsrebase/rebase:tooling/workflow-kit",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "files": {
-    ".agents/skills/linear-content/SKILL.md": "b2b180fea300170666f84f39c10c941e44d229614a362e0fa3e6c47e09c46baf",
+    ".agents/skills/linear-content/SKILL.md": "234fcb9fa34707efc66f59a0756865fd5b60f958faa3a664e4a9261900ba4b67",
     ".agents/skills/linear-ticket/SKILL.md": "3e19879221e9b1f6aa768ff8213dc97aefedf956e5c319312b22c1f6596173f6",
     ".agents/skills/pr-creation/SKILL.md": "c1d1b88668da274e0662f76667b9cffff54a3cbdb104bcf1e16e57241c0d56f0",
     ".github/PULL_REQUEST_TEMPLATE.md": "0beb1310fa6344563ba2b2b7a2576e565ca1ab574266b3fcaf304e4d94b634ab",
-    ".github/kit/README.md": "9d790823febb4e50a58d7b24d7767f74bbdf0821b537287554c2cca6c07a3b4d",
-    ".github/kit/bin/kit.py": "67f3bf3a4cd64451d572ec2df922a56dc484abef38e4949feb0d307f6c993484",
+    ".github/kit/README.md": "8667eba92e5f1990dfde448ec6ad08e81b514ef70a0564e5d33884d2ef90e74a",
+    ".github/kit/bin/kit.py": "9dd1c4bfbd41a5af39cb82d1f8cd35d23d501c21c6a6e7948992b860b0e95bf5",
+    ".github/kit/bin/linear_audit.py": "318fd28f20cd03c73bcc04be96433f02f40818bf146b6b8c2c82a2a9cb3c9cb8",
+    ".github/kit/bin/linear_gate.py": "f7e174a88d463466b587b48b82c4dca5a25098886823f9f286f849b291323404",
     ".github/kit/bin/pr_lint.py": "1c8df301fc8ea24fe2dbf6a0ae98736748e70fe6928b274498d5759b704ace0e",
-    ".github/kit/bin/preflight": "9840e0ad957f1e8f5ce5debf32c41746541f7928896ac089255f0dca09e4c323"
+    ".github/kit/bin/preflight": "3bb023bc9b2e74b21aed0f50c624c31f536d4259152126d72a8065e7f732d597",
+    ".omp/hooks/pre/linear-gate.ts": "1196bbfb8c42957e965cd221aee2c2186c993cfdf84fbe5cf3a0e043755f3455"
   },
   "mirror": {
     "client-repo-onboarding/SKILL.md": "bfccad221991f34b8b645904a3fe4071b230583bf59cf8e71e167e3d3b281bff",
-    "linear-content/SKILL.md": "b2b180fea300170666f84f39c10c941e44d229614a362e0fa3e6c47e09c46baf",
+    "linear-content/SKILL.md": "234fcb9fa34707efc66f59a0756865fd5b60f958faa3a664e4a9261900ba4b67",
     "linear-ticket/SKILL.md": "3e19879221e9b1f6aa768ff8213dc97aefedf956e5c319312b22c1f6596173f6",
     "posthog-analytics/SKILL.md": "4c699e408c4cfec454c9509e066c4ccaf373f3539e3635d0b6b2072a76d496e9",
     "pr-creation/SKILL.md": "c1d1b88668da274e0662f76667b9cffff54a3cbdb104bcf1e16e57241c0d56f0",
