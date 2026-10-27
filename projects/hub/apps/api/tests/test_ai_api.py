@@ -4,23 +4,37 @@ task's own provider and counts against its cap."""
 import base64
 import json
 import os
+import re
 from collections.abc import Iterator
+from contextlib import closing
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select, text
+from pydantic_ai.messages import ModelResponse, TextPart
+from pydantic_ai.models import Model
+from pydantic_ai.models.function import FunctionModel
+from pydantic_ai.settings import ModelSettings
+from pydantic_ai.usage import RequestUsage
+from sqlalchemy import Engine, select, text
 from sqlalchemy.orm import Session
 
-from rebase_api.deps import get_admin, get_prova_call, get_settings
+from rebase_api.deps import (
+    get_admin,
+    get_model_factory,
+    get_prova_call,
+    get_session_opener,
+    get_settings,
+)
 from rebase_core.admin_tokens import AdminRead
 from rebase_core.ai_config import AiConfigService
 from rebase_core.config import Settings
 from rebase_core.errors import LlmUnavailable
 from rebase_core.llm import LlmRequest, LlmResponse
-from rebase_core.models import AdminAction, User
+from rebase_core.mail import RecordingSender
+from rebase_core.models import AdminAction, AiUsage, User
 
 SECRET = "sk-secret-abcd"
 SECRETS_KEY = base64.b64encode(os.urandom(32)).decode()
@@ -144,6 +158,35 @@ def test_anonymous_gets_401_on_every_route(
     assert response.status_code == 401
 
 
+@pytest.fixture
+def member(client: TestClient, api_session: Session, sender: RecordingSender) -> Iterator[User]:
+    """A signed-in member who is not an admin: a real session through the magic link, with
+    `get_admin` not overridden, which is the point."""
+    row = User(email="ada.member@studio.it", nome="Ada", cognome="Lovelace", role="member")
+    api_session.add(row)
+    api_session.commit()
+    assert client.post("/api/hub/auth/link", json={"email": row.email}).status_code == 202
+    match = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
+    assert match
+    assert client.post("/api/hub/auth/enter", json={"token": match.group(1)}).status_code == 200
+    assert client.get("/api/hub/me").json()["role"] == "member"
+    yield row
+    api_session.rollback()
+    api_session.execute(text("DELETE FROM users"))
+    api_session.commit()
+
+
+@pytest.mark.parametrize(("method", "path", "body"), ROUTES)
+def test_non_admin_gets_403_on_every_route(
+    client: TestClient, member: User, method: str, path: str, body: Any
+) -> None:
+    """A member's cookie is a real identity at the wrong door: 403, not the signed-out 401,
+    and nothing is saved, spent or read."""
+    response = getattr(client, method)(path, **({} if body is None else {"json": body}))
+    assert response.status_code == 403
+    assert SECRET not in response.text
+
+
 def test_get_never_contains_the_key(client: TestClient, admin: User) -> None:
     saved = client.put(f"{BASE}/providers/anthropic/key", json={"key": SECRET})
     assert saved.status_code == 200
@@ -190,6 +233,27 @@ def test_put_task_validates_provider_and_effort(client: TestClient, admin: User)
     assert client.put(f"{BASE}/tasks/nope", json=body).status_code == 404
 
 
+def test_an_amount_the_columns_cannot_hold_is_a_422_not_a_500(
+    client: TestClient, admin: User
+) -> None:
+    price = {
+        "provider": "anthropic",
+        "model": "claude-opus-5",
+        "input_eur_per_mtok": "100000000",
+        "output_eur_per_mtok": "25",
+    }
+    assert client.put(f"{BASE}/prices", json=price).status_code == 422
+    task = {
+        "provider": "anthropic",
+        "model": "claude-opus-5",
+        "effort": "low",
+        "max_output_tokens": 100,
+        "daily_cap_eur": "1e9",
+        "enabled": True,
+    }
+    assert client.put(f"{BASE}/tasks/card", json=task).status_code == 422
+
+
 def test_prova_returns_answer_latency_cost_with_stub_model(
     client: TestClient, admin: User, stub: dict[str, Any]
 ) -> None:
@@ -214,8 +278,39 @@ def test_prova_error_message_has_no_key(
     assert SECRET not in response.text
 
 
-def test_prova_counts_against_cap(client: TestClient, admin: User, stub: dict[str, Any]) -> None:
+def test_prova_goes_through_the_real_seam_and_counts_against_cap(
+    client: TestClient, admin: User, api_engine: Engine
+) -> None:
+    """Only the provider's model is a stub: `get_prova_call` builds the real `AiCall`, so
+    the usage row has the purpose and the task the wiring gave it, and the cap sees it."""
+    overrides = client.app.dependency_overrides  # type: ignore[attr-defined]
+    overrides[get_session_opener] = lambda: lambda: closing(Session(api_engine))
+    seen: list[tuple[str, str, str, str | None]] = []
+
+    def model_factory(
+        provider: str, model: str, api_key: str, effort: str | None
+    ) -> tuple[Model, ModelSettings]:
+        seen.append((provider, model, api_key, effort))
+        answer = ModelResponse(
+            parts=[TextPart(content='{"answer": "ok"}')],
+            usage=RequestUsage(input_tokens=10, output_tokens=2),
+        )
+        return FunctionModel(lambda messages, info: answer, model_name=model), ModelSettings()
+
+    overrides[get_model_factory] = lambda: model_factory
+    assert client.put(f"{BASE}/providers/anthropic/key", json={"key": SECRET}).status_code == 200
+    assert (
+        client.put(f"{BASE}/providers/anthropic/enabled", json={"enabled": True}).status_code == 200
+    )
     _price(client)
-    assert client.post(f"{BASE}/tasks/card/prova").json()["error"] is None
+
+    body = client.post(f"{BASE}/tasks/card/prova").json()
+
+    assert body["error"] is None and body["answer"] == "ok"
+    assert Decimal(body["cost_eur"]) > 0
+    assert seen == [("anthropic", "claude-opus-5", SECRET, "medium")]
     spent = next(t for t in client.get(BASE).json()["tasks"] if t["task"] == "card")
     assert Decimal(spent["spent_today_eur"]) > 0
+    with Session(api_engine) as check:
+        [usage] = check.scalars(select(AiUsage)).all()
+        assert (usage.task, usage.purpose) == ("card", "prova")
