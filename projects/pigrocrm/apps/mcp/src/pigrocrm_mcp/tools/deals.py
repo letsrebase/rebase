@@ -45,7 +45,8 @@ def move(
 ) -> dict[str, Any]:
     """`stage_id` is the tool's name for the destination and `pipeline_stage_id` the deal's
     own field for it (REB-808): an agent that has just read a deal says the second."""
-    given = {value for value in (stage_id, pipeline_stage_id) if value}
+    # As UUIDs, so the same identifier spelt twice (case, hyphens) is one stage.
+    given = {UUID(value) for value in (stage_id, pipeline_stage_id) if value}
     if len(given) > 1:
         raise ValidationFailed(
             "input",
@@ -63,10 +64,8 @@ def move(
                 "`pipeline_stage_id`; gli stati sono in `list_pipeline_stages`"
             ),
         )
-    (destination,) = given
-    result = DealService(context.session).move_stage(
-        UUID(deal_id), UUID(destination), context.actor
-    )
+    destination = given.pop()
+    result = DealService(context.session).move_stage(UUID(deal_id), destination, context.actor)
     return result.model_dump(mode="json")
 
 

@@ -46,6 +46,7 @@ from mcp.server import MCPServer
 
 from pigrocrm.core.analytics.schemas import BindTimeRequest
 from pigrocrm.core.analytics.service import AnalyticsService
+from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings, gmail_configured
 from pigrocrm.core.errors import ValidationFailed
 from pigrocrm.core.gmail.attachment_text import GmailAttachmentService
@@ -381,10 +382,19 @@ def register(
         # unset one is left alone, while a keyword argument defaulted to `None` is set to
         # `None` and clears it. Before, `tariffa_oraria_default=50` alone also emptied
         # `costo_orario_default`.
-        TimeEntryService(context.session).update_user_rates(
-            UUID(user_id), UserRatesUpdate.model_validate(supplied), context.actor
+        identifier = UUID(user_id)
+        data = UserRatesUpdate.model_validate(supplied)
+        # Read ahead of the write, so `changed` names the rates whose value is not what it
+        # was: resending `50` against a stored `50.00` changes nothing.
+        user = context.session.get(User, identifier)
+        before = {name: getattr(user, name) for name in supplied} if user is not None else {}
+        TimeEntryService(context.session).update_user_rates(identifier, data, context.actor)
+        changed = sorted(
+            name
+            for name, value in data.model_dump(exclude_unset=True).items()
+            if before.get(name) != value
         )
-        return {"esito": "tariffe aggiornate", "changed": sorted(supplied)}
+        return {"esito": "tariffe aggiornate", "changed": changed}
 
     @mcp.tool()
     @guard
