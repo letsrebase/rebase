@@ -9,6 +9,9 @@ for a developer's client and for a shell on the host.
 
 import os
 import sys
+from contextlib import AbstractContextManager, closing
+
+from sqlalchemy.orm import Session
 
 from rebase_core.admin_tokens import AdminTokenService
 from rebase_core.config import get_settings
@@ -17,7 +20,7 @@ from rebase_core.db import create_engine_from_settings, session_factory
 from rebase_core.engagements import EngagementService
 from rebase_core.errors import DomainError
 from rebase_core.http import urllib_call, urllib_engagements_call
-from rebase_core.llm import call_from_settings
+from rebase_core.llm import call_for_task
 from rebase_core.mail import sender_from_settings
 from rebase_core.signing import signing_from_settings
 from rebase_mcp.server import build_server
@@ -42,6 +45,10 @@ def main() -> int:
         session.close()
     renderer = ContractRenderer()
     sender = sender_from_settings(settings)
+
+    def open_session() -> AbstractContextManager[Session]:
+        return closing(factory())
+
     build_server(
         factory,
         lambda: admin,
@@ -49,7 +56,8 @@ def main() -> int:
         http=urllib_call,
         renderer=renderer,
         signing=signing_from_settings(settings, renderer),
-        llm=call_from_settings(settings),
+        card_llm=lambda: call_for_task(open_session, settings, "card"),
+        team_llm=lambda: call_for_task(open_session, settings, "team_proposal"),
         sender=sender,
         engagements=lambda session: EngagementService(
             session, settings, urllib_engagements_call, sender=sender

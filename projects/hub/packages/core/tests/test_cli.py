@@ -7,9 +7,12 @@ fake Documenso, is `test_documenso.py`'s, and `CardWriter.refresh_stale`'s is
 are all swapped out, so the tests prove `main` dispatches to each command and reports
 what it returns, nothing more."""
 
+import base64
+import os
 from typing import Any
 
 import pytest
+from sqlalchemy import Engine, text
 
 from rebase_core import cli, signing
 from rebase_core.campaigns.tick import TickResult
@@ -17,7 +20,7 @@ from rebase_core.cli import main
 from rebase_core.config import Settings
 from rebase_core.engagements import EngagementService
 from rebase_core.http import urllib_engagements_call
-from rebase_core.llm import AnthropicCall
+from rebase_core.llm import RecordingCall
 from rebase_core.signing import SweepResult
 from rebase_core.team_schemas import CardsRefreshed
 
@@ -161,23 +164,31 @@ class _FakeCardWriter:
         return self.result
 
 
+_CARD_CALL = RecordingCall([])
+_TASKS_ASKED: list[str] = []
+
+
+def _configured_card_task(opener: object, settings: Settings, task: str) -> RecordingCall:
+    """`call_for_task` with a model configured: the seam itself is `test_llm.py`'s."""
+    _TASKS_ASKED.append(task)
+    return _CARD_CALL
+
+
 def test_cards_refresh_prints_the_counts(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """One batch of `--limit` per run, the oldest first (`refresh_stale`), so the
     operator runs it again until it prints «0 schede scritte»."""
     _FakeCardWriter.instances = []
-    monkeypatch.setattr(
-        cli,
-        "get_settings",
-        lambda: Settings(anthropic_api_key="sk-ant-test-not-a-real-key", _env_file=None),  # type: ignore[call-arg]
-    )
+    monkeypatch.setattr(cli, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
+    monkeypatch.setattr(cli, "call_for_task", _configured_card_task)
     monkeypatch.setattr(cli, "CardWriter", _FakeCardWriter)
 
     assert main(["cards-refresh", "--limit", "10"]) == 0
 
     [writer] = _FakeCardWriter.instances
-    assert isinstance(writer.llm, AnthropicCall)
+    assert writer.llm is _CARD_CALL
+    assert _TASKS_ASKED[-1] == "card"
     assert writer.limits == [10]
     assert capsys.readouterr().out.strip() == "3 schede scritte, 1 non riuscite"
 
@@ -192,7 +203,7 @@ def test_cards_refresh_prints_the_counts(
         # An outage: counted among the failed, and the stop said.
         (
             CardsRefreshed(written=1, failed=1, stopped=True),
-            "1 schede scritte, 1 non riuscite, fermato: Claude non disponibile",
+            "1 schede scritte, 1 non riuscite, fermato: modello non disponibile",
         ),
     ],
     ids=["failures", "outage"],
@@ -207,11 +218,8 @@ def test_cards_refresh_says_the_stop(
     «0 schede scritte, 0 non riuscite» still says the backlog is done. A card still
     gendered after its rewrite is among the «non riuscite» (REB-802)."""
     _FakeCardWriter.instances = []
-    monkeypatch.setattr(
-        cli,
-        "get_settings",
-        lambda: Settings(anthropic_api_key="sk-ant-test-not-a-real-key", _env_file=None),  # type: ignore[call-arg]
-    )
+    monkeypatch.setattr(cli, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
+    monkeypatch.setattr(cli, "call_for_task", _configured_card_task)
     monkeypatch.setattr(cli, "CardWriter", _FakeCardWriter)
     monkeypatch.setattr(_FakeCardWriter, "result", result)
 
@@ -220,15 +228,143 @@ def test_cards_refresh_says_the_stop(
     assert capsys.readouterr().out.strip() == line
 
 
-def test_cards_refresh_without_a_key_says_so_and_writes_nothing(
+def test_cards_refresh_names_modelli_ai_when_no_task_configured(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Without a key a run would print «0 schede scritte» for ever: it says why instead."""
+    """With no model configured for the card task a run would print «0 schede scritte» for
+    ever: it says why instead, and where to fix it."""
     _FakeCardWriter.instances = []
     monkeypatch.setattr(cli, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
+    monkeypatch.setattr(cli, "call_for_task", lambda opener, settings, task: None)
     monkeypatch.setattr(cli, "CardWriter", _FakeCardWriter)
 
     assert main(["cards-refresh"]) == 1
 
     assert _FakeCardWriter.instances == []
-    assert "REBASE_ANTHROPIC_API_KEY" in capsys.readouterr().err
+    assert capsys.readouterr().err.strip() == (
+        "Nessun modello configurato per le schede: apri «Modelli AI»."
+    )
+
+
+# ---- ai-seed / ai-rotate-secrets (REB-832) ----------------------------------------------
+
+_SECRETS_KEY = base64.b64encode(os.urandom(32)).decode()
+_OLD_KEY = "sk-ant-old-key-abcd"
+
+
+@pytest.fixture
+def ai_db(hub_engine: Engine, monkeypatch: pytest.MonkeyPatch) -> Any:
+    """The command's settings point at the test database; the AI tables go back to what
+    migration 0036 seeded afterwards."""
+
+    def use(secrets_key: str = _SECRETS_KEY) -> None:
+        url = hub_engine.url.render_as_string(hide_password=False)
+        monkeypatch.setattr(
+            cli,
+            "get_settings",
+            lambda: Settings(database_url=url, secrets_key=secrets_key, _env_file=None),  # type: ignore[call-arg]
+        )
+
+    use()
+    monkeypatch.setenv("REBASE_ANTHROPIC_API_KEY", _OLD_KEY)
+    monkeypatch.setenv("REBASE_TEAM_BUILDER_MODEL", "claude-opus-5")
+    yield use
+    with hub_engine.begin() as conn:
+        for statement in (
+            "DELETE FROM ai_prices",
+            "UPDATE ai_providers SET key_ciphertext = NULL, key_nonce = NULL, "
+            "key_last4 = NULL, saved_by = NULL, saved_at = NULL, enabled = false",
+            "UPDATE ai_tasks SET provider = 'anthropic', model = 'claude-opus-5'",
+        ):
+            conn.execute(text(statement))
+
+
+def test_ai_seed_stores_encrypted_and_prints_hint_only(
+    ai_db: Any, hub_engine: Engine, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["ai-seed", "--eur-per-usd", "0.92"]) == 0
+
+    captured = capsys.readouterr()
+    assert "chiave salvata, finisce con …abcd" in captured.out
+    assert _OLD_KEY not in captured.out + captured.err
+    with hub_engine.connect() as conn:
+        row = conn.execute(
+            text("SELECT key_ciphertext, enabled FROM ai_providers WHERE provider = 'anthropic'")
+        ).one()
+        prices = conn.execute(text("SELECT count(*) FROM ai_prices")).scalar_one()
+    assert row.enabled is True
+    assert _OLD_KEY.encode() not in bytes(row.key_ciphertext)
+    assert prices == 2
+
+
+def test_ai_seed_twice_refuses_and_changes_nothing(
+    ai_db: Any, hub_engine: Engine, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["ai-seed", "--eur-per-usd", "0.92"]) == 0
+    capsys.readouterr()
+    with hub_engine.connect() as conn:
+        before = conn.execute(text("SELECT key_ciphertext FROM ai_providers")).all()
+
+    assert main(["ai-seed", "--eur-per-usd", "0.92"]) == 1
+
+    assert "non la sovrascrive" in capsys.readouterr().err
+    with hub_engine.connect() as conn:
+        assert conn.execute(text("SELECT key_ciphertext FROM ai_providers")).all() == before
+
+
+def test_ai_seed_without_secrets_key_exits_1_with_sentence(
+    ai_db: Any, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ai_db("")
+
+    assert main(["ai-seed", "--eur-per-usd", "0.92"]) == 1
+
+    assert "REBASE_SECRETS_KEY" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("rate", ["NaN", "Infinity", "-1", "0", "100000"])
+def test_ai_seed_refuses_a_rate_that_is_not_a_sensible_number_with_a_sentence(
+    ai_db: Any, capsys: pytest.CaptureFixture[str], rate: str
+) -> None:
+    """Review of #666, nit 3: `NaN` used to reach a comparison and print a traceback."""
+    assert main(["ai-seed", f"--eur-per-usd={rate}"]) == 1
+    err = capsys.readouterr().err
+    assert "il cambio deve essere un numero positivo" in err
+    assert "Traceback" not in err
+
+
+def test_ai_seed_requires_the_exchange_rate(ai_db: Any) -> None:
+    with pytest.raises(SystemExit):
+        main(["ai-seed"])
+
+
+def test_ai_rotate_secrets_command_reencrypts_and_prints_the_count(
+    ai_db: Any, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["ai-seed", "--eur-per-usd", "0.92"]) == 0
+    capsys.readouterr()
+    new = base64.b64encode(os.urandom(32)).decode()
+
+    monkeypatch.setenv("REBASE_SECRETS_KEY_OLD", _SECRETS_KEY)
+    monkeypatch.setenv("REBASE_SECRETS_KEY_NEW", new)
+
+    assert main(["ai-rotate-secrets"]) == 0
+    assert capsys.readouterr().out.strip() == "1 chiavi ricifrate"
+
+    # The old key no longer opens it.
+    assert main(["ai-rotate-secrets"]) == 1
+    assert "REBASE_SECRETS_KEY" in capsys.readouterr().err
+
+
+def test_ai_rotate_secrets_takes_no_key_on_the_command_line(
+    ai_db: Any, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Review of #666, minor 1: what opens every stored key is in the environment, not in
+    `ps`; without both values the command says so and changes nothing."""
+    monkeypatch.delenv("REBASE_SECRETS_KEY_OLD", raising=False)
+    monkeypatch.delenv("REBASE_SECRETS_KEY_NEW", raising=False)
+
+    assert main(["ai-rotate-secrets"]) == 2
+    assert "REBASE_SECRETS_KEY_OLD" in capsys.readouterr().err
+    with pytest.raises(SystemExit):
+        main(["ai-rotate-secrets", "--old-key", _SECRETS_KEY, "--new-key", _SECRETS_KEY])

@@ -82,6 +82,7 @@ running the core service the admin area runs, with the calling admin as the acto
 
 - `list_team_requests`, `get_team_request`: «Richieste team» and a request's page.
 - `list_team_proposals`: «Proposte», every «Proponi il team» asked, filed or not.
+- `list_ai_config`: «Modelli AI», read only: providers (the hint, never a key), tasks, prices, the month's spend. No tool writes a key.
 - `set_team_request_summary`: «Salva il riassunto», refused while it names the company.
 - `contact_team_talents`: «Contatta i talenti», or with `only_silent` «Rimanda a chi non ha risposto».
 - `set_team_request_status`: «Segna come contattata», «Chiudi», with an optional note.
@@ -89,6 +90,12 @@ running the core service the admin area runs, with the calling admin as the acto
 - `get_freelancer_card`, `regenerate_freelancer_card`: the anonymous card, and «Rigenera scheda». The card's `seniority` and `anni` are the admin's when `override_freelancer` set them (`seniority`, `anni`), Claude's otherwise; `anni` is `null` and `seniority_incerta` true when the CV dates no role (REB-799).
 - `set_freelancer_vetted`: «Segna come verificato» and «Togli la verifica».
 - `grant_talent_cloud`, `revoke_talent_cloud`, `list_talent_cloud_grants`: the cloud's grants.
+
+«Modelli AI» (`/hub/admin/modelli-ai`, REB-833, `routers/ai.py` under `/api/hub/admin/ai`) is
+where an admin replaces a provider's key (write-only: the answer is «configurata, finisce con
+…abcd»), picks each task's provider, model, effort, token and daily euro cap, edits the price
+table and reads the month's spend. «Prova» sends one fixed non-personal prompt through the
+task's own seam, recorded as `purpose="prova"`, so it spends the task's cap.
 
 `get_talento` and `list_talenti` carry `vetted_at` and whether an anonymous card exists.
 Since REB-778 each `list_talenti` row also carries the card's `posizione` and the
@@ -141,6 +148,34 @@ campaign without a terminal:
   actions included.
 - `get_campagna`: one campaign, with each person's outcome, and `entrato_dalla_mail` /
   `azione_dalla_mail` when the mail's own link was the door.
+
+## One person, once (REB-800)
+
+A person is their address **or** their LinkedIn profile. `rebase_core.linkedin` is the one place a
+profile is checked and given its stored shape, `https://www.linkedin.com/in/<name>` in lower case with
+no query, slash or locale, and `linkedin_key` is what two profiles are compared by; `User` and
+`Signup` normalise on write (`@validates`), and `uq_users_linkedin_lower` and
+`uq_signups_linkedin_lower` hold the rule in the database. `UserService.find_person(email,
+linkedin_url)` is the lookup every form goes through: the person who answers to the address (an
+address merged away answers for the survivor, `User.survivor`), else the one holding the profile.
+So the sign-up form attaches a second address with a known profile to the row already there, the
+wizard to the card already there (and mails the **address on file**, never the one typed, with
+`ALREADY_HAS_CARD_BY_LINKEDIN_NOTE`), and an admin's draft or an edit that names a profile already on
+a card is refused with `LINKEDIN_HAS_CARD` / `LINKEDIN_TAKEN`. A sign-up whose profile is on a card is no
+lead (`rebase_core.leads.card_by_linkedin`, in the three lead lists).
+
+Two live cards that share a profile are a *unibile* pair (`rebase_core.duplicates.find_duplicates`);
+the same name or telephone number only flags (`possibile_duplicato_di` on a Talenti row and in
+`get_talento`, `da_rivedere`), never merged on its own. `PersonMergeService` (`rebase_core.merge`)
+merges one card into another: admin «Unisci» (`POST /api/hub/freelancers/{id}/merge`), MCP
+`merge_freelancers` (`list_duplicati` lists the pairs, without addresses), and
+`rebase talent-duplicates` (dry run unless `--apply`). Every relation moves by id (`RELATIONS`, with
+`LEFT_IN_PLACE` naming what stays and why; `test_every_foreign_key_to_a_person_is_moved_or_left_on_purpose`
+fails on a table added later that points at a person), the newest CV (`freelancers.cv_uploaded_at`)
+stays with its card and the card is flagged for `cards-refresh`, the absorbed card is soft-deleted and
+its `users` row points at the survivor (`merged_into_id`), and the `merged` entry in the trail names
+every moved row so `--undo` can put it back. Production runbook, order of steps, the dump taken first
+and the undo: `docs/merge-duplicate-talents.md`.
 
 ## The guide is a generated file, committed, and easy to leave stale
 
@@ -382,15 +417,30 @@ those cards into a team (`rebase_core.team_builder`), which a company files with
 (`projects/website`, REB-676) asks the same `POST /api/hub/team/proposals` and sends the
 visitor to `/hub/team?proposta=<id>` for the whole team, which the page reads back with
 `GET /api/hub/team/proposals/{id}` (REB-675, spec § 3.2 addendum). Both calls go through one seam,
-`rebase_core.llm`, with inference global (the API offers `global` or `us`; EU
-residency would take Vertex AI or Bedrock in an EU region, not decided); the tests
-hand a `RecordingCall` and never reach Anthropic.
+`rebase_core.llm` (`AiCall`, on Pydantic AI; REB-831): which provider, model, effort and
+output ceiling answer a task, and the provider's key, are read from the database on every
+call («Modelli AI», `ai_tasks`), never from the environment, and every call writes its
+usage (`ai_usage`). It refuses before any network when the task's daily euro cap is spent,
+its model has no price, or its provider is off or has no key. The Anthropic path keeps what
+the hub always sent: the `server-side-fallback-2026-07-01` beta with `fallbacks="default"`,
+inference global (`inference_geo`; the API offers `global` or `us`, EU residency would take
+Vertex AI or Bedrock in an EU region, not decided), adaptive thinking at the task's effort,
+`cache_control` on the team builder's catalogue block, and the schema through the SDK's
+`transform_schema`; `anthropic_model.py` teaches Pydantic AI the `fallback` block such a
+response carries (`test_llm.py` drives it over a mocked wire). The tests hand a
+`RecordingCall` and never reach a provider.
 
-**The privacy page goes out before the hub.** From the first card on, CVs go to
-Anthropic, and it is letsrebase.com/privacy, in «La tua scheda e il team builder», that
-tells the people they belong to. So on production the section is live first: the
-`website-v*` tag that carries it, then the key in `.env`, then the `hub-v*` tag. The
-other way round, CVs reach Anthropic while the privacy page still says nothing of it.
+**The privacy page goes out before the hub sends a CV anywhere.** From the first card on,
+CVs go to a model provider (today Anthropic), and it is letsrebase.com/privacy, in «La tua
+scheda e il team builder», that tells the people they belong to. The key is no longer in
+`.env` but in the database, so the gate is no longer «the key lands after the page»: the
+`website-v*` tag that carries the section goes first, and **`rebase ai-seed` (the moment a
+provider has a key and is on) and `REBASE_CARDS_LOOP=on` both come after it**. The other
+way round, CVs reach a provider while the privacy page still says nothing of it. Nor
+enable OpenAI or Google in «Modelli AI» before the processors check of the design (the
+notice lists them, a data-processing agreement exists with each, no-training and retention
+terms are checked): the page lets an admin do it today, and doing it sends CVs to a
+processor the notice does not name.
 
 **The talent cloud** (milestone D, REB-517 to REB-521) shows the same cards by name to a
 company rebase admitted. «Apri il talent cloud» on a company request's page in «Aziende»
@@ -403,28 +453,31 @@ talent the availability question, answered with a click that posts on
 rebase» on their card. **On production the talents' mail of spec § 4.4 goes out before
 the first grant**: every freelancer with a card is told, by a campaign from «Campagne»,
 what their card says, that the public builder shows it without their name, and that the
-companies rebase admits see their profile by name with the CV. **The `mcp` service now
-uses the Anthropic and the Resend keys** as `api` does: `propose_team` and
-`regenerate_freelancer_card` call Claude, `contact_team_talents` and
-`grant_talent_cloud` send mail. Recreate it beside `api` whenever either key changes;
-without them those tools answer as the admin area does (the builder off, sending not
-active here, the cloud opened with no mail).
+companies rebase admits see their profile by name with the CV. **The `mcp` service uses
+«Modelli AI» and the Resend key** as `api` does: `propose_team` and
+`regenerate_freelancer_card` call the configured model (asked on each call, so a model
+configured while it runs applies at once), `contact_team_talents` and
+`grant_talent_cloud` send mail. Recreate it beside `api` when the Resend key changes;
+without a model or a mail key those tools answer as the admin area does (the builder off,
+sending not active here, the cloud opened with no mail).
 
-**The key** is `REBASE_ANTHROPIC_API_KEY`, in production's and the preview's
-`${DEPLOY_PATH}/.env`, never in the repository; recreate `api` and `mcp` after setting
-it (`docker compose -p rebase --env-file "${DEPLOY_PATH}/.env" up -d api mcp` from
-`projects/hub`, `-p rebase-preview` on the preview). Without it no card is written
-and `POST /api/hub/team/proposals` answers 503 «Il team builder è spento.»; nothing
-else of the hub changes. `REBASE_TEAM_BUILDER_ENABLED=false` is the switch that turns
-the proposals off with the key still there: the same 503, while cards go on being
-written and requests already filed stay in «Richieste team».
+**The key** is saved in «Modelli AI», encrypted, never in the repository or the
+environment (see «Model provider keys» below); the old `REBASE_ANTHROPIC_API_KEY` and
+`REBASE_TEAM_BUILDER_MODEL` are read once, by `rebase ai-seed`, and are no longer settings
+nor passed to the containers. Nothing needs recreating when a key or a model changes: the
+next call reads it. With no model configured for a task (task or provider off, no key) no
+card is written and `POST /api/hub/team/proposals` answers 503 «Il team builder è
+spento.»; a task whose daily cap is spent answers the visitor 503 «Troppe richieste in
+questo momento»; nothing else of the hub changes. `REBASE_TEAM_BUILDER_ENABLED=false` is
+the switch that turns the proposals off with the model still there: the same 503, while
+cards go on being written and requests already filed stay in «Richieste team».
 
 **The backlog is `rebase cards-refresh`.** A card is written after the wizard or a CV
 upload, so the CVs already on file need it too: since REB-552 the `cards` service runs
 it once an hour, up to 50 cards. The loop itself is gated by `REBASE_CARDS_LOOP`
 (`.env`, default `off`), no Python setting: production keeps it `off` until the talents'
-mail of spec § 4.4 has gone out, so a deploy that already carries the key never sends a
-CV to Anthropic before that mail, then sets it `on` and runs `docker compose up -d
+mail of spec § 4.4 has gone out, so a deploy that already has a model configured never sends a
+CV to a provider before that mail, then sets it `on` and runs `docker compose up -d
 cards` to recreate the service. The first run after the key lands is still by hand,
 before the loop is switched on:
 `docker compose -p rebase --env-file /opt/hub/.env exec api uv run --no-sync rebase
@@ -438,8 +491,9 @@ Each run takes 50 CVs, the oldest first (`--limit`), and never a turned-down per
 CV that failed on its own account (a refusal, a scan with no text, a card that names the
 person) is not tried again until it changes, so the runs end; an outage stops the batch,
 counts under «non riuscite» and is the next run's, so a run that keeps printing «0
-schede scritte, 1 non riuscite, fermato: Claude non disponibile» is Claude not
-answering, not a CV. «Rigenera scheda» on
+schede scritte, 1 non riuscite, fermato: modello non disponibile» is the model not
+answering (or its daily cap spent, or no model configured: the card then carries that reason,
+«Tetto giornaliero raggiunto», and nothing is retired), not a CV. «Rigenera scheda» on
 the talent's page asks again for one. A card whose Italian gives the person's gender away
 (`_gendered` in `cards.py`, the gate under the prompt's rule) is asked for once more, and
 one still gendered after it is not written: the card read shows the error «La scheda
@@ -644,6 +698,59 @@ the `PIGROCRM_REGISTRY_TOKEN` in the CRM's own host `.env`. One value, set by ha
 both files, generated once; without it the page answers 503 with a sentence and the CRM
 side does not even have the route. The call goes through `rebase_core.http`, the seam
 the mail uses, so the tests hand a fake and never reach a CRM.
+
+### Model provider keys (`REBASE_SECRETS_KEY`, `ai-seed`, rotation)
+
+Provider API keys live encrypted in the database (`ai_providers`, AES-256-GCM,
+`rebase_core/secrets.py`); the key that opens them, `REBASE_SECRETS_KEY` (32 bytes in
+base64, `openssl rand -base64 32`), lives only in the host `.env`, root-only (`chmod
+600`), never in the database or a backup. Without it the app refuses to save or read a
+provider key and «Modelli AI» says so.
+
+**Order on production, once (REB-832, REB-831): two tags, so the builder is never without
+a model.** The workflow rsyncs the sources, builds and runs `up -d` in one step
+(`_deploy-compose.yml`), so there is no point between the new image and the new
+containers to run `ai-seed` in, and a single deploy leaves the public builder answering
+503 «Il team builder è spento.» (the old variables are no longer passed to the containers)
+from `up -d` until the command is run. The milestone's commits allow better, because the
+commit that adds `ai-seed` comes before the one that stops reading the environment:
+
+1. Add `REBASE_SECRETS_KEY=<openssl rand -base64 32>` to the host `.env` (root-only), next
+   to the existing `REBASE_ANTHROPIC_API_KEY` and `REBASE_TEAM_BUILDER_MODEL`. Keep a
+   copy in the password manager: losing it loses every stored provider key. The privacy
+   page is live (see above).
+2. Tag the `ai-seed` commit of the milestone, not its head (`git log --oneline --grep
+   'add ai-seed and ai-rotate-secrets'`; its CI run must be green, as for any tag). It
+   adds the tables and the command and still reads the key from the environment, so
+   production behaves as before. This needs the milestone merged with its commits, not
+   squashed; if it was squashed, deploy the head and take the outage, running step 3 the
+   moment `up -d` ends.
+3. Inside the running api container, which still has the two old variables:
+   `docker compose -p rebase --env-file /opt/hub/.env exec api rebase ai-seed
+   --eur-per-usd <rate>` (`-p rebase-preview --env-file /opt/hub-preview/.env` on the
+   preview). It moves the old key and model into the tables (key sealed, `anthropic` on,
+   both tasks on the model) and writes the Claude prices in euros from claude.com/pricing
+   (USD per million tokens, read 2026-10-27: opus-5 5/25/0.50, opus-5-5 4/20/0.20,
+   thinking billed as output). `<rate>` is **euros per one dollar**, the inverse of the
+   ECB's quote (ECB 1.0870 USD per EUR means `--eur-per-usd 0.9199`), of the day. No rate
+   lives in the code. It prints «chiave salvata, finisce con …abcd», never the key, and
+   refuses to run twice.
+4. Tag the milestone's head. The new containers read the model and the key from the
+   database; nothing was ever without one.
+5. Verify with «Prova» on each task in «Modelli AI».
+
+**Rotation:** generate a new value, then hand both to a one-off container through the
+environment, never the command line (`ps` and the shell history would show what opens every
+stored key): `read -rs REBASE_SECRETS_KEY_OLD; read -rs REBASE_SECRETS_KEY_NEW; export
+REBASE_SECRETS_KEY_OLD REBASE_SECRETS_KEY_NEW; docker compose -p rebase --env-file
+/opt/hub/.env run --rm -e REBASE_SECRETS_KEY_OLD -e REBASE_SECRETS_KEY_NEW api rebase
+ai-rotate-secrets` (`-p rebase-preview --env-file /opt/hub-preview/.env` on the preview).
+It re-seals every stored key in one transaction and prints the count; a wrong old value
+changes nothing. Then put the new value in `.env` and recreate **api, mcp and cards**
+(`docker compose -p rebase --env-file /opt/hub/.env up -d api mcp cards`): all three read
+`REBASE_SECRETS_KEY`, and a `cards` loop on the old value would fail every hourly run
+with a sentence naming `REBASE_SECRETS_KEY` and the card would carry it. Between the command and the recreate the
+old value no longer opens the keys, so keep `REBASE_CARDS_LOOP=off` for the gap.
 
 ### Database backups
 

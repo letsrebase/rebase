@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -19,15 +19,19 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, validates
 
 from rebase_core.db import Base, PrimaryKeyMixin, TimestampMixin
+from rebase_core.linkedin import (
+    LINKEDIN_URL_MAX_LENGTH,
+    PROFILE_SQL_PREDICATE,
+    canonical_linkedin,
+)
 from rebase_core.regimes import PARTITA_IVA
 
 UTM_MAX_LENGTH = 200
 UTM_COLUMNS = ("utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term", "utm_id")
 NAME_MAX_LENGTH = 120
-LINKEDIN_URL_MAX_LENGTH = 300
 # A phone number for a company's own referente (REB-380): companies only ask for it
 # today, so it stays optional at this level and required only by `CompanyCreate`'s own
 # validation -- the same split `Freelancer`'s signup-born columns already keep between
@@ -89,8 +93,19 @@ class Signup(Base, PrimaryKeyMixin):
     # they own that address (REB-646).
     rif: Mapped[str | None] = mapped_column(String(REFERRAL_CODE_LENGTH), default=None)
 
+    @validates("linkedin_url")
+    def _canonical_linkedin(self, _key: str, value: str | None) -> str | None:
+        return canonical_linkedin(value)
+
     __table_args__ = (
         Index("uq_orbiters_signups_email_lower", func.lower(email), unique=True),
+        # The same fact for the landing's list (REB-800); see `uq_users_linkedin_lower`.
+        Index(
+            "uq_signups_linkedin_lower",
+            func.lower(linkedin_url),
+            unique=True,
+            postgresql_where=text(PROFILE_SQL_PREDICATE),
+        ),
         # Trigram search on the merged talenti list (REB-285): a bare sign-up has no
         # linked `users` row, so its own `nome`/`cognome`/`email` are what `q` matches
         # against. Migration 0013 creates the GIN indexes that serve these.
@@ -145,6 +160,15 @@ class User(Base, PrimaryKeyMixin, TimestampMixin):
     referral_code: Mapped[str | None] = mapped_column(String(REFERRAL_CODE_LENGTH), default=None)
     role: Mapped[str] = mapped_column(String(10), nullable=False, default="member")
     attivo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Set when an admin merged this row into another person's (REB-800): the row stays,
+    # nothing is deleted, and its address still answers: a login link asked for it opens
+    # the survivor, and a form that types it lands on the survivor. `NULL` for everyone
+    # else. Never a chain: a merge repoints whoever pointed at the row it absorbs.
+    merged_into_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
+
+    @validates("linkedin_url")
+    def _canonical_linkedin(self, _key: str, value: str | None) -> str | None:
+        return canonical_linkedin(value)
 
     __table_args__ = (
         Index("uq_users_email_lower", func.lower(email), unique=True),
@@ -170,6 +194,16 @@ class User(Base, PrimaryKeyMixin, TimestampMixin):
             postgresql_ops={"email": "gin_trgm_ops"},
         ),
         Index("uq_users_referral_code", "referral_code", unique=True),
+        # One person per LinkedIn profile (REB-800), the same fact `uq_users_email_lower`
+        # states for the address, for personal profiles only (`linkedin_key`). Migration 0035
+        # creates it only when no two rows share a profile yet; otherwise
+        # `rebase talent-duplicates --apply` does, after the merge.
+        Index(
+            "uq_users_linkedin_lower",
+            func.lower(linkedin_url),
+            unique=True,
+            postgresql_where=text(PROFILE_SQL_PREDICATE),
+        ),
     )
 
 
@@ -250,6 +284,10 @@ class Freelancer(Base, PrimaryKeyMixin, TimestampMixin, UtmMixin):
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     cv_bytes: Mapped[bytes | None] = mapped_column(LargeBinary, default=None)
     cv_filename: Mapped[str | None] = mapped_column(String(CV_FILENAME_MAX_LENGTH), default=None)
+    # When the CV in this row was stored (REB-800): what «the newest CV» means when two
+    # cards of one person are merged. `updated_at` moves on every status change, so it
+    # cannot say it. `NULL` with no CV; migration 0035 backfills it from `updated_at`.
+    cv_uploaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     cv_mime: Mapped[str | None] = mapped_column(String(CV_MIME_MAX_LENGTH), default=None)
     cv_size: Mapped[int | None] = mapped_column(Integer, default=None)
     tariffa_giornaliera: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), default=None)
@@ -632,7 +670,7 @@ class Comment(Base, PrimaryKeyMixin):
 
 # ---- what an admin overrode, cleared, deleted or restored, and when --------------------
 
-ADMIN_ACTION_ENTITY_TYPES = ("freelancer", "company", "match", "freelancer_fiscal")
+ADMIN_ACTION_ENTITY_TYPES = ("freelancer", "company", "match", "freelancer_fiscal", "ai_config")
 # `overridden` covers both "set" and "clear" -- clearing is setting a field to its empty
 # value, and `rebase_core.audit.field_changes` records the same `changed`/`before`/`after`
 # shape either way. `cleared` is only for the one thing that shape must never carry: the
@@ -644,10 +682,17 @@ ADMIN_ACTION_ENTITY_TYPES = ("freelancer", "company", "match", "freelancer_fisca
 # changed and never their values: a tax identifier is not copied into this table.
 # REB-509 adds `vetted`, on entity type `freelancer`: «Vetted» flips `Freelancer.vetted_at`
 # on or off, not a field an "overridden"/"cleared" pair already describes.
+# REB-830 adds the model providers' trail, on entity type `ai_config` (one fixed id:
+# the entity is the configuration, not a row): `ai_key` (its payload says «chiave
+# sostituita» and the last four characters, never the key), `ai_task`, `ai_price` and
+# `ai_switch` (a provider turned on or off), the last three with the before and after.
 # REB-498 adds `pigro_link` on `match`: an admin's «Riprova su Pigro», its payload the
 # outcome (`esito`) and the CRM's sentence (`errore`). REB-517 adds `talents_contacted`,
 # on entity type `team_request`: «Contatta i talenti» and «Rimanda», with how many talents
 # were mailed. No `CHECK` holds this list: it is the record of what the code writes.
+# REB-800 adds `merged` (on the card that was absorbed: whose it went into, and every row
+# that moved, by id, so the merge can be undone), `absorbed` (on the survivor: what it
+# took in) and `unmerged` (the undo, on both).
 ADMIN_ACTION_KINDS = (
     "overridden",
     "cleared",
@@ -664,6 +709,13 @@ ADMIN_ACTION_KINDS = (
     "vetted",
     "pigro_link",
     "talents_contacted",
+    "ai_key",
+    "ai_task",
+    "ai_price",
+    "ai_switch",
+    "merged",
+    "absorbed",
+    "unmerged",
 )
 
 
@@ -1369,3 +1421,139 @@ class ReferralSettings(Base, PrimaryKeyMixin, TimestampMixin):
         Numeric(RATE_DIGITS, RATE_PLACES), nullable=False, default=Decimal("0.30")
     )
     updated_by: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
+
+
+# The model providers and the tasks they answer (REB-830): «Modelli AI» in the admin
+# area, the Pydantic AI seam in `llm.py`. A provider is one of these three and a task one
+# of these two; the database repeats both lists as `CHECK`s. The efforts are the one
+# reasoning knob every provider maps in its own words (`llm.build_model`).
+AI_PROVIDERS = ("anthropic", "openai", "google")
+AI_TASKS = ("card", "team_proposal")
+AI_EFFORTS = ("low", "medium", "high")
+# Why a call ran (`ai_usage.purpose`): a real one, an admin's «Prova», an evaluation run.
+# All three consume the cap of the task they ran as.
+AI_USAGE_PURPOSES = ("run", "prova", "eval")
+
+
+class AiProvider(Base):
+    """One model provider's account: the API key encrypted at rest (AES-256-GCM,
+    `rebase_core.secrets`) in `key_ciphertext` and `key_nonce`, and `key_last4`, the only
+    part of it that is ever shown again. Write-only: nothing reads the key back to a
+    person, and no column here holds it in clear. `enabled` is the switch: a provider
+    off is never called, whatever a task says."""
+
+    __tablename__ = "ai_providers"
+
+    provider: Mapped[str] = mapped_column(String(20), primary_key=True)
+    key_ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary, default=None)
+    key_nonce: Mapped[bytes | None] = mapped_column(LargeBinary, default=None)
+    key_last4: Mapped[str | None] = mapped_column(String(4), default=None)
+    saved_by: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
+    saved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    __table_args__ = (
+        CheckConstraint(
+            "provider IN ('anthropic', 'openai', 'google')", name="ck_ai_providers_provider"
+        ),
+        CheckConstraint(
+            "(key_ciphertext IS NULL) = (key_nonce IS NULL)", name="ck_ai_providers_key_pair"
+        ),
+    )
+
+
+class AiTask(Base):
+    """What answers one task (`card`, `team_proposal`): provider, free-text model name,
+    reasoning effort where the provider has one, the output ceiling, and an optional
+    daily cap in euros that stops the task's calls for the rest of the day. The two rows
+    are seeded by migration 0036; `rebase ai-seed` points them at the old Anthropic
+    settings."""
+
+    __tablename__ = "ai_tasks"
+
+    task: Mapped[str] = mapped_column(String(20), primary_key=True)
+    provider: Mapped[str] = mapped_column(ForeignKey("ai_providers.provider"), nullable=False)
+    model: Mapped[str] = mapped_column(String(CARD_MODEL_MAX_LENGTH), nullable=False)
+    effort: Mapped[str | None] = mapped_column(String(10), default=None)
+    max_output_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
+    daily_cap_eur: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), default=None)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        CheckConstraint("task IN ('card', 'team_proposal')", name="ck_ai_tasks_task"),
+        CheckConstraint("max_output_tokens > 0", name="ck_ai_tasks_max_output_tokens"),
+        CheckConstraint(
+            "daily_cap_eur IS NULL OR daily_cap_eur >= 0", name="ck_ai_tasks_daily_cap"
+        ),
+    )
+
+
+class AiPrice(Base):
+    """What one model costs, in euro per million tokens, as an admin entered it: no
+    exchange rate lives in code. `thinking_eur_per_mtok` is `NULL` when the provider
+    bills thinking like output, `cache_read_eur_per_mtok` when it has no cheaper rate for
+    cached input. A task whose model has no row here is not callable
+    (`AiConfigService.can_call`): an unpriced call is never recorded as free."""
+
+    __tablename__ = "ai_prices"
+
+    provider: Mapped[str] = mapped_column(String(20), primary_key=True)
+    model: Mapped[str] = mapped_column(String(CARD_MODEL_MAX_LENGTH), primary_key=True)
+    input_eur_per_mtok: Mapped[Decimal] = mapped_column(Numeric(12, 4), nullable=False)
+    output_eur_per_mtok: Mapped[Decimal] = mapped_column(Numeric(12, 4), nullable=False)
+    thinking_eur_per_mtok: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), default=None)
+    cache_read_eur_per_mtok: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), default=None)
+
+    __table_args__ = (
+        CheckConstraint(
+            "provider IN ('anthropic', 'openai', 'google')", name="ck_ai_prices_provider"
+        ),
+        CheckConstraint(
+            "input_eur_per_mtok >= 0 AND output_eur_per_mtok >= 0 "
+            "AND (thinking_eur_per_mtok IS NULL OR thinking_eur_per_mtok >= 0) "
+            "AND (cache_read_eur_per_mtok IS NULL OR cache_read_eur_per_mtok >= 0)",
+            name="ck_ai_prices_not_negative",
+        ),
+    )
+
+
+class AiUsage(Base, PrimaryKeyMixin):
+    """One model call the provider answered, a refusal included: `task` is the configured
+    task whose daily cap the call consumes, `purpose` why it ran (`AI_USAGE_PURPOSES`),
+    `provider` and `model` what actually answered (an evaluation run may differ from the
+    task's own). `cost_eur` is `NULL`, and `priced` false, when no price row existed for
+    the model: the call is counted and shown as unpriced, never as free.
+    `freelancer_id` is the person a card call was about, `NULL` for the others and after
+    the person is deleted."""
+
+    __tablename__ = "ai_usage"
+
+    at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    task: Mapped[str] = mapped_column(String(20), nullable=False)
+    purpose: Mapped[str] = mapped_column(String(20), nullable=False, default="run")
+    provider: Mapped[str] = mapped_column(String(20), nullable=False)
+    model: Mapped[str] = mapped_column(String(CARD_MODEL_MAX_LENGTH), nullable=False)
+    input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    thinking_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    cache_read_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    cost_eur: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), default=None)
+    priced: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    freelancer_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("freelancers.id", ondelete="SET NULL"), default=None
+    )
+
+    __table_args__ = (
+        Index("ix_ai_usage_task_at", "task", "at"),
+        CheckConstraint("task IN ('card', 'team_proposal')", name="ck_ai_usage_task"),
+        CheckConstraint("purpose IN ('run', 'prova', 'eval')", name="ck_ai_usage_purpose"),
+        CheckConstraint("priced = (cost_eur IS NOT NULL)", name="ck_ai_usage_priced"),
+    )

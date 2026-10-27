@@ -112,6 +112,8 @@ const CARD_TALENTO = {
   // REB-558: a card's own day rate and work mode.
   tariffa_giornaliera: '450.00',
   remoto: 'remoto',
+  // REB-800: the other live cards that may be the same person; empty for almost everyone.
+  possibile_duplicato_di: [],
 }
 
 /** A bare sign-up in `talenti` (ORB-163): `stato` `lead`, no card behind it yet, so
@@ -128,6 +130,7 @@ const LEAD_TALENTO = {
   created_at: '2026-09-08T10:00:00Z',
   tariffa_giornaliera: null,
   remoto: null,
+  possibile_duplicato_di: [],
 }
 
 /** A company request in `GET /api/hub/companies` (REB-286's own new coverage: the
@@ -180,6 +183,9 @@ function settle(): Promise<void> {
   return promise
 }
 
+/** `GET /api/hub/talent/duplicati` when nobody is on the list twice. */
+const NO_DUPLICATES = { unibili: [], da_rivedere: [], iscrizioni: 0 }
+
 /** The admin routes these pages sit on, without the frame and its guard: the pages
  *  read `useParams` and render `Link`s, so a router has to be there. The pathless
  *  `signedIn` id mirrors the real tree (REB-279's `SignedInLayout`), since
@@ -188,7 +194,18 @@ function settle(): Promise<void> {
  *  `router.tsx` gives them (REB-286), duplicated rather than imported the same way
  *  `Thanks.test.tsx` duplicates `thanks`'s own. Returns the router so a test can read
  *  `router.state.location.search` back out after an interaction. */
-function mount(path: string) {
+function mount(path: string, duplicates: Record<string, unknown> | (() => Response) = NO_DUPLICATES) {
+  // REB-800: Talenti and a card's page read the duplicate pairs too, beside what the
+  // test mocked for the page itself. They are answered here, apart, so a test that hands
+  // one `Response` to every call (which can be read once) and its call counts stay as
+  // they were; a test about the pairs passes its own body, or a function making the
+  // whole `Response` when the answer itself is the point.
+  const inner = globalThis.fetch
+  vi.stubGlobal('fetch', (input: Parameters<typeof fetch>[0], init?: RequestInit) =>
+    String(input) === '/api/hub/talent/duplicati'
+      ? Promise.resolve(typeof duplicates === 'function' ? duplicates() : answer(200, duplicates))
+      : inner(input, init),
+  )
   const root = createRootRoute({ component: () => <Outlet /> })
   const signedIn = createRoute({ getParentRoute: () => root, id: 'signedIn', component: () => <Outlet /> })
   const talent = createRoute({
@@ -258,9 +275,14 @@ function mount(path: string) {
     path: '/admin/companies/$id',
     component: AdminCompanyDetail,
   })
+  const duplicati = createRoute({
+    getParentRoute: () => signedIn,
+    path: '/admin/talent/duplicates',
+    component: () => <p>duplicati</p>,
+  })
   const router = createRouter({
     routeTree: root.addChildren([
-      signedIn.addChildren([talent, talentLead, freelanceDetail, contratti, nuovoMatch, companies, companiesDetail]),
+      signedIn.addChildren([talent, talentLead, freelanceDetail, contratti, nuovoMatch, companies, companiesDetail, duplicati]),
     ]),
     history: createMemoryHistory({ initialEntries: [path] }),
     parseSearch,
@@ -283,7 +305,12 @@ function cellUnder(row: HTMLElement, header: string): HTMLElement {
   return within(row).getAllByRole('cell')[index]!
 }
 
-afterEach(() => vi.restoreAllMocks())
+// The stub goes first: it was installed over the test's own spy, and putting back the
+// spy's value before the spy is restored would leave it in `fetch` for the next test.
+afterEach(() => {
+  vi.unstubAllGlobals()
+  vi.restoreAllMocks()
+})
 
 describe('the Talenti list (REB-282/283)', () => {
   it('lists a card and a lead together, each with its own state and origin, and links to the right page', async () => {
@@ -1400,5 +1427,115 @@ describe('«da team builder» and the talent cloud on Aziende (REB-518)', () => 
     expect(await within(section).findByRole('button', { name: 'Revoco…' })).toBeDisabled()
     revoking.resolve(answer(200, { ...GRANT, revoked_at: '2026-09-26T11:00:00Z' }))
     await within(section).findByRole('button', { name: 'Apri il talent cloud' })
+  })
+})
+
+/** Two live cards of one person (REB-800), as `GET /api/hub/talent/duplicati` reads them. */
+function person(id: string, nome: string, cognome: string) {
+  return {
+    freelancer_id: id,
+    user_id: `u-${id}`,
+    nome,
+    cognome,
+    email: `${nome.toLowerCase()}@studio.it`,
+    created_at: '2026-09-10T10:00:00Z',
+    cv_uploaded_at: null,
+    ha_cv: false,
+  }
+}
+const LINKED_PAIR = {
+  survivor: person('f2', 'Grace', 'Hopper'),
+  assorbito: person('f1', 'Ada', 'Lovelace'),
+  segnali: ['linkedin'],
+  unibile: true,
+}
+const NAME_PAIR = { ...LINKED_PAIR, survivor: person('f3', 'Alan', 'Turing'), segnali: ['nome'], unibile: false }
+
+describe('«Possibile duplicato» and the way into «Duplicati» (REB-800)', () => {
+  it('flags a row whose card may be someone else, linking to that card', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      answer(200, {
+        totale: 2,
+        items: [{ ...CARD_TALENTO, possibile_duplicato_di: ['f2'] }, { ...LEAD_TALENTO, possibile_duplicato_di: [] }],
+        per_stato: {},
+      }),
+    )
+    mount('/admin/talent')
+    const ada = (await screen.findByText('ada@studio.it')).closest('tr')!
+    expect(within(ada).getByRole('link', { name: 'Possibile duplicato' })).toHaveAttribute(
+      'href',
+      '/admin/freelance/f2',
+    )
+    const bob = screen.getByText('bob@example.org').closest('tr')!
+    expect(within(bob).queryByText('Possibile duplicato')).toBeNull()
+  })
+
+  it('sends a row with several look-alikes to the page that lists the pairs', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      answer(200, { totale: 1, items: [{ ...CARD_TALENTO, possibile_duplicato_di: ['f2', 'f3'] }], per_stato: {} }),
+    )
+    mount('/admin/talent')
+    expect(await screen.findByRole('link', { name: 'Possibile duplicato' })).toHaveAttribute(
+      'href',
+      '/admin/talent/duplicates',
+    )
+  })
+
+  it('links to «Duplicati» with the number of pairs, and only when there is one', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      answer(200, { totale: 1, items: [{ ...CARD_TALENTO, possibile_duplicato_di: [] }], per_stato: {} }),
+    )
+    mount('/admin/talent', { unibili: [LINKED_PAIR], da_rivedere: [NAME_PAIR], iscrizioni: 0 })
+    expect(await screen.findByRole('link', { name: 'Duplicati · 2' })).toHaveAttribute(
+      'href',
+      '/admin/talent/duplicates',
+    )
+  })
+
+  it('shows no link when nobody is on the list twice', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      answer(200, { totale: 1, items: [{ ...CARD_TALENTO, possibile_duplicato_di: [] }], per_stato: {} }),
+    )
+    mount('/admin/talent')
+    await screen.findByText('ada@studio.it')
+    await settle()
+    expect(screen.queryByRole('link', { name: /Duplicati/ })).toBeNull()
+  })
+
+  it('leaves the list alone when the pairs cannot be read', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      answer(200, { totale: 1, items: [{ ...CARD_TALENTO, possibile_duplicato_di: [] }], per_stato: {} }),
+    )
+    mount('/admin/talent', () => answer(500, { detail: 'boom' }))
+    expect(await screen.findByText('ada@studio.it')).toBeInTheDocument()
+    await settle()
+    expect(screen.queryByRole('link', { name: /Duplicati/ })).toBeNull()
+  })
+
+  it('flags a card\'s page with the other card of its pair', async () => {
+    routeFetch({
+      'GET /api/hub/freelancers/f1': INCOMPLETE,
+      'GET /api/hub/freelancers/f1/audit': [],
+      'GET /api/hub/freelancers/f1/card': noCard('f1'),
+    })
+    mount('/admin/freelance/f1', { unibili: [LINKED_PAIR], da_rivedere: [], iscrizioni: 0 })
+    const banner = await screen.findByRole('banner')
+    expect(await within(banner).findByRole('link', { name: 'Possibile duplicato' })).toHaveAttribute(
+      'href',
+      '/admin/freelance/f2',
+    )
+  })
+
+  it('shows nothing on the page of a card that is in no pair', async () => {
+    routeFetch({
+      'GET /api/hub/freelancers/f1': INCOMPLETE,
+      'GET /api/hub/freelancers/f1/audit': [],
+      'GET /api/hub/freelancers/f1/card': noCard('f1'),
+    })
+    const elsewhere = { ...LINKED_PAIR, survivor: person('f8', 'Linus', 'Torvalds'), assorbito: person('f9', 'Dennis', 'Ritchie') }
+    mount('/admin/freelance/f1', { unibili: [elsewhere], da_rivedere: [], iscrizioni: 0 })
+    await screen.findByRole('banner')
+    await settle()
+    expect(screen.queryByText('Possibile duplicato')).toBeNull()
   })
 })

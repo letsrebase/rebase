@@ -48,7 +48,7 @@ from fastapi import (
 )
 
 from rebase_api.deps import (
-    LlmDep,
+    CardLlmDep,
     MeDep,
     SenderDep,
     SessionDep,
@@ -173,7 +173,7 @@ def replace_my_cv(
     request: Request,
     session: SessionDep,
     background: BackgroundTasks,
-    llm: LlmDep,
+    llm: CardLlmDep,
     open_session: SessionOpenerDep,
     cv: Annotated[UploadFile, File()],
 ) -> MeRead:

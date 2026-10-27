@@ -470,7 +470,7 @@ def test_the_service_has_exactly_the_dashboards_that_exist() -> None:
     where the message is about a list.
 
     6B shipped one; Tasks C4 and C6 added the other two and registered their tools in the
-    same commits, for the reason `tools/__init__.py` records beside each. The set is
+    same commits, for the reason `tools/dashboard.py`'s docstring records. The set is
     widened by the task that adds the method and never ahead of it -- a set widened early
     leaves the assertion green over a method that does not exist, which is a pin that has
     stopped pinning.

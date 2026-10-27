@@ -112,8 +112,10 @@ def settings(hub_engine: Engine) -> Settings:
 
 
 def _apply(session: Session, email: str = "ada@studio.it") -> UUID:
+    # One profile per person (REB-800): each address gets a profile of its own.
+    profile = {**GOOD, "linkedin_url": f"https://www.linkedin.com/in/{email.split('@')[0]}"}
     read, _ = FreelancerService(session).apply(
-        FreelancerCreate(**GOOD, email=email), PDF, "Ada CV.pdf", "application/pdf"
+        FreelancerCreate(**profile, email=email), PDF, "Ada CV.pdf", "application/pdf"
     )
     return read.id
 

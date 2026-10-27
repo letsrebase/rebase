@@ -40,7 +40,7 @@ INVALID_TOKEN = "token non valido o revocato"
 
 
 def _audit_payload(record: PersonalAccessToken) -> dict[str, object]:
-    return {"token_id": record.id, "nome": record.nome}
+    return {"token_id": record.id, "nome": record.nome, "full_access": record.full_access}
 
 
 class PatRead(BaseModel):
@@ -49,9 +49,20 @@ class PatRead(BaseModel):
     id: UUID
     nome: str
     prefix: str
+    # What the owner chose for this token (REB-810). The token reaches the privileged
+    # surface only where the space's own switch is open too, which `resolve` decides.
+    full_access: bool
     last_used_at: datetime | None
     revoked_at: datetime | None
     created_at: datetime
+
+
+class TeamPatRead(PatRead):
+    """A colleague's live token as an administrator sees it: whose it is, so that the one
+    that should not reach the invoice tools can be closed without asking its owner."""
+
+    user_id: UUID
+    owner_nome: str
 
 
 def _digest(raw: str) -> str:
@@ -70,12 +81,18 @@ class PatService:
         # inheriting whatever `.env` the process happened to load.
         self.settings = settings or get_settings()
 
-    def create(self, nome: str, actor: Actor) -> tuple[PatRead, str]:
+    def create(self, nome: str, actor: Actor, *, full_access: bool = False) -> tuple[PatRead, str]:
         if actor.id is None:
             raise ValidationFailed("token", "actor", "serve un utente autenticato")
         # A token outlives the revocation the first link by mail performs, so an
         # address nobody has proven yet cannot mint one (spec 2026-09-12 §6.4).
         require_verified_identity(self.session, actor, "create_token")
+        if full_access:
+            # A token that opens the privileged surface is a person's decision, and an
+            # agent credential can mint tokens over REST like any other write: without
+            # this, the token a person kept closed could mint an open one for itself.
+            actor.require_person("create_full_access_token")
+            self._require_ceiling_open()
 
         raw = PAT_PREFIX + secrets.token_urlsafe(32)
         record = PersonalAccessToken(
@@ -83,6 +100,7 @@ class PatService:
             nome=nome,
             token_hash=_digest(raw),
             prefix=raw[: len(PAT_PREFIX) + PREFIX_VISIBLE_CHARS],
+            full_access=full_access,
         )
         self.session.add(record)
         try:
@@ -123,6 +141,77 @@ class PatService:
             USER_ENTITY, record.user_id, "pat_revoked", actor, _audit_payload(record)
         )
         self.session.commit()
+
+    def _require_ceiling_open(self) -> None:
+        """A token cannot be given what its space does not offer. Stored closed instead
+        of refused it would be a flag nobody can see doing anything, and the day an
+        administrator opens the switch every such token would open with it."""
+        if not self.settings.mcp_full_access:
+            raise ValidationFailed(
+                "token",
+                "full_access",
+                "l'accesso completo è chiuso per questo spazio: lo apre un amministratore "
+                "in Impostazioni → Spazio",
+            )
+
+    def set_full_access(self, pat_id: UUID, full_access: bool, actor: Actor) -> PatRead:
+        """Opens or closes one token's privileged surface (REB-810). Its owner may, and so
+        may an administrator, who is the one asked to close a token that should not be
+        reaching the invoice tools. No agent credential may, not even the owner's own
+        token: a token that could open itself would make the choice the owner made
+        meaningless, so this is refused before the role is looked at (`require_person`).
+
+        Closing is always allowed; opening needs the space's switch open (the ceiling). A
+        revoked token has nothing left to decide. The change is recorded against the
+        token's owner, with the actor who made it, so the timeline says whether the owner
+        or an administrator did it. A call that changes nothing records nothing.
+        """
+        actor.require_person("set_token_full_access")
+        record = self.session.get(PersonalAccessToken, pat_id)
+        if record is None:
+            raise NotFound("personal_access_token", pat_id)
+        if record.user_id != actor.id:
+            # Another member's token is account administration, like changing the member
+            # (`UserService.update`): a scoped admin has the role and not the whole space.
+            actor.require_unscoped_admin("set_token_full_access")
+        if record.revoked_at is not None:
+            raise Conflict("personal_access_token", "token revocato: non si può più modificare")
+        if record.full_access == full_access:
+            return PatRead.model_validate(record)
+        if full_access:
+            self._require_ceiling_open()
+        record.full_access = full_access
+        self.session.flush()
+        self.activities.record(
+            USER_ENTITY,
+            record.user_id,
+            "pat_full_access_changed",
+            actor,
+            {**_audit_payload(record), "full_access_prima": not full_access},
+        )
+        self.session.commit()
+        return PatRead.model_validate(record)
+
+    def list_team(self, actor: Actor) -> list[TeamPatRead]:
+        """The live tokens of the members other than the caller, for an administrator."""
+        actor.require_unscoped_admin("list_team_tokens")
+        stmt = (
+            select(PersonalAccessToken, User.nome)
+            .join(User, User.id == PersonalAccessToken.user_id)
+            .where(
+                PersonalAccessToken.revoked_at.is_(None),
+                PersonalAccessToken.user_id != actor.id,
+            )
+            .order_by(User.nome, PersonalAccessToken.created_at.desc())
+        )
+        return [
+            TeamPatRead(
+                **PatRead.model_validate(record).model_dump(),
+                user_id=record.user_id,
+                owner_nome=nome,
+            )
+            for record, nome in self.session.execute(stmt)
+        ]
 
     def revoke_all_for(self, user_id: UUID, actor: Actor) -> None:
         """Ends every live token of one user, inside the caller's transaction: flushes,
@@ -186,14 +275,16 @@ class PatService:
         # travels on the actor rather than being consulted at the point of use, so a REST
         # request presenting this token behaves exactly like the MCP transport -- the
         # asymmetry that once let a `curl` issue an invoice while the tool was
-        # unregistered. Closed unless the installation opted in; see
-        # `AGENT_FORBIDDEN_ACTIONS` for what that opens and why it is a decision about a
-        # machine rather than about a role.
+        # unregistered. Two things must be open (REB-810): the token's own flag, chosen by
+        # its owner and closed unless asked for, and the space's `mcp_full_access`, which
+        # is the ceiling: an installation that never opened it has no privileged surface
+        # at all, whatever a token says. See `AGENT_FORBIDDEN_ACTIONS` for what that
+        # opens and why it is a decision about a machine rather than about a role.
         resolved = Actor(
             id=user.id,
             type="mcp",
             role=role,
-            full_access=self.settings.mcp_full_access,
+            full_access=record.full_access and self.settings.mcp_full_access,
             # The owner's scope travels on the credential (REB-634): an agent sees the
             # aziende its person sees, read fresh here like the role.
             aziende=scope_of(user),

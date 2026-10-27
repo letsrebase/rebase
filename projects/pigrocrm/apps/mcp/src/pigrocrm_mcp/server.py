@@ -7,7 +7,6 @@ from uuid import UUID
 
 from mcp.server import MCPServer
 from mcp.server.context import ServerMiddleware
-from mcp.server.mcpserver import Context
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.shared.exceptions import MCPError
 from mcp.types import INVALID_PARAMS
@@ -19,12 +18,14 @@ from pigrocrm.core.errors import DomainError, OutOfScope
 from pigrocrm.core.fields.schemas import EntityType
 from pigrocrm.core.storage import DocumentStorage, storage_from_settings
 from pigrocrm_mcp import analytics
+from pigrocrm_mcp.annotations import READ_ONLY
 from pigrocrm_mcp.arguments import GuidedMCPServer
 from pigrocrm_mcp.context import ActorProvider, McpContext, SessionProvider
 from pigrocrm_mcp.errors import to_agent_message, to_domain_error
+from pigrocrm_mcp.listing import trim_tool_list
 from pigrocrm_mcp.provenance import mark_free_text
 from pigrocrm_mcp.resources import entities
-from pigrocrm_mcp.tools.schema import ENTITY_TYPES, entity_schema
+from pigrocrm_mcp.tools.schema import entity_schema
 
 INSTRUCTIONS = """PigroCRM — CRM per freelancer e piccole startup italiane.
 
@@ -42,6 +43,11 @@ uno strumento.
 Uno strumento `update_*` rifiuta una modifica vuota e risponde con `changed` (i campi
 cambiati) e `cleared` (quelli svuotati, con il valore che avevano): un campo che volevi
 cambiare e non è in `changed` non è stato modificato.
+In `changes` di un `update_*` metti solo i campi da modificare; `null` svuota quelli che lo
+ammettono (`update_attivita` ha flag propri). Gli elenchi e le ricerche paginati rispondono
+`next_cursor`: passalo come `cursor` per la pagina dopo, senza interpretarlo. `custom` di una
+ricerca filtra per uguaglianza esatta sui campi personalizzati (chiavi in `describe_schema`);
+`dir` è `asc` o `desc`.
 """
 
 
@@ -170,7 +176,9 @@ def build_server(
             resolved_settings, session_factory=getattr(session_provider, "new_session", None)
         ),
     )
-    mcp = GuidedMCPServer("PigroCRM", instructions=INSTRUCTIONS, middleware=middleware)
+    mcp = GuidedMCPServer(
+        "PigroCRM", instructions=INSTRUCTIONS, middleware=middleware, actor_provider=actor_provider
+    )
 
     # Resolved once, here, rather than per call (Task 4A-1). `ScopedSessionProvider`
     # (production, via `__main__.py`) exposes `.scope()`; a plain callable provider
@@ -308,51 +316,13 @@ def build_server(
         """The guard for a resource or a prompt: a domain error leaves as an `MCPError`."""
         return _guarded(fn, _as_protocol_error)
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY)
     @_guard
     def describe_schema(entity_type: EntityType) -> dict[str, Any]:
-        """Campi nativi e personalizzati attualmente definiti per un'entità.
-
-        Legge dal database a ogni chiamata: usalo prima di creare o aggiornare.
+        """Campi nativi e personalizzati di un'entità, letti a ogni chiamata. Usalo prima di creare
+        o aggiornare.
         """
         return entity_schema(context, entity_type)
-
-    @mcp.tool()
-    @_guard
-    async def refresh_schema(ctx: Context) -> dict[str, int]:
-        """Ricarica i campi personalizzati e riporta quanti sono definiti per entità.
-
-        Dopo aver chiamato questo strumento, richiama `describe_schema` per vedere
-        i campi aggiornati: a seconda della versione di protocollo negoziata con
-        questo client, potresti non ricevere alcun avviso automatico di
-        cambiamento. Non aspettare una notifica che potrebbe non arrivare mai.
-        """
-        counts: dict[str, int] = {
-            entity: len(entity_schema(context, entity)["custom_fields"]) for entity in ENTITY_TYPES
-        }
-        # Best-effort, kept because it is correct and harmless -- not because it
-        # reliably reaches the client. Verified against the installed SDK
-        # (mcp==2.0.0), not assumed: with the default connection mode (`Client(
-        # server)`, `mode="auto"`), this negotiates the modern 2026-07-28
-        # protocol, under which `notifications/tools/list_changed` is delivered
-        # only to a client that opened a `subscriptions/listen` stream —
-        # `mcp.server.lowlevel.server.Server.get_capabilities`'s own docstring
-        # says so, and a live reproduction confirmed it: a `Client(server)`
-        # connection with a registered `message_handler` received zero messages
-        # after this call, even though the server advertises
-        # `tools.listChanged=True` for that same connection. Forcing the classic
-        # handshake protocol instead (`Client(server, mode="legacy")`, which
-        # negotiates 2025-11-25) delivered a `ToolListChangedNotification`
-        # immediately, despite that connection advertising `listChanged=False`.
-        # See `test_refresh_schema_notification_is_a_documented_sdk_limitation`
-        # for the reproduction this comment is based on. Re-verified on mcp==2.2.0
-        # (REB-451): that test still passes, and the capabilities are still
-        # `listChanged=True` on the modern connection and `False` on the legacy one.
-        # Re-verify both directions the next time `mcp` is upgraded. Either the
-        # modern protocol's listen-stream requirement, or this SDK's capability
-        # advertisement for it, may have changed.
-        await ctx.session.send_tool_list_changed()
-        return counts
 
     @mcp.resource("customer://{customer_id}")
     @_protocol_guard
@@ -416,39 +386,49 @@ def build_server(
         slack_tools.register(mcp, context, _guard, resolved_settings)
 
     if resolved_settings.mcp_full_access:
-        # The other half of the switch. `Actor.full_access` (stamped in
-        # `PatService.resolve`) decides whether the *service* says yes; this decides
-        # whether there is a door at all. Both read the same setting, and
-        # `test_mcp_invoice_ban.py` fails if they disagree -- registered tools that all
-        # refuse, or capabilities with no way to reach them, are both worse than either
-        # honest state.
+        # The ceiling, and only the ceiling (REB-810). `Settings.mcp_full_access` decides
+        # whether there is a door at all; which tokens are shown it is each token's own
+        # `full_access`, read from the actor by `GuidedMCPServer` (`list_tools`,
+        # `call_tool`), and the service says yes or no from the same flag
+        # (`Actor.full_access`, stamped in `PatService.resolve` from the token and this
+        # setting). `test_mcp_invoice_ban.py` fails if the two disagree -- registered tools
+        # that all refuse, or capabilities with no way to reach them, are both worse than
+        # either honest state.
         #
         # Conditional for the same reason Gmail is: not registered means not listed and
         # not callable. An installation that has not opted in does not get tools answering
-        # «vietato», it gets a surface on which they do not exist. The module
-        # reads the settings once more for the one tool that also needs a mailbox
-        # (`discover_gmail_correspondents`), which is absent without Google exactly as
-        # `tools/gmail.py` is.
-        from pigrocrm_mcp.tools import privileged as privileged_tools
+        # «vietato», it gets a surface on which they do not exist, and a token that has not
+        # been given the flag sees the same surface. The module reads the settings once
+        # more for the one tool that also needs a mailbox (`discover_gmail_correspondents`),
+        # which is absent without Google exactly as `tools/gmail.py` is.
+        #
+        # Everything registered inside the block is what a token without the flag does not
+        # see: the block, not a list of names, is the definition of «privileged».
+        with mcp.privileged_registration():
+            from pigrocrm_mcp.tools import privileged as privileged_tools
 
-        privileged_tools.register(mcp, context, _guard, resolved_settings)
+            privileged_tools.register(mcp, context, _guard, resolved_settings)
 
-        if gmail_configured(resolved_settings):
-            # Slice 9C §4.2's three Drive reads, and the only privileged module whose
-            # *whole* content needs Google as well as the switch: reading a folder or a
-            # file spends the titolare's Drive quota under their OAuth consent, and
-            # without a Google client there is no credential to spend it with. So the
-            # second condition is expressed here, in the import, rather than as an `if`
-            # inside `register` -- unlike `privileged.py`, which is registered by the
-            # switch alone and re-reads the settings for its one Gmail tool.
-            #
-            # Both privileged modules are named in `test_mcp_invoice_ban.py`'s
-            # `PRIVILEGED_MODULES`, and that file fails if either is reachable outside
-            # this block: the exemption its source scans grant is enumerated in one
-            # place and checked, not left to a comment.
-            from pigrocrm_mcp.tools import drive_privileged as drive_privileged_tools
+            if gmail_configured(resolved_settings):
+                # Slice 9C §4.2's three Drive reads, and the only privileged module whose
+                # *whole* content needs Google as well as the switch: reading a folder or a
+                # file spends the titolare's Drive quota under their OAuth consent, and
+                # without a Google client there is no credential to spend it with. So the
+                # second condition is expressed here, in the import, rather than as an `if`
+                # inside `register` -- unlike `privileged.py`, which is registered by the
+                # switch alone and re-reads the settings for its one Gmail tool.
+                #
+                # Both privileged modules are named in `test_mcp_invoice_ban.py`'s
+                # `PRIVILEGED_MODULES`, and that file fails if either is reachable outside
+                # this block: the exemption its source scans grant is enumerated in one
+                # place and checked, not left to a comment.
+                from pigrocrm_mcp.tools import drive_privileged as drive_privileged_tools
 
-            drive_privileged_tools.register(mcp, context, _guard, resolved_settings)
+                drive_privileged_tools.register(mcp, context, _guard, resolved_settings)
+
+    # Once every tool is registered and before the analytics wrapper reads the schemas:
+    # the listing an agent pays for in tokens loses the `title`s nobody reads (`listing.py`).
+    trim_tool_list(mcp)
     # Last, once every tool and resource is registered, so the wrapper sees them all.
     # A no-op without `PIGROCRM_POSTHOG_KEY` (see `analytics.py`), which is what every
     # test and every self-hosted installation without a key gets. `space` is the slug

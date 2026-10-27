@@ -37,6 +37,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from rebase_core.admin_tokens import AdminRead
+from rebase_core.ai_config import AiConfigService
 from rebase_core.amounts import NotAnAmount, italian_amount
 from rebase_core.campaigns.service import CampaignService
 from rebase_core.cards import CardWriter
@@ -47,6 +48,7 @@ from rebase_core.config import Settings
 from rebase_core.contract_schemas import FiscalData, MatchCreate
 from rebase_core.contracts.fields import signer_data
 from rebase_core.contracts.render import Renderer
+from rebase_core.duplicates import duplicate_list
 from rebase_core.engagements import EngagementService
 from rebase_core.errors import DomainError, NotFound, ValidationFailed
 from rebase_core.fiscal import FiscalService
@@ -64,6 +66,7 @@ from rebase_core.matches import (
     require_live_document,
     require_live_match,
 )
+from rebase_core.merge import PersonMergeService
 from rebase_core.models import Freelancer, Signup, User
 from rebase_core.perks import PerkService
 from rebase_core.pigro import PigroRegistry, PigroUnavailable
@@ -209,6 +212,16 @@ def _moment(value: str | None, field: str) -> datetime | None:
         raise ToolError(f"{field}: «{value}» non è una data e ora ISO 8601") from None
 
 
+def _without_addresses(page: dict[str, Any]) -> dict[str, Any]:
+    """The duplicates' page for an agent: the pairs by name and id, never an address."""
+    for key in ("unibili", "da_rivedere"):
+        for pair in page[key]:
+            for side in ("survivor", "assorbito"):
+                pair[side].pop("email", None)
+                pair[side].pop("user_id", None)
+    return page
+
+
 def _search_term(value: str | None) -> str | None:
     """`q` bounded the way the API's `SearchQ` bounds it: an unbounded term reaching
     `ILIKE` and `similarity()` on every row is a denial of service with extra steps."""
@@ -245,6 +258,10 @@ def _supplied_text(raw: str) -> str | None:
     return raw or None
 
 
+# A model seam asked on each tool call, `None` when no model is configured for the task.
+LlmSource = Callable[[], LlmCall | None]
+
+
 def build_server(
     factory: SessionFactory,
     admin: AdminProvider,
@@ -254,7 +271,8 @@ def build_server(
     middleware: Sequence[ServerMiddleware[Any]] | None = None,
     renderer: Renderer | None = None,
     signing: SigningFactory | None = None,
-    llm: LlmCall | None = None,
+    card_llm: LlmSource | None = None,
+    team_llm: LlmSource | None = None,
     sender: EmailSender | None = None,
     engagements: EngagementsFactory | None = None,
 ) -> MCPServer:
@@ -270,10 +288,12 @@ def build_server(
     `FakeRenderer` and a service over fakes. Without them a contract is not written and
     a send answers that signing is not active here, as the admin area does.
 
-    `llm` is the Claude seam (REB-508, `call_from_settings`) `propose_team` and
-    `regenerate_freelancer_card` call, `None` without a key -- then, as the admin area
-    already does, they refuse with the team builder's own sentence rather than a
-    silent no-op; `sender` is the availability mails' and the talent cloud's
+    `team_llm` and `card_llm` answer the model seam (REB-508, `call_for_task`) for
+    `propose_team` and `regenerate_freelancer_card`, asked on each call because an admin
+    can configure a model in «Modelli AI» while this server runs; `None` from either
+    (no model configured for that task) -- then, as the admin area already does, the
+    tool refuses with the team builder's own sentence rather than a silent no-op;
+    `sender` is the availability mails' and the talent cloud's
     (`sender_from_settings`), `None` without a mail key. A test hands `RecordingCall`
     and `RecordingSender`, the same way `mail.py`'s own tests do.
 
@@ -689,6 +709,7 @@ def build_server(
         il team builder è spento, invece di lasciare la scheda com'era fingendo di
         averla riscritta. Il livello che l'admin ha corretto (`override_freelancer`,
         `seniority` e `anni`) resta com'è."""
+        llm = card_llm() if card_llm is not None else None
         if llm is None:
             # `CardWriter.write` itself has no opinion on a missing key -- it just
             # answers the card unchanged, `list_pigro_spaces`'s own precondition,
@@ -712,6 +733,33 @@ def build_server(
         voce che è una modifica di campo, non su una cancellazione o un ripristino."""
         return _run(
             lambda s: FreelancerService(s).revert(UUID(freelancer_id), UUID(action_id), admin().id)
+        )
+
+    @mcp.tool()
+    def list_duplicati() -> dict[str, Any]:
+        """Chi è in lista due volte (REB-800): `unibili` sono le coppie di schede vive con
+        lo stesso profilo LinkedIn, che `merge_freelancers` può unire; `da_rivedere` quelle
+        che hanno in comune solo il nome o il telefono, da guardare prima di decidere,
+        mai unite da sole; `iscrizioni` quante iscrizioni ripetono un profilo (nessuna
+        scheda da unire: restano fuori dalle liste dei lead). Per ogni coppia `survivor` è
+        la scheda col CV più recente, quella che tiene, e `assorbito` quella che entra
+        nell'altra. Solo lettura, senza indirizzi."""
+        return _call(lambda s: _without_addresses(duplicate_list(s).model_dump(mode="json")))
+
+    @mcp.tool()
+    def merge_freelancers(freelancer_id: str, da_id: str) -> dict[str, Any]:
+        """Unisce la scheda `da_id` in `freelancer_id` (REB-800): commenti, accessi,
+        match, contratti, righe di campagna, referral e voci del registro passano alla
+        scheda che resta; il CV più recente resta lì, con la sua scheda anonima segnata
+        da riscrivere (la riscrive `cards-refresh`, oppure `regenerate_freelancer_card`);
+        l'altra scheda non si cancella, si nasconde e punta a questa, e l'indirizzo che
+        aveva continua a funzionare per entrare. Risponde quante righe sono passate, per
+        tipo, e l'id dell'azione. Rifiutata con una frase quando entrambe hanno un
+        contratto quadro in corso o firmato, un incarico attivo con la stessa azienda o
+        due codici fiscali diversi, o quando la scheda da assorbire è di un amministratore.
+        Si annulla da terminale con `rebase talent-duplicates --undo`."""
+        return _run(
+            lambda s: PersonMergeService(s).merge(UUID(freelancer_id), UUID(da_id), admin().id)
         )
 
     @mcp.tool()
@@ -886,6 +934,18 @@ def build_server(
             lambda s: CompanyService(s).revert(UUID(company_id), UUID(action_id), admin().id)
         )
 
+    # ---- «Modelli AI» (REB-833): read only, never a key ------------------------------
+
+    @mcp.tool()
+    def list_ai_config() -> dict[str, Any]:
+        """«Modelli AI», solo lettura: per ogni fornitore se la chiave c'è («configurata,
+        finisce con …abcd», mai la chiave) e se è acceso; per ogni compito (`card`,
+        `team_proposal`) fornitore, modello, livello di ragionamento, massimo di token,
+        tetto giornaliero in euro, quanto ha speso oggi e perché non può partire, se non
+        può; i prezzi per milione di token e la spesa del mese per compito e fornitore.
+        Le chiavi si cambiano solo dalla pagina: nessun tool le scrive."""
+        return _run(lambda s: AiConfigService(s, team_settings()).read())
+
     # ---- the team requests, the engine, and the talent cloud (REB-520, spec § 8) -------
 
     @mcp.tool()
@@ -1010,9 +1070,9 @@ def build_server(
             previous_id=UUID(previous_id) if previous_id else None,
         )
         return _run(
-            lambda s: TeamBuilder(s, llm, team_settings()).propose(
-                data, origine="admin", user_id=admin().id
-            )
+            lambda s: TeamBuilder(
+                s, team_llm() if team_llm is not None else None, team_settings()
+            ).propose(data, origine="admin", user_id=admin().id)
         )
 
     @mcp.tool()

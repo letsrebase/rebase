@@ -266,6 +266,10 @@ class CompanyService:
         identity_changes = {k: v for k, v in changes.items() if k in _ADMIN_IDENTITY_FIELDS}
         row_changes = {k: v for k, v in changes.items() if k not in _ADMIN_IDENTITY_FIELDS}
         reject_cleared_columns(ENTITY, User, identity_changes)
+        if identity_changes.get("linkedin_url") is not None:
+            UserService(self.session).require_free_linkedin(
+                user.id, identity_changes["linkedin_url"]
+            )
         reject_cleared_columns(ENTITY, Company, row_changes)
         # A partial override may touch only one side of the together-rule
         # (`ck_companies_giorni_presenza_together`): computed and refused here, on the

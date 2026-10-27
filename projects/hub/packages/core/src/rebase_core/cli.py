@@ -1,14 +1,21 @@
 """`rebase`: the operator's commands."""
 
 import argparse
+import base64
+import binascii
+import os
 import sys
 from collections.abc import Sequence
+from contextlib import closing
 from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
+from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import bindparam, select, text
 from sqlalchemy.orm import Session
 
 from rebase_core.admin_tokens import DEFAULT_NAME, AdminTokenService
+from rebase_core.ai_config import AiConfigService
 from rebase_core.campaigns.sender import campaign_sender_from_settings
 from rebase_core.campaigns.tick import run_tick
 from rebase_core.cards import CardWriter
@@ -23,12 +30,15 @@ from rebase_core.contracts.render import (
 from rebase_core.conversions import pixel_from_settings
 from rebase_core.db import create_engine_from_settings, session_factory
 from rebase_core.documenso import client_from_settings
+from rebase_core.duplicates import UNIQUE_INDEXES, ensure_unique_indexes, find_duplicates
 from rebase_core.errors import DocumensoFailed, DomainError
 from rebase_core.freelancers import freelancer_read
 from rebase_core.http import HttpCall
-from rebase_core.llm import call_from_settings
+from rebase_core.llm import call_for_task
 from rebase_core.mail import CardSummary, EmailSender, sender_from_settings, welcome_mail
+from rebase_core.merge import MergeRead, PersonMergeService
 from rebase_core.models import USER_ROLES, Freelancer, Signup, User
+from rebase_core.secrets import KEY_BYTES
 from rebase_core.signing import signing_from_settings
 from rebase_core.users import UserService
 
@@ -216,31 +226,269 @@ def cards_refresh(limit: int) -> int:
     Run once after the deploy that brings the key, and again until it prints «0 schede
     scritte, 0 non riuscite». A CV that failed on its own account is not tried again
     until it changes, so the runs end; a batch that met an outage stops there, counts it
-    among «non riuscite», says «fermato: Claude non disponibile» and leaves it and the
+    among «non riuscite», says «fermato: modello non disponibile» and leaves it and the
     rest to the next run. A card still giving the gender away after its rewrite is among
-    «non riuscite» (REB-802), and not tried again until its CV changes. Without a key it
-    says so, rather than printing «0 schede scritte» for ever."""
+    «non riuscite» (REB-802), and not tried again until its CV changes. Without a model
+    configured for the `card` task it says so, rather than printing «0 schede scritte» for
+    ever."""
     if limit < 1:
         print("--limit deve essere almeno 1.", file=sys.stderr)
         return 2
     settings = get_settings()
-    llm = call_from_settings(settings)
+    open_session = session_factory(create_engine_from_settings(settings))
+    llm = call_for_task(lambda: closing(open_session()), settings, "card")
     if llm is None:
         print(
-            "Nessuna chiave per Claude: serve REBASE_ANTHROPIC_API_KEY.",
+            "Nessun modello configurato per le schede: apri «Modelli AI».",
             file=sys.stderr,
         )
         return 1
-    session = session_factory(create_engine_from_settings(settings))()
+    session = open_session()
     try:
         result = CardWriter(session, llm).refresh_stale(limit)
     finally:
         session.close()
     summary = f"{result.written} schede scritte, {result.failed} non riuscite"
     if result.stopped:
-        summary += ", fermato: Claude non disponibile"
+        summary += ", fermato: modello non disponibile"
     print(summary)
     return 0
+
+
+def ai_seed(eur_per_usd: str) -> int:
+    """`rebase ai-seed --eur-per-usd 0.92`: once, moves `REBASE_ANTHROPIC_API_KEY` and
+    `REBASE_TEAM_BUILDER_MODEL` (read from the environment: the Settings fields are gone,
+    REB-831) into «Modelli AI»: the key sealed, `anthropic` on, both tasks on that model,
+    and the prices of the Claude models in euros at `--eur-per-usd` (EUR per 1 USD, the
+    inverse of the ECB's quote). Prints the hint of the key, never the key (REB-832)."""
+    try:
+        rate = Decimal(eur_per_usd)
+    except InvalidOperation:
+        print("--eur-per-usd deve essere un numero, per esempio 0.92.", file=sys.stderr)
+        return 2
+    api_key = os.environ.get("REBASE_ANTHROPIC_API_KEY", "").strip()
+    if not api_key:
+        print("REBASE_ANTHROPIC_API_KEY manca: non c'è niente da spostare.", file=sys.stderr)
+        return 1
+    model = os.environ.get("REBASE_TEAM_BUILDER_MODEL", "").strip() or "claude-opus-5"
+    settings = get_settings()
+    session = session_factory(create_engine_from_settings(settings))()
+    try:
+        result = AiConfigService(session, settings).seed_from_env(None, api_key, model, rate)
+    except DomainError as exc:
+        print(exc.message, file=sys.stderr)
+        return 1
+    finally:
+        session.close()
+    print(f"chiave salvata, finisce con …{result.key_hint[-4:]}")
+    print(f"modello {result.model} per le schede e per il team, {result.prices} prezzi scritti")
+    return 0
+
+
+def _key_from_argument(value: str) -> bytes | None:
+    try:
+        key = base64.b64decode(value.strip(), validate=True)
+    except (binascii.Error, ValueError):
+        return None
+    return key if len(key) == KEY_BYTES else None
+
+
+def ai_rotate_secrets() -> int:
+    """`rebase ai-rotate-secrets`: re-seals every stored provider key from the old
+    `REBASE_SECRETS_KEY` to the new one, in one transaction, and prints how many. Both
+    values come from the environment (`REBASE_SECRETS_KEY_OLD`, `REBASE_SECRETS_KEY_NEW`),
+    never from the command line, where `ps`, the shell history and `docker exec` would show
+    what opens every stored key. Put the new value in `.env` afterwards (REB-832)."""
+    old = _key_from_argument(os.environ.get("REBASE_SECRETS_KEY_OLD", ""))
+    new = _key_from_argument(os.environ.get("REBASE_SECRETS_KEY_NEW", ""))
+    if old is None or new is None:
+        print(
+            "REBASE_SECRETS_KEY_OLD e REBASE_SECRETS_KEY_NEW devono essere 32 byte in base64.",
+            file=sys.stderr,
+        )
+        return 2
+    settings = get_settings()
+    session = session_factory(create_engine_from_settings(settings))()
+    try:
+        count = AiConfigService(session, settings).rotate(old, new)
+    except DomainError as exc:
+        print(exc.message, file=sys.stderr)
+        return 1
+    finally:
+        session.close()
+    print(f"{count} chiavi ricifrate")
+    return 0
+
+
+def talent_duplicates(
+    session: Session,
+    *,
+    apply: bool = False,
+    admin_email: str | None = None,
+    survivor: UUID | None = None,
+    absorbed: UUID | None = None,
+    undo: UUID | None = None,
+) -> tuple[int, list[str]]:
+    """`rebase talent-duplicates`: the people who are on the list twice (REB-800).
+
+    Without flags it only reads: every pair of live cards that share a LinkedIn profile
+    (`unibili`, with what a merge would move), every pair that only shares a name or a
+    telephone number (`da rivedere`: never merged on its own), and the sign-ups that
+    repeat a profile. It prints counts and internal ids, never a name, an address or a
+    profile, so its output can go on a card. `--apply --admin EMAIL` merges every unibile
+    pair, the card with the newest CV surviving (`--survivor ID --absorbed ID` merges that
+    one pair instead, whichever signals it has: an admin who read both cards chose), then
+    creates the LinkedIn unique indexes if nothing shares a profile any more. `--undo
+    ACTION_ID --admin EMAIL` puts one merge back. Answers the exit code and the lines."""
+    lines: list[str] = []
+    if (apply or undo is not None) and not admin_email:
+        return 2, ["--apply e --undo vogliono --admin con l'indirizzo di un amministratore."]
+    admin_id: UUID | None = None
+    if admin_email:
+        admin = UserService(session).by_email(admin_email)
+        if admin is None or admin.role != "admin":
+            return 1, [f"Nessun amministratore con email {admin_email.strip().lower()}"]
+        admin_id = admin.id
+    merges = PersonMergeService(session)
+    if undo is not None:
+        assert admin_id is not None
+        try:
+            done = merges.undo(undo, admin_id)
+        except DomainError as exc:
+            return 1, [exc.message]
+        moved = ", ".join(f"{key}={count}" for key, count in sorted(done.moved.items()))
+        note = (
+            " (il profilo LinkedIn resta alla scheda che l'ha tenuto: l'indice unico ne vuole uno)"
+            if done.lasciati.get("linkedin")
+            else ""
+        )
+        return 0, [
+            f"unione {undo} annullata: scheda {done.absorbed_freelancer_id} di nuovo viva "
+            f"({moved}){note}"
+        ]
+    if survivor is not None or absorbed is not None:
+        if not (apply and survivor and absorbed):
+            return 2, ["--survivor e --absorbed vanno insieme, e con --apply."]
+        assert admin_id is not None
+        try:
+            done = merges.merge(survivor, absorbed, admin_id)
+        except DomainError as exc:
+            return 1, [exc.message]
+        return 0, [_merge_line(done)]
+
+    report = find_duplicates(session)
+    lines.append(
+        f"{len(report.unibili)} coppie unibili (stesso LinkedIn), "
+        f"{len(report.da_rivedere)} da rivedere (solo nome o telefono), "
+        f"{len(report.iscrizioni)} iscrizioni che ripetono un profilo"
+    )
+    failed = 0
+    for number, pair in enumerate(report.unibili, 1):
+        head = (
+            f"coppia {number}: tieni {pair.survivor.freelancer_id} "
+            f"assorbi {pair.assorbito.freelancer_id} [{','.join(pair.segnali)}]"
+        )
+        if not apply:
+            try:
+                plan = merges.plan(pair.survivor.freelancer_id, pair.assorbito.freelancer_id)
+            except DomainError as exc:
+                lines.append(f"{head} bloccata: {exc.message}")
+                continue
+            moved = ", ".join(f"{key}={count}" for key, count in sorted(plan.items())) or "niente"
+            lines.append(f"{head} sposterebbe: {moved}")
+            continue
+        assert admin_id is not None
+        try:
+            if (
+                session.scalar(
+                    select(Freelancer.deleted_at).where(
+                        Freelancer.id == pair.assorbito.freelancer_id
+                    )
+                )
+                is not None
+            ):
+                lines.append(f"{head} già assorbita")
+                continue
+            done = merges.merge(pair.survivor.freelancer_id, pair.assorbito.freelancer_id, admin_id)
+        except DomainError as exc:
+            session.rollback()
+            failed += 1
+            lines.append(f"{head} bloccata: {exc.message}")
+            continue
+        lines.append(f"{head} {_merge_line(done, short=True)}")
+    for pair in report.da_rivedere:
+        lines.append(
+            f"da rivedere: {pair.survivor.freelancer_id} e {pair.assorbito.freelancer_id} "
+            f"[{','.join(pair.segnali)}]"
+        )
+    for lead in report.iscrizioni:
+        other = lead.card_user_id or lead.other_signup_id
+        lines.append(
+            f"iscrizione {lead.signup_id} ripete il profilo di "
+            f"{'una scheda (utente' if lead.card_user_id else "un'altra iscrizione ("}{other}): "
+            "fuori dalle liste dei lead, niente da unire"
+        )
+    if apply:
+        ensured = ensure_unique_indexes(session)
+        if ensured.created:
+            lines.append(f"indici unici creati: {', '.join(ensured.created)}")
+        for name, shared in ensured.blocked.items():
+            lines.append(
+                f"indice {name} non creato: {shared} profili sono ancora su più righe "
+                "(coppie bloccate sopra, iscrizioni o utenti senza scheda da sistemare a mano)"
+            )
+        if not ensured.created and not ensured.blocked:
+            lines.append("indici unici già presenti")
+    else:
+        present = {
+            row
+            for row in session.scalars(
+                text("SELECT indexname FROM pg_indexes WHERE indexname IN :names").bindparams(
+                    bindparam("names", [name for name, _ in UNIQUE_INDEXES], expanding=True)
+                )
+            )
+        }
+        missing = [name for name, _ in UNIQUE_INDEXES if name not in present]
+        lines.append(f"indici unici mancanti: {', '.join(missing) or 'nessuno'}")
+    return (1 if failed else 0), lines
+
+
+def _merge_line(done: MergeRead, *, short: bool = False) -> str:
+    moved = ", ".join(f"{key}={count}" for key, count in sorted(done.moved.items())) or "niente"
+    flag = ", scheda da rigenerare" if done.scheda_da_rigenerare else ""
+    text_ = f"unite (azione {done.action_id}): cv {done.cv}, spostato {moved}{flag}"
+    return (
+        text_
+        if short
+        else (
+            f"scheda {done.absorbed_freelancer_id} unita in {done.survivor_freelancer_id}: {text_}"
+        )
+    )
+
+
+def talent_duplicates_command(
+    apply: bool,
+    admin_email: str | None,
+    survivor: UUID | None,
+    absorbed: UUID | None,
+    undo: UUID | None,
+) -> int:
+    settings = get_settings()
+    session = session_factory(create_engine_from_settings(settings))()
+    try:
+        code, lines = talent_duplicates(
+            session,
+            apply=apply,
+            admin_email=admin_email,
+            survivor=survivor,
+            absorbed=absorbed,
+            undo=undo,
+        )
+    finally:
+        session.close()
+    for line in lines:
+        print(line, file=sys.stderr if code else sys.stdout)
+    return code
 
 
 def documenso_check(settings: Settings, http: HttpCall | None = None) -> int:
@@ -390,6 +638,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Scrive la scheda anonima di chi ha un CV nuovo o cambiato, i più vecchi prima",
     )
     cards_parser.add_argument("--limit", type=int, default=50)
+    seed_parser = sub.add_parser(
+        "ai-seed",
+        help="Sposta la chiave Anthropic e il modello vecchi in «Modelli AI», con i prezzi",
+    )
+    seed_parser.add_argument("--eur-per-usd", required=True)
+    sub.add_parser(
+        "ai-rotate-secrets",
+        help="Ricifra le chiavi dei modelli: REBASE_SECRETS_KEY_OLD e REBASE_SECRETS_KEY_NEW",
+    )
+    dup_parser = sub.add_parser(
+        "talent-duplicates",
+        help="Elenca chi è in lista due volte (a secco) e con --apply unisce le schede",
+    )
+    dup_parser.add_argument("--apply", action="store_true")
+    dup_parser.add_argument("--admin")
+    dup_parser.add_argument("--survivor", type=UUID)
+    dup_parser.add_argument("--absorbed", type=UUID)
+    dup_parser.add_argument("--undo", type=UUID)
     token = sub.add_parser(
         "createtoken", help="Crea un token personale di un amministratore, per un agente"
     )
@@ -421,6 +687,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         return campaigns_tick()
     if args.command == "cards-refresh":
         return cards_refresh(args.limit)
+    if args.command == "ai-seed":
+        return ai_seed(args.eur_per_usd)
+    if args.command == "ai-rotate-secrets":
+        return ai_rotate_secrets()
+    if args.command == "talent-duplicates":
+        return talent_duplicates_command(
+            args.apply, args.admin, args.survivor, args.absorbed, args.undo
+        )
     if args.command == "createtoken":
         return createtoken(args.email, args.nome)
     if args.command == "setrole":

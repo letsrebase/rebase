@@ -136,12 +136,13 @@ class Settings(BaseSettings):
     # the person running it may reasonably want their own agent to do everything they
     # can. Everyone else keeps the closed default without having to know it exists.
     #
-    # The flag is read once, in `PatService.resolve`, and stamped onto the `Actor` it
-    # builds -- so the capability travels on the credential rather than living in a
-    # global that a caller could be unaware of. That is deliberate: it means a REST
-    # request presenting the same token is treated exactly like the MCP transport
-    # (see the reasoning in `actor.py`), and it is the first step toward residuo R10,
-    # where a token would say what it is *for* instead of inheriting everything.
+    # This is the ceiling (REB-810): the privileged tools are registered only where it is
+    # on, and a token reaches them only if its own `full_access` flag, chosen by its owner,
+    # is on as well. `PatService.resolve` reads both once and stamps the result onto the
+    # `Actor` it builds -- so the capability travels on the credential rather than living
+    # in a global that a caller could be unaware of. That is deliberate: it means a REST
+    # request presenting the same token is treated exactly like the MCP transport (see the
+    # reasoning in `actor.py`).
     mcp_full_access: bool = False
 
     # The emitter's timezone, and the only one. Every `Date` column in the product is a

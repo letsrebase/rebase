@@ -9,7 +9,7 @@ from pigrocrm.core.templates.schemas import TemplateListQuery
 from pigrocrm.core.templates.service import TemplateService
 from pigrocrm_mcp.context import McpContext
 
-# A version number arrives as `int | str` (see `tools/__init__.py`'s note on why every
+# A version number arrives as `int | str` (see `tools/params.py`'s note on why every
 # scalar tool parameter has to stay permissive at the SDK boundary) and is validated
 # here, inside the guarded call, where a bad value becomes rendered guidance instead of
 # the SDK's own raw dump. Through pydantic rather than a bare `int(...)`: `int("prima")`

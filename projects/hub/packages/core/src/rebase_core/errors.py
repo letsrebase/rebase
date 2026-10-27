@@ -66,9 +66,24 @@ class LlmUnavailable(DomainError):
     code = "llm_unavailable"
 
 
+class LlmCapReached(LlmUnavailable):
+    """The task's daily euro cap is spent (`ai_config.py`): the call was refused before
+    any network. `message` is the sentence «Modelli AI» shows for the task. The same `code`
+    as its parent, so the places that key on it (`TEAM_PROPOSAL_ERRORS`, the API's
+    handler) treat it as the outage it is for a visitor."""
+
+
+class LlmNotConfigured(LlmUnavailable):
+    """The task cannot be called as configured: off, its provider off or without a key,
+    no price for its model, or a saved key that does not open. Refused before any
+    network; `message` is the sentence that says which, never key text. The `code` of its
+    parent, as `LlmCapReached`."""
+
+
 class TeamBuilderOff(DomainError):
     """The team builder cannot run in this environment: `REBASE_TEAM_BUILDER_ENABLED` is
-    false, or no `REBASE_ANTHROPIC_API_KEY` is configured at all (spec § 3.2, § 5).
+    false, or no model is configured for the `team_proposal` task in «Modelli AI» (spec
+    § 3.2, § 5).
     `message` is «Il team builder è spento.», the same sentence for either reason -- a
     visitor gets nothing useful from knowing which. A 503, the same shape
     `SigningUnavailable` already gives an environment missing Documenso or a mail
@@ -85,3 +100,31 @@ class TeamBuilderBusy(DomainError):
     the same thing either way. A 503 with `Retry-After`, like the limiter's 429."""
 
     code = "team_builder_busy"
+
+
+class SecretsKeyMissing(DomainError):
+    """`REBASE_SECRETS_KEY` is empty or is not 32 bytes in base64 (`secrets.py`, REB-829):
+    a provider key is neither saved nor read, and nothing falls back to plain text. A 409
+    in the API with the sentence, which «Modelli AI» shows as its banner."""
+
+    code = "secrets_key_missing"
+
+    def __init__(self) -> None:
+        super().__init__(
+            "REBASE_SECRETS_KEY manca o non è valida: servono 32 byte in base64. "
+            "Senza, le chiavi dei modelli non si salvano né si leggono."
+        )
+
+
+class SecretsKeyInvalid(DomainError):
+    """A stored secret does not open with the current `REBASE_SECRETS_KEY`. `message` names
+    the variable and nothing else: never the ciphertext, the key or a partial text, and
+    never which of «wrong key» or «row altered» it was (`secrets.py`, REB-829)."""
+
+    code = "secrets_key_invalid"
+
+    def __init__(self) -> None:
+        super().__init__(
+            "Una chiave salvata non si decifra: verifica REBASE_SECRETS_KEY, "
+            "oppure salva di nuovo la chiave del fornitore."
+        )

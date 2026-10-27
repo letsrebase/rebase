@@ -20,6 +20,7 @@ from rebase_core.models import Freelancer, FreelancerCard, TeamProposal, User
 from rebase_core.perks import guide_bytes
 from rebase_core.schemas import SignupCreate
 from rebase_core.service import SignupService
+from rebase_core.team_builder import ProposalAnswer
 from rebase_core.team_requests import TeamRequestService
 from rebase_core.team_schemas import TeamRequestCreate
 from rebase_mcp.server import build_server
@@ -47,7 +48,8 @@ def _seed(factory: sessionmaker[Session], addresses: list[str]) -> None:
                     email=address,
                     nome="Ada",
                     cognome="Lovelace",
-                    linkedin_url="https://www.linkedin.com/in/ada",
+                    # One profile per address: the same profile is the same person (REB-800).
+                    linkedin_url=f"https://www.linkedin.com/in/{address.split('@')[0]}",
                 )
             )
     finally:
@@ -68,7 +70,7 @@ async def test_the_talent_list_is_newest_first_and_the_total_counts_everything(
     assert [item["email"] for item in body["items"]] == ["due@studio.it"]
     item = body["items"][0]
     assert (item["nome"], item["cognome"]) == ("Ada", "Lovelace")
-    assert item["linkedin_url"] == "https://www.linkedin.com/in/ada"
+    assert item["linkedin_url"] == "https://www.linkedin.com/in/due"
     assert item["stato"] == "lead"
 
 
@@ -177,6 +179,8 @@ async def test_the_admin_tools_read_and_move_a_candidate_without_the_cv(
             "regenerate_freelancer_card",
             "get_freelancer_audit",
             "revert_freelancer_action",
+            "list_duplicati",
+            "merge_freelancers",
             "add_freelancer_comment",
             "list_aziende",
             "get_company",
@@ -189,6 +193,7 @@ async def test_the_admin_tools_read_and_move_a_candidate_without_the_cv(
             "add_company_comment",
             "list_team_requests",
             "list_team_proposals",
+            "list_ai_config",
             "get_team_request",
             "set_team_request_summary",
             "contact_team_talents",
@@ -708,6 +713,7 @@ def _proposal_response(position: str = "t1") -> LlmResponse:
     }
     return LlmResponse(
         text=json.dumps(body),
+        parsed=ProposalAnswer.model_validate(body),
         stop_reason="end_turn",
         refusal_category=None,
         model=MODEL,
@@ -748,6 +754,29 @@ def _seed_admin(factory: sessionmaker[Session]) -> None:
     session.close()
 
 
+async def test_the_model_is_asked_on_each_call_not_when_the_server_is_built(
+    factory: sessionmaker[Session],
+) -> None:
+    """REB-831: an admin can configure a model in «Modelli AI» while the MCP server
+    runs, so the tool asks for the seam on each call: off first, a card after."""
+    freelancer_id = _seed_freelancer_with_text_cv(
+        factory, "Ada Lovelace, backend developer a Torino da nove anni: Python, FastAPI, AWS."
+    )
+    _seed_admin(factory)
+    configured: list[RecordingCall] = []
+    source = lambda: configured[0] if configured else None  # noqa: E731
+    async with Client(build_server(factory, lambda: IVAN, card_llm=source)) as client:
+        off = await client.call_tool("regenerate_freelancer_card", {"freelancer_id": freelancer_id})
+        assert off.is_error and "Il team builder è spento." in off.content[0].text
+
+        configured.append(RecordingCall([card_response()]))
+        written = _payload(
+            await client.call_tool("regenerate_freelancer_card", {"freelancer_id": freelancer_id})
+        )
+        assert written["card"]["ruolo"] == CARD["ruolo"]
+    _wipe(factory)
+
+
 async def test_freelancer_card_tools_read_write_and_off_is_the_sentence(
     factory: sessionmaker[Session],
 ) -> None:
@@ -767,7 +796,7 @@ async def test_freelancer_card_tools_read_write_and_off_is_the_sentence(
 
     _seed_admin(factory)
     llm = RecordingCall([card_response(), card_response()])
-    async with Client(build_server(factory, lambda: IVAN, llm=llm)) as client:
+    async with Client(build_server(factory, lambda: IVAN, card_llm=lambda: llm)) as client:
         written = _payload(
             await client.call_tool("regenerate_freelancer_card", {"freelancer_id": freelancer_id})
         )
@@ -1151,7 +1180,7 @@ async def test_propose_team_proposes_as_the_admin_and_off_is_the_sentence(
     )
     llm = RecordingCall([_proposal_response()])
     async with Client(
-        build_server(factory, lambda: IVAN, settings=_team_settings(), llm=llm)
+        build_server(factory, lambda: IVAN, settings=_team_settings(), team_llm=lambda: llm)
     ) as client:
         proposed = _payload(await client.call_tool("propose_team", {"descrizione": descrizione}))
         assert proposed["origine"] == "admin"

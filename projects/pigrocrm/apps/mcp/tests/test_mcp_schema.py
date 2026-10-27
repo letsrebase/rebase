@@ -1,4 +1,3 @@
-import asyncio
 import json
 
 import pytest
@@ -60,51 +59,10 @@ async def test_describe_schema_reads_live_so_a_new_field_appears_at_once(
 async def test_the_tool_list_is_advertised(server) -> None:
     async with Client(server) as client:
         names = {tool.name for tool in (await client.list_tools()).tools}
-    assert {"describe_schema", "refresh_schema"} <= names
-
-
-async def test_refresh_schema_reports_what_it_rebuilt(server, mcp_session: Session) -> None:
-    FieldDefinitionService(mcp_session).create(
-        FieldDefinitionCreate(
-            entity_type="customer", key="settore", label="Settore", field_type="text"
-        ),
-        ADMIN,
-    )
-    async with Client(server) as client:
-        body = _payload(await client.call_tool("refresh_schema", {}))
-    assert body["customer"] == 1
-
-
-async def test_refresh_schema_notification_is_a_documented_sdk_limitation(server) -> None:
-    """`refresh_schema` calls `ctx.session.send_tool_list_changed()` correctly (see
-    the comment beside that call in server.py), but the installed SDK (mcp==2.0.0)
-    only delivers it to a client that opened a `subscriptions/listen` stream when
-    the connection negotiates the modern (2026-07-28) protocol -- the default a
-    plain `Client` connection negotiates, and what every other test in this file
-    uses. This documents the observed gap (and that the classic handshake
-    protocol does not have it) instead of asserting a promise the SDK does not
-    keep by default. It is exactly why `refresh_schema`'s own docstring tells the
-    caller to call `describe_schema` again rather than wait to be notified.
-    """
-    modern_messages: list[object] = []
-
-    async def modern_handler(message: object) -> None:
-        modern_messages.append(message)
-
-    async with Client(server, message_handler=modern_handler) as client:
-        await client.call_tool("refresh_schema", {})
-        await asyncio.sleep(0.05)
-    assert modern_messages == []
-
-    legacy_messages: list[object] = []
-
-    async def legacy_handler(message: object) -> None:
-        legacy_messages.append(message)
-
-    async with Client(server, mode="legacy", message_handler=legacy_handler) as client:
-        await client.call_tool("refresh_schema", {})
-        await asyncio.sleep(0.05)
-    assert any(type(m).__name__ == "ToolListChangedNotification" for m in legacy_messages)
+    assert "describe_schema" in names
+    # `refresh_schema` was dropped (REB-813): `describe_schema` reads the database on every
+    # call, so there is nothing to refresh and no tool-list change to wait for.
+    assert "refresh_schema" not in names
 
 
 async def test_customer_resource_returns_readable_markdown(server, mcp_session: Session) -> None:
