@@ -126,7 +126,10 @@ export const MIN_ROLE = {
   update_rate_card: 'collaboratore',
   create_contract_expense: 'collaboratore',
   update_contract_expense: 'collaboratore',
+  create_clause_note: 'collaboratore',
+  update_clause_note: 'collaboratore',
   set_renewal_assumption: 'collaboratore',
+  renew_contract: 'collaboratore',
   // The Email tab: the three presses on a draft the assistant prepared (REB-415). The
   // send and its verification are Italian strings, like the Gmail and Drive settings
   // below, because `gmail/send.py` builds its sentence around them.

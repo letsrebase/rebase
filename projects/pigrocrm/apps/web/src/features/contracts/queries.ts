@@ -291,3 +291,114 @@ export function useContractConcentration(contractId: string, enabled: boolean) {
       ),
   })
 }
+
+// -- Note sulle clausole ----------------------------------------------------------------
+
+export type ClauseNote = components['schemas']['ClauseNoteRead']
+export type ClauseNoteCreateBody = components['schemas']['ClauseNoteCreate']
+export type ClauseNoteUpdateBody = components['schemas']['ClauseNoteUpdate']
+
+export function useClauseNotes(contractId: string) {
+  return useQuery({
+    queryKey: queryKeys.contractClauseNotes(contractId),
+    queryFn: () =>
+      unwrap(
+        api.GET('/api/contracts/{contract_id}/clause-notes', {
+          params: { path: { contract_id: contractId } },
+        }),
+      ),
+  })
+}
+
+/** The contract's own read carries the notes too (`note_clausole`), so the list, the row
+ *  and the timeline go stale together. */
+function invalidateClauseNotes(client: QueryClient, contractId: string) {
+  void client.invalidateQueries({ queryKey: queryKeys.contractClauseNotes(contractId) })
+  invalidateContract(client, contractId)
+}
+
+export function useCreateClauseNote(contractId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: ClauseNoteCreateBody) =>
+      unwrap(
+        api.POST('/api/contracts/{contract_id}/clause-notes', {
+          params: { path: { contract_id: contractId } },
+          body,
+        }),
+      ),
+    onSuccess: () => invalidateClauseNotes(queryClient, contractId),
+  })
+}
+
+export function useUpdateClauseNote(contractId: string, noteId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: ClauseNoteUpdateBody) =>
+      unwrap(
+        api.PATCH('/api/contracts/{contract_id}/clause-notes/{note_id}', {
+          params: { path: { contract_id: contractId, note_id: noteId } },
+          body,
+        }),
+      ),
+    onSuccess: () => invalidateClauseNotes(queryClient, contractId),
+  })
+}
+
+// -- Rinnovo ----------------------------------------------------------------------------
+
+export type RenewContractBody = components['schemas']['ContractRenew']
+export type RenewalDuration = components['schemas']['RenewalDuration']
+
+/** Renews `contractId` into a successor. The old row now answers `contratto_successivo_id`,
+ *  the customer's list (every `contracts` key) gains the new one and both timelines move,
+ *  so the three are refreshed together. The successor's own page loads on arrival. */
+export function useRenewContract(contractId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: RenewContractBody) =>
+      unwrap(
+        api.POST('/api/contracts/{contract_id}/renew', {
+          params: { path: { contract_id: contractId } },
+          body,
+        }),
+      ),
+    onSuccess: () => invalidateContract(queryClient, contractId),
+  })
+}
+
+// -- Tetto sulla quota del cliente -------------------------------------------------------
+
+/** The azienda's active contracts that carry a cap on the customer's share (REB-761), for
+ *  the dashboard's «ci sta?» simulator to pick from. The list endpoint has no filter on the
+ *  cap, so every page of the active contracts is read and the capped ones kept here: an
+ *  azienda has a handful of active contracts, and a first page alone could hide one. Under
+ *  the `contracts` key, so any contract written anywhere refreshes it. */
+export function useCappedContracts(aziendaId: string | null | undefined) {
+  return useQuery({
+    queryKey: queryKeys.contracts({ azienda_id: aziendaId ?? null, stato: 'attivo', capped: true }),
+    queryFn: async () => {
+      const items: Contract[] = []
+      let cursor: string | undefined
+      do {
+        const page = await unwrap(
+          api.GET('/api/contracts', {
+            params: {
+              query: {
+                stato: 'attivo',
+                ...(aziendaId ? { azienda_id: aziendaId } : {}),
+                limit: 200,
+                sort: 'titolo',
+                dir: 'asc',
+                cursor,
+              },
+            },
+          }),
+        )
+        items.push(...page.items)
+        cursor = page.next_cursor ?? undefined
+      } while (cursor !== undefined)
+      return items.filter((contract) => contract.tetto_quota_cliente !== null)
+    },
+  })
+}

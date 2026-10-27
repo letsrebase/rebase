@@ -7,6 +7,7 @@ import { StatusPill } from '@/components/StatusPill'
 import { Button } from '@rebase/ui/button'
 import { Card, CardContent } from '@rebase/ui/card'
 import { Skeleton } from '@rebase/ui/skeleton'
+import { ClauseNotesSection } from '@/features/contracts/ClauseNotesSection'
 import { ContractForm } from '@/features/contracts/ContractForm'
 import { ContractDays } from '@/features/days/ContractDays'
 import { ContractEmailSection } from '@/features/contracts/ContractEmailSection'
@@ -17,6 +18,7 @@ import {
   EXPENSE_POLICY_LABELS,
   cadenceLabel,
   formatAmount,
+  formatCapPercent,
   readExpensePolicy,
   renewalLabel,
   stateLabel,
@@ -25,6 +27,8 @@ import {
 import { RateCardsSection } from '@/features/contracts/RateCardsSection'
 import { RegisterSection } from '@/features/contracts/RegisterSection'
 import { RenewalSection } from '@/features/contracts/RenewalSection'
+import { RenewContractButton } from '@/features/contracts/RenewContractDialog'
+import { RenewalChain } from '@/features/contracts/RenewalChain'
 import { useContract, type Contract } from '@/features/contracts/queries'
 import { useCustomer } from '@/features/customers/queries'
 import { formatDate } from '@/features/invoices/format'
@@ -95,6 +99,7 @@ export function ContractDetail() {
                 Modifica
               </Button>
             )}
+            <RenewContractButton contract={row} />
           </>
         }
         overview={
@@ -124,6 +129,7 @@ export function ContractDetail() {
                   }
                 />
                 <Row label="Preavviso di disdetta" value={`${row.preavviso_disdetta_giorni} giorni`} />
+                <RenewalChain contract={row} />
               </CardContent>
             </Card>
 
@@ -139,6 +145,10 @@ export function ContractDetail() {
                 />
                 <Row label="Rivalsa INPS" value={row.applies_social_charge ? 'Applicata' : 'No'} />
                 <Row label="Spese" value={expensePolicy(row)} />
+                <Row
+                  label="Tetto sulla quota"
+                  value={row.tetto_quota_cliente === null ? 'Nessuno' : formatCapPercent(row.tetto_quota_cliente)}
+                />
               </CardContent>
             </Card>
 
@@ -172,6 +182,9 @@ export function ContractDetail() {
             </div>
             <div className="lg:col-span-2">
               <ContractEmailSection contractId={row.id} customerId={row.customer_id} />
+            </div>
+            <div className="lg:col-span-2">
+              <ClauseNotesSection contractId={row.id} />
             </div>
             <div className="lg:col-span-2">
               <RenewalSection contract={row} />

@@ -104,6 +104,25 @@ describe('the request the fields make', () => {
       errors: { deal: expect.stringContaining('non ha una stima') },
     })
   })
+
+  it('carries the day the money arrives, and the contract chosen, beside the estimate', () => {
+    expect(
+      simulatorRequest({ ...BLANK, valore: '20000', data: '2027-03-15', contractId: 'c1' }),
+    ).toEqual({
+      ok: true,
+      input: { valore_preventivato: '20000', data_prevista: '2027-03-15', contract_id: 'c1' },
+    })
+    expect(simulatorRequest({ ...BLANK, valore: '20000', data: '2027-03-15', contractId: null })).toEqual({
+      ok: true,
+      input: { valore_preventivato: '20000', data_prevista: '2027-03-15' },
+    })
+  })
+
+  it('still refuses an estimate it cannot read, whatever contract is chosen', () => {
+    expect(simulatorRequest({ ...BLANK, data: '2027-03-15', contractId: 'c1' })).toMatchObject({
+      ok: false,
+    })
+  })
 })
 
 describe('the year of the date', () => {

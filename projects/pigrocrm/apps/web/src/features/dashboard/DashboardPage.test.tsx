@@ -107,6 +107,8 @@ const BY_PATH: Record<string, unknown> = {
   '/api/analytics/fiscal': EMPTY_ESTIMATE,
   // No ceiling applies: the panel under the figures draws nothing (REB-755).
   '/api/analytics/ceilings': { anno: 2026, azienda_id: 'a1', pack_id: 'it-flat-rate', pack_version: '1', soglie: [] },
+  // No active contract caps a customer's share: nor does that panel have anything to show.
+  '/api/contracts': { items: [], next_cursor: null },
   '/api/analytics/year': EMPTY_YEAR,
 }
 

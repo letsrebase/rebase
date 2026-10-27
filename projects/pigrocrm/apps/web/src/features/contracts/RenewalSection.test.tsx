@@ -183,4 +183,47 @@ describe('RenewalSection', () => {
     expect(await screen.findByText(/inizia il 01\/02\/2027/)).toBeInTheDocument()
     expect(api.GET).not.toHaveBeenCalledWith('/api/contracts/{contract_id}/concentration', expect.anything())
   })
+
+  describe('the contract’s cap on the customer’s share', () => {
+    function withCap(superata: boolean | null, soglia_da_contratto = true) {
+      vi.mocked(api.GET).mockImplementation(((path: string) => {
+        if (path.endsWith('/renewal-assumption')) return ok(ASSUMPTION)
+        if (path.endsWith('/projection')) return ok(projection('0.00', '1500.00'))
+        return ok({
+          ...CONCENTRATION,
+          soglia: 0.5,
+          soglia_da_contratto,
+          valute: [{ ...CONCENTRATION.valute[0], quota: superata ? 0.5 : 0.25, superata }],
+        })
+      }) as never)
+    }
+
+    it('shows the cap beside the share and says it is under it', async () => {
+      withCap(false)
+      renderSection()
+
+      expect(await screen.findByText('Tetto 50%')).toBeInTheDocument()
+      expect(screen.getByText('25%')).toBeInTheDocument()
+      expect(screen.getByText('Sotto il tetto')).toBeInTheDocument()
+      expect(screen.queryByText('Tetto raggiunto')).not.toBeInTheDocument()
+    })
+
+    it('says the cap is reached when the server says the share is over it', async () => {
+      withCap(true)
+      renderSection()
+
+      expect(await screen.findByText('Tetto raggiunto')).toBeInTheDocument()
+      expect(screen.getByText('Tetto 50%')).toBeInTheDocument()
+      expect(screen.queryByText('Sotto il tetto')).not.toBeInTheDocument()
+    })
+
+    it('shows no cap and no pill when the threshold is not the contract’s own', async () => {
+      withCap(false, false)
+      renderSection()
+
+      expect(await screen.findByText('25%')).toBeInTheDocument()
+      expect(screen.queryByText(/^Tetto/)).not.toBeInTheDocument()
+      expect(screen.queryByText('Sotto il tetto')).not.toBeInTheDocument()
+    })
+  })
 })

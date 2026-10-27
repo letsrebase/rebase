@@ -45,7 +45,9 @@ function byPath(panoramica: unknown, fiscale: unknown = FISCALE, soglie: unknown
         ? ok(fiscale)
         : path === '/api/analytics/ceilings'
           ? ok({ anno: 2026, azienda_id: 'a1', pack_id: 'it-flat-rate', pack_version: '1', soglie })
-          : ok(panoramica),
+          : path === '/api/contracts'
+            ? ok({ items: [], next_cursor: null })
+            : ok(panoramica),
     )
 }
 
@@ -549,6 +551,7 @@ describe('EconomicTab, with several aziende', () => {
   it('in «tutte» asks the estimate once per azienda and names each share’s azienda', async () => {
     vi.mocked(api.GET).mockImplementation((path: string, init?: unknown) => {
       if (path === '/api/analytics/ceilings') return Promise.resolve(ok(NO_CEILINGS))
+      if (path === '/api/contracts') return Promise.resolve(ok({ items: [], next_cursor: null }))
       if (path === '/api/analytics/fiscal') {
         const query = (init as GetCall[1])?.params?.query ?? {}
         // The forfettario has an estimate; the foreign company has no profile at all.
@@ -604,6 +607,8 @@ describe('EconomicTab, with several aziende', () => {
       Promise.resolve(
         path === '/api/analytics/ceilings'
           ? ok(NO_CEILINGS)
+          : path === '/api/contracts'
+          ? ok({ items: [], next_cursor: null })
           : path === '/api/analytics/fiscal'
           ? failed({ code: 'permission_denied', detail: 'solo un admin' }, 403)
           : ok({

@@ -41,6 +41,7 @@ const CONTRACT = {
   divisa: 'EUR',
   requires_prior_approval: true,
   applies_social_charge: false,
+  tetto_quota_cliente: '50.00',
   politica_spese: { kind: 'rimborsabile_con_tetto', importo_tetto: '500.00' },
   stato: 'bozza',
   note: null,
@@ -136,6 +137,19 @@ describe('ContractDetail', () => {
     // The contract's days (REB-745): its own section, with the empty state of a contract that has none.
     expect(screen.getByRole('heading', { name: 'Giornate' })).toBeInTheDocument()
     expect(await screen.findByText('Nessuna giornata su questo contratto')).toBeInTheDocument()
+  })
+
+  it('shows the cap on the customer’s share in the billing card, or says there is none', async () => {
+    mockApi(ok(CONTRACT))
+    const first = renderPage()
+    expect(await screen.findByText('Tetto sulla quota')).toBeInTheDocument()
+    expect(screen.getByText('Tetto sulla quota').parentElement).toHaveTextContent('50%')
+    first.unmount()
+
+    mockApi(ok({ ...CONTRACT, tetto_quota_cliente: null }))
+    renderPage()
+    expect(await screen.findByText('Nessuno')).toBeInTheDocument()
+    expect(screen.getByText('Tetto sulla quota').parentElement).toHaveTextContent('Nessuno')
   })
 
   it('offers Attiva, Stato and Modifica to a writer', async () => {
