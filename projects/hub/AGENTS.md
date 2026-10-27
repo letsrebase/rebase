@@ -751,37 +751,41 @@ base64, `openssl rand -base64 32`), lives only in the host `.env`, root-only (`c
 600`), never in the database or a backup. Without it the app refuses to save or read a
 provider key and «Modelli AI» says so.
 
-**Order on production, once (REB-832, REB-831): two tags, so the builder is never without
-a model.** The workflow rsyncs the sources, builds and runs `up -d` in one step
-(`_deploy-compose.yml`), so there is no point between the new image and the new
-containers to run `ai-seed` in, and a single deploy leaves the public builder answering
-503 «Il team builder è spento.» (the old variables are no longer passed to the containers)
-from `up -d` until the command is run. The milestone's commits allow better, because the
-commit that adds `ai-seed` comes before the one that stops reading the environment:
+**Order on production, once (REB-834): one deploy, then `ai-seed` at once.** The two-tag
+path (tag the `ai-seed` commit, then the head) does not work: that commit still numbers
+its migration 0035, which collides with `0035_one_person_one_linkedin` (REB-800) already
+applied on production, and deploying it would mis-stamp alembic. The workflow rsyncs the
+sources, builds and runs `up -d` in one step (`_deploy-compose.yml`), so there is no point
+between the new image and the new containers to run `ai-seed` in: the public builder
+answers 503 «Il team builder è spento.» (the old variables are no longer passed to the
+containers) from `up -d` until the command is run. Measured on 2026-10-27, about 30
+seconds between the first refused connection and the builder answering again. So:
 
-1. Add `REBASE_SECRETS_KEY=<openssl rand -base64 32>` to the host `.env` (root-only), next
-   to the existing `REBASE_ANTHROPIC_API_KEY` and `REBASE_TEAM_BUILDER_MODEL`. Keep a
-   copy in the password manager: losing it loses every stored provider key. The privacy
-   page is live (see above).
-2. Tag the `ai-seed` commit of the milestone, not its head (`git log --oneline --grep
-   'add ai-seed and ai-rotate-secrets'`; its CI run must be green, as for any tag). It
-   adds the tables and the command and still reads the key from the environment, so
-   production behaves as before. This needs the milestone merged with its commits, not
-   squashed; if it was squashed, deploy the head and take the outage, running step 3 the
-   moment `up -d` ends.
-3. Inside the running api container, which still has the two old variables:
-   `docker compose -p rebase --env-file /opt/hub/.env exec api rebase ai-seed
+1. Add `REBASE_SECRETS_KEY=<openssl rand -base64 32>` to the host `.env` (root-only,
+   `chmod 600`), next to the existing `REBASE_ANTHROPIC_API_KEY` (and
+   `REBASE_TEAM_BUILDER_MODEL` when set; the command defaults to `claude-opus-5`). Keep a
+   copy only Lorenzo can read (a root-only file in `/root/`, the password manager): losing
+   it loses every stored provider key. The preview first, the same way, because the
+   trunk deploys it before any tag.
+2. Tag `main` (`hub-v<next>`) and wait for the tag CI and the deploy run to end.
+3. The moment `up -d` ends, run the command with the old key handed in through the
+   environment, never on the command line (the containers no longer carry it):
+   `REBASE_ANTHROPIC_API_KEY="$(grep '^REBASE_ANTHROPIC_API_KEY=' /opt/hub/.env | cut
+   -d= -f2-)"; export REBASE_ANTHROPIC_API_KEY; docker compose -p rebase --env-file
+   /opt/hub/.env exec -e REBASE_ANTHROPIC_API_KEY api uv run --no-sync rebase ai-seed
    --eur-per-usd <rate>` (`-p rebase-preview --env-file /opt/hub-preview/.env` on the
-   preview). It moves the old key and model into the tables (key sealed, `anthropic` on,
-   both tasks on the model) and writes the Claude prices in euros from claude.com/pricing
-   (USD per million tokens, read 2026-10-27: opus-5 5/25/0.50, opus-5-5 4/20/0.20,
-   thinking billed as output). `<rate>` is **euros per one dollar**, the inverse of the
-   ECB's quote (ECB 1.0870 USD per EUR means `--eur-per-usd 0.9199`), of the day. No rate
-   lives in the code. It prints «chiave salvata, finisce con …abcd», never the key, and
-   refuses to run twice.
-4. Tag the milestone's head. The new containers read the model and the key from the
-   database; nothing was ever without one.
-5. Verify with «Prova» on each task in «Modelli AI».
+   preview; there is no `rebase` on the container's `PATH`, hence `uv run --no-sync`). It
+   moves the old key and model into the tables (key sealed, `anthropic` on, both tasks on
+   the model) and writes the Claude prices in euros from claude.com/pricing (USD per
+   million tokens, read 2026-10-27: opus-5 5/25/0.50, opus-5-5 4/20/0.20, thinking billed
+   as output). `<rate>` is **euros per one dollar**, the inverse of the ECB's quote (ECB
+   1.0870 USD per EUR means `--eur-per-usd 0.9199`), of the day. No rate lives in the
+   code. It prints «chiave salvata, finisce con …abcd», never the key, and refuses to run
+   twice.
+4. Verify with «Prova» on each task in «Modelli AI», and the public builder
+   (`POST /api/hub/team/proposals`).
+5. Remove `REBASE_ANTHROPIC_API_KEY` and `REBASE_TEAM_BUILDER_MODEL` from the `.env` (the
+   key now lives encrypted in the database) and recreate `api`, `mcp` and `cards`.
 
 **Rotation:** generate a new value, then hand both to a one-off container through the
 environment, never the command line (`ps` and the shell history would show what opens every
@@ -795,6 +799,36 @@ changes nothing. Then put the new value in `.env` and recreate **api, mcp and ca
 `REBASE_SECRETS_KEY`, and a `cards` loop on the old value would fail every hourly run
 with a sentence naming `REBASE_SECRETS_KEY` and the card would carry it. Between the command and the recreate the
 old value no longer opens the keys, so keep `REBASE_CARDS_LOOP=off` for the gap.
+
+### OpenAI and Google (REB-840): prices, verification, the processors gate
+
+The seam supports all three providers; only Anthropic has run against the real API. OpenAI
+and Google **stay `enabled=false` in production** until the processors check of the design
+holds for each: the privacy notice lists the provider, a data processing agreement exists
+with it, and its no-training and retention terms were read. Lorenzo and Ivan decide that;
+nothing in the code or a deploy turns a provider on, and a task pointed at a provider that
+is off is refused with «Il fornitore è spento» (an evaluation run needs the explicit
+`--allow-disabled`, because it sends CVs).
+
+- `rebase ai-prices-seed --eur-per-usd <rate>`: writes the reviewed price table
+  (`SEED_USD_PRICES` in `ai_config.py`: USD per million tokens, Standard tier, short
+  context, from developers.openai.com/api/docs/pricing and
+  ai.google.dev/gemini-api/docs/pricing, read 2026-10-27) in euros, `<rate>` being euros per
+  one dollar as for `ai-seed`. A row that exists, an admin's edit included, is never
+  overwritten; no provider is turned on. Google's page announces dated steps (`gemini-4-argon`
+  doubles on 2026-12-01, `gemini-3.8-flash` on 2027-01-01): edit those rows in «Modelli AI»
+  when the date comes, and re-read both pages before trusting the table after that.
+- `rebase ai-verify --provider openai|google --model <model>`: with the key saved in «Modelli
+  AI» (the provider may still be off), one call with a fixed prompt that carries no personal
+  data and the seam's native structured output, then the same with the effort setting. It
+  prints `key_injected= native_output_ok= thinking_ok= usage_present=` and exits 0 only when
+  the first three hold; it prints an exception class and a status, never the key nor the
+  provider's text. Tests use stub models. **The live run has not happened:** no OpenAI or
+  Gemini key exists yet. When one is saved on the preview, run it for each provider with the
+  model chosen; if `key_injected` or `native_output_ok` is `False`, stop and fix `build_model`
+  before enabling that provider, and record the verified model and date here.
+- Evaluation per provider (`cards-eval`, `--allow-disabled`, the report saved) waits for the
+  evaluation set of the Phase 2 milestone to be on `main`.
 
 ### Database backups
 

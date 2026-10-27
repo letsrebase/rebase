@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from rebase_core.admin_tokens import DEFAULT_NAME, AdminTokenService
 from rebase_core.ai_config import AiConfigService
+from rebase_core.ai_verify import verify
 from rebase_core.campaigns.sender import campaign_sender_from_settings
 from rebase_core.campaigns.tick import run_tick
 from rebase_core.card_eval import CardEvalService, draft_expected, format_report, run_eval
@@ -360,10 +361,8 @@ def ai_seed(eur_per_usd: str) -> int:
     REB-831) into «Modelli AI»: the key sealed, `anthropic` on, both tasks on that model,
     and the prices of the Claude models in euros at `--eur-per-usd` (EUR per 1 USD, the
     inverse of the ECB's quote). Prints the hint of the key, never the key (REB-832)."""
-    try:
-        rate = Decimal(eur_per_usd)
-    except InvalidOperation:
-        print("--eur-per-usd deve essere un numero, per esempio 0.92.", file=sys.stderr)
+    rate = _parse_rate(eur_per_usd)
+    if rate is None:
         return 2
     api_key = os.environ.get("REBASE_ANTHROPIC_API_KEY", "").strip()
     if not api_key:
@@ -382,6 +381,58 @@ def ai_seed(eur_per_usd: str) -> int:
     print(f"chiave salvata, finisce con …{result.key_hint[-4:]}")
     print(f"modello {result.model} per le schede e per il team, {result.prices} prezzi scritti")
     return 0
+
+
+def _parse_rate(eur_per_usd: str) -> Decimal | None:
+    try:
+        return Decimal(eur_per_usd)
+    except InvalidOperation:
+        print("--eur-per-usd deve essere un numero, per esempio 0.92.", file=sys.stderr)
+        return None
+
+
+def ai_prices_seed(eur_per_usd: str) -> int:
+    """`rebase ai-prices-seed --eur-per-usd 0.92`: the reviewed OpenAI and Google price table
+    (USD per million tokens from their pricing pages, `SEED_USD_PRICES`) in euros at that
+    rate. A price row that exists, an admin's edit included, is left as it is. Turns no
+    provider on: that is «Modelli AI» (REB-840)."""
+    rate = _parse_rate(eur_per_usd)
+    if rate is None:
+        return 2
+    settings = get_settings()
+    session = session_factory(create_engine_from_settings(settings))()
+    try:
+        result = AiConfigService(session, settings).seed_prices(rate)
+    except DomainError as exc:
+        print(exc.message, file=sys.stderr)
+        return 1
+    finally:
+        session.close()
+    print(f"{result.written} prezzi scritti, {result.kept} già presenti e lasciati com'erano")
+    return 0
+
+
+def ai_verify(provider: str, model: str) -> int:
+    """`rebase ai-verify --provider openai|google --model M`: one call with a fixed prompt
+    that carries no personal data, to the key saved in «Modelli AI», and what the provider
+    did with the seam's native structured output. Exit 0 only when the key was injected, the
+    output came back in the schema and the effort setting was taken; it works with the
+    provider still switched off (REB-840). Never prints the key."""
+    settings = get_settings()
+    session = session_factory(create_engine_from_settings(settings))()
+    try:
+        key = AiConfigService(session, settings).resolve_key(provider)
+    except DomainError as exc:
+        print(exc.message, file=sys.stderr)
+        return 1
+    finally:
+        session.close()
+    if key is None:
+        print(f"Manca la chiave di {provider}: salvala in «Modelli AI» e riprova.", file=sys.stderr)
+        return 1
+    report = verify(provider, model, key)
+    print("\n".join(report.lines()))
+    return 0 if report.ok else 1
 
 
 def _key_from_argument(value: str) -> bytes | None:
@@ -756,6 +807,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Sposta la chiave Anthropic e il modello vecchi in «Modelli AI», con i prezzi",
     )
     seed_parser.add_argument("--eur-per-usd", required=True)
+    prices_parser = sub.add_parser(
+        "ai-prices-seed",
+        help="Scrive i prezzi OpenAI e Google dalle loro pagine, senza toccare le righe esistenti",
+    )
+    prices_parser.add_argument("--eur-per-usd", required=True)
+    verify_parser = sub.add_parser(
+        "ai-verify",
+        help="Prova una chiamata con output strutturato nativo al fornitore, con la sua chiave",
+    )
+    verify_parser.add_argument("--provider", required=True, choices=["openai", "google"])
+    verify_parser.add_argument("--model", required=True)
     sub.add_parser(
         "ai-rotate-secrets",
         help="Ricifra le chiavi dei modelli: REBASE_SECRETS_KEY_OLD e REBASE_SECRETS_KEY_NEW",
@@ -806,6 +868,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return cards_eval(args.provider, args.model, args.effort)
     if args.command == "ai-seed":
         return ai_seed(args.eur_per_usd)
+    if args.command == "ai-prices-seed":
+        return ai_prices_seed(args.eur_per_usd)
+    if args.command == "ai-verify":
+        return ai_verify(args.provider, args.model)
     if args.command == "ai-rotate-secrets":
         return ai_rotate_secrets()
     if args.command == "talent-duplicates":
