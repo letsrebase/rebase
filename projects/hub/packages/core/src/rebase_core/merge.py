@@ -278,6 +278,10 @@ LEFT_IN_PLACE: dict[str, str] = {
     "referral_settings.updated_by": "the admin who set it",
     "ai_providers.saved_by": "the admin who saved the key",
     "ai_usage.freelancer_id": "the cost of a call as made, about the card it was written for",
+    "card_eval_profiles.freelancer_id": "a CV's evaluation profile stays with it, out of every run",
+    "card_eval_profiles.corrected_by": "the admin who corrected the expected card",
+    "card_eval_runs.created_by": "the admin who ran the evaluation",
+    "card_eval_results.freelancer_id": "what a run wrote for one CV, about that card as it was",
 }
 
 

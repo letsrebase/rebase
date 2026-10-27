@@ -670,7 +670,14 @@ class Comment(Base, PrimaryKeyMixin):
 
 # ---- what an admin overrode, cleared, deleted or restored, and when --------------------
 
-ADMIN_ACTION_ENTITY_TYPES = ("freelancer", "company", "match", "freelancer_fiscal", "ai_config")
+ADMIN_ACTION_ENTITY_TYPES = (
+    "freelancer",
+    "company",
+    "match",
+    "freelancer_fiscal",
+    "ai_config",
+    "card_eval",
+)
 # `overridden` covers both "set" and "clear" -- clearing is setting a field to its empty
 # value, and `rebase_core.audit.field_changes` records the same `changed`/`before`/`after`
 # shape either way. `cleared` is only for the one thing that shape must never carry: the
@@ -692,7 +699,10 @@ ADMIN_ACTION_ENTITY_TYPES = ("freelancer", "company", "match", "freelancer_fisca
 # were mailed. No `CHECK` holds this list: it is the record of what the code writes.
 # REB-800 adds `merged` (on the card that was absorbed: whose it went into, and every row
 # that moved, by id, so the merge can be undone), `absorbed` (on the survivor: what it
-# took in) and `unmerged` (the undo, on both).
+# took in) and `unmerged` (the undo, on both). REB-835 adds the evaluation set's trail,
+# on entity type `card_eval` (the freelancer's id): `eval_add`, `eval_remove`,
+# `eval_expected` (its payload names the fields that changed, never their values: an
+# expected card is personal data), `eval_accept` and `eval_rate`.
 ADMIN_ACTION_KINDS = (
     "overridden",
     "cleared",
@@ -716,6 +726,11 @@ ADMIN_ACTION_KINDS = (
     "merged",
     "absorbed",
     "unmerged",
+    "eval_add",
+    "eval_remove",
+    "eval_expected",
+    "eval_accept",
+    "eval_rate",
 )
 
 
@@ -1557,3 +1572,88 @@ class AiUsage(Base, PrimaryKeyMixin):
         CheckConstraint("purpose IN ('run', 'prova', 'eval')", name="ck_ai_usage_purpose"),
         CheckConstraint("priced = (cost_eur IS NOT NULL)", name="ck_ai_usage_priced"),
     )
+
+
+# ---- the evaluation set (REB-835) ---------------------------------------------------------
+
+CARD_EVAL_STATUSES = ("bozza", "accettata")
+CARD_EVAL_LABEL_MAX_LENGTH = 40
+
+
+class CardEvalProfile(Base, TimestampMixin):
+    """One person of the evaluation set and the card an admin wrote by hand as the
+    answer a model is measured against (design 2026-10-27, «Evaluation before a change
+    goes live»). The expected card is personal data derived from a CV, so it lives only
+    here, in the database, and goes with the person (`ON DELETE CASCADE`).
+    `label` is the failure the profile covers («senza date», «duplicato», «GitHub»).
+    `bozza` is the builder's draft, `accettata` an admin's correction; only an accepted
+    profile takes part in a run, and a card has to exist before it can be accepted. Its
+    `seniority` and `anni` are the expected level."""
+
+    __tablename__ = "card_eval_profiles"
+
+    freelancer_id: Mapped[UUID] = mapped_column(
+        ForeignKey("freelancers.id", ondelete="CASCADE"), primary_key=True
+    )
+    label: Mapped[str] = mapped_column(String(CARD_EVAL_LABEL_MAX_LENGTH), nullable=False)
+    expected_card: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=None)
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="bozza")
+    corrected_by: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
+
+    __table_args__ = (
+        CheckConstraint("status IN ('bozza', 'accettata')", name="ck_card_eval_profiles_status"),
+        CheckConstraint(
+            "status = 'bozza' OR expected_card IS NOT NULL",
+            name="ck_card_eval_profiles_accepted_has_card",
+        ),
+    )
+
+
+class CardEvalRun(Base, PrimaryKeyMixin):
+    """One `rebase cards-eval`: which task, provider, model and effort it measured, the
+    prompt version it ran, and the totals (`summary`: counts, latency, cost, the change
+    against the previous run of the task). The per-person rows are `CardEvalResult`."""
+
+    __tablename__ = "card_eval_runs"
+
+    task: Mapped[str] = mapped_column(String(20), nullable=False)
+    provider: Mapped[str] = mapped_column(String(20), nullable=False)
+    model: Mapped[str] = mapped_column(String(CARD_MODEL_MAX_LENGTH), nullable=False)
+    effort: Mapped[str | None] = mapped_column(String(10), default=None)
+    prompt_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    summary: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    created_by: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint("task IN ('card', 'team_proposal')", name="ck_card_eval_runs_task"),
+        Index("ix_card_eval_runs_task_created", "task", "created_at"),
+    )
+
+
+class CardEvalResult(Base):
+    """What a run made of one person: the three automatic measures, the card it wrote
+    (personal data, so the row goes with the run and with the person), the call's
+    latency and cost, and the admin's three-point ratings of role, skills and summary
+    once given. `failure` is the kind of failure when no card came out (`cards.Failure`),
+    and then the measures are `NULL`."""
+
+    __tablename__ = "card_eval_results"
+
+    run_id: Mapped[UUID] = mapped_column(
+        ForeignKey("card_eval_runs.id", ondelete="CASCADE"), primary_key=True
+    )
+    freelancer_id: Mapped[UUID] = mapped_column(
+        ForeignKey("freelancers.id", ondelete="CASCADE"), primary_key=True
+    )
+    label: Mapped[str] = mapped_column(String(CARD_EVAL_LABEL_MAX_LENGTH), nullable=False)
+    anni_ok: Mapped[bool | None] = mapped_column(Boolean, default=None)
+    seniority_ok: Mapped[bool | None] = mapped_column(Boolean, default=None)
+    guard_clean: Mapped[bool | None] = mapped_column(Boolean, default=None)
+    failure: Mapped[str | None] = mapped_column(String(20), default=None)
+    latency_ms: Mapped[int | None] = mapped_column(Integer, default=None)
+    cost_eur: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), default=None)
+    card: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=None)
+    ratings: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=None)
