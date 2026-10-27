@@ -383,8 +383,8 @@ export function AdminTalenti() {
           <Input
             id="talenti-origine"
             placeholder="home, pigrocrm…"
-            value={search.origine ?? ''}
-            onChange={(event) => setFilter('origine', event.target.value || undefined)}
+            value={search.pagina_origine ?? ''}
+            onChange={(event) => setFilter('pagina_origine', event.target.value || undefined)}
           />
         </FilterField>
         <FilterField label="UTM source" htmlFor="talenti-utm-source">

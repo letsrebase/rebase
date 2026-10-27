@@ -26,17 +26,46 @@ tells the caller whether a further page exists without a separate `count(*)`. Th
 keeps `search`'s `ILIKE`/`similarity()` filters sitting directly on each table's own
 columns, where migration 0013's trigram indexes serve them, rather than on a `UNION`
 subquery a planner may or may not push a predicate through.
+
+**Sorting by a card value keeps the same keyset (REB-801).** `ordina` `tariffa_*` and
+`anni_*` rank by the freelancer's own rate or the years on the anonymous card, ascending
+or descending, with the cursor carrying that value and the id, exactly as it carries
+`created_at` or the trigram score. A lead has neither value, and so does a card with no
+rate or no years: ranking drops them (a row with nothing to rank by has no place in the
+order), `totale`/`per_stato` agree, and the lead query is skipped as for any card-only
+filter. That keeps the order a single sorted query rather than a merge with a nullable
+key, where a NULL tail would have to be reopened by every page.
+
+**`origine` is the value a row shows (REB-798).** `form`, `wizard` or `admin`, derived
+from `compilata_da`; the marketing page a person started from (`Freelancer.origine`,
+`home`, `pigrocrm`) is `pagina_origine`, a filter of its own, so the two meanings no
+longer share a name.
 """
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal, get_args
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, Select, Subquery, exists, func, or_, select
+from sqlalchemy import (
+    ColumnElement,
+    Numeric,
+    Select,
+    Subquery,
+    and_,
+    case,
+    exists,
+    false,
+    func,
+    or_,
+    select,
+)
 from sqlalchemy.orm import Session, aliased, defer
 
+from rebase_core.bands import band_for
+from rebase_core.errors import NotFound, ValidationFailed
 from rebase_core.freelancers import LEAD_STATE
 from rebase_core.models import (
     FREELANCER_STATES,
@@ -61,19 +90,30 @@ LIST_LIMIT_MAX = 500
 _ORIGIN_FORM: TalentoOrigine = "form"
 # `COMPILATA_DA`'s two values (`models.py`), named for what an admin reading the list
 # actually asks: did the person write this themselves, through the wizard, or did an
-# admin draft it from research.
+# admin draft it from research. The column is `NOT NULL` and checked to those two, so
+# the filter below and the row's own `origine` cannot part ways.
 _ORIGIN_BY_COMPILATA_DA: dict[str, TalentoOrigine] = {"persona": "wizard", "admin": "admin"}
+_COMPILATA_DA_BY_ORIGIN: dict[str, str] = {
+    origin: compilata_da for compilata_da, origin in _ORIGIN_BY_COMPILATA_DA.items()
+}
+ORIGINS: tuple[str, ...] = get_args(TalentoOrigine)
+SENIORITIES = ("junior", "mid", "senior", "lead")
+SCHEDA_STATES = ("presente", "assente", "fallita")
+ORDINA_VALUES = ("recenti", "tariffa_asc", "tariffa_desc", "anni_asc", "anni_desc")
+
+_ENTITY = "talenti"
+_RankedBy = Literal["tariffa", "anni"]
 
 
 def _card_only_active(*values: object) -> bool:
     """Whether any filter with no lead-side equivalent is set: `posizione`, `remoto`,
-    `tariffa_giornaliera` and the marketing `origine` are columns a bare sign-up simply
-    does not have (`Signup` carries none of them), and `competenze` and `luogo` read an
-    anonymous card a sign-up cannot have either, so a value here can only ever exclude
-    every lead, and the lead query is skipped outright rather than issued for a result
-    that can only be empty. `has_cv` is handled separately, since `has_cv=False` is a
-    value every lead genuinely satisfies. `None`, an empty string and an empty tuple are
-    unset."""
+    `tariffa_giornaliera` and the marketing `pagina_origine` are columns a bare sign-up
+    simply does not have (`Signup` carries none of them), and `competenze`, `luogo`,
+    `seniority`, `anni`, `settori`, `lingue` and `scheda` read an anonymous card a
+    sign-up cannot have either, so a value here can only ever exclude every lead, and
+    the lead query is skipped outright rather than issued for a result that can only be
+    empty. `has_cv` is handled separately, since `has_cv=False` is a value every lead
+    genuinely satisfies. `None`, an empty string and an empty tuple are unset."""
     return any(value not in (None, "") and value != () for value in values)
 
 
@@ -89,7 +129,9 @@ def _card_emails() -> Subquery:
     )
 
 
-def _signup_read(row: Signup) -> TalentoRead:
+def signup_read(row: Signup) -> TalentoRead:
+    """A bare sign-up as a row of the list: `stato` `lead`, `origine` `form`, none of
+    the card's fields."""
     return TalentoRead(
         id=row.id,
         nome=row.nome,
@@ -108,14 +150,37 @@ def _card_text(card: dict[str, Any], key: str) -> str | None:
     return value if isinstance(value, str) else None
 
 
-def _card_read(row: Freelancer, user: User, card: object) -> TalentoRead:
-    """`card` is the row's `freelancer_cards.card` as stored: a JSON object for a live
-    anonymous card (REB-518), `None` for none and for one the writer retired after a
-    failure. Each field is taken only when it has the type the writer gives it, since a
-    card written by hand may hold anything, and a wrong one reads as missing."""
+def _card_texts(card: dict[str, Any], key: str) -> list[str]:
+    value = card.get(key)
+    return [item for item in value if isinstance(item, str)] if isinstance(value, list) else []
+
+
+def card_fields(card: object, rate: Decimal | None) -> dict[str, Any]:
+    """What a row says about the person from the anonymous card (REB-778, REB-798), and
+    the client's price band of their rate: the one builder behind a row of the list and
+    the MCP `get_talento`, so the two cannot disagree. `card` is the row's
+    `freelancer_cards.card` as stored: a JSON object for a live anonymous card
+    (REB-518), `None` for none and for one the writer retired after a failure. Each
+    field is taken only when it has the type the writer gives it, since a card written
+    by hand may hold anything, and a wrong one reads as missing."""
     scheda = card if isinstance(card, dict) else {}
     anni = scheda.get("anni")
-    competenze = scheda.get("competenze")
+    return {
+        "ruolo": _card_text(scheda, "ruolo"),
+        "seniority": _card_text(scheda, "seniority"),
+        "anni": anni if isinstance(anni, int) and not isinstance(anni, bool) else None,
+        "competenze": _card_texts(scheda, "competenze"),
+        "settori": _card_texts(scheda, "settori"),
+        "lingue": _card_texts(scheda, "lingue"),
+        "luogo": _card_text(scheda, "luogo"),
+        "sintesi": _card_text(scheda, "sintesi"),
+        "fascia": band_for(rate),
+    }
+
+
+def _card_read(row: Freelancer, user: User, card: object) -> TalentoRead:
+    """One freelancer as a row: the person and the card's own columns, then
+    `card_fields` for what the anonymous `card` says."""
     return TalentoRead(
         id=row.id,
         nome=user.nome,
@@ -131,22 +196,14 @@ def _card_read(row: Freelancer, user: User, card: object) -> TalentoRead:
         vetted_at=row.vetted_at,
         ha_scheda_anonima=isinstance(card, dict),
         posizione=row.posizione,
-        ruolo=_card_text(scheda, "ruolo"),
-        seniority=_card_text(scheda, "seniority"),
-        anni=anni if isinstance(anni, int) and not isinstance(anni, bool) else None,
-        competenze=(
-            [skill for skill in competenze if isinstance(skill, str)]
-            if isinstance(competenze, list)
-            else []
-        ),
-        luogo=_card_text(scheda, "luogo"),
+        **card_fields(card, row.tariffa_giornaliera),
     )
 
 
 def _names_skill(term: str) -> ColumnElement[bool]:
     """Whether the row's freelancer names `term`, case-insensitively: in their own
     position, or in the role, a skill or the summary of their anonymous card. Only a
-    JSON string on the card can match, the values `_card_read` keeps, so a match on the
+    JSON string on the card can match, the values `card_fields` keeps, so a match on the
     role, the skills or the place is always one the row shows; a card that is not a
     JSON object matches nothing.
 
@@ -179,68 +236,236 @@ def _lives_in(place: str) -> ColumnElement[bool]:
     )
 
 
-def _card_stmt(
-    *,
-    q: str,
-    posizione: str | None,
-    remoto: str | None,
-    tariffa_min: Decimal | None,
-    tariffa_max: Decimal | None,
-    origine: str | None,
-    utm_source: str | None,
-    has_cv: bool | None,
-    con_accessi: bool | None,
-    creato_da: datetime | None,
-    creato_a: datetime | None,
-    competenze: Sequence[str],
-    luogo: str | None,
-) -> Select[Freelancer, User]:
+def _card_list_names(key: str, term: str) -> ColumnElement[bool]:
+    """Whether the anonymous card's array `key` (`settori`, `lingue`) holds a string
+    element containing `term`, the same substring match `competenze` applies."""
+    scheda = aliased(FreelancerCard)
+    return exists(
+        select(scheda.freelancer_id).where(
+            scheda.freelancer_id == Freelancer.id,
+            any_element_matches(scheda.card[key], term),
+        )
+    )
+
+
+def _has_seniority(values: Sequence[str]) -> ColumnElement[bool]:
+    """Whether the anonymous card's `seniority` is one of `values`: only a JSON string
+    can be, the same test `card_fields` applies."""
+    scheda = aliased(FreelancerCard)
+    field = scheda.card["seniority"]
+    return exists(
+        select(scheda.freelancer_id).where(
+            scheda.freelancer_id == Freelancer.id,
+            func.jsonb_typeof(field) == "string",
+            func.lower(field.astext).in_(values),
+        )
+    )
+
+
+def _card_anni() -> ColumnElement[Any]:
+    """The anonymous card's `anni` as a number, `NULL` when there is no card or the
+    value is not a whole JSON number: the values `card_fields` keeps, so a filter or a
+    ranking never meets a row whose years the row itself does not show (`5.5`, `"9"`).
+    A scalar subquery by primary key, so the same expression serves a `WHERE`, an
+    `ORDER BY` and a keyset predicate, and the guard sits inside the `CASE` rather than
+    beside it in an `AND`, where SQL would not promise to run it first."""
+    scheda = aliased(FreelancerCard)
+    field = scheda.card["anni"]
+    years = case(
+        (
+            and_(func.jsonb_typeof(field) == "number", field.astext.regexp_match(r"^-?[0-9]+$")),
+            field.astext.cast(Numeric),
+        )
+    )
+    return select(years).where(scheda.freelancer_id == Freelancer.id).scalar_subquery()
+
+
+def _scheda_is(state: str) -> ColumnElement[bool]:
+    """The state of the freelancer's anonymous card: `presente` is a live card (a JSON
+    object, the test `card_fields` and REB-518 apply), `fallita` a recorded failure
+    (`error`) with no live card, `assente` neither: no CV yet, or a CV nobody has asked
+    Claude about. A failure beside an older live card (an outage keeps it) reads as
+    `presente`: the card shown is a card."""
+    live = aliased(FreelancerCard)
+    failed = aliased(FreelancerCard)
+    has_live = exists(
+        select(live.freelancer_id).where(
+            live.freelancer_id == Freelancer.id, func.jsonb_typeof(live.card) == "object"
+        )
+    )
+    has_failure = exists(
+        select(failed.freelancer_id).where(
+            failed.freelancer_id == Freelancer.id,
+            failed.error.is_not(None),
+            or_(failed.card.is_(None), func.jsonb_typeof(failed.card) != "object"),
+        )
+    )
+    if state == "presente":
+        return has_live
+    if state == "fallita":
+        return has_failure & ~has_live
+    return ~has_live & ~has_failure
+
+
+@dataclass(frozen=True, slots=True)
+class _Order:
+    """What the list is sorted by: the cursor's key, the direction, and the card value
+    ranked by (`None` for `created_at` and the trigram score, which every row has)."""
+
+    spec: SortSpec
+    descending: bool
+    ranked_by: _RankedBy | None = None
+
+
+def _order(ordina: str | None, term: str) -> _Order:
+    if ordina is not None and ordina not in ORDINA_VALUES:
+        raise ValidationFailed(_ENTITY, "ordina", f"atteso uno fra {', '.join(ORDINA_VALUES)}")
+    if ordina is None:
+        return _Order(
+            SortSpec("score", "float") if term else SortSpec("created_at", "datetime"), True
+        )
+    if ordina == "recenti":
+        return _Order(SortSpec("created_at", "datetime"), True)
+    field, direction = ordina.split("_")
+    ranked_by: _RankedBy = "tariffa" if field == "tariffa" else "anni"
+    # The whole `ordina` is the cursor's key, direction included: a cursor minted going
+    # up must not be replayed going down, where `(value, id) > ...` would skip and
+    # repeat rows.
+    return _Order(SortSpec(ordina, "float"), direction == "desc", ranked_by)
+
+
+def _choices(field: str, values: Sequence[str] | None, allowed: Sequence[str]) -> tuple[str, ...]:
+    """The distinct lowercase `values`, each one of `allowed`; blank ones are ignored."""
+    chosen = tuple(dict.fromkeys(v.strip().lower() for v in values or () if v.strip()))
+    for value in chosen:
+        if value not in allowed:
+            raise ValidationFailed(
+                _ENTITY, field, f"«{value}»: atteso uno fra {', '.join(allowed)}"
+            )
+    return chosen
+
+
+def _terms(values: Sequence[str] | None) -> tuple[str, ...]:
+    return tuple(value.strip() for value in values or () if value.strip())
+
+
+@dataclass(frozen=True, slots=True)
+class _Filters:
+    """Every filter of one list call, validated once, so the listing, the leads and
+    `_counts` read the same values and cannot drift apart."""
+
+    q: str
+    posizione: str | None
+    remoto: str | None
+    tariffa_min: Decimal | None
+    tariffa_max: Decimal | None
+    origine: str | None
+    pagina_origine: str | None
+    utm_source: str | None
+    has_cv: bool | None
+    con_accessi: bool | None
+    creato_da: datetime | None
+    creato_a: datetime | None
+    competenze: tuple[str, ...]
+    luogo: str | None
+    seniority: tuple[str, ...]
+    anni_min: int | None
+    anni_max: int | None
+    settori: tuple[str, ...]
+    lingue: tuple[str, ...]
+    scheda: str | None
+    ranked_by: _RankedBy | None
+
+    @property
+    def card_only(self) -> bool:
+        """Whether a lead can never satisfy these: any filter `_card_only_active`
+        names, `origine` `wizard`/`admin` (a lead is `form`), or a ranking by a card
+        value."""
+        return _card_only_active(
+            self.posizione,
+            self.remoto,
+            self.tariffa_min,
+            self.tariffa_max,
+            self.origine if self.origine != _ORIGIN_FORM else None,
+            self.pagina_origine,
+            self.competenze,
+            self.luogo,
+            self.seniority,
+            self.anni_min,
+            self.anni_max,
+            self.settori,
+            self.lingue,
+            self.scheda,
+            self.ranked_by,
+        )
+
+    @property
+    def leads_possible(self) -> bool:
+        """Whether a bare sign-up can be in the answer at all, `stato` aside."""
+        return not self.card_only and self.has_cv is not True
+
+
+def _card_stmt(f: _Filters) -> Select[Freelancer, User]:
     """Every freelancer card, `stato` left for the caller to filter separately -- this
     statement backs both the listing and `_counts`' per-state `GROUP BY`, and the
     counts must see every state at once."""
     stmt = select(Freelancer, User).join(User, User.id == Freelancer.user_id)
     stmt = stmt.where(Freelancer.deleted_at.is_(None))
-    if q:
+    if f.q:
         search_cols = (User.nome, User.cognome, User.email, Freelancer.posizione)
-        stmt = stmt.where(matches_any(search_cols, q))
-    if posizione:
-        stmt = stmt.where(Freelancer.posizione.ilike(f"%{escape_like(posizione)}%"))
-    if remoto is not None:
-        stmt = stmt.where(Freelancer.remoto == remoto)
-    if tariffa_min is not None:
-        stmt = stmt.where(Freelancer.tariffa_giornaliera >= tariffa_min)
-    if tariffa_max is not None:
-        stmt = stmt.where(Freelancer.tariffa_giornaliera <= tariffa_max)
-    if origine is not None:
-        stmt = stmt.where(Freelancer.origine == origine)
-    if utm_source is not None:
-        stmt = stmt.where(Freelancer.utm_source == utm_source)
-    if has_cv is not None:
+        stmt = stmt.where(matches_any(search_cols, f.q))
+    if f.posizione:
+        stmt = stmt.where(Freelancer.posizione.ilike(f"%{escape_like(f.posizione)}%"))
+    if f.remoto is not None:
+        stmt = stmt.where(Freelancer.remoto == f.remoto)
+    if f.tariffa_min is not None:
+        stmt = stmt.where(Freelancer.tariffa_giornaliera >= f.tariffa_min)
+    if f.tariffa_max is not None:
+        stmt = stmt.where(Freelancer.tariffa_giornaliera <= f.tariffa_max)
+    if f.origine == _ORIGIN_FORM:
+        # `form` is a bare sign-up: no card is one.
+        stmt = stmt.where(false())
+    elif f.origine is not None:
+        stmt = stmt.where(Freelancer.compilata_da == _COMPILATA_DA_BY_ORIGIN[f.origine])
+    if f.pagina_origine is not None:
+        stmt = stmt.where(Freelancer.origine == f.pagina_origine)
+    if f.utm_source is not None:
+        stmt = stmt.where(Freelancer.utm_source == f.utm_source)
+    if f.has_cv is not None:
         stmt = stmt.where(
-            Freelancer.cv_filename.isnot(None) if has_cv else Freelancer.cv_filename.is_(None)
+            Freelancer.cv_filename.isnot(None) if f.has_cv else Freelancer.cv_filename.is_(None)
         )
-    if con_accessi is not None:
+    if f.con_accessi is not None:
         login_exists = exists(select(Login.id).where(Login.user_id == Freelancer.user_id))
-        stmt = stmt.where(login_exists if con_accessi else ~login_exists)
-    if creato_da is not None:
-        stmt = stmt.where(Freelancer.created_at >= creato_da)
-    if creato_a is not None:
-        stmt = stmt.where(Freelancer.created_at <= creato_a)
-    for skill in competenze:
+        stmt = stmt.where(login_exists if f.con_accessi else ~login_exists)
+    if f.creato_da is not None:
+        stmt = stmt.where(Freelancer.created_at >= f.creato_da)
+    if f.creato_a is not None:
+        stmt = stmt.where(Freelancer.created_at <= f.creato_a)
+    for skill in f.competenze:
         stmt = stmt.where(_names_skill(skill))
-    if luogo:
-        stmt = stmt.where(_lives_in(luogo))
+    if f.luogo:
+        stmt = stmt.where(_lives_in(f.luogo))
+    if f.seniority:
+        stmt = stmt.where(_has_seniority(f.seniority))
+    if f.anni_min is not None:
+        stmt = stmt.where(_card_anni() >= f.anni_min)
+    if f.anni_max is not None:
+        stmt = stmt.where(_card_anni() <= f.anni_max)
+    for sector in f.settori:
+        stmt = stmt.where(_card_list_names("settori", sector))
+    for language in f.lingue:
+        stmt = stmt.where(_card_list_names("lingue", language))
+    if f.scheda is not None:
+        stmt = stmt.where(_scheda_is(f.scheda))
+    if f.ranked_by == "tariffa":
+        stmt = stmt.where(Freelancer.tariffa_giornaliera.is_not(None))
+    elif f.ranked_by == "anni":
+        stmt = stmt.where(_card_anni().is_not(None))
     return stmt
 
 
-def _lead_stmt(
-    *,
-    q: str,
-    utm_source: str | None,
-    con_accessi: bool | None,
-    creato_da: datetime | None,
-    creato_a: datetime | None,
-) -> Select[Signup]:
+def _lead_stmt(f: _Filters) -> Select[Signup]:
     """Every bare sign-up (no card), the same anti-join `_card_emails` describes."""
     card_emails = _card_emails()
     stmt = (
@@ -248,11 +473,11 @@ def _lead_stmt(
         .outerjoin(card_emails, card_emails.c.email == func.lower(Signup.email))
         .where(card_emails.c.email.is_(None))
     )
-    if q:
-        stmt = stmt.where(matches_any((Signup.nome, Signup.cognome, Signup.email), q))
-    if utm_source is not None:
-        stmt = stmt.where(Signup.utm_source == utm_source)
-    if con_accessi is not None:
+    if f.q:
+        stmt = stmt.where(matches_any((Signup.nome, Signup.cognome, Signup.email), f.q))
+    if f.utm_source is not None:
+        stmt = stmt.where(Signup.utm_source == f.utm_source)
+    if f.con_accessi is not None:
         # A lead has no `user_id` of its own; the address is the only thing it can be
         # matched to a `users`/`logins` row by, the same lowercased join `_card_read`'s
         # sibling `FreelancerService._signed_up` uses elsewhere in this package.
@@ -262,17 +487,32 @@ def _lead_stmt(
             .join(lead_user, lead_user.id == Login.user_id)
             .where(func.lower(lead_user.email) == func.lower(Signup.email))
         )
-        stmt = stmt.where(login_exists if con_accessi else ~login_exists)
-    if creato_da is not None:
-        stmt = stmt.where(Signup.created_at >= creato_da)
-    if creato_a is not None:
-        stmt = stmt.where(Signup.created_at <= creato_a)
+        stmt = stmt.where(login_exists if f.con_accessi else ~login_exists)
+    if f.creato_da is not None:
+        stmt = stmt.where(Signup.created_at >= f.creato_da)
+    if f.creato_a is not None:
+        stmt = stmt.where(Signup.created_at <= f.creato_a)
     return stmt
 
 
 class TalentiService:
     def __init__(self, session: Session) -> None:
         self.session = session
+
+    def row_for_freelancer(self, freelancer_id: UUID) -> TalentoRead:
+        """The list's own row for one freelancer, deleted or not (the caller decides
+        what a deleted card means): what `get_talento` merges over the admin detail, so
+        a card reads the same in both. `NotFound` for an id that is no freelancer."""
+        found = self.session.execute(
+            select(Freelancer, User, FreelancerCard.card.label("scheda"))
+            .join(User, User.id == Freelancer.user_id)
+            .outerjoin(FreelancerCard, FreelancerCard.freelancer_id == Freelancer.id)
+            .where(Freelancer.id == freelancer_id)
+            .options(defer(Freelancer.cv_bytes))
+        ).first()
+        if found is None:
+            raise NotFound("talento", freelancer_id)
+        return _card_read(found[0], found[1], found.scheda)
 
     def list_recent(
         self,
@@ -286,6 +526,7 @@ class TalentiService:
         tariffa_min: Decimal | None = None,
         tariffa_max: Decimal | None = None,
         origine: str | None = None,
+        pagina_origine: str | None = None,
         utm_source: str | None = None,
         has_cv: bool | None = None,
         con_accessi: bool | None = None,
@@ -293,6 +534,13 @@ class TalentiService:
         creato_a: datetime | None = None,
         competenze: Sequence[str] | None = None,
         luogo: str | None = None,
+        seniority: Sequence[str] | None = None,
+        anni_min: int | None = None,
+        anni_max: int | None = None,
+        settori: Sequence[str] | None = None,
+        lingue: Sequence[str] | None = None,
+        scheda: str | None = None,
+        ordina: str | None = None,
     ) -> TalentoList:
         """Every card and every bare sign-up as one row, newest-or-best-match first,
         `stato` `lead` for the bare ones.
@@ -303,26 +551,64 @@ class TalentiService:
         filter -- REB-285 does not change that), and `None` merges both. Every other
         filter narrows both sides at once, except the card-only ones
         (`_card_only_active`), which a lead can never satisfy and so drop it from the
-        merge outright, and `has_cv`,
-        which a lead satisfies only as `False`.
+        merge outright, and `has_cv`, which a lead satisfies only as `False`.
+
+        `origine` is what the row shows (`form`, `wizard`, `admin`; anything else is a
+        `ValidationFailed`, not an empty list that reads like «nobody»), and
+        `pagina_origine` the marketing page the person started from (REB-798).
 
         `competenze` keeps the cards that name every one of its terms (REB-778), each
         in the position or in the anonymous card's role, skills or summary; `luogo`
         keeps the cards whose anonymous card places them there. Blank terms are ignored.
-        """
+        REB-801 adds, on the same anonymous card: `seniority` (one of `SENIORITIES`,
+        any of those given), `anni_min`/`anni_max` (inclusive), `settori` and `lingue`
+        (every term must be named by one element, a substring, like `competenze`), and
+        `scheda`, the card's own state (`SCHEDA_STATES`).
+
+        `ordina` is `recenti` (newest first, even while searching), or `tariffa_asc`,
+        `tariffa_desc`, `anni_asc`, `anni_desc`: the cursor then carries that value, and
+        the rows with none to rank by (every lead, a card with no rate or no years) are
+        left out of the list and of its counts. Without it the order is newest first, or
+        best match while `q` searches."""
         limit = max(1, min(limit, LIST_LIMIT_MAX))
         term = (q or "").strip()
-        skills = tuple(skill.strip() for skill in competenze or () if skill.strip())
-        place = (luogo or "").strip() or None
-        card_only_active = _card_only_active(
-            posizione, remoto, tariffa_min, tariffa_max, origine, skills, place
+        # A blank is no filter, the way a blank `q` or `luogo` always was.
+        origine = (origine or "").strip().lower() or None
+        pagina_origine = (pagina_origine or "").strip() or None
+        scheda = (scheda or "").strip().lower() or None
+        ordina = (ordina or "").strip().lower() or None
+        order = _order(ordina, term)
+        if origine is not None and origine not in ORIGINS:
+            raise ValidationFailed(_ENTITY, "origine", f"atteso uno fra {', '.join(ORIGINS)}")
+        if scheda is not None and scheda not in SCHEDA_STATES:
+            raise ValidationFailed(_ENTITY, "scheda", f"atteso uno fra {', '.join(SCHEDA_STATES)}")
+        f = _Filters(
+            q=term,
+            posizione=posizione,
+            remoto=remoto,
+            tariffa_min=tariffa_min,
+            tariffa_max=tariffa_max,
+            origine=origine,
+            pagina_origine=pagina_origine,
+            utm_source=utm_source,
+            has_cv=has_cv,
+            con_accessi=con_accessi,
+            creato_da=creato_da,
+            creato_a=creato_a,
+            competenze=_terms(competenze),
+            luogo=(luogo or "").strip() or None,
+            seniority=_choices("seniority", seniority, SENIORITIES),
+            anni_min=anni_min,
+            anni_max=anni_max,
+            settori=_terms(settori),
+            lingue=_terms(lingue),
+            scheda=scheda,
+            ranked_by=order.ranked_by,
         )
         wants_cards = stato is None or stato != LEAD_STATE
-        wants_leads = (
-            (stato is None or stato == LEAD_STATE) and not card_only_active and has_cv is not True
-        )
+        wants_leads = (stato is None or stato == LEAD_STATE) and f.leads_possible
 
-        sort_spec = SortSpec("score", "float") if term else SortSpec("created_at", "datetime")
+        sort_spec = order.spec
         cursor_bound: tuple[datetime | float, UUID] | None = (
             decode_cursor(sort_spec, cursor) if cursor else None
         )
@@ -330,34 +616,30 @@ class TalentiService:
         candidates: list[tuple[datetime | float, UUID, TalentoRead]] = []
 
         if wants_cards:
-            stmt = _card_stmt(
-                q=term,
-                posizione=posizione,
-                remoto=remoto,
-                tariffa_min=tariffa_min,
-                tariffa_max=tariffa_max,
-                origine=origine,
-                utm_source=utm_source,
-                has_cv=has_cv,
-                con_accessi=con_accessi,
-                creato_da=creato_da,
-                creato_a=creato_a,
-                competenze=skills,
-                luogo=place,
-            )
+            stmt = _card_stmt(f)
             if stato is not None:
                 stmt = stmt.where(Freelancer.stato == stato)
             sort_col: Any
-            if term:
+            if order.ranked_by == "tariffa":
+                sort_col = Freelancer.tariffa_giornaliera
+            elif order.ranked_by == "anni":
+                sort_col = _card_anni()
+            elif sort_spec.key == "score":
                 search_cols = (User.nome, User.cognome, User.email, Freelancer.posizione)
-                score = similarity_score(search_cols, term).label("score")
-                stmt = stmt.add_columns(score)
-                sort_col = score
+                sort_col = similarity_score(search_cols, term)
             else:
                 sort_col = Freelancer.created_at
+            if sort_spec.key != "created_at":
+                stmt = stmt.add_columns(sort_col.label("ordine"))
             if cursor_bound is not None:
                 stmt = stmt.where(
-                    keyset_predicate(sort_col, Freelancer.id, cursor_bound[0], cursor_bound[1])
+                    keyset_predicate(
+                        sort_col,
+                        Freelancer.id,
+                        cursor_bound[0],
+                        cursor_bound[1],
+                        descending=order.descending,
+                    )
                 )
             # The anonymous card rides along whole (one row per freelancer, the primary
             # key): its fields are what an agent matches a request on (REB-778), and a
@@ -368,24 +650,23 @@ class TalentiService:
             # A row reads `cv_size` and the file's name, never the PDF itself: a page of
             # 100 cards (or a campaign's whole list, P-REB-41) must not carry 100 CVs.
             rows = self.session.execute(
-                stmt.order_by(sort_col.desc(), Freelancer.id.desc())
+                stmt.order_by(
+                    sort_col.desc() if order.descending else sort_col.asc(),
+                    Freelancer.id.desc() if order.descending else Freelancer.id.asc(),
+                )
                 .limit(limit + 1)
                 .options(defer(Freelancer.cv_bytes))
             ).all()
             for row in rows:
                 card, user = row[0], row[1]
-                sort_value = row.score if term else card.created_at
+                # A Postgres `numeric` comes back as a `Decimal`; the cursor carries
+                # JSON numbers, so a ranked value is a `float` on both sides.
+                sort_value = card.created_at if sort_spec.key == "created_at" else float(row.ordine)
                 candidates.append((sort_value, card.id, _card_read(card, user, row.scheda)))
 
         if wants_leads:
-            lead_stmt = _lead_stmt(
-                q=term,
-                utm_source=utm_source,
-                con_accessi=con_accessi,
-                creato_da=creato_da,
-                creato_a=creato_a,
-            )
-            if term:
+            lead_stmt = _lead_stmt(f)
+            if sort_spec.key == "score":
                 lead_score = similarity_score((Signup.nome, Signup.cognome, Signup.email), term)
                 lead_stmt = lead_stmt.add_columns(lead_score.label("score"))
                 lead_sort_col: Any = lead_score
@@ -400,10 +681,10 @@ class TalentiService:
             ).all()
             for lead_row in lead_rows:
                 signup = lead_row[0]
-                sort_value = lead_row.score if term else signup.created_at
-                candidates.append((sort_value, signup.id, _signup_read(signup)))
+                sort_value = lead_row.score if sort_spec.key == "score" else signup.created_at
+                candidates.append((sort_value, signup.id, signup_read(signup)))
 
-        candidates.sort(key=lambda c: (c[0], c[1]), reverse=True)
+        candidates.sort(key=lambda c: (c[0], c[1]), reverse=order.descending)
         page = candidates[:limit]
         items = [item for _, _, item in page]
         next_cursor = (
@@ -412,78 +693,27 @@ class TalentiService:
             else None
         )
 
-        per_stato = self._counts(
-            q=term,
-            posizione=posizione,
-            remoto=remoto,
-            tariffa_min=tariffa_min,
-            tariffa_max=tariffa_max,
-            origine=origine,
-            utm_source=utm_source,
-            has_cv=has_cv,
-            con_accessi=con_accessi,
-            creato_da=creato_da,
-            creato_a=creato_a,
-            competenze=skills,
-            luogo=place,
-        )
+        per_stato = self._counts(f)
         totale = sum(per_stato.values()) if stato is None else per_stato.get(stato, 0)
         return TalentoList(totale=totale, items=items, per_stato=per_stato, next_cursor=next_cursor)
 
-    def _counts(
-        self,
-        *,
-        q: str,
-        posizione: str | None,
-        remoto: str | None,
-        tariffa_min: Decimal | None,
-        tariffa_max: Decimal | None,
-        origine: str | None,
-        utm_source: str | None,
-        has_cv: bool | None,
-        con_accessi: bool | None,
-        creato_da: datetime | None,
-        creato_a: datetime | None,
-        competenze: Sequence[str],
-        luogo: str | None,
-    ) -> dict[str, int]:
+    def _counts(self, f: _Filters) -> dict[str, int]:
         """How many rows sit in each state, `lead` included, with every filter but
         `stato` itself applied (REB-285) -- the numbers the admin area's tabs need
         beside the page, answering "how many if I picked this one" rather than "how
         many exist at all"."""
-        card_stmt = _card_stmt(
-            q=q,
-            posizione=posizione,
-            remoto=remoto,
-            tariffa_min=tariffa_min,
-            tariffa_max=tariffa_max,
-            origine=origine,
-            utm_source=utm_source,
-            has_cv=has_cv,
-            con_accessi=con_accessi,
-            creato_da=creato_da,
-            creato_a=creato_a,
-            competenze=competenze,
-            luogo=luogo,
-        )
         grouped = self.session.execute(
-            card_stmt.with_only_columns(Freelancer.stato, func.count()).group_by(Freelancer.stato)
+            _card_stmt(f)
+            .with_only_columns(Freelancer.stato, func.count())
+            .group_by(Freelancer.stato)
         ).all()
         by_state: dict[str, int] = {stato: count for stato, count in grouped}
         counts = {stato: by_state.get(stato, 0) for stato in FREELANCER_STATES}
 
-        card_only_active = _card_only_active(
-            posizione, remoto, tariffa_min, tariffa_max, origine, competenze, luogo
-        )
-        if card_only_active or has_cv is True:
-            counts[LEAD_STATE] = 0
-        else:
-            lead_stmt = _lead_stmt(
-                q=q,
-                utm_source=utm_source,
-                con_accessi=con_accessi,
-                creato_da=creato_da,
-                creato_a=creato_a,
+        if f.leads_possible:
+            counts[LEAD_STATE] = (
+                self.session.scalar(_lead_stmt(f).with_only_columns(func.count())) or 0
             )
-            counts[LEAD_STATE] = self.session.scalar(lead_stmt.with_only_columns(func.count())) or 0
+        else:
+            counts[LEAD_STATE] = 0
         return counts

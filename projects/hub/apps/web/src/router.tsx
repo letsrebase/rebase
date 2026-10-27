@@ -317,7 +317,7 @@ const adminTalent = createRoute({
         : undefined,
     tariffa_min: strParam(search.tariffa_min),
     tariffa_max: strParam(search.tariffa_max),
-    origine: strParam(search.origine),
+    pagina_origine: strParam(search.pagina_origine),
     utm_source: strParam(search.utm_source),
     has_cv: search.has_cv === true || search.has_cv === 'true' ? true : search.has_cv === false || search.has_cv === 'false' ? false : undefined,
     con_accessi:

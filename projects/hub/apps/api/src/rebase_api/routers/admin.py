@@ -450,6 +450,7 @@ def list_talenti(
     tariffa_min: Decimal | None = None,
     tariffa_max: Decimal | None = None,
     origine: str | None = None,
+    pagina_origine: str | None = None,
     utm_source: str | None = None,
     has_cv: bool | None = None,
     con_accessi: bool | None = None,
@@ -460,7 +461,9 @@ def list_talenti(
     `stato` «lead» for the bare ones -- the read model «Developer e CTO» and
     «Iscrizioni» read as two overlapping lists, merged. Additive beside both: neither
     changes here. REB-285 adds `q` (nome/cognome/email/posizione, trigram-ordered),
-    `cursor`, and every filter after `stato`."""
+    `cursor`, and every filter after `stato`. `origine` is the channel a row shows
+    (`form`, `wizard`, `admin`) and `pagina_origine` the marketing page the person
+    started from (REB-798; the page filter was `origine` before)."""
     return TalentiService(session).list_recent(
         limit=limit,
         stato=stato,
@@ -471,6 +474,7 @@ def list_talenti(
         tariffa_min=tariffa_min,
         tariffa_max=tariffa_max,
         origine=origine,
+        pagina_origine=pagina_origine,
         utm_source=utm_source,
         has_cv=has_cv,
         con_accessi=con_accessi,

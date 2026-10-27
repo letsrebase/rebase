@@ -121,7 +121,7 @@ async def test_a_partial_surname_narrows_the_talent_list_to_the_matching_rows(
     _card(clean, "Bruno", "Neri", "bruno@studio.it", "600")
     _lead(clean, "Cara", "Bianchi", "cara@studio.it")
     async with _server(clean) as client:
-        found = _payload(await client.call_tool("list_talenti", {"q": "lovel"}))
+        found = _payload(await client.call_tool("list_talenti", {"q": "lovel", "campi": ["email"]}))
     assert [item["email"] for item in found["items"]] == ["ada@studio.it"]
     assert found["totale"] == 1 and found["next_cursor"] is None
 
@@ -131,8 +131,12 @@ async def test_a_filter_excludes_the_rows_it_does_not_match(clean: Any) -> None:
     _card(clean, "Bruno", "Neri", "bruno@studio.it", "600")
     _lead(clean, "Cara", "Bianchi", "cara@studio.it")
     async with _server(clean) as client:
-        priced = _payload(await client.call_tool("list_talenti", {"tariffa_min": "500"}))
-        leads = _payload(await client.call_tool("list_talenti", {"stato": "lead"}))
+        priced = _payload(
+            await client.call_tool("list_talenti", {"tariffa_min": "500", "campi": ["email"]})
+        )
+        leads = _payload(
+            await client.call_tool("list_talenti", {"stato": "lead", "campi": ["email"]})
+        )
     # A tariffa a lead cannot have drops every lead outright, not just some.
     assert [item["email"] for item in priced["items"]] == ["bruno@studio.it"]
     assert priced["totale"] == 1
@@ -184,7 +188,9 @@ async def test_a_filter_amount_is_read_with_italian_thousands(clean: Any) -> Non
     _company(clean, "ACME Srl", "wile@acme.it", "Un backend developer per tre mesi.", "1200")
     _company(clean, "Rossi Lab", "paperone@rossilab.it", "Una pipeline dati.", "1800")
     async with _server(clean) as client:
-        priced = _payload(await client.call_tool("list_talenti", {"tariffa_min": "1.500"}))
+        priced = _payload(
+            await client.call_tool("list_talenti", {"tariffa_min": "1.500", "campi": ["email"]})
+        )
         rich = _payload(await client.call_tool("list_aziende", {"budget_min": "1.234,50"}))
     assert [item["email"] for item in priced["items"]] == ["bruno@studio.it"]
     assert [item["email"] for item in rich["items"]] == ["paperone@rossilab.it"]
@@ -233,7 +239,10 @@ async def test_skills_narrow_the_talent_list_and_ride_on_each_row(clean: Any) ->
         session.close()
     async with _server(clean) as client:
         found = _payload(
-            await client.call_tool("list_talenti", {"competenze": ["sql server", "react"]})
+            await client.call_tool(
+                "list_talenti",
+                {"competenze": ["sql server", "react"], "campi": ["email", "competenze", "luogo"]},
+            )
         )
         too_many = await client.call_tool("list_talenti", {"competenze": ["x"] * 11})
     assert [item["email"] for item in found["items"]] == ["ada@studio.it"]
