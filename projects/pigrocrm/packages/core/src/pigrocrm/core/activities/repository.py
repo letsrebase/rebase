@@ -32,8 +32,8 @@ class ActivityRepository:
         """The global activity feed of §6.1: newest first, across every entity.
 
         Not paginated, and fifty rows at most, optionally narrowed to `entity_types` (REB-811).
-        A complete history of activity is the entity's own `timeline`, which already exists; a paginated global feed would be a
-        second way to browse the same rows, with its own cursor to get wrong.
+        A complete history of activity is the entity's own `timeline`, which already exists; a
+        paginated global feed would be a second way to browse the same rows, with its own cursor to get wrong.
 
         Served by `ix_activities_recent` once a space's feed is large enough for the
         planner to want it; nothing asserts the plan since REB-580, because a space's
