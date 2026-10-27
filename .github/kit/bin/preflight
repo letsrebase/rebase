@@ -81,6 +81,9 @@ HOOK = """#!/bin/sh
 # expensive verification happens here, before a PR exists, instead of on a
 # GitHub runner after every push. PREFLIGHT_SKIP=1 bypasses it.
 root=$(git rev-parse --show-toplevel) || exit 1
+# The hooks directory is shared by every worktree, including one on a branch older
+# than the kit: there is nothing to run there, which is not a reason to refuse a push.
+[ -f "$root/.github/kit/bin/preflight" ] || { echo "preflight: no kit in this checkout, not checked" >&2; exit 0; }
 py=$(command -v python3 || command -v python) || { echo "preflight: no python3 on PATH" >&2; exit 1; }
 exec "$py" "$root/.github/kit/bin/preflight" --hook
 """
