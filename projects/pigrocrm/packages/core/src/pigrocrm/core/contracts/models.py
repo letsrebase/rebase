@@ -103,6 +103,12 @@ class Contract(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     applies_social_charge: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
+    # REB-761: the most one customer may be of the azienda's invoiced revenue over this
+    # contract's own anniversary year, as a percentage the way its owner reads it
+    # (`50.00`, the `FiscalProfile` rates' own shape), `NULL` for no cap. A clause of the
+    # contract and not of the regime (mastro's invariant 2): it survives a change of pack.
+    # What it is compared with is `ContractService.concentration_cap`'s share.
+    tetto_quota_cliente: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), default=None)
     # mastro's `ExpensePolicy` (`contract.ts:90-99`), kept as a tagged JSONB union
     # rather than flattened: unlike payment terms, this one genuinely needs a payload
     # (a cap amount) on only one of its variants. Not deeply validated here -- the
@@ -136,6 +142,12 @@ class Contract(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
             name="ck_contracts_preavviso_rinnovo_required",
         ),
         CheckConstraint("fine IS NULL OR inizio <= fine", name="ck_contracts_fine_ordered"),
+        # A cap of 0 forbids the customer and one of 100 never binds: neither is a clause.
+        CheckConstraint(
+            "tetto_quota_cliente IS NULL "
+            "OR (tetto_quota_cliente > 0 AND tetto_quota_cliente < 100)",
+            name="ck_contracts_tetto_quota_cliente_range",
+        ),
         Index("ix_contracts_custom_fields", "custom_fields", postgresql_using="gin"),
         # Residuo R9: one `(column, id)` B-tree per key CONTRACT_SORTS admits.
         Index("ix_contracts_created_at_id", "created_at", "id"),

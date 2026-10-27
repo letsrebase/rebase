@@ -1813,3 +1813,48 @@ def test_0057_repoints_an_ordinary_profile_at_its_own_pack_and_clears_the_forfet
         downgrade(config, "0056")
         assert read()[ordinary][0] == "it-flat-rate"
         assert read()[forfettario][0] == "it-flat-rate"
+
+
+def _cap_shape(url: str) -> tuple[set[str], set[str]]:
+    engine: Engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            columns = set(
+                connection.execute(
+                    text(
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_name = 'contracts' AND column_name = 'tetto_quota_cliente'"
+                    )
+                ).scalars()
+            )
+            checks = set(
+                connection.execute(
+                    text(
+                        "SELECT conname FROM pg_constraint "
+                        "WHERE conname = 'ck_contracts_tetto_quota_cliente_range'"
+                    )
+                ).scalars()
+            )
+        return columns, checks
+    finally:
+        engine.dispose()
+
+
+def test_0058_adds_the_share_cap_column_and_its_range_check_both_ways(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-761: one nullable column and one CHECK, no backfill, both ways."""
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0057")
+        assert _cap_shape(url) == (set(), set())
+        upgrade(config, "0058")
+        assert _cap_shape(url) == (
+            {"tetto_quota_cliente"},
+            {"ck_contracts_tetto_quota_cliente_range"},
+        )
+        downgrade(config, "0057")
+        assert _cap_shape(url) == (set(), set())
+        upgrade(config, "0058")
+        assert _cap_shape(url)[1] == {"ck_contracts_tetto_quota_cliente_range"}
