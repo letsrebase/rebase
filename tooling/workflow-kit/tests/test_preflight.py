@@ -38,6 +38,20 @@ class ChangedPaths(unittest.TestCase):
         self.assertIn("projects/hub/old.txt", paths)
         self.assertIn("docs_new.txt", paths)
 
+    def test_a_committed_move_reports_the_directory_it_left(self):
+        git(self.root, "checkout", "-q", "-b", "work")
+        git(self.root, "mv", "projects/hub/old.txt", "docs_new.txt")
+        git(self.root, "commit", "-q", "-m", "move")
+        paths, _ = preflight.changed_paths(self.root, "main")
+        self.assertEqual(paths, ["docs_new.txt", "projects/hub/old.txt"])
+
+    def test_a_new_directory_is_listed_file_by_file(self):
+        new = self.root / "projects" / "api" / "pkg"
+        new.mkdir(parents=True)
+        (new / "mod.py").write_text("x = 1\n", encoding="utf-8")
+        paths, _ = preflight.changed_paths(self.root, "main")
+        self.assertEqual(paths, ["projects/api/pkg/mod.py"])
+
     def test_an_unstaged_edit_keeps_its_first_character(self):
         (self.root / "projects" / "hub" / "old.txt").write_text("y\n", encoding="utf-8")
         paths, _ = preflight.changed_paths(self.root, "main")

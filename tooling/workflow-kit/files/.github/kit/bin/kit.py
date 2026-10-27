@@ -224,7 +224,7 @@ def sync(repo: Path, source: Path, force: bool = False) -> int:
     template.write_text(render_template(cfg), encoding="utf-8", newline="\n")
     managed[TEMPLATE.as_posix()] = digest(template)
 
-    migrate_claude_only_skills(repo)
+    migrate_claude_only_skills(repo, previous.get("mirror", {}))
     mirror(repo / AGENTS_SKILLS, repo / CLAUDE_SKILLS)
 
     manifest = {
@@ -284,12 +284,18 @@ def pending_losses(repo: Path, files: Path, mirrored: dict[str, str]) -> list[st
     return out
 
 
-def migrate_claude_only_skills(repo: Path) -> None:
-    """A skill only under .claude/skills moves to .agents/skills before the mirror runs."""
+def migrate_claude_only_skills(repo: Path, mirrored: dict[str, str]) -> None:
+    """A skill only under .claude/skills moves to .agents/skills before the mirror runs.
+
+    Unless the last sync mirrored it there: then it was deleted from .agents/skills on
+    purpose, and bringing it back would make a skill impossible to remove.
+    """
     claude, agents = repo / CLAUDE_SKILLS, repo / AGENTS_SKILLS
-    if not claude.is_dir():
+    if not claude.is_dir() or claude.is_symlink():
         return
     for skill in sorted(p for p in claude.iterdir() if p.is_dir()):
+        if any(key.startswith(f"{skill.name}/") for key in mirrored):
+            continue
         if not (agents / skill.name).exists():
             (agents / skill.name).parent.mkdir(parents=True, exist_ok=True)
             shutil.copytree(skill, agents / skill.name)
@@ -300,7 +306,8 @@ def migrate_claude_only_skills(repo: Path) -> None:
 
 
 def mirror(src: Path, dst: Path) -> None:
-    if dst.is_symlink():
+    # A symlink, or a symlink Git for Windows checked out as a text file, is replaced.
+    if dst.is_symlink() or dst.is_file():
         dst.unlink()
     if dst.exists():
         shutil.rmtree(dst)

@@ -182,14 +182,20 @@ def changed_paths(root: Path, base: str) -> tuple[list[str], str]:
 
     paths: set[str] = set()
     if merge_base:
+        # --no-renames: a move lists its old path too, so the checks of the directory
+        # a file left still run (the callers of a moved module are there).
         paths.update(
-            git("diff", "--name-only", f"{merge_base}..HEAD", cwd=root).splitlines()
+            git("diff", "--name-only", "--no-renames", f"{merge_base}..HEAD", cwd=root).splitlines()
         )
     # raw=True: a generic .strip() on this call would eat the leading space
     # of a leading " M path" record (see the `git()` docstring above it).
     # -z NUL-terminates every record, including the last, so the final
     # split element is always an empty string to discard, never content.
-    status_z = git("status", "--porcelain", "-z", cwd=root, raw=True).split("\0")
+    # --untracked-files=all: a new directory is listed file by file, not as one `dir/`
+    # entry that no `**/*.py` glob would ever match.
+    status_z = git(
+        "status", "--porcelain", "-z", "--untracked-files=all", cwd=root, raw=True
+    ).split("\0")
     if status_z and status_z[-1] == "":
         status_z = status_z[:-1]
     i = 0
@@ -526,19 +532,12 @@ def main() -> int:
 
     head = git("rev-parse", "HEAD", cwd=root)
 
-    if args.hook:
-        state = read_state(root)
-        if state.get("sha") == head and not paths_dirty(root):
-            print(
-                f"preflight: {head[:9]} already passed "
-                f"({', '.join(state.get('checks', []))})",
-                file=sys.stderr,
-            )
-            return 0
-
-    if args.all:
+    if args.all or not merge_base:
+        # No base to diff against (a fresh clone without origin/main, a renamed trunk):
+        # "what changed" has no honest answer, so every check runs rather than none.
+        reason = "--all" if args.all else f"base {base} unresolved"
         selected = list(checks)
-        why = {c.id: ["--all"] for c in checks}
+        why = {c.id: [reason] for c in checks}
     else:
         why = {}
         selected = []
@@ -553,6 +552,22 @@ def main() -> int:
         if unknown:
             die(f"unknown check id(s): {', '.join(sorted(unknown))}")
         selected = [c for c in checks if c.id in wanted]
+
+    if args.hook:
+        # A recorded pass is reused only when it covered every check this diff selects:
+        # `preflight lint` on its own records lint, never the tests the diff also needs.
+        state = read_state(root)
+        covered = set(state.get("checks", []))
+        if (
+            state.get("sha") == head
+            and not paths_dirty(root)
+            and {c.id for c in selected} <= covered
+        ):
+            print(
+                f"preflight: {head[:9]} already passed ({', '.join(sorted(covered))})",
+                file=sys.stderr,
+            )
+            return 0
 
     if args.list:
         print(f"base {base} ({merge_base[:9] or 'unresolved'}), {len(paths)} changed path(s)")
