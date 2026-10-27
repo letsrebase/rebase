@@ -173,6 +173,55 @@ def test_a_counterparty_nobody_filed_is_created_only_on_the_decision_for_its_cus
     assert [c["partita_iva"] for c in customers] == [CLIENTE_PIVA]
 
 
+def test_a_customer_of_another_azienda_is_a_422_that_names_the_party_and_writes_nothing(
+    logged_in: TestClient,
+    fiscal_profile: dict[str, Any],
+    emitter: dict[str, Any],
+    customer: dict[str, Any],
+) -> None:
+    """REB-783: the dialog lists only the file's azienda's customers, but the id is the
+    caller's, so the confirmation itself refuses one from another azienda, and one of
+    the right azienda still imports."""
+    content = _fixture(CONSULENZA)
+    ltd = logged_in.post(
+        "/api/aziende",
+        json={
+            "nome": "acme ltd",
+            "ragione_sociale": "Acme Ltd",
+            "partita_iva": "GB123456789",
+            "nazione": "GB",
+            "indirizzo": "1 Poultry",
+            "comune": "London",
+            "fiscal_profile": {"pack_id": "non-it", "aliquota_iva_default": "20.00"},
+        },
+    ).json()
+    foreign = logged_in.post(
+        "/api/customers",
+        json={"ragione_sociale": "Acme Customer Ltd", "nazione": "GB", "azienda_id": ltd["id"]},
+    )
+    assert foreign.status_code == 201, foreign.text
+    party = CLIENTE_PIVA
+
+    refused = logged_in.post(
+        CONFIRM,
+        files=_files(("fattura.xml", content)),
+        data=_decisions({party: {"customer_id": foreign.json()["id"]}}),
+    )
+
+    assert refused.status_code == 422, refused.text
+    assert "Esempio Servizi S.r.l." in refused.text
+    assert logged_in.get("/api/invoices").json()["items"] == []
+    assert logged_in.get("/api/documents").json()["items"] == []
+
+    accepted = logged_in.post(
+        CONFIRM,
+        files=_files(("fattura.xml", content)),
+        data=_decisions({party: {"customer_id": customer["id"]}}),
+    )
+    assert accepted.status_code == 200, accepted.text
+    assert accepted.json()["righe"][0]["outcome"] == "imported"
+
+
 def test_a_year_of_xml_in_one_zip_imports_with_no_gap_to_declare(
     logged_in: TestClient,
     fiscal_profile: dict[str, Any],

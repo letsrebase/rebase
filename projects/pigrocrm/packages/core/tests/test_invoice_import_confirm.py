@@ -11,7 +11,7 @@ duplicate insert; confirming a fresh one produces exactly the row
 """
 
 import hashlib
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -31,6 +31,7 @@ from pigrocrm.core.errors import AgentForbidden, PermissionDenied, ValidationFai
 from pigrocrm.core.fiscal.models import FiscalProfile
 from pigrocrm.core.fiscal.repository import FiscalProfileRepository
 from pigrocrm.core.invoices.import_confirm import map_parsed_invoice_to_import
+from pigrocrm.core.invoices.import_review import detect_adapter
 from pigrocrm.core.invoices.import_schemas import (
     ParsedInvoice,
     ParsedInvoiceLine,
@@ -38,6 +39,7 @@ from pigrocrm.core.invoices.import_schemas import (
     ParsedInvoiceTaxSummary,
     ParsedInvoiceTransmission,
 )
+from pigrocrm.core.invoices.import_upload import UploadedPartyDecision, party_key
 from pigrocrm.core.invoices.models import Invoice, InvoiceRegisterGap
 from pigrocrm.core.invoices.repository import InvoiceRepository
 from pigrocrm.core.invoices.service import InvoiceService
@@ -351,6 +353,123 @@ def test_an_explicit_customer_id_overrides_the_automatic_match(
     assert row.outcome == "imported"
     assert row.fattura is not None
     assert row.fattura.customer_id == chosen.id
+
+
+def test_a_customer_of_another_azienda_is_refused_and_nothing_is_written(
+    db_session: Session, local_storage: LocalFileStorage
+) -> None:
+    """REB-783: `customer_id` is a human decision, but the register it lands on is the
+    file issuer's azienda's. A customer on another azienda would put an invoice on one
+    register for another's customer, so the confirmation answers `ValidationFailed`
+    naming the party, and no invoice is written."""
+    service = _svc(db_session, local_storage)
+    other = LegalEntity(
+        ragione_sociale="Acme Ltd", partita_iva="IE6388047V", nazione="IE", predefinita=False
+    )
+    db_session.add(other)
+    db_session.flush()
+    foreign = _customer(db_session, azienda_id=other.id)
+    document_id = _document(db_session, local_storage, _fixture(CONSULENZA))
+
+    before = _invoice_count(db_session)
+    with pytest.raises(ValidationFailed) as caught:
+        service.confirm_import(document_id, ADMIN, customer_id=foreign.id)
+
+    assert caught.value.details["field"] == "customer_id"
+    assert "Esempio Servizi S.r.l." in caught.value.details["reason"]
+    assert "altra azienda" in caught.value.details["reason"]
+    assert _invoice_count(db_session) == before
+
+
+def test_an_archived_customer_is_refused_and_one_of_the_right_azienda_still_imports(
+    db_session: Session, local_storage: LocalFileStorage
+) -> None:
+    service = _svc(db_session, local_storage)
+    archived = _customer(db_session, deleted_at=datetime.now(UTC))
+    chosen = _customer(db_session)
+    document_id = _document(db_session, local_storage, _fixture(CONSULENZA))
+
+    with pytest.raises(ValidationFailed) as caught:
+        service.confirm_import(document_id, ADMIN, customer_id=archived.id)
+    assert "archiviato" in caught.value.details["reason"]
+
+    [row] = service.confirm_import(document_id, ADMIN, customer_id=chosen.id)
+    assert row.outcome == "imported"
+    assert row.fattura is not None
+    assert row.fattura.customer_id == chosen.id
+
+
+def test_a_refusal_in_a_later_file_leaves_the_earlier_files_unwritten(
+    db_session: Session, local_storage: LocalFileStorage
+) -> None:
+    """Each invoice commits on its own, so a customer refused only when its file is
+    reached would leave the files before it on the register behind a bare 422. The
+    refusal is found before the first write: nothing of the request is written."""
+    service = _svc(db_session, local_storage)
+    other = LegalEntity(
+        ragione_sociale="Acme Ltd", partita_iva="IE6388047V", nazione="IE", predefinita=False
+    )
+    db_session.add(other)
+    db_session.flush()
+    own = _customer(db_session)
+    foreign = _customer(db_session, azienda_id=other.id)
+    first = _fixture(CONSULENZA)
+    second = (
+        first.decode()
+        .replace("<Numero>2026/6</Numero>", "<Numero>2026/9</Numero>")
+        .replace("09876543210", "01112223334")
+        .replace("Esempio Servizi S.r.l.", "Beta Servizi S.r.l.")
+        .encode()
+    )
+    parties = []
+    for xml in (first, second):
+        adapter = detect_adapter(xml)
+        assert adapter is not None
+        parties.extend(party_key(invoice.cliente) for invoice in adapter.parse(xml))
+    assert len(set(parties)) == 2
+
+    before = _invoice_count(db_session)
+    with pytest.raises(ValidationFailed) as caught:
+        service.confirm_upload(
+            [("uno.xml", first), ("due.xml", second)],
+            {
+                parties[0]: UploadedPartyDecision(customer_id=own.id),
+                parties[1]: UploadedPartyDecision(customer_id=foreign.id),
+            },
+            ADMIN,
+        )
+
+    assert "Beta Servizi S.r.l." in caught.value.details["reason"]
+    assert _invoice_count(db_session) == before
+
+
+def test_the_automatic_match_never_attaches_a_customer_of_another_azienda(
+    db_session: Session, local_storage: LocalFileStorage
+) -> None:
+    """The same tax id on file under another azienda is not this invoice's customer:
+    the review does not propose it, and a confirmation that creates the counterparty
+    makes one on the azienda the file landed on instead of reusing the other's."""
+    service = _svc(db_session, local_storage)
+    other = LegalEntity(
+        ragione_sociale="Acme Ltd", partita_iva="IE6388047V", nazione="IE", predefinita=False
+    )
+    db_session.add(other)
+    db_session.flush()
+    foreign = _customer(db_session, azienda_id=other.id, partita_iva=CLIENTE_PIVA)
+    document_id = _document(db_session, local_storage, _fixture(CONSULENZA), owner=foreign)
+
+    [reviewed] = service.review_import([document_id], ADMIN)
+    assert reviewed.outcome == "needs_customer_confirmation"
+    assert reviewed.matched_customer_id is None
+
+    [row] = service.confirm_import(document_id, ADMIN, create_customer=True)
+
+    assert row.outcome == "imported"
+    assert row.fattura is not None
+    assert row.fattura.customer_id != foreign.id
+    created = db_session.get(Customer, row.fattura.customer_id)
+    assert created is not None
+    assert created.azienda_id == row.azienda_id
 
 
 def test_create_customer_makes_exactly_one_new_customer_for_a_brand_new_counterpartys_batch(
