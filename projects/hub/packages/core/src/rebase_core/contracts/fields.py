@@ -9,10 +9,11 @@ the Typst pandoc writes, after pandoc has escaped everything else:
 - `[[text]]` is a proposal still to be decided, highlighted in the draft. A document
   whose front matter no longer says `status: draft` may not carry one.
 
-The fee and the payment term are checked here: a fee that is not a JSON number, is not
-above zero or has more decimals than the page prints is refused, and the payment term
-is written from `giorni-pagamento` and `fine-mese`, refusing one that could fall past
-the 60 days of law 81/2017 (article 7.1 of the framework agreement). Moved out of
+The fee and the payment term are checked here: a fee (or a proposal's price) that is
+not a JSON number, is not above zero or has more decimals than the page prints is
+refused, and the payment term is written from `giorni-pagamento` and `fine-mese`,
+refusing one that could fall past the 60 days of law 81/2017 (article 7.1 of the
+framework agreement). Moved out of
 `tools/build_contract_pdf.py` (REB-386) when the hub started typesetting at request time.
 """
 
@@ -33,6 +34,9 @@ PROPOSAL_OPEN = r"\[\["
 PROPOSAL_CLOSE = r"\]\]"
 
 FEE = "compenso"
+# What a company pays rebase in a proposal (REB-689): checked and printed like the fee.
+PRICE = "corrispettivo"
+MONEY = (FEE, PRICE)
 CENT = Decimal("0.01")
 TERM, DAYS, MONTH_END = "termine-pagamento", "giorni-pagamento", "fine-mese"
 # Article 3 of law 81/2017: no term past 60 days from the invoice. Counted from the end
@@ -132,9 +136,10 @@ def checked(data: dict[str, Value], *, receipt: bool = False) -> dict[str, Value
     """The data, with the fee checked and the payment term written from its two parts,
     counted from the invoice's date or, with `receipt`, from the receipt's: an occasional
     letter is paid on a ricevuta (REB-687)."""
-    fee = amount(data, FEE)
-    if fee is not None and fee <= 0:
-        raise ContractFailed(f"{FEE} is {fee}: a fee above zero")
+    for key in MONEY:
+        money = amount(data, key)
+        if money is not None and money <= 0:
+            raise ContractFailed(f"{key} is {money}: an amount above zero")
     if data.get(TERM) is not None:
         raise ContractFailed(
             f"{TERM} is written from {DAYS} and {MONTH_END}; give those two instead"
@@ -193,12 +198,12 @@ def parse_italian_date(text: str) -> date:
 
 
 def rendered(key: str, value: Value) -> str:
-    """What the page prints for a value. Only the fee is reformatted: a letter number or
-    a VAT number is an identifier, printed as it was given."""
+    """What the page prints for a value. Only the fee and a proposal's price are
+    reformatted: a letter number or a VAT number is an identifier, printed as given."""
     if isinstance(value, bool):
         return "sì" if value else "no"
     if isinstance(value, (int, float)):
-        if key == FEE:
+        if key in MONEY:
             return f"{italian(Decimal(str(value)), 2)} €"
         return str(value)
     # Pandoc's `smart` curls the apostrophes of the Markdown around this value; a value
