@@ -14,10 +14,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 // REB-788: the panels read the role (the estimate is an administrator's), so the tests
 // say which role is signed in; the default is the one that may read everything.
 const session = vi.hoisted(() => ({ ruolo: 'admin' as 'admin' | 'collaboratore' | 'readonly' }))
-vi.mock('@/lib/auth', () => ({
-  useAuth: () => ({ user: { ruolo: session.ruolo } }),
-  useCan: () => session.ruolo === 'admin',
-}))
+vi.mock('@/lib/auth', async () => {
+  const { can } = await import('@/lib/permissions')
+  return {
+    useAuth: () => ({ user: { ruolo: session.ruolo } }),
+    useCan: (action: Parameters<typeof can>[1]) => can(session.ruolo, action),
+  }
+})
 import { DashboardPage } from './DashboardPage'
 import type { DashboardSearch } from './search'
 import { api } from '@/lib/api'

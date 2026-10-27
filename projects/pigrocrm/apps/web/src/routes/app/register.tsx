@@ -278,7 +278,7 @@ export function SignupPage({ go = (url) => window.location.assign(url) }: { go?:
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-4">
+    <div className="flex min-h-full items-center justify-center p-4">
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle className="inline-flex items-center text-2xl">

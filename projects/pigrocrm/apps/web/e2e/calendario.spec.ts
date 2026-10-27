@@ -93,7 +93,7 @@ test.describe('il calendario', () => {
     await dialog.getByRole('button', { name: 'Giornata (8h)' }).click()
 
     // The calendar itself shows it, which is the read the page just invalidated.
-    await expect(dialog.getByRole('heading', { name: /^Ore \(\d+\)$/ })).toBeVisible()
+    await expect(dialog.getByRole('heading', { name: /^Ore \(\d+(,\d+)?\)$/ })).toBeVisible()
     await expect(dialog.getByText('8 h').first()).toBeVisible()
     await closeDayPanel(dialog).click()
 

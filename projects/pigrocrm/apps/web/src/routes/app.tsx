@@ -39,7 +39,7 @@ function AppLayout() {
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center gap-2 p-8 text-sm text-muted-foreground">
+      <div className="flex min-h-full items-center justify-center gap-2 p-8 text-sm text-muted-foreground">
         <Loader className="size-8" />
         Caricamento…
       </div>

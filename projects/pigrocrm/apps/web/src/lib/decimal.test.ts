@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
   decimalStringFromScaled,
-  formatItalianDecimal,
   formatItalianQuantity,
   italianiseDecimals,
   scaledFromDecimalString,
@@ -62,22 +61,6 @@ describe('decimalStringFromScaled', () => {
     for (const value of ['0.00', '0.07', '12.30', '-4.05', '999.99']) {
       expect(decimalStringFromScaled(scaledFromDecimalString(value, 2), 2)).toBe(value)
     }
-  })
-})
-
-describe('formatItalianDecimal', () => {
-  it('writes the comma and the thousands, keeping every place the server sent', () => {
-    expect(formatItalianDecimal('24.00')).toBe('24,00')
-    expect(formatItalianDecimal('0.50')).toBe('0,50')
-    expect(formatItalianDecimal('1234.5')).toBe('1.234,5')
-    expect(formatItalianDecimal('-1234567.25')).toBe('-1.234.567,25')
-    expect(formatItalianDecimal('8')).toBe('8')
-  })
-
-  it('hands back what it does not understand', () => {
-    expect(formatItalianDecimal('')).toBe('')
-    expect(formatItalianDecimal('otto')).toBe('otto')
-    expect(formatItalianDecimal('1e3')).toBe('1e3')
   })
 })
 

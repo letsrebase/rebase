@@ -49,7 +49,7 @@ function errorState(problem: { detail: string }): State {
 
 /** Centering wrapper, the same shape `EnterPage` draws: a card alone on the page. */
 function PageShell({ children }: { children: ReactNode }) {
-  return <div className="flex min-h-screen items-center justify-center p-4">{children}</div>
+  return <div className="flex min-h-full items-center justify-center p-4">{children}</div>
 }
 
 /**

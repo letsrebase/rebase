@@ -38,6 +38,15 @@ describe('InstallPrompt', () => {
     Reflect.deleteProperty(navigator, 'standalone')
   })
 
+  it('is a row of the page column, never a card floating over it (REB-791)', () => {
+    render(<InstallPrompt />)
+    fireInstallPrompt()
+    engage()
+    const row = screen.getByRole('status')
+    expect(row.className).not.toMatch(/\b(fixed|absolute|sticky)\b/)
+    expect(row.className).toContain('flex-none')
+  })
+
   it('offers the install only after the person has done something', () => {
     render(<InstallPrompt />)
     fireInstallPrompt()

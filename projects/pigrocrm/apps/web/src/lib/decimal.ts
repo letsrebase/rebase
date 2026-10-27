@@ -81,24 +81,8 @@ function withThousands(whole: string): string {
 }
 
 /**
- * A decimal string the API sent as the Italian figure a person reads: the comma for the
- * decimal point, the dot for thousands, **every place the server sent** (`"24.00"` is
- * `"24,00"`). A string that is not a plain decimal comes back untouched, so a value this
- * does not understand is shown as it arrived rather than guessed at.
- *
- * Written on the string and not through `Number`: the digits on screen are the digits the
- * server holds, with no float between them (`Number("0.29") * 100` is
- * `28.999999999999996`).
- */
-export function formatItalianDecimal(value: string): string {
-  const match = DECIMAL_STRING.exec(value)
-  if (match === null) return value
-  const [, sign = '', whole = '', fraction] = match
-  return `${sign}${withThousands(whole)}${fraction === undefined ? '' : `,${fraction}`}`
-}
-
-/**
- * The same, for a *quantity* (hours, days): trailing zeros after the point are dropped
+ * A decimal string for a *quantity* (hours, days), with the comma for the decimal point and
+ * the dot for thousands: trailing zeros after the point are dropped
  * and so is a point left bare, so `"2.00"` reads «2», `"0.50"` «0,5» and `"4.25"` «4,25».
  * A count of days with a «,00» behind it reads like a price. Money does not come through
  * here: a price keeps its two places.

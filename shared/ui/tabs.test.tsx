@@ -119,4 +119,17 @@ describe('Tabs', () => {
     rerender(strip(true))
     expect(document.getElementById(a.getAttribute('aria-controls')!)).not.toBeNull()
   })
+
+  it('drops aria-controls on a link trigger (asChild) with no panel', () => {
+    render(
+      <Tabs value="a">
+        <TabsList>
+          <TabsTrigger value="a" asChild>
+            <a href="/a">A</a>
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>,
+    )
+    expect(screen.getByRole('tab', { name: 'A' })).not.toHaveAttribute('aria-controls')
+  })
 })

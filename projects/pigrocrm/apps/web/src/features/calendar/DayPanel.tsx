@@ -59,7 +59,7 @@ export function DayPanel({
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       {/* REB-792: the dialog is as tall as the window at most and its middle row scrolls, so
           a date with many rows keeps every one reachable and the header and «Chiudi» in view. */}
-      <DialogContent className="max-h-[calc(100dvh-2rem)] grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-lg">
+      <DialogContent className="max-h-[calc(100%-2rem)] grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{formatIsoDateItalian(giorno)}</DialogTitle>
         </DialogHeader>
@@ -74,18 +74,20 @@ export function DayPanel({
               <NewCommitment giorno={giorno} />
             </>
           )}
+        </div>
+
+        <div className="space-y-3">
           {problem !== null && (
             <p role="alert" className="text-sm text-destructive">
               {problem}
             </p>
           )}
+          <DialogFooter>
+            <Button variant="outline" onClick={onClose}>
+              Chiudi
+            </Button>
+          </DialogFooter>
         </div>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Chiudi
-          </Button>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   )

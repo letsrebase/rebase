@@ -60,9 +60,9 @@ function TabsList({
 }
 
 /* Radix writes `aria-controls` on every trigger, pointing at the panel it would
-   render, but it mounts only the active panel (and a strip of links or a filter strip
-   has no `TabsContent` at all): the attribute then names an element that is not in
-   the page, which axe reports as critical (`aria-valid-attr-value`). The trigger keeps
+   render, but a strip of links or a filter strip has no `TabsContent` at all: the
+   attribute then names an element that is not in the page, which axe reports as
+   critical (`aria-valid-attr-value`). The trigger keeps
    the id Radix gave it and puts it back on the element only while that panel exists,
    checked after every commit because the panels come and go with the active value. */
 function useAriaControlsOnlyWhenMounted(ref: React.RefObject<HTMLElement | null>) {
