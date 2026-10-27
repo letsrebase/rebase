@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 KIT = Path(__file__).resolve().parents[1]
 SOURCE = KIT / "files" / ".github" / "kit" / "bin" / "preflight"
@@ -22,6 +23,12 @@ def git(cwd: Path, *args: str) -> None:
 
 class ChangedPaths(unittest.TestCase):
     def setUp(self):
+        # A machine's own core.hooksPath or init template must not reach the fixture.
+        isolated = mock.patch.dict(
+            os.environ, {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+        )
+        isolated.start()
+        self.addCleanup(isolated.stop)
         self.root = Path(tempfile.mkdtemp()).resolve()
         self.addCleanup(shutil.rmtree, self.root)
         git(self.root, "init", "-q", "-b", "main")

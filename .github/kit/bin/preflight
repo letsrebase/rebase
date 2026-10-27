@@ -518,7 +518,8 @@ def main() -> int:
     if args.install_hook:
         hooks = git_path("hooks", root)
         hook = hooks / "pre-push"
-        common = Path(git("rev-parse", "--path-format=absolute", "--git-common-dir", cwd=root))
+        # --path-format needs git 2.31; a relative answer is relative to `root`.
+        common = root / git("rev-parse", "--git-common-dir", cwd=root)
         line = 'exec python3 "$(git rev-parse --show-toplevel)/.github/kit/bin/preflight" --hook'
         if not hooks.resolve().is_relative_to(common.resolve()):
             # core.hooksPath points elsewhere: a versioned directory in the repository,

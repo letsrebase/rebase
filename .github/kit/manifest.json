@@ -9,7 +9,7 @@
     ".github/kit/README.md": "1a50407859eb2d721a3ceee3c5f4d6ee4c869d97fb4100d4f4a61388d2eae25e",
     ".github/kit/bin/kit.py": "67f3bf3a4cd64451d572ec2df922a56dc484abef38e4949feb0d307f6c993484",
     ".github/kit/bin/pr_lint.py": "1c8df301fc8ea24fe2dbf6a0ae98736748e70fe6928b274498d5759b704ace0e",
-    ".github/kit/bin/preflight": "349e49818f83e99eeb07702a9150e16a005920ef2773785b994f7ed6ed602d4b"
+    ".github/kit/bin/preflight": "b82f4c8caaa4b5e39e5ec3b215a115138986136f09a27c75f3d9d8efb2330dcc"
   },
   "mirror": {
     "client-repo-onboarding/SKILL.md": "bfccad221991f34b8b645904a3fe4071b230583bf59cf8e71e167e3d3b281bff",
