@@ -34,6 +34,14 @@ VERDICTS: tuple[Verdict, ...] = ("supported", "unsupported", "contradicted")
 # provider's outage being the caller's (`LlmUnavailable`).
 JudgeFailure = Literal["refusal", "max_tokens", "shape"]
 
+# The judge's own output ceiling, tokens, whatever the `card` task's is (2000 in production,
+# which is a card's): the longest answer the schema allows is eight verdicts with a reason of
+# 200 characters (about 650 tokens), thirty claims of 160 characters in `invented` (about
+# 1,300) and thirty identifiers of 120 in `identifying` (about 900), some 2,900 tokens, and
+# the model thinks before it answers (a card's call thinks 250 to 500 tokens at medium effort,
+# a judging one more). 8,000 leaves the worst answer and its thinking inside, with room.
+JUDGE_MAX_OUTPUT_TOKENS = 8000
+
 
 class FieldVerdict(BaseModel):
     model_config = ConfigDict(extra="forbid")

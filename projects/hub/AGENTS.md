@@ -573,6 +573,10 @@ is in `WAREHOUSE_TABLES`. The admin area has no page for it and the API no route
   by default, or by `--judge-provider` and `--judge-model` (both or neither): **the same model
   judging its own cards tends to find them right, and the report says so**; judge with another
   provider when one is configured and on. The reasons are stored with the result and never printed.
+  **The judge has its own output ceiling**, `JUDGE_MAX_OUTPUT_TOKENS` (8000, `TaskOverride.max_output_tokens`),
+  not the `card` task's 2000: its longest legal answer is about 2,900 tokens and it thinks before
+  answering. It is still a call of task `card`, `purpose="eval"`, recorded and capped as one; the writing
+  calls keep the task's ceiling, so the cards are written as production writes them.
 - **Safety.** A provider that is off, the writer's or the judge's, is refused («Il fornitore è
   spento») unless `--allow-disabled` says this evaluation may send CVs to it; the report then
   carries that warning. The processors gate of «OpenAI and Google» below is about production use;

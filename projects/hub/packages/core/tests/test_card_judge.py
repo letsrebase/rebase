@@ -4,9 +4,16 @@ as data, whichever prompt wrote the card), what it asks, and how its answer is r
 from datetime import UTC, date, datetime
 
 import pytest
-from fakes_cards import CARD, judge_response
+from fakes_cards import CARD, judge_response, judgement_body
 
-from rebase_core.card_judge import CardJudgement, judge, judge_prompt, judgement_from
+from rebase_core.card_draft import FONTI_FIELDS
+from rebase_core.card_judge import (
+    JUDGE_MAX_OUTPUT_TOKENS,
+    CardJudgement,
+    judge,
+    judge_prompt,
+    judgement_from,
+)
 from rebase_core.cv_text import CvText
 from rebase_core.errors import LlmUnavailable
 from rebase_core.hub_facts import HubFacts
@@ -136,3 +143,17 @@ def test_one_call_and_an_outage_is_the_callers() -> None:
 
     with pytest.raises(LlmUnavailable):
         judge(Down(), CARD_, CV_TEXT, None, SourceSet([]), HubFacts(None, None), TODAY)  # type: ignore[arg-type]
+
+
+def test_the_longest_answer_the_schema_allows_is_read_whole_and_fits_the_judges_ceiling() -> None:
+    """The card task's 2000-token ceiling would cut it; the judge's own does not."""
+    reasons = {name: ("supported", "r" * 200) for name in FONTI_FIELDS}
+    body = judgement_body(reasons, invented=["i" * 160] * 30, identifying=["n" * 120] * 30)
+
+    answer = judgement_from(judge_response(text=body))
+
+    assert isinstance(answer, CardJudgement)
+    assert [len(v.reason) for v in answer.fields().values()] == [200] * 8
+    assert (len(answer.invented), len(answer.identifying)) == (30, 30)
+    assert len(body) / 4 > 2000  # at four characters a token it is over the task's ceiling
+    assert len(body) / 3 + 2000 < JUDGE_MAX_OUTPUT_TOKENS  # at three, with thinking, under it

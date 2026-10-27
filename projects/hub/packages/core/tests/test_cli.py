@@ -24,6 +24,7 @@ from rebase_core import cli, signing
 from rebase_core.ai_config import AiConfigService
 from rebase_core.ai_verify import VerifyReport
 from rebase_core.campaigns.tick import TickResult
+from rebase_core.card_judge import JUDGE_MAX_OUTPUT_TOKENS
 from rebase_core.cli import main
 from rebase_core.config import Settings
 from rebase_core.db import session_factory
@@ -633,7 +634,10 @@ def test_cards_eval_prints_the_report_of_the_sample_as_the_task_is_set(
         "purpose": "eval",
         "freelancer_id": person,
     }
-    assert judging == writer
+    assert judging["override"] == TaskOverride(
+        "anthropic", "claude-opus-5", "medium", True, max_output_tokens=JUDGE_MAX_OUTPUT_TOKENS
+    )
+    assert {**judging, "override": live} == writer
     assert eval_db.scalars(select(FreelancerCard)).all() == []
     assert eval_db.scalars(select(CardEvalRun)).one().summary["complete"] is True
 
@@ -657,7 +661,10 @@ def test_cards_eval_writes_with_the_provider_model_effort_and_prompt_it_was_aske
     assert "ATTENZIONE: --allow-disabled" in out
     writer, judging = built
     assert writer["override"] == TaskOverride("openai", "gpt-5", "high", allow_disabled=True)
-    assert judging["override"] == TaskOverride("google", "gemini-3", None, allow_disabled=True)
+    # The judge has its own output ceiling; the writer keeps the task's.
+    assert judging["override"] == TaskOverride(
+        "google", "gemini-3", None, True, max_output_tokens=JUDGE_MAX_OUTPUT_TOKENS
+    )
     # Version 1 reads the CV alone.
     assert "Sources available" not in llm.requests[0].messages[0].text
     assert eval_db.scalars(select(CardEvalRun)).one().prompt_version == 1

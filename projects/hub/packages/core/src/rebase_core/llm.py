@@ -152,12 +152,16 @@ class TaskOverride:
     run (REB-834): the task's daily cap is still the one it consumes. `allow_disabled`
     lets an evaluation reach a provider that is switched off (`rebase cards-eval
     --allow-disabled`, REB-835): it sends CVs there, so it is explicit, and it still needs
-    the key and the model's price."""
+    the key and the model's price. `max_output_tokens` replaces the task's output ceiling for
+    this call: the evaluation's judge (REB-842) answers a verdict and a reason for eight
+    fields, which a card task's ceiling is too small for. It is still a call of the task, and
+    is recorded and capped as one."""
 
     provider: str
     model: str
     effort: str | None = None
     allow_disabled: bool = False
+    max_output_tokens: int | None = None
 
 
 ModelFactory = Callable[[str, str, str, str | None], tuple[Model, ModelSettings]]
@@ -358,7 +362,12 @@ class AiCall:
                 raise LlmNotConfigured(error.message) from None
             if key is None:
                 raise LlmNotConfigured(NO_KEY)
-            return provider, model, effort, row.max_output_tokens, key
+            ceiling = (
+                self._override.max_output_tokens
+                if self._override is not None and self._override.max_output_tokens
+                else row.max_output_tokens
+            )
+            return provider, model, effort, ceiling, key
 
     @staticmethod
     def _can_call_override(
