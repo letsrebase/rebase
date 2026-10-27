@@ -47,7 +47,7 @@ dependencies = [
   # `subprocess.run` is not a failure a person reading a document can act on).
   # Pinned like every other entry here, and declared because
   # `test_architecture.py` builds core's import allowlist from this list.
-  "pypdf==6.19.0",
+  "pypdf==6.21.1",
   # The same pin as hub's `rebase-core`: the weekly digest's own PostHog event (REB-221).
   "posthog==7.60.1",
   # Web Push for the reminders (REB-738): the RFC 8291 payload encryption and the RFC 8292
