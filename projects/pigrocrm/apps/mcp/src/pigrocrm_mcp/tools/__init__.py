@@ -284,10 +284,10 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
     ) -> dict[str, Any]:
         """Crea un cliente. Chiama prima `describe_schema` per i campi personalizzati.
 
-        `owner_id` e' la persona che risponde del cliente, a cui arrivano i promemoria
-        su fatture e contratti: omesso, e' chi crea il cliente. Indicare un'altra
-        persona, come cambiarla poi con `update_customer`, lo puo' fare solo un
-        amministratore.
+        `owner_id` e' la persona che risponde del cliente (la trovi in `list_members`), a
+        cui arrivano i promemoria su fatture e contratti: omesso, e' chi crea il cliente.
+        Indicare un'altra persona, come cambiarla poi con `update_customer`, lo puo' fare
+        solo un amministratore.
 
         `giorni_pagamento` e `pagamento_fine_mese` sono i termini di pagamento concordati
         («30 giorni data fattura fine mese» e' `30` con `True`): da qui `issue_invoice`
@@ -338,8 +338,8 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
     def update_customer(customer_id: str, changes: CustomerChanges) -> dict[str, Any]:
         """Aggiorna un cliente. `changes` contiene solo i campi da modificare.
 
-        `owner_id` (la persona che risponde del cliente) lo cambia solo un
-        amministratore; `null` toglie il responsabile."""
+        `owner_id` (la persona che risponde del cliente, da `list_members`) lo cambia solo
+        un amministratore; `null` toglie il responsabile."""
         return customers.update(context, customer_id, changes)
 
     @mcp.tool()
@@ -1791,9 +1791,13 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
     @mcp.tool()
     @guard
     def list_members() -> list[dict[str, Any]]:
-        """Le persone attive dello spazio, per nome: id e nome. Serve a trovare
-        l'`owner_id` da dare a un deal (`create_deal`, `update_deal`)."""
-        return [member.model_dump(mode="json") for member in UserService(context.session).members()]
+        """Le persone attive dello spazio, per nome: `id`, `nome` e `ruolo`, piu' l'`email`
+        se chi chiama e' un amministratore (per gli altri e' `null`). Sono le stesse persone
+        che l'app propone come responsabile o assegnatario. Serve a trovare l'id da dare a
+        `owner_id` (`create_customer`, `update_customer`, `create_deal`, `update_deal`) e a
+        `assegnata_a` (`create_attivita`, `update_attivita`, `get_attivita_oggi`)."""
+        directory = UserService(context.session).directory(context.actor)
+        return [member.model_dump(mode="json") for member in directory]
 
     @mcp.tool()
     @guard
@@ -2395,7 +2399,7 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         Si può agganciare a **un solo** fra cliente, persona, deal e fattura -- oppure a
         nessuno: «fare la fatturazione elettronica di marzo» non è di nessun cliente.
         Chiama `describe_schema` con `attivita` per sapere quali campi personalizzati
-        esistono."""
+        esistono. `assegnata_a` e' l'id di una persona: lo trovi in `list_members`."""
         return calendar_tools.create(
             context,
             {
@@ -2423,7 +2427,8 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
 
         Per *togliere* una scadenza servono `scadenza_da_rimuovere: true` (una PATCH non
         distingue «assente» da «null»), e per staccarla da cliente/deal/persona/fattura
-        `riferimento_da_rimuovere: true`."""
+        `riferimento_da_rimuovere: true`. `assegnata_a` e' l'id di una persona: lo trovi
+        in `list_members`."""
         return calendar_tools.update(context, attivita_id, changes)
 
     @mcp.tool()

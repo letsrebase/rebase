@@ -14,6 +14,7 @@ from pigrocrm.core.auth.passwords import dummy_hash, hash_password, verify_passw
 from pigrocrm.core.auth.repository import UserRepository
 from pigrocrm.core.auth.schemas import (
     MIN_PASSWORD_LENGTH,
+    MemberDetail,
     MemberRead,
     UserCreate,
     UserRead,
@@ -383,8 +384,20 @@ class UserService:
     def members(self) -> list[MemberRead]:
         """The active users of the space by name, for a picker (REB-780). Open to every
         role, an agent credential included: `list` is the administrators' because it
-        carries emails, roles and rates, and this carries none of them."""
+        carries emails, roles and rates, and this carries none of them. `directory` is the
+        richer read for the MCP, where the role is shown to every caller and the email
+        to administrators."""
         return [MemberRead.model_validate(u) for u in self.repo.list_active()]
+
+    def directory(self, actor: Actor) -> list[MemberDetail]:
+        """The same active users as `members`, with their role, and their email when the
+        actor administers the space (REB-809). Both read `list_active`, so what an agent
+        can pick is what the web pickers list; only what is shown differs, by the rule
+        `list` applies to the whole Team page."""
+        rows = [MemberDetail.model_validate(user) for user in self.repo.list_active()]
+        if actor.can_administer:
+            return rows
+        return [row.model_copy(update={"email": None}) for row in rows]
 
     def list(self, actor: Actor) -> list[UserRead]:
         actor.require_admin("list_users")
