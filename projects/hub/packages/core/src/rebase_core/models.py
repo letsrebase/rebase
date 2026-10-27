@@ -1480,12 +1480,13 @@ class AiPrice(Base):
 
 
 class AiUsage(Base, PrimaryKeyMixin):
-    """One model call, whatever came of it: `task` is the configured task whose daily cap
-    the call consumes, `purpose` why it ran (`AI_USAGE_PURPOSES`), `provider` and `model`
-    what actually answered (an evaluation run may differ from the task's own). `cost_eur`
-    is `NULL`, and `priced` false, when no price row existed for the model: the call is
-    counted and shown as unpriced, never as free. `freelancer_id` is the person a card
-    call was about, `NULL` for the others and after the person is deleted."""
+    """One model call the provider answered, a refusal included: `task` is the configured
+    task whose daily cap the call consumes, `purpose` why it ran (`AI_USAGE_PURPOSES`),
+    `provider` and `model` what actually answered (an evaluation run may differ from the
+    task's own). `cost_eur` is `NULL`, and `priced` false, when no price row existed for
+    the model: the call is counted and shown as unpriced, never as free.
+    `freelancer_id` is the person a card call was about, `NULL` for the others and after
+    the person is deleted."""
 
     __tablename__ = "ai_usage"
 

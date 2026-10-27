@@ -392,6 +392,22 @@ def test_provider_error_maps_to_llm_unavailable_without_key_in_message(
     assert _usage_rows(opener) == []  # a call that failed spent nothing we know of
 
 
+def test_a_usage_row_that_cannot_be_written_does_not_lose_the_paid_answer(
+    opener: SessionOpener, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    def broken(self: AiConfigService, **kwargs: Any) -> None:
+        raise RuntimeError(f"disk full, key {API_KEY}")
+
+    monkeypatch.setattr(AiConfigService, "record_usage", broken)
+
+    with caplog.at_level(logging.INFO):
+        response = _call(opener, Stub()).complete(_request())
+
+    assert response.parsed is not None
+    assert "usage not recorded: RuntimeError" in caplog.text
+    assert API_KEY not in caplog.text
+
+
 def test_provider_errors_are_domain_errors(opener: SessionOpener) -> None:
     """The API's `domain_error_handler` and the MCP's `_call` both catch `DomainError`,
     not `LlmUnavailable` by name: this is what turns a stalled provider into a 502 or a

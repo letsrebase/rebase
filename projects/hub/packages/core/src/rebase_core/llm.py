@@ -9,7 +9,10 @@ Which provider, model, effort and ceiling answer a task, and the provider's key,
 from the database at call time (`AiConfigService`, «Modelli AI»), never from the
 environment: a change an admin saves applies to the next call, and a call is refused
 before any network when the task's daily euro cap is spent, its model has no price, or
-its provider is off or has no key. Every call that reaches a provider writes its usage.
+its provider is off or has no key. Every call the provider answers writes its usage (a
+refusal too, which is paid for); one that fails, an outage or a body that is not a
+response, leaves none, as there are no tokens to read, and a usage row that cannot be
+written is logged and does not lose the answer already paid for.
 There is no fallback from one provider to another: an outage is a `LlmUnavailable`.
 
 `AiCall` never raises past `complete` anything but a `LlmUnavailable` (or one of its two
@@ -378,21 +381,25 @@ class AiCall:
         thinking = usage.output_reasoning_tokens
         input_tokens = usage.input_tokens - usage.cache_read_tokens
         output_tokens = usage.output_tokens - thinking
-        with self._session_factory() as session:
-            AiConfigService(session, self._settings).record_usage(
-                task=self._task,
-                purpose=self._purpose,
-                provider=provider,
-                model=answer.model_name or "",
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-                thinking_tokens=thinking,
-                cache_read_tokens=usage.cache_read_tokens,
-                freelancer_id=self._freelancer_id,
-                # The model that answered may be a fallback or a dated alias with no price
-                # row: the call is then priced as the one asked for, so it spends the cap.
-                priced_as=configured,
-            )
+        try:
+            with self._session_factory() as session:
+                AiConfigService(session, self._settings).record_usage(
+                    task=self._task,
+                    purpose=self._purpose,
+                    provider=provider,
+                    model=answer.model_name or "",
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    thinking_tokens=thinking,
+                    cache_read_tokens=usage.cache_read_tokens,
+                    freelancer_id=self._freelancer_id,
+                    # The model that answered may be a fallback or a dated alias with no
+                    # price row: the call is then priced as the one asked for, so it
+                    # spends the cap.
+                    priced_as=configured,
+                )
+        except Exception as error:  # the answer is paid for: a lost row must not lose it
+            logger.error("%s usage not recorded: %s", provider, type(error).__name__)
         refused = stop_reason == "refusal"
         text = None if refused else (answer.text or None)
         parsed: BaseModel | None = None
