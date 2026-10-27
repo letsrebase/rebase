@@ -221,7 +221,14 @@ async def test_the_admin_tools_read_and_move_a_candidate_without_the_cv(
 
 def _wipe(factory: sessionmaker[Session]) -> None:
     session = factory()
-    for table in ("comments", "freelancers", "companies", "users"):
+    for table in (
+        "admin_actions",
+        "comments",
+        "freelancer_cards",
+        "freelancers",
+        "companies",
+        "users",
+    ):
         session.execute(text(f"DELETE FROM {table}"))
     session.commit()
     session.close()
@@ -758,7 +765,8 @@ async def test_freelancer_card_tools_read_write_and_off_is_the_sentence(
         assert off.is_error
         assert "Il team builder è spento." in off.content[0].text
 
-    llm = RecordingCall([card_response()])
+    _seed_admin(factory)
+    llm = RecordingCall([card_response(), card_response()])
     async with Client(build_server(factory, lambda: IVAN, llm=llm)) as client:
         written = _payload(
             await client.call_tool("regenerate_freelancer_card", {"freelancer_id": freelancer_id})
@@ -771,6 +779,36 @@ async def test_freelancer_card_tools_read_write_and_off_is_the_sentence(
             await client.call_tool("get_freelancer_card", {"freelancer_id": freelancer_id})
         )
         assert read_back["card"] == written["card"]
+        assert (written["card"]["seniority"], written["card"]["anni"]) == ("senior", 9)
+        assert (written["seniority_admin"], written["anni_admin"]) == (None, None)
+
+        # REB-799: the admin's level beats Claude's in the card read and survives a
+        # regenerate; an empty string takes it off again.
+        await client.call_tool(
+            "override_freelancer",
+            {"freelancer_id": freelancer_id, "seniority": "junior", "anni": "2"},
+        )
+        corrected = _payload(
+            await client.call_tool("get_freelancer_card", {"freelancer_id": freelancer_id})
+        )
+        assert (corrected["card"]["seniority"], corrected["card"]["anni"]) == ("junior", 2)
+        assert (corrected["seniority_admin"], corrected["anni_admin"]) == ("junior", 2)
+        again = _payload(
+            await client.call_tool("regenerate_freelancer_card", {"freelancer_id": freelancer_id})
+        )
+        assert (again["card"]["seniority"], again["card"]["anni"]) == ("junior", 2)
+        await client.call_tool(
+            "override_freelancer",
+            {"freelancer_id": freelancer_id, "seniority": "", "anni": ""},
+        )
+        cleared = _payload(
+            await client.call_tool("get_freelancer_card", {"freelancer_id": freelancer_id})
+        )
+        assert (cleared["card"]["seniority"], cleared["card"]["anni"]) == ("senior", 9)
+        refused = await client.call_tool(
+            "override_freelancer", {"freelancer_id": freelancer_id, "anni": "molti"}
+        )
+        assert refused.is_error
 
         listed = _payload(await client.call_tool("list_talenti", {"campi": ["tutti"]}))
         assert listed["items"][0]["ha_scheda_anonima"] is True

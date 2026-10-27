@@ -269,9 +269,22 @@ class Freelancer(Base, PrimaryKeyMixin, TimestampMixin, UtmMixin):
     # neither a field correction nor reversible the same way (there is no "before").
     vetted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     vetted_by: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
+    # What an admin says of the person's level (REB-799), `NULL` while nobody has: it
+    # beats the card's `seniority` and `anni` wherever the card is read, and lives here,
+    # not in `freelancer_cards`, because a regenerated or retired card must not erase it.
+    seniority_admin: Mapped[str | None] = mapped_column(String(10), default=None)
+    anni_admin: Mapped[int | None] = mapped_column(Integer, default=None)
 
     __table_args__ = (
         Index("ix_freelancers_created_at", "created_at"),
+        CheckConstraint(
+            "seniority_admin IS NULL OR seniority_admin IN ('junior', 'mid', 'senior', 'lead')",
+            name="ck_freelancers_seniority_admin",
+        ),
+        CheckConstraint(
+            "anni_admin IS NULL OR (anni_admin >= 0 AND anni_admin <= 60)",
+            name="ck_freelancers_anni_admin_range",
+        ),
         Index("uq_freelancers_user_id", "user_id", unique=True),
         # Trigram search on the merged talenti list (REB-285): `nome`/`cognome`/
         # `email` live on `users` (indexed there); `posizione` is the one searchable

@@ -27,7 +27,7 @@ import {
 } from '@/lib/api'
 import { bandLabel } from '@/lib/bands'
 import { resolveReferral } from '@/lib/utm'
-import { REMOTO_LABELS, SENIORITY_LABELS, formatDaysPerWeek, formatExperience } from '@/lib/format'
+import { REMOTO_LABELS, formatDaysPerWeek, formatLevel } from '@/lib/format'
 
 /** The lengths core's `TeamProposalCreate` takes (`team_schemas.py`), measured as it
  *  measures them, stripped: the page says so before the API has to. */
@@ -360,7 +360,7 @@ function MemberCard({ member, name }: { member: TeamMember; name: string | null 
           <h3>{name ?? member.ruolo}</h3>
         </CardTitle>
         {name && <p className="font-medium">{member.ruolo}</p>}
-        <CardDescription>{`${scheda.ruolo}, ${SENIORITY_LABELS[scheda.seniority] ?? scheda.seniority}, ${formatExperience(scheda.anni)}`}</CardDescription>
+        <CardDescription>{`${scheda.ruolo}, ${formatLevel(scheda)}`}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-1 flex-col gap-3">
         <p>{member.motivazione}</p>

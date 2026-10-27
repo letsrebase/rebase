@@ -28,7 +28,7 @@ LIST_LIMIT_MAX = 200
 
 # The default row: who the person is and what the anonymous card says they do, with no
 # address, no UTM and no dates. A row has the keys it has a value for: a lead is just
-# `id`, `nome`, `cognome` and `stato`.
+# `id`, `nome`, `cognome` and `stato`. `seniority_incerta` joins it when true (below).
 SHORT_FIELDS = (
     "id",
     "nome",
@@ -81,6 +81,11 @@ def talento_row(row: dict[str, Any], fields: tuple[str, ...] | None) -> dict[str
     if fields is not None:
         return {name: row[name] for name in fields}
     short = {name: row[name] for name in SHORT_FIELDS if row[name] not in (None, [])}
+    # A seniority the card's dates could not back (REB-799) says so, only then: `anni`
+    # is usually left out with it (null), and a flag false on nearly every row would be
+    # noise.
+    if row["seniority_incerta"]:
+        short["seniority_incerta"] = True
     if "competenze" in short:
         short["competenze"] = short["competenze"][:SHORT_SKILLS]
     if "sintesi" in short:

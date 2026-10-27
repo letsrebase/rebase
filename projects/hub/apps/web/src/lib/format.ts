@@ -142,10 +142,23 @@ export function formatDaysPerWeek(giorni: number | null): string {
   return giorni === 1 ? '1 giorno a settimana' : `${giorni} giorni a settimana`
 }
 
-/** A card's `anni`, as a phrase: «meno di un anno», «1 anno», «9 anni di esperienza». */
-export function formatExperience(anni: number): string {
+/** A card's `anni`, as a phrase: «meno di un anno», «1 anno», «9 anni di esperienza»,
+ *  and «Anni non indicati nel CV» when the CV dates no role (REB-799). */
+export function formatExperience(anni: number | null): string {
+  if (anni === null) return 'Anni non indicati nel CV'
   if (anni === 0) return 'meno di un anno di esperienza'
   return anni === 1 ? '1 anno di esperienza' : `${anni} anni di esperienza`
+}
+
+/** A card's level for a company: «Senior, 9 anni di esperienza», with «(da verificare)»
+ *  after a seniority the CV's dates could not back (REB-799). */
+export function formatLevel(card: {
+  seniority: string
+  anni: number | null
+  seniority_incerta?: boolean
+}): string {
+  const seniority = SENIORITY_LABELS[card.seniority] ?? card.seniority
+  return `${seniority}${card.seniority_incerta ? ' (da verificare)' : ''}, ${formatExperience(card.anni)}`
 }
 
 /** REB-518: the talent's «Verificato» pill, core's `team_words.VETTED_LABEL`, and the

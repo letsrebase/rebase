@@ -47,7 +47,7 @@ from rebase_core.team_builder import (
     cloud_visible,
 )
 from rebase_core.team_caps import BUSY_SENTENCE
-from rebase_core.team_schemas import Card, TeamProposalCreate
+from rebase_core.team_schemas import CardRead, TeamProposalCreate
 
 NOW = datetime(2026, 9, 26, 9, 30, tzinfo=UTC)
 DESCRIZIONE = (
@@ -259,6 +259,7 @@ def test_catalogue_is_stable_and_anonymous(clean: Session) -> None:
         "ruolo",
         "seniority",
         "anni",
+        "seniority_incerta",
         "competenze",
         "settori",
         "lingue",
@@ -272,6 +273,7 @@ def test_catalogue_is_stable_and_anonymous(clean: Session) -> None:
         "ruolo": "Backend developer",
         "seniority": "senior",
         "anni": 9,
+        "seniority_incerta": False,
         "competenze": ["Python", "FastAPI", "PostgreSQL", "AWS"],
         "settori": ["fintech", "e-commerce"],
         "lingue": ["italiano", "inglese"],
@@ -289,6 +291,32 @@ def test_catalogue_is_stable_and_anonymous(clean: Session) -> None:
         assert str(freelancer_id) not in catalogue
     # The same text for every visitor: the prompt's cached prefix.
     assert catalogue_lines(clean) == (catalogue, positions)
+
+
+def test_the_catalogue_reads_the_level_an_admin_set_and_marks_a_guess(clean: Session) -> None:
+    """REB-799: the engine picks people on seniority and years, so it reads the admin's
+    over Claude's, and a card with no dated role says `anni` null and the seniority
+    uncertain, until an admin sets one."""
+    corrected = _talent(clean, 1)
+    clean.get_one(Freelancer, corrected).seniority_admin = "lead"
+    clean.get_one(Freelancer, corrected).anni_admin = 14
+    undated = _talent(clean, 2, card={**CARD, "anni": None, "seniority": "mid"})
+    clean.commit()
+
+    catalogue, positions = catalogue_lines(clean)
+
+    by_id = dict(zip(positions, (json.loads(line) for line in catalogue.splitlines()), strict=True))
+    assert (by_id[corrected]["seniority"], by_id[corrected]["anni"]) == ("lead", 14)
+    assert by_id[corrected]["seniority_incerta"] is False
+    assert (by_id[undated]["seniority"], by_id[undated]["anni"]) == ("mid", None)
+    assert by_id[undated]["seniority_incerta"] is True
+
+    clean.get_one(Freelancer, undated).seniority_admin = "senior"
+    clean.commit()
+    catalogue, positions = catalogue_lines(clean)
+    assert (
+        json.loads(catalogue.splitlines()[positions.index(undated)])["seniority_incerta"] is False
+    )
 
 
 def test_catalogue_positions_are_unique(clean: Session) -> None:
@@ -370,7 +398,7 @@ def test_engine_maps_the_answer_to_freelancers(clean: Session) -> None:
         "Frontend developer",
     )
     assert (first.motivazione, first.giorni_settimana) == ("React da sei anni.", 3)
-    assert first.scheda == Card.model_validate(
+    assert first.scheda == CardRead.model_validate(
         {**CARD, "ruolo": "Frontend developer", "luogo": "Milano"}
     )
     assert (first.modalita, first.fascia) == ("ibrido", Band(min=400, max=500))  # 420
@@ -1345,7 +1373,7 @@ def test_a_public_card_names_its_place_nowhere(clean: Session) -> None:
     assert scheda.settori == ["fintech", "turismo bergamasco"]
     assert "Bergamo" not in public.model_dump_json()
     [admin] = [member.scheda for member in builder.get(public.id, public=False).team]
-    assert admin == Card.model_validate(card)
+    assert admin == CardRead.model_validate(card)
 
 
 @pytest.mark.parametrize("change", ["deleted", "scartato"])

@@ -67,7 +67,8 @@ describe('«Scheda anonima» on the talent page (REB-514, spec § 2.1, § 5.1)',
     expect(await screen.findByText('Backend developer')).toBeInTheDocument()
     const card = section()
     expect(spy).toHaveBeenCalledWith('/api/hub/freelancers/f1/card', expect.anything())
-    expect(within(card).getByText('Senior')).toBeInTheDocument()
+    // The level editor's own select carries a hidden option of the same word.
+    expect(within(card).getByText('Senior', { selector: 'span' })).toBeInTheDocument()
     expect(within(card).getByText('9 anni di esperienza')).toBeInTheDocument()
     for (const skill of ['Python', 'FastAPI', 'PostgreSQL']) expect(within(card).getByText(skill)).toBeInTheDocument()
     expect(within(card).getByText('fintech, e-commerce')).toBeInTheDocument()
@@ -159,6 +160,68 @@ describe('«Scheda anonima» on the talent page (REB-514, spec § 2.1, § 5.1)',
     await userEvent.click(await screen.findByRole('button', { name: 'Rigenera scheda' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Il team builder è spento.')
     expect(screen.getByText('Backend developer')).toBeInTheDocument()
+  })
+
+  it('says the years are not in the CV and the seniority is a guess, when the card dates nothing (REB-799)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      answer(200, { ...WRITTEN, card: { ...WRITTEN.card, seniority: 'mid', anni: null, seniority_incerta: true } }),
+    )
+    mount()
+    await screen.findByText('Backend developer')
+    expect(within(section()).getByText('Anni non indicati nel CV')).toBeInTheDocument()
+    expect(within(section()).getByText('Da verificare')).toBeInTheDocument()
+    expect(within(section()).queryByText('Corretta dall’admin')).toBeNull()
+  })
+
+  it('shows what the admin corrected, and takes the correction off with «Togli la correzione»', async () => {
+    let call = 0
+    const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_input, init) => {
+      if (init?.method === 'PATCH') return answer(200, {})
+      call += 1
+      return answer(200, {
+        ...WRITTEN,
+        card: { ...WRITTEN.card, seniority: 'lead', anni: 14 },
+        seniority_admin: call === 1 ? 'lead' : null,
+        anni_admin: call === 1 ? 14 : null,
+      })
+    })
+    mount()
+    await screen.findByText('Backend developer')
+    expect(within(section()).getAllByText('Corretta dall’admin')).toHaveLength(2)
+    expect(within(section()).getByLabelText('Anni dell’admin')).toHaveValue(14)
+
+    await userEvent.click(within(section()).getByRole('button', { name: 'Togli la correzione' }))
+
+    const patch = spy.mock.calls.find(([, init]) => init?.method === 'PATCH')
+    expect(patch?.[0]).toBe('/api/hub/freelancers/f1/override')
+    expect(JSON.parse(String(patch?.[1]?.body))).toEqual({ seniority_admin: null, anni_admin: null })
+    expect(await screen.findByText('Backend developer')).toBeInTheDocument()
+  })
+
+  it('saves the admin’s seniority and years through the override, and refuses years it cannot save', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_input, init) => {
+      if (init?.method === 'PATCH') return answer(200, {})
+      return answer(200, WRITTEN)
+    })
+    mount()
+    await screen.findByText('Backend developer')
+    const editor = section()
+    expect(within(editor).queryByRole('button', { name: 'Togli la correzione' })).toBeNull()
+
+    await userEvent.click(within(editor).getByRole('combobox', { name: 'Seniority dell’admin' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'Junior' }))
+    const years = within(editor).getByLabelText('Anni dell’admin')
+    await userEvent.type(years, '2.5')
+    expect(within(editor).getByText('Gli anni sono un numero intero da 0 a 60.')).toBeInTheDocument()
+    expect(within(editor).getByRole('button', { name: 'Salva il livello' })).toBeDisabled()
+
+    await userEvent.clear(years)
+    await userEvent.type(years, '2')
+    await userEvent.click(within(editor).getByRole('button', { name: 'Salva il livello' }))
+
+    const patch = spy.mock.calls.find(([, init]) => init?.method === 'PATCH')
+    expect(patch?.[0]).toBe('/api/hub/freelancers/f1/override')
+    expect(JSON.parse(String(patch?.[1]?.body))).toEqual({ seniority_admin: 'junior', anni_admin: 2 })
   })
 
   it('says so when the card cannot be read', async () => {

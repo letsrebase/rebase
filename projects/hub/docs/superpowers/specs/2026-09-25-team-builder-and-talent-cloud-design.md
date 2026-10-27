@@ -193,7 +193,14 @@ those at the API's boot:
 }
 ```
 
-`seniority` is one of `junior`, `mid`, `senior`, `lead`; `luogo` is the city or region
+`seniority` is one of `junior`, `mid`, `senior`, `lead`, and since REB-799 it follows
+`anni`, which counts only roles the CV dates and is null (required in the schema, null
+and not absent) when it dates none: junior under 3 years, mid 3 to 5, senior 6 and up,
+lead only with 8 years and a leadership the CV states. The parser enforces the bands
+(`card_level.banded`); a card with `anni` null keeps Claude's reading of the
+responsibility, never lead, and every read says its seniority is uncertain. An admin's
+own seniority and years (`freelancers.seniority_admin`, `anni_admin`) are read over the
+card's, wherever it is read, and survive a regenerate. `luogo` is the city or region
 the CV names, or null, required in the schema (null, not absent) and never rendered
 on the public page (the admin's talent page and the cloud, which shows the CV itself,
 may carry it); `sintesi` is two sentences at most, Italian, with no
@@ -310,8 +317,8 @@ sends without JavaScript. The landing's own side is `projects/website` (REB-676)
 ### 3.3 The proposal
 
 `TeamProposalRead`: `id`, `descrizione`, `persone` (REB-675), `riassunto`, `luogo`, `team: [{posizione, ruolo, motivazione,
-giorni_settimana, scheda: {ruolo, seniority, anni, competenze, settori, lingue,
-sintesi}, modalita, fascia: {min, max}}]`, `economia: {giorno: {min, max}, mese: {min,
+giorni_settimana, scheda: {ruolo, seniority, anni, seniority_incerta, competenze,
+settori, lingue, sintesi}, modalita, fascia: {min, max}}]`, `economia: {giorno: {min, max}, mese: {min,
 max}, giorni_mese: 22}`, `previous_id`, `created_at`. `posizione` is the person's
 index in this proposal (1, 2, 3); the public read carries no freelancer id at all, so a
 visitor cannot follow one talent across proposals or rebuild the catalogue; the admin's
@@ -331,8 +338,8 @@ now=utcnow)` with `propose(data, *, origine, user_id) -> TeamProposalRead` and
 `get(proposal_id, *, public: bool)`. The catalogue is every live freelancer
 (`deleted_at IS NULL`, `stato != 'scartato'`) with a card, sorted by the freelancer's
 id so the text is the same for every visitor (the cache prefix), rendered as one JSON
-line each: `{"id": "t1", "ruolo", "seniority", "anni", "competenze", "settori",
-"lingue", "luogo", "modalita", "fascia": "400–500"}`, where `t1`, `t2`… is the line's
+line each: `{"id": "t1", "ruolo", "seniority", "anni", "seniority_incerta",
+"competenze", "settori", "lingue", "luogo", "modalita", "fascia": "400–500"}`, where `t1`, `t2`… is the line's
 position in that order (a slice of the UUIDv7 would collide within a minute of
 signups) and the service keeps the map from position to freelancer for this call;
 `sintesi` is left out of the catalogue, the structured fields are what the engine

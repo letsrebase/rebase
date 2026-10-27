@@ -23,6 +23,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from rebase_core.bands import Band
+from rebase_core.card_level import LEAD_FROM, MID_FROM, SENIOR_FROM
 from rebase_core.cards import (
     CARD_MAX_TOKENS,
     CARD_SCHEMA,
@@ -39,8 +40,8 @@ from rebase_core.freelancers import FreelancerService
 from rebase_core.llm import LlmRequest, LlmResponse, LlmUnavailable, RecordingCall
 from rebase_core.members import MemberService
 from rebase_core.models import Freelancer, FreelancerCard, User
-from rebase_core.schemas import FreelancerCreate
-from rebase_core.team_schemas import Card, CardsRefreshed
+from rebase_core.schemas import FreelancerCreate, FreelancerOverride
+from rebase_core.team_schemas import Card, CardRead, CardsRefreshed
 
 NOW = datetime(2026, 9, 26, 9, 30, tzinfo=UTC)
 CV = text_pdf("Ada Lovelace, backend developer a Torino da nove anni: Python, FastAPI, AWS.")
@@ -156,7 +157,7 @@ def test_card_from_a_cv(clean: Session) -> None:
     read = CardWriter(clean, llm, now=lambda: NOW).write(freelancer_id)
 
     assert read.freelancer_id == freelancer_id
-    assert read.card == Card.model_validate(CARD)
+    assert read.card == CardRead.model_validate(CARD)
     assert (read.cv_sha256, read.model, read.generated_at, read.error) == (
         _sha(CV),
         MODEL,
@@ -582,7 +583,7 @@ def test_a_card_that_is_not_the_person_is_written_at_once(clean: Session) -> Non
     read = CardWriter(clean, llm).write(freelancer_id)
 
     assert len(llm.requests) == 1
-    assert read.error is None and read.card == Card.model_validate(card)
+    assert read.error is None and read.card == CardRead.model_validate(card)
 
 
 def test_a_gendered_card_is_asked_again_once_and_the_neutral_one_is_written(
@@ -598,7 +599,7 @@ def test_a_gendered_card_is_asked_again_once_and_the_neutral_one_is_written(
 
     read = CardWriter(clean, llm, now=lambda: NOW).write(freelancer_id)
 
-    assert read.card == Card.model_validate(CARD) and read.error is None
+    assert read.card == CardRead.model_validate(CARD) and read.error is None
     assert (read.cv_sha256, read.model, read.generated_at) == (_sha(CV), MODEL, NOW)
     stored = _stored(clean, freelancer_id)
     assert stored is not None
@@ -706,7 +707,7 @@ def test_a_regenerate_still_gendered_keeps_the_cards_of_the_same_cv_with_the_err
 
     read = CardWriter(clean, llm).write(freelancer_id, force=True)
 
-    assert read.card == Card.model_validate(CARD) and read.error == GENDERED
+    assert read.card == CardRead.model_validate(CARD) and read.error == GENDERED
 
 
 def test_a_regenerate_still_gendered_retires_a_stored_card_that_is_gendered(
@@ -793,7 +794,7 @@ def test_an_outage_on_a_new_cv_retires_the_old_card(clean: Session) -> None:
     assert _card_is_sql_null(clean, freelancer_id)
 
     again = CardWriter(clean, RecordingCall([card_response()])).write(freelancer_id)
-    assert again.card == Card.model_validate(CARD) and again.cv_sha256 == _sha(CV_2026)
+    assert again.card == CardRead.model_validate(CARD) and again.cv_sha256 == _sha(CV_2026)
     assert again.error is None
 
 
@@ -805,7 +806,7 @@ def test_an_outage_on_the_same_cv_keeps_its_card(clean: Session) -> None:
 
     down = CardWriter(clean, _Scripted([_down()])).write(freelancer_id, force=True)
 
-    assert down.card == Card.model_validate(CARD) and down.cv_sha256 == _sha(CV)
+    assert down.card == CardRead.model_validate(CARD) and down.cv_sha256 == _sha(CV)
     assert down.error
 
 
@@ -831,7 +832,7 @@ def test_the_same_cv_refused_on_regenerate_keeps_its_card(clean: Session) -> Non
 
     read = CardWriter(clean, llm).write(freelancer_id, force=True)
 
-    assert read.card == Card.model_validate(CARD) and read.cv_sha256 == _sha(CV)
+    assert read.card == CardRead.model_validate(CARD) and read.cv_sha256 == _sha(CV)
     assert read.error
     stored = _stored(clean, freelancer_id)
     assert stored is not None and stored.error_cv_sha256 == _sha(CV)
@@ -883,7 +884,7 @@ def test_an_outage_is_tried_again(clean: Session, logs: pytest.LogCaptureFixture
 
     again = CardWriter(clean, llm).write(freelancer_id)
     assert len(llm.requests) == 2
-    assert again.card == Card.model_validate(CARD) and again.error is None
+    assert again.card == CardRead.model_validate(CARD) and again.error is None
 
 
 def test_no_key_writes_nothing(clean: Session) -> None:
@@ -899,7 +900,7 @@ def test_no_key_writes_nothing(clean: Session) -> None:
     CardWriter(clean, RecordingCall([card_response()])).write(freelancer_id)
     MemberService(clean).replace_cv(freelancer_id, CV_2026, "cv 2026.pdf", "application/pdf")
     kept = CardWriter(clean, None).write(freelancer_id, force=True)
-    assert kept.cv_sha256 == _sha(CV) and kept.card == Card.model_validate(CARD)
+    assert kept.cv_sha256 == _sha(CV) and kept.card == CardRead.model_validate(CARD)
 
 
 def test_the_database_is_released_during_the_call(clean: Session) -> None:
@@ -1058,3 +1059,141 @@ def test_refresh_stale_stops_at_an_outage(clean: Session) -> None:
     assert "Secondo CV" in _user_text(retry.requests[0])
     assert "Terzo CV" in _user_text(retry.requests[1])
     assert CardWriter(clean, retry).refresh_stale(limit=3) == CardsRefreshed(written=0, failed=0)
+
+
+# ---- the level (REB-799) -------------------------------------------------------------
+
+
+def test_the_prompt_states_the_bands_the_parser_enforces() -> None:
+    """The numbers in the prompt are `card_level`'s, so the rule Claude is told and the
+    rule the parser applies cannot drift apart; `anni` is asked from dated roles and may
+    be null, and `lead` needs leadership as well as years."""
+    cv = CvText(filename="cv.pdf", pagine=1, testo="Backend developer, Python.", troncato=False)
+    system = card_prompt(cv, "Backend developer").system[0]["text"]
+
+    assert f"junior under {MID_FROM} years" in system
+    assert f"mid from {MID_FROM} to {SENIOR_FROM - 1}" in system
+    assert f"senior from {SENIOR_FROM} up" in system
+    assert f"senior from {LEAD_FROM} years up when the CV states" in system
+    assert f"never has fewer than {LEAD_FROM} years" in system
+    assert "counted only from roles the CV dates" in system
+    assert "null, never a guess, when the CV dates no professional role at all" in system
+    assert "When anni is null, give seniority as your reading of the responsibility" in system
+    assert system.index("- anni:") < system.index("- seniority:")
+
+
+def test_the_schema_lets_the_model_say_the_years_are_unknown() -> None:
+    """`anni` is required (a key silently missing is a shape failure) and nullable, and
+    comes before `seniority`, which is read from it."""
+    properties = CARD_SCHEMA["properties"]
+    assert "anni" in CARD_SCHEMA["required"]
+    assert {"type": "null"} in properties["anni"]["anyOf"]
+    assert list(properties).index("anni") < list(properties).index("seniority")
+
+
+@pytest.mark.parametrize(
+    ("answer", "seniority", "anni", "incerta"),
+    [
+        # The audit's inconsistent cards, as the parser stores them now.
+        ({"seniority": "lead", "anni": 3}, "mid", 3, False),
+        ({"seniority": "senior", "anni": 3}, "mid", 3, False),
+        ({"seniority": "mid", "anni": 7}, "senior", 7, False),
+        ({"seniority": "lead", "anni": 12}, "lead", 12, False),
+        # A CV that dates nothing: years unknown, the seniority a guess, never lead.
+        ({"seniority": "junior", "anni": None}, "junior", None, True),
+        ({"seniority": "lead", "anni": None}, "senior", None, True),
+    ],
+)
+def test_the_writer_stores_the_banded_seniority_and_marks_a_guess(
+    clean: Session, answer: dict[str, Any], seniority: str, anni: int | None, incerta: bool
+) -> None:
+    freelancer_id = _apply(clean)
+    llm = RecordingCall([card_response({**CARD, **answer})])
+
+    read = CardWriter(clean, llm).write(freelancer_id)
+
+    assert read.error is None and read.card is not None
+    assert (read.card.seniority, read.card.anni, read.card.seniority_incerta) == (
+        seniority,
+        anni,
+        incerta,
+    )
+    stored = _stored(clean, freelancer_id)
+    assert stored is not None and stored.card is not None
+    assert (stored.card["seniority"], stored.card["anni"]) == (seniority, anni)
+
+
+def test_an_admins_level_beats_the_card_and_survives_a_regenerate(clean: Session) -> None:
+    """The admin's seniority and years sit on the freelancer, not on the card: a
+    regenerate that writes a different card, a card retired by a new CV and one that
+    fails all leave them, and taking them off shows Claude's reading again."""
+    freelancer_id = _apply(clean)
+    admin = _admin(clean)
+    llm = RecordingCall(
+        [
+            card_response({**CARD, "seniority": "junior", "anni": 2}),
+            card_response({**CARD, "seniority": "mid", "anni": 4}),
+        ]
+    )
+    writer = CardWriter(clean, llm)
+    assert writer.write(freelancer_id).card is not None
+
+    FreelancerService(clean).override(
+        freelancer_id, FreelancerOverride(seniority_admin="lead", anni_admin=15), admin
+    )
+
+    read = writer.read(freelancer_id)
+    assert read.card is not None
+    assert (read.card.seniority, read.card.anni) == ("lead", 15)
+    assert (read.seniority_admin, read.anni_admin) == ("lead", 15)
+    assert read.card.seniority_incerta is False
+    stored = _stored(clean, freelancer_id)
+    assert stored is not None and stored.card is not None
+    assert (stored.card["seniority"], stored.card["anni"]) == ("junior", 2)  # Claude's, untouched
+
+    regenerated = writer.write(freelancer_id, force=True)
+    assert regenerated.card is not None
+    assert (regenerated.card.seniority, regenerated.card.anni) == ("lead", 15)
+    stored = _stored(clean, freelancer_id)
+    assert stored is not None and stored.card is not None
+    assert (stored.card["seniority"], stored.card["anni"]) == ("mid", 4)
+
+    # A CV replaced by a scan retires the card, and the correction is still on the row.
+    MemberService(clean).replace_cv(freelancer_id, SCAN, "scansione.pdf", "application/pdf")
+    retired = CardWriter(clean, RecordingCall([])).write(freelancer_id)
+    assert retired.card is None
+    assert (retired.seniority_admin, retired.anni_admin) == ("lead", 15)
+
+    FreelancerService(clean).override(
+        freelancer_id, FreelancerOverride(seniority_admin=None, anni_admin=None), admin
+    )
+    assert writer.read(freelancer_id).seniority_admin is None
+
+
+def test_a_year_alone_from_the_admin_leaves_an_undated_seniority_uncertain(
+    clean: Session,
+) -> None:
+    freelancer_id = _apply(clean)
+    admin = _admin(clean)
+    writer = CardWriter(clean, RecordingCall([card_response({**CARD, "anni": None})]))
+    writer.write(freelancer_id)
+
+    FreelancerService(clean).override(freelancer_id, FreelancerOverride(anni_admin=6), admin)
+    read = writer.read(freelancer_id)
+    assert read.card is not None
+    assert (read.card.anni, read.card.seniority_incerta) == (6, True)
+
+    FreelancerService(clean).override(
+        freelancer_id, FreelancerOverride(seniority_admin="senior"), admin
+    )
+    read = writer.read(freelancer_id)
+    assert read.card is not None
+    assert (read.card.seniority, read.card.seniority_incerta) == ("senior", False)
+
+
+@pytest.mark.parametrize(
+    "bad", [{"seniority_admin": "guru"}, {"anni_admin": -1}, {"anni_admin": 61}], ids=str
+)
+def test_an_override_refuses_a_level_outside_the_cards_words(bad: dict[str, Any]) -> None:
+    with pytest.raises(ValueError, match="seniority_admin|anni_admin"):
+        FreelancerOverride(**bad)
