@@ -45,7 +45,7 @@
     </header>
 
     <main class="wrap section">
-      <p class="kicker">Ultimo aggiornamento <time datetime="2026-09-29">29 settembre 2026</time></p>
+      <p class="kicker">Ultimo aggiornamento <time datetime="2026-10-27">27 ottobre 2026</time></p>
       <h1 class="measure">Informativa sulla privacy</h1>
 
       <div class="measure" style="display: grid; gap: 1.25rem; margin-top: 2rem">
@@ -78,21 +78,53 @@
 
         <h2>La tua scheda e il team builder</h2>
         <p>
-          Da settembre 2026, se hai una scheda freelance, il testo del tuo CV viene inviato
-          all'API di Anthropic per scrivere una descrizione anonima del profilo (ruolo,
-          seniority, competenze, settori, lingue): succede ogni volta che il CV cambia, o
-          quando un amministratore la richiede di nuovo. La descrizione che un visitatore
-          scrive nel team builder viene inviata alla stessa API insieme alle descrizioni
-          anonime di tutti i profili, per proporre una squadra. Ogni descrizione anonima che parte
-          così porta con sé anche la città o la regione che il CV indica, il modo in cui lavori (da
-          remoto, ibrido o in sede) e una fascia di prezzo ricavata dalla tua tariffa, mai la
-          tariffa stessa; i contatti che un'azienda lascia con «Assumi team» restano invece nella
-          richiesta che arriva a noi, e ad Anthropic non vanno. Anthropic tratta questi dati per
-          conto nostro, secondo i suoi termini sul trattamento dei dati, e
-          <strong>non li usa per addestrare i propri modelli</strong>. La sua informativa è su
+          Se hai una scheda freelance, scriviamo una descrizione anonima del tuo profilo (ruolo,
+          seniority, competenze, settori, lingue). Per scriverla leggiamo il testo del tuo CV, il
+          ruolo che hai indicato nel profilo, il tuo profilo GitHub e i repository pubblici che hai
+          su GitHub, le pagine pubbliche dei link che ci hai indicato nel profilo (un sito
+          personale, un portfolio, una pagina di Behance, di Dribbble, di Stack Overflow e simili)
+          e quello che rebase già sa del tuo lavoro: i progetti che hai fatto passando da noi
+          (ruolo, durata, esito, senza il nome del cliente) e la seniority che un amministratore ha
+          eventualmente fissato. La tariffa e il modo in cui lavori non servono a scriverla.
+          <strong>Non leggiamo LinkedIn</strong>: il tuo profilo LinkedIn resta un contatto, non
+          una fonte per la scheda. Non leggiamo nemmeno nulla che stia dietro un accesso, né pagine
+          che non hai indicato tu. La descrizione si scrive quando carichi un CV nuovo o quando un
+          amministratore la richiede di nuovo; se un link cambia o lo togli, aggiorniamo quello
+          che abbiamo letto, e la descrizione si riscrive alla prima occasione.
+        </p>
+        <p>
+          Quel testo, cioè il CV, il ruolo, quello che abbiamo letto da GitHub e dalle pagine dei
+          tuoi link e i dati di rebase sul tuo lavoro, viene inviato all'API di Anthropic, che lo
+          elabora per scrivere la descrizione. La descrizione che un visitatore
+          scrive nel team builder viene inviata alla stessa API insieme alle descrizioni anonime di
+          tutti i profili, per proporre una squadra. Ogni descrizione anonima che parte così porta
+          con sé anche la città o la regione che il CV indica, il modo in cui lavori (da remoto,
+          ibrido o in sede) e una fascia di prezzo ricavata dalla tua tariffa, mai la tariffa
+          stessa; i contatti che un'azienda lascia con «Assumi team» restano invece nella richiesta
+          che arriva a noi, e ad Anthropic non vanno. Anthropic tratta questi dati per conto
+          nostro, come responsabile del trattamento, secondo il suo accordo sul trattamento dei
+          dati (DPA), e <strong>non li usa per addestrare i propri modelli</strong>. I dati possono
+          uscire dall'Unione Europea e dallo Spazio economico europeo: Anthropic li elabora anche
+          fuori da lì, per esempio negli Stati Uniti, e il trasferimento si regge sulle clausole
+          contrattuali standard della Commissione europea (modulo due, da titolare a responsabile)
+          che il suo DPA incorpora. Il DPA è su
+          <a class="quiet-link" href="https://www.anthropic.com/legal/data-processing-addendum"
+            >www.anthropic.com/legal/data-processing-addendum</a
+          >
+          e la sua informativa su
           <a class="quiet-link" href="https://www.anthropic.com/privacy"
             >www.anthropic.com/privacy</a
-          >.
+          >. Non mandiamo questi dati a nessun altro fornitore di modelli.
+        </p>
+        <p>
+          Quello che leggiamo da GitHub e dalle pagine dei tuoi link lo conserviamo, nel testo
+          letto e in un'impronta (hash) che ci dice se è cambiato, e lo rileggiamo una volta a
+          settimana. Lo teniamo finché il link resta nel tuo profilo: lo cancelliamo quando lo togli,
+          quando cancelli il profilo, o quando ce lo chiedi. Base giuridica: il nostro interesse
+          legittimo a descrivere con precisione chi sei alle aziende che cercano un freelance, su
+          informazioni che hai reso pubbliche tu. Ti puoi opporre in ogni momento e chiederci di
+          togliere una fonte o di cancellare la tua descrizione, scrivendo a
+          <a class="quiet-link" href="mailto:ciao@letsrebase.com">ciao@letsrebase.com</a>.
         </p>
         <p>
           Chi visita la pagina pubblica del team builder vede la descrizione senza il tuo nome.

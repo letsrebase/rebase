@@ -6,8 +6,8 @@ keeps the result per person in `freelancer_sources`, so a card can say what it w
 written from and a change of a source can mark it stale.
 
 * **Off by default.** `ai_sources` holds one switch per kind (`github`, `links`), both
-  off, and neither is turned on in production until Lorenzo and Ivan confirm the privacy
-  notice covers reading what people linked. A kind that is off is not fetched, and its
+  off, and neither is turned on in production until the privacy notice covers reading what people
+  linked (it does since REB-841). A kind that is off is not fetched, and its
   rows are deleted at once when an admin turns it off and again at the next refetch.
 * **The hash ignores what moves on its own.** The hash of a GitHub source is its
   `hash_material()` (no stars, last push or language counts); of a page, its text without
