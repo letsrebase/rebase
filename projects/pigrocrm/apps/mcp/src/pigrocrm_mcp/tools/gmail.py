@@ -105,7 +105,7 @@ from pigrocrm.core.gmail.solleciti import SollecitiService
 from pigrocrm_mcp.annotations import ADDITIVE, READ_ONLY
 from pigrocrm_mcp.context import McpContext
 
-# The same runtime-permissive / schema-only-strict split `tools/__init__.py` uses
+# The same runtime-permissive / schema-only-strict split `tools/params.py` describes
 # throughout, and for the same reason: a bare `Literal`/`int` parameter is validated by
 # the SDK *before* the guarded function runs, so a wrong value reaches the agent as a
 # raw English pydantic dump with an errors.pydantic.dev link instead of the rendered

@@ -9156,7 +9156,7 @@ export interface components {
         /**
          * InvoiceReviewRequest
          * @description One or more `document_id`s, never raw bytes -- the MCP rule
-         *     (`tools/__init__.py`'s own "the download of bytes never goes through MCP")
+         *     (`tools/families/documents.py`'s own "the download of bytes never goes through MCP")
          *     applied symmetrically to the *input* side, and the same shape `InvoiceImport.
          *     pdf_sorgente` already uses for a `documents` row that is already on file.
          */

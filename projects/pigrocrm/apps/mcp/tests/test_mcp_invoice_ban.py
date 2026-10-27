@@ -521,7 +521,7 @@ def test_the_registration_scan_reads_every_module_and_not_only_the_first() -> No
     bans below would pass while checking a file that contains none of them."""
     names = _registered_tool_names()
     assert "list_gmail_messages" in names  # tools/gmail.py
-    assert "create_customer" in names  # tools/__init__.py
+    assert "create_customer" in names  # tools/families/customers.py
 
 
 @pytest.mark.parametrize("forbidden", FORBIDDEN)
@@ -877,7 +877,7 @@ def test_the_wide_scan_really_reads_the_resources_the_prompts_and_the_server() -
     assert "def customer_resource(" in source  # server.py's inline @mcp.resource
     assert "def stato_cliente(" in source  # prompts/customer.py
     assert "def revisione_pipeline(" in source  # prompts/dashboards.py
-    assert "def search_everything(" in source  # tools/__init__.py, i.e. the old width
+    assert "def search_everything(" in source  # tools/families/shared.py, i.e. the old width
 
 
 def test_no_unconditional_module_can_even_obtain_a_drive_reader() -> None:
