@@ -795,6 +795,8 @@ def test_the_ceiling_counts_every_campaign_by_the_day_in_rome(
     clean.commit()
     run_tick(clean, sender, SMALL_DAY, clock=clock, pause=NO_PAUSE)
     assert len(sender.sent) > 3
+    after = [r.stato for c in (first, second) for r in rows(clean, c).values()]
+    assert after.count("inviata") == len(sender.sent) and "fallita" not in after
 
 
 def test_a_quota_429_stops_the_campaign_without_spending_an_attempt(

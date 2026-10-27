@@ -218,7 +218,7 @@ line, «N campagne, M inviate, S saltate, F fallite». `campagne` is how many du
 campaigns this pass touched, and `inviate` and `saltate` are recipients this pass
 actually sent to or skipped. `fallite` are rows this pass marked `fallita`: a mail
 Resend refused outright (a 422, say), a row whose third attempt failed too (a timeout,
-a 429 or a 5xx leaves the row `in_coda` for the next pass, with the same
+a bare 429 or a 5xx leaves the row `in_coda` for the next pass, with the same
 `Idempotency-Key`), and a row whose checks or render raised, marked rather than let it
 wedge every campaign after it (controller ruling R14). A 401 or 403 (a revoked or
 restricted key, a domain Resend no longer sends for) marks no row: the pass stops that
@@ -245,8 +245,9 @@ campaign's page, `list_campagne` and `get_campagna` say when the rest leaves. Th
 first pass after midnight in Rome sends it and clears the note. A 429 whose body
 names `daily_quota_exceeded` or `monthly_quota_exceeded` (a sender outcome of its own,
 `quota`) is the same stop: no attempt is spent and the row is tried again next pass,
-since Resend's day may not start at Rome's midnight; a bare 429 is still a retry that
-counts.
+since Resend's day is a UTC day, which starts one or two hours after Rome's midnight:
+in that window the ceiling has reset while Resend's count has not, so a campaign may
+spend the reserve until the 429 stops it. A bare 429 is still a retry that counts.
 
 **The same pass stamps what each mail led to** (P-REB-41 phase 2, `rebase_core.campaigns.outcome`).
 For every row sent in the last 30 days and still missing a stamp, it writes `entrato_at`
