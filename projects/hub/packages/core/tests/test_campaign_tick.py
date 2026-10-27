@@ -28,6 +28,8 @@ from rebase_core.campaigns.tick import (
     SEND_INTERVAL_SECONDS,
     STALLED_KEY,
     STALLED_LIST,
+    STALLED_QUOTA_DAY,
+    STALLED_QUOTA_MONTH,
     _claim,
     run_tick,
 )
@@ -735,3 +737,94 @@ def test_a_mail_the_webhook_confirms_clears_the_stall_only_if_it_left_after_the_
     assert recovered is not None and recovered.stato == "inviata"
     expected = (stopped_at, STALLED_KEY) if stall_stays else (None, None)
     assert (after.stato, after.fermo_at, after.fermo_motivo) == ("in_invio", *expected)
+
+
+SMALL_DAY = SETTINGS.model_copy(update={"resend_daily_quota": 5, "campaign_daily_reserve": 2})
+
+
+def test_a_list_past_the_daily_ceiling_sends_across_two_days_with_no_fallita(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    """REB-779: 5 a day less 2 reserved leaves 3. The fourth row stays `in_coda` with no
+    attempt spent, the page says which day the rest leaves, and the next morning's
+    pass sends it and clears the note."""
+    clock = Clock(NOW)
+    emails = [f"p{n}@studio.it" for n in range(5)]
+    campaign = scheduled(clean, clock, *emails)
+    sender = RecordingCampaignSender()
+    first = run_tick(clean, sender, SMALL_DAY, clock=clock, pause=NO_PAUSE)
+    assert (first.inviate, first.fallite, len(sender.sent)) == (3, 0, 3)
+    left = [r for r in rows(clean, campaign).values() if r.stato == "in_coda"]
+    assert len(left) == 2 and {r.tentativi for r in left} == {0}
+    held = CampaignService(clean, SMALL_DAY, clock=clock).detail(campaign.id).campagna
+    assert held.stato == "in_invio"
+    assert held.fermo_motivo == (
+        "limite di 3 mail al giorno raggiunto: il resto parte il 26/09 dalle 00:00 (ora di Roma)"
+    )
+    # Later the same day nothing leaves and nothing is spent.
+    clock.at += timedelta(hours=10)
+    again = run_tick(clean, sender, SMALL_DAY, clock=clock, pause=NO_PAUSE)
+    assert (again.inviate, again.fallite, len(sender.sent)) == (0, 0, 3)
+    # After midnight in Rome (22:00 UTC is 00:00 of the 26th).
+    clock.at = datetime(2026, 9, 25, 22, 1, tzinfo=UTC)
+    second = run_tick(clean, sender, SMALL_DAY, clock=clock, pause=NO_PAUSE)
+    assert (second.inviate, second.fallite, len(sender.sent)) == (2, 0, 5)
+    done = CampaignService(clean, SMALL_DAY, clock=clock).detail(campaign.id).campagna
+    assert (done.stato, done.fermo_motivo, done.fermo_at) == ("inviata", None, None)
+    assert {r.stato for r in rows(clean, campaign).values()} == {"inviata"}
+
+
+def test_the_ceiling_counts_every_campaign_by_the_day_in_rome(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    """A second campaign shares the day's room with the first, and a mail sent at 23:30
+    in Rome the evening before does not count against the next day."""
+    clock = Clock(NOW)
+    first = scheduled(clean, clock, "a@studio.it", "b@studio.it")
+    second = scheduled_filtri(clean, clock, "c@studio.it", "d@studio.it")
+    sender = RecordingCampaignSender()
+    run_tick(clean, sender, SMALL_DAY, clock=clock, pause=NO_PAUSE)
+    assert len(sender.sent) == 3
+    states = [r.stato for c in (first, second) for r in rows(clean, c).values()]
+    assert states.count("inviata") == 3 and "fallita" not in states and "in_coda" in states
+    clean.execute(
+        update(CampaignRecipient)
+        .where(CampaignRecipient.stato == "inviata")
+        .values(inviata_at=datetime(2026, 9, 24, 21, 30, tzinfo=UTC))  # 23:30 in Rome
+    )
+    clean.commit()
+    run_tick(clean, sender, SMALL_DAY, clock=clock, pause=NO_PAUSE)
+    assert len(sender.sent) > 3
+    after = [r.stato for c in (first, second) for r in rows(clean, c).values()]
+    assert after.count("inviata") == len(sender.sent) and "fallita" not in after
+
+
+def test_a_quota_429_stops_the_campaign_without_spending_an_attempt(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    clock = Clock(NOW)
+    campaign = scheduled(clean, clock, "a@studio.it", "b@studio.it")
+    full = RecordingCampaignSender([SendOutcome("quota", dettaglio="daily_quota_exceeded")])
+    result = run_tick(clean, full, SETTINGS, clock=clock, pause=NO_PAUSE)
+    assert (result.inviate, result.fallite, len(full.sent)) == (0, 0, 1)
+    assert {(r.stato, r.tentativi) for r in rows(clean, campaign).values()} == {("in_coda", 0)}
+    stalled = CampaignService(clean, SETTINGS, clock=clock).detail(campaign.id).campagna
+    assert (stalled.stato, stalled.fermo_motivo) == ("in_invio", STALLED_QUOTA_DAY)
+    clock.at += timedelta(minutes=1)
+    run_tick(clean, RecordingCampaignSender(), SETTINGS, clock=clock, pause=NO_PAUSE)
+    done = CampaignService(clean, SETTINGS, clock=clock).detail(campaign.id).campagna
+    assert (done.stato, done.fermo_motivo) == ("inviata", None)
+
+
+def test_a_monthly_quota_says_so(clean: Session) -> None:  # noqa: F811  (fixture)
+    clock = Clock(NOW)
+    campaign = scheduled(clean, clock, "a@studio.it")
+    full = RecordingCampaignSender([SendOutcome("quota", dettaglio="monthly_quota_exceeded")])
+    run_tick(clean, full, SETTINGS, clock=clock, pause=NO_PAUSE)
+    stalled = CampaignService(clean, SETTINGS, clock=clock).detail(campaign.id).campagna
+    assert stalled.fermo_motivo == STALLED_QUOTA_MONTH
+
+
+def test_a_reserve_that_takes_the_whole_quota_is_refused_at_start_up() -> None:
+    with pytest.raises(ValueError, match="REBASE_CAMPAIGN_DAILY_RESERVE"):
+        SETTINGS.model_validate({**SETTINGS.model_dump(), "resend_daily_quota": 10})
