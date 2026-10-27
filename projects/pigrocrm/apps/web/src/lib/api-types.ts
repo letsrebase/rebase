@@ -4688,8 +4688,12 @@ export interface components {
             kind: string;
             /** Actor Id */
             actor_id: string | null;
+            /** Actor Name */
+            actor_name?: string | null;
             /** Actor Type */
             actor_type: string;
+            /** Triggered By Name */
+            triggered_by_name?: string | null;
             /** Payload */
             payload: {
                 [key: string]: unknown;

@@ -248,6 +248,7 @@ class AutomationRunner:
                 "da": previous.nome,
                 "a": target.nome,
                 "attivata_da": str(actor.id) if actor.id is not None else None,
+                "attivata_via": actor.type,
             },
         )
         return AutomationOutcome(rule, True, None)
@@ -272,5 +273,6 @@ class AutomationRunner:
                 "motivo": outcome.reason,
                 "documento_id": str(document.id),
                 "attivata_da": str(actor.id) if actor.id is not None else None,
+                "attivata_via": actor.type,
             },
         )

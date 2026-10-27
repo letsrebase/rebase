@@ -19,6 +19,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings, slack_configured
@@ -49,6 +50,7 @@ class SlackService:
         self.settings = settings
         self.client = client
         self.repo = SlackRepository(session)
+        self.activities = ActivityService(session)
 
     # -- reads -----------------------------------------------------------------
 
@@ -136,6 +138,7 @@ class SlackService:
         workspace, token = self._active()
         matcher = SlackMatcher(self.repo, self.client, token)
         self._calling(workspace, lambda: matcher.match_all(self.repo.people(), force=True))
+        self.activities.record(SLACK_ENTITY, workspace.id, "slack.abbinamenti_rifatti", actor)
         self.session.commit()
         return self.health(actor)
 
@@ -162,6 +165,11 @@ class SlackService:
         self.repo.upsert_link(
             user.id, source="manual", slack_user_id=member.id, slack_email=member.email
         )
+        # The member it concerns, not their Slack address: the address is on the Team
+        # panel already, and the timeline is read by more people than that panel.
+        self.activities.record(
+            SLACK_ENTITY, workspace.id, "slack.abbinamento_manuale", actor, {"user_id": user.id}
+        )
         self.session.commit()
         return self.health(actor)
 
@@ -176,6 +184,9 @@ class SlackService:
             self.repo.delete_link(link)
         matcher = SlackMatcher(self.repo, self.client, token)
         self._calling(workspace, lambda: matcher.match_user(user, force=True))
+        self.activities.record(
+            SLACK_ENTITY, workspace.id, "slack.abbinamento_rimosso", actor, {"user_id": user.id}
+        )
         self.session.commit()
         return self.health(actor)
 
@@ -198,6 +209,16 @@ class SlackService:
                 )
             workspace.channel_id = found.id
             workspace.channel_name = found.name
+        if channel_id is None:
+            self.activities.record(SLACK_ENTITY, workspace.id, "slack.canale_rimosso", actor)
+        else:
+            self.activities.record(
+                SLACK_ENTITY,
+                workspace.id,
+                "slack.canale_impostato",
+                actor,
+                {"canale": workspace.channel_name},
+            )
         self.session.commit()
         return self.health(actor)
 

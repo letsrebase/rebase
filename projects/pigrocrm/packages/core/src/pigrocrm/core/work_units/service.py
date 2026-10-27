@@ -18,6 +18,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.contracts.repository import ContractRepository
 from pigrocrm.core.documents.models import Document
@@ -56,6 +57,14 @@ from pigrocrm.core.work_units.schemas import (
 
 WORK_UNIT_ENTITY = "work_unit"
 APPROVAL_ENTITY = "approval"
+# What a contract's days and approvals are recorded against in the timeline: the contract,
+# whose page already shows its own history (REB-741..744). The day's own ledger
+# (`work_unit_transitions`, written by `work_unit_log_transition` with the actor) stays the
+# authority on its states, but it names a member by id and a channel as «human» or «agent»
+# and no timeline serves it; an approval row has no actor column at all, and linking one to
+# a day that does not change state writes no ledger row. So each of these writes also leaves
+# a contract entry naming the member and the channel (REB-781).
+CONTRACT_ENTITY = "contract"
 
 # The partial unique index that allows one live day per contract per date
 # (`models.py`): the name Postgres reports when a second one is recorded.
@@ -122,6 +131,7 @@ class WorkUnitService:
         self.session = session
         self.repo = WorkUnitRepository(session)
         self.transitions = WorkUnitTransitionRepository(session)
+        self.activities = ActivityService(session)
 
     def get(self, work_unit_id: UUID) -> WorkUnitRead:
         work_unit = self.repo.get(work_unit_id)
@@ -189,6 +199,17 @@ class WorkUnitService:
         # is the entire point of the Done-when ("a day ... lands in
         # 'lavorato_senza_approvazione' automatically").
         self.session.refresh(work_unit)
+        # The day's own ledger holds who and when (`work_unit_transitions`); the contract's
+        # timeline holds it too, with the member's name and the channel, which is where a
+        # person looking for «who proposed this day» looks (REB-781). Written after the
+        # refresh, so a state the trigger redirected is the state recorded.
+        self.activities.record(
+            CONTRACT_ENTITY,
+            work_unit.contract_id,
+            "day_created",
+            actor,
+            {"giornata": work_unit.data.isoformat(), "stato": work_unit.stato},
+        )
         if commit:
             self.session.commit()
         return WorkUnitRead.model_validate(work_unit)
@@ -228,6 +249,14 @@ class WorkUnitService:
                 a=nuovo_stato,
             ) from exc
         self.session.refresh(work_unit)  # see create()'s own comment
+        if work_unit.stato != origine:
+            self.activities.record(
+                CONTRACT_ENTITY,
+                work_unit.contract_id,
+                "day_state_changed",
+                actor,
+                {"giornata": work_unit.data.isoformat(), "da": origine, "a": work_unit.stato},
+            )
         self.session.commit()
         return WorkUnitRead.model_validate(work_unit)
 
@@ -268,6 +297,13 @@ class WorkUnitService:
         work_unit.approval_id = approval_id
         self.session.flush()
         self.session.refresh(work_unit)  # see create()'s own comment
+        self.activities.record(
+            CONTRACT_ENTITY,
+            work_unit.contract_id,
+            "approval_linked",
+            actor,
+            {"giornata": work_unit.data.isoformat()},
+        )
         self.session.commit()
         return WorkUnitRead.model_validate(work_unit)
 
@@ -356,6 +392,7 @@ class ApprovalService:
         self.session = session
         self.storage = storage
         self.repo = ApprovalRepository(session)
+        self.activities = ActivityService(session)
 
     def get(self, approval_id: UUID) -> ApprovalRead:
         approval = self.repo.get(approval_id)
@@ -376,6 +413,9 @@ class ApprovalService:
                 estratto=data.estratto,
                 origine=data.origine,
             )
+        )
+        self.activities.record(
+            CONTRACT_ENTITY, data.contract_id, "approval_added", actor, {"canale": data.canale}
         )
         self.session.commit()
         return ApprovalRead.model_validate(approval)
@@ -438,6 +478,13 @@ class ApprovalService:
             }
         )
         recorded = [WorkUnitRead.model_validate(day) for day in days]
+        self.activities.record(
+            CONTRACT_ENTITY,
+            data.contract_id,
+            "approval_recorded",
+            actor,
+            {"giorni": len(days), "canale": data.canale},
+        )
         self.session.commit()
         return ApprovalRecorded(approval=detail, work_units=recorded)
 
