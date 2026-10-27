@@ -19,6 +19,7 @@ from mcp import Client
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings
 from pigrocrm.core.storage import LocalFileStorage
+from pigrocrm_mcp.listing import compact_schema
 from pigrocrm_mcp.server import build_server
 
 # The three installations the tool list differs on: nothing configured, the invoice and
@@ -71,6 +72,8 @@ _IRREVERSIBLE = {
     "discard_proforma",
     "set_offer_state",
 }
+# A `create_*` that is not additive: `chiudi_precedente` shortens the rate card in force.
+_CREATES_THAT_OVERWRITE = {"create_rate_card"}
 
 
 def _server(tmp_path: Path, **settings: Any) -> Any:
@@ -124,6 +127,8 @@ async def test_the_hints_match_what_the_name_promises(surface: Any) -> None:
             assert hints.destructive_hint is False, tool.name
         elif tool.name.startswith("update_"):
             assert hints.destructive_hint is True, f"{tool.name} overwrites what was there"
+        elif tool.name in _CREATES_THAT_OVERWRITE:
+            assert hints.destructive_hint is True, f"{tool.name} can overwrite"
         elif tool.name.startswith(("create_", "archive_", "restore_")):
             assert hints.destructive_hint is False, tool.name
 
@@ -162,9 +167,36 @@ async def test_the_full_access_tool_list_fits_its_budget(tmp_path: Path) -> None
 async def test_the_listing_carries_no_empty_promises(surface: Any) -> None:
     """`listing.py` removes what no client reads. A `title` is the property name in Title
     Case, an `outputSchema` of any object says nothing, and `default: null` repeats
-    `required`; none of them may come back through a new tool."""
+    `required`; none of them may come back through a new tool. Checked with the same
+    schema-aware walk that removes them, so a property *called* `title` is not a finding."""
     for tool in await _tools(surface):
-        text = json.dumps(tool.input_schema)
-        assert '"title"' not in text, tool.name
-        assert '"default": null' not in text, tool.name
+        assert compact_schema(tool.input_schema) == tool.input_schema, tool.name
+        assert compact_schema(tool.output_schema) == tool.output_schema, tool.name
         assert tool.output_schema != {"type": "object", "additionalProperties": True}, tool.name
+
+
+def test_compact_schema_drops_the_keywords_and_keeps_the_values() -> None:
+    schema = {
+        "title": "get_customerArguments",
+        "type": "object",
+        "properties": {
+            # a property called `title` and one called `default` are names, not keywords
+            "title": {"title": "Title", "type": "string"},
+            "default": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None},
+            "stato": {"enum": ["title", "default"], "default": "title", "type": "string"},
+            "righe": {"items": {"title": "Riga", "type": "object"}, "type": "array"},
+            "da": {"type": "integer", "default": 0},
+        },
+        "required": ["title"],
+    }
+    assert compact_schema(schema) == {
+        "type": "object",
+        "properties": {
+            "title": {"type": "string"},
+            "default": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+            "stato": {"enum": ["title", "default"], "default": "title", "type": "string"},
+            "righe": {"items": {"type": "object"}, "type": "array"},
+            "da": {"type": "integer", "default": 0},
+        },
+        "required": ["title"],
+    }

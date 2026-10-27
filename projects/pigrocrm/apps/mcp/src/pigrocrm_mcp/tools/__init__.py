@@ -734,7 +734,9 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
             ),
         )
 
-    @mcp.tool(annotations=ADDITIVE)
+    # `chiudi_precedente` shortens the card in force on `valido_da`: an overwrite, so the
+    # tool is destructive although it is a `create_*`.
+    @mcp.tool(annotations=DESTRUCTIVE)
     @guard
     def create_rate_card(
         contract_id: str,

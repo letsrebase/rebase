@@ -46,7 +46,8 @@ cambiare e non è in `changed` non è stato modificato.
 In `changes` di un `update_*` metti solo i campi da modificare; `null` svuota quelli che lo
 ammettono (`update_attivita` ha flag propri). Gli elenchi e le ricerche paginati rispondono
 `next_cursor`: passalo come `cursor` per la pagina dopo, senza interpretarlo. `custom` di una
-ricerca filtra per uguaglianza esatta sui campi personalizzati (chiavi in `describe_schema`).
+ricerca filtra per uguaglianza esatta sui campi personalizzati (chiavi in `describe_schema`);
+`dir` è `asc` o `desc`.
 """
 
 
