@@ -86,6 +86,18 @@ class ChangedPaths(unittest.TestCase):
         preflight.record_pass(self.root, head, "main", ["lint"], clean_at_start=True)
         self.assertTrue(state.exists())
 
+    def test_install_hook_refuses_a_hooks_path_inside_the_repository(self):
+        git(self.root, "config", "core.hooksPath", ".githooks")
+        run = subprocess.run(
+            ["python3", str(SOURCE), "--install-hook"],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(run.returncode, 2)
+        self.assertIn("versioned file", run.stderr)
+        self.assertFalse((self.root / ".githooks" / "pre-push").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

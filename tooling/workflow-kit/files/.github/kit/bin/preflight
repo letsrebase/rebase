@@ -91,8 +91,11 @@ exec "$py" "$root/.github/kit/bin/preflight" --hook
 
 
 def git(*args: str, cwd: Path | None = None, raw: bool = False) -> str:
+    # Git writes paths as UTF-8 bytes; decoding with the locale's encoding (cp1252 on
+    # many Windows machines) raises on a valid filename before any check runs.
     p = subprocess.run(
-        ("git",) + args, cwd=cwd, capture_output=True, text=True, check=False
+        ("git",) + args, cwd=cwd, capture_output=True, check=False,
+        encoding="utf-8", errors="surrogateescape",
     )
     if p.returncode != 0:
         raise RuntimeError(f"git {' '.join(args)}: {p.stderr.strip()}")
@@ -513,7 +516,20 @@ def main() -> int:
         die("not inside a git repository")
 
     if args.install_hook:
-        hook = git_path("hooks", root) / "pre-push"
+        hooks = git_path("hooks", root)
+        hook = hooks / "pre-push"
+        try:
+            versioned = ".git" not in hooks.relative_to(root).parts
+        except ValueError:
+            versioned = False
+        line = 'exec python3 "$(git rev-parse --show-toplevel)/.github/kit/bin/preflight" --hook'
+        if versioned:
+            die(
+                f"core.hooksPath points at {hooks}, inside the repository: a hook there is a "
+                f"versioned file. Add this line to its pre-push hook instead:\n  {line}"
+            )
+        if hook.exists() and "preflight" not in hook.read_text(encoding="utf-8", errors="replace"):
+            die(f"{hook} exists and is not preflight's; add this line to it yourself:\n  {line}")
         hook.parent.mkdir(parents=True, exist_ok=True)
         hook.write_text(HOOK, newline="\n")
         hook.chmod(0o755)
