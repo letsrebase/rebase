@@ -53,6 +53,7 @@ from sqlalchemy.orm import Session
 
 from rebase_core.audit import utcnow
 from rebase_core.bands import band_for
+from rebase_core.card_guard import KnownIdentifiers, identifying
 from rebase_core.card_level import banded, card_read
 from rebase_core.cv_text import CvText
 from rebase_core.db import SessionOpener
@@ -103,63 +104,6 @@ _FAILURES: dict[Failure, str] = {
     # previous card is retired meanwhile, and comes back with the next answer.
     "unavailable": "Claude non ha risposto: «Rigenera scheda» riprova.",
 }
-
-# A link or an address in a card (spec § 2.1: no link). A scheme, not the bare word
-# `http`, which is also a skill («HTTP/2», «REST/HTTP») a backend developer's card lists.
-_ADDRESS = re.compile(r"https?://|www\.|@", re.IGNORECASE)
-
-
-def _names(value: str, name: str) -> bool:
-    """Whether `name` is in `value` as a whole word written with a capital: in any case
-    but all lower case, so «Conti» and «CONTI» are the person and «conti» is not; of a
-    name of two words, one capital is enough («de Luca»)."""
-    person = re.compile(rf"\b{re.escape(name)}\b", re.IGNORECASE)
-    return any(not found.group().islower() for found in person.finditer(value))
-
-
-def _without_skills(value: str, skills: list[str]) -> str:
-    """`value` with each of `skills` blanked where it is written whole, the longest
-    first, so a name read afterwards is not one inside a technology («Ruby on Rails»)."""
-    for skill in sorted((skill.strip() for skill in skills), key=len, reverse=True):
-        if skill:
-            value = re.sub(rf"(?<!\w){re.escape(skill)}(?!\w)", " ", value, flags=re.IGNORECASE)
-    return value
-
-
-def _identifies(card: Card, cognome: str, nome: str = "") -> bool:
-    """Whether the card names the person, by the surname as a whole word written with a
-    capital in the role, the summary, the skills or the sectors, by the first name the
-    same way in the role or the summary, or carries a link or an email address anywhere.
-
-    A capital, because a person's name has one in a sentence and many surnames are
-    words too: Conti is in «la dashboard dei conti», Grande in «grande distribuzione»,
-    Porta in «porta avanti», and a card refused for them is parked until the CV changes
-    (`_names`). `luogo` and `lingue` are not read for the surname: Messina, Ferrara or
-    Milano is a city the CV may name, Russo, Greco or Tedesco a language the person may
-    speak, and a card refused for its own CV's place would be refused again on
-    «Rigenera». The first name, and each word of a first name of two («Maria Grazia»)
-    of three letters or more, is read in the role and the summary only, where a
-    sentence would name the person («Ada, backend developer»). Not in the skills, which
-    are names of technologies, and not inside one of the card's own skills where the
-    role or the summary writes it: Ada, Ruby, Julia or Pascal is a language as well as
-    a person, so «Ruby on Rails developer» is the technology for a Ruby who lists «Ruby
-    on Rails», while «Ruby, backend developer» is still her. The prompt forbids all of
-    it; this is what a card that ignored it runs into before it reaches a page."""
-    named = [card.ruolo, card.sintesi, *card.competenze, *card.settori]
-    prose = [card.ruolo, card.sintesi]
-    every = [*named, *card.lingue, *([card.luogo] if card.luogo is not None else [])]
-    surname = cognome.strip()
-    if surname and any(_names(value, surname) for value in named):
-        return True
-    first = nome.strip()
-    given = {first, *(word for word in re.split(r"[\s\-]+", first) if len(word) >= 3)}
-    given.discard("")
-    if any(
-        _names(_without_skills(value, card.competenze), name) for name in given for value in prose
-    ):
-        return True
-    return any(_ADDRESS.search(value) for value in every)
-
 
 # What gives a card's person away as a woman (REB-574): Italian writes the gender into
 # the role, the participle and the pronoun, and in a catalogue of a few dozen people
@@ -335,7 +279,9 @@ def _card_from(response: LlmResponse, cognome: str, nome: str = "") -> Card | Fa
     card = response.parsed
     if not isinstance(card, Card):
         return "shape"
-    return "identifying" if _identifies(card, cognome, nome) else banded(card)
+    return (
+        "identifying" if identifying(card, KnownIdentifiers.empty(cognome, nome)) else banded(card)
+    )
 
 
 class CardWriter:

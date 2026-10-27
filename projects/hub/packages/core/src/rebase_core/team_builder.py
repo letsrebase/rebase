@@ -943,7 +943,7 @@ def _names_place(text: str, luogo: str | None) -> bool:
     """Whether `text` names the place of `luogo`: any word of four letters or more of it,
     but the words for a kind of place (`_PLACE_GENERIC`), as a whole word written with a
     capital, in any case but all lower case, as the card writer reads a surname
-    (`cards._names`): «Alto Adige» and «BERGAMO» are the place, «di alto livello» is
+    (`card_guard._names`): «Alto Adige» and «BERGAMO» are the place, «di alto livello» is
     not."""
     return _names_any(text, _place_words(luogo))
 
