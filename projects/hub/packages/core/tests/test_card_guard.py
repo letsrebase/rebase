@@ -197,6 +197,17 @@ def test_an_employer_that_is_also_a_technology_does_not_fail_the_skills() -> Non
     assert identifying(_card(sintesi="Esperto di Google Cloud e Python.", **skills), known) == []
 
 
+def test_a_skill_that_is_an_employer_fails() -> None:
+    """Only a skill that *is* the employer's name (legal form and punctuation aside) is a
+    leak; one that merely contains it is the technology."""
+    known = KnownIdentifiers(cognome="Zz", employers=["Initech Srl", "Google LLC"])
+
+    assert identifying(_card(competenze=["Initech"]), known) == ["competenze"]
+    assert identifying(_card(competenze=["Python", "INITECH S.r.l."]), known) == ["competenze"]
+    assert identifying(_card(competenze=["Google"]), known) == ["competenze"]
+    assert identifying(_card(competenze=["Python", "Google Cloud"]), known) == []
+
+
 def test_an_employer_in_the_role_the_summary_or_the_sectors_still_fails() -> None:
     known = KnownIdentifiers(cognome="Zz", employers=["Google LLC"])
     skills = {"competenze": ["Python", "Google Cloud"]}
