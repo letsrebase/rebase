@@ -583,11 +583,12 @@ export function UsersPanel() {
             <Input
               id="rename-nome"
               aria-invalid={renameProblem !== null}
+              aria-describedby={renameProblem ? 'rename-nome-error' : undefined}
               value={renameNome}
               onChange={(event) => setRenameNome(event.target.value)}
             />
             {renameProblem && (
-              <p role="alert" className="text-sm text-destructive">
+              <p id="rename-nome-error" role="alert" className="text-sm text-destructive">
                 {renameProblem.detail}
               </p>
             )}

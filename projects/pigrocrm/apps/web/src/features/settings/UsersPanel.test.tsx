@@ -519,6 +519,7 @@ describe('UsersPanel', () => {
       await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
       expect(await screen.findByText('Nome non valido.')).toBeInTheDocument()
       expect(screen.getByRole('dialog')).toBeInTheDocument()
+      expect(screen.getByLabelText('Nome')).toHaveAccessibleDescription('Nome non valido.')
     })
   })
 
