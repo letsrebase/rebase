@@ -556,6 +556,21 @@ def main() -> int:
     # A pass is reusable by the pre-push hook only if it tested exactly HEAD: a run over
     # uncommitted files proves nothing about the commit once they are stashed.
     clean_at_start = not paths_dirty(root)
+    if args.hook:
+        # The checks run on this checkout, so they prove something about the push only
+        # when the push sends this checkout's HEAD and the tree holds nothing else.
+        other = [oid for oid in pushed_commits(root) if oid != head]
+        if other:
+            die(
+                f"this push sends {other[0][:9]}, not the checked-out {head[:9]}, "
+                "and preflight tests only HEAD. Push it from a checkout of that commit, or "
+                "set PREFLIGHT_SKIP=1 once it is verified some other way."
+            )
+        if not clean_at_start:
+            die(
+                "uncommitted changes: the checks would test the working tree, not "
+                "the commit being pushed. Commit or stash them first."
+            )
 
     if args.all or not merge_base:
         # No base to diff against (a fresh clone without origin/main, a renamed trunk):
@@ -655,6 +670,22 @@ def main() -> int:
 
 def paths_dirty(root: Path) -> bool:
     return bool(git("status", "--porcelain", cwd=root))
+
+
+def pushed_commits(root: Path) -> list[str]:
+    """The commits a push sends, from the lines git writes to a pre-push hook's stdin."""
+    if sys.stdin is None or sys.stdin.isatty():
+        return []
+    out = []
+    for line in sys.stdin.read().splitlines():
+        parts = line.split()
+        if len(parts) != 4 or set(parts[1]) == {"0"}:
+            continue  # malformed, or a branch deletion, which sends no commit
+        try:
+            out.append(git("rev-parse", f"{parts[1]}^{{commit}}", cwd=root))
+        except RuntimeError:
+            out.append(parts[1])
+    return out
 
 
 def record_pass(root: Path, head: str, base: str, ids: list[str], clean_at_start: bool) -> None:

@@ -6,10 +6,10 @@
     ".agents/skills/linear-ticket/SKILL.md": "3e19879221e9b1f6aa768ff8213dc97aefedf956e5c319312b22c1f6596173f6",
     ".agents/skills/pr-creation/SKILL.md": "c1d1b88668da274e0662f76667b9cffff54a3cbdb104bcf1e16e57241c0d56f0",
     ".github/PULL_REQUEST_TEMPLATE.md": "0beb1310fa6344563ba2b2b7a2576e565ca1ab574266b3fcaf304e4d94b634ab",
-    ".github/kit/README.md": "1a50407859eb2d721a3ceee3c5f4d6ee4c869d97fb4100d4f4a61388d2eae25e",
+    ".github/kit/README.md": "9d790823febb4e50a58d7b24d7767f74bbdf0821b537287554c2cca6c07a3b4d",
     ".github/kit/bin/kit.py": "67f3bf3a4cd64451d572ec2df922a56dc484abef38e4949feb0d307f6c993484",
     ".github/kit/bin/pr_lint.py": "1c8df301fc8ea24fe2dbf6a0ae98736748e70fe6928b274498d5759b704ace0e",
-    ".github/kit/bin/preflight": "b82f4c8caaa4b5e39e5ec3b215a115138986136f09a27c75f3d9d8efb2330dcc"
+    ".github/kit/bin/preflight": "b620537941da89d7330e71fbebf6ca012c2c96509ae41fe6a75c145b584b3cd5"
   },
   "mirror": {
     "client-repo-onboarding/SKILL.md": "bfccad221991f34b8b645904a3fe4071b230583bf59cf8e71e167e3d3b281bff",

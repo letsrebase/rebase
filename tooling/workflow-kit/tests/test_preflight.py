@@ -130,6 +130,58 @@ class ChangedPaths(unittest.TestCase):
         hook = self.root / ".git" / "hooks" / "pre-push"
         self.assertIn(".github/kit/bin/preflight", hook.read_text(encoding="utf-8"))
 
+    def hook(self, stdin: str) -> subprocess.CompletedProcess:
+        """Run preflight as git's pre-push hook would, with `stdin` as the ref lines."""
+        return subprocess.run(
+            ["python3", str(SOURCE), "--hook", "--base", "main"],
+            cwd=self.root,
+            input=stdin,
+            capture_output=True,
+            text=True,
+        )
+
+    def add_manifest(self):
+        (self.root / ".github").mkdir()
+        (self.root / ".github" / "preflight.json").write_text(
+            '{"checks": [{"id": "ok", "run": "true"}]}', encoding="utf-8"
+        )
+        git(self.root, "add", ".")
+        git(self.root, "commit", "-q", "-m", "manifest")
+
+    def test_the_hook_refuses_uncommitted_changes(self):
+        self.add_manifest()
+        (self.root / "projects" / "hub" / "old.txt").write_text("fixed\n", encoding="utf-8")
+        run = self.hook("")
+        self.assertEqual(run.returncode, 2)
+        self.assertIn("uncommitted changes", run.stderr)
+
+    def test_the_hook_refuses_a_push_of_another_commit(self):
+        self.add_manifest()
+        git(self.root, "branch", "other")
+        git(self.root, "checkout", "-q", "other")
+        (self.root / "projects" / "hub" / "old.txt").write_text("other\n", encoding="utf-8")
+        git(self.root, "commit", "-q", "-am", "other")
+        other = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=self.root, capture_output=True, text=True
+        ).stdout.strip()
+        git(self.root, "checkout", "-q", "main")
+        zero = "0" * 40
+        run = self.hook(f"refs/heads/other {other} refs/heads/other {zero}\n")
+        self.assertEqual(run.returncode, 2)
+        self.assertIn("preflight tests only HEAD", run.stderr)
+
+    def test_the_hook_passes_a_push_of_head_and_a_deletion(self):
+        self.add_manifest()
+        head = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=self.root, capture_output=True, text=True
+        ).stdout.strip()
+        zero = "0" * 40
+        run = self.hook(
+            f"refs/heads/main {head} refs/heads/main {zero}\n"
+            f"(delete) {zero} refs/heads/gone {head}\n"
+        )
+        self.assertEqual(run.returncode, 0, run.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

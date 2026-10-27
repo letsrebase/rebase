@@ -28,3 +28,9 @@ python3 .github/kit/bin/preflight --list                # when .github/preflight
 ```
 
 On Windows, use `py` where these say `python3`.
+
+`preflight --install-hook` writes a pre-push hook into the repository's own git
+directory, never into a `core.hooksPath` directory, which it refuses with the line to add
+there instead. The hook tests the checked-out commit, so it refuses a push that sends a
+different commit (another branch, say) and a push from a tree with uncommitted changes.
+`PREFLIGHT_SKIP=1` bypasses it.
