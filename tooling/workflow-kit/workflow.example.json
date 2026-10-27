@@ -1,0 +1,84 @@
+{
+  "version": 1,
+  "tracker": {
+    "kind": "linear",
+    "workspace": "<workspace url key>",
+    "team": "<team name>",
+    "prefix": "<PREFIX>",
+    "language": "English",
+    "contract": "docs/tracker.md",
+    "labels": {
+      "type": [
+        "fix",
+        "feature",
+        "refactor",
+        "chore",
+        "docs",
+        "test",
+        "ci"
+      ],
+      "area": [
+        "area:api",
+        "area:web"
+      ]
+    }
+  },
+  "github": {
+    "merge": "squash",
+    "required_check": "ci",
+    "review_bots": []
+  },
+  "commits": {
+    "types": [
+      "feat",
+      "fix",
+      "refactor",
+      "perf",
+      "test",
+      "docs",
+      "ci",
+      "chore",
+      "style",
+      "revert"
+    ],
+    "scope_required": true,
+    "scopes": [
+      "api",
+      "web",
+      "ci",
+      "repo",
+      "deps"
+    ]
+  },
+  "pr": {
+    "title_max": 72,
+    "card_line": true,
+    "milestone_card_line": true,
+    "exempt_authors": [
+      "dependabot[bot]",
+      "app/dependabot"
+    ],
+    "sections": [
+      {
+        "title": "What this changes",
+        "required": true
+      },
+      {
+        "title": "How I verified it",
+        "required": true
+      },
+      {
+        "title": "What did not change, on purpose",
+        "when": "a reviewer could assume a neighbouring thing moved"
+      },
+      {
+        "title": "Anything a reviewer should look at twice"
+      },
+      {
+        "title": "Screenshots and video",
+        "required": true
+      }
+    ]
+  },
+  "extras": "docs/agents"
+}

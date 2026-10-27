@@ -1,22 +1,28 @@
 ---
 name: linear-content
-description: Use when writing anything that lands on Linear for this repository: an issue title and body, a comment, a closing comment, a project description, a project status update. The shape, the language and what never goes in, with templates, so every card reads the same way. Triggers whenever `save_issue`, `save_comment`, `save_project` or `save_status_update` is about to be called.
+description: >-
+  Use when writing anything that lands on Linear for this repository: an issue title and body, a comment, a closing comment, a project description, a project status update. The shape, the language and what never goes in, with templates, so every card reads the same way. Triggers whenever `save_issue`, `save_comment`, `save_project` or `save_status_update` is about to be called.
 ---
 
 # Writing on Linear
 
-The board's job is that two people can see at a glance who is on what and how far.
-Write for a reader skimming the list, not for one studying a card: what was decided
+Part of the workflow kit (`.github/kit/README.md`); the board is the one
+`.github/workflow.json` names under `tracker`.
+
+The board's job is that the people on it can see at a glance who is on what and how
+far. Write for a reader skimming the list, not for one studying a card: what was decided
 and what was left undone on purpose, in as few lines as carry them. The full record
 is the commit, the PR and the project's docs; the card indexes them.
 
 ## Language
 
-English, first person, plain words, the way you would say it to a colleague. No em
-dashes, no "not just X but Y", no emoji, no selling ("robust", "seamless", "powerful").
-Italian only inside «guillemets» when quoting what the product says to its users or what
-the person you work for said. Real newlines, never `\n` escapes. Markdown headings are bold lead words, not
-`#` titles: a card is not a document.
+The board's language is `tracker.language` in `workflow.json`, English when it is not
+set; identifiers (labels, states, branches, code) stay English whatever it is. First
+person, plain words, the way you would say it to a colleague. No em dashes, no "not just
+X but Y", no emoji, no selling ("robust", "seamless", "powerful"). Another language only
+inside «guillemets», when quoting what the product says to its users or what the person
+you work for said. Real newlines, never `\n` escapes. Markdown headings are bold lead
+words, not `#` titles: a card is not a document.
 
 ## The title
 
@@ -34,7 +40,7 @@ means the second half belongs in the body.
 
 ## The issue body
 
-**It fits one screen.** At most four bold lead words, each two or three sentences.
+**It fits one screen.** At most five bold lead words, each two or three sentences.
 Skip one only when it has nothing to say, never because it is inconvenient. Point at
 the file and line, the spec section, the run id; never paste them. The full
 measurement, the design options and the long scan belong to the commit, the PR or a
@@ -75,7 +81,7 @@ that says which kind it is, so a reader can skim the thread.
 - **Scope.** `**Scope, narrowed:** ...` or `**Scope, grown:** ...` What the card now
   covers that it did not, or no longer covers, and why: a neighbour found late, a file
   that had to move too, a piece left for its own card (with the id, once filed).
-- **Waiting.** `**Waiting on Lorenzo:** ...` What you are stopped on, from whom, and what
+- **Waiting.** `**Waiting on the lead:** ...` What you are stopped on, from whom, and what
   you will do when it arrives. One comment when you stop, one when it lifts.
 - **Decision.** `**MCP, decided.** ...` What was chosen, the reason, where it is recorded
   (`DECISIONS.md` row, spec paragraph). If it is the lead's to take: the question, the
@@ -106,7 +112,7 @@ description is one sentence starting `Closes when` with the observable check.
 
 For `save_project`: `summary` is one sentence stating the outcome (under 255
 chars). The description is at most a short paragraph: what the project is, where it
-lives (`projects/<name>/`), how it deploys (the tag pattern), and what is open now.
+lives (the directory), how it deploys (the tag pattern, when it has one), and what is open now.
 The architecture it builds, the package list and the design record live in the
 project's own `AGENTS.md` and `docs/`; the description points at them in one line.
 `links` to the code and the live surface.
@@ -126,11 +132,11 @@ command, never from a title; a card closed by a merge is not proof a deploy ran.
 
 ## References
 
-- Commits: seven-character sha in backticks, `03c4461`. Tags as written, `pigrocrm-v0.1.0`.
-- CI: the run id and the job name that matters, `run 34351172643, pigrocrm · web`.
+- Commits: seven-character sha in backticks, `03c4461`. Tags as written, `web-v0.1.0`.
+- CI: the run id and the job name that matters, `run 34351172643, web · lint`.
 - Code: `path/from/repo/root.py:123`, or the symbol in backticks.
 - PRs and pages: the full URL.
-- Issues: `REB-N`, only one you have read.
+- Issues: `<prefix>-N`, only one you have read.
 
 ## What never goes on the board
 

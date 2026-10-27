@@ -114,17 +114,18 @@ none of them are silently skipped just because the repository and the project ex
 
 ## Keeping the template in step
 
-`tooling/client-repo-starter/template/` and `letsrebase/point` (today's only repo
-built from it) each carry their own copy of `AGENTS.md` and the three skills, not a
-link back to this repository's own `docs/tracker.md` or `.claude/skills/`. An edit
-here that is not `rebase`-team-specific (an API quirk, a habit like closing a
-finished project once its issues are all terminal, a naming rule) does not reach
-either copy on its own.
+The three skills (`linear-ticket`, `linear-content`, `pr-creation`) and the PR checks
+are the workflow kit's now (`tooling/workflow-kit/`, root `AGENTS.md` § Conventions).
+Until `new-client-repo.mjs` renders them from the kit (REB-821),
+`tooling/client-repo-starter/template/` and `letsrebase/point` (today's only repo built
+from it) still carry their own older copies, and an edit to `AGENTS.md` or
+`docs/tracker.md` here that is not `rebase`-team-specific (an API quirk, a habit like
+closing a finished project once its issues are all terminal, a naming rule) reaches
+neither on its own.
 
-Fold the same edit into `tooling/client-repo-starter/template/` in the same pull
-request that makes it here: the two are meant to read as one contract with different
-team names filled in, and a PR that changes one without the other is incomplete, not
-deferred.
+So, until then: fold a change to the kit's skills, or a non-`rebase`-specific change to
+the contract, into `tooling/client-repo-starter/template/` in the same pull request that
+makes it here. A PR that changes one without the other is incomplete, not deferred.
 
 For a repository that already exists (`point`, and any client repo after it), the
 fold cannot land in this PR: it is that repository's own change, reviewed there.

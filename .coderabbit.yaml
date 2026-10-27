@@ -22,7 +22,7 @@ tone_instructions: >-
 reviews:
   profile: chill
   # The PR body is the author's: the template's sections, then `Linear: REB-N.` as
-  # its last line (.claude/skills/pr-creation). Appended to the body, the summary
+  # its last line (.agents/skills/pr-creation). Appended to the body, the summary
   # lands after that line and is rewritten on every push.
   high_level_summary_in_walkthrough: true
   in_progress_fortune: false
@@ -55,38 +55,15 @@ reviews:
     # to #366, and none of them added one.
     docstrings:
       mode: "off"
-    # Skipped on every run so far ("CodeRabbit's high-level summary is enabled")
-    # and blind to the final `Linear:` line: the custom check below is the
-    # template, that line included.
+    # The title and the body's template (sections, order, the closing `Linear:`
+    # line) are checked by `pr_lint.py`, a step of the required `ci` (REB-816), so
+    # the built-in description and title checks and the custom template check that
+    # used to warn here are off: one blocking answer instead of two that disagreed.
     description:
       mode: "off"
-    # The skill also caps the title at 72 characters. A model counts characters
-    # badly near a limit, so the length is left to a person here.
     title:
-      mode: warning
-      requirements: >-
-        Conventional Commits, as .claude/skills/pr-creation § Title says:
-        `type(scope): subject`. `type` is one of feat, fix, refactor, perf, test,
-        docs, ci, chore, style, revert. `scope` is present, lowercase, and names
-        the project, app or package the change lands in, such as web, api, core,
-        mcp, hub, website, brand, ci, repo, tooling, infra, ui; two are separated
-        by a comma. The subject starts with a lowercase letter, has no Title Case
-        and no trailing period. Length and grammatical mood are not judged by
-        this check.
+      mode: "off"
     custom_checks:
-      - name: PR body follows the template
-        mode: warning
-        instructions: >-
-          Read the PR description, leaving out every block a bot generated: text
-          between `<!-- This is an auto-generated comment` and `<!-- end of
-          auto-generated comment` markers, and text between `<!--
-          greptile_comment -->` and `<!-- /greptile_comment -->`. Pass when what
-          remains contains the headings `## What this changes`, `## How I
-          verified it` and `## Screenshots and video`, in that order, and its last
-          non-empty line is exactly `Linear: REB-<number>.` or `Linear: milestone
-          <name> (REB-<number>, REB-<number>, ...)`. Otherwise fail, naming each
-          missing heading or quoting the last line. Pass without checking when
-          the PR was opened by a bot account.
       - name: No em dashes in added English prose
         mode: warning
         instructions: >-

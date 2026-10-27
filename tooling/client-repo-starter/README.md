@@ -107,7 +107,7 @@ For a genuinely new repository:
    same fields `docs/tracker.md` uses for the product team: an outcome name that is
    a verb and the work it does. Whoever else the spec names as a member (never
    assumed to be a fixed pair) is added separately, since `save_project` has no
-   member field for them (`.claude/skills/client-repo-onboarding/SKILL.md` § Step 1).
+   member field for them (`.agents/skills/client-repo-onboarding/SKILL.md` § Step 1).
 2. **Run the script**:
    ```bash
    node tooling/client-repo-starter/new-client-repo.mjs \
@@ -145,7 +145,7 @@ project-update paragraph) does not reach that repository just because the script
 runs again, since an existing file is skipped without `--force`. The moment such a
 change lands here, file a Linear issue in that repository's own team (never in
 `rebase`'s) naming the drift, rather than trusting it will be remembered later
-(`.claude/skills/client-repo-onboarding/` § Keeping the template in step). Carrying
+(`.agents/skills/client-repo-onboarding/` § Keeping the template in step). Carrying
 the change over is the same by-hand fold as the pilot's own `WARP.md` merge above,
 not a second run of the script, and it lands as its own small PR on that repository,
 reviewed the same way, closing the issue that tracked it.
@@ -191,8 +191,8 @@ Three knobs the script takes, because not every contract carries the same weight
   also writes a starter `.coderabbit.yaml`. Either flag alone renders that
   reviewer's own review loop; both together render the adversarial pass as well
   (CodeRabbit checks Greptile's findings against the code), the same loop
-  `letsrebase/rebase` runs on itself (`.claude/skills/pr-creation/` § After `gh pr
-  create`, step 3). Neither on renders no review-gate section at all.
+  `letsrebase/rebase` runs on itself (`docs/agents/pr-creation.md` § The review loop).
+  Neither on renders no review-gate section at all.
 
 Commit conventions and the PR template are never configurable: every contract uses
 the same shape `letsrebase/rebase` does (`docs/design/DECISIONS.md`, 2026-09-24).

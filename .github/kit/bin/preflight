@@ -1,0 +1,713 @@
+#!/usr/bin/env python3
+"""preflight - run a repo's checks locally, scoped to what actually changed.
+
+Part of the workflow kit (tooling/workflow-kit in letsrebase/rebase); every repo that
+uses the kit carries this copy at .github/kit/bin/preflight. Run it with
+`python3 .github/kit/bin/preflight` from anywhere in the checkout.
+
+Why this exists: GitHub Actions was doing work that a local machine can do for
+free and faster. Every push to a PR branch re-ran a repo's whole suite on a
+hosted runner, so a one-line change cost the same as a rewrite and the answer
+arrived minutes after the push instead of before it. preflight moves that work
+in front of the push: it diffs the branch against its base, matches the changed
+paths against the repo's own check manifest, and runs only the checks those
+paths can break, in parallel.
+
+The manifest is `.github/preflight.json` at the repo root. JSON on purpose:
+every machine can parse it with no dependency, and an agent can generate and
+validate one without a YAML library. Schema:
+
+    {
+      "base": "origin/main",          // optional, default origin/<default branch>
+      "jobs": 4,                      // optional, max concurrent checks
+      "checks": [
+        {
+          "id": "lint",               // required, unique, used in output + state
+          "run": "pnpm lint",         // required, shell command from the repo root
+          "when": ["**/*.ts"],        // optional, omit or ["**"] = always runs
+          "unless": ["docs/**"],      // optional, drops paths from the match
+          "why": "free-text note",    // optional, for whoever reads the file next
+          "setup": "docker compose up -d --wait",   // optional, before `run`
+          "teardown": "docker compose down -v",     // optional, always after
+          "serial": false,            // optional, true = exclusive machine-wide
+          "lock": "postgres",         // optional, names the exclusive resource
+          "env": {"FOO": "bar"}       // optional
+        }
+      ]
+    }
+
+Usage (`preflight` below is `python3 .github/kit/bin/preflight`):
+    preflight                 run the checks the current diff can break
+    preflight --all           run every check in the manifest
+    preflight --list          show what would run, and which paths matched
+    preflight --base <ref>    compare against something other than the manifest base
+    preflight --changed       print the changed paths and exit
+    preflight --json          machine-readable result on stdout
+    preflight --install-hook  install .git/hooks/pre-push in this repo
+    preflight --hook          what the hook calls: reuses a pass already recorded
+    preflight lint test        run only these check ids, whatever the diff says
+
+A `serial` check holds an exclusive lock under ~/.cache/preflight for the whole
+machine, not just for this run, because one machine often runs several checkouts at
+once: a check that binds host port 5432 or eats several GiB must not run beside the
+same check in another checkout. `lock` names the resource so unrelated heavy checks
+do not queue behind each other; it defaults to `heavy`.
+
+Each check's `run`, `setup` and `teardown` runs under `bash -o pipefail`, so on Windows
+preflight needs Git Bash or WSL on PATH; preflight itself is Python 3.10 with no
+dependency.
+
+Exit codes: 0 all matched checks passed, 1 a check failed, 2 usage or manifest
+error. PREFLIGHT_SKIP=1 makes --hook exit 0 without running anything.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+
+MANIFEST = ".github/preflight.json"
+
+HOOK = """#!/bin/sh
+# Installed by `preflight --install-hook`. The point of this hook is that the
+# expensive verification happens here, before a PR exists, instead of on a
+# GitHub runner after every push. PREFLIGHT_SKIP=1 bypasses it.
+root=$(git rev-parse --show-toplevel) || exit 1
+py=$(command -v python3 || command -v python) || { echo "preflight: no python3 on PATH" >&2; exit 1; }
+exec "$py" "$root/.github/kit/bin/preflight" --hook
+"""
+
+
+# --------------------------------------------------------------------------- #
+# git
+
+
+def git(*args: str, cwd: Path | None = None, raw: bool = False) -> str:
+    # Git writes paths as UTF-8 bytes; decoding with the locale's encoding (cp1252 on
+    # many Windows machines) raises on a valid filename before any check runs.
+    p = subprocess.run(
+        ("git",) + args, cwd=cwd, capture_output=True, check=False,
+        encoding="utf-8", errors="surrogateescape",
+    )
+    if p.returncode != 0:
+        raise RuntimeError(f"git {' '.join(args)}: {p.stderr.strip()}")
+    # `raw=True` returns stdout exactly as git wrote it. Every other caller
+    # wants the usual trailing-newline trim, but `git status --porcelain -z`
+    # NUL-terminates fixed-width status records, and a generic .strip() eats
+    # the leading space of a leading " M path" record (an ordinary unstaged
+    # modification, the common case) along with it, silently truncating the
+    # first character of that path. A truncated path just misses every glob
+    # it should have matched, so the check it should have triggered is
+    # skipped and preflight reports green: the same shape of failure as the
+    # cascade-skip this tool exists to catch on the CI side.
+    return p.stdout if raw else p.stdout.strip()
+
+
+def repo_root() -> Path:
+    return Path(git("rev-parse", "--show-toplevel"))
+
+
+def strip_git_env() -> list[str]:
+    """Drop the variables that pin git to one repository, so a check sees none.
+
+    A hook runs with GIT_DIR, GIT_INDEX_FILE, GIT_PREFIX and the rest of
+    `git rev-parse --local-env-vars` exported. Those are inherited by every
+    check this tool then runs, and any test that shells out to git inside a
+    temporary repository of its own silently operates on *this* repository
+    instead. Measured 2026-09-07 in one of our repos: a test that builds a
+    throwaway repository passes by hand and fails four assertions under `--hook` with
+    "Command failed: git commit -q -m first commit", because the commit was
+    reading this repository's index rather than the temp repo's. A check
+    expects discovery from its own cwd, which is what removing these
+    restores. This process's own git calls are unaffected: every one of them
+    passes an explicit cwd.
+
+    GIT_CONFIG* is deliberately kept, even though git lists it as local. Those
+    carry `-c` overrides rather than a repository location, and some agent
+    harnesses export a pair of them into every shell; dropping those would
+    silently change how a check behaves under preflight versus by hand, which
+    is the class of bug this function exists to remove, not to add.
+    """
+    names = [
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_COMMON_DIR", "GIT_DIR",
+        "GIT_GRAFT_FILE", "GIT_IMPLICIT_WORK_TREE", "GIT_INDEX_FILE",
+        "GIT_OBJECT_DIRECTORY", "GIT_PREFIX", "GIT_SHALLOW_FILE",
+        "GIT_WORK_TREE",
+    ]
+    return [name for name in names if os.environ.pop(name, None) is not None]
+
+
+def git_path(name: str, root: Path) -> Path:
+    """Resolve a path inside the git directory, correctly inside a worktree.
+
+    `<root>/.git/<name>` is wrong in a linked worktree, where `.git` is a *file*
+    holding `gitdir: <main>/.git/worktrees/<name>` and appending to it raises
+    NotADirectoryError. `git rev-parse --git-path` also picks the right one of the
+    two git directories per path: `hooks` resolves to the shared one, so installing
+    the hook once covers every worktree, while `preflight` resolves to the
+    worktree's own, so two branches never share a recorded pass.
+    """
+    # git answers relative to `root` (`.git/preflight`); resolve it there, never
+    # against this process's own cwd, which is wherever the user ran preflight from.
+    path = Path(git("rev-parse", "--git-path", name, cwd=root))
+    return path if path.is_absolute() else (root / path).resolve()
+
+
+def default_base(root: Path) -> str:
+    """origin/HEAD when the remote publishes one, else origin/main."""
+    try:
+        ref = git("symbolic-ref", "--quiet", "refs/remotes/origin/HEAD", cwd=root)
+        return ref.removeprefix("refs/remotes/")
+    except RuntimeError:
+        return "origin/main"
+
+
+def changed_paths(root: Path, base: str) -> tuple[list[str], str]:
+    """Committed diff against the merge base, plus everything uncommitted.
+
+    Both halves matter: an agent that has not committed yet still wants the
+    right checks, and a branch several commits along wants all of them.
+    """
+    try:
+        merge_base = git("merge-base", base, "HEAD", cwd=root)
+    except RuntimeError:
+        # A base that does not exist locally (fresh clone, renamed trunk) must
+        # not silently degrade into "nothing changed", which would run nothing.
+        merge_base = ""
+
+    paths: set[str] = set()
+    if merge_base:
+        # --no-renames: a move lists its old path too, so the checks of the directory
+        # a file left still run (the callers of a moved module are there).
+        # -z: git quotes a path with non-ASCII characters, quotes or tabs otherwise,
+        # and a quoted path matches no glob.
+        committed = git(
+            "diff", "--name-only", "-z", "--no-renames", f"{merge_base}..HEAD", cwd=root, raw=True
+        )
+        paths.update(p for p in committed.split("\0") if p)
+    # raw=True: a generic .strip() on this call would eat the leading space
+    # of a leading " M path" record (see the `git()` docstring above it).
+    # -z NUL-terminates every record, including the last, so the final
+    # split element is always an empty string to discard, never content.
+    # --untracked-files=all: a new directory is listed file by file, not as one `dir/`
+    # entry that no `**/*.py` glob would ever match.
+    status_z = git(
+        "status", "--porcelain", "-z", "--untracked-files=all", cwd=root, raw=True
+    ).split("\0")
+    if status_z and status_z[-1] == "":
+        status_z = status_z[:-1]
+    i = 0
+    while i < len(status_z):
+        line = status_z[i]
+        i += 1
+        if len(line) < 4:
+            continue
+        paths.add(line[3:])
+        # A rename or copy is "R  new\0old" (or " R new\0old" when the worktree side
+        # renamed an intent-to-add file): the second record is a bare path with no
+        # status prefix, taken whole rather than cut like a status line.
+        if any(c in "RC" for c in line[:2]) and i < len(status_z):
+            paths.add(status_z[i])
+            i += 1
+    return sorted(p for p in paths if p), merge_base
+
+
+# --------------------------------------------------------------------------- #
+# glob matching
+
+
+def glob_to_re(pattern: str) -> re.Pattern[str]:
+    """Git-style glob: `**` crosses directories, `*` and `?` do not.
+
+    Written out rather than handed to fnmatch, whose `*` matches `/` and would
+    make `src/*.ts` match `src/a/b.ts`. A bare directory prefix (`docs/`) is
+    treated as `docs/**`, because that is what everybody means by it.
+    """
+    if pattern.endswith("/"):
+        pattern += "**"
+    out = ["(?s:"]
+    i, n = 0, len(pattern)
+    while i < n:
+        c = pattern[i]
+        if c == "*":
+            if pattern.startswith("**", i):
+                i += 2
+                if pattern.startswith("/", i):
+                    i += 1
+                    out.append("(?:.*/)?")  # `a/**/b` also matches `a/b`
+                else:
+                    out.append(".*")
+                continue
+            out.append("[^/]*")
+        elif c == "?":
+            out.append("[^/]")
+        elif c == "[":
+            j = pattern.find("]", i + 1)
+            if j < 0:
+                out.append(re.escape(c))
+            else:
+                body = pattern[i + 1 : j].replace("\\", "\\\\")
+                if body.startswith("!"):
+                    body = "^" + body[1:]
+                out.append(f"[{body}]")
+                i = j + 1
+                continue
+        else:
+            out.append(re.escape(c))
+        i += 1
+    out.append(")\\Z")
+    return re.compile("".join(out))
+
+
+def matches(paths: list[str], patterns: list[str]) -> list[str]:
+    res = [glob_to_re(p) for p in patterns]
+    return [p for p in paths if any(r.match(p) for r in res)]
+
+
+# --------------------------------------------------------------------------- #
+# manifest
+
+
+class Check:
+    __slots__ = ("id", "run", "when", "unless", "why", "setup", "teardown", "serial",
+                 "lock", "env")
+
+    def __init__(self, raw: dict, index: int):
+        self.id = raw.get("id") or f"check-{index}"
+        self.run = raw.get("run")
+        self.when = raw.get("when") or ["**"]
+        self.unless = raw.get("unless") or []
+        self.why = raw.get("why") or ""
+        self.setup = raw.get("setup")
+        self.teardown = raw.get("teardown")
+        self.serial = bool(raw.get("serial"))
+        # Named so two repos can share one exclusive resource (`"lock": "postgres"`)
+        # while an unrelated heavy check does not have to wait behind them.
+        self.lock = raw.get("lock") or "heavy"
+        self.env = raw.get("env") or {}
+
+    def selects(self, paths: list[str]) -> list[str]:
+        hit = matches(paths, self.when)
+        if self.unless:
+            dropped = set(matches(hit, self.unless))
+            hit = [p for p in hit if p not in dropped]
+        return hit
+
+
+def load_manifest(root: Path) -> tuple[dict, list[Check]]:
+    path = root / MANIFEST
+    if not path.exists():
+        die(
+            f"no {MANIFEST} in {root}.\n"
+            "Every repo that runs checks needs one: it is what tells preflight which\n"
+            "commands a given path can break. See `preflight --help` for the schema.",
+            2,
+        )
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        die(f"{MANIFEST} is not valid JSON: {exc}", 2)
+
+    raw = data.get("checks")
+    if not isinstance(raw, list) or not raw:
+        die(f"{MANIFEST} has no `checks` array", 2)
+
+    checks, seen = [], set()
+    for i, item in enumerate(raw):
+        if not isinstance(item, dict):
+            die(f"{MANIFEST}: checks[{i}] is not an object", 2)
+        c = Check(item, i)
+        if not c.run:
+            die(f"{MANIFEST}: check `{c.id}` has no `run`", 2)
+        if c.id in seen:
+            die(f"{MANIFEST}: duplicate check id `{c.id}`", 2)
+        seen.add(c.id)
+        checks.append(c)
+    return data, checks
+
+
+# --------------------------------------------------------------------------- #
+# running
+
+
+class Result:
+    __slots__ = ("check", "code", "seconds", "log")
+
+    def __init__(self, check: Check, code: int, seconds: float, log: Path):
+        self.check, self.code, self.seconds, self.log = check, code, seconds, log
+
+
+# A `serial` check is exclusive across the whole machine, not just within one run.
+# Measured on a shared development machine: eight agents each running a repo's heavy
+# check at once put it at 14 of 15 GiB and 19 of 31 GiB of swap, and one suite was
+# SIGKILLed at 17 minutes, which reads exactly like a real failure and is not one.
+# The same lock also settles the fixed host ports several repos publish (5432 and
+# friends): two repos' Postgres-bound checks can no longer collide.
+LOCK_DIR = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "preflight"
+
+
+def heavy_lock(name: str):
+    LOCK_DIR.mkdir(parents=True, exist_ok=True)
+    fh = (LOCK_DIR / f"{name}.lock").open("a+")
+    try:
+        import fcntl
+    except ImportError:  # Windows: msvcrt locks a byte range instead of the whole file
+        import msvcrt
+
+        fh.seek(0)
+        try:
+            msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+        except OSError:
+            print(f"  wait  holding for the `{name}` lock (another checkout is running a "
+                  "serial check)", file=sys.stderr)
+            while True:
+                try:
+                    msvcrt.locking(fh.fileno(), msvcrt.LK_LOCK, 1)
+                    break
+                except OSError:
+                    time.sleep(1)
+        return fh
+    try:
+        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        print(
+            f"  wait  holding for the `{name}` lock (another checkout is running a "
+            "serial check)", file=sys.stderr,
+        )
+        fcntl.flock(fh, fcntl.LOCK_EX)
+    return fh
+
+
+def run_check(check: Check, root: Path, logdir: Path) -> Result:
+    log = logdir / f"{check.id.replace('/', '_')}.log"
+    env = {**os.environ, **{k: str(v) for k, v in check.env.items()}}
+    env["PREFLIGHT"] = "1"
+    lock = heavy_lock(check.lock) if check.serial else None
+    started = time.monotonic()
+    code = 0
+    with log.open("w") as fh:
+        for phase, cmd in (("setup", check.setup), ("run", check.run)):
+            if not cmd:
+                continue
+            fh.write(f"$ {cmd}\n")
+            fh.flush()
+            code = subprocess.run(
+                ["bash", "-o", "pipefail", "-c", cmd],
+                cwd=root, env=env, stdout=fh, stderr=subprocess.STDOUT, check=False,
+            ).returncode
+            if code != 0:
+                fh.write(f"\n[preflight] {phase} exited {code}\n")
+                break
+        if check.teardown:
+            fh.write(f"$ {check.teardown}\n")
+            fh.flush()
+            subprocess.run(
+                ["bash", "-o", "pipefail", "-c", check.teardown],
+                cwd=root, env=env, stdout=fh, stderr=subprocess.STDOUT, check=False,
+            )
+    if lock is not None:
+        lock.close()  # releasing the flock with it
+    return Result(check, code, time.monotonic() - started, log)
+
+
+def execute(selected: list[Check], root: Path, jobs: int) -> list[Result]:
+    logdir = git_path("preflight", root) / "logs"
+    if logdir.exists():
+        shutil.rmtree(logdir, ignore_errors=True)
+    logdir.mkdir(parents=True, exist_ok=True)
+
+    parallel = [c for c in selected if not c.serial]
+    serial = [c for c in selected if c.serial]
+    results: list[Result] = []
+
+    if parallel:
+        with ThreadPoolExecutor(max(1, min(jobs, len(parallel)))) as ex:
+            futures = [ex.submit(run_check, c, root, logdir) for c in parallel]
+            # as_completed, so a 20-second lint reports while a 3-minute test
+            # suite is still running: the first failure is visible immediately
+            # instead of after the slowest check in the batch.
+            for fut in as_completed(futures):
+                res = fut.result()
+                results.append(res)
+                report_one(res)
+    for c in serial:
+        res = run_check(c, root, logdir)
+        results.append(res)
+        report_one(res)
+    return results
+
+
+# --------------------------------------------------------------------------- #
+# output
+
+
+def colour(code: str, text: str) -> str:
+    return text if not sys.stderr.isatty() else f"\033[{code}m{text}\033[0m"
+
+
+def report_one(res: Result) -> None:
+    mark = colour("32", "PASS") if res.code == 0 else colour("31", "FAIL")
+    print(f"  {mark}  {res.check.id:<28} {res.seconds:6.1f}s", file=sys.stderr)
+
+
+def die(message: str, code: int = 2) -> None:
+    print(f"preflight: {message}", file=sys.stderr)
+    raise SystemExit(code)
+
+
+# --------------------------------------------------------------------------- #
+# state, so a pass is not paid for twice
+
+
+def read_state(root: Path) -> dict:
+    path = git_path("preflight", root) / "state.json"
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def write_state(root: Path, sha: str, base: str, ids: list[str]) -> None:
+    path = git_path("preflight", root) / "state.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({"sha": sha, "base": base, "checks": ids, "at": int(time.time())})
+    )
+
+
+# --------------------------------------------------------------------------- #
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(add_help=False)
+    ap.add_argument("-h", "--help", action="store_true")
+    ap.add_argument("--all", action="store_true")
+    ap.add_argument("--list", action="store_true")
+    ap.add_argument("--changed", action="store_true")
+    ap.add_argument("--json", action="store_true")
+    ap.add_argument("--base")
+    ap.add_argument("--jobs", type=int)
+    ap.add_argument("--install-hook", action="store_true")
+    ap.add_argument("--hook", action="store_true")
+    ap.add_argument("only", nargs="*", help="run only these check ids")
+    args = ap.parse_args()
+
+    if args.help:
+        print(__doc__)
+        return 0
+
+    # Reported under --list rather than always: it is only ever non-empty
+    # under a hook, and that is exactly when somebody is asking why a check
+    # behaves differently there than it does by hand.
+    stripped = strip_git_env()
+
+    try:
+        root = repo_root()
+    except RuntimeError:
+        die("not inside a git repository")
+
+    if args.install_hook:
+        hooks = git_path("hooks", root)
+        hook = hooks / "pre-push"
+        # --path-format needs git 2.31; a relative answer is relative to `root`.
+        common = root / git("rev-parse", "--git-common-dir", cwd=root)
+        line = 'exec python3 "$(git rev-parse --show-toplevel)/.github/kit/bin/preflight" --hook'
+        if not hooks.resolve().is_relative_to(common.resolve()):
+            # core.hooksPath points elsewhere: a versioned directory in the repository,
+            # or a shared one every repository on the machine uses. Neither is ours.
+            where = "a versioned file" if hooks.resolve().is_relative_to(root.resolve()) else (
+                "a hook every repository using that directory runs"
+            )
+            die(
+                f"core.hooksPath points at {hooks}, so a hook there is {where}. "
+                f"Add this line to its pre-push hook instead:\n  {line}"
+            )
+        if hook.exists() and "preflight" not in hook.read_text(encoding="utf-8", errors="replace"):
+            die(f"{hook} exists and is not preflight's; add this line to it yourself:\n  {line}")
+        hook.parent.mkdir(parents=True, exist_ok=True)
+        hook.write_text(HOOK, newline="\n")
+        hook.chmod(0o755)
+        print(f"installed {hook}", file=sys.stderr)
+        return 0
+
+    if args.hook and os.environ.get("PREFLIGHT_SKIP") == "1":
+        print("preflight: skipped (PREFLIGHT_SKIP=1)", file=sys.stderr)
+        return 0
+
+    data, checks = load_manifest(root)
+    base = args.base or data.get("base") or default_base(root)
+    jobs = args.jobs or int(data.get("jobs") or 0) or min(4, os.cpu_count() or 2)
+
+    paths, merge_base = changed_paths(root, base)
+    if args.changed:
+        print("\n".join(paths))
+        return 0
+
+    head = git("rev-parse", "HEAD", cwd=root)
+    # A pass is reusable by the pre-push hook only if it tested exactly HEAD: a run over
+    # uncommitted files proves nothing about the commit once they are stashed.
+    clean_at_start = not paths_dirty(root)
+    if args.hook:
+        # The checks run on this checkout, so they prove something about the push only
+        # when the push sends this checkout's HEAD and the tree holds nothing else.
+        other = [oid for oid in pushed_commits(root) if oid != head]
+        if other:
+            die(
+                f"this push sends {other[0][:9]}, not the checked-out {head[:9]}, "
+                "and preflight tests only HEAD. Push it from a checkout of that commit, or "
+                "set PREFLIGHT_SKIP=1 once it is verified some other way."
+            )
+        if not clean_at_start:
+            die(
+                "uncommitted changes: the checks would test the working tree, not "
+                "the commit being pushed. Commit or stash them first."
+            )
+
+    if args.all or not merge_base:
+        # No base to diff against (a fresh clone without origin/main, a renamed trunk):
+        # "what changed" has no honest answer, so every check runs rather than none.
+        reason = "--all" if args.all else f"base {base} unresolved"
+        selected = list(checks)
+        why = {c.id: [reason] for c in checks}
+    else:
+        why = {}
+        selected = []
+        for c in checks:
+            hit = c.selects(paths)
+            if hit:
+                selected.append(c)
+                why[c.id] = hit
+    if args.only:
+        wanted = set(args.only)
+        unknown = wanted - {c.id for c in checks}
+        if unknown:
+            die(f"unknown check id(s): {', '.join(sorted(unknown))}")
+        selected = [c for c in checks if c.id in wanted]
+
+    if args.hook:
+        # A recorded pass is reused only when it covered every check this diff selects:
+        # `preflight lint` on its own records lint, never the tests the diff also needs.
+        state = read_state(root)
+        covered = set(state.get("checks", []))
+        if (
+            state.get("sha") == head
+            and not paths_dirty(root)
+            and {c.id for c in selected} <= covered
+        ):
+            print(
+                f"preflight: {head[:9]} already passed ({', '.join(sorted(covered))})",
+                file=sys.stderr,
+            )
+            return 0
+
+    if args.list:
+        print(f"base {base} ({merge_base[:9] or 'unresolved'}), {len(paths)} changed path(s)")
+        if stripped:
+            print(f"dropped git's repo-local env: {', '.join(stripped)}")
+        for c in checks:
+            hit = why.get(c.id, [])
+            state = colour("32", "run ") if c in selected else colour("90", "skip")
+            print(f"  {state} {c.id:<28} {c.run}")
+            if hit:
+                shown = ", ".join(hit[:4]) + (f" +{len(hit) - 4} more" if len(hit) > 4 else "")
+                print(f"       matched: {shown}")
+        return 0
+
+    if not selected:
+        print(
+            f"preflight: nothing to check ({len(paths)} changed path(s) match no check)",
+            file=sys.stderr,
+        )
+        record_pass(root, head, merge_base, [], clean_at_start)
+        return 0
+
+    print(
+        f"preflight: {len(selected)} check(s) for {len(paths)} changed path(s) "
+        f"vs {base}, up to {jobs} at a time",
+        file=sys.stderr,
+    )
+    started = time.monotonic()
+    results = execute(selected, root, jobs)
+    wall = time.monotonic() - started
+    failed = [r for r in results if r.code != 0]
+
+    if args.json:
+        print(json.dumps({
+            "base": base, "sha": head, "seconds": round(wall, 1),
+            "checks": [
+                {"id": r.check.id, "ok": r.code == 0, "seconds": round(r.seconds, 1),
+                 "log": str(r.log)} for r in results
+            ],
+        }, indent=2))
+
+    if failed:
+        print(
+            colour("31", f"\npreflight: {len(failed)} of {len(results)} failed in {wall:.1f}s"),
+            file=sys.stderr,
+        )
+        for r in failed:
+            print(f"\n--- {r.check.id} ({r.log}) ---", file=sys.stderr)
+            tail = r.log.read_text(encoding="utf-8", errors="replace").splitlines()[-40:]
+            print("\n".join(tail), file=sys.stderr)
+        return 1
+
+    print(
+        colour("32", f"preflight: {len(results)} check(s) passed in {wall:.1f}s"),
+        file=sys.stderr,
+    )
+    record_pass(root, head, merge_base, [r.check.id for r in results], clean_at_start)
+    return 0
+
+
+def paths_dirty(root: Path) -> bool:
+    return bool(git("status", "--porcelain", cwd=root))
+
+
+def pushed_commits(root: Path) -> list[str]:
+    """The commits a push sends, from the lines git writes to a pre-push hook's stdin."""
+    if sys.stdin is None or sys.stdin.isatty():
+        return []
+    out = []
+    for line in sys.stdin.read().splitlines():
+        parts = line.split()
+        if len(parts) != 4 or set(parts[1]) == {"0"}:
+            continue  # malformed, or a branch deletion, which sends no commit
+        try:
+            out.append(git("rev-parse", f"{parts[1]}^{{commit}}", cwd=root))
+        except RuntimeError:
+            out.append(parts[1])
+    return out
+
+
+def record_pass(root: Path, head: str, base: str, ids: list[str], clean_at_start: bool) -> None:
+    """Save a pass the hook may reuse, only when the run tested HEAD and nothing else."""
+    if not clean_at_start or paths_dirty(root) or git("rev-parse", "HEAD", cwd=root) != head:
+        print(
+            "preflight: not recorded for the push hook (uncommitted changes or a moved HEAD: "
+            "the pass covered the working tree, not the commit)",
+            file=sys.stderr,
+        )
+        return
+    write_state(root, head, base, ids)
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except KeyboardInterrupt:
+        raise SystemExit(130)
+    except BrokenPipeError:
+        # `preflight --help | head` closes stdout early; a traceback there reads
+        # like the tool is broken.
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        raise SystemExit(0)

@@ -1,0 +1,149 @@
+---
+name: linear-content
+description: >-
+  Use when writing anything that lands on Linear for this repository: an issue title and body, a comment, a closing comment, a project description, a project status update. The shape, the language and what never goes in, with templates, so every card reads the same way. Triggers whenever `save_issue`, `save_comment`, `save_project` or `save_status_update` is about to be called.
+---
+
+# Writing on Linear
+
+Part of the workflow kit (`.github/kit/README.md`); the board is the one
+`.github/workflow.json` names under `tracker`.
+
+The board's job is that the people on it can see at a glance who is on what and how
+far. Write for a reader skimming the list, not for one studying a card: what was decided
+and what was left undone on purpose, in as few lines as carry them. The full record
+is the commit, the PR and the project's docs; the card indexes them.
+
+## Language
+
+The board's language is `tracker.language` in `workflow.json`, English when it is not
+set; identifiers (labels, states, branches, code) stay English whatever it is. First
+person, plain words, the way you would say it to a colleague. No em dashes, no "not just
+X but Y", no emoji, no selling ("robust", "seamless", "powerful"). Another language only
+inside «guillemets», when quoting what the product says to its users or what the person
+you work for said. Real newlines, never `\n` escapes. Markdown headings are bold lead
+words, not `#` titles: a card is not a document.
+
+## The title
+
+One sentence **under 80 characters, starting with a verb**, one clause, or two
+when the second only names what makes the first visible. It names the work the
+card does, the same shape as a project name. The observed problem is not lost: it
+is the `**Observed.**` line of the body, one screen down. A colon inside a title
+means the second half belongs in the body.
+
+- Good: `Drop the stale legacy database from the CRM host`
+- Good: `Make the CV optional in the wizard and the member area`
+- Bad: `The dead confermata -> bozza transition is gone from both tables` (the
+  end state, not the work; it reads as a riddle to anyone who did not write it)
+- Bad: a two-hundred-character sentence that is the whole body, in the title
+
+## The issue body
+
+**It fits one screen.** At most five bold lead words, each two or three sentences.
+Skip one only when it has nothing to say, never because it is inconvenient. Point at
+the file and line, the spec section, the run id; never paste them. The full
+measurement, the design options and the long scan belong to the commit, the PR or a
+document; one line on the card indexes them.
+
+```markdown
+**Observed.** What happens today, where (`path/to/file.py:123`, a run id), for whom.
+A quote from the person who asked, in «guillemets», with the date, when the ask is theirs.
+
+**Needed.** The outcome, as behaviour a reader can check, not a list of files to
+edit. Where a design choice is already taken, say so and where it is recorded.
+
+**Done when.** One line, the check a reader can test. If the check needs more than
+one line it is the work, not a done-when.
+
+**Not here.** One sentence, when a reader might expect something and will not find
+it, so nobody reopens a closed question.
+
+**Adjacent.** The open cards the scan found and what was done about each (linked,
+narrowed around, waited for), or that the area calls answered empty.
+```
+
+**Adjacent** is skipped only on a card filed for later, and added when the card is
+picked up (`patch` with `op: "append"`, in the call that moves it). When they apply,
+in one line each: **Blocks** / **Blocked by** (issue ids you have read), **Decision
+for the lead** (one question, the options, your recommendation first).
+
+## Comments
+
+One comment per event that changes the issue: two or three sentences, and the
+closing evidence bullets when it is the closing comment. Each opens with a bold lead
+that says which kind it is, so a reader can skim the thread.
+
+- **Progress.** `**Step 4 done and live:** ...` What landed, where to see it, the commit.
+  Never "working on it".
+- **Found.** `**Cause is different from the title:** ...` The reproduction or measurement,
+  and what it changes about the plan.
+- **Scope.** `**Scope, narrowed:** ...` or `**Scope, grown:** ...` What the card now
+  covers that it did not, or no longer covers, and why: a neighbour found late, a file
+  that had to move too, a piece left for its own card (with the id, once filed).
+- **Waiting.** `**Waiting on the lead:** ...` What you are stopped on, from whom, and what
+  you will do when it arrives. One comment when you stop, one when it lifts.
+- **Decision.** `**MCP, decided.** ...` What was chosen, the reason, where it is recorded
+  (`DECISIONS.md` row, spec paragraph). If it is the lead's to take: the question, the
+  options, your recommendation, and stop.
+- **PR.** `PR: <url> (branch ...)` plus one sentence on what it contains and what is
+  still running (review, CI).
+- **Review.** `**Review applied:** ...` How many findings, which changed the code (commit
+  sha), which you left as they were and why. The full record stays on the PR; the card
+  gets the one line that says the PR is not what it was when it opened. The same shape
+  for a CI run that went red (`**CI red:** run ..., <job>, <cause>`, written when you
+  see it, with the sha of the fix added to the same comment when you push it).
+- **Closing.** `**Merged:** <url> (merge commit ...)` or `**In production:** tag ...`
+  followed by `Evidence:` and a bulleted list a reader can chase: run ids with the job
+  names that went green, test counts, the request you made and what came back, what you
+  opened in a browser and saw. Then `Left open on purpose:` if anything is.
+
+## Project and milestone naming, and the description
+
+The name is a verb and the work it does (`Give every space its own team`, `Align
+the wizard UI with the site`). An outcome-only clause (`A space has a team`) reads
+as a riddle to anyone who did not write it. No initiative prefix and no version
+number: the initiative field already says which product, and `vN` checks nothing.
+No state word either: `deployed`, `done`, `complete` repeat the status, which
+already says it, and go stale the day the status moves.
+
+A milestone carries the same shape (`Cut both wizards to three screens`), and its
+description is one sentence starting `Closes when` with the observable check.
+
+For `save_project`: `summary` is one sentence stating the outcome (under 255
+chars). The description is at most a short paragraph: what the project is, where it
+lives (the directory), how it deploys (the tag pattern, when it has one), and what is open now.
+The architecture it builds, the package list and the design record live in the
+project's own `AGENTS.md` and `docs/`; the description points at them in one line.
+`links` to the code and the live surface.
+
+## Status updates
+
+`save_status_update` with `type: "project"`, the project id in `project`. **Three
+sentences, no more**: what shipped or slipped, the health word and why, the next visible
+thing. A reader who sees only the update understands where the release stands; nobody
+reads a second copy of the issue list. Three moments always get one: the project moves
+to `started` (what it delivers, the first card), a milestone merges or a release ships
+(what landed, health, what is next), and the last card is `Done` (what was verified and
+on which surface, the project moved to Completed in the same step, or what keeps it
+open). Between those, write one when something changed that the issue list would not
+show, and skip it when it would only restate it. A claim comes from cards, PRs and a
+command, never from a title; a card closed by a merge is not proof a deploy ran.
+
+## References
+
+- Commits: seven-character sha in backticks, `03c4461`. Tags as written, `web-v0.1.0`.
+- CI: the run id and the job name that matters, `run 34351172643, web · lint`.
+- Code: `path/from/repo/root.py:123`, or the symbol in backticks.
+- PRs and pages: the full URL.
+- Issues: `<prefix>-N`, only one you have read.
+
+## What never goes on the board
+
+Secrets, tokens, passwords or where to find them beyond "on the server, root-only".
+Personal data of a customer or a signup (a name, an email, a CV). Screenshots with
+real customer data. A claim a test did not make. A restated board. A decision that
+belongs in `docs/design/DECISIONS.md` and is not also recorded there. A full
+neighbour scan, measurement or design exploration in an issue body (one line points
+at it, wherever it properly lives). An issue filed after the work only to have a
+`Done` card: the commit is the record of finished work that needed no decision.
