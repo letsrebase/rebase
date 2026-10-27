@@ -163,8 +163,9 @@ class MemberRead(BaseModel):
 
 class MemberDetail(MemberRead):
     """A member as an agent reads them in `list_members` (REB-809), where `MemberRead` stays
-    the web picker's: the picker's name and id, and the role, which any member may know. The email is the administrators'
-    (`UserService.directory`), as it is on the Team page, and `None` for anybody else."""
+    the web picker's: the picker's name and id, and the role, which any member may know.
+    The email is the administrators' (`UserService.directory`), as it is on the Team page,
+    and `None` for anybody else."""
 
     ruolo: Role
     email: str | None = None
