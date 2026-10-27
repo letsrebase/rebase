@@ -18,6 +18,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.contracts.repository import ContractRepository
 from pigrocrm.core.documents.models import Document
@@ -56,6 +57,12 @@ from pigrocrm.core.work_units.schemas import (
 
 WORK_UNIT_ENTITY = "work_unit"
 APPROVAL_ENTITY = "approval"
+# What a day's approvals are recorded against in the timeline: the contract, whose page
+# already shows its own history (REB-741..744). A day's own history is the transition
+# ledger, which `work_unit_log_transition` writes with the actor; an approval row has no
+# actor column at all, and linking one to a day that does not change state writes no
+# ledger row, so both would otherwise be changes nobody is named for (REB-781).
+CONTRACT_ENTITY = "contract"
 
 # The partial unique index that allows one live day per contract per date
 # (`models.py`): the name Postgres reports when a second one is recorded.
@@ -122,6 +129,7 @@ class WorkUnitService:
         self.session = session
         self.repo = WorkUnitRepository(session)
         self.transitions = WorkUnitTransitionRepository(session)
+        self.activities = ActivityService(session)
 
     def get(self, work_unit_id: UUID) -> WorkUnitRead:
         work_unit = self.repo.get(work_unit_id)
@@ -268,6 +276,13 @@ class WorkUnitService:
         work_unit.approval_id = approval_id
         self.session.flush()
         self.session.refresh(work_unit)  # see create()'s own comment
+        self.activities.record(
+            CONTRACT_ENTITY,
+            work_unit.contract_id,
+            "approval_linked",
+            actor,
+            {"giornata": work_unit.data.isoformat()},
+        )
         self.session.commit()
         return WorkUnitRead.model_validate(work_unit)
 
@@ -356,6 +371,7 @@ class ApprovalService:
         self.session = session
         self.storage = storage
         self.repo = ApprovalRepository(session)
+        self.activities = ActivityService(session)
 
     def get(self, approval_id: UUID) -> ApprovalRead:
         approval = self.repo.get(approval_id)
@@ -376,6 +392,9 @@ class ApprovalService:
                 estratto=data.estratto,
                 origine=data.origine,
             )
+        )
+        self.activities.record(
+            CONTRACT_ENTITY, data.contract_id, "approval_added", actor, {"canale": data.canale}
         )
         self.session.commit()
         return ApprovalRead.model_validate(approval)
@@ -438,6 +457,13 @@ class ApprovalService:
             }
         )
         recorded = [WorkUnitRead.model_validate(day) for day in days]
+        self.activities.record(
+            CONTRACT_ENTITY,
+            data.contract_id,
+            "approval_recorded",
+            actor,
+            {"giorni": len(days), "canale": data.canale},
+        )
         self.session.commit()
         return ApprovalRecorded(approval=detail, work_units=recorded)
 

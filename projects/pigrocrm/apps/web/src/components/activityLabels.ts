@@ -34,6 +34,20 @@ const KIND_LABELS: Record<string, string> = {
   expense_added: 'Spesa registrata',
   expense_updated: 'Spesa modificata',
   renewal_assumption_set: 'Assunzione di rinnovo salvata',
+  // A contract's day ledger (REB-781): who recorded the client's approval of days, and who
+  // linked one to a day that did not change state, which the day's own ledger does not show.
+  approval_added: 'Approvazione aggiunta',
+  approval_recorded: 'Approvazione registrata',
+  approval_linked: 'Approvazione collegata a una giornata',
+  // The mail drafts of a record and the Slack settings, the other writes that used to leave
+  // no row at all. `gmail.messaggio_inviato` and its siblings fall to `humanize`, as before.
+  'gmail.bozza_creata': 'Bozza di email creata',
+  'gmail.bozza_modificata': 'Bozza di email modificata',
+  'gmail.bozza_eliminata': 'Bozza di email eliminata',
+  'slack.abbinamento_manuale': 'Utente Slack abbinato a mano',
+  'slack.abbinamento_rimosso': 'Abbinamento Slack rimosso',
+  'slack.abbinamenti_rifatti': 'Abbinamenti Slack rifatti',
+  'slack.canale_impostato': 'Canale Slack impostato',
 }
 
 /**
@@ -84,6 +98,13 @@ const dateTimeFormatter = new Intl.DateTimeFormat('it-IT', {
   timeStyle: 'short',
 })
 
+// The timeline answers «when exactly did this member change it», which a minute does not
+// when two members edit the same record in one sitting: seconds on top of `dateTimeFormatter`.
+const exactDateTimeFormatter = new Intl.DateTimeFormat('it-IT', {
+  dateStyle: 'medium',
+  timeStyle: 'medium',
+})
+
 /**
  * `occurred_at` is a full ISO-8601 datetime with an explicit UTC offset (verified live
  * against the real API: `"2026-08-07T20:26:33.337592Z"`), never a bare "YYYY-MM-DD" -- so,
@@ -94,4 +115,9 @@ const dateTimeFormatter = new Intl.DateTimeFormat('it-IT', {
  */
 export function formatOccurredAt(occurredAt: string): string {
   return dateTimeFormatter.format(new Date(occurredAt))
+}
+
+/** `formatOccurredAt` with the seconds, for the one screen that is about the exact moment. */
+export function formatOccurredAtExact(occurredAt: string): string {
+  return exactDateTimeFormatter.format(new Date(occurredAt))
 }

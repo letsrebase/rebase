@@ -38,7 +38,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.repository import ActivityRepository
-from pigrocrm.core.activities.schemas import ActivityRead
+from pigrocrm.core.activities.service import serve_activities
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.analytics.repository import AnalyticsRepository
 from pigrocrm.core.analytics.schemas import PeriodPnlQuery
@@ -319,10 +319,9 @@ class DashboardService:
                     collegamento=_CONCENTRAZIONE_LINK,
                 ),
             ],
-            attivita_recenti=[
-                ActivityRead.model_validate(row)
-                for row in self.activities.recent(_RECENT_ACTIVITIES)
-            ],
+            attivita_recenti=serve_activities(
+                self.session, self.activities.recent(_RECENT_ACTIVITIES)
+            ),
         )
 
     def get_receivables_dashboard(

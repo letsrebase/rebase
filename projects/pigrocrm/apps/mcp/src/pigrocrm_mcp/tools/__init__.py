@@ -1253,8 +1253,11 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
     def get_timeline(
         entity_type: EntityType, entity_id: str, limit: BoundedLimit = 50
     ) -> dict[str, Any]:
-        """Cronologia di un'entità. `actor_type` distingue le azioni umane da quelle di
-        un agente."""
+        """Cronologia di un'entità: per ogni voce chi, quando e da dove. `actor_name` è il
+        nome del membro (anche se disattivato) e `actor_type` il canale: `user` dal web,
+        `mcp` da un agente col token di quel membro, `rebase` dalla porta di rebase,
+        `system` da un'automazione, che nomina chi l'ha attivata in `triggered_by_name`.
+        `occurred_at` è l'istante esatto."""
         entries = ActivityService(context.session).timeline(
             entity_type, UUID(entity_id), limit=cast(int, limit)
         )
