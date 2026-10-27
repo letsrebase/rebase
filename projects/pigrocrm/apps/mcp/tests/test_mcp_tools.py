@@ -920,7 +920,7 @@ async def test_an_agent_sets_a_deals_owner_and_a_new_deal_defaults_to_its_creato
         members = _payload(await client.call_tool("list_members", {}))["result"]
         assert str(colleague.id) in {m["id"] for m in members}
         assert str(gone.id) not in {m["id"] for m in members}
-        assert set(members[0]) == {"id", "nome"}
+        assert set(members[0]) == {"id", "nome", "ruolo", "email"}
 
         customer = _payload(await client.call_tool("create_customer", {"ragione_sociale": "ACME"}))
         named = _payload(

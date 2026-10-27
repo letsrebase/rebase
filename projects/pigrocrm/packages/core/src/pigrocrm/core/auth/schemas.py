@@ -153,12 +153,22 @@ class MeUpdate(BaseModel):
 
 class MemberRead(BaseModel):
     """What any member may know of a colleague (REB-780): enough to name an owner or an
-    assignee and to pick one, and nothing else (no email, role or rates)."""
+    assignee and to pick one, and nothing else (no email, role or rates). `MemberDetail`
+    adds the role and, for an administrator, the email, for the MCP's `list_members`."""
 
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
     nome: str
+
+
+class MemberDetail(MemberRead):
+    """A member as an agent reads them in `list_members` (REB-809): the picker's name and
+    id, and the role, which any member may know. The email is the administrators'
+    (`UserService.directory`), as it is on the Team page, and `None` for anybody else."""
+
+    ruolo: Role
+    email: str | None = None
 
 
 class UserRead(BaseModel):

@@ -516,7 +516,15 @@ _CREDENZIALI: dict[Method, str] = {
         "scelta dal suo profilo: un agente non decide che cosa arriva nella casella di "
         "chi lo ha collegato"
     ),
-    ("UserService", "list"): "l'anagrafica utenti non serve a nessun tool",
+    (
+        "UserService",
+        "list",
+    ): "the full user register (rates, scope, last login) is the admin's Team page",
+    ("UserService", "members"): (
+        "the picker's names for the web app (`/api/users/directory`); `list_members` reads "
+        "the same active users through `directory`, which adds the role, and the email "
+        "for an administrator (REB-809)"
+    ),
     ("UserService", "authenticate"): "e' il passo di login, non un'operazione",
 }
 
