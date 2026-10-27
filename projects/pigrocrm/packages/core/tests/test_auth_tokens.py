@@ -27,6 +27,7 @@ from pigrocrm.core.errors import (
     Conflict,
     NotFound,
     PermissionDenied,
+    ScopedAdmin,
     ValidationFailed,
 )
 
@@ -342,6 +343,22 @@ def test_a_member_cannot_change_or_list_a_colleagues_tokens(db_session: Session)
         service.list_team(stranger)
 
     assert _full_access_entries(db_session, owner.id) == []
+
+
+def test_an_administrator_scoped_to_some_aziende_does_not_administer_tokens(
+    db_session: Session,
+) -> None:
+    """Another member's token is account administration, like changing the member: the
+    role is not enough, the whole space has to be in view (spec 2026-10-03 §1.11)."""
+    owner = _collaboratore(db_session, "pat-scope-own@test.it")
+    service = PatService(db_session, Settings(_env_file=None, mcp_full_access=True))  # type: ignore[call-arg]
+    record, _ = service.create("Mio", Actor(id=owner.id, type="user", role="collaboratore"))
+    scoped_admin = Actor(id=uuid4(), type="user", role="admin", aziende=())
+
+    with pytest.raises(ScopedAdmin):
+        service.set_full_access(record.id, True, scoped_admin)
+    with pytest.raises(ScopedAdmin):
+        service.list_team(scoped_admin)
 
 
 def test_a_token_cannot_open_itself_nor_a_sibling(db_session: Session) -> None:

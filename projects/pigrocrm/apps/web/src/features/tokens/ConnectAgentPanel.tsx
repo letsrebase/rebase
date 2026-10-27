@@ -32,9 +32,14 @@ import { useCreateToken, useTokenOptions, type CreatedToken } from './queries'
 export function ConnectAgentPanel({
   issued,
   onIssued,
+  fullAccessByDefault = false,
 }: {
   issued: CreatedToken | null
   onIssued: (created: CreatedToken) => void
+  /** Starts the «Accesso completo» box ticked, for a door whose whole purpose needs it
+   *  (registering an issued invoice). Still shown, still the person's to untick, and
+   *  still only effective where the space offers it. */
+  fullAccessByDefault?: boolean
 }) {
   const [nome, setNome] = useState('Claude Code')
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
@@ -42,7 +47,7 @@ export function ConnectAgentPanel({
   // The invoice, rate and period-lock tools are chosen per token (REB-810) and closed
   // unless asked for, here as in the tokens page. Unknown counts as closed: the server
   // refuses an opening the space does not offer.
-  const [fullAccess, setFullAccess] = useState(false)
+  const [fullAccess, setFullAccess] = useState(fullAccessByDefault)
   const options = useTokenOptions()
   const fullAccessAvailable = options.data?.full_access_available === true
   // The dialog and the start page can both be on screen (the sidebar's «Collega un

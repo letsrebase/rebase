@@ -171,7 +171,9 @@ class PatService:
         if record is None:
             raise NotFound("personal_access_token", pat_id)
         if record.user_id != actor.id:
-            actor.require_admin("set_token_full_access")
+            # Another member's token is account administration, like changing the member
+            # (`UserService.update`): a scoped admin has the role and not the whole space.
+            actor.require_unscoped_admin("set_token_full_access")
         if record.revoked_at is not None:
             raise Conflict("personal_access_token", "token revocato: non si può più modificare")
         if record.full_access == full_access:
@@ -192,7 +194,7 @@ class PatService:
 
     def list_team(self, actor: Actor) -> list[TeamPatRead]:
         """The live tokens of the members other than the caller, for an administrator."""
-        actor.require_admin("list_team_tokens")
+        actor.require_unscoped_admin("list_team_tokens")
         stmt = (
             select(PersonalAccessToken, User.nome)
             .join(User, User.id == PersonalAccessToken.user_id)

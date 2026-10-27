@@ -63,7 +63,8 @@ class GuidedMCPServer(MCPServer):
             return self._actor_provider().full_access
         except DomainError:
             # A token revoked since, its owner deactivated: it is shown the ordinary
-            # surface, and the first call it makes answers the refusal.
+            # surface, a privileged tool called by name answers «Unknown tool», and the
+            # first ordinary call it makes answers the refusal.
             return False
 
     async def list_tools(self) -> list[MCPTool]:

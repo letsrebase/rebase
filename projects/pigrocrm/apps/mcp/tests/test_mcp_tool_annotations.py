@@ -79,7 +79,11 @@ _CREATES_THAT_OVERWRITE = {"create_rate_card"}
 def _server(tmp_path: Path, **settings: Any) -> Any:
     return build_server(
         lambda: None,
-        lambda: Actor(id=None, type="mcp", role="admin"),
+        # The token carries the flag too (REB-810): a surface that opens the space's switch is
+        # measured as a token that was given it sees it.
+        lambda: Actor(
+            id=None, type="mcp", role="admin", full_access=settings.get("mcp_full_access", False)
+        ),
         LocalFileStorage(tmp_path),
         Settings(_env_file=None, **settings),  # type: ignore[call-arg]
     )

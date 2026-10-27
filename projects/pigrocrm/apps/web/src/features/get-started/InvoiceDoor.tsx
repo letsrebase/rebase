@@ -449,7 +449,7 @@ function Handoff({
       {(!assistantConnected || issued !== null) && (
         <div className="space-y-3 border-t pt-3">
           <p className="font-medium">Prima collega l’assistente</p>
-          <ConnectAgentPanel issued={issued} onIssued={setIssued} />
+          <ConnectAgentPanel issued={issued} onIssued={setIssued} fullAccessByDefault />
           {issued && (
             <Button type="button" variant="outline" onClick={() => setIssued(null)}>
               Ho copiato il token
