@@ -43,6 +43,7 @@ from datetime import datetime, timedelta
 from typing import Literal, Protocol
 from urllib.parse import urlsplit
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 import requests
 from cryptography.hazmat.primitives import serialization
@@ -75,6 +76,10 @@ SEND_TIMEOUT_SECONDS = 10
 # sends, and a slow push service must not make it hold it for everybody else's turn. What is
 # not sent by then stays unrecorded and goes in the next pass.
 PHASE_SECONDS = 120
+# What a notification's two texts may weigh in UTF-8: far under the ~4 KB a push service takes,
+# with room for the URL, the tag and the encryption's own overhead.
+TITLE_BYTES = 300
+BODY_BYTES = 1000
 
 Outcome = Literal["accepted", "gone", "failed"]
 
@@ -87,6 +92,14 @@ class PushTarget:
     p256dh: str
     auth: str
     created_at: datetime
+
+
+def _clip(text: str, limit: int) -> str:
+    """`text` cut to `limit` bytes of UTF-8 on a character boundary, with an ellipsis."""
+    raw = text.encode()
+    if len(raw) <= limit:
+        return text
+    return raw[: limit - 3].decode(errors="ignore") + "..."
 
 
 @dataclass(frozen=True)
@@ -102,8 +115,16 @@ class PushMessage:
     urgent: bool
 
     def payload(self) -> str:
+        """The JSON the worker reads. A push service takes about 4 KB, and a title is text
+        somebody typed (a timer's description is up to 2000 characters), so the two texts are
+        cut to a byte budget here, where the size is known, and not in the worker."""
         return json.dumps(
-            {"title": self.title, "body": self.body, "url": self.url, "tag": self.tag},
+            {
+                "title": _clip(self.title, TITLE_BYTES),
+                "body": _clip(self.body, BODY_BYTES),
+                "url": self.url,
+                "tag": self.tag,
+            },
             ensure_ascii=False,
         )
 
@@ -287,8 +308,12 @@ class PushChannel(Channel):
             if context.covered(identity, reminder.severity):
                 continue
             # A browser announces what reached the list after it subscribed, and a reminder
-            # that has been there longer than a push service would hold it is not news.
-            if context.now - candidate.listed_at > timedelta(seconds=TTL_SECONDS):
+            # that has been there longer than a push service would hold it is not news. One
+            # listed inside the person's quiet hours was being held, not left behind, so
+            # a Friday night's reminder is still news on Monday morning.
+            listed_local = candidate.listed_at.astimezone(ZoneInfo(context.settings.timezone))
+            held = candidate.general.quiet_at(listed_local.weekday(), listed_local.time())
+            if not held and context.now - candidate.listed_at > timedelta(seconds=TTL_SECONDS):
                 continue
             reachable = [
                 t for t in targets[reminder.user_id] if t.created_at <= candidate.listed_at
@@ -317,6 +342,10 @@ class PushChannel(Channel):
                         logger.warning(
                             "push: il tempo della passata è finito, il resto alla prossima"
                         )
+                        # What browsers already took of this reminder is recorded: sending
+                        # it to them again would sound it twice.
+                        if took:
+                            result.accepted.append(accepted)
                         return result
                     outcome = sender.send(target, message)
                     if outcome == "accepted":

@@ -617,7 +617,7 @@ def test_a_reminder_that_has_been_listed_longer_than_a_push_service_holds_it_is_
                 "key": f"attivita_overdue:{attivita}",
                 "user": owner.id,
                 "period": TUESDAY,
-                "at": at(TUESDAY, 10) - timedelta(hours=30),
+                "at": at(TUESDAY, 10) - timedelta(hours=25),
             },
         )
 
@@ -643,3 +643,44 @@ def test_a_browser_a_second_person_took_over_gets_them_only_what_comes_after(
 
     assert _run(settings, engine, None, pusher, at(TUESDAY, 12)).pushes == 0
     assert pusher.sent == []
+
+
+def test_a_reminder_held_by_the_weekend_is_still_news_on_monday_morning(
+    settings: Settings, engine: Engine, session: Session, owner: User, pusher: RecordingPushSender
+) -> None:
+    friday = date(2026, 10, 30)
+    _subscribe(session, owner, at_=at(friday, 9))
+    _overdue(session, owner, days=20, today=friday)
+    assert _run(settings, engine, None, pusher, at(friday, 21)).pushes == 0  # listed, held
+    assert _run(settings, engine, None, pusher, at(date(2026, 10, 31), 11)).pushes == 0
+
+    monday = _run(settings, engine, None, pusher, at(date(2026, 11, 2), 8, 30))
+
+    assert monday.pushes == 1, "listed in quiet hours: held, not left behind"
+
+
+def test_what_a_browser_took_before_the_deadline_is_recorded_and_not_sent_again(
+    settings: Settings,
+    engine: Engine,
+    session: Session,
+    owner: User,
+    pusher: RecordingPushSender,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import itertools
+
+    import pigrocrm.core.reminders.push as push_module
+
+    _subscribe(session, owner, "https://push.example.test/one", at_=at(TUESDAY, 9))
+    _subscribe(session, owner, "https://push.example.test/two", at_=at(TUESDAY, 9, 1))
+    _overdue(session, owner, days=20)
+    # The deadline is set (0), the first browser is reached (0), the second finds it passed.
+    clock = itertools.chain([0.0, 0.0], itertools.repeat(10_000.0))
+    monkeypatch.setattr(push_module.time, "monotonic", lambda: next(clock))
+
+    first = _run(settings, engine, None, pusher, at(TUESDAY, 10))
+
+    assert first.pushes == 1 and len(pusher.sent) == 1
+    assert _count(engine, "reminder_delivery", "channel = 'push'") == 1, "recorded"
+    monkeypatch.undo()
+    assert _run(settings, engine, None, pusher, at(TUESDAY, 10, 15)).pushes == 0

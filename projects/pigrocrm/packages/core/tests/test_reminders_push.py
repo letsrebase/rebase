@@ -502,3 +502,18 @@ def test_links_stay_on_the_space_the_person_is_in() -> None:
     assert absolute("https://pigro.example.test/acme/", "/app/avvisi") == (
         "https://pigro.example.test/acme/app/avvisi"
     )
+
+
+def test_a_long_title_is_cut_to_a_byte_budget_a_push_service_accepts() -> None:
+    long = PushMessage(
+        "é" * 2000, "😀" * 2000, "/acme/app/hours", "timer_running_long:1", urgent=True
+    )
+
+    payload = long.payload()
+
+    assert len(payload.encode()) < 2000, "far under the ~4 KB a push service takes"
+    decoded = json.loads(payload)
+    assert decoded["title"].endswith("...") and decoded["body"].endswith("...")
+    assert decoded["url"] == "/acme/app/hours" and decoded["tag"] == "timer_running_long:1"
+    short = PushMessage("t", "b", "/u", "k", urgent=False)
+    assert json.loads(short.payload())["title"] == "t", "a short text is untouched"
