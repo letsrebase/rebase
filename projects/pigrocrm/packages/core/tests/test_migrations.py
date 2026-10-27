@@ -1,4 +1,5 @@
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -1726,3 +1727,89 @@ def test_0051_adds_the_invitation_mail_columns_and_its_downgrade_drops_them(
         assert _invitation_mail_columns(url) == set()
         upgrade(config, "0051")
         assert _invitation_mail_columns(url) == mail
+
+
+def test_0057_repoints_an_ordinary_profile_at_its_own_pack_and_clears_the_forfettarios_figures(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-760 over real rows planted at 0056: an `RF01` profile left on the forfettario's
+    pack with its coefficients, and a forfettario beside it. The first moves to
+    `it-standard` with the forfettario's figures and the bollo cleared; the second is
+    untouched; the downgrade points the first back."""
+    ordinary, forfettario = (
+        "00000000-0000-7000-8000-0000000000b1",
+        "00000000-0000-7000-8000-0000000000b2",
+    )
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0056")
+        engine: Engine = create_engine(url)
+        with engine.begin() as connection:
+            for azienda, nome, regime, rate, bollo, params in (
+                (ordinary, "ordinaria", "RF01", "22.00", "true", ("67.00", "5.00", "26.07")),
+                (forfettario, "forfettaria", "RF19", "0.00", "true", ("78.00", "5.00", "26.07")),
+            ):
+                connection.execute(
+                    text(
+                        """
+                        INSERT INTO emitter_profile (id, nome, predefinita, attiva,
+                            ragione_sociale, nazione, created_at, updated_at)
+                        VALUES (:id, :nome, false, true, :nome, 'IT', now(), now())
+                        """
+                    ),
+                    {"id": azienda, "nome": nome},
+                )
+                connection.execute(
+                    text(
+                        f"""
+                        INSERT INTO fiscal_profile (id, azienda_id, codice_regime,
+                            aliquota_iva_default, applica_bollo, soglia_bollo, importo_bollo,
+                            condizioni_pagamento, modalita_pagamento, giorni_scadenza,
+                            coefficiente_redditivita, aliquota_imposta_sostitutiva,
+                            aliquota_inps, pack_id, pack_version, created_at, updated_at)
+                        VALUES (gen_random_uuid(), :azienda, :regime, :rate, {bollo}, 77.47,
+                            2.00, 'TP02', 'MP05', 30, :c, :s, :i, 'it-flat-rate', '1',
+                            now(), now())
+                        """
+                    ),
+                    {
+                        "azienda": azienda,
+                        "regime": regime,
+                        "rate": rate,
+                        "c": params[0],
+                        "s": params[1],
+                        "i": params[2],
+                    },
+                )
+        engine.dispose()
+
+        def read() -> dict[str, tuple[Any, ...]]:
+            engine = create_engine(url)
+            try:
+                with engine.connect() as connection:
+                    rows = connection.execute(
+                        text(
+                            "SELECT azienda_id::text, pack_id, applica_bollo, "
+                            "coefficiente_redditivita, aliquota_imposta_sostitutiva, aliquota_inps "
+                            "FROM fiscal_profile"
+                        )
+                    ).all()
+                return {row[0]: tuple(row[1:]) for row in rows}
+            finally:
+                engine.dispose()
+
+        upgrade(config, "0057")
+        after = read()
+        assert after[ordinary] == ("it-standard", False, None, None, None)
+        assert after[forfettario] == (
+            "it-flat-rate",
+            True,
+            Decimal("78.00"),
+            Decimal("5.00"),
+            Decimal("26.07"),
+        )
+
+        downgrade(config, "0056")
+        assert read()[ordinary][0] == "it-flat-rate"
+        assert read()[forfettario][0] == "it-flat-rate"
