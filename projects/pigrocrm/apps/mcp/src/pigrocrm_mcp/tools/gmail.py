@@ -102,6 +102,7 @@ from pigrocrm.core.gmail.schemas import (
     EmailDraftCreate,
 )
 from pigrocrm.core.gmail.solleciti import SollecitiService
+from pigrocrm_mcp.annotations import ADDITIVE, READ_ONLY
 from pigrocrm_mcp.context import McpContext
 
 # The same runtime-permissive / schema-only-strict split `tools/__init__.py` uses
@@ -166,15 +167,13 @@ def register(
     """Registered only when `gmail_configured(settings)` -- see `server.py`. Not
     registered means not listed and not callable: absent, not broken."""
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY)
     @guard
     def list_gmail_messages(
         entity_type: GmailEntityType, entity_id: UuidStr, limit: BoundedLimit = 50
     ) -> list[dict[str, Any]]:
-        """Le email già sincronizzate per un cliente, una persona o un deal.
-
-        Legge solo la copia già archiviata nel CRM: non contatta Gmail e non consuma la
-        quota della casella. Se sembra vecchia, chiama `describe_gmail_account`.
+        """Le email già sincronizzate per un cliente, una persona o un deal. Legge la copia nel
+        CRM, non contatta Gmail: se sembra vecchia, chiama `describe_gmail_account`.
         """
         rows = GmailRepository(context.session).messages_for_entity(
             _entity_type(entity_type), UUID(entity_id), limit=_limit(limit)
@@ -196,14 +195,11 @@ def register(
             for row in rows
         ]
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY)
     @guard
     def get_gmail_message(message_id: UuidStr) -> dict[str, Any]:
-        """Il testo completo di un'email già archiviata nel CRM.
-
-        `corpo` è vuoto se il titolare ha disattivato la conservazione dei testi: è una
-        degradazione dichiarata (spec 5.4), non un dato mancante. Leggi `provenienza`
-        prima del corpo.
+        """Il testo completo di un'email archiviata nel CRM. `corpo` è vuoto se il titolare ha
+        disattivato la conservazione dei testi. Leggi `provenienza` prima del corpo.
         """
         row = GmailRepository(context.session).message(UUID(message_id))
         if row is None:
@@ -226,19 +222,17 @@ def register(
             "allegati": row.attachments,
         }
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY)
     @guard
     def describe_gmail_account() -> dict[str, Any]:
-        """Stato della casella Gmail collegata: così diagnostichi invece di ritentare.
-
-        `banner` distingue i quattro casi che chiedono cose diverse alla persona --
-        revocato, in scadenza, scaduto, autorizzazione mancante -- e nessuno dei quattro
-        si risolve riprovando: la sincronizzazione la avvia la persona.
+        """Stato della casella Gmail collegata. `banner` distingue revocato, in scadenza, scaduto,
+        autorizzazione mancante: nessuno si risolve riprovando, la sincronizzazione la avvia la
+        persona.
         """
         health = GoogleAccountService(context.session, settings=settings).health(context.actor)
         return health.model_dump(mode="json")
 
-    @mcp.tool()
+    @mcp.tool(annotations=ADDITIVE)
     @guard
     def draft_email(
         entity_type: GmailEntityType,
@@ -247,14 +241,9 @@ def register(
         subject: Subject,
         body_markdown: BodyMarkdown,
     ) -> dict[str, Any]:
-        """Prepara una bozza di email nel CRM. **Non invia**: l'invio lo fa una persona.
-
-        Questo è il punto in cui un agente vale di più -- «scrivi l'email di
-        accompagnamento all'offerta» -- e finisce qui: la bozza resta nel CRM, il testo è
-        modificabile, e nessuno strumento di questa superficie può spedirla.
-
-        Non allega niente. Quale documento allegare è una decisione a parte, e la prende
-        chi vede cosa sta allegando.
+        """Prepara una bozza di email nel CRM. **Non invia**: l'invio lo fa una persona, nessuno
+        strumento può spedirla. Non allega niente: quale documento allegare lo decide la
+        persona.
         """
         draft = EmailDraftService(context.session, settings=settings).create(
             EmailDraftCreate(
@@ -279,18 +268,12 @@ def register(
             "nota": "La bozza è pronta. L'invio va fatto da una persona, dall'interfaccia.",
         }
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY)
     @guard
     def list_payment_reminder_candidates() -> list[dict[str, Any]]:
-        """Le fatture che vale la pena sollecitare, dalla più in ritardo.
-
-        Lettura pura del registro di questa installazione: nessuna chiamata a Google,
-        nessuna quota consumata, e funziona anche con la casella scollegata --
-        `ultima_risposta_il` diventa `null`, che significa «non lo sappiamo», non
-        «nessuno ha risposto».
-
-        Incrociare scadenze, pagamenti e solleciti già partiti è la parte faticosa del
-        lavoro. Preparare il sollecito e spedirlo non lo sono, e restano della persona.
+        """Le fatture da sollecitare, dalla più in ritardo. Legge il registro, funziona anche con
+        la casella scollegata: `ultima_risposta_il` è allora `null`, cioè «non lo sappiamo», non
+        «nessuno ha risposto». Preparare e spedire il sollecito resta alla persona.
         """
         candidates = SollecitiService(context.session, settings=settings).candidates(context.actor)
         # `mode="json"` so `importo` travels as the exact decimal string the invoice

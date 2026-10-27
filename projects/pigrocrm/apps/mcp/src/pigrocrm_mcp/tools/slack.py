@@ -21,6 +21,7 @@ from mcp.server import MCPServer
 from pigrocrm.core.config import Settings
 from pigrocrm.core.slack.client import slack_client_for
 from pigrocrm.core.slack.service import SlackService
+from pigrocrm_mcp.annotations import READ_ONLY
 from pigrocrm_mcp.context import McpContext
 
 
@@ -30,18 +31,14 @@ def register(
     """Registered only when Slack is configured (`slack_configured`, `server.py`): not
     registered means not listed and not callable, absent and not broken."""
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY)
     @guard
     def describe_slack() -> dict[str, Any]:
-        """Stato del collegamento Slack dello spazio: il workspace, se funziona, il
-        canale dei promemoria dello spazio e, per ogni utente, se è stato riconosciuto in
-        Slack (`matched` dall'email, `manual` a mano, `unmatched` se non c'è: non riceve
-        nulla su Slack).
-
-        Solo per un amministratore dell'intero spazio. `workspace.status` è `active`,
-        `revoked` (Slack ha revocato l'accesso: `last_error` dice come rimediare) o
-        `disconnected`. Nessun workspace collegato non è un errore. Collegare Slack, correggere
-        un abbinamento e scegliere il canale li fa una persona, da Impostazioni → Slack."""
+        """Stato del collegamento Slack: workspace, canale dei promemoria e, per ogni utente, se è
+        riconosciuto (`matched`, `manual`, `unmatched`: non riceve nulla). `workspace.status` è
+        `active`, `revoked` (`last_error` dice come rimediare) o `disconnected`. Solo per un
+        amministratore dell'intero spazio. Nessun workspace collegato non è un errore.
+        """
         service = SlackService(
             context.session, settings=settings, client=slack_client_for(settings)
         )

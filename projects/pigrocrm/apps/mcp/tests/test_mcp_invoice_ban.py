@@ -840,7 +840,7 @@ def _agent_reachable_source() -> str:
     code is not only `tools/`. `resources/entities.py` renders the `customer://`,
     `person://` and `deal://` templates, `prompts/` holds §10's four prompts, and
     `server.py` itself carries three inline `@mcp.resource` bodies plus
-    `describe_schema`/`refresh_schema` -- all registered unconditionally, none of them
+    `describe_schema` -- all registered unconditionally, none of them
     scanned by a tools-only sweep. A `drive_reader_for` built inside a resource render or
     a prompt body would be exactly as reachable as one built in a tool, while leaving no
     trace under `tools/` at all.
