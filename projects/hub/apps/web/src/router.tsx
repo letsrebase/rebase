@@ -25,6 +25,7 @@ import { TeamRisposta } from '@/pages/TeamRisposta'
 import { AdminAccessi } from '@/pages/admin/Accessi'
 import { AdminAdmins } from '@/pages/admin/Admins'
 import { AdminAgenti } from '@/pages/admin/Agenti'
+import { AdminModelliAi } from '@/pages/admin/ModelliAi'
 import { AdminGuard } from '@/pages/admin/AdminGuard'
 import { AdminGuida } from '@/pages/admin/Guida'
 import { AdminPigro } from '@/pages/admin/Pigro'
@@ -510,6 +511,11 @@ const adminAdminsRedirect = createRoute({
   },
 })
 const adminAgents = createRoute({ getParentRoute: () => adminArea, path: '/agents', component: AdminAgenti })
+const adminModelliAi = createRoute({
+  getParentRoute: () => adminArea,
+  path: '/modelli-ai',
+  component: AdminModelliAi,
+})
 const adminAgentsRedirect = createRoute({
   getParentRoute: () => adminArea,
   path: '/agenti',
@@ -564,6 +570,7 @@ export const routeTree = root.addChildren([
       adminCompaniesDetail,
       adminCompaniesDetailRedirect,
       adminReferrals,
+      adminModelliAi,
       adminPigro,
       adminGuide,
       adminGuideRedirect,
