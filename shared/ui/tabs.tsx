@@ -85,21 +85,27 @@ function TabsTrigger({
 }: React.ComponentProps<typeof TabsPrimitive.Trigger>) {
   const own = React.useRef<HTMLButtonElement | null>(null)
   useAriaControlsOnlyWhenMounted(own)
+  // Stable per caller ref: an inline callback changes identity on every render, and React
+  // would detach and re-attach it each time.
+  const setRef = React.useCallback(
+    (node: HTMLButtonElement | null) => {
+      own.current = node
+      // React 19 runs the cleanup a callback ref returns instead of calling it with
+      // null, so the caller's own cleanup is kept and run, or null is handed over.
+      const cleanup = typeof ref === "function" ? ref(node) : undefined
+      if (ref && typeof ref !== "function") ref.current = node
+      return () => {
+        own.current = null
+        if (typeof cleanup === "function") cleanup()
+        else if (typeof ref === "function") ref(null)
+        else if (ref) ref.current = null
+      }
+    },
+    [ref]
+  )
   return (
     <TabsPrimitive.Trigger
-      ref={(node) => {
-        own.current = node
-        // React 19 runs the cleanup a callback ref returns instead of calling it with
-        // null, so the caller's own cleanup is kept and run, or null is handed over.
-        const cleanup = typeof ref === "function" ? ref(node) : undefined
-        if (ref && typeof ref !== "function") ref.current = node
-        return () => {
-          own.current = null
-          if (typeof cleanup === "function") cleanup()
-          else if (typeof ref === "function") ref(null)
-          else if (ref) ref.current = null
-        }
-      }}
+      ref={setRef}
       data-slot="tabs-trigger"
       className={cn(
         /* `-mb-px` pulls the trigger's own bottom border onto the list's hairline, so
