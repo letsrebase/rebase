@@ -14,6 +14,15 @@ import { ImportInvoicesButton } from './ImportInvoicesDialog'
 const mockAuth = vi.hoisted(() => ({ may: true }))
 vi.mock('@/lib/auth', () => ({ useCan: () => mockAuth.may }))
 
+// The customer list of the picker (REB-777): `useCustomers` goes through `openapi-fetch`,
+// which hands `fetch` a `Request` and not a URL, so it is stood in for rather than routed
+// through the `fetch` seam the two multipart routes use. `undefined` is a list that could
+// not be read.
+const mockCustomers = vi.hoisted(() => ({ data: undefined as unknown }))
+vi.mock('@/features/customers/queries', () => ({
+  useCustomers: () => ({ data: mockCustomers.data }),
+}))
+
 const REVIEW = '/api/invoices/import/upload/review'
 const CONFIRM = '/api/invoices/import/upload/confirm'
 
@@ -30,6 +39,7 @@ function json(body: unknown, status = 200): Promise<Response> {
 
 beforeEach(() => {
   mockAuth.may = true
+  mockCustomers.data = undefined
   mockFetch.mockReset()
   vi.stubGlobal('fetch', mockFetch)
 })
@@ -65,6 +75,16 @@ function invoice(numero: string, overrides: Record<string, unknown> = {}) {
   }
 }
 
+// The shape of `CustomerPage`. `az-1` is the azienda `reviewRow` writes its invoices on.
+const CUSTOMERS = {
+  items: [
+    { id: 'cust-acme', ragione_sociale: 'Acme Ltd', azienda_id: 'az-1' },
+    { id: 'cust-rossi', ragione_sociale: 'Rossi Consulting S.r.l.', azienda_id: 'az-1' },
+    { id: 'cust-altrove', ragione_sociale: 'Altrove S.p.A.', azienda_id: 'az-2' },
+  ],
+  next_cursor: null,
+}
+
 function reviewRow(file: string, outcome: ReviewRow['outcome'], numero = '2026/6'): ReviewRow {
   return {
     file,
@@ -72,7 +92,8 @@ function reviewRow(file: string, outcome: ReviewRow['outcome'], numero = '2026/6
     outcome,
     invoice: outcome === 'unclaimed' ? null : (invoice(numero) as never),
     party_key: outcome === 'unclaimed' ? null : '09876543210',
-  }
+    azienda_id: outcome === 'unclaimed' ? null : 'az-1',
+  } as ReviewRow
 }
 
 function xml(name: string): File {
@@ -154,6 +175,186 @@ describe('the import dialog', () => {
 
     expect(screen.getByRole('button', { name: 'Niente da importare' })).toBeDisabled()
     expect(screen.getAllByText(/non viene importata/i)).toHaveLength(2)
+  })
+
+  it('attaches a new customer to one already on file picked by hand, and creates nobody', async () => {
+    // A foreign customer: the register cannot match it by tax id, so it is offered as new
+    // on every import (REB-777). The person says it is the one they already have.
+    mockFetch.mockImplementation((url) => {
+      if (url === REVIEW) {
+        return json({ righe: [reviewRow('a.xml', 'needs_customer_confirmation', '2026/1')] })
+      }
+      const row: ConfirmRow = {
+        file: 'a.xml',
+        sha256: 'sha-a.xml',
+        outcome: 'imported',
+        azienda_id: 'az-1',
+        fattura: { anno: 2026, numero: 1, customer_id: 'cust-acme' } as ConfirmRow['fattura'],
+        buchi_non_dichiarati: [],
+      }
+      return json({ righe: [row] })
+    })
+
+    mockCustomers.data = CUSTOMERS
+    const user = await openAndPick([xml('a.xml')])
+    const section = await screen.findByRole('region', { name: 'Clienti da creare' })
+    await user.click(within(section).getByRole('combobox', { name: /Cliente di Esempio Servizi/ }))
+    await user.click(await screen.findByRole('option', { name: 'Acme Ltd' }))
+
+    // The row says where the invoice goes, and is no longer a «cliente nuovo».
+    expect(screen.getByText(/Va al cliente «Acme Ltd»/)).toBeInTheDocument()
+    expect(screen.getByText('Cliente scelto')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Importa 1 fattura' }))
+
+    await screen.findByText('Importate')
+    const confirm = mockFetch.mock.calls.find(([url]) => url === CONFIRM)
+    expect(JSON.parse(formOf(confirm).get('decisioni') as string)).toEqual({
+      clienti: { '09876543210': { customer_id: 'cust-acme' } },
+    })
+  })
+
+  it('goes back to creating the customer when «Crea un nuovo cliente» is picked again', async () => {
+    mockFetch.mockImplementation((url) => {
+      if (url === REVIEW) {
+        return json({ righe: [reviewRow('a.xml', 'needs_customer_confirmation', '2026/1')] })
+      }
+      return json({ righe: [] })
+    })
+
+    mockCustomers.data = CUSTOMERS
+    const user = await openAndPick([xml('a.xml')])
+    const section = await screen.findByRole('region', { name: 'Clienti da creare' })
+    const picker = within(section).getByRole('combobox', { name: /Cliente di Esempio Servizi/ })
+    await user.click(picker)
+    await user.click(await screen.findByRole('option', { name: 'Rossi Consulting S.r.l.' }))
+    await user.click(picker)
+    await user.click(await screen.findByRole('option', { name: 'Crea un nuovo cliente' }))
+    await user.click(screen.getByRole('button', { name: 'Importa 1 fattura' }))
+
+    await waitFor(() => expect(mockFetch.mock.calls.some(([url]) => url === CONFIRM)).toBe(true))
+    const confirm = mockFetch.mock.calls.find(([url]) => url === CONFIRM)
+    expect(JSON.parse(formOf(confirm).get('decisioni') as string)).toEqual({
+      clienti: { '09876543210': { create_customer: true } },
+    })
+  })
+
+  it('offers only the customers of the azienda the invoice is written on', async () => {
+    mockCustomers.data = CUSTOMERS
+    mockFetch.mockImplementation((url) =>
+      url === REVIEW
+        ? json({ righe: [reviewRow('a.xml', 'needs_customer_confirmation', '2026/1')] })
+        : json({}, 500),
+    )
+
+    const user = await openAndPick([xml('a.xml')])
+    const section = await screen.findByRole('region', { name: 'Clienti da creare' })
+    await user.click(within(section).getByRole('combobox', { name: /Cliente di Esempio Servizi/ }))
+
+    expect(await screen.findByRole('option', { name: 'Acme Ltd' })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: 'Altrove S.p.A.' })).not.toBeInTheDocument()
+  })
+
+  it('does not let a customer be picked for a party whose invoices span two aziende', async () => {
+    mockCustomers.data = CUSTOMERS
+    mockFetch.mockImplementation((url) =>
+      url === REVIEW
+        ? json({
+            righe: [
+              reviewRow('a.xml', 'needs_customer_confirmation', '2026/1'),
+              { ...reviewRow('b.xml', 'needs_customer_confirmation', '2026/2'), azienda_id: 'az-2' },
+            ],
+          })
+        : json({}, 500),
+    )
+
+    await openAndPick([xml('a.xml'), xml('b.xml')])
+    const section = await screen.findByRole('region', { name: 'Clienti da creare' })
+
+    expect(within(section).getByRole('combobox', { name: /Cliente di Esempio Servizi/ })).toBeDisabled()
+    expect(within(section).getByText(/sono di più aziende/)).toBeInTheDocument()
+  })
+
+  it('says the list is partial when the customers do not fit in one page', async () => {
+    mockCustomers.data = { ...CUSTOMERS, next_cursor: 'abc' }
+    mockFetch.mockImplementation((url) =>
+      url === REVIEW
+        ? json({ righe: [reviewRow('a.xml', 'needs_customer_confirmation', '2026/1')] })
+        : json({}, 500),
+    )
+
+    await openAndPick([xml('a.xml')])
+
+    expect(await screen.findByText(/Elenco parziale: solo i primi 200 clienti/)).toBeInTheDocument()
+  })
+
+  it('keeps two customers of the same name apart, each with its own picker', async () => {
+    mockCustomers.data = CUSTOMERS
+    const twin = (file: string, key: string) => ({
+      ...reviewRow(file, 'needs_customer_confirmation', file),
+      party_key: key,
+      invoice: invoice(file, {
+        cliente: { ...invoice(file).cliente, partita_iva: null, codice_fiscale: null },
+      }),
+    })
+    mockFetch.mockImplementation((url) =>
+      url === REVIEW
+        ? json({ righe: [twin('a.xml', 'estero:1'), twin('b.xml', 'estero:2')] })
+        : json({ righe: [] }),
+    )
+
+    const user = await openAndPick([xml('a.xml'), xml('b.xml')])
+    const section = await screen.findByRole('region', { name: 'Clienti da creare' })
+    const pickers = within(section).getAllByRole('combobox')
+    expect(pickers).toHaveLength(2)
+    expect(new Set(pickers.map((picker) => picker.id)).size).toBe(2)
+
+    await user.click(pickers[1]!)
+    await user.click(await screen.findByRole('option', { name: 'Acme Ltd' }))
+    await user.click(screen.getByRole('button', { name: 'Importa 2 fatture' }))
+
+    await waitFor(() => expect(mockFetch.mock.calls.some(([url]) => url === CONFIRM)).toBe(true))
+    const confirm = mockFetch.mock.calls.find(([url]) => url === CONFIRM)
+    expect(JSON.parse(formOf(confirm).get('decisioni') as string)).toEqual({
+      clienti: { 'estero:1': { create_customer: true }, 'estero:2': { customer_id: 'cust-acme' } },
+    })
+  })
+
+  it('does not offer a customer for one the person unticked', async () => {
+    mockCustomers.data = CUSTOMERS
+    mockFetch.mockImplementation((url) =>
+      url === REVIEW
+        ? json({ righe: [reviewRow('a.xml', 'needs_customer_confirmation', '2026/1')] })
+        : json({}, 500),
+    )
+
+    const user = await openAndPick([xml('a.xml')])
+    const section = await screen.findByRole('region', { name: 'Clienti da creare' })
+    await user.click(within(section).getByRole('checkbox'))
+
+    expect(within(section).getByRole('combobox', { name: /Cliente di Esempio Servizi/ })).toBeDisabled()
+  })
+
+  it('keeps the old choice, create or skip, when the customer list cannot be read', async () => {
+    mockFetch.mockImplementation((url) =>
+      url === REVIEW
+        ? json({ righe: [reviewRow('a.xml', 'needs_customer_confirmation', '2026/1')] })
+        : json({ righe: [] }),
+    )
+
+    const user = await openAndPick([xml('a.xml')])
+    const section = await screen.findByRole('region', { name: 'Clienti da creare' })
+    expect(within(section).getByRole('checkbox')).toBeChecked()
+    await user.click(within(section).getByRole('combobox', { name: /Cliente di Esempio Servizi/ }))
+    expect(await screen.findAllByRole('option')).toHaveLength(1)
+    expect(screen.getByRole('option', { name: 'Crea un nuovo cliente' })).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    await user.click(screen.getByRole('button', { name: 'Importa 1 fattura' }))
+
+    await waitFor(() => expect(mockFetch.mock.calls.some(([url]) => url === CONFIRM)).toBe(true))
+    const confirm = mockFetch.mock.calls.find(([url]) => url === CONFIRM)
+    expect(JSON.parse(formOf(confirm).get('decisioni') as string)).toEqual({
+      clienti: { '09876543210': { create_customer: true } },
+    })
   })
 
   it('confirms with the same files and the decision keyed by their hash, then reads the register', async () => {
@@ -327,6 +528,64 @@ describe('the import dialog', () => {
       { clienti: { '09876543210': { create_customer: true } } },
       { clienti: { '09876543210': { customer_id: 'customer-1' } } },
     ])
+  })
+
+  it('sends a picked customer in the first batch and what that batch attached in the next', async () => {
+    mockCustomers.data = CUSTOMERS
+    const files = Array.from({ length: 30 }, (_, i) => xml(`f${String(i).padStart(2, '0')}.xml`))
+    mockFetch.mockImplementation((url, init) => {
+      const names = (init?.body as FormData).getAll('file').map((f) => (f as File).name)
+      if (url === REVIEW) {
+        return json({ righe: names.map((n) => reviewRow(n, 'needs_customer_confirmation', n)) })
+      }
+      return json({
+        righe: names.map((n) => ({
+          file: n,
+          sha256: `sha-${n}`,
+          outcome: 'imported',
+          party_key: '09876543210',
+          azienda_id: 'az-1',
+          fattura: { anno: 2026, numero: 1, customer_id: 'cust-acme' },
+          buchi_non_dichiarati: [],
+        })),
+      })
+    })
+
+    const user = await openAndPick(files)
+    const section = await screen.findByRole('region', { name: 'Clienti da creare' })
+    await user.click(within(section).getByRole('combobox', { name: /Cliente di Esempio Servizi/ }))
+    await user.click(await screen.findByRole('option', { name: 'Acme Ltd' }))
+    await user.click(screen.getByRole('button', { name: 'Importa 30 fatture' }))
+
+    await screen.findByText(/non manca nessun numero/)
+    const decisions = mockFetch.mock.calls
+      .filter(([url]) => url === CONFIRM)
+      .map((call) => JSON.parse(formOf(call).get('decisioni') as string))
+    expect(decisions).toEqual([
+      { clienti: { '09876543210': { customer_id: 'cust-acme' } } },
+      { clienti: { '09876543210': { customer_id: 'cust-acme' } } },
+    ])
+  })
+
+  it('forgets a pick when the person chooses other files', async () => {
+    mockCustomers.data = CUSTOMERS
+    mockFetch.mockImplementation((url) =>
+      url === REVIEW
+        ? json({ righe: [reviewRow('a.xml', 'needs_customer_confirmation', '2026/1')] })
+        : json({ righe: [] }),
+    )
+
+    const user = await openAndPick([xml('a.xml')])
+    let section = await screen.findByRole('region', { name: 'Clienti da creare' })
+    await user.click(within(section).getByRole('combobox', { name: /Cliente di Esempio Servizi/ }))
+    await user.click(await screen.findByRole('option', { name: 'Acme Ltd' }))
+    await user.click(screen.getByRole('button', { name: 'Scegli altri file' }))
+    await user.upload(screen.getByLabelText('Carica i file delle fatture'), [xml('b.xml')])
+
+    section = await screen.findByRole('region', { name: 'Clienti da creare' })
+    expect(within(section).getByRole('combobox', { name: /Cliente di Esempio Servizi/ })).toHaveTextContent(
+      'Crea un nuovo cliente',
+    )
   })
 
   it('names the file of every invoice the register refused, and why a file did not read', async () => {

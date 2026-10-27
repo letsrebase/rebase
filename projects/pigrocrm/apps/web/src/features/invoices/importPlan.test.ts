@@ -81,15 +81,41 @@ describe('the new customers of a review', () => {
       row('needs_customer_confirmation', '2'),
       row('needs_customer_confirmation', '3', {
         party_key: '11111111111',
+        azienda_id: 'az-2',
         invoice: invoice({ ragione_sociale: 'Altro S.r.l.', partita_iva: 'IT11111111111' }),
       }),
       row('ready', '4'),
     ]
 
+    // `aziendaId` is the azienda the party's invoices are written on, which bounds the
+    // customers it may be attached to.
     expect(newParties(rows)).toEqual([
-      { key: '09876543210', name: 'Esempio Servizi S.r.l.', taxId: 'IT09876543210', invoices: 2 },
-      { key: '11111111111', name: 'Altro S.r.l.', taxId: 'IT11111111111', invoices: 1 },
+      {
+        key: '09876543210',
+        name: 'Esempio Servizi S.r.l.',
+        taxId: 'IT09876543210',
+        invoices: 2,
+        aziendaId: null,
+        mixedAziende: false,
+      },
+      {
+        key: '11111111111',
+        name: 'Altro S.r.l.',
+        taxId: 'IT11111111111',
+        invoices: 1,
+        aziendaId: 'az-2',
+        mixedAziende: false,
+      },
     ])
+  })
+
+  it('flags a party whose invoices are written on more than one azienda', () => {
+    const rows = [
+      row('needs_customer_confirmation', '1', { azienda_id: 'az-1' }),
+      row('needs_customer_confirmation', '2', { azienda_id: 'az-2' }),
+    ]
+
+    expect(newParties(rows)).toMatchObject([{ invoices: 2, aziendaId: 'az-1', mixedAziende: true }])
   })
 })
 
@@ -127,6 +153,26 @@ describe('what a confirmation would write', () => {
     const created = new Map([['09876543210', 'customer-1']])
 
     expect(decisionsFor(rows, NONE, created)).toEqual({
+      clienti: { '09876543210': { customer_id: 'customer-1' } },
+    })
+  })
+
+  it('attaches by id the customer a person picked from the list, instead of creating one', () => {
+    const chosen = new Map([['09876543210', { id: 'customer-9', name: 'Acme Ltd' }]])
+
+    expect(decisionsFor(rows, NONE, new Map(), chosen)).toEqual({
+      clienti: { '09876543210': { customer_id: 'customer-9' } },
+    })
+  })
+
+  it('lets an unticked customer win over a picked one, and an earlier batch over a pick', () => {
+    const chosen = new Map([['09876543210', { id: 'customer-9', name: 'Acme Ltd' }]])
+    const created = new Map([['09876543210', 'customer-1']])
+
+    expect(decisionsFor(rows, new Set(['09876543210']), new Map(), chosen)).toEqual({
+      clienti: { '09876543210': { skip: true } },
+    })
+    expect(decisionsFor(rows, NONE, created, chosen)).toEqual({
       clienti: { '09876543210': { customer_id: 'customer-1' } },
     })
   })
