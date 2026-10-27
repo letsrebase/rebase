@@ -11,6 +11,7 @@ from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.analytics.schemas import BudgetQuery, CeilingSimulationQuery, PeriodPnlQuery
 from pigrocrm.core.contract_expenses.schemas import ContractExpenseUpdate
 from pigrocrm.core.contracts.schemas import (
+    ClauseNoteUpdate,
     ContractListQuery,
     ContractProjectionQuery,
     ContractUpdate,
@@ -80,6 +81,7 @@ PersonChanges = Annotated[dict[str, Any], WithJsonSchema(PersonUpdate.model_json
 DealChanges = Annotated[dict[str, Any], WithJsonSchema(DealUpdate.model_json_schema())]
 ContractChanges = Annotated[dict[str, Any], WithJsonSchema(ContractUpdate.model_json_schema())]
 RateCardChanges = Annotated[dict[str, Any], WithJsonSchema(RateCardUpdate.model_json_schema())]
+ClauseNoteChanges = Annotated[dict[str, Any], WithJsonSchema(ClauseNoteUpdate.model_json_schema())]
 ContractExpenseChanges = Annotated[
     dict[str, Any], WithJsonSchema(ContractExpenseUpdate.model_json_schema())
 ]
@@ -663,7 +665,11 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
     @mcp.tool()
     @guard
     def get_contract(contract_id: str) -> dict[str, Any]:
-        """Legge un contratto."""
+        """Legge un contratto, con le sue note sulle clausole (`note_clausole`: il
+        riferimento, il testo letterale e l'interpretazione adottata dalla persona,
+        REB-762) e, se è stato rinnovato, l'id di chi lo rinnova
+        (`contratto_successivo_id`, REB-763). Un'interpretazione scritta lì vale più di
+        una lettura tua del testo: usala."""
         return contracts.get(context, contract_id)
 
     @mcp.tool()
@@ -769,6 +775,50 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         """Elenca le schede tariffarie di un contratto, dalla più vecchia alla più
         recente."""
         return {"items": contracts.list_rate_cards(context, contract_id)}
+
+    @mcp.tool()
+    @guard
+    def create_clause_note(
+        contract_id: str,
+        riferimento_clausola: str,
+        testo_letterale: str,
+        interpretazione_adottata: str,
+        note: str | None = None,
+    ) -> dict[str, Any]:
+        """Scrive la lettura di una clausola di un contratto (REB-762):
+        `riferimento_clausola` («Art. 8.3 Rinnovo»), il `testo_letterale` copiato così
+        com'è e l'`interpretazione_adottata`, quella che la persona ha deciso. Una
+        clausola può reggere più di una lettura onesta e il sistema non finge di sapere
+        quale vale: la decisione sta qui, accanto alle parole, e `get_contract` la
+        restituisce. Non scrivere un'interpretazione che non ti è stata detta: chiedila.
+        """
+        return contracts.create_clause_note(
+            context,
+            contract_id,
+            {
+                "riferimento_clausola": riferimento_clausola,
+                "testo_letterale": testo_letterale,
+                "interpretazione_adottata": interpretazione_adottata,
+                "note": note,
+            },
+        )
+
+    @mcp.tool()
+    @guard
+    def update_clause_note(
+        contract_id: str, note_id: str, changes: ClauseNoteChanges
+    ) -> dict[str, Any]:
+        """Corregge una nota su una clausola. `changes` contiene solo i campi da
+        modificare; `note` si svuota con `null`, gli altri tre non si svuotano. Una nota
+        non si cancella: si corregge."""
+        return contracts.update_clause_note(context, contract_id, note_id, changes)
+
+    @mcp.tool()
+    @guard
+    def list_clause_notes(contract_id: str) -> dict[str, Any]:
+        """Elenca le note sulle clausole di un contratto, dalla più vecchia alla più
+        recente: le stesse che `get_contract` restituisce in `note_clausole`."""
+        return {"items": contracts.list_clause_notes(context, contract_id)}
 
     @mcp.tool()
     @guard

@@ -702,6 +702,10 @@ _COPERTE_O_UMANE: dict[Method, str] = {
     "riscriverli su un documento gia' reso",
     ("DocumentService", "add_version"): "richiede byte gia' resi, che l'MCP non produce",
     ("FiscalProfileService", "get"): "describe_fiscal_profile espone gia' il regime",
+    ("ContractService", "get"): "get_contract legge `detail`: la stessa riga con le note sulle "
+    "clausole e il contratto che lo rinnova (REB-762, REB-763)",
+    ("ContractService", "simulate_cap"): "lo raggiunge `simulate_ceiling` quando riceve un "
+    "`contract_id`: il tetto del contratto e' una parte della stessa risposta (REB-761)",
     ("TemplateService", "get"): "describe_template espone gia' il template",
     ("GoogleDriveAccountService", "space_storage"): (
         "read only by the admin's Drive page as part of Drive health; "

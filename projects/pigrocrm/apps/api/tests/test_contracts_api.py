@@ -188,3 +188,51 @@ def test_the_simulator_answers_the_contracts_cap(logged_in: TestClient) -> None:
     assert body["tetto_contratto"]["contract_id"] == contract_id
     assert body["tetto_contratto"]["rientra"] is False
     assert body["tetto_contratto"]["periodo_da"] == "2026-01-01"
+
+
+# ---- clause notes (REB-762) -----------------------------------------------------------
+
+
+def test_a_clause_note_is_written_corrected_listed_and_read_with_the_contract(
+    logged_in: TestClient,
+) -> None:
+    contract_id = _contract(logged_in)
+    created = logged_in.post(
+        f"/api/contracts/{contract_id}/clause-notes",
+        json={
+            "riferimento_clausola": "Art. 8.3 Rinnovo",
+            "testo_letterale": "Il contratto si rinnova salvo disdetta.",
+            "interpretazione_adottata": "Rinnovo tacito, disdetta a 60 giorni.",
+        },
+    )
+    assert created.status_code == 201, created.text
+    note_id = created.json()["id"]
+
+    corrected = logged_in.patch(
+        f"/api/contracts/{contract_id}/clause-notes/{note_id}",
+        json={"note": "Confermato dal cliente il 12 ottobre"},
+    )
+    assert corrected.status_code == 200, corrected.text
+
+    listed = logged_in.get(f"/api/contracts/{contract_id}/clause-notes").json()
+    assert [n["id"] for n in listed] == [note_id]
+    read = logged_in.get(f"/api/contracts/{contract_id}").json()
+    assert [n["riferimento_clausola"] for n in read["note_clausole"]] == ["Art. 8.3 Rinnovo"]
+    assert read["note_clausole"][0]["note"] == "Confermato dal cliente il 12 ottobre"
+    assert read["contratto_successivo_id"] is None
+
+
+def test_a_clause_note_missing_its_interpretation_is_a_422_and_an_unknown_one_a_404(
+    logged_in: TestClient,
+) -> None:
+    contract_id = _contract(logged_in)
+    refused = logged_in.post(
+        f"/api/contracts/{contract_id}/clause-notes",
+        json={"riferimento_clausola": "Art. 1", "testo_letterale": "Testo."},
+    )
+    assert refused.status_code == 422, refused.text
+    missing = logged_in.patch(
+        f"/api/contracts/{contract_id}/clause-notes/00000000-0000-0000-0000-000000000000",
+        json={"note": "x"},
+    )
+    assert missing.status_code == 404, missing.text

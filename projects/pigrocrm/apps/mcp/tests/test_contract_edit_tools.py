@@ -138,3 +138,42 @@ async def test_a_cap_on_the_customers_share_is_set_read_and_simulated(
         )
         assert simulated.structured_content["soglie"] == []
         assert simulated.structured_content["tetto_contratto"]["rientra"] is False
+
+
+async def test_a_note_on_the_renewal_clause_is_read_back_with_get_contract(
+    server, mcp_session: Session
+) -> None:
+    """REB-762's done-when: a note is added to the renewal clause and an agent reads it with
+    `get_contract`; it can also correct it and list them, and a note is never deleted."""
+    contract_id = _contract_id(mcp_session)
+
+    async with Client(server) as client:
+        created = await client.call_tool(
+            "create_clause_note",
+            {
+                "contract_id": contract_id,
+                "riferimento_clausola": "Art. 8.3 Rinnovo",
+                "testo_letterale": "Il contratto si rinnova salvo disdetta.",
+                "interpretazione_adottata": "Rinnovo tacito, disdetta a 60 giorni.",
+            },
+        )
+        note_id = created.structured_content["id"]
+        read = await client.call_tool("get_contract", {"contract_id": contract_id})
+        [note] = read.structured_content["note_clausole"]
+        assert note["interpretazione_adottata"] == "Rinnovo tacito, disdetta a 60 giorni."
+        assert read.structured_content["contratto_successivo_id"] is None
+
+        corrected = await client.call_tool(
+            "update_clause_note",
+            {
+                "contract_id": contract_id,
+                "note_id": note_id,
+                "changes": {"note": "Confermato dal cliente"},
+            },
+        )
+        assert corrected.structured_content["note"] == "Confermato dal cliente"
+        listed = await client.call_tool("list_clause_notes", {"contract_id": contract_id})
+        assert [n["id"] for n in listed.structured_content["items"]] == [note_id]
+
+        names = {tool.name for tool in (await client.list_tools()).tools}
+        assert not {"delete_clause_note", "archive_clause_note"} & names

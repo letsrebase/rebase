@@ -365,6 +365,81 @@ class ContractCapSimulation(BaseModel):
     rientra: bool
 
 
+# ---- clause notes (REB-762) ---------------------------------------------------------
+
+RIFERIMENTO_CLAUSOLA_MAX_LENGTH = 200
+CLAUSE_TEXT_MAX_LENGTH = 20_000
+
+
+def _not_blank(value: str | None) -> str | None:
+    """A reading made of spaces is no reading: `min_length` counts them."""
+    if value is not None and not value.strip():
+        raise ValueError("non può essere vuoto")
+    return value
+
+
+class ClauseNoteCreate(BaseModel):
+    """A reading of one clause: where it is (`riferimento_clausola`, «Art. 8.3 Rinnovo»),
+    what it says word for word (`testo_letterale`) and what the person decided it means
+    (`interpretazione_adottata`). `note` is anything else worth keeping beside them."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    riferimento_clausola: SafeStr = Field(min_length=1, max_length=RIFERIMENTO_CLAUSOLA_MAX_LENGTH)
+    testo_letterale: SafeStr = Field(min_length=1, max_length=CLAUSE_TEXT_MAX_LENGTH)
+    interpretazione_adottata: SafeStr = Field(min_length=1, max_length=CLAUSE_TEXT_MAX_LENGTH)
+    note: SafeStr | None = Field(default=None, max_length=CLAUSE_TEXT_MAX_LENGTH)
+
+    _required_text_is_not_blank = field_validator(
+        "riferimento_clausola", "testo_letterale", "interpretazione_adottata"
+    )(_not_blank)
+
+
+class ClauseNoteUpdate(BaseModel):
+    """A partial patch: the three required fields may be changed and never emptied, `note`
+    is cleared with an explicit `null`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    riferimento_clausola: SafeStr | None = Field(
+        default=None, min_length=1, max_length=RIFERIMENTO_CLAUSOLA_MAX_LENGTH
+    )
+    testo_letterale: SafeStr | None = Field(
+        default=None, min_length=1, max_length=CLAUSE_TEXT_MAX_LENGTH
+    )
+    interpretazione_adottata: SafeStr | None = Field(
+        default=None, min_length=1, max_length=CLAUSE_TEXT_MAX_LENGTH
+    )
+    note: SafeStr | None = Field(default=None, max_length=CLAUSE_TEXT_MAX_LENGTH)
+
+    _required_text_is_not_blank = field_validator(
+        "riferimento_clausola", "testo_letterale", "interpretazione_adottata"
+    )(_not_blank)
+
+
+class ClauseNoteRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    contract_id: UUID
+    riferimento_clausola: str
+    testo_letterale: str
+    interpretazione_adottata: str
+    note: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ContractDetail(ContractRead):
+    """A contract as its page and an agent read it: the row, the clause notes written
+    against it (REB-762) and the contract that renewed it, if one did (REB-763). Only
+    `ContractService.detail` builds one, so a list of contracts stays one query: the
+    notes and the successor are asked for the one contract being opened."""
+
+    contratto_successivo_id: UUID | None
+    note_clausole: list[ClauseNoteRead]
+
+
 # ---- renewal assumptions and the projected figure (REB-375) -----------------------
 
 
