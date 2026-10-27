@@ -346,7 +346,9 @@ export function DealForm({
                 <SelectValue placeholder="Seleziona…" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={NO_OWNER}>Nessuno</SelectItem>
+                {/* A new deal always has an owner: an omitted one is the creator, so
+                    «nessuno» can only be said on an existing deal. */}
+                {!isCreate && <SelectItem value={NO_OWNER}>Nessuno</SelectItem>}
                 {owners.map((person) => (
                   <SelectItem key={person.id} value={person.id}>
                     {person.nome}
