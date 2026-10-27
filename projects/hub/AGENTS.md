@@ -522,6 +522,44 @@ the team builder's catalogue and proposals) or `card_level.level` for a reader t
 the card's JSON only. Never read `Card.seniority` or `Card.anni` off a stored card
 without them.
 
+**A provider, a model or a prompt change is measured before it goes live** (REB-835, design
+2026-10-27 «Evaluation before a change goes live»). The evaluation set is about fifteen real
+profiles, chosen to cover the failures seen (an undated CV, a duplicate person, a
+GitHub-heavy profile, a designer with a portfolio, a very senior lead), each with the card an
+admin wrote by hand as the expected answer. It lives in the hub's database only
+(`card_eval_profiles`, `card_eval_runs`, `card_eval_results`, migration 0037), never in the
+repository, a log, Linear or a PR, because an expected card and the card a run wrote are
+derived from a CV; every row that holds one cascades with the person, and the trail
+(`admin_actions`, entity `card_eval`) names the fields that changed, never their values. The
+three tables are not in `WAREHOUSE_TABLES`.
+
+1. `rebase cards-eval-draft --freelancer <id> --label "senza date" [--freelancer … --label …]`
+   puts a person in the set and drafts their expected card with the `card` task's own model
+   (`CardWriter.compose`, the production writer with nothing stored), as a `bozza`. It prints
+   label, name and `/hub/admin/valutazione/<id>`, never the card. A profile an admin has
+   corrected or accepted is never overwritten by a model.
+2. An admin corrects the card and accepts it in «Valutazione»; any later edit makes it a
+   `bozza` again. Only accepted profiles take part in a run.
+3. `rebase cards-eval --task card --provider P --model M [--effort E]` runs the accepted
+   profiles with `AiCall(override=TaskOverride(P, M, E))`: the seam as the `card` task, answered
+   by that provider and model, so every call is recorded in `ai_usage` under task `card` with
+   `purpose="eval"` and **counts against the task's daily euro cap**, which can end the run
+   early (it then says `INCOMPLETA`, exits 1 and is never taken as a baseline). It never writes
+   a live card and never touches `ai_tasks`. Run it from the `api` container like
+   `cards-refresh` (`docker compose -p rebase --env-file /opt/hub/.env exec api uv run
+   --no-sync rebase cards-eval …`, `-p rebase-preview --env-file /opt/hub-preview/.env` on the
+   preview). The provider must be on and have a key and a price for the model.
+
+Reading the report: one line per person (label and the first characters of the id, never a
+name) with `anni` (within one year of the expected value, or both null), `seniority` (equal)
+and `guardia` (the guards of `cards.py` did not refuse the card) as `ok`/`no`, the ratings of
+`ruolo`, `competenze` and `sintesi` («da valutare» until an admin rates them 1 to 3 in
+«Valutazione»), latency and cost in euro; then the totals, and the change against the
+previous finished run of the task as «meglio/uguale/peggio» per measure. **A change goes live
+when it is no worse than the baseline on the first three and an admin accepts the ratings.**
+The baseline is the run of the current prompt and model: record its id in the PR that
+changes the prompt (`PROMPT_VERSION` in `cards.py`).
+
 **Every «Proponi il team» is a row, answered or not** (migration 0028, Ivan 2026-09-29:
 «salvare tutte le richieste dopo il click proponi team anche se non ancora
 finalizzate/inviate così raccogliamo metriche di uso»). `team_proposals` keeps the
