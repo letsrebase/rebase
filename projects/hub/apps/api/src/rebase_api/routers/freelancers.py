@@ -49,7 +49,11 @@ from rebase_api.deps import (
 from rebase_api.ratelimit import spend_one
 from rebase_core.amounts import NotAnAmount, italian_amount
 from rebase_core.cards import write_after_response
-from rebase_core.freelancers import ALREADY_HAS_CARD_NOTE, FreelancerService
+from rebase_core.freelancers import (
+    ALREADY_HAS_CARD_BY_LINKEDIN_NOTE,
+    ALREADY_HAS_CARD_NOTE,
+    FreelancerService,
+)
 from rebase_core.mail import EmailSender, Mail
 from rebase_core.schemas import DISTINCT_ID_MAX_LENGTH, Ack, FreelancerCreate, SignupUtm
 from rebase_core.users import UserService
@@ -163,7 +167,14 @@ def apply(
             data, cv.file.read(), cv.filename or "", cv.content_type or ""
         )
     if not created and sender is not None:
-        mail = UserService(session, settings).request_link(data.email, note=ALREADY_HAS_CARD_NOTE)
+        users = UserService(session, settings)
+        # The address typed is on file (or was merged into a card, REB-800): the mail goes
+        # there. Otherwise the card was found by its LinkedIn profile, and the mail goes to
+        # the address on file, which the person controls and the form never reveals.
+        if users.by_email(data.email) is not None:
+            mail = users.request_link(data.email, note=ALREADY_HAS_CARD_NOTE)
+        else:
+            mail = users.request_link(read.email, note=ALREADY_HAS_CARD_BY_LINKEDIN_NOTE)
         if mail is not None:
             background.add_task(_send_existing_card_mail, sender, mail)
     if created and tracker is not None:

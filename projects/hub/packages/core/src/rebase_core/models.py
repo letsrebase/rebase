@@ -19,15 +19,19 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, validates
 
 from rebase_core.db import Base, PrimaryKeyMixin, TimestampMixin
+from rebase_core.linkedin import (
+    LINKEDIN_URL_MAX_LENGTH,
+    PROFILE_SQL_PREDICATE,
+    canonical_linkedin,
+)
 from rebase_core.regimes import PARTITA_IVA
 
 UTM_MAX_LENGTH = 200
 UTM_COLUMNS = ("utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term", "utm_id")
 NAME_MAX_LENGTH = 120
-LINKEDIN_URL_MAX_LENGTH = 300
 # A phone number for a company's own referente (REB-380): companies only ask for it
 # today, so it stays optional at this level and required only by `CompanyCreate`'s own
 # validation -- the same split `Freelancer`'s signup-born columns already keep between
@@ -89,8 +93,19 @@ class Signup(Base, PrimaryKeyMixin):
     # they own that address (REB-646).
     rif: Mapped[str | None] = mapped_column(String(REFERRAL_CODE_LENGTH), default=None)
 
+    @validates("linkedin_url")
+    def _canonical_linkedin(self, _key: str, value: str | None) -> str | None:
+        return canonical_linkedin(value)
+
     __table_args__ = (
         Index("uq_orbiters_signups_email_lower", func.lower(email), unique=True),
+        # The same fact for the landing's list (REB-800); see `uq_users_linkedin_lower`.
+        Index(
+            "uq_signups_linkedin_lower",
+            func.lower(linkedin_url),
+            unique=True,
+            postgresql_where=text(PROFILE_SQL_PREDICATE),
+        ),
         # Trigram search on the merged talenti list (REB-285): a bare sign-up has no
         # linked `users` row, so its own `nome`/`cognome`/`email` are what `q` matches
         # against. Migration 0013 creates the GIN indexes that serve these.
@@ -145,6 +160,15 @@ class User(Base, PrimaryKeyMixin, TimestampMixin):
     referral_code: Mapped[str | None] = mapped_column(String(REFERRAL_CODE_LENGTH), default=None)
     role: Mapped[str] = mapped_column(String(10), nullable=False, default="member")
     attivo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Set when an admin merged this row into another person's (REB-800): the row stays,
+    # nothing is deleted, and its address still answers: a login link asked for it opens
+    # the survivor, and a form that types it lands on the survivor. `NULL` for everyone
+    # else. Never a chain: a merge repoints whoever pointed at the row it absorbs.
+    merged_into_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
+
+    @validates("linkedin_url")
+    def _canonical_linkedin(self, _key: str, value: str | None) -> str | None:
+        return canonical_linkedin(value)
 
     __table_args__ = (
         Index("uq_users_email_lower", func.lower(email), unique=True),
@@ -170,6 +194,16 @@ class User(Base, PrimaryKeyMixin, TimestampMixin):
             postgresql_ops={"email": "gin_trgm_ops"},
         ),
         Index("uq_users_referral_code", "referral_code", unique=True),
+        # One person per LinkedIn profile (REB-800), the same fact `uq_users_email_lower`
+        # states for the address, for personal profiles only (`linkedin_key`). Migration 0035
+        # creates it only when no two rows share a profile yet; otherwise
+        # `rebase talent-duplicates --apply` does, after the merge.
+        Index(
+            "uq_users_linkedin_lower",
+            func.lower(linkedin_url),
+            unique=True,
+            postgresql_where=text(PROFILE_SQL_PREDICATE),
+        ),
     )
 
 
@@ -250,6 +284,10 @@ class Freelancer(Base, PrimaryKeyMixin, TimestampMixin, UtmMixin):
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     cv_bytes: Mapped[bytes | None] = mapped_column(LargeBinary, default=None)
     cv_filename: Mapped[str | None] = mapped_column(String(CV_FILENAME_MAX_LENGTH), default=None)
+    # When the CV in this row was stored (REB-800): what «the newest CV» means when two
+    # cards of one person are merged. `updated_at` moves on every status change, so it
+    # cannot say it. `NULL` with no CV; migration 0035 backfills it from `updated_at`.
+    cv_uploaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     cv_mime: Mapped[str | None] = mapped_column(String(CV_MIME_MAX_LENGTH), default=None)
     cv_size: Mapped[int | None] = mapped_column(Integer, default=None)
     tariffa_giornaliera: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), default=None)
@@ -648,6 +686,9 @@ ADMIN_ACTION_ENTITY_TYPES = ("freelancer", "company", "match", "freelancer_fisca
 # outcome (`esito`) and the CRM's sentence (`errore`). REB-517 adds `talents_contacted`,
 # on entity type `team_request`: «Contatta i talenti» and «Rimanda», with how many talents
 # were mailed. No `CHECK` holds this list: it is the record of what the code writes.
+# REB-800 adds `merged` (on the card that was absorbed: whose it went into, and every row
+# that moved, by id, so the merge can be undone), `absorbed` (on the survivor: what it
+# took in) and `unmerged` (the undo, on both).
 ADMIN_ACTION_KINDS = (
     "overridden",
     "cleared",
@@ -664,6 +705,9 @@ ADMIN_ACTION_KINDS = (
     "vetted",
     "pigro_link",
     "talents_contacted",
+    "merged",
+    "absorbed",
+    "unmerged",
 )
 
 

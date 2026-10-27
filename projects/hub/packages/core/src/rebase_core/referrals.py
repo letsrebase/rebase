@@ -196,7 +196,12 @@ class ReferralService:
         referral that does not happen."""
         if not code:
             return None
-        return self.session.scalar(select(User).where(User.referral_code == code.strip().upper()))
+        owner = self.session.scalar(select(User).where(User.referral_code == code.strip().upper()))
+        # A code of a person an admin merged into another (REB-800) credits the survivor:
+        # the absorbed row is a husk that nobody reads a ledger from.
+        if owner is not None and owner.merged_into_id is not None:
+            owner = self.session.get(User, owner.merged_into_id) or owner
+        return owner
 
     def link_signup(
         self, kind: str, entity_id: UUID, code: str | None, *, new_user_id: UUID

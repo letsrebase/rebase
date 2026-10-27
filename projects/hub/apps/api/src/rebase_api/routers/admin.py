@@ -32,10 +32,12 @@ from rebase_core.cards import CardWriter
 from rebase_core.cloud import TalentCloudService
 from rebase_core.comments import CommentService
 from rebase_core.companies import CompanyService
+from rebase_core.duplicates import DuplicateListRead, duplicate_list
 from rebase_core.errors import TeamBuilderOff
 from rebase_core.freelancers import FreelancerService
 from rebase_core.logins import LoginService
 from rebase_core.mail import EmailSender, Mail
+from rebase_core.merge import MergeRead, MergeRequest, PersonMergeService
 from rebase_core.models import NAME_MAX_LENGTH, User
 from rebase_core.pagination import CURSOR_MAX_LENGTH
 from rebase_core.perks import PerkService
@@ -274,6 +276,27 @@ def revert_freelancer_action(
     """Puts a field back to the value a past `overridden` entry names in its own
     `before`, itself recorded as a fresh override."""
     return FreelancerService(session).revert(freelancer_id, action_id, admin.id)
+
+
+@router.get("/talent/duplicati", response_model=DuplicateListRead)
+def list_duplicates(_: AdminDep, session: SessionDep) -> DuplicateListRead:
+    """Who is on the list twice (REB-800): the pairs that share a LinkedIn profile, which
+    can be merged, and the ones that only share a name or a number, which are for an
+    admin to look at. The survivor of each pair is the card with the newest CV."""
+    return duplicate_list(session)
+
+
+@router.post("/freelancers/{freelancer_id}/merge", response_model=MergeRead)
+def merge_freelancer(
+    admin: AdminDep, session: SessionDep, freelancer_id: UUID, body: MergeRequest
+) -> MergeRead:
+    """Merges the card `da` into this one (REB-800): its comments, logins, matches,
+    contracts, campaign rows, referrals and audit entries move here, the newer of the two
+    CVs stays here with its card flagged for regeneration, and the other card is
+    soft-deleted and points at this one. Refused with a sentence when both have a live
+    framework agreement or an active match with the same company, or two different tax
+    codes. Undone from the shell with `rebase talent-duplicates --undo`."""
+    return PersonMergeService(session).merge(freelancer_id, body.da, admin.id)
 
 
 @router.get("/companies", response_model=CompanyList)

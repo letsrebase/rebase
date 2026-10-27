@@ -2,7 +2,7 @@ import re
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
-from urllib.parse import unquote, urlsplit, urlunsplit
+from urllib.parse import urlsplit
 from uuid import UUID
 
 from pydantic import (
@@ -17,13 +17,13 @@ from pydantic import (
 )
 
 from rebase_core.bands import Band
+from rebase_core.linkedin import normalise_linkedin, reject_control_characters
 from rebase_core.models import (
     AZIENDA_MAX_LENGTH,
     COMMENT_MAX_LENGTH,
     DURATA_MAX_LENGTH,
     GIORNI_PRESENZA_MAX,
     GIORNI_PRESENZA_MIN,
-    LINKEDIN_URL_MAX_LENGTH,
     NAME_MAX_LENGTH,
     ORIGINE_MAX_LENGTH,
     POSIZIONE_MAX_LENGTH,
@@ -33,100 +33,14 @@ from rebase_core.models import (
 )
 from rebase_core.validation import SafeStr
 
-LINKEDIN_HOST = "linkedin.com"
 # What the landing sends in `oppref`, bounded to the same 512 characters it bounds it to
 # (the community page's script, gone with the page in REB-72). Not a column width:
 # nothing stores this.
 OPPREF_MAX_LENGTH = 512
 
-# Characters that must never reach a stored value. C0 (tab, CR, LF included), DEL and
-# C1 are refused because `urllib.parse` strips tab/CR/LF from a URL *before* parsing
-# it, so a value with a newline in it validated as a URL and was then stored whole --
-# `.../in/ada\nBcc: qualcuno@altrove.it` was accepted. The same string is later read by
-# an assistant drafting mail to these people, which is where a newline stops being
-# cosmetic. The bidi controls are refused for the mirror-image reason: they make a
-# stored name render as a different name, so what an admin reads is not what is there.
-BIDI_CONTROLS = frozenset("\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069")
-
-
-def _reject_control_characters(value: str) -> str:
-    """Refuses rather than strips, and looks at the value *before* it is trimmed or
-    parsed, so nothing invisible is deleted on the way to the column -- the reasoning
-    `validation.py` records for `SafeStr`, which closes only `\x00`. Note that Python's
-    own `str.strip()` treats `\n`, `\t` and even `\x85` as whitespace, so checking
-    after trimming would let a trailing control character disappear in silence."""
-    for character in value:
-        if character < " " or character == "\x7f" or "\x80" <= character <= "\x9f":
-            raise ValueError("il testo contiene un carattere di controllo, non ammesso")
-        if character in BIDI_CONTROLS:
-            raise ValueError("il testo contiene un carattere di direzione, non ammesso")
-    return value
-
-
-LINKEDIN_PROFILE = "https://www.linkedin.com/in/"
 # What an address may be before it is normalised: a share link carries its tracking, so
 # the raw value is bounded well above the column and the stored one is checked again.
 LINKEDIN_INPUT_MAX_LENGTH = 2000
-# A scheme written out (`https://`, `javascript:`), as opposed to an address pasted
-# without one (`linkedin.com/in/ada`). No dot in it, so `linkedin.com:443/...` is not
-# read as the scheme `linkedin.com`.
-_HAS_SCHEME = re.compile(r"^[a-z][a-z0-9+-]*:", re.IGNORECASE)
-# The name in `/in/<name>`, and whatever LinkedIn appends after it (`/details/`, `/it`).
-_PROFILE_PATH = re.compile(r"^/in/([^/]*)(?:/.*)?$")
-# What a profile's name is made of once decoded: letters and digits of any script, `-`
-# and `_`. Anything else in that segment is not a profile, and is refused rather than
-# stored, because the name is interpolated into a link an admin clicks.
-_PROFILE_NAME = re.compile(r"[\w-]+")
-
-
-def normalise_linkedin(value: str | None) -> str | None:
-    """The one place a LinkedIn address is checked and given its stored shape.
-
-    Until ORB-203 the value was stored exactly as typed and anything short of
-    `https://...linkedin.com/...` was refused, so `linkedin.com/in/ada` pasted from a
-    phone was a 422 and `?utm_source=share` reached the admin list. Now a personal
-    profile, however it arrives (no scheme, `http`, `it.` or `www.`, a trailing slash,
-    query or fragment), is stored as `https://www.linkedin.com/in/<name>`, the name
-    percent-decoded, so `jürgen` and `j%C3%BCrgen` are one person. Any other page on
-    LinkedIn (a company, an old `/pub/` address) is rebuilt from its host and path over
-    `https`. What is not on LinkedIn is still refused, and what is checked is what is
-    stored: `urllib.parse` strips tab, CR and LF before parsing, so control characters
-    are refused on the raw value first."""
-    if value is None or not value.strip():
-        return None
-    trimmed = _reject_control_characters(value).strip()
-    refused = ValueError(f"serve l'indirizzo di un profilo su {LINKEDIN_HOST}, oppure niente")
-    # A browser reads `\` as `/` in an https address and `urlsplit` does not, so
-    # `https://evil.com\.linkedin.com/x` is LinkedIn here and evil.com in the admin's
-    # browser. No LinkedIn address has one.
-    if "\\" in trimmed:
-        raise refused
-    candidate = trimmed if _HAS_SCHEME.match(trimmed) else f"https://{trimmed}"
-    parts = urlsplit(candidate)
-    host = (parts.hostname or "").lower()
-    # The host is compared, never searched: `https://evil.com/linkedin.com/x` and
-    # `https://linkedin.com.evil.com/` are not profiles, and `urlsplit` decides which
-    # part of the string is the host. `javascript:...//linkedin.com/` has a scheme of
-    # its own and fails here too. Credentials or a port in front of the host are refused
-    # rather than carried into a stored link.
-    if (
-        parts.scheme.lower() not in {"http", "https"}
-        or not (host == LINKEDIN_HOST or host.endswith(f".{LINKEDIN_HOST}"))
-        or parts.username is not None
-        or parts.netloc.lower() != host
-    ):
-        raise refused
-    profile = _PROFILE_PATH.match(parts.path)
-    if profile:
-        name = unquote(profile.group(1))
-        if not _PROFILE_NAME.fullmatch(name):
-            raise refused
-        stored = LINKEDIN_PROFILE + name
-    else:
-        stored = urlunsplit(("https", host, parts.path, parts.query, parts.fragment))
-    if len(stored) > LINKEDIN_URL_MAX_LENGTH:
-        raise ValueError(f"al massimo {LINKEDIN_URL_MAX_LENGTH} caratteri")
-    return stored
 
 
 # The id PostHog gave the browser (`shared/analytics` `distinctId()`), sent with an
@@ -209,7 +123,7 @@ class SignupCreate(BaseModel):
     def _oppref(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        trimmed = _reject_control_characters(value).strip()
+        trimmed = reject_control_characters(value).strip()
         return trimmed or None
 
     @field_validator("nome", "cognome", mode="after")
@@ -217,7 +131,7 @@ class SignupCreate(BaseModel):
     def _trimmed(cls, value: str) -> str:
         """Trimmed here rather than in the landing's JavaScript alone: the API is the
         one public write in the CRM, and `"  "` must not become a name of two spaces."""
-        trimmed = _reject_control_characters(value).strip()
+        trimmed = reject_control_characters(value).strip()
         if not trimmed:
             raise ValueError("serve un valore, non solo spazi")
         return trimmed
@@ -308,7 +222,7 @@ def clean_text(value: str, *, what: str) -> str:
     """A one-line value a person types (a name, a company, a phone): trimmed, no
     control or direction character, never only spaces. Shared by the wizards' schemas
     and the team request's (`team_schemas.TeamRequestCreate`)."""
-    trimmed = _reject_control_characters(value).strip()
+    trimmed = reject_control_characters(value).strip()
     if not trimmed:
         raise ValueError(f"serve {what}, non solo spazi")
     return trimmed
@@ -323,7 +237,7 @@ def clean_multiline(value: str, *, what: str) -> str:
     for character in value:
         if character in "\n\r\t":
             continue
-        _reject_control_characters(character)
+        reject_control_characters(character)
     trimmed = value.strip()
     if not trimmed:
         raise ValueError(f"serve {what}, non solo spazi")
@@ -333,7 +247,7 @@ def clean_multiline(value: str, *, what: str) -> str:
 def _https_url(value: str) -> str:
     """Any https address: the additional links are the person's own (a site, a GitHub,
     a portfolio), so the host is not checked, only that it is a link worth following."""
-    trimmed = _reject_control_characters(value).strip()
+    trimmed = reject_control_characters(value).strip()
     parts = urlsplit(trimmed)
     if parts.scheme != "https" or not parts.hostname:
         raise ValueError("serve un indirizzo https completo")
@@ -864,6 +778,10 @@ class TalentoRead(BaseModel):
     lingue: list[str] = Field(default_factory=list)
     sintesi: str | None = None
     fascia: Band | None = None
+    # The other live cards that may be this person (REB-800): the same LinkedIn profile,
+    # name or telephone number, by freelancer id. Empty for almost everyone, and for a
+    # lead. `rebase_core.duplicates` says which signal; an admin merges from there.
+    possibile_duplicato_di: list[UUID] = Field(default_factory=list)
 
 
 class TalentoList(BaseModel):
