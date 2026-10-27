@@ -392,6 +392,22 @@ def test_provider_error_maps_to_llm_unavailable_without_key_in_message(
     assert _usage_rows(opener) == []  # a call that failed spent nothing we know of
 
 
+def test_a_usage_row_that_cannot_be_written_does_not_lose_the_paid_answer(
+    opener: SessionOpener, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    def broken(self: AiConfigService, **kwargs: Any) -> None:
+        raise RuntimeError(f"disk full, key {API_KEY}")
+
+    monkeypatch.setattr(AiConfigService, "record_usage", broken)
+
+    with caplog.at_level(logging.INFO):
+        response = _call(opener, Stub()).complete(_request())
+
+    assert response.parsed is not None
+    assert "usage not recorded: RuntimeError" in caplog.text
+    assert API_KEY not in caplog.text
+
+
 def test_provider_errors_are_domain_errors(opener: SessionOpener) -> None:
     """The API's `domain_error_handler` and the MCP's `_call` both catch `DomainError`,
     not `LlmUnavailable` by name: this is what turns a stalled provider into a 502 or a
@@ -691,6 +707,16 @@ def test_wire_marks_the_catalogue_block_for_caching(opener: SessionOpener, wire:
     ]
 
 
+def test_wire_sends_no_empty_system_block(opener: SessionOpener, wire: Wire) -> None:
+    """A caller with no rules (a probe) must not send `system: [{"text": ""}]`, which
+    Anthropic refuses; with a cached block only that block goes, and with neither, none."""
+    _wire_call(opener).complete(_request(system=""))
+    assert "system" not in wire.body
+
+    _wire_call(opener).complete(_request(system="  ", system_cached=CATALOGUE))
+    assert [block["text"] for block in wire.body["system"]] == [CATALOGUE]
+
+
 def test_wire_sends_no_cache_control_without_a_cached_block(
     opener: SessionOpener, wire: Wire
 ) -> None:
@@ -791,6 +817,32 @@ def test_wire_fallback_block_is_read_as_the_model_that_answered(
     assert response.model == "claude-opus-5-5"
     [row] = _usage_rows(opener)
     assert row.model == "claude-opus-5-5"
+    # No price row for the fallback model: priced as `claude-opus-5`, the one asked for.
+    assert row.priced is True and row.cost_eur is not None and row.cost_eur > 0
+
+
+def test_an_answer_from_an_unpriced_model_still_spends_the_daily_cap(
+    opener: SessionOpener, wire: Wire
+) -> None:
+    """Review of #666, Major 2: a fallback model or a dated alias with no price row used to
+    be recorded unpriced, cost NULL, so the cap never moved."""
+    with opener() as session:
+        task = session.get(AiTask, "card")
+        assert task is not None
+        task.daily_cap_eur = Decimal("0.01")
+        session.commit()
+    wire._handler = lambda request: httpx2.Response(
+        200, json=_beta_message(model="claude-opus-5-20261001")
+    )
+
+    response = _wire_call(opener).complete(_request())
+
+    assert response.model == "claude-opus-5-20261001"
+    [row] = _usage_rows(opener)
+    assert (row.model, row.priced) == ("claude-opus-5-20261001", True)
+    assert row.cost_eur == Decimal("0.012000")
+    with pytest.raises(LlmCapReached):
+        _wire_call(opener).complete(_request())
 
 
 def test_wire_outage_is_llm_unavailable_without_key_or_prompt_in_the_log(

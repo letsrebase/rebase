@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 
 from rebase_api.deps import AdminDep, ProvaCallDep, SessionDep, SettingsDep
-from rebase_core.ai_config import AiConfigService
+from rebase_core.ai_config import MAX_AMOUNT_EUR, AiConfigService
 from rebase_core.ai_schemas import AiConfigRead, PriceRead, ProviderRead, TaskRead
 from rebase_core.errors import LlmUnavailable, NotFound
 from rebase_core.llm import LlmMessage, LlmRequest
@@ -24,12 +24,13 @@ from rebase_core.models import AI_TASKS, AiUsage
 
 router = APIRouter(prefix="/api/hub/admin/ai", tags=["hub-admin"])
 
+PROVA_SYSTEM = "Rispondi in modo brevissimo."
 PROVA_PROMPT = "Rispondi solo con la parola: ok."
 PROVA_MAX_TOKENS = 64
 
 
 class KeyBody(BaseModel):
-    model_config = ConfigDict(extra="forbid", repr=False)
+    model_config = ConfigDict(extra="forbid")
 
     key: str = Field(min_length=1, max_length=512, repr=False)
 
@@ -47,7 +48,7 @@ class TaskBody(BaseModel):
     model: str = Field(min_length=1, max_length=100)
     effort: str | None = None
     max_output_tokens: int = Field(ge=1, le=200_000)
-    daily_cap_eur: Decimal | None = Field(default=None, ge=0)
+    daily_cap_eur: Decimal | None = Field(default=None, ge=0, le=MAX_AMOUNT_EUR)
     enabled: bool
 
 
@@ -56,10 +57,10 @@ class PriceBody(BaseModel):
 
     provider: str = Field(min_length=1, max_length=20)
     model: str = Field(min_length=1, max_length=100)
-    input_eur_per_mtok: Decimal = Field(ge=0)
-    output_eur_per_mtok: Decimal = Field(ge=0)
-    thinking_eur_per_mtok: Decimal | None = Field(default=None, ge=0)
-    cache_read_eur_per_mtok: Decimal | None = Field(default=None, ge=0)
+    input_eur_per_mtok: Decimal = Field(ge=0, le=MAX_AMOUNT_EUR)
+    output_eur_per_mtok: Decimal = Field(ge=0, le=MAX_AMOUNT_EUR)
+    thinking_eur_per_mtok: Decimal | None = Field(default=None, ge=0, le=MAX_AMOUNT_EUR)
+    cache_read_eur_per_mtok: Decimal | None = Field(default=None, ge=0, le=MAX_AMOUNT_EUR)
 
 
 class ProvaRead(BaseModel):
@@ -125,7 +126,7 @@ def prova(
     try:
         response = make_call(task).complete(
             LlmRequest(
-                system="",
+                system=PROVA_SYSTEM,
                 messages=[LlmMessage(role="user", text=PROVA_PROMPT)],
                 output_model=_Probe,
                 max_tokens=PROVA_MAX_TOKENS,

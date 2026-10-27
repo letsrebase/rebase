@@ -226,7 +226,7 @@ def cards_refresh(limit: int) -> int:
     Run once after the deploy that brings the key, and again until it prints «0 schede
     scritte, 0 non riuscite». A CV that failed on its own account is not tried again
     until it changes, so the runs end; a batch that met an outage stops there, counts it
-    among «non riuscite», says «fermato: Claude non disponibile» and leaves it and the
+    among «non riuscite», says «fermato: modello non disponibile» and leaves it and the
     rest to the next run. A card still giving the gender away after its rewrite is among
     «non riuscite» (REB-802), and not tried again until its CV changes. Without a model
     configured for the `card` task it says so, rather than printing «0 schede scritte» for
@@ -250,7 +250,7 @@ def cards_refresh(limit: int) -> int:
         session.close()
     summary = f"{result.written} schede scritte, {result.failed} non riuscite"
     if result.stopped:
-        summary += ", fermato: Claude non disponibile"
+        summary += ", fermato: modello non disponibile"
     print(summary)
     return 0
 
@@ -293,13 +293,19 @@ def _key_from_argument(value: str) -> bytes | None:
     return key if len(key) == KEY_BYTES else None
 
 
-def ai_rotate_secrets(old_key: str, new_key: str) -> int:
-    """`rebase ai-rotate-secrets --old-key X --new-key Y`: re-seals every stored provider
-    key from the old `REBASE_SECRETS_KEY` to the new one, in one transaction, and prints
-    how many. Put the new value in `.env` afterwards (REB-832)."""
-    old, new = _key_from_argument(old_key), _key_from_argument(new_key)
+def ai_rotate_secrets() -> int:
+    """`rebase ai-rotate-secrets`: re-seals every stored provider key from the old
+    `REBASE_SECRETS_KEY` to the new one, in one transaction, and prints how many. Both
+    values come from the environment (`REBASE_SECRETS_KEY_OLD`, `REBASE_SECRETS_KEY_NEW`),
+    never from the command line, where `ps`, the shell history and `docker exec` would show
+    what opens every stored key. Put the new value in `.env` afterwards (REB-832)."""
+    old = _key_from_argument(os.environ.get("REBASE_SECRETS_KEY_OLD", ""))
+    new = _key_from_argument(os.environ.get("REBASE_SECRETS_KEY_NEW", ""))
     if old is None or new is None:
-        print("Le due chiavi devono essere 32 byte in base64.", file=sys.stderr)
+        print(
+            "REBASE_SECRETS_KEY_OLD e REBASE_SECRETS_KEY_NEW devono essere 32 byte in base64.",
+            file=sys.stderr,
+        )
         return 2
     settings = get_settings()
     session = session_factory(create_engine_from_settings(settings))()
@@ -637,12 +643,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Sposta la chiave Anthropic e il modello vecchi in «Modelli AI», con i prezzi",
     )
     seed_parser.add_argument("--eur-per-usd", required=True)
-    rotate_parser = sub.add_parser(
-        "ai-rotate-secrets", help="Ricifra le chiavi dei modelli con un nuovo REBASE_SECRETS_KEY"
+    sub.add_parser(
+        "ai-rotate-secrets",
+        help="Ricifra le chiavi dei modelli: REBASE_SECRETS_KEY_OLD e REBASE_SECRETS_KEY_NEW",
     )
-    rotate_parser.add_argument("--old-key", required=True)
-    rotate_parser.add_argument("--new-key", required=True)
-
     dup_parser = sub.add_parser(
         "talent-duplicates",
         help="Elenca chi è in lista due volte (a secco) e con --apply unisce le schede",
@@ -686,8 +690,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "ai-seed":
         return ai_seed(args.eur_per_usd)
     if args.command == "ai-rotate-secrets":
-        return ai_rotate_secrets(args.old_key, args.new_key)
-
+        return ai_rotate_secrets()
     if args.command == "talent-duplicates":
         return talent_duplicates_command(
             args.apply, args.admin, args.survivor, args.absorbed, args.undo

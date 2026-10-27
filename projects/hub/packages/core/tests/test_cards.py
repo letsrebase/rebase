@@ -34,6 +34,7 @@ from rebase_core.cards import (
 )
 from rebase_core.cv_text import CvText
 from rebase_core.db import session_factory
+from rebase_core.errors import LlmCapReached, LlmNotConfigured
 from rebase_core.freelancers import FreelancerService
 from rebase_core.llm import (
     LlmMessage,
@@ -826,6 +827,39 @@ def test_an_outage_on_a_new_cv_retires_the_old_card(clean: Session) -> None:
     again = CardWriter(clean, RecordingCall([card_response()])).write(freelancer_id)
     assert again.card == CardRead.model_validate(CARD) and again.cv_sha256 == _sha(CV_2026)
     assert again.error is None
+
+
+@pytest.mark.parametrize(
+    ("error", "reason"),
+    [
+        (LlmCapReached("Tetto giornaliero raggiunto"), "Tetto giornaliero raggiunto"),
+        (LlmNotConfigured("Manca la chiave del fornitore"), "Manca la chiave del fornitore"),
+    ],
+    ids=["cap", "not configured"],
+)
+def test_a_call_refused_for_the_cap_or_the_config_says_why_and_retires_nothing(
+    clean: Session, error: LlmUnavailable, reason: str
+) -> None:
+    """Review of #666, minor 6: not «Claude non ha risposto», and not an outage's side
+    effect: a new CV's previous card stays until a model answers, the sentence is the
+    reason «Modelli AI» shows, the CV is not parked, and the batch stops."""
+    freelancer_id = _apply(clean)
+    CardWriter(clean, RecordingCall([card_response()])).write(freelancer_id)
+    MemberService(clean).replace_cv(freelancer_id, CV_2026, "cv 2026.pdf", "application/pdf")
+
+    refused = CardWriter(clean, _Scripted([error])).write(freelancer_id)
+
+    assert refused.error == reason
+    assert refused.card == CardRead.model_validate(CARD)  # nothing was retired
+    assert not _card_is_sql_null(clean, freelancer_id)
+    stored = _stored(clean, freelancer_id)
+    assert stored is not None and stored.error_cv_sha256 is None
+
+    assert CardWriter(clean, _Scripted([error])).refresh_stale() == CardsRefreshed(
+        written=0, failed=1, stopped=True
+    )
+    again = CardWriter(clean, RecordingCall([card_response()])).write(freelancer_id)
+    assert again.error is None and again.cv_sha256 == _sha(CV_2026)
 
 
 def test_an_outage_on_the_same_cv_keeps_its_card(clean: Session) -> None:

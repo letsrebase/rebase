@@ -56,7 +56,7 @@ from rebase_core.bands import band_for
 from rebase_core.card_level import banded, card_read
 from rebase_core.cv_text import CvText
 from rebase_core.db import SessionOpener
-from rebase_core.errors import LlmUnavailable, NotFound
+from rebase_core.errors import LlmCapReached, LlmNotConfigured, LlmUnavailable, NotFound
 from rebase_core.freelancers import ENTITY, FreelancerService
 from rebase_core.llm import LlmCall, LlmMessage, LlmRequest, LlmResponse
 from rebase_core.models import Freelancer, FreelancerCard, User
@@ -476,8 +476,8 @@ class CardWriter:
         self.session.commit()
         try:
             response = self.llm.complete(request)
-        except LlmUnavailable:
-            return self._fail(freelancer_id, digest, "unavailable")
+        except LlmUnavailable as exc:
+            return self._unanswered(freelancer_id, digest, exc)
         card = _card_from(response, cognome, nome)
         if not isinstance(card, Card):
             return self._fail(freelancer_id, digest, card)
@@ -496,8 +496,8 @@ class CardWriter:
             logger.info("card for freelancer %s gave the gender away: asked again", freelancer_id)
             try:
                 again = self.llm.complete(neutral_retry(request, response.text))
-            except LlmUnavailable:
-                return self._fail(freelancer_id, digest, "unavailable")
+            except LlmUnavailable as exc:
+                return self._unanswered(freelancer_id, digest, exc)
             input_tokens += again.input_tokens
             output_tokens += again.output_tokens + again.thinking_tokens
             rewritten = _card_from(again, cognome, nome)
@@ -522,6 +522,20 @@ class CardWriter:
         if not saved:
             return "superseded"
         return "written"
+
+    def _unanswered(self, freelancer_id: UUID, digest: str, error: LlmUnavailable) -> Outcome:
+        """The call did not give a card. A real outage is `_fail`'s «unavailable». A call
+        the seam refused before any network, for the daily cap or a task with no model, is
+        not a provider outage and does not read like one: the stored sentence is the
+        reason «Modelli AI» shows («Tetto giornaliero raggiunto», …), and nothing is
+        retired, since the previous card is as good as it was. Both stop the batch, as an
+        outage does: the next call would be refused the same."""
+        if not isinstance(error, LlmCapReached | LlmNotConfigured):
+            return self._fail(freelancer_id, digest, "unavailable")
+        if not self._save(freelancer_id, digest, {"error": error.message, "error_cv_sha256": None}):
+            return "superseded"
+        logger.warning("card for freelancer %s not written: %s", freelancer_id, "refused")
+        return "unavailable"
 
     def _fail(self, freelancer_id: UUID, digest: str, kind: Failure) -> Outcome:
         """The sentence beside the card, and the failed CV's hash unless the failure was

@@ -203,7 +203,7 @@ def test_cards_refresh_prints_the_counts(
         # An outage: counted among the failed, and the stop said.
         (
             CardsRefreshed(written=1, failed=1, stopped=True),
-            "1 schede scritte, 1 non riuscite, fermato: Claude non disponibile",
+            "1 schede scritte, 1 non riuscite, fermato: modello non disponibile",
         ),
     ],
     ids=["failures", "outage"],
@@ -322,21 +322,49 @@ def test_ai_seed_without_secrets_key_exits_1_with_sentence(
     assert "REBASE_SECRETS_KEY" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("rate", ["NaN", "Infinity", "-1", "0", "100000"])
+def test_ai_seed_refuses_a_rate_that_is_not_a_sensible_number_with_a_sentence(
+    ai_db: Any, capsys: pytest.CaptureFixture[str], rate: str
+) -> None:
+    """Review of #666, nit 3: `NaN` used to reach a comparison and print a traceback."""
+    assert main(["ai-seed", f"--eur-per-usd={rate}"]) == 1
+    err = capsys.readouterr().err
+    assert "il cambio deve essere un numero positivo" in err
+    assert "Traceback" not in err
+
+
 def test_ai_seed_requires_the_exchange_rate(ai_db: Any) -> None:
     with pytest.raises(SystemExit):
         main(["ai-seed"])
 
 
 def test_ai_rotate_secrets_command_reencrypts_and_prints_the_count(
-    ai_db: Any, capsys: pytest.CaptureFixture[str]
+    ai_db: Any, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert main(["ai-seed", "--eur-per-usd", "0.92"]) == 0
     capsys.readouterr()
     new = base64.b64encode(os.urandom(32)).decode()
 
-    assert main(["ai-rotate-secrets", "--old-key", _SECRETS_KEY, "--new-key", new]) == 0
+    monkeypatch.setenv("REBASE_SECRETS_KEY_OLD", _SECRETS_KEY)
+    monkeypatch.setenv("REBASE_SECRETS_KEY_NEW", new)
+
+    assert main(["ai-rotate-secrets"]) == 0
     assert capsys.readouterr().out.strip() == "1 chiavi ricifrate"
 
     # The old key no longer opens it.
-    assert main(["ai-rotate-secrets", "--old-key", _SECRETS_KEY, "--new-key", new]) == 1
+    assert main(["ai-rotate-secrets"]) == 1
     assert "REBASE_SECRETS_KEY" in capsys.readouterr().err
+
+
+def test_ai_rotate_secrets_takes_no_key_on_the_command_line(
+    ai_db: Any, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Review of #666, minor 1: what opens every stored key is in the environment, not in
+    `ps`; without both values the command says so and changes nothing."""
+    monkeypatch.delenv("REBASE_SECRETS_KEY_OLD", raising=False)
+    monkeypatch.delenv("REBASE_SECRETS_KEY_NEW", raising=False)
+
+    assert main(["ai-rotate-secrets"]) == 2
+    assert "REBASE_SECRETS_KEY_OLD" in capsys.readouterr().err
+    with pytest.raises(SystemExit):
+        main(["ai-rotate-secrets", "--old-key", _SECRETS_KEY, "--new-key", _SECRETS_KEY])
