@@ -42,9 +42,11 @@ ADMIN_ROLES: tuple[str, ...] = ("admin",)
 #
 # **Why it is a switch and not a wall.** The product is single-tenant and self-hosted, and
 # the person running it may reasonably want their own agent to do everything they can do.
-# `Settings.mcp_full_access` is read once, in `PatService.resolve`, and stamped onto the
-# actor as `full_access`. The default is closed, so nobody has to know this exists to be
-# safe; opening it is a decision about one installation, recorded in its `.env`.
+# `Settings.mcp_full_access` is the ceiling and the token's own `full_access` is the
+# choice (REB-810): `PatService.resolve` stamps the actor with both and the actor carries
+# `full_access` only where both are open. The default is closed on each, so nobody has to
+# know this exists to be safe; opening the ceiling is a decision about one installation,
+# and opening a token is its owner's decision about one agent.
 #
 # The list does not change when the switch flips -- it *is* what the switch is about,
 # which is why every argument above stays here in full. The real cure remains scopes on a
@@ -180,7 +182,8 @@ class Actor(BaseModel):
     type: ActorType
     role: Role
     # What this credential may do, carried on the credential itself rather than read
-    # from a global at the point of use. `PatService.resolve` sets it from
+    # from a global at the point of use. `PatService.resolve` sets it from the token's
+    # own `full_access` and the space's
     # `Settings.mcp_full_access`; a browser session never sets it because a `user` actor
     # is not subject to the list at all. Keeping it here is what makes a REST request
     # presenting a PAT behave exactly like the MCP transport -- the asymmetry that let a

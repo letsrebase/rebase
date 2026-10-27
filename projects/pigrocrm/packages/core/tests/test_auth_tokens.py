@@ -22,7 +22,13 @@ from pigrocrm.core.auth.tokens import (
     issue_refresh_token,
 )
 from pigrocrm.core.config import Settings
-from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
+from pigrocrm.core.errors import (
+    AgentForbidden,
+    Conflict,
+    NotFound,
+    PermissionDenied,
+    ValidationFailed,
+)
 
 SETTINGS = Settings(jwt_secret="test-secret-not-for-production-and-32-chars-long")
 ADMIN = Actor(id=None, type="system", role="admin")
@@ -187,8 +193,11 @@ def test_pat_resolves_to_an_actor_and_records_last_use(db_session: Session) -> N
     assert service.list(actor)[0].last_used_at is not None
 
 
-def test_the_installation_decides_what_a_token_may_do(db_session: Session) -> None:
-    """`full_access` is stamped here or nowhere.
+def test_a_token_reaches_the_privileged_surface_only_where_it_and_the_space_both_say_so(
+    db_session: Session,
+) -> None:
+    """`full_access` is stamped here or nowhere, from two things (REB-810): the token's own
+    flag, which its owner chose, and the space's `mcp_full_access`, the ceiling.
 
     It is the one place an `mcp` actor is built from a credential, so it is the one place
     that can answer "what may this token do" once rather than at every point of use. A
@@ -196,10 +205,10 @@ def test_the_installation_decides_what_a_token_may_do(db_session: Session) -> No
     and the MCP adapter free to disagree -- which is exactly the asymmetry that once let a
     `curl` issue an invoice while the tool was unregistered.
 
-    Both halves asserted against `Settings(_env_file=None, ...)` and never against the
-    ambient process settings: the owner of this repository runs with the switch **on**,
-    and a test that inherited that would assert the opposite of what it claims on his
-    machine and pass anyway.
+    Asserted against `Settings(_env_file=None, ...)` and never against the ambient process
+    settings: the owner of this repository runs with the switch **on**, and a test that
+    inherited that would assert the opposite of what it claims on his machine and pass
+    anyway.
     """
     user = _make_user(db_session, "pat-switch@test.it")
     actor = Actor(id=user.id, type="user", role="admin")
@@ -207,11 +216,180 @@ def test_the_installation_decides_what_a_token_may_do(db_session: Session) -> No
     chiusa = Settings(_env_file=None)  # type: ignore[call-arg]
     aperta = Settings(_env_file=None, mcp_full_access=True)  # type: ignore[call-arg]
 
-    _, raw = PatService(db_session, chiusa).create("Claude locale", actor)
+    _, closed = PatService(db_session, aperta).create("Chiacchiere", actor)
+    _, open_ = PatService(db_session, aperta).create("Fatturazione", actor, full_access=True)
 
-    assert PatService(db_session, chiusa).resolve(raw).full_access is False
-    # The same token, the same user, the same role: only the installation changed.
-    assert PatService(db_session, aperta).resolve(raw).full_access is True
+    # The same user, the same role, the same space: only the token differs.
+    assert PatService(db_session, aperta).resolve(closed).full_access is False
+    assert PatService(db_session, aperta).resolve(open_).full_access is True
+    # And the ceiling wins over a token that asks for more than the space offers.
+    assert PatService(db_session, chiusa).resolve(open_).full_access is False
+
+
+def test_a_token_cannot_be_made_with_what_the_space_does_not_offer(db_session: Session) -> None:
+    """Stored closed instead of refused it would be a flag nobody can see doing anything,
+    and the day an administrator opens the switch every such token would open with it."""
+    user = _make_user(db_session, "pat-ceiling@test.it")
+    actor = Actor(id=user.id, type="user", role="admin")
+    chiusa = Settings(_env_file=None)  # type: ignore[call-arg]
+
+    with pytest.raises(ValidationFailed) as exc:
+        PatService(db_session, chiusa).create("Fatturazione", actor, full_access=True)
+
+    assert exc.value.details["field"] == "full_access"
+    assert PatService(db_session, chiusa).list(actor) == []
+
+
+def test_an_agent_credential_cannot_mint_a_token_that_opens_the_privileged_surface(
+    db_session: Session,
+) -> None:
+    """A token is accepted on every REST route and `POST /api/tokens` is one of them: the
+    token a person kept closed would otherwise mint an open one for itself."""
+    user = _make_user(db_session, "pat-mint@test.it")
+    aperta = Settings(_env_file=None, mcp_full_access=True)  # type: ignore[call-arg]
+    service = PatService(db_session, aperta)
+    agent = Actor(id=user.id, type="mcp", role="admin")
+
+    with pytest.raises(AgentForbidden):
+        service.create("Per me", agent, full_access=True)
+
+    _, raw = service.create("Chiuso", agent)  # the ordinary token is unchanged
+    assert raw.startswith(PAT_PREFIX)
+
+
+def _collaboratore(db_session: Session, email: str):
+    return UserService(db_session).create(
+        UserCreate(email=email, password="supersegreta1", nome="Colla", ruolo="collaboratore"),
+        ADMIN,
+    )
+
+
+def _full_access_entries(db_session: Session, owner_id) -> list[Activity]:
+    return list(
+        db_session.scalars(
+            select(Activity)
+            .where(Activity.entity_id == owner_id, Activity.kind == "pat_full_access_changed")
+            .order_by(Activity.occurred_at, Activity.id)
+        )
+    )
+
+
+def test_the_owner_changes_the_flag_and_every_change_is_recorded(db_session: Session) -> None:
+    user = _make_user(db_session, "pat-flag@test.it")
+    actor = Actor(id=user.id, type="user", role="admin")
+    aperta = Settings(_env_file=None, mcp_full_access=True)  # type: ignore[call-arg]
+    service = PatService(db_session, aperta)
+    record, raw = service.create("Claude", actor)
+
+    opened = service.set_full_access(record.id, True, actor)
+    assert opened.full_access is True
+    assert service.resolve(raw).full_access is True
+    closed = service.set_full_access(record.id, False, actor)
+    assert closed.full_access is False
+    assert service.resolve(raw).full_access is False
+
+    first, second = _full_access_entries(db_session, user.id)
+    assert (first.payload["full_access"], first.payload["full_access_prima"]) == (True, False)
+    assert (second.payload["full_access"], second.payload["full_access_prima"]) == (False, True)
+    assert first.payload["token_id"] == str(record.id)
+    assert (first.actor_id, first.actor_type) == (user.id, "user")
+    assert raw not in str([first.payload, second.payload])
+
+
+def test_setting_the_flag_to_what_it_is_records_nothing(db_session: Session) -> None:
+    user = _make_user(db_session, "pat-noop@test.it")
+    actor = Actor(id=user.id, type="user", role="admin")
+    service = PatService(db_session, Settings(_env_file=None, mcp_full_access=True))  # type: ignore[call-arg]
+    record, _ = service.create("Claude", actor)
+
+    assert service.set_full_access(record.id, False, actor).full_access is False
+
+    assert _full_access_entries(db_session, user.id) == []
+
+
+def test_an_administrator_changes_a_colleagues_token_and_the_entry_names_who(
+    db_session: Session,
+) -> None:
+    admin = _make_user(db_session, "pat-admin@test.it")
+    colleague = _collaboratore(db_session, "pat-colla@test.it")
+    aperta = Settings(_env_file=None, mcp_full_access=True)  # type: ignore[call-arg]
+    service = PatService(db_session, aperta)
+    record, raw = service.create(
+        "Colla", Actor(id=colleague.id, type="user", role="collaboratore"), full_access=True
+    )
+    admin_actor = Actor(id=admin.id, type="user", role="admin")
+
+    assert [token.owner_nome for token in service.list_team(admin_actor)] == ["Colla"]
+    service.set_full_access(record.id, False, admin_actor)
+
+    assert service.resolve(raw).full_access is False
+    (entry,) = _full_access_entries(db_session, colleague.id)
+    assert entry.actor_id == admin.id, "the owner's timeline names the administrator"
+    assert entry.payload["full_access"] is False
+
+
+def test_a_member_cannot_change_or_list_a_colleagues_tokens(db_session: Session) -> None:
+    owner = _collaboratore(db_session, "pat-own@test.it")
+    other = _collaboratore(db_session, "pat-other@test.it")
+    aperta = Settings(_env_file=None, mcp_full_access=True)  # type: ignore[call-arg]
+    service = PatService(db_session, aperta)
+    record, _ = service.create("Mio", Actor(id=owner.id, type="user", role="collaboratore"))
+    stranger = Actor(id=other.id, type="user", role="collaboratore")
+
+    with pytest.raises(PermissionDenied):
+        service.set_full_access(record.id, True, stranger)
+    with pytest.raises(PermissionDenied):
+        service.list_team(stranger)
+
+    assert _full_access_entries(db_session, owner.id) == []
+
+
+def test_a_token_cannot_open_itself_nor_a_sibling(db_session: Session) -> None:
+    """The person's decision is not the agent's, whatever the agent's role: this is the
+    REST route an open `PATCH` would be reachable by with the token alone."""
+    user = _make_user(db_session, "pat-self@test.it")
+    aperta = Settings(_env_file=None, mcp_full_access=True)  # type: ignore[call-arg]
+    service = PatService(db_session, aperta)
+    record, raw = service.create("Chiuso", Actor(id=user.id, type="user", role="admin"))
+    agent = service.resolve(raw)
+
+    with pytest.raises(AgentForbidden):
+        service.set_full_access(record.id, True, agent)
+
+    assert service.resolve(raw).full_access is False
+    assert _full_access_entries(db_session, user.id) == []
+
+
+def test_the_flag_cannot_be_opened_above_the_ceiling_but_can_always_be_closed(
+    db_session: Session,
+) -> None:
+    user = _make_user(db_session, "pat-above@test.it")
+    actor = Actor(id=user.id, type="user", role="admin")
+    record, _ = PatService(
+        db_session,
+        Settings(_env_file=None, mcp_full_access=True),  # type: ignore[call-arg]
+    ).create("Claude", actor, full_access=True)
+    chiusa = PatService(db_session, Settings(_env_file=None))  # type: ignore[call-arg]
+
+    # The administrator closed the switch afterwards: the flag keeps what it was, and the
+    # owner can still close it.
+    assert chiusa.set_full_access(record.id, False, actor).full_access is False
+    with pytest.raises(ValidationFailed):
+        chiusa.set_full_access(record.id, True, actor)
+
+
+def test_a_revoked_token_has_nothing_left_to_decide(db_session: Session) -> None:
+    user = _make_user(db_session, "pat-dead@test.it")
+    actor = Actor(id=user.id, type="user", role="admin")
+    service = PatService(db_session, Settings(_env_file=None, mcp_full_access=True))  # type: ignore[call-arg]
+    record, _ = service.create("Claude", actor)
+    service.revoke(record.id, actor)
+
+    with pytest.raises(Conflict):
+        service.set_full_access(record.id, True, actor)
+
+    with pytest.raises(NotFound):
+        service.set_full_access(uuid4(), True, actor)
 
 
 def test_revoked_pat_stops_working(db_session: Session) -> None:

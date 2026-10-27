@@ -600,6 +600,11 @@ ROWS: list[Row] = [
     # did NOT gate minting: both rows and the spec §10 table stand as written.
     Row("POST", "/api/tokens", expect="open", body={"nome": "matrice-token"}),
     Row("DELETE", "/api/tokens/{token_id}", expect="open"),
+    # REB-810: a token's own full access. Open to every role for the same reason: it is the
+    # owner's own token, and a foreign id is a 404 from here (an administrator may change a
+    # colleague's, which no row in this matrix reaches). An agent credential is refused by
+    # the service whatever its role, and `test_token_full_access_api.py` owns that.
+    Row("PATCH", "/api/tokens/{token_id}", expect="open", body={"full_access": False}),
     # --- users, invites, rates: admin (auth/service.py, auth/invitations.py) ---------
     # `PATCH /api/users/{user_id}` is REB-292's route: its last-admin guard sits behind
     # `require_admin`, so as `collaboratore` this answers 403 before and after that

@@ -163,8 +163,9 @@ Per ciascuna delle 14 fatture:
    elenca le sottocartelle per cliente, e sceso in una di quelle il PDF della fattura
    (`apps/mcp/src/pigrocrm_mcp/tools/drive_privileged.py`; registrato solo con
    `PIGROCRM_MCP_FULL_ACCESS=true` **e** Google configurato — `gmail_configured`,
-   verificato da `server.py`). Non esiste ricerca per nome: bisogna scendere cartella per
-   cartella.
+   verificato da `server.py`; dal REB-810 li vede solo un token con l'«Accesso completo»
+   scelto dal suo titolare, creato con quella spunta o aperto dalla pagina Token). Non
+   esiste ricerca per nome: bisogna scendere cartella per cartella.
 2. **Controllo incrociato numero↔file — passo dell'operatore, nessun tool lo fa da
    solo**: prima di usare un file come `drive_file_id` di una riga, aprirlo (o leggerlo
    con `read_drive_file`) e confermare che il numero di fattura sul PDF corrisponda alla

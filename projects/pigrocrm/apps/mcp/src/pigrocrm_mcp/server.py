@@ -176,7 +176,9 @@ def build_server(
             resolved_settings, session_factory=getattr(session_provider, "new_session", None)
         ),
     )
-    mcp = GuidedMCPServer("PigroCRM", instructions=INSTRUCTIONS, middleware=middleware)
+    mcp = GuidedMCPServer(
+        "PigroCRM", instructions=INSTRUCTIONS, middleware=middleware, actor_provider=actor_provider
+    )
 
     # Resolved once, here, rather than per call (Task 4A-1). `ScopedSessionProvider`
     # (production, via `__main__.py`) exposes `.scope()`; a plain callable provider
@@ -384,39 +386,45 @@ def build_server(
         slack_tools.register(mcp, context, _guard, resolved_settings)
 
     if resolved_settings.mcp_full_access:
-        # The other half of the switch. `Actor.full_access` (stamped in
-        # `PatService.resolve`) decides whether the *service* says yes; this decides
-        # whether there is a door at all. Both read the same setting, and
-        # `test_mcp_invoice_ban.py` fails if they disagree -- registered tools that all
-        # refuse, or capabilities with no way to reach them, are both worse than either
-        # honest state.
+        # The ceiling, and only the ceiling (REB-810). `Settings.mcp_full_access` decides
+        # whether there is a door at all; which tokens are shown it is each token's own
+        # `full_access`, read from the actor by `GuidedMCPServer` (`list_tools`,
+        # `call_tool`), and the service says yes or no from the same flag
+        # (`Actor.full_access`, stamped in `PatService.resolve` from the token and this
+        # setting). `test_mcp_invoice_ban.py` fails if the two disagree -- registered tools
+        # that all refuse, or capabilities with no way to reach them, are both worse than
+        # either honest state.
         #
         # Conditional for the same reason Gmail is: not registered means not listed and
         # not callable. An installation that has not opted in does not get tools answering
-        # «vietato», it gets a surface on which they do not exist. The module
-        # reads the settings once more for the one tool that also needs a mailbox
-        # (`discover_gmail_correspondents`), which is absent without Google exactly as
-        # `tools/gmail.py` is.
-        from pigrocrm_mcp.tools import privileged as privileged_tools
+        # «vietato», it gets a surface on which they do not exist, and a token that has not
+        # been given the flag sees the same surface. The module reads the settings once
+        # more for the one tool that also needs a mailbox (`discover_gmail_correspondents`),
+        # which is absent without Google exactly as `tools/gmail.py` is.
+        #
+        # Everything registered inside the block is what a token without the flag does not
+        # see: the block, not a list of names, is the definition of «privileged».
+        with mcp.privileged_registration():
+            from pigrocrm_mcp.tools import privileged as privileged_tools
 
-        privileged_tools.register(mcp, context, _guard, resolved_settings)
+            privileged_tools.register(mcp, context, _guard, resolved_settings)
 
-        if gmail_configured(resolved_settings):
-            # Slice 9C §4.2's three Drive reads, and the only privileged module whose
-            # *whole* content needs Google as well as the switch: reading a folder or a
-            # file spends the titolare's Drive quota under their OAuth consent, and
-            # without a Google client there is no credential to spend it with. So the
-            # second condition is expressed here, in the import, rather than as an `if`
-            # inside `register` -- unlike `privileged.py`, which is registered by the
-            # switch alone and re-reads the settings for its one Gmail tool.
-            #
-            # Both privileged modules are named in `test_mcp_invoice_ban.py`'s
-            # `PRIVILEGED_MODULES`, and that file fails if either is reachable outside
-            # this block: the exemption its source scans grant is enumerated in one
-            # place and checked, not left to a comment.
-            from pigrocrm_mcp.tools import drive_privileged as drive_privileged_tools
+            if gmail_configured(resolved_settings):
+                # Slice 9C §4.2's three Drive reads, and the only privileged module whose
+                # *whole* content needs Google as well as the switch: reading a folder or a
+                # file spends the titolare's Drive quota under their OAuth consent, and
+                # without a Google client there is no credential to spend it with. So the
+                # second condition is expressed here, in the import, rather than as an `if`
+                # inside `register` -- unlike `privileged.py`, which is registered by the
+                # switch alone and re-reads the settings for its one Gmail tool.
+                #
+                # Both privileged modules are named in `test_mcp_invoice_ban.py`'s
+                # `PRIVILEGED_MODULES`, and that file fails if either is reachable outside
+                # this block: the exemption its source scans grant is enumerated in one
+                # place and checked, not left to a comment.
+                from pigrocrm_mcp.tools import drive_privileged as drive_privileged_tools
 
-            drive_privileged_tools.register(mcp, context, _guard, resolved_settings)
+                drive_privileged_tools.register(mcp, context, _guard, resolved_settings)
 
     # Once every tool is registered and before the analytics wrapper reads the schemas:
     # the listing an agent pays for in tokens loses the `title`s nobody reads (`listing.py`).

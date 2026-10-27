@@ -2,6 +2,7 @@ import { Copy } from 'lucide-react'
 import { useId, useState } from 'react'
 import { toast } from '@rebase/ui/sonner'
 import { Button } from '@rebase/ui/button'
+import { Checkbox } from '@rebase/ui/checkbox'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { Textarea } from '@rebase/ui/textarea'
@@ -14,7 +15,7 @@ import {
   mcpServersJson,
   serverName,
 } from './connectSnippets'
-import { useCreateToken, type CreatedToken } from './queries'
+import { useCreateToken, useTokenOptions, type CreatedToken } from './queries'
 
 /**
  * Everything a client needs to talk to this installation's MCP server over HTTP
@@ -38,6 +39,12 @@ export function ConnectAgentPanel({
   const [nome, setNome] = useState('Claude Code')
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
   const create = useCreateToken()
+  // The invoice, rate and period-lock tools are chosen per token (REB-810) and closed
+  // unless asked for, here as in the tokens page. Unknown counts as closed: the server
+  // refuses an opening the space does not offer.
+  const [fullAccess, setFullAccess] = useState(false)
+  const options = useTokenOptions()
+  const fullAccessAvailable = options.data?.full_access_available === true
   // The dialog and the start page can both be on screen (the sidebar's «Collega un
   // agente» over an empty space's Home): fixed ids would appear twice and a label
   // would name the input behind the dialog.
@@ -54,7 +61,7 @@ export function ConnectAgentPanel({
 
   function mint() {
     setProblem(null)
-    create.mutate(nome, {
+    create.mutate({ nome, full_access: fullAccess && fullAccessAvailable }, {
       onSuccess: (created) => onIssued(created),
       onError: (error) => setProblem(toProblem(error)),
     })
@@ -127,6 +134,20 @@ export function ConnectAgentPanel({
           {fieldError?.field === 'nome' && (
             <p className="text-sm text-destructive">{fieldError.message}</p>
           )}
+          <div className="flex items-center gap-2 pt-1">
+            <Checkbox
+              id={id('token-full-access')}
+              checked={fullAccess && fullAccessAvailable}
+              disabled={!fullAccessAvailable}
+              onCheckedChange={(checked) => setFullAccess(checked === true)}
+            />
+            <Label htmlFor={id('token-full-access')}>Accesso completo</Label>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            {fullAccessAvailable
+              ? 'Per emettere o registrare fatture, cambiare tariffe e chiudere i mesi: atti che non si annullano. Chiuso, se non lo spunti.'
+              : 'Chiuso per questo spazio: lo apre un amministratore in Impostazioni → Spazio. Senza, l’agente non ha gli strumenti per fatture, tariffe e chiusura dei mesi.'}
+          </p>
         </div>
       )}
 

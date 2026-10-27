@@ -44,6 +44,8 @@ const KIND_LABELS: Record<string, string> = {
   'gmail.bozza_creata': 'Bozza di email creata',
   'gmail.bozza_modificata': 'Bozza di email modificata',
   'gmail.bozza_eliminata': 'Bozza di email eliminata',
+  // A token's full access opened or closed (REB-810), recorded on its owner's account.
+  pat_full_access_changed: 'Accesso completo di un token modificato',
   'slack.abbinamento_manuale': 'Utente Slack abbinato a mano',
   'slack.abbinamento_rimosso': 'Abbinamento Slack rimosso',
   'slack.abbinamenti_rifatti': 'Abbinamenti Slack rifatti',
