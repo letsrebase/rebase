@@ -357,6 +357,37 @@ export function Gallery() {
           </div>
         </Section>
 
+        <Section
+          title="Scrolling table"
+          note="A table wider than its card scrolls inside it and takes a tab stop while it does (REB-775): focus it and the arrow keys move it. The region's name is the caller's."
+          className="items-stretch"
+        >
+          {/* Flush against a box that clips, as the CRM's and the hub's list wrappers are
+              (`overflow-x-auto overflow-y-hidden border`): the place a ring would be cut off. */}
+          <div className="w-72 overflow-hidden border border-border bg-card">
+            <Table scrollLabel="Trattamento fiscale per voce">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Voce</TableHead>
+                  <TableHead>Natura</TableHead>
+                  <TableHead>Aliquota</TableHead>
+                  <TableHead>Riferimento normativo</TableHead>
+                  <TableHead className="text-right">Imponibile</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow>
+                  <TableCell>Consulenza</TableCell>
+                  <TableCell>N2.2</TableCell>
+                  <TableCell>0%</TableCell>
+                  <TableCell>Art. 1, commi 54-89, L. 190/2014</TableCell>
+                  <TableCell className="text-right">1.200,00</TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          </div>
+        </Section>
+
         <Section title="Tabs" note="Both variants, and the vertical orientation: the underlined row, the same row with no rule under it, and the column.">
           <Tabs defaultValue="uno" className="w-72">
             <TabsList>

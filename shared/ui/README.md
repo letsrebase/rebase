@@ -178,7 +178,7 @@ in full, because the obvious reading of it is wrong twice over (REB-308). Radix 
 that is not on the path to the open surface, sparing every `[aria-live]` region and its
 ancestors. Sonner's toaster is one of those and sits inside `<main>`, so the marks land
 on `<main>`'s own children rather than stopping at `#root`, and the reported nodes are
-five sections of this gallery, never the trigger. Radix does trap Tab inside the
+six sections of this gallery (the sixth is the scrolling table, a real tab stop), never the trigger. Radix does trap Tab inside the
 surface, so nothing outside is reachable in practice, but axe reads the static DOM and
 cannot see a focus trap; the remedy it accepts is `inert` on the background, which radix
 does not use. A dialog and a sheet put the identical attributes on the identical
