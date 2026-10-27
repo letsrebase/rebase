@@ -144,8 +144,8 @@ id, the admin's full detail where a card exists:
 
 | Tool | What it answers |
 |---|---|
-| `list_talenti` | the «Talenti» screen: cards and bare sign-ups as one list, with search, filters, cursor |
-| `get_talento` | one talent by id: the card's detail (state, thread, UTM, logins, downloads, Pigro space) or the bare lead row |
+| `list_talenti` | the «Talenti» screen: cards and bare sign-ups as one list, with search, filters (also seniority, years, sectors, languages, card state), a sort by rate or years, a short row (`campi` for more) and a cursor |
+| `get_talento` | one talent by id: the list's row (with the card's fields) over the card's detail (state, thread, UTM, logins, downloads, Pigro space), or the bare lead row |
 | `create_freelancer_from_signup` | a card drafted from public sources, with its sources in the thread |
 | `get_freelancer` | a card by id, `FreelancerRead` with its comments |
 | `read_freelancer_cv` | the CV's text, not its bytes |

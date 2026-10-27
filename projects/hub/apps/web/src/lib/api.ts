@@ -733,7 +733,9 @@ export interface TalentiFilters {
   remoto?: Remoto
   tariffa_min?: string
   tariffa_max?: string
-  origine?: string
+  /** The page of the site the person started from (`home`, `pigrocrm`); `origine`,
+   *  the channel a row shows (`form`, `wizard`, `admin`), has no control on the page. */
+  pagina_origine?: string
   utm_source?: string
   has_cv?: boolean
   con_accessi?: boolean

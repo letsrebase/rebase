@@ -16,6 +16,7 @@ from pydantic import (
     model_validator,
 )
 
+from rebase_core.bands import Band
 from rebase_core.models import (
     AZIENDA_MAX_LENGTH,
     COMMENT_MAX_LENGTH,
@@ -819,11 +820,14 @@ class TalentoRead(BaseModel):
     ones `FreelancerRead` carries; a bare sign-up has neither, so both stay `None` for
     a `lead` row.
 
-    `posizione` is the card's own, and `ruolo`, `seniority`, `anni`, `competenze` and
-    `luogo` are read off Claude's anonymous card (REB-778), so an agent matching a
-    request reads what a person does from the list itself rather than one profile at a
-    time. The card's five are empty for a talent with no live anonymous card, and all six
-    for a lead."""
+    `posizione` is the card's own, and `ruolo`, `seniority`, `anni`, `competenze`,
+    `settori`, `lingue`, `luogo` and `sintesi` are read off Claude's anonymous card
+    (REB-778, REB-798), so an agent matching a request reads what a person does from the
+    list itself rather than one profile at a time; `fascia` is the client's price band
+    of the card's own rate (`bands.band_for`), read at the same moment. Those nine are
+    empty for a talent with no live anonymous card (`fascia` follows the rate, not the
+    card), and all of them for a lead. One builder, `talenti.card_fields`, fills them
+    for the list and for the MCP `get_talento`, so the two cannot disagree."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -849,6 +853,10 @@ class TalentoRead(BaseModel):
     anni: int | None = None
     competenze: list[str] = Field(default_factory=list)
     luogo: str | None = None
+    settori: list[str] = Field(default_factory=list)
+    lingue: list[str] = Field(default_factory=list)
+    sintesi: str | None = None
+    fascia: Band | None = None
 
 
 class TalentoList(BaseModel):

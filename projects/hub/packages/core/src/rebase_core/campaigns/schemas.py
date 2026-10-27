@@ -37,7 +37,9 @@ FilterAmount = Annotated[Decimal, Field(ge=0, decimal_places=2)]
 class TalentiFiltri(BaseModel):
     """The Talenti list's own filters (`GET /api/hub/talent`, `talenti.py:191`), stored
     on the campaign and replayed through `TalentiService` when the list is shown and when
-    a mail is about to leave."""
+    a mail is about to leave. `origine` is the marketing page the person started from
+    (`home`, `pigrocrm`), stored under that key since before the list named it
+    `pagina_origine` (REB-798); `audience._from_talenti` translates it on replay."""
 
     lista: Literal["talenti"]
     stato: str | None = Field(default=None, max_length=20)
