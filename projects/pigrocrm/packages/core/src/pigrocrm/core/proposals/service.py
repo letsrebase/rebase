@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.auth.models import User
 from pigrocrm.core.contracts.models import Contract, RateCard
 from pigrocrm.core.contracts.service import (
     check_payment_terms_together,
@@ -184,18 +185,27 @@ class ProposalService:
             )
         return proposal
 
+    def _decider(self, actor: Actor) -> str:
+        """Who decided, read from the credential and never from a request (REB-806): the
+        member's name as it is now, or the actor's kind for one without a user row. The
+        timeline row carries the user id as well, so a later rename does not orphan it."""
+        user = self.session.get(User, actor.id) if actor.id is not None else None
+        return user.nome or user.email if user is not None else actor.type
+
     def reject(self, proposal_id: UUID, data: ProposalReject, actor: Actor) -> ProposalRead:
+        actor.require_person("reject_proposal")
         actor.require_write("reject_proposal")
         proposal = self._require_pending(proposal_id)
+        decider = self._decider(actor)
         proposal.stato = "rifiutata"
-        proposal.deciso_da = data.deciso_da
+        proposal.deciso_da = decider
         proposal.deciso_il = datetime.now(UTC)
         self.activities.record(
             ENTITY,
             proposal.id,
             "rejected",
             actor,
-            {"deciso_da": data.deciso_da, "motivo": data.motivo},
+            {"deciso_da": decider, "motivo": data.motivo},
         )
         self.session.commit()
         return ProposalRead.model_validate(proposal)
@@ -206,8 +216,10 @@ class ProposalService:
         /`id_risultato`/`deciso_da`/`deciso_il` are set, and exactly one commit closes
         all of it. A `'giornata'` accept never leaves a day at `'proposto'` because
         there is no separate call in between that could be interrupted."""
+        actor.require_person("accept_proposal")
         actor.require_write("accept_proposal")
         proposal = self._require_pending(proposal_id)
+        decider = self._decider(actor)
         accepted = (
             data.campi_accettati
             if data.campi_accettati is not None
@@ -221,14 +233,14 @@ class ProposalService:
         proposal.campi_accettati = accepted
         proposal.stato = "accettata"
         proposal.id_risultato = id_risultato
-        proposal.deciso_da = data.deciso_da
+        proposal.deciso_da = decider
         proposal.deciso_il = datetime.now(UTC)
         self.activities.record(
             ENTITY,
             proposal.id,
             "accepted",
             actor,
-            {"deciso_da": data.deciso_da, "id_risultato": str(id_risultato)},
+            {"deciso_da": decider, "id_risultato": str(id_risultato)},
         )
         self.session.commit()
         return ProposalRead.model_validate(proposal)

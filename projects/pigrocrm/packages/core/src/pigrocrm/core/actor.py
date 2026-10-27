@@ -245,6 +245,17 @@ class Actor(BaseModel):
         """
         self._refuse_if_agent(action)
 
+    def require_person(self, action: str) -> None:
+        """Refuses every agent credential, `full_access` or not (REB-806).
+
+        `_refuse_if_agent` is a switch an installation may open; this is not. A decision
+        that exists to be taken by a person (accepting or rejecting what an agent
+        proposed) must not be takeable by the credential that read the untrusted text
+        the proposal came from, so no flag can turn it on. Checked before the role, for
+        `_refuse_if_agent`'s reason."""
+        if self.type == "mcp":
+            raise AgentForbidden(action)
+
     def require_write(self, action: str) -> None:
         self._refuse_if_agent(action)
         if not self.can_write:

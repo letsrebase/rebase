@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from datetime import datetime
 from uuid import UUID
 
@@ -26,12 +26,15 @@ class ActivityRepository:
         )
         return list(self.session.execute(stmt).scalars())
 
-    def recent(self, limit: int = 50) -> list[Activity]:
+    def recent(
+        self, limit: int = 50, entity_types: Collection[str] | None = None
+    ) -> list[Activity]:
         """The global activity feed of §6.1: newest first, across every entity.
 
-        Not paginated, and fifty rows at most. A complete history of activity is the
-        entity's own `timeline`, which already exists; a paginated global feed would be a
-        second way to browse the same rows, with its own cursor to get wrong.
+        Not paginated, and fifty rows at most, optionally narrowed to `entity_types` (REB-811).
+        A complete history of activity is the entity's own `timeline`, which already exists; a
+        paginated global feed would be a second way to browse the same rows, with its own
+        cursor to get wrong.
 
         Served by `ix_activities_recent` once a space's feed is large enough for the
         planner to want it; nothing asserts the plan since REB-580, because a space's
@@ -42,11 +45,12 @@ class ActivityRepository:
         reason: `occurred_at` has microsecond resolution and rows written in one
         transaction can share it.
         """
+        statement = select(Activity)
+        if entity_types is not None:
+            statement = statement.where(Activity.entity_type.in_(entity_types))
         return list(
             self.session.execute(
-                select(Activity)
-                .order_by(Activity.occurred_at.desc(), Activity.id.desc())
-                .limit(limit)
+                statement.order_by(Activity.occurred_at.desc(), Activity.id.desc()).limit(limit)
             ).scalars()
         )
 

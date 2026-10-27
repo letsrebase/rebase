@@ -673,6 +673,11 @@ _BYTE: dict[Method, str] = {
 #    survive being asked why, and the only way to keep that true is to delete the ones
 #    that do not the moment the tool is written.
 _COPERTE_O_UMANE: dict[Method, str] = {
+    ("ProposalService", "accept"): "REB-806: deciding a proposal is a person's act. The "
+    "token that read the mail (text written by somebody else) would also have proposed it, "
+    "and proposing then accepting in one turn closes the chain. `Actor.require_person` "
+    "refuses every agent credential, over REST too, with or without `mcp_full_access`",
+    ("ProposalService", "reject"): "same as accept: rejecting is a person's decision too",
     ("ContractEmailService", "create"): "il testo che esce a nome del titolare lo salva la "
     "persona dalla pagina del contratto; l'agente scrive bozze con draft_email",
     ("ContractEmailService", "update"): "come create: il testo di un modello e' della persona",

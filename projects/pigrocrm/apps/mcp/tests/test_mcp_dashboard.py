@@ -362,3 +362,48 @@ async def test_every_dashboard_tool_offers_the_azienda_and_echoes_it(
         malformed = await client.call_tool("get_commercial_dashboard", {"azienda_id": "non-id"})
     assert malformed.is_error
     assert "azienda_id" in malformed.content[0].text
+
+
+# -- REB-811: the feed an agent reads carries no account events -------------------
+
+
+async def test_the_operational_feed_hides_account_events_from_an_agent_token(
+    dashboard_server: Any, mcp_engine: Engine
+) -> None:
+    from pigrocrm.core.activities.models import Activity
+    from pigrocrm.core.activities.service import ActivityService
+    from pigrocrm.core.dashboard.service import DashboardService
+
+    marker = f"{_PREFIX}-invitee@example.it"
+    factory = session_factory(mcp_engine)
+    with factory() as session:
+        service = ActivityService(session)
+        rows = [
+            service.record("invitation", uuid4(), "created", ADMIN, {"email": marker}),
+            service.record("user", uuid4(), "pat_created", ADMIN, {"token_id": f"{_PREFIX}-tok"}),
+            service.record("digest", uuid4(), "digest.inviato", ADMIN, {"to": marker}),
+            service.record("customer", uuid4(), f"{_PREFIX}.updated", ADMIN, {"changed": ["note"]}),
+        ]
+        session.commit()
+        ids = [row.id for row in rows]
+    try:
+        async with Client(dashboard_server) as client:
+            feed = _payload(await client.call_tool("get_operational_dashboard", {}))
+        raw = json.dumps(feed["attivita_recenti"])
+        assert marker not in raw
+        assert f"{_PREFIX}-tok" not in raw
+        assert {row["entity_type"] for row in feed["attivita_recenti"]}.isdisjoint(
+            {"invitation", "user", "digest"}
+        )
+        # The business row is still there: the filter narrows the feed, it does not empty it.
+        assert f"{_PREFIX}.updated" in [row["kind"] for row in feed["attivita_recenti"]]
+
+        # A person administering the space keeps the whole feed.
+        person = Actor(id=None, type="user", role="admin")
+        with factory() as session:
+            full = DashboardService(session).get_operational_dashboard(person)
+        assert "invitation" in {row.entity_type for row in full.attivita_recenti}
+    finally:
+        with factory() as session:
+            session.execute(delete(Activity).where(Activity.id.in_(ids)))
+            session.commit()
