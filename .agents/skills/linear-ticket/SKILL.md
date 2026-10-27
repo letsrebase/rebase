@@ -24,9 +24,9 @@ Then `get_user` with `query: "me"`, and keep the `id` it returns, not the displa
 it is the account this session writes as, what `assignee: "me"` will mean, and what every
 ownership test below compares against. It is not necessarily the person talking to you.
 
-An empty list from the first `list_issues` with `team: <tracker.team>` is a wrong
-workspace until proven otherwise, not an empty board: `get_issue` on a card id from `git
-log origin/main` settles it.
+Once `get_workspace` has proved the workspace, an empty first `list_issues` with `team:
+<tracker.team>` is a new or empty board; when it surprises you, `get_issue` on a card id
+from `git log origin/main` settles which.
 
 ## No Linear tool in the session
 
@@ -78,7 +78,7 @@ Each read with `fields: ["id", "title", "status", "statusType", "labels", "proje
 
 1. **The area, open states only.** `list_issues` with the area label and `state:
    "started"` (In Progress and In Review together), then `"unstarted"`, then `"backlog"`:
-   one `state` per call.
+   one `state` per call, each paged with `cursor` until `hasNextPage` is false.
 2. **The surface, by name.** `list_issues` with `query:` one noun of what you are about to
    touch, one call per noun: the screen, the route, the table, the file's stem. `query`
    ranks, it does not filter: read the first handful and stop where the titles stop being
@@ -106,8 +106,8 @@ Every field at once; a second call to add the missing ones is the sign the first
 | Field | Value |
 |---|---|
 | `team` | `tracker.team` |
-| `project` | the project id from `list_projects`; project names get renamed and a lookup by an old name fails |
-| `milestone` | the milestone id from `list_milestones(project)`. Accepted and not echoed back. Never `projectMilestone` (the read's name), which is silently ignored on write |
+| `project` | the project id from `list_projects`; project names get renamed and a lookup by an old name fails. Omitted only where the tracker contract allows a card outside every project |
+| `milestone` | the milestone id from `list_milestones(project)`, whenever there is a project. Accepted and not echoed back. Never `projectMilestone` (the read's name), which is silently ignored on write |
 | `title` | a verb and the work, one clause, under 80 characters (`linear-content`) |
 | `description` | per `linear-content`, real newlines, never `\n` escapes |
 | `addLabels` | one from `tracker.labels.type` and one from `tracker.labels.area`. Both are groups: a second label from one group is silently dropped. Never `labels` (it replaces the set) and never the id fields (`labelIds`, `addLabelIds`), which answer success and apply nothing |

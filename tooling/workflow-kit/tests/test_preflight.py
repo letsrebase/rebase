@@ -98,6 +98,31 @@ class ChangedPaths(unittest.TestCase):
         self.assertIn("versioned file", run.stderr)
         self.assertFalse((self.root / ".githooks" / "pre-push").exists())
 
+    def test_install_hook_refuses_a_shared_hooks_directory(self):
+        shared = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, shared)
+        git(self.root, "config", "core.hooksPath", str(shared))
+        run = subprocess.run(
+            ["python3", str(SOURCE), "--install-hook"],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(run.returncode, 2)
+        self.assertIn("every repository", run.stderr)
+        self.assertFalse((shared / "pre-push").exists())
+
+    def test_install_hook_writes_the_repositorys_own_hook(self):
+        run = subprocess.run(
+            ["python3", str(SOURCE), "--install-hook"],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(run.returncode, 0, run.stderr)
+        hook = self.root / ".git" / "hooks" / "pre-push"
+        self.assertIn(".github/kit/bin/preflight", hook.read_text(encoding="utf-8"))
+
 
 if __name__ == "__main__":
     unittest.main()

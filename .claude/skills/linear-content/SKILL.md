@@ -1,6 +1,7 @@
 ---
 name: linear-content
-description: Use when writing anything that lands on Linear for this repository: an issue title and body, a comment, a closing comment, a project description, a project status update. The shape, the language and what never goes in, with templates, so every card reads the same way. Triggers whenever `save_issue`, `save_comment`, `save_project` or `save_status_update` is about to be called.
+description: >-
+  Use when writing anything that lands on Linear for this repository: an issue title and body, a comment, a closing comment, a project description, a project status update. The shape, the language and what never goes in, with templates, so every card reads the same way. Triggers whenever `save_issue`, `save_comment`, `save_project` or `save_status_update` is about to be called.
 ---
 
 # Writing on Linear
@@ -39,7 +40,7 @@ means the second half belongs in the body.
 
 ## The issue body
 
-**It fits one screen.** At most four bold lead words, each two or three sentences.
+**It fits one screen.** At most five bold lead words, each two or three sentences.
 Skip one only when it has nothing to say, never because it is inconvenient. Point at
 the file and line, the spec section, the run id; never paste them. The full
 measurement, the design options and the long scan belong to the commit, the PR or a
@@ -80,7 +81,7 @@ that says which kind it is, so a reader can skim the thread.
 - **Scope.** `**Scope, narrowed:** ...` or `**Scope, grown:** ...` What the card now
   covers that it did not, or no longer covers, and why: a neighbour found late, a file
   that had to move too, a piece left for its own card (with the id, once filed).
-- **Waiting.** `**Waiting on Lorenzo:** ...` What you are stopped on, from whom, and what
+- **Waiting.** `**Waiting on the lead:** ...` What you are stopped on, from whom, and what
   you will do when it arrives. One comment when you stop, one when it lifts.
 - **Decision.** `**MCP, decided.** ...` What was chosen, the reason, where it is recorded
   (`DECISIONS.md` row, spec paragraph). If it is the lead's to take: the question, the

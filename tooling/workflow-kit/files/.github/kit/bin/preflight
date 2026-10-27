@@ -518,15 +518,17 @@ def main() -> int:
     if args.install_hook:
         hooks = git_path("hooks", root)
         hook = hooks / "pre-push"
-        try:
-            versioned = ".git" not in hooks.relative_to(root).parts
-        except ValueError:
-            versioned = False
+        common = Path(git("rev-parse", "--path-format=absolute", "--git-common-dir", cwd=root))
         line = 'exec python3 "$(git rev-parse --show-toplevel)/.github/kit/bin/preflight" --hook'
-        if versioned:
+        if not hooks.resolve().is_relative_to(common.resolve()):
+            # core.hooksPath points elsewhere: a versioned directory in the repository,
+            # or a shared one every repository on the machine uses. Neither is ours.
+            where = "a versioned file" if hooks.resolve().is_relative_to(root.resolve()) else (
+                "a hook every repository using that directory runs"
+            )
             die(
-                f"core.hooksPath points at {hooks}, inside the repository: a hook there is a "
-                f"versioned file. Add this line to its pre-push hook instead:\n  {line}"
+                f"core.hooksPath points at {hooks}, so a hook there is {where}. "
+                f"Add this line to its pre-push hook instead:\n  {line}"
             )
         if hook.exists() and "preflight" not in hook.read_text(encoding="utf-8", errors="replace"):
             die(f"{hook} exists and is not preflight's; add this line to it yourself:\n  {line}")

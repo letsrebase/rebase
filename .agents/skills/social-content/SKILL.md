@@ -1,6 +1,7 @@
 ---
 name: social-content
-description: Use when asked for anything rebase publishes on a social network or shares as a picture: a LinkedIn post or its text, a carousel or document post, a single image, a cover or banner for a profile or page, an announcement, a «build in public» update with numbers, a redraw of an old one. Triggers on «post», «carosello», «carousel», «LinkedIn», «copertina», «banner», «immagine da condividere», «annuncio», «scrivi il testo del post», and on a request to turn a report, a release or an analysis into something to share.
+description: >-
+  Use when asked for anything rebase publishes on a social network or shares as a picture: a LinkedIn post or its text, a carousel or document post, a single image, a cover or banner for a profile or page, an announcement, a «build in public» update with numbers, a redraw of an old one. Triggers on «post», «carosello», «carousel», «LinkedIn», «copertina», «banner», «immagine da condividere», «annuncio», «scrivi il testo del post», and on a request to turn a report, a release or an analysis into something to share.
 ---
 
 # Social content for rebase

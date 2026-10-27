@@ -47,9 +47,9 @@ each work commit's last line as usual.
 
 On a milestone's draft PR the branch carries no issue id, so the Linear automation does
 not fire: comment the PR URL on every card it lists, and move each card yourself. The
-independent review and the bots' loop below run on the whole diff against `main` before
-`gh pr ready`, on the sha that will merge; neither bot reads a draft by itself
-(`drafts: false` in `.coderabbit.yaml`, `triggerOnDrafts: false` in
+independent review runs on the whole diff against `main` before `gh pr ready`; the bots'
+loop below runs after it, on the sha that will merge, since neither bot reads a draft by
+itself (`drafts: false` in `.coderabbit.yaml`, `triggerOnDrafts: false` in
 `.greptile/config.json`).
 
 ## Working concurrently
@@ -132,7 +132,9 @@ Agent» defaults, TREX, who may create rules, the Linear integration. Each sha g
 through the same round: Greptile's review (a), CodeRabbit's own review (b), then
 CodeRabbit against Greptile (c), then every finding fixed or answered (d). Run (a)
 and (b) as background jobs next to the CI watch; (c) waits for both. Each block below
-starts from `git rev-parse HEAD`, because a background job is a fresh shell. On a
+reads the PR's own head (`gh pr view <n> --json headRefOid`), because a background job is
+a fresh shell and a detached worktree's `HEAD` need not be what the PR shows; the merge
+is of that reviewed head (`gh pr merge <n> --merge --match-head-commit <sha>`). On a
 milestone's draft PR the loop runs after `gh pr ready`, on the sha that will merge:
 neither reviewer reads a draft by itself (`drafts: false` in `.coderabbit.yaml`,
 `triggerOnDrafts: false` in `.greptile/config.json`), and an `@greptileai` on a draft
@@ -174,7 +176,7 @@ top-level comment on that sha. The completed check run is the signal; the review
 land a few seconds before or after it (#268):
 
 ```bash
-sha=$(git rev-parse HEAD)
+sha=$(gh pr view <n> --json headRefOid -q .headRefOid)
 for i in $(seq 20); do   # ten minutes, then the @greptileai nudge below
   run=$(gh api "repos/letsrebase/rebase/commits/$sha/check-runs" \
       --jq '.check_runs[] | select(.name == "Greptile Review" and .status == "completed") | .conclusion + " | " + .output.title + " | " + .output.summary')
@@ -222,7 +224,7 @@ threads are reviews as well, without the `Actionable comments` line, which is wh
 read below filters on it:
 
 ```bash
-sha=$(git rev-parse HEAD)
+sha=$(gh pr view <n> --json headRefOid -q .headRefOid)
 for i in $(seq 20); do   # ten minutes, then @coderabbitai review
   st=$(gh api "repos/letsrebase/rebase/commits/$sha/statuses" \
       --jq '[.[] | select(.context == "CodeRabbit")][0].description // ""')
@@ -267,7 +269,7 @@ answer on a Greptile thread and resolved it before any pass had been asked for. 
 comment hands it Greptile's side and asks for a verdict on each item:
 
 ```bash
-sha=$(git rev-parse HEAD); short=$(git rev-parse --short=9 HEAD)
+sha=$(gh pr view <n> --json headRefOid -q .headRefOid); short=${sha:0:9}
 rid=$(gh api --paginate "repos/letsrebase/rebase/pulls/<n>/comments?per_page=100" \
     --jq ".[] | select(.user.login == \"greptile-apps[bot]\" and .original_commit_id == \"$sha\" and .in_reply_to_id == null) | .pull_request_review_id" | tail -n 1)
 { echo "@coderabbitai Adversarial pass on Greptile's review of $short. You have reviewed this commit on your own; now act as Greptile's adversary. For each item below, check the claim against the code at $short yourself and answer **confirmed**, **refuted** or **partly**, with the evidence: file and line, or the script you ran and what it printed. Do not take Greptile's reasoning or mine on trust, and do not agree to be agreeable: a finding that does not hold is refuted, and an answer of mine that does not hold is wrong. Then list any defect in this diff that neither review raised. Start your reply with the line \`Adversarial verdict on $short\`, then one line per item, then the misses."
@@ -285,7 +287,7 @@ there is no pass. Post it and wait for the reply, a new comment by the bot that
 opens with the line it was asked for:
 
 ```bash
-short=$(git rev-parse --short=9 HEAD); since=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+short=$(gh pr view <n> --json headRefOid -q .headRefOid | cut -c1-9); since=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 gh pr comment <n> --body-file adversary.md
 for i in $(seq 40); do   # twenty minutes; #388's verdict took two and a half
   verdict=$(gh api --paginate "repos/letsrebase/rebase/issues/<n>/comments?per_page=100" \
