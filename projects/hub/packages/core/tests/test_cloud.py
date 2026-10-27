@@ -556,6 +556,36 @@ def test_the_filters_narrow_the_cloud(talents: Session) -> None:
     ) == {backend}
 
 
+def test_the_admins_level_beats_the_cards_in_the_cloud_and_its_filter(talents: Session) -> None:
+    """REB-799: the seniority filter and the card the cloud shows read the admin's word
+    over Claude's; a card with no dated role shows its years as null and its seniority
+    uncertain, and the admin's seniority makes it certain again."""
+    corrected = _talent(talents, "Rossi", card={"seniority": "lead"})
+    talents.get_one(Freelancer, corrected).seniority_admin = "junior"
+    talents.get_one(Freelancer, corrected).anni_admin = 2
+    undated = _talent(talents, "Bianchi", card={"seniority": "mid", "anni": None})
+    talents.commit()
+    service = CloudTalentService(talents)
+
+    assert _ids(service, seniority="junior") == {corrected}
+    assert _ids(service, seniority="lead") == set()
+    assert _ids(service, seniority="mid") == {undated}
+    cards = {talent.freelancer_id: talent.card for talent in service.list(CloudTalentQuery()).items}
+    assert (cards[corrected].seniority, cards[corrected].anni) == ("junior", 2)
+    assert cards[corrected].seniority_incerta is False
+    assert (cards[undated].seniority, cards[undated].anni) == ("mid", None)
+    assert cards[undated].seniority_incerta is True
+
+    talents.get_one(Freelancer, undated).seniority_admin = "senior"
+    talents.commit()
+    [after] = [
+        talent.card
+        for talent in service.list(CloudTalentQuery()).items
+        if talent.freelancer_id == undated
+    ]
+    assert (after.seniority, after.seniority_incerta) == ("senior", False)
+
+
 @pytest.mark.parametrize(("field", "value"), [("seniority", "guru"), ("modalita", "luna")])
 def test_a_filter_word_the_cloud_does_not_know_is_refused(
     talents: Session, field: str, value: str

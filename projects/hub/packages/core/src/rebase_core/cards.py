@@ -26,6 +26,11 @@ Claude was writing gets nothing stored for it; `FreelancerService.clear_cv` take
 same row lock (its `UPDATE`) before it deletes the card, so the two cannot interleave
 into a card for a CV that is gone.
 
+The card's `anni` is `None` when the CV dates no role, and its seniority is brought inside
+the year bands the prompt states (`card_level.banded`, REB-799). An admin's own seniority
+and years sit on `freelancers` (`seniority_admin`, `anni_admin`), so a regenerated or
+retired card never erases them, and `read` answers the card with them over it.
+
 Who calls it: the wizard and the member's CV upload, after their response, through
 `write_after_response` in a session of its own; the admin's two routes; `rebase
 cards-refresh`, for the backlog; and `FreelancerService.clear_cv`, whose `delete` runs
@@ -48,6 +53,7 @@ from sqlalchemy.orm import Session
 
 from rebase_core.audit import utcnow
 from rebase_core.bands import band_for
+from rebase_core.card_level import banded, card_read
 from rebase_core.cv_text import CvText
 from rebase_core.db import SessionOpener
 from rebase_core.errors import LlmUnavailable, NotFound
@@ -244,11 +250,18 @@ You receive the position the freelancer gave on their profile and the text of th
 CV. Answer with the card alone, in the JSON schema you are given:
 
 - ruolo: the professional role, as a short title (for example "Backend developer").
-- seniority: junior, mid, senior or lead, from the years of professional experience \
-and the responsibility the CV shows; lead only for someone who leads people or a \
-technical area.
 - anni: the years of professional experience in the role's field, a whole number \
-between 0 and 60.
+between 0 and 60, counted only from roles the CV dates: add up the dated periods \
+(a role still going ends today), overlapping roles counted once and the gaps between \
+roles left out, not the span from the first start to the last end; studies, theses, \
+internships under three months and undated projects left out. null, never a guess, \
+when the CV dates no professional role at all.
+- seniority: junior, mid, senior or lead, by these bands of anni: junior under 3 \
+years, mid from 3 to 5, senior from 6 up. lead is senior from 8 years up when the CV \
+states that the person leads people or a technical area (reporting lines, a team, a \
+technical direction); a founder or a "Fractional CTO" title alone is not leadership, \
+and a lead never has fewer than 8 years. When anni is null, give seniority as your \
+reading of the responsibility the CV shows (never lead): it is shown as uncertain.
 - competenze: at most 20 skills, technologies and methods, the most relevant first, \
 each a few words.
 - settori: at most 10 industries the person worked in (for example "fintech", \
@@ -267,7 +280,8 @@ organisation they worked for, any link, email address or phone number: describe 
 employer by its industry instead ("una banca", "una startup fintech").
 - Name a place only in luogo: ruolo, sintesi, competenze and settori name no city, \
 region or country.
-- Use only what the CV says: never invent a skill, a sector, a language or a year.
+- Use only what the CV says: never invent a skill, a sector, a language or a year; a \
+year you cannot read from a date in the CV is null.
 - La scheda non rivela mai il genere della persona. Il soggetto è sempre «il profilo», \
 e aggettivi e participi si accordano con «profilo», al maschile singolare \
 («specializzato», «esperto»); il ruolo è scritto in una forma che non ha genere \
@@ -327,7 +341,8 @@ def neutral_retry(request: LlmRequest, answer: str) -> LlmRequest:
 def _card_from(response: LlmResponse, cognome: str, nome: str = "") -> Card | Failure:
     """The card, or the kind of failure: `stop_reason` is read before the body, as the
     seam hands it over (`llm.py`), and a card that validates is still refused if it
-    names the person or carries an address."""
+    names the person or carries an address. Its seniority is brought inside the year
+    bands (`card_level.banded`, REB-799) before anything reads it."""
     if response.stop_reason == "refusal":
         return "refusal"
     if response.stop_reason == "max_tokens":
@@ -338,7 +353,7 @@ def _card_from(response: LlmResponse, cognome: str, nome: str = "") -> Card | Fa
         card = Card.model_validate(json.loads(response.text))
     except ValueError:  # `json.JSONDecodeError` and Pydantic's `ValidationError` alike
         return "shape"
-    return "identifying" if _identifies(card, cognome, nome) else card
+    return "identifying" if _identifies(card, cognome, nome) else banded(card)
 
 
 class CardWriter:
@@ -428,16 +443,24 @@ class CardWriter:
                 model=None,
                 generated_at=None,
                 error=None,
+                seniority_admin=row.seniority_admin,
+                anni_admin=row.anni_admin,
             )
         return FreelancerCardRead(
             freelancer_id=freelancer_id,
-            card=Card.model_validate(stored.card) if stored.card is not None else None,
+            card=(
+                card_read(stored.card, row.seniority_admin, row.anni_admin)
+                if stored.card is not None
+                else None
+            ),
             modalita=row.remoto,
             fascia=band_for(row.tariffa_giornaliera),
             cv_sha256=stored.cv_sha256,
             model=stored.model,
             generated_at=stored.generated_at,
             error=stored.error,
+            seniority_admin=row.seniority_admin,
+            anni_admin=row.anni_admin,
         )
 
     # ---- helpers ---------------------------------------------------------------------

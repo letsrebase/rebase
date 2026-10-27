@@ -46,6 +46,7 @@ from pigrocrm.core.timetracking.schemas import (
 from pigrocrm.core.timetracking.service import TimeEntryService
 from pigrocrm.core.timetracking.timer import TimerService
 from pigrocrm_mcp.context import McpContext
+from pigrocrm_mcp.tools.changes import refuse_empty, refuse_nothing_given, report
 
 # `list_locks` takes no schema of its own -- `anno` goes straight into a `WHERE` -- so
 # the year is validated here, inside the guarded call, against the same bounds
@@ -65,11 +66,12 @@ def log_time(context: McpContext, data: dict[str, Any]) -> dict[str, Any]:
 
 
 def update_time_entry(context: McpContext, entry_id: str, data: dict[str, Any]) -> dict[str, Any]:
-    return (
-        TimeEntryService(context.session)
-        .update(UUID(entry_id), TimeEntryUpdate(**data), context.actor)
-        .model_dump(mode="json")
-    )
+    service = TimeEntryService(context.session)
+    identifier = UUID(entry_id)
+    changes = TimeEntryUpdate(**data)
+    refuse_empty(data)
+    before = service.get(identifier, context.actor)
+    return report(before, service.update(identifier, changes, context.actor))
 
 
 def archive_time_entry(context: McpContext, entry_id: str) -> dict[str, str]:
@@ -113,11 +115,14 @@ def start_timer(context: McpContext, data: dict[str, Any]) -> dict[str, Any]:
 
 
 def update_timer(context: McpContext, data: dict[str, Any]) -> dict[str, Any]:
-    return (
-        TimerService(context.session)
-        .update(TimerUpdate(**data), context.actor)
-        .model_dump(mode="json")
-    )
+    # `None` means «leave it» on this tool, so a call that names nothing has nothing to say.
+    refuse_nothing_given(**data)
+    service = TimerService(context.session)
+    changes = TimerUpdate(**data)
+    running = service.current(context.actor)
+    # With no timer running the service's own refusal is the answer, and it comes before
+    # there is anything to compare.
+    return report(running, service.update(changes, context.actor))
 
 
 def stop_timer(context: McpContext, data: dict[str, Any]) -> dict[str, Any]:
@@ -156,11 +161,12 @@ def create_cost(context: McpContext, data: dict[str, Any]) -> dict[str, Any]:
 
 
 def update_cost(context: McpContext, cost_id: str, data: dict[str, Any]) -> dict[str, Any]:
-    return (
-        CostService(context.session)
-        .update(UUID(cost_id), CostUpdate(**data), context.actor)
-        .model_dump(mode="json")
-    )
+    service = CostService(context.session)
+    identifier = UUID(cost_id)
+    changes = CostUpdate(**data)
+    refuse_empty(data)
+    before = service.get(identifier, context.actor)
+    return report(before, service.update(identifier, changes, context.actor))
 
 
 def archive_cost(context: McpContext, cost_id: str) -> dict[str, str]:

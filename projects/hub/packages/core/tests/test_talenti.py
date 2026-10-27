@@ -651,6 +651,44 @@ def test_seniority_takes_any_of_the_levels_and_refuses_an_unknown_one(clean: Ses
         talenti.list_recent(seniority=["guru"])
 
 
+def test_the_admins_level_beats_the_cards_in_the_row_the_filters_and_the_ranking(
+    clean: Session,
+) -> None:
+    """REB-799: an admin's seniority and years are what the row shows and what the
+    seniority and anni filters and the anni sort read, each on its own; a card with no
+    dated years reads uncertain until an admin gives the seniority."""
+    corrected = _profile(clean, "fix@studio.it", rate="300", seniority="lead", anni=3)
+    clean.execute(
+        text("UPDATE freelancers SET seniority_admin = 'mid', anni_admin = 6 WHERE id = :id"),
+        {"id": corrected},
+    )
+    _profile(clean, "plain@studio.it", rate="300", seniority="senior", anni=9)
+    undated = _profile(clean, "undated@studio.it", rate="300", seniority="mid")
+    clean.commit()
+    talenti = TalentiService(clean)
+
+    rows = {row.email: row for row in talenti.list_recent().items}
+    assert (rows["fix@studio.it"].seniority, rows["fix@studio.it"].anni) == ("mid", 6)
+    assert rows["fix@studio.it"].seniority_incerta is False
+    assert (rows["plain@studio.it"].seniority, rows["plain@studio.it"].anni) == ("senior", 9)
+    assert (rows["undated@studio.it"].seniority, rows["undated@studio.it"].anni) == ("mid", None)
+    assert rows["undated@studio.it"].seniority_incerta is True
+
+    assert _emails(talenti.list_recent(seniority=["mid"])) == ["undated@studio.it", "fix@studio.it"]
+    assert _emails(talenti.list_recent(seniority=["lead"])) == []
+    assert _emails(talenti.list_recent(anni_min=6, anni_max=6)) == ["fix@studio.it"]
+    assert _emails(talenti.list_recent(anni_max=3)) == []
+    ranked = talenti.list_recent(ordina="anni_desc")
+    assert _emails(ranked) == ["plain@studio.it", "fix@studio.it"]
+
+    clean.execute(
+        text("UPDATE freelancers SET seniority_admin = 'senior' WHERE id = :id"), {"id": undated}
+    )
+    clean.commit()
+    [after] = [row for row in talenti.list_recent().items if row.email == "undated@studio.it"]
+    assert (after.seniority, after.seniority_incerta) == ("senior", False)
+
+
 def test_anni_min_and_max_are_inclusive_and_skip_a_card_with_no_years(clean: Session) -> None:
     for email, anni in (("a@studio.it", 2), ("b@studio.it", 5), ("c@studio.it", 8)):
         _profile(clean, email, rate="300", seniority="mid", anni=anni)

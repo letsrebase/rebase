@@ -21,6 +21,9 @@ def test_the_marker_is_added_only_where_free_text_is_present() -> None:
     assert mark_free_text({"items": [{"custom_fields": {"x": 1}}]})["provenienza"]
     assert "provenienza" not in mark_free_text({"note": None, "custom_fields": {}})
     assert mark_free_text({"note": "x", "provenienza": "la sua"})["provenienza"] == "la sua"
+    # Every key the guard relies on, so removing one is a failing test and not a silent gap.
+    for key in ("note", "estratto", "etichetta", "markdown", "causale", "payload"):
+        assert mark_free_text({key: "x"})["provenienza"], key
     assert mark_free_text("non un dict") == "non un dict"
 
 

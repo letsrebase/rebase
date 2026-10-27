@@ -41,6 +41,7 @@ __all__ = [
     "CARD_SENIORITIES",
     "Band",
     "Card",
+    "CardRead",
     "CardsRefreshed",
     "CloudRequestCreate",
     "CloudTalentList",
@@ -84,13 +85,29 @@ class Card(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     ruolo: SafeStr = Field(min_length=1, max_length=120)
+    # `anni` before `seniority`, which is read from it: the schema's order is the order
+    # the model writes in. `None` when the CV dates no role (REB-799): the model is told
+    # to say so rather than guess, and `seniority` is then a reading of the
+    # responsibility alone, shown as uncertain (`CardRead.seniority_incerta`). No default,
+    # like `luogo`.
+    anni: int | None = Field(ge=0, le=60)
     seniority: Literal["junior", "mid", "senior", "lead"]
-    anni: int = Field(ge=0, le=60)
     competenze: list[SafeStr] = Field(max_length=20)
     settori: list[SafeStr] = Field(max_length=10)
     lingue: list[SafeStr] = Field(max_length=8)
     luogo: SafeStr | None = Field(max_length=120)
     sintesi: SafeStr = Field(min_length=1, max_length=400)
+
+
+class CardRead(Card):
+    """A `Card` as everything but the card writer reads it (REB-799): `seniority` and
+    `anni` are the effective ones, the admin's when there is one (`freelancers.
+    seniority_admin`, `anni_admin`), the card's own otherwise. `seniority_incerta` says
+    the seniority is a guess the CV's dates could not back: `anni` is null on the card
+    and nobody corrected the seniority. Computed by `card_level.card_read`, never stored
+    and never asked of Claude: the schema Claude answers is `Card`'s."""
+
+    seniority_incerta: bool = False
 
 
 class FreelancerCardRead(BaseModel):
@@ -101,16 +118,21 @@ class FreelancerCardRead(BaseModel):
     (`bands.band_for`), read when the card is shown, so a mode or a rate the person
     edits is right at once (§ 2.1), and the page never computes a band of its own.
     `fascia` is `None` without a rate. `card`, `cv_sha256`, `model` and `generated_at`
-    stay `None` until a CV produces a card; `error` is set or not on its own."""
+    stay `None` until a CV produces a card; `error` is set or not on its own. `card` is
+    the effective one (`CardRead`); `seniority_admin` and `anni_admin` are the admin's
+    own values, `None` while nobody corrected them (REB-799), so the page can tell a
+    correction from Claude's reading."""
 
     freelancer_id: UUID
-    card: Card | None
+    card: CardRead | None
     modalita: str | None
     fascia: Band | None
     cv_sha256: str | None
     model: str | None
     generated_at: datetime | None
     error: str | None
+    seniority_admin: str | None = None
+    anni_admin: int | None = None
 
 
 class CardsRefreshed(NamedTuple):
@@ -170,7 +192,7 @@ class TeamMemberRead(BaseModel):
     ruolo: str
     motivazione: str
     giorni_settimana: int | None
-    scheda: Card
+    scheda: CardRead
     modalita: str | None
     fascia: Band | None
 
@@ -441,7 +463,7 @@ class CloudTalentRead(BaseModel):
     linkedin_url: str | None
     links: list[str]
     vetted: bool
-    card: Card
+    card: CardRead
     modalita: str | None
     fascia: Band | None
     ha_cv: bool

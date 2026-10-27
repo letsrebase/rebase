@@ -155,6 +155,17 @@ def test_the_short_row_is_the_card_without_addresses_dates_or_empty_keys() -> No
     assert set(lead) == {"id", "nome", "cognome", "stato"}
 
 
+def test_the_short_row_says_when_the_seniority_is_a_guess() -> None:
+    """REB-799: a card with no dated years has no `anni` in the short row, and says its
+    seniority is uncertain; a row that is sure never carries the flag, and an `anni` of
+    zero is a value."""
+    unsure = talento_row(_row(seniority="mid", anni=None, seniority_incerta=True), None)
+    assert unsure["seniority"] == "mid" and "anni" not in unsure
+    assert unsure["seniority_incerta"] is True
+    sure = talento_row(_row(seniority="junior", anni=0), None)
+    assert sure["anni"] == 0 and "seniority_incerta" not in sure
+
+
 def test_a_long_summary_is_cut_at_a_word_in_the_short_row_and_whole_on_request() -> None:
     long = " ".join(["Costruisce pipeline dati per aziende finanziarie."] * 8)
     row = _row(sintesi=long)

@@ -131,6 +131,8 @@ def freelancer_read(row: Freelancer, user: User) -> FreelancerRead:
         updated_at=row.updated_at,
         deleted_at=row.deleted_at,
         vetted_at=row.vetted_at,
+        seniority_admin=row.seniority_admin,
+        anni_admin=row.anni_admin,
     )
 
 

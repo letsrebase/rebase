@@ -65,6 +65,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Session, aliased, defer
 
 from rebase_core.bands import band_for
+from rebase_core.card_level import level
 from rebase_core.errors import NotFound, ValidationFailed
 from rebase_core.freelancers import LEAD_STATE
 from rebase_core.models import (
@@ -155,20 +156,30 @@ def _card_texts(card: dict[str, Any], key: str) -> list[str]:
     return [item for item in value if isinstance(item, str)] if isinstance(value, list) else []
 
 
-def card_fields(card: object, rate: Decimal | None) -> dict[str, Any]:
+def card_fields(
+    card: object,
+    rate: Decimal | None,
+    seniority_admin: str | None = None,
+    anni_admin: int | None = None,
+) -> dict[str, Any]:
     """What a row says about the person from the anonymous card (REB-778, REB-798), and
     the client's price band of their rate: the one builder behind a row of the list and
     the MCP `get_talento`, so the two cannot disagree. `card` is the row's
     `freelancer_cards.card` as stored: a JSON object for a live anonymous card
     (REB-518), `None` for none and for one the writer retired after a failure. Each
     field is taken only when it has the type the writer gives it, since a card written
-    by hand may hold anything, and a wrong one reads as missing."""
+    by hand may hold anything, and a wrong one reads as missing.
+
+    `seniority` and `anni` are the admin's when one corrected them (`seniority_admin`,
+    `anni_admin`, REB-799), the card's otherwise, through `card_level.level`;
+    `seniority_incerta` says the seniority is a guess, the card having no dated years."""
     scheda = card if isinstance(card, dict) else {}
-    anni = scheda.get("anni")
+    effective = level(scheda, seniority_admin, anni_admin)
     return {
         "ruolo": _card_text(scheda, "ruolo"),
-        "seniority": _card_text(scheda, "seniority"),
-        "anni": anni if isinstance(anni, int) and not isinstance(anni, bool) else None,
+        "seniority": effective.seniority,
+        "anni": effective.anni,
+        "seniority_incerta": effective.incerta,
         "competenze": _card_texts(scheda, "competenze"),
         "settori": _card_texts(scheda, "settori"),
         "lingue": _card_texts(scheda, "lingue"),
@@ -196,7 +207,7 @@ def _card_read(row: Freelancer, user: User, card: object) -> TalentoRead:
         vetted_at=row.vetted_at,
         ha_scheda_anonima=isinstance(card, dict),
         posizione=row.posizione,
-        **card_fields(card, row.tariffa_giornaliera),
+        **card_fields(card, row.tariffa_giornaliera, row.seniority_admin, row.anni_admin),
     )
 
 
@@ -249,22 +260,28 @@ def _card_list_names(key: str, term: str) -> ColumnElement[bool]:
 
 
 def _has_seniority(values: Sequence[str]) -> ColumnElement[bool]:
-    """Whether the anonymous card's `seniority` is one of `values`: only a JSON string
-    can be, the same test `card_fields` applies."""
+    """Whether the row's seniority is one of `values`: the admin's when one corrected it
+    (`seniority_admin`, REB-799), the anonymous card's otherwise, of which only a JSON
+    string can be, the same test `card_fields` applies."""
     scheda = aliased(FreelancerCard)
     field = scheda.card["seniority"]
-    return exists(
+    on_the_card = exists(
         select(scheda.freelancer_id).where(
             scheda.freelancer_id == Freelancer.id,
             func.jsonb_typeof(field) == "string",
             func.lower(field.astext).in_(values),
         )
     )
+    return case(
+        (Freelancer.seniority_admin.is_not(None), Freelancer.seniority_admin.in_(values)),
+        else_=on_the_card,
+    )
 
 
 def _card_anni() -> ColumnElement[Any]:
-    """The anonymous card's `anni` as a number, `NULL` when there is no card or the
-    value is not a whole JSON number: the values `card_fields` keeps, so a filter or a
+    """The row's years as a number: the admin's when one corrected them (`anni_admin`,
+    REB-799), else the anonymous card's, `NULL` when there is no card or the value is
+    not a whole JSON number: the values `card_fields` keeps, so a filter or a
     ranking never meets a row whose years the row itself does not show (`5.5`, `"9"`).
     A scalar subquery by primary key, so the same expression serves a `WHERE`, an
     `ORDER BY` and a keyset predicate, and the guard sits inside the `CASE` rather than
@@ -277,7 +294,8 @@ def _card_anni() -> ColumnElement[Any]:
             field.astext.cast(Numeric),
         )
     )
-    return select(years).where(scheda.freelancer_id == Freelancer.id).scalar_subquery()
+    on_the_card = select(years).where(scheda.freelancer_id == Freelancer.id).scalar_subquery()
+    return func.coalesce(Freelancer.anni_admin.cast(Numeric), on_the_card)
 
 
 def _scheda_is(state: str) -> ColumnElement[bool]:

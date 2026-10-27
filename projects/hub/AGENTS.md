@@ -86,7 +86,7 @@ running the core service the admin area runs, with the calling admin as the acto
 - `contact_team_talents`: «Contatta i talenti», or with `only_silent` «Rimanda a chi non ha risposto».
 - `set_team_request_status`: «Segna come contattata», «Chiudi», with an optional note.
 - `propose_team`: the engine as the admin (`origine` `admin`), outside the daily cap.
-- `get_freelancer_card`, `regenerate_freelancer_card`: the anonymous card, and «Rigenera scheda».
+- `get_freelancer_card`, `regenerate_freelancer_card`: the anonymous card, and «Rigenera scheda». The card's `seniority` and `anni` are the admin's when `override_freelancer` set them (`seniority`, `anni`), Claude's otherwise; `anni` is `null` and `seniority_incerta` true when the CV dates no role (REB-799).
 - `set_freelancer_vetted`: «Segna come verificato» and «Togli la verifica».
 - `grant_talent_cloud`, `revoke_talent_cloud`, `list_talent_cloud_grants`: the cloud's grants.
 
@@ -446,6 +446,21 @@ one still gendered after it is not written: the card read shows the error «La s
 rivela il genere della persona anche dopo la riscrittura», the run counts it under «non
 riuscite», and the CV is not asked again until it changes or an admin asks with «Rigenera
 scheda»; an outage on the rewrite is an outage like any other (REB-574, REB-802).
+
+**The card's level is banded, and an admin can overrule it** (REB-799). The prompt gives
+`anni` from dated roles only, `null` when the CV dates none, and the bands: junior under
+3 years, mid 3 to 5, senior 6 and up, lead only from 8 years with leadership the CV
+states. `card_level.banded` enforces the same numbers on the answer (the seniority is the
+band's, `lead` kept only with `LEAD_FROM` years, and never without years), so the two are
+held together by `test_the_prompt_states_the_bands_the_parser_enforces`. A card with
+`anni` null keeps Claude's reading of the responsibility and is `seniority_incerta`. The
+admin's seniority and years are `freelancers.seniority_admin` and `anni_admin` (migration
+0034), set by `override_freelancer` or «Correggi il livello» on the card, audited and
+revertable like every override, kept by a regenerate, and applied wherever the card is
+read through `card_level.card_read` (the card read, the cloud and its seniority filter,
+the team builder's catalogue and proposals) or `card_level.level` for a reader that has
+the card's JSON only. Never read `Card.seniority` or `Card.anni` off a stored card
+without them.
 
 **Every «Proponi il team» is a row, answered or not** (migration 0028, Ivan 2026-09-29:
 «salvare tutte le richieste dopo il click proponi team anche se non ancora
