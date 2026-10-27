@@ -11,6 +11,8 @@ import pytest
 
 from pigrocrm.core.fiscal.pack import (
     IT_FLAT_RATE_PACK,
+    IT_STANDARD_PACK,
+    NON_IT_PACK,
     RIVALSA_INPS_CHARGE_ID,
     resolve_pack,
 )
@@ -58,15 +60,31 @@ def test_an_unknown_charge_id_is_refused_rather_than_returning_none() -> None:
         IT_FLAT_RATE_PACK.charge("una_carica_che_non_esiste")
 
 
-def test_resolve_pack_finds_the_one_shipped_pack() -> None:
+def test_resolve_pack_finds_every_shipped_pack() -> None:
     assert resolve_pack("it-flat-rate", "1") is IT_FLAT_RATE_PACK
+    assert resolve_pack("it-standard", "1") is IT_STANDARD_PACK
+    assert resolve_pack("non-it", "1") is NON_IT_PACK
+
+
+def test_only_the_forfettario_declares_a_ceiling_or_a_charge() -> None:
+    """REB-760: the 85,000 and 100,000 euro thresholds and the rivalsa are the
+    forfettario's alone. The ordinary regime and the foreign pack declare neither, so a
+    ceiling is a fact read off the pack and never a branch on the regime code."""
+    assert [c.id for c in IT_FLAT_RATE_PACK.ceilings] == [
+        "soglia_ricavi",
+        "soglia_fuoriuscita_immediata",
+    ]
+    assert IT_STANDARD_PACK.ceilings == () and IT_STANDARD_PACK.charges == ()
+    assert NON_IT_PACK.ceilings == () and NON_IT_PACK.charges == ()
 
 
 def test_resolve_pack_refuses_an_unknown_id_or_version() -> None:
     with pytest.raises(KeyError):
-        resolve_pack("it-standard", "1")
+        resolve_pack("generic", "1")
     with pytest.raises(KeyError):
         resolve_pack("it-flat-rate", "0")
+    with pytest.raises(KeyError):
+        resolve_pack("it-standard", "0")
 
 
 def test_the_pack_is_frozen_data_with_no_database_import() -> None:

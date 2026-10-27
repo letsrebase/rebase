@@ -11,7 +11,7 @@ from decimal import Decimal
 import pytest
 
 from pigrocrm.core.errors import ValidationFailed
-from pigrocrm.core.fiscal.regime import FORFETTARIO, ORDINARIO, resolve_regime
+from pigrocrm.core.fiscal.regime import FORFETTARIO, ORDINARIO, frozen_pack_id, resolve_regime
 from pigrocrm.core.fiscal.schemas import (
     DEFAULT_RIFERIMENTO_NORMATIVO,
     PAESI_UE,
@@ -51,13 +51,37 @@ def _group(aliquota: str, imponibile: str, natura: str | None) -> RiepilogoGroup
 
 
 def test_resolve_regime_picks_the_strategy_from_the_code() -> None:
-    assert resolve_regime("RF19") is FORFETTARIO
-    assert resolve_regime("RF01") is ORDINARIO
+    assert resolve_regime("RF19", "it-flat-rate") is FORFETTARIO
+    assert resolve_regime("RF01", "it-standard") is ORDINARIO
+
+
+def test_a_regime_belongs_to_its_own_pack_only() -> None:
+    """REB-760: `RF01` is the ordinary regime of `it-standard` and `RF19` the
+    forfettario of `it-flat-rate`. The pairing is refused both ways, naming the field and
+    the codes the pack does carry, so an ordinary azienda is never held to the
+    forfettario's ceilings by a pack it was left on."""
+    with pytest.raises(ValidationFailed) as ordinary:
+        resolve_regime("RF01", "it-flat-rate")
+    assert ordinary.value.details["field"] == "codice_regime"
+    assert "it-standard" in ordinary.value.message
+    with pytest.raises(ValidationFailed) as forfettario:
+        resolve_regime("RF19", "it-standard")
+    assert forfettario.value.details["field"] == "codice_regime"
+    assert "it-flat-rate" in forfettario.value.message
+
+
+def test_a_frozen_snapshot_of_the_ordinary_regime_reads_as_its_own_pack() -> None:
+    """An invoice issued before REB-760 froze `RF01` beside `it-flat-rate`; the register
+    names the pair as `it-standard`, and every other pair as it was frozen."""
+    assert frozen_pack_id("RF01", "it-flat-rate") == "it-standard"
+    assert frozen_pack_id("RF01", "it-standard") == "it-standard"
+    assert frozen_pack_id("RF19", "it-flat-rate") == "it-flat-rate"
+    assert frozen_pack_id(None, "non-it") == "non-it"
 
 
 def test_an_unknown_regime_code_names_the_field() -> None:
     with pytest.raises(ValidationFailed) as caught:
-        resolve_regime("RF07")
+        resolve_regime("RF07", "it-flat-rate")
     assert caught.value.details["entity"] == "fiscal_profile"
     assert caught.value.details["field"] == "codice_regime"
 
@@ -66,7 +90,7 @@ def test_a_code_that_is_not_a_regime_at_all_is_refused_by_fullmatch() -> None:
     """`.fullmatch`, never `.match` with `$`: "RF19\\n" is 5 characters and would
     reach a String(4) column as a raw DataError."""
     with pytest.raises(ValidationFailed):
-        resolve_regime("RF19\n")
+        resolve_regime("RF19\n", "it-flat-rate")
 
 
 def test_forfettario_forces_zero_rate_with_the_natura_and_the_reference() -> None:

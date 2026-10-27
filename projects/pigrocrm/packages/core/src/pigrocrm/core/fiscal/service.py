@@ -11,7 +11,7 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.fiscal.models import FiscalProfile
-from pigrocrm.core.fiscal.pack import PACK_NON_IT
+from pigrocrm.core.fiscal.pack import PACK_IT_FLAT_RATE, PACK_IT_STANDARD, PACK_NON_IT
 from pigrocrm.core.fiscal.regime import resolve_regime
 from pigrocrm.core.fiscal.repository import FiscalProfileRepository
 from pigrocrm.core.fiscal.schemas import FiscalProfileRead, FiscalProfileUpsert, FiscalSnapshot
@@ -137,13 +137,25 @@ class FiscalProfileService:
         is touched. Public since REB-630: `LegalEntityService.create` runs it on the
         profile a new azienda is born with, so a bad profile refuses the whole request
         rather than leaving an azienda `issue` could never use."""
-        # `resolve_regime` does every check: the pack decides whether a code is
-        # required (`it-flat-rate`) or forbidden (`non-it`, REB-619), then the
+        # `resolve_regime` does the regime checks: the pack decides whether a code is
+        # required (the Italian packs) or forbidden (`non-it`, REB-619), then the
         # `RF01`-`RF19` shape, with `.fullmatch` so "RF19\n" cannot reach the String(4)
-        # column, and whether a strategy exists. Raising here means an unimplemented
-        # regime is refused at configuration time rather than at the first emission.
+        # column, whether a strategy exists, and that it is the pack's own (REB-760).
+        # Raising here means an unimplemented regime is refused at configuration time
+        # rather than at the first emission.
         resolve_regime(payload["codice_regime"], payload["pack_id"])
-        abroad = payload["pack_id"] == PACK_NON_IT
+        pack_id = payload["pack_id"]
+        abroad = pack_id == PACK_NON_IT
+        if pack_id == PACK_IT_STANDARD and payload["aliquota_iva_default"] <= ZERO:
+            # The ordinary regime taxes every operation: `ORDINARIO.resolve_line_vat`
+            # refuses a zero rate, so a zero default would leave a profile whose every
+            # invoice is refused at the first line.
+            raise ValidationFailed(
+                ENTITY,
+                "aliquota_iva_default",
+                "il regime ordinario applica l'IVA: l'aliquota di default non puo' essere zero",
+                expected="un'aliquota maggiore di zero, per esempio 22.00",
+            )
         if payload["aliquota_iva_default"] == ZERO and not payload.get("natura_default"):
             # The same rule for both packs, since `invoice_lines` requires a natura
             # beside a zero rate whoever issues; the reason differs, so the words do.
@@ -159,17 +171,18 @@ class FiscalProfileService:
                 if abroad
                 else "una natura, per esempio N2.2",
             )
-        if abroad:
-            # What a foreign azienda cannot carry (REB-619): the bollo is an Italian
-            # duty, and the three income parameters are the forfettario's arithmetic,
-            # which the fiscal estimate would otherwise compute for a company it does
-            # not apply to. `FiscalProfileUpsert` defaults them off for this pack; an
-            # explicit value is refused, not silently dropped.
+        if pack_id != PACK_IT_FLAT_RATE:
+            # What only the forfettario carries (REB-619, REB-760): the bollo is owed on
+            # an untaxed base and the three income parameters are the forfettario's
+            # arithmetic, which the fiscal estimate would otherwise compute for an azienda
+            # it does not apply to. `FiscalProfileUpsert` defaults them off for these
+            # packs; an explicit value is refused, not silently dropped.
+            whose = "un'azienda estera" if abroad else "il regime ordinario"
             if payload["applica_bollo"]:
                 raise ValidationFailed(
                     ENTITY,
                     "applica_bollo",
-                    "un'azienda estera non applica il bollo virtuale",
+                    f"{whose} non applica il bollo virtuale",
                     expected="applica_bollo = false",
                 )
             for field in (
@@ -181,7 +194,7 @@ class FiscalProfileService:
                     raise ValidationFailed(
                         ENTITY,
                         field,
-                        "un'azienda estera non ha i parametri del forfettario",
+                        f"{whose} non ha i parametri del forfettario",
                         expected="nessun valore",
                     )
         if payload["aliquota_iva_default"] != ZERO and payload.get("natura_default"):

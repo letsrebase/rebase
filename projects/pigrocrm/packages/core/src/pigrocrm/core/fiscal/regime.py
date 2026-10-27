@@ -17,7 +17,7 @@ from decimal import Decimal
 from typing import Protocol, runtime_checkable
 
 from pigrocrm.core.errors import ValidationFailed
-from pigrocrm.core.fiscal.pack import PACK_IT_FLAT_RATE, PACK_NON_IT
+from pigrocrm.core.fiscal.pack import PACK_IT_FLAT_RATE, PACK_IT_STANDARD, PACK_NON_IT
 from pigrocrm.core.fiscal.schemas import (
     CODICE_REGIME_RE,
     DEFAULT_RIFERIMENTO_NORMATIVO,
@@ -36,6 +36,9 @@ ZERO = Decimal("0.00")
 @runtime_checkable
 class RegimeStrategy(Protocol):
     codice: str
+    # The pack this strategy belongs to: a regime and a pack are chosen together, and a
+    # profile that pairs one with the other's is refused (`resolve_regime`).
+    pack_id: str
 
     def resolve_line_vat(
         self, requested: Decimal | None, profile: FiscalSnapshot, *, nazione_cliente: str
@@ -80,6 +83,7 @@ class _Forfettario:
     """
 
     codice = "RF19"
+    pack_id = PACK_IT_FLAT_RATE
 
     def resolve_line_vat(
         self, requested: Decimal | None, profile: FiscalSnapshot, *, nazione_cliente: str
@@ -117,16 +121,15 @@ class _Forfettario:
 
 
 class _Ordinario:
-    """`RF01`. Present so the arithmetic of spec 6.1 is observable.
-
-    The product ships the forfettario; this strategy is what a `test` fixture selects
-    to put a 22% and a 10% group on the same invoice and watch `build_riepilogo` and
-    `sum_totals` produce values that are not all zero. It is a real strategy, not a
-    mock: switching `fiscal_profile.codice_regime` to `RF01` selects it in production
-    too, and everything it needs already exists.
+    """`RF01`, the ordinary regime, on the `it-standard` pack (REB-760). Every operation
+    is taxed at the rate entered, or the profile's default, and the invoice carries no
+    `Natura`, no `RiferimentoNormativo` and no stamp duty: there is no untaxed base for
+    the duty to be owed on. Its arithmetic is spec 6.1's, the rounding of `totals.py`
+    producing a VAT figure for every group (a 22% and a 10% line on one invoice).
     """
 
     codice = "RF01"
+    pack_id = PACK_IT_STANDARD
 
     def resolve_line_vat(
         self, requested: Decimal | None, profile: FiscalSnapshot, *, nazione_cliente: str
@@ -169,6 +172,7 @@ class _Estero:
     """
 
     codice = PACK_NON_IT
+    pack_id = PACK_NON_IT
 
     def resolve_line_vat(
         self, requested: Decimal | None, profile: FiscalSnapshot, *, nazione_cliente: str
@@ -201,19 +205,23 @@ _BY_CODE: dict[str, RegimeStrategy] = {
 }
 
 
-def resolve_regime(codice_regime: str | None, pack_id: str = PACK_IT_FLAT_RATE) -> RegimeStrategy:
+def resolve_regime(codice_regime: str | None, pack_id: str) -> RegimeStrategy:
     """The strategy for a stored `codice_regime` and pack, or `ValidationFailed`
     naming the field.
 
     The pack decides first (REB-619): `non-it` is `ESTERO` and carries no code, since
     RF01..RF19 are FatturaPA values; a code beside it is refused rather than ignored,
     because a profile that says both «estera» and «RF19» is a configuration nobody
-    meant. On the Italian pack the code is required, then two checks, not one: the
+    meant. On an Italian pack the code is required, then three checks, not one: the
     value must be a syntactically valid `RF01`-`RF19` code (`.fullmatch`, so a
-    trailing newline is refused rather than accepted and passed on), and a strategy
-    must exist for it. A code such as `RF07` is real FPR12 and still has no
+    trailing newline is refused rather than accepted and passed on), a strategy
+    must exist for it (a code such as `RF07` is real FPR12 and still has no
     implementation here, and saying so is more useful than resolving it to the
-    forfettario and silently issuing an invoice under the wrong regime.
+    forfettario and silently issuing an invoice under the wrong regime), and that
+    strategy must belong to the pack (REB-760): `RF01` is the ordinary regime of
+    `it-standard` and `RF19` the forfettario of `it-flat-rate`, so a profile that names
+    one with the other's pack is refused instead of being held to the other regime's
+    ceilings.
     """
     if pack_id == PACK_NON_IT:
         if codice_regime is not None:
@@ -246,7 +254,37 @@ def resolve_regime(codice_regime: str | None, pack_id: str = PACK_IT_FLAT_RATE) 
             f"il regime {codice_regime} non e' implementato in questa versione",
             expected=f"uno tra: {', '.join(sorted(_BY_CODE))}",
         )
+    if strategy.pack_id != pack_id:
+        belonging = sorted(code for code, known in _BY_CODE.items() if known.pack_id == pack_id)
+        raise ValidationFailed(
+            ENTITY,
+            "codice_regime",
+            f"il regime {codice_regime} appartiene al pacchetto {strategy.pack_id}, "
+            f"non a {pack_id}",
+            expected=f"uno tra: {', '.join(belonging)}" if belonging else "un pacchetto italiano",
+        )
     return strategy
 
 
-__all__ = ["ESTERO", "FORFETTARIO", "ORDINARIO", "RegimeStrategy", "resolve_regime"]
+def frozen_pack_id(codice_regime: str | None, pack_id: str) -> str:
+    """The pack an invoice's frozen snapshot belongs to, read the way it is today.
+
+    An invoice issued before REB-760 under the ordinary regime froze `RF01` beside
+    `it-flat-rate`, the only Italian pack there was. The snapshot is never rewritten, so
+    the register names that pair as what it is now, `it-standard`, and a year with
+    invoices of both kinds has one `RF01` row and not two.
+    """
+    strategy = _BY_CODE.get(codice_regime) if codice_regime is not None else None
+    if strategy is not None and pack_id == PACK_IT_FLAT_RATE:
+        return strategy.pack_id
+    return pack_id
+
+
+__all__ = [
+    "ESTERO",
+    "FORFETTARIO",
+    "ORDINARIO",
+    "RegimeStrategy",
+    "frozen_pack_id",
+    "resolve_regime",
+]

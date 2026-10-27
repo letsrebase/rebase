@@ -239,15 +239,14 @@ def test_two_aziende_hold_two_fiscal_profiles_apart(db_session: Session) -> None
     fiscal = FiscalProfileService(db_session)
     fiscal.upsert(FiscalProfileUpsert(codice_regime="RF19"), ADMIN)
     fiscal.upsert(
-        FiscalProfileUpsert(
-            codice_regime="RF01", aliquota_iva_default=Decimal("22.00"), natura_default=None
-        ),
+        FiscalProfileUpsert(pack_id="it-standard"),
         ADMIN,
         azienda_id=second.id,
     )
     assert fiscal.get(ADMIN).codice_regime == "RF19"
     assert fiscal.get(ADMIN, first.id).codice_regime == "RF19"
     assert fiscal.get(ADMIN, second.id).codice_regime == "RF01"
+    assert fiscal.get(ADMIN, second.id).pack_id == "it-standard"
     assert fiscal.snapshot(second.id).aliquota_iva_default == Decimal("22.00")
     assert fiscal.snapshot().aliquota_iva_default == Decimal("0.00")
 

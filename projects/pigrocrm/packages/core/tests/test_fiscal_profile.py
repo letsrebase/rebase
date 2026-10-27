@@ -96,10 +96,15 @@ def test_every_upsert_records_an_activity(db_session: Session) -> None:
     profile = service.upsert(_payload(), ADMIN)
     service.upsert(
         _payload(
+            pack_id="it-standard",
             codice_regime="RF01",
             natura_default=None,
             aliquota_iva_default=Decimal("22.00"),
             riferimento_normativo=None,
+            applica_bollo=False,
+            coefficiente_redditivita=None,
+            aliquota_imposta_sostitutiva=None,
+            aliquota_inps=None,
         ),
         ADMIN,
     )
@@ -186,7 +191,7 @@ def test_one_profile_per_azienda_is_the_database_guarantee(db_session: Session) 
     assert azienda is not None
     db_session.add(FiscalProfile(codice_regime="RF19", azienda_id=azienda.id))
     db_session.flush()
-    db_session.add(FiscalProfile(codice_regime="RF01", azienda_id=azienda.id))
+    db_session.add(FiscalProfile(codice_regime="RF19", azienda_id=azienda.id))
     with pytest.raises(IntegrityError):
         db_session.flush()
     db_session.rollback()
