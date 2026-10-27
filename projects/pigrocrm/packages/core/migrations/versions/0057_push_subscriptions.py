@@ -1,7 +1,7 @@
 """push_subscription: the browsers a person receives reminders on
 
-Revision ID: 0056
-Revises: 0055
+Revision ID: 0057
+Revises: 0056
 
 For REB-738 (reminders as web push, spec 2026-10-26 §6.1). One row per browser that
 allowed notifications: the endpoint at the vendor's push service, the two keys that
@@ -19,8 +19,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0056"
-down_revision: str | Sequence[str] | None = "0055"
+revision: str = "0057"
+down_revision: str | Sequence[str] | None = "0056"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
