@@ -356,8 +356,8 @@ omp, the kit's Linear gate refuses a card, comment or update that breaks the
   reference in a commit body is a pointer, not a link.
 - **The procedure for Linear, PRs and CI is the workflow kit, written once in
   `tooling/workflow-kit/` and copied into every repository that uses it**: this one,
-  the client repositories built from `tooling/client-repo-starter/` (whose template still
-  carries older copies until REB-821 renders them from the kit), and Lorenzo's
+  the client repositories built from `tooling/client-repo-starter/` (whose script runs
+  the kit's sync), and Lorenzo's
   personal repositories (`docs/design/DECISIONS.md`, 2026-10-27). The kit's skills
   (`linear-ticket`, `linear-content`, `pr-creation`) and scripts read this
   repository's data from `.github/workflow.json` and its own steps from `docs/agents/`.

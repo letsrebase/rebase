@@ -114,26 +114,24 @@ none of them are silently skipped just because the repository and the project ex
 
 ## Keeping the template in step
 
-The three skills (`linear-ticket`, `linear-content`, `pr-creation`) and the PR checks
-are the workflow kit's now (`tooling/workflow-kit/`, root `AGENTS.md` § Conventions).
-Until `new-client-repo.mjs` renders them from the kit (REB-821),
-`tooling/client-repo-starter/template/` and `letsrebase/point` (today's only repo built
-from it) still carry their own older copies, and an edit to `AGENTS.md` or
-`docs/tracker.md` here that is not `rebase`-team-specific (an API quirk, a habit like
-closing a finished project once its issues are all terminal, a naming rule) reaches
-neither on its own.
+The three skills (`linear-ticket`, `linear-content`, `pr-creation`), the PR template
+and the PR checks are the workflow kit's (`tooling/workflow-kit/`, root `AGENTS.md` §
+Conventions): `new-client-repo.mjs` writes the repository's `.github/workflow.json` and
+runs the kit's sync, so a new repository gets the current kit and nothing to fold. A
+change to the kit reaches a repository that already exists through that repository's
+own `kit.py sync`, in its own PR.
 
-So, until then: fold a change to the kit's skills, or a non-`rebase`-specific change to
-the contract, into `tooling/client-repo-starter/template/` in the same pull request that
-makes it here. A PR that changes one without the other is incomplete, not deferred.
+What still needs folding by hand is `template/AGENTS.md`: an edit to this repository's
+`AGENTS.md` or `docs/tracker.md` that is not `rebase`-team-specific (an API quirk, a
+habit like closing a finished project once its issues are all terminal, a naming rule)
+goes into `tooling/client-repo-starter/template/AGENTS.md` in the same pull request.
 
-For a repository that already exists (`point`, and any client repo after it), the
-fold cannot land in this PR: it is that repository's own change, reviewed there.
-File a Linear issue in that repository's own team (never in `rebase`'s), named and
-labelled the way any other issue there is, describing the drift and pointing at the
-commit or PR that introduced it here.
-`tooling/client-repo-starter/README.md` § Retrofitting an existing repository is the
-procedure for the fold itself, once someone picks the issue up.
+For a repository that already exists (`point`, and any client repo after it), neither
+lands in this PR: it is that repository's own change, reviewed there. File a Linear
+issue in that repository's own team (never in `rebase`'s), named and labelled the way
+any other issue there is, describing the drift or the sync and pointing at the commit or
+PR that introduced it here. `tooling/client-repo-starter/README.md` § Retrofitting an
+existing repository is the procedure, once someone picks the issue up.
 
 ## Keeping it running: project updates
 

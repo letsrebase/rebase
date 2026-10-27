@@ -89,27 +89,6 @@ const WORKTREE_POLICY = args.worktree
   ? "work in a git worktree of its own (`git worktree add -b <branch> ../<repo>-<name> origin/main`), never directly in the shared checkout: more than one person can be committing to this repository at once, and a worktree is what keeps your commit yours."
   : "a plain branch checkout is fine here (`git checkout -b <branch> origin/main`); this contract has one person committing at a time, so nothing needs a worktree's isolation: revisit if that changes.";
 
-const WORKTREE_BLOCK = args.worktree
-  ? [
-      "4. **Work in a git worktree of its own**, never the shared checkout: other",
-      "   sessions write to the same index, and a worktree is what keeps your commit",
-      "   yours.",
-      "",
-      "   ```bash",
-      "   git fetch origin",
-      "   git worktree add -b <branch> ../<repo>-<name> origin/main",
-      "   cd ../<repo>-<name>",
-      "   ```",
-      "",
-      "   Remove it once the PR merges (`git worktree remove ../<repo>-<name>`); never",
-      "   remove a worktree with uncommitted work still in it.",
-    ].join("\n")
-  : [
-      "4. **A plain branch checkout is fine here**: `git checkout -b <branch> origin/main`.",
-      "   This contract has one person committing at a time, so nothing needs a",
-      "   worktree's isolation: revisit if that changes.",
-    ].join("\n");
-
 const REVIEW_GATE_POLICY = args.greptile && args.coderabbit
   ? "Greptile and CodeRabbit both review every PR here (each already configured on this repository): Greptile first, then CodeRabbit's own review, then CodeRabbit checks Greptile's findings against the code. Every finding from either, and every adversarial verdict, gets fixed or answered before merging."
   : args.greptile
@@ -339,13 +318,62 @@ const REVIEWER_BLOCK = args.greptile && args.coderabbit
   ? CODERABBIT_LOOP_LINES.join("\n")
   : "";
 
-const REVIEWER_MERGE_CLAUSE = args.greptile && args.coderabbit
-  ? " and Greptile reads full marks and CodeRabbit's review has nothing open"
-  : args.greptile
-  ? " and Greptile reads full marks"
-  : args.coderabbit
-  ? " and CodeRabbit's review has nothing open"
+// The reviewers' loop is this repository's own step, so it goes to docs/agents/, which
+// the workflow kit's pr-creation skill reads when present.
+const EXTRAS_PR_CREATION = REVIEWER_BLOCK
+  ? [
+      "# Opening a pull request here: the reviewers' loop",
+      "",
+      "The workflow kit's `pr-creation` skill (`.agents/skills/pr-creation/SKILL.md`) is",
+      "the procedure; this file is the step only this repository takes. Read the skill",
+      "first, then this.",
+      REVIEWER_BLOCK,
+      "",
+    ].join("\n")
   : "";
+
+const KIT_DIR = join(HERE, "..", "workflow-kit");
+
+// Everything the kit's skills and checks read about this repository. Labels, scopes and
+// the conditional PR sections a codebase grows are filled in as it grows.
+const WORKFLOW_JSON = {
+  version: 1,
+  tracker: {
+    kind: "linear",
+    workspace: "letsrebase",
+    team: args.linearTeam,
+    prefix: args.linearPrefix,
+    language: "English",
+    contract: "AGENTS.md",
+    labels: {
+      type: ["fix", "feature", "refactor", "chore", "docs", "test", "ci", "design", "security", "spike"],
+      area: [],
+    },
+  },
+  github: {
+    merge: "merge",
+    required_check: "ci",
+    review_bots: [...(args.greptile ? ["greptile"] : []), ...(args.coderabbit ? ["coderabbit"] : [])],
+  },
+  commits: {
+    types: ["feat", "fix", "refactor", "perf", "test", "docs", "ci", "chore", "style", "revert"],
+    scope_required: true,
+  },
+  pr: {
+    title_max: 72,
+    card_line: true,
+    milestone_card_line: true,
+    exempt_authors: ["dependabot[bot]", "app/dependabot"],
+    sections: [
+      { title: "What this changes", required: true },
+      { title: "How I verified it", required: true },
+      { title: "What did not change, on purpose", when: "a reviewer could assume a neighbouring thing moved" },
+      { title: "Anything a reviewer should look at twice" },
+      { title: "Screenshots and video", required: true },
+    ],
+  },
+  extras: "docs/agents",
+};
 
 const CODERABBIT_YAML = `# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
 #
@@ -365,23 +393,12 @@ reviews:
     docstrings:
       enabled: false
   pre_merge_checks:
+    # The title and the body's template are checked by the workflow kit's pr_lint.py
+    # in ci, a blocking answer; the built-in checks would only warn about the same.
     title:
-      mode: warning
-      requirements: >-
-        Conventional Commits, as .claude/skills/pr-creation § Title says:
-        \`type(scope): subject\`. \`type\` is one of feat, fix, refactor, perf, test,
-        docs, ci, chore, style, revert. The subject starts with a lowercase letter
-        and has no Title Case.
-    custom_checks:
-      - name: PR body follows the template
-        mode: warning
-        instructions: >-
-          Read the PR description, leaving out every block a bot generated. Pass
-          when what remains contains the headings \`## What this changes\`, \`## How
-          I verified it\` and \`## Screenshots and video\`, in that order, and its
-          last non-empty line is exactly \`Linear: ${args.linearPrefix}-<number>.\`. Otherwise fail,
-          naming each missing heading or quoting the last line. Pass without
-          checking when the PR was opened by a bot account.
+      mode: "off"
+    description:
+      mode: "off"
 
 knowledge_base:
   linear:
@@ -396,10 +413,7 @@ chat:
 
 // Line-level substitutions: a line whose trimmed content is exactly the key is
 // replaced wholesale (and dropped entirely when the value is empty).
-const BLOCK_SUBSTITUTIONS = {
-  "{{WORKTREE_BLOCK}}": WORKTREE_BLOCK,
-  "{{GREPTILE_BLOCK}}": REVIEWER_BLOCK,
-};
+const BLOCK_SUBSTITUTIONS = {};
 
 // Inline substitutions: replaced wherever they occur inside a line.
 const INLINE_SUBSTITUTIONS = {
@@ -411,7 +425,6 @@ const INLINE_SUBSTITUTIONS = {
   "{{LINEAR_PROJECT}}": args.linearProject,
   "{{WORKTREE_POLICY}}": WORKTREE_POLICY,
   "{{REVIEW_GATE_POLICY}}": REVIEW_GATE_POLICY,
-  "{{GREPTILE_MERGE_CLAUSE}}": REVIEWER_MERGE_CLAUSE,
 };
 
 // ---- walk the template, resolve placeholders, write into the target ----
@@ -473,6 +486,32 @@ if (args.coderabbit) {
     writeFileSync(dest, CODERABBIT_YAML);
     written.push(".coderabbit.yaml");
   }
+}
+
+// The workflow kit's data and this repository's own steps, then the kit itself: the three
+// skills, the scripts, the PR template rendered from workflow.json, the .claude/skills
+// copy and the manifest kit.py check compares in ci.
+function writeOwn(rel, content) {
+  const dest = join(targetDir, rel);
+  if (existsSync(dest) && !args.force) {
+    skipped.push(rel);
+    return;
+  }
+  mkdirSync(dirname(dest), { recursive: true });
+  writeFileSync(dest, content);
+  written.push(rel);
+}
+writeOwn(".github/workflow.json", JSON.stringify(WORKFLOW_JSON, null, 2) + "\n");
+if (EXTRAS_PR_CREATION) writeOwn("docs/agents/pr-creation.md", EXTRAS_PR_CREATION);
+try {
+  const out = execFileSync(
+    "python3",
+    [join(KIT_DIR, "files", ".github", "kit", "bin", "kit.py"), "--repo", targetDir, "sync", "--source", KIT_DIR],
+    { encoding: "utf8" },
+  );
+  written.push(`workflow kit: ${out.trim().split("\n").at(-1)}`);
+} catch (err) {
+  fail(`the workflow kit's sync failed (python3 3.10+ is required): ${err.stderr || err.message}`);
 }
 
 console.log(`Wrote ${written.length} file(s) into ${targetDir}:`);
@@ -584,4 +623,10 @@ Next, by hand or with an agent holding the linear-rebase MCP server:
    on its jobs; ${runnerPoolReady
      ? `${args.org}/${args.repo} is already scoped into the private-clients runner group, so the workflow file is the only remaining step.`
      : `it still needs to be scoped into the private-clients runner group first (docs/ci-runner-pool.md) -- not done automatically this run, see the note above.`}
+6. In that CI workflow, a job inside the required \`ci\` that runs
+   \`python3 .github/kit/bin/kit.py check\` and, on pull requests,
+   \`python3 .github/kit/bin/pr_lint.py --github\` with GITHUB_TOKEN in its environment and
+   \`pull-requests: read\` permission (letsrebase/rebase's ci.yml, job \`kit\`). Fill
+   .github/workflow.json's area labels and commit scopes as the codebase grows, then run
+   kit.py sync again.
 `);

@@ -8,10 +8,14 @@ specific to this codebase (stack, commands, architecture, the things that look o
 until you have read the spec that explains them) live in § This codebase, below; keep
 that section current as the project grows rather than letting it go stale.
 
-If your harness reads `.claude/skills/`, three skills carry the same rules as
-detailed, ordered procedure: `linear-ticket`, `linear-content`, `pr-creation`. Where
-this file and a skill disagree, this file is right and the skill has a bug. If your
-harness does not read skills, this file is the whole contract.
+Three skills carry the same rules as detailed, ordered procedure: `linear-ticket`,
+`linear-content`, `pr-creation`, in `.agents/skills/` (Codex and the Agent Skills
+standard) with a copy in `.claude/skills/` (Claude Code). They come from rebase's
+workflow kit (`.github/kit/README.md`), read this repository's data from
+`.github/workflow.json`, and are checked in `ci` by `.github/kit/bin/kit.py check`, so
+change them in the kit, never here. Where this file and a skill disagree, this file is
+right and the skill has a bug. If your harness does not read skills, this file is the
+whole contract.
 
 ## Where this fits
 
@@ -145,7 +149,9 @@ outcome, not a description of what you touched.
   none.
 
 Last line: `Linear: {{LINEAR_PREFIX}}-N.` No placeholder ("not filed yet", "TBD"):
-a PR without its card waits, and the person hears why.
+a PR without its card waits, and the person hears why. `ci` checks the title and the
+body against `.github/workflow.json` (`python3 .github/kit/bin/pr_lint.py --title ...
+--body-file ...` runs the same check before you open the PR).
 
 {{REVIEW_GATE_POLICY}}
 
