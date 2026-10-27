@@ -29,6 +29,11 @@ FREE_TEXT_KEYS: frozenset[str] = frozenset(
         "titolo",
         "descrizione",
         "variabili",
+        "causale",
+        "motivo",
+        "oggetto",
+        "corpo",
+        "payload",
     }
 )
 
@@ -47,6 +52,10 @@ def _carries_free_text(value: Any) -> bool:
     if isinstance(value, list):
         return any(_carries_free_text(item) for item in value)
     return False
+
+
+# A tool that answers a bare list cannot carry a top-level sentence without changing its
+# shape; those that return third-party text (mail) mark each item themselves.
 
 
 def mark_free_text(result: Any) -> Any:

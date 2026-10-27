@@ -1037,7 +1037,7 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         motivo_confidenza: str | None = None,
     ) -> dict[str, Any]:
         """Propone un nuovo contratto letto da un documento già archiviato: scrive
-        solo una `proposals` row in attesa di `accept_proposal`, mai un
+        solo una `proposals` row in attesa che una persona la decida dall'app, mai un
         `Contract`. `document_id` è il documento (da `import_drive_file`, da un
         caricamento diretto, o da un allegato di posta già archiviato) da cui
         `estratto` è stato letto verbatim (`tipo_estratto='citato'`) o trascritto
@@ -1108,10 +1108,10 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         motivo_confidenza: str | None = None,
     ) -> dict[str, Any]:
         """Propone una giornata letta da un'email (o da un altro documento) di
-        approvazione già archiviata: scrive solo una `proposals` row in attesa di
-        `accept_proposal`, mai un `WorkUnit`. `contract_id` è il contratto che la
+        approvazione già archiviata: scrive solo una `proposals` row in attesa che
+        una persona la decida dall'app, mai un `WorkUnit`. `contract_id` è il contratto che la
         giornata riguarda; `canale`/`mittente`/`ricevuto_il`/`message_id` sono
-        l'evidenza dell'approvazione che `accept_proposal` scriverà come
+        l'evidenza dell'approvazione che l'accettazione scriverà come
         `approval` insieme al `work_unit` approvato, entrambi nella stessa
         transazione -- mai una giornata lasciata `'proposto'`."""
         return proposals.propose(
