@@ -14,11 +14,8 @@ body runs. A caller wiring `build_server` with a plain `lambda: shared_session` 
 what this package's own `server` fixture does -- gets the loud `RuntimeError` instead of a
 wrong number.
 
-Registered by Task B8 rather than by Task B12, which owns 6B's surface, for the reason
-`tools/__init__.py` gives beside `describe_automations`: the moment the service exists,
-both coverage tests demand that each of its public methods be a tool or a named exclusion,
-and deferring one to a later task is exactly the placeholder Task A11 cleared out of the
-taxonomy.
+A dashboard method is a tool the moment the service exists: both coverage tests demand
+that each public method of a service be a tool or a named exclusion.
 """
 
 from typing import Any

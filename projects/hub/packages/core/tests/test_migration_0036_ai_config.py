@@ -1,4 +1,4 @@
-"""0035 (REB-830): `ai_providers`, `ai_tasks`, `ai_prices` and `ai_usage`, seeded with the
+"""0036 (REB-830): `ai_providers`, `ai_tasks`, `ai_prices` and `ai_usage`, seeded with the
 three providers and the two tasks and no key; a retried deploy lands on the same schema,
 and the downgrade drops the four."""
 
@@ -130,7 +130,7 @@ def test_upgrade_is_idempotent(hub_postgres: Any) -> None:
         with engine.begin() as connection:
             # An admin's change survives the revision running again over its own tables.
             connection.execute(text("UPDATE ai_tasks SET model = 'gpt-5' WHERE task = 'card'"))
-            connection.execute(text("UPDATE alembic_version SET version_num = '0034'"))
+            connection.execute(text("UPDATE alembic_version SET version_num = '0035'"))
         command.upgrade(config, "head")
         with engine.connect() as connection:
             assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar() == (
@@ -153,7 +153,7 @@ def test_downgrade_drops_them(hub_postgres: Any) -> None:
         config = Config(str(INI_PATH))
         config.set_main_option("sqlalchemy.url", url)
         engine = create_engine(url, future=True)
-        command.downgrade(config, "0034")
+        command.downgrade(config, "0035")
         with engine.connect() as connection:
             assert _tables(connection) == set()
         command.upgrade(config, "head")

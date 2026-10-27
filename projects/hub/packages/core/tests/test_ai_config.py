@@ -45,7 +45,7 @@ def admin(hub_engine: Engine, hub_session: Session) -> Iterator[User]:
     hub_session.commit()
     yield row
     hub_session.rollback()
-    # Back to what migration 0035 seeded, for the next test of this worker.
+    # Back to what migration 0036 seeded, for the next test of this worker.
     for statement in (
         "DELETE FROM ai_usage",
         "DELETE FROM ai_prices",

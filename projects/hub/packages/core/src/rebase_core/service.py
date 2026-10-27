@@ -2,6 +2,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from rebase_core.linkedin import linkedin_key
 from rebase_core.models import Freelancer, Signup, User
 from rebase_core.schemas import SignupCreate, SignupList, SignupListItem, SignupRead
 
@@ -24,6 +25,13 @@ class SignupService:
         existing = self._find(email)
         if existing is not None:
             return _read(self._fill_in_what_is_missing(existing, data), nuova=False)
+        # The same LinkedIn profile under another address is the same person (REB-800):
+        # the form attaches to the row already on the list instead of adding a second
+        # one, and answers as for a repeat. The address typed this time is not kept: it
+        # is unverified, and the person is reachable at the one already on file.
+        same_profile = self._find_by_linkedin(data.linkedin_url)
+        if same_profile is not None:
+            return _read(same_profile, nuova=False)
 
         # The first attribution of an address is the one that stays: a person who comes
         # back through another ad and types the same email is the same person.
@@ -50,7 +58,7 @@ class SignupService:
             # commits; the functional unique index decides, and the loser reads the
             # winner's row instead of reporting a conflict nobody caused.
             self.session.rollback()
-            winner = self._find(email)
+            winner = self._find(email) or self._find_by_linkedin(data.linkedin_url)
             assert winner is not None
             return _read(winner, nuova=False)
         return _read(row, nuova=True)
@@ -102,6 +110,8 @@ class SignupService:
         for field in ("nome", "cognome", "linkedin_url"):
             value = getattr(data, field)
             if value is not None and not (getattr(row, field) or "").strip():
+                if field == "linkedin_url" and self._find_by_linkedin(value) is not None:
+                    continue  # another row on the list holds that profile (REB-800)
                 setattr(row, field, value)
                 changed = True
         if changed:
@@ -110,6 +120,12 @@ class SignupService:
 
     def _find(self, email: str) -> Signup | None:
         return self.session.scalar(select(Signup).where(func.lower(Signup.email) == email))
+
+    def _find_by_linkedin(self, linkedin_url: str | None) -> Signup | None:
+        key = linkedin_key(linkedin_url)
+        if key is None:
+            return None
+        return self.session.scalar(select(Signup).where(func.lower(Signup.linkedin_url) == key))
 
 
 def _read(row: Signup, *, nuova: bool) -> SignupRead:

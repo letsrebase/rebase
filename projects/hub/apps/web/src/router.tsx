@@ -35,6 +35,7 @@ import { AdminCampagna } from '@/pages/admin/Campagna'
 import { AdminCampagne } from '@/pages/admin/Campagne'
 import { AdminCreaCampagna } from '@/pages/admin/CreaCampagna'
 import { AdminCreaMatch } from '@/pages/admin/CreaMatch'
+import { AdminDuplicati } from '@/pages/admin/Duplicati'
 import { AdminMatches } from '@/pages/admin/Matches'
 import { AdminReferrals } from '@/pages/admin/Referrals'
 import { AdminProposteTeam } from '@/pages/admin/ProposteTeam'
@@ -340,6 +341,13 @@ const adminTalentRedirect = createRoute({
     throw redirect({ to: '/admin/talent', search: true })
   },
 })
+// REB-800: the people who are on the list twice, from the link on Talenti. A static
+// segment, so it wins over `/talent/$id` below.
+const adminTalentDuplicates = createRoute({
+  getParentRoute: () => adminArea,
+  path: '/talent/duplicates',
+  component: AdminDuplicati,
+})
 const adminTalentLead = createRoute({
   getParentRoute: () => adminArea,
   path: '/talent/$id',
@@ -550,6 +558,7 @@ export const routeTree = root.addChildren([
       adminIndexRedirect,
       adminTalent,
       adminTalentRedirect,
+      adminTalentDuplicates,
       adminTalentLead,
       adminTalentLeadRedirect,
       adminFreelanceDetail,

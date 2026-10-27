@@ -15,6 +15,7 @@ from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session, defer
 
 from rebase_core.errors import ValidationFailed
+from rebase_core.leads import card_by_linkedin
 from rebase_core.models import Company, Freelancer, Login, Signup, User
 from rebase_core.schemas import card_is_complete
 
@@ -99,7 +100,7 @@ def _leads(session: Session) -> list[Candidate]:
     signup_user = select(User.id).where(func.lower(User.email) == func.lower(Signup.email))
     rows = session.execute(
         select(Signup, signup_user.scalar_subquery())
-        .where(func.lower(Signup.email).not_in(card_emails))
+        .where(func.lower(Signup.email).not_in(card_emails), ~card_by_linkedin())
         .order_by(Signup.created_at, Signup.id)
     ).all()
     return [

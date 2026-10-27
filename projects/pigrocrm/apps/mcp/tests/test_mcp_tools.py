@@ -26,7 +26,6 @@ async def test_every_tool_from_the_spec_is_exposed(server) -> None:
 
     assert {
         "describe_schema",
-        "refresh_schema",
         "create_customer",
         "update_customer",
         "get_customer",

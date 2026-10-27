@@ -86,6 +86,10 @@ def talento_row(row: dict[str, Any], fields: tuple[str, ...] | None) -> dict[str
     # noise.
     if row["seniority_incerta"]:
         short["seniority_incerta"] = True
+    # Who this person may also be (REB-800), only when somebody: by id, so the agent
+    # compares the two with `get_talento` and an admin merges with `merge_freelancers`.
+    if row["possibile_duplicato_di"]:
+        short["possibile_duplicato_di"] = row["possibile_duplicato_di"]
     if "competenze" in short:
         short["competenze"] = short["competenze"][:SHORT_SKILLS]
     if "sintesi" in short:

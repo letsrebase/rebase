@@ -249,7 +249,8 @@ export function SpacePanel() {
           <CardTitle>Agente</CardTitle>
           <CardDescription>
             Con l'accesso completo un token personale può anche emettere fatture e chiudere
-            periodi: operazioni che non si annullano.
+            periodi: operazioni che non si annullano. Aprirlo qui non dà nulla a nessun token:
+            ognuno lo riceve solo se il suo titolare lo sceglie in Token di accesso.
           </CardDescription>
         </CardHeader>
         <CardContent>

@@ -1,7 +1,7 @@
 """ai_providers, ai_tasks, ai_prices, ai_usage: the model providers, configured in the hub
 
-Revision ID: 0035
-Revises: 0034
+Revision ID: 0036
+Revises: 0035
 
 REB-830 (design 2026-10-27, `docs/superpowers/specs/`): the Anthropic key and the model
 used to live in the server's `.env`; an admin now chooses, per task, which provider and
@@ -31,8 +31,8 @@ from collections.abc import Sequence
 
 from alembic import op
 
-revision: str = "0035"
-down_revision: str | Sequence[str] | None = "0034"
+revision: str = "0036"
+down_revision: str | Sequence[str] | None = "0035"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

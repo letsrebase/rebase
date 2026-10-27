@@ -51,6 +51,7 @@ import {
 import { cn } from '@rebase/ui/cn'
 import { AuditTrail } from './AuditTrail'
 import { Comments } from './Comments'
+import { DuplicateOf, DuplicatePill, DuplicatesLink } from './DuplicateMarks'
 import { CompanyOverrideDialog, FreelancerOverrideDialog, RecordLifecycle } from './Override'
 import { SchedaAnonima } from './SchedaAnonima'
 
@@ -325,11 +326,14 @@ export function AdminTalenti() {
   return (
     <>
       <Header title="Talenti" count={list.data?.pages[0]?.totale}>
-        <StateFilter
-          states={FREELANCER_LIST_STATES}
-          value={search.stato}
-          onChange={(value) => setFilter('stato', value)}
-        />
+        <div className="flex flex-wrap items-center gap-3">
+          <DuplicatesLink />
+          <StateFilter
+            states={FREELANCER_LIST_STATES}
+            value={search.stato}
+            onChange={(value) => setFilter('stato', value)}
+          />
+        </div>
       </Header>
       <div className="grid gap-4 border-b px-6 py-4 sm:grid-cols-2 lg:grid-cols-4">
         <FilterField label="Cerca" htmlFor="talenti-q">
@@ -517,6 +521,7 @@ function TalentoRow({ item }: { item: Talento }) {
         <div className="flex flex-wrap items-center gap-1.5">
           <StatePill stato={item.stato} />
           {item.vetted_at && <VettedPill />}
+          <DuplicatePill others={item.possibile_duplicato_di} />
         </div>
       </TableCell>
       <TableCell className="text-right text-muted-foreground">
@@ -1046,6 +1051,7 @@ export function AdminFreelancerDetail() {
         <div className="flex flex-wrap items-center gap-2">
           <StatePill stato={f.stato} />
           {f.vetted_at && <VettedPill />}
+          {f.deleted_at === null && <DuplicateOf freelancerId={f.id} />}
           {!f.completa && <IncompletePill />}
           {f.cv_filename !== null && f.cv_size !== null && f.deleted_at === null && (
             <>

@@ -473,7 +473,11 @@ def test_issuing_a_token_is_recorded_on_the_owners_timeline(db_session: Session)
 
     entry = _entries(db_session, "user", user.id)[-1]
     assert entry.kind == "pat_created"
-    assert entry.payload == {"token_id": str(record.id), "nome": "Claude locale"}
+    assert entry.payload == {
+        "token_id": str(record.id),
+        "nome": "Claude locale",
+        "full_access": False,
+    }
     assert entry.actor_id == user.id
 
 
