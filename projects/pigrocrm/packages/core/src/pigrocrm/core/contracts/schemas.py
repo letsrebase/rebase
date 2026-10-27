@@ -467,8 +467,10 @@ class ContractDetail(ContractRead):
     notes and the successor are asked for the one contract being opened."""
 
     contratto_successivo_id: UUID | None
-    # The latest 50, oldest first; the notes' own list answers for all of them.
+    # The latest 50, oldest first. `note_clausole_totale` is how many the contract has: when
+    # it is more than the list, the rest is in the notes' own list (`list_clause_notes`).
     note_clausole: list[ClauseNoteRead]
+    note_clausole_totale: int
 
 
 # ---- renewal assumptions and the projected figure (REB-375) -----------------------

@@ -5647,6 +5647,8 @@ export interface components {
             contratto_successivo_id: string | null;
             /** Note Clausole */
             note_clausole: components["schemas"]["ClauseNoteRead"][];
+            /** Note Clausole Totale */
+            note_clausole_totale: number;
         };
         /** ContractEmailAttachment */
         ContractEmailAttachment: {

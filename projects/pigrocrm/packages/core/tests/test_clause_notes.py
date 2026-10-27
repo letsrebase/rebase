@@ -167,4 +167,5 @@ def test_the_contract_carries_only_the_latest_notes_and_the_list_has_them_all(
     detail = ContractService(db_session).detail(contract_id, ADMIN)
 
     assert [n.riferimento_clausola for n in detail.note_clausole] == ["Art. 2", "Art. 3"]
+    assert detail.note_clausole_totale == 3
     assert len(service.list_for_contract(contract_id, ADMIN)) == 3

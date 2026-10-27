@@ -398,7 +398,10 @@ export function useCappedContracts(aziendaId: string | null | undefined) {
         items.push(...page.items)
         cursor = page.next_cursor ?? undefined
       } while (cursor !== undefined)
-      return items.filter((contract) => contract.tetto_quota_cliente !== null)
+      // In euros only: the simulated amount is a deal estimate, which carries no currency.
+      return items.filter(
+        (contract) => contract.tetto_quota_cliente !== null && contract.divisa === 'EUR',
+      )
     },
   })
 }

@@ -503,6 +503,7 @@ describe('CeilingPanel, the cap on a customer’s share', () => {
     titolo: 'Piattaforma ACME',
     stato: 'attivo',
     azienda_id: 'a1',
+    divisa: 'EUR',
     tetto_quota_cliente: '50.00',
   }
   const UNCAPPED = { ...CAPPED, id: 'k2', titolo: 'Manutenzione Beta', tetto_quota_cliente: null }

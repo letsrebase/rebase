@@ -4,8 +4,8 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import func, select, update
 from sqlalchemy import inspect as sa_inspect
-from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -61,6 +61,10 @@ from pigrocrm.core.schemas import reject_cleared_columns, supplied_changes
 # plain `str` would fail mypy strict at `specs_for`'s own call site.
 ENTITY: EntityType = "contract"
 
+
+# The currency a simulated addition is in: a deal's estimate carries none, and deals are
+# estimated in euros (`Deal.valore_preventivato`).
+SIMULATION_DIVISA = "EUR"
 
 # How many clause notes `ContractService.detail` carries, the latest ones.
 DETAIL_NOTES_LIMIT = 50
@@ -204,6 +208,11 @@ class ContractService:
             .limit(DETAIL_NOTES_LIMIT)
         )
         notes = reversed(list(latest))
+        totale = self.session.scalar(
+            select(func.count())
+            .select_from(ClauseNote)
+            .where(ClauseNote.contract_id == contract_id)
+        )
         return ContractDetail(
             **ContractRead.model_validate(contract).model_dump(),
             contratto_successivo_id=self.session.scalar(
@@ -213,6 +222,7 @@ class ContractService:
                 )
             ),
             note_clausole=[ClauseNoteRead.model_validate(note) for note in notes],
+            note_clausole_totale=totale or 0,
         )
 
     def update(self, contract_id: UUID, data: ContractUpdate, actor: Actor) -> ContractRead:
@@ -499,6 +509,16 @@ class ContractService:
                 "tetto_quota_cliente",
                 "il contratto non ha un tetto sulla quota del cliente",
                 expected="un contratto con un tetto, da impostare sul contratto",
+            )
+        if contract.divisa != SIMULATION_DIVISA:
+            # The addition is a deal's estimate, in the currency deals are estimated in; added
+            # to the revenue of a contract in another one it would be a sum of two currencies.
+            raise ValidationFailed(
+                ENTITY,
+                "divisa",
+                f"il simulatore ragiona in {SIMULATION_DIVISA}: il contratto è in "
+                f"{contract.divisa}",
+                expected=f"un contratto in {SIMULATION_DIVISA}",
             )
         # A contract that has not started (a fresh renewal) is asked about its first year:
         # the cap is read where the clause begins, and the simulation still answers.

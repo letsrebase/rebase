@@ -329,3 +329,15 @@ def test_a_contract_of_another_azienda_is_not_simulated_against_this_one(
             other.id,
         )
     assert excinfo.value.details["field"] == "contract_id"
+
+
+def test_a_contract_in_another_currency_is_not_simulated_with_an_amount_in_euros(
+    db_session: Session,
+) -> None:
+    customer = _customer(db_session)
+    contract = ContractService(db_session).create(
+        _create_payload(customer.id, divisa="USD", tetto_quota_cliente="50.00"), ADMIN
+    )
+    with pytest.raises(ValidationFailed) as excinfo:
+        ContractService(db_session).simulate_cap(contract.id, Decimal("1.00"), None, ADMIN)
+    assert excinfo.value.details["field"] == "divisa"
