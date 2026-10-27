@@ -44,7 +44,7 @@ import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, time as day_time, timedelta
 from uuid import UUID
 
 from sqlalchemy import and_, func, or_, select, text, update
@@ -54,9 +54,10 @@ from rebase_core.campaigns.actions import done_at
 from rebase_core.campaigns.audience import REASON_DONE, REASON_NOT_LISTED, candidates, exclusions
 from rebase_core.campaigns.outcome import stamp_outcomes
 from rebase_core.campaigns.render import RenderTarget, render
-from rebase_core.campaigns.sender import CampaignSender
+from rebase_core.campaigns.sender import QUOTA_MONTHLY, CampaignSender
 from rebase_core.config import Settings
 from rebase_core.models import Campaign, CampaignRecipient
+from rebase_core.team_caps import ROME, rome_midnight
 
 MAX_ATTEMPTS = 3
 # Resend's default limit is two requests a second for the whole team, and the magic
@@ -71,6 +72,13 @@ ROW_PREPARE_ERROR = "errore nel preparare la mail"
 # domain or the key's id), so the sentence names both rather than guess.
 STALLED_KEY = "Resend rifiuta l'invio: controlla la chiave e il dominio del mittente"
 STALLED_LIST = "la lista non si legge"
+
+# A send held by the day's ceiling or by Resend's own quota (REB-779) reads like the
+# other stops on the page («Invio fermo: ...»), with when the rest leaves. The first is
+# ours and ends at midnight in Rome; the second is Resend's, whose day may not start at
+# the same minute, so the pass keeps trying every minute with no attempt counted.
+STALLED_QUOTA_DAY = "Resend ha esaurito la quota di oggi: il resto parte appena la rinnova"
+STALLED_QUOTA_MONTH = "Resend ha esaurito la quota del mese: il resto parte quando si rinnova"
 
 _log = logging.getLogger(__name__)
 
@@ -129,6 +137,35 @@ def run_tick(
             lock_conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": TICK_LOCK_KEY})
             lock_conn.commit()
     return result
+
+
+def campaign_room(session: Session, settings: Settings, now: datetime) -> int:
+    """How many more campaign mails may leave today (REB-779): the day's ceiling, less
+    the reserve for the mails that are not campaigns, less the rows sent since midnight
+    in Rome across every campaign. Never below zero."""
+    ceiling = max(settings.resend_daily_quota - settings.campaign_daily_reserve, 0)
+    sent = session.scalar(
+        select(func.count())
+        .select_from(CampaignRecipient)
+        .where(
+            CampaignRecipient.stato == "inviata",
+            CampaignRecipient.inviata_at >= rome_midnight(now),
+        )
+    )
+    return max(ceiling - (sent or 0), 0)
+
+
+def held_sentence(settings: Settings, now: datetime) -> str:
+    """What the page says when the ceiling holds the rest: the number and the day and
+    hour it leaves, the next midnight in Rome."""
+    ceiling = max(settings.resend_daily_quota - settings.campaign_daily_reserve, 0)
+    tomorrow = datetime.combine(
+        rome_midnight(now).date() + timedelta(days=1), day_time.min, tzinfo=ROME
+    )
+    return (
+        f"limite di {ceiling} mail al giorno raggiunto: il resto parte il "
+        f"{tomorrow:%d/%m} dalle 00:00 (ora di Roma)"
+    )
 
 
 def _claim(session: Session, campaign_id: UUID, now: datetime) -> Campaign | None:
@@ -283,7 +320,26 @@ def _send(
             result.fallite += 1
             session.commit()
             continue
+        if campaign_room(session, settings, clock()) == 0:
+            # The day's ceiling (REB-779): the row stays `in_coda` with no attempt
+            # counted, and the first pass after midnight in Rome sends it.
+            session.commit()  # releases the row's lock; nothing was written
+            _stall(session, campaign.id, held_sentence(settings, clock()), clock())
+            return
         outcome = sender.send(rendered, idempotency_key=str(row.id))
+        if outcome.esito == "quota":
+            # Resend's own 429 for the quota: every other mail would get it, and the
+            # row did nothing wrong. Same stop as the ceiling, tried again next pass.
+            session.commit()
+            _log.error("campaign %s stopped this tick: Resend quota", campaign.id)
+            monthly = outcome.dettaglio == QUOTA_MONTHLY
+            _stall(
+                session,
+                campaign.id,
+                STALLED_QUOTA_MONTH if monthly else STALLED_QUOTA_DAY,
+                clock(),
+            )
+            return
         if outcome.esito == "fermati":
             # Resend refused the key or the domain: every other row would get the same
             # answer. Stop this campaign's pass with the row still `in_coda` and no

@@ -15,7 +15,13 @@ from rebase_core.mail import RESEND_URL
 
 # `fermati`: Resend refused the key or the domain (401/403), an answer every other
 # mail of the list would get too, so the tick stops instead of burning the list.
-Esito = Literal["accettata", "riprova", "rifiutata", "fermati"]
+# `quota`: a 429 that names Resend's daily or monthly quota, not its request rate
+# (REB-779): every other mail of the day would get it too, and it is no attempt of the
+# row's. `dettaglio` keeps which quota, so the page can say when the rest leaves.
+Esito = Literal["accettata", "riprova", "rifiutata", "fermati", "quota"]
+
+QUOTA_DAILY = "daily_quota_exceeded"
+QUOTA_MONTHLY = "monthly_quota_exceeded"
 
 
 @dataclass(frozen=True)
@@ -67,6 +73,8 @@ class ResendCampaignSender:
         name = _field(raw, "name")
         if status == 409 and name == "concurrent_idempotent_requests":
             return SendOutcome("riprova", dettaglio=name)
+        if status == 429 and name in (QUOTA_DAILY, QUOTA_MONTHLY):
+            return SendOutcome("quota", dettaglio=name)
         if status == 429 or status >= 500:
             return SendOutcome("riprova", dettaglio=f"Resend {status}")
         if status in (401, 403):

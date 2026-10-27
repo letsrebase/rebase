@@ -231,6 +231,23 @@ lista non si legge») instead of «Parte il…» until the first mail that leave
 The one sentence covers both causes of a 401/403, since only the status is kept. No
 address and no key ever appears in these lines or anywhere else in the logs.
 
+**A daily ceiling holds the rest of a long list for the next day** (REB-779). Resend's
+free plan sends `REBASE_RESEND_DAILY_QUOTA` (default 100) mails a day, and the magic
+link and the member mails use the same key. A campaign may send that less
+`REBASE_CAMPAIGN_DAILY_RESERVE` (default 20, kept for the magic links, the member
+mails and the campaign test mails, which are not rows and are not counted), so 80.
+`campaign_room` (`rebase_core.campaigns.tick`) counts the `campaign_recipients`
+sent since midnight in Rome by `inviata_at`, across every campaign; right before
+each mail, at zero the pass stops that campaign with its rows still `in_coda` and no
+attempt counted, and stores «limite di N mail al giorno raggiunto: il resto parte il
+DD/MM dalle 00:00 (ora di Roma)» as the stop (`fermo_motivo`), so «Campagne», the
+campaign's page, `list_campagne` and `get_campagna` say when the rest leaves. The
+first pass after midnight in Rome sends it and clears the note. A 429 whose body
+names `daily_quota_exceeded` or `monthly_quota_exceeded` (a sender outcome of its own,
+`quota`) is the same stop: no attempt is spent and the row is tried again next pass,
+since Resend's day may not start at Rome's midnight; a bare 429 is still a retry that
+counts.
+
 **The same pass stamps what each mail led to** (P-REB-41 phase 2, `rebase_core.campaigns.outcome`).
 For every row sent in the last 30 days and still missing a stamp, it writes `entrato_at`
 (the first login after the mail) and `azione_at` (the campaign's action, from the table
