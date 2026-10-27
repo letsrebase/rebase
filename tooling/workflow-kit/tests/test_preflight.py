@@ -66,6 +66,26 @@ class ChangedPaths(unittest.TestCase):
             preflight.git_path("preflight", self.root), self.root / ".git" / "preflight"
         )
 
+    def test_a_committed_path_with_an_accent_arrives_unquoted(self):
+        git(self.root, "checkout", "-q", "-b", "work")
+        (self.root / "projects" / "hub" / "caff\u00e8.py").write_text("x = 1\n", encoding="utf-8")
+        git(self.root, "add", ".")
+        git(self.root, "commit", "-q", "-m", "accent")
+        paths, _ = preflight.changed_paths(self.root, "main")
+        self.assertEqual(paths, ["projects/hub/caff\u00e8.py"])
+
+    def test_a_pass_over_uncommitted_files_is_not_recorded_for_the_hook(self):
+        head = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=self.root, capture_output=True, text=True
+        ).stdout.strip()
+        state = preflight.git_path("preflight", self.root) / "state.json"
+        (self.root / "projects" / "hub" / "old.txt").write_text("dirty\n", encoding="utf-8")
+        preflight.record_pass(self.root, head, "main", ["lint"], clean_at_start=False)
+        self.assertFalse(state.exists())
+        git(self.root, "checkout", "--", ".")
+        preflight.record_pass(self.root, head, "main", ["lint"], clean_at_start=True)
+        self.assertTrue(state.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

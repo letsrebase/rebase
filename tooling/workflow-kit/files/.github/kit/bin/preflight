@@ -184,9 +184,12 @@ def changed_paths(root: Path, base: str) -> tuple[list[str], str]:
     if merge_base:
         # --no-renames: a move lists its old path too, so the checks of the directory
         # a file left still run (the callers of a moved module are there).
-        paths.update(
-            git("diff", "--name-only", "--no-renames", f"{merge_base}..HEAD", cwd=root).splitlines()
+        # -z: git quotes a path with non-ASCII characters, quotes or tabs otherwise,
+        # and a quoted path matches no glob.
+        committed = git(
+            "diff", "--name-only", "-z", "--no-renames", f"{merge_base}..HEAD", cwd=root, raw=True
         )
+        paths.update(p for p in committed.split("\0") if p)
     # raw=True: a generic .strip() on this call would eat the leading space
     # of a leading " M path" record (see the `git()` docstring above it).
     # -z NUL-terminates every record, including the last, so the final
@@ -531,6 +534,9 @@ def main() -> int:
         return 0
 
     head = git("rev-parse", "HEAD", cwd=root)
+    # A pass is reusable by the pre-push hook only if it tested exactly HEAD: a run over
+    # uncommitted files proves nothing about the commit once they are stashed.
+    clean_at_start = not paths_dirty(root)
 
     if args.all or not merge_base:
         # No base to diff against (a fresh clone without origin/main, a renamed trunk):
@@ -587,7 +593,7 @@ def main() -> int:
             f"preflight: nothing to check ({len(paths)} changed path(s) match no check)",
             file=sys.stderr,
         )
-        write_state(root, head, merge_base, [])
+        record_pass(root, head, merge_base, [], clean_at_start)
         return 0
 
     print(
@@ -624,12 +630,24 @@ def main() -> int:
         colour("32", f"preflight: {len(results)} check(s) passed in {wall:.1f}s"),
         file=sys.stderr,
     )
-    write_state(root, head, merge_base, [r.check.id for r in results])
+    record_pass(root, head, merge_base, [r.check.id for r in results], clean_at_start)
     return 0
 
 
 def paths_dirty(root: Path) -> bool:
     return bool(git("status", "--porcelain", cwd=root))
+
+
+def record_pass(root: Path, head: str, base: str, ids: list[str], clean_at_start: bool) -> None:
+    """Save a pass the hook may reuse, only when the run tested HEAD and nothing else."""
+    if not clean_at_start or paths_dirty(root) or git("rev-parse", "HEAD", cwd=root) != head:
+        print(
+            "preflight: not recorded for the push hook (uncommitted changes or a moved HEAD: "
+            "the pass covered the working tree, not the commit)",
+            file=sys.stderr,
+        )
+        return
+    write_state(root, head, base, ids)
 
 
 if __name__ == "__main__":
