@@ -109,7 +109,12 @@ def _connect(client: TestClient) -> None:
 def test_the_account_is_readable_with_slack_off_and_says_so(logged_in: TestClient) -> None:
     response = logged_in.get("/api/slack/account")
     assert response.status_code == 200, response.text
-    assert response.json() == {"configured": False, "workspace": None, "members": []}
+    assert response.json() == {
+        "configured": False,
+        "workspace": None,
+        "members": [],
+        "problem": None,
+    }
     assert logged_in.get("/api/slack/me").json() == {
         "configured": False,
         "connected": False,

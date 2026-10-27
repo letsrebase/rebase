@@ -93,7 +93,7 @@ async def test_a_workspace_nobody_connected_is_a_state_not_an_error(
     actor = Actor(id=admin.id, type="mcp", role="admin")
     async with Client(_server(mcp_session, actor, tmp_path)) as client:
         health = _payload(await client.call_tool("describe_slack", {}))
-    assert health == {"configured": True, "workspace": None, "members": []}
+    assert health == {"configured": True, "workspace": None, "members": [], "problem": None}
 
 
 async def test_a_collaboratore_cannot_read_the_matches_of_everyone(
