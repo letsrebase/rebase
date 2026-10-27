@@ -90,13 +90,21 @@ export function registerPush(sw: ServiceWorkerGlobalScope, icon: string): void {
   })
 }
 
+/** Whether a page is under the worker's scope, by path segment: `/acme/app` holds
+ *  `/acme/app/invoices` and not `/acme/application`. */
+export function inScope(url: string, scope: string): boolean {
+  if (!url.startsWith(scope)) return false
+  const next = url.charAt(scope.length)
+  return next === '' || next === '/' || next === '?' || next === '#'
+}
+
 /** A window of this space already open is taken to the record and focused, so a tap does
  *  not stack a tab per reminder; none open, or one the browser will not navigate (an
  *  uncontrolled one), opens a new one. */
 async function openTarget(sw: ServiceWorkerGlobalScope, target: string): Promise<void> {
   const scope = sw.registration.scope
   const windows = await sw.clients.matchAll({ type: 'window', includeUncontrolled: true })
-  const open = windows.find((client) => client.url.startsWith(scope))
+  const open = windows.find((client) => inScope(client.url, scope))
   if (open) {
     try {
       const moved = await open.navigate(target)

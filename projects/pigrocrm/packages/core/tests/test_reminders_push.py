@@ -321,6 +321,11 @@ def test_the_endpoints_the_browser_vendors_issue_are_accepted(endpoint: str) -> 
         "https://metadata.internal/x",
         "https://user:pass@fcm.googleapis.com/x",
         "file:///etc/passwd",
+        # Not the vendors' own, though public and HTTPS: the server would call anything.
+        "https://push.example.test/a",
+        "https://attacker.example/fcm.googleapis.com",
+        "https://fcm.googleapis.com.attacker.example/x",
+        "https://notfcm.googleapis.com/x",
         "https://" + "a" * 3000 + ".example.test/x",
         "not a url",
     ],
@@ -397,6 +402,41 @@ def test_unsubscribing_removes_only_the_callers_own_and_twice_is_fine(db_session
     service.unsubscribe(one, "https://fcm.googleapis.com/fcm/send/one")
     assert service.mine(one) == []
     assert db_session.scalars(select(PushSubscription)).all()
+
+
+def test_a_browser_that_changes_hands_starts_over_for_its_new_person(db_session: Session) -> None:
+    """Its age is what keeps a person from being sent the backlog (`push.py`): the
+    previous person's age says nothing about the next one."""
+    _, one = _user(db_session)
+    _, other = _user(db_session)
+    service = PushSubscriptionService(db_session)
+    first = service.subscribe(one, _write())
+    row = db_session.get(PushSubscription, first.id)
+    assert row is not None
+    row.created_at = datetime(2020, 1, 1, tzinfo=UTC)
+    db_session.commit()
+
+    again_same = service.subscribe(one, _write())
+    assert again_same.created_at == datetime(2020, 1, 1, tzinfo=UTC), (
+        "the same person keeps its age"
+    )
+
+    moved = service.subscribe(other, _write())
+    assert moved.created_at > datetime(2020, 1, 1, tzinfo=UTC)
+
+
+def test_a_person_keeps_at_most_ten_browsers_and_the_oldest_goes(db_session: Session) -> None:
+    _, actor = _user(db_session)
+    _, other = _user(db_session)
+    service = PushSubscriptionService(db_session)
+    service.subscribe(other, _write("https://fcm.googleapis.com/fcm/send/not-mine"))
+
+    for number in range(12):
+        service.subscribe(actor, _write(f"https://fcm.googleapis.com/fcm/send/b{number:02d}"))
+
+    kept = {row.endpoint.rsplit("/", 1)[1] for row in service.mine(actor)}
+    assert kept == {f"b{number:02d}" for number in range(2, 12)}
+    assert len(service.mine(other)) == 1, "somebody else's are not counted or touched"
 
 
 def test_a_job_has_no_browser(db_session: Session) -> None:

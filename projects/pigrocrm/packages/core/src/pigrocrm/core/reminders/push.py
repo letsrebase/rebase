@@ -15,15 +15,17 @@ not available on this installation, and a reminder is never held back by it.
 
 **What the channel does** (`PushChannel`): a notification per reminder, at once, to every
 browser the person subscribed from, outside their quiet hours. A browser announces what
-reached the person's list after it subscribed and never the backlog: a person who turns
-push on with thirty reminders open is not sent thirty notifications. A reminder is
+reached the person's list after it subscribed, and no longer than a push service would have
+held it (`TTL_SECONDS`) ago: never the backlog, so a person who turns push on with thirty
+reminders open, or on again for a type, is not sent thirty notifications. A reminder is
 recorded as delivered when at least one browser's push service accepted it, a
 subscription the push service reports gone (404 or 410) is deleted with the ledger writes,
 and any other failure writes nothing, so the next pass tries again (§8.3).
 
-**The endpoint is a URL this server calls.** The sender resolves its host before each send
-and refuses one that does not resolve to public addresses, never follows a redirect, and
-sends nothing but the encrypted payload (`push_subscriptions.py` has the other half).
+**The endpoint is a URL this server calls.** Only a browser vendor's push service is accepted
+when it is stored (`push_subscriptions.py`); the sender resolves its host before each send
+and refuses one that does not resolve to public addresses, never follows a redirect, sends
+nothing but the encrypted payload, and gives the whole phase `PHASE_SECONDS`.
 """
 
 from __future__ import annotations
@@ -33,18 +35,19 @@ import ipaddress
 import json
 import logging
 import socket
+import time
 from collections import defaultdict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Literal, Protocol
 from urllib.parse import urlsplit
 from uuid import UUID
 
 import requests
 from cryptography.hazmat.primitives import serialization
-from py_vapid import Vapid
-from pywebpush import WebPushException, webpush
+from py_vapid import Vapid  # type: ignore[import-untyped]
+from pywebpush import WebPushException, webpush  # type: ignore[import-untyped]
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -68,6 +71,10 @@ PUSH = "push"
 # that instant, and a phone in a pocket is not.
 TTL_SECONDS = 24 * 60 * 60
 SEND_TIMEOUT_SECONDS = 10
+# How long one pass may spend sending push, in all: the pass holds the space's lock while it
+# sends, and a slow push service must not make it hold it for everybody else's turn. What is
+# not sent by then stays unrecorded and goes in the next pass.
+PHASE_SECONDS = 120
 
 Outcome = Literal["accepted", "gone", "failed"]
 
@@ -279,7 +286,10 @@ class PushChannel(Channel):
             identity = candidate.identity(PUSH)
             if context.covered(identity, reminder.severity):
                 continue
-            # A browser announces what reached the list after it subscribed.
+            # A browser announces what reached the list after it subscribed, and a reminder
+            # that has been there longer than a push service would hold it is not news.
+            if context.now - candidate.listed_at > timedelta(seconds=TTL_SECONDS):
+                continue
             reachable = [
                 t for t in targets[reminder.user_id] if t.created_at <= candidate.listed_at
             ]
@@ -297,11 +307,17 @@ class PushChannel(Channel):
         def send() -> ChannelResult:
             result = ChannelResult()
             gone: set[str] = set()
+            deadline = time.monotonic() + PHASE_SECONDS
             for accepted, message, reachable in planned:
                 took = False
                 for target in reachable:
                     if target.endpoint in gone:
                         continue
+                    if time.monotonic() > deadline:
+                        logger.warning(
+                            "push: il tempo della passata è finito, il resto alla prossima"
+                        )
+                        return result
                     outcome = sender.send(target, message)
                     if outcome == "accepted":
                         took = True
@@ -313,4 +329,4 @@ class PushChannel(Channel):
                     result.accepted.append(accepted)
             return result
 
-        return Prepared(PUSH, len(planned), send)
+        return Prepared(PUSH, sum(len(reachable) for _, _, reachable in planned), send)

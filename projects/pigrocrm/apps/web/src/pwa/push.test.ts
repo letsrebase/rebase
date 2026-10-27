@@ -24,6 +24,8 @@ describe('pushSupport', () => {
 describe('pushState', () => {
   const base = {
     loading: false,
+    failed: false,
+    workerMissing: false,
     serverEnabled: true,
     support: 'supported',
     permission: 'default',
@@ -32,9 +34,11 @@ describe('pushState', () => {
 
   it('walks the reasons in order', () => {
     expect(pushState({ ...base, loading: true })).toBe('loading')
+    expect(pushState({ ...base, failed: true, serverEnabled: false })).toBe('error')
     expect(pushState({ ...base, serverEnabled: false, support: 'unsupported' })).toBe('unavailable')
     expect(pushState({ ...base, support: 'unsupported' })).toBe('unsupported')
     expect(pushState({ ...base, support: 'ios-needs-install' })).toBe('ios-needs-install')
+    expect(pushState({ ...base, workerMissing: true })).toBe('worker-missing')
     expect(pushState({ ...base, permission: 'denied' })).toBe('denied')
     expect(pushState(base)).toBe('off')
     expect(pushState({ ...base, subscribed: true })).toBe('on')

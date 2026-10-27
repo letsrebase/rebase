@@ -695,7 +695,7 @@ def automations(*, slug: str | None, data: date | None, dry_run: bool) -> int:
     from sqlalchemy import create_engine, select
 
     from pigrocrm.core.db.clock import today_local
-    from pigrocrm.core.tenants import Tenant, ensure_tenants_database, space_base_settings
+    from pigrocrm.core.tenants import Tenant, ensure_tenants_database
     from pigrocrm.core.tenants.database import tenant_database_url
 
     settings = get_settings()
@@ -714,11 +714,7 @@ def automations(*, slug: str | None, data: date | None, dry_run: bool) -> int:
             try:
                 with session_factory(registry)() as session:
                     spaces.extend(
-                        (
-                            row.slug,
-                            tenant_database_url(settings, row.db_name),
-                            space_base_settings(settings, row.slug).public_url,
-                        )
+                        (row.slug, tenant_database_url(settings, row.db_name))
                         for row in session.scalars(select(Tenant).order_by(Tenant.created_at)).all()
                         if slug is None or row.slug == slug
                     )

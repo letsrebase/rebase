@@ -30,8 +30,15 @@ included: a reminder that falls in the window (20:00 to 08:00 and the whole week
 `PIGROCRM_TIMEZONE`, unless somebody changed it) stays undelivered and the first pass after
 the window sends it. Never the in-app list.
 
-A browser announces what reached the person's list **after it subscribed**, never the
-backlog: turning push on with thirty reminders open sends no notification for those.
+A browser announces what reached the person's list **after it subscribed**, and in the last
+day (what a push service would hold it for), never the backlog: turning push on, or on again
+for a type, with thirty reminders open sends no notification for those. A browser that
+changes hands (somebody else signs in on it and turns push on) starts over for its new
+person, and signing out turns push off for that browser. A person keeps at most ten browsers
+(the oldest goes), and only the browser vendors' own push services are accepted as an
+endpoint (`fcm.googleapis.com`, `push.services.mozilla.com`, `notify.windows.com`,
+`push.apple.com`), so a person cannot make the server call an address of their choosing. A
+pass gives the push phase two minutes in all; what is not sent by then goes in the next one.
 
 ## 2. Settings of the installation
 
@@ -89,6 +96,9 @@ Never rotate it to «tidy up».
   ```
 
   The line ends with `, email 3 (prova)` when three mails would go, and writes nothing.
+  Read it for **today**: `--data` evaluates another day at its last minute, which is inside
+  the default quiet hours, so the email and push counters of a rehearsal of another day say
+  0 whatever would go. A rehearsal counts push as one per browser, like the real line.
 - **Push.** Nobody has a subscription until they press **Attiva**, so the first pass sends
   none.
 

@@ -120,12 +120,17 @@ class ReminderLedger:
             )
         )
 
-    def forget_unraised(self, ran: Collection[str], raised: Collection[str]) -> int:
+    def forget_unraised(
+        self, ran: Collection[str], raised: Collection[str], *, before: datetime | None = None
+    ) -> int:
         """Deletes the acknowledge, snooze and delivery rows of every key of the types
         that ran this pass which the pass did not raise; the number of rows deleted.
 
         «Raised» is by key and for anybody: a key raised for one person keeps everybody's
-        rows. The rows of a type that did not run are not touched.
+        rows. The rows of a type that did not run are not touched. A row written after
+        `before` (when the evaluation was made) is not this evaluation's to end: the pass
+        sends between its reads and its writes, and a person who acknowledges a reminder
+        meanwhile has done it about a cause the evaluation never saw.
         """
         if not ran:
             return 0
@@ -134,6 +139,8 @@ class ReminderLedger:
             statement = delete(model).where(model.type.in_(list(ran)))
             if raised:
                 statement = statement.where(model.key.not_in(list(raised)))
+            if before is not None:
+                statement = statement.where(model.updated_at <= before)
             # `RETURNING` and not `rowcount`, the way `gmail/repository.py` counts: the
             # DBAPI's row count is not typed on a generic result.
             deleted += len(self.session.execute(statement.returning(model.id)).all())

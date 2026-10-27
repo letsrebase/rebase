@@ -53,6 +53,8 @@ class Evaluation:
     reminders: tuple[Reminder, ...]
     ran: frozenset[str]
     raised: frozenset[str]
+    # The wall-clock moment the evaluation began: what a row written later is told apart by.
+    evaluated_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -75,8 +77,9 @@ class ReminderEngine:
     def evaluate(self, *, today: date | None = None, now: datetime | None = None) -> Evaluation:
         """Runs every detector that applies to the space and is switched on for it, and
         resolves each detection per recipient. Reads and writes nothing else."""
+        evaluated_at = datetime.now(UTC)
         today = today if today is not None else today_local(self.settings)
-        now = now if now is not None else datetime.now(UTC)
+        now = now if now is not None else evaluated_at
         preferences = ReminderSettings.load(self.session)
         ctx = DetectorContext(
             session=self.session,
@@ -124,7 +127,7 @@ class ReminderEngine:
         # of an attivita must survive the day its reminder is not raised for them, and ends
         # only when the cause is gone (`forget_unraised`).
         reminders = self._without_what_a_reminder_already_says(reminders)
-        return Evaluation(tuple(reminders), frozenset(ran), frozenset(raised))
+        return Evaluation(tuple(reminders), frozenset(ran), frozenset(raised), evaluated_at)
 
     def _without_what_a_reminder_already_says(self, reminders: list[Reminder]) -> list[Reminder]:
         """Drops, for one person, the attività reminder of what `fattura_scaduta` opened
@@ -236,7 +239,9 @@ class ReminderEngine:
                         PushSubscription.endpoint.in_(sent.gone_endpoints)
                     )
                 )
-        ended = ledger.forget_unraised(evaluation.ran, evaluation.raised)
+        ended = ledger.forget_unraised(
+            evaluation.ran, evaluation.raised, before=evaluation.evaluated_at
+        )
         if job is not None:
             ledger.touch_job(job)
         self.session.commit()

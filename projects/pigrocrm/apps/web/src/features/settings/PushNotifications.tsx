@@ -4,6 +4,9 @@ import type { PushState } from '@/pwa/push'
 
 /** What each state tells the person; the two with a button are `off` and `on`. */
 const EXPLANATION: Record<Exclude<PushState, 'loading' | 'off' | 'on'>, string> = {
+  error: 'Non riesco a leggere lo stato delle notifiche. Ricarica la pagina per riprovare.',
+  'worker-missing':
+    'Il browser non ha ancora attivato l’app per le notifiche. Ricarica la pagina e riprova.',
   unavailable: 'Le notifiche push non sono attive su questa installazione.',
   unsupported: 'Questo browser non supporta le notifiche push.',
   'ios-needs-install':

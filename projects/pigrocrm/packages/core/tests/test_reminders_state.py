@@ -355,3 +355,17 @@ def test_quiet_hours_are_read_as_the_window_that_crosses_midnight() -> None:
     assert not EffectiveGeneral(QuietHours(enabled=False), 8).quiet_at(5, time(23, 0))
     weekdays_only = EffectiveGeneral(QuietHours(weekend=False), 8)
     assert not weekdays_only.quiet_at(6, time(14, 0))
+
+
+def test_a_row_written_after_the_evaluation_is_not_its_to_end(db_session: Session) -> None:
+    """The pass sends between its reads and its writes: a person who acknowledges meanwhile
+    has dealt with a cause the evaluation never saw."""
+    user = _user(db_session)
+    ReminderStateService(db_session).acknowledge(_actor(user), KEY, "serious")
+    ledger = ReminderLedger(db_session)
+    long_ago = datetime(2020, 1, 1, tzinfo=UTC)
+
+    assert ledger.forget_unraised({"attivita_overdue"}, set(), before=long_ago) == 0
+    assert db_session.scalars(select(ReminderAck).where(ReminderAck.key == KEY)).all()
+
+    assert ledger.forget_unraised({"attivita_overdue"}, set()) == 1, "no moment: as it was"

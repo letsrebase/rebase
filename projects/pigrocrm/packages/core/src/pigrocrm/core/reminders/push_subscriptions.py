@@ -7,10 +7,12 @@ database like every other piece of a person's bookkeeping; the same endpoint is 
 stored twice.
 
 **The endpoint is a URL this server will call**, and the person who registers it chooses
-it, so it is checked twice: `accepts_endpoint` refuses what no push service has (plain
-HTTP, a bare or numeric host, a name that is not on the public internet) when it is
-stored, and the sender checks again what the name resolves to when it sends
-(`reminders/push.py`), because a name can be pointed somewhere else after it was accepted.
+it, so it is checked twice: `accepts_endpoint` accepts only the hosts of the browser
+vendors' push services (`PUSH_SERVICES`) when it is stored, so nobody can have the server
+call an address of their choosing, and the sender checks again what the name resolves to
+when it sends (`reminders/push.py`). **One person has at most `MAX_PER_USER` browsers**: the
+oldest goes when another is added, so a person cannot make a pass call a thousand
+endpoints.
 
 **The endpoint belongs to a browser, not to a person**: when somebody signs in on a
 browser another person subscribed from, subscribing again moves the row to them, so the
@@ -22,13 +24,12 @@ from __future__ import annotations
 
 import base64
 import binascii
-import ipaddress
 from datetime import datetime
 from urllib.parse import urlsplit
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import CheckConstraint, ForeignKey, String, Text, func, select
+from sqlalchemy import CheckConstraint, ForeignKey, String, Text, case, delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
@@ -45,8 +46,19 @@ USER_AGENT_MAX_LENGTH = 300
 _P256DH_BYTES = 65
 _AUTH_BYTES = 16
 
-# Names that are on no public network, whatever they resolve to on this host.
-_PRIVATE_SUFFIXES = (".local", ".localhost", ".internal", ".lan", ".home", ".corp", ".intranet")
+# The push services of the browsers PigroCRM can be installed from: Chrome, Edge, Opera,
+# Brave and Samsung Internet through Google's (`fcm.googleapis.com`), Firefox through
+# Mozilla's, Edge also through Windows', Safari through Apple's. A host is accepted when it
+# is one of these or a subdomain of one. A vendor that adds a service is a line here.
+PUSH_SERVICES = (
+    "fcm.googleapis.com",
+    "push.services.mozilla.com",
+    "notify.windows.com",
+    "push.apple.com",
+)
+# How many browsers one person may have on file. Generous for a phone, a laptop and a
+# desktop; the oldest is dropped past it.
+MAX_PER_USER = 10
 
 
 class PushSubscription(Base, PrimaryKeyMixin, TimestampMixin):
@@ -76,9 +88,9 @@ def _decoded(value: str) -> bytes:
 
 
 def accepts_endpoint(endpoint: str) -> bool:
-    """Whether a push service could plausibly have issued this endpoint: HTTPS, a real
-    public-looking DNS name (no address literal, no single label, no private suffix), no
-    credentials. The sender resolves the name again before every send."""
+    """Whether this is the endpoint of one of the browser vendors' push services: HTTPS, no
+    credentials, and a host that is a push service or one of its subdomains. The sender
+    resolves the name again before every send."""
     if len(endpoint) > ENDPOINT_MAX_LENGTH:
         return False
     try:
@@ -88,13 +100,7 @@ def accepts_endpoint(endpoint: str) -> bool:
         return False
     if parts.scheme != "https" or not host or parts.username or parts.password:
         return False
-    try:
-        ipaddress.ip_address(host)
-    except ValueError:
-        pass
-    else:
-        return False
-    return "." in host and not host.endswith(_PRIVATE_SUFFIXES)
+    return any(host == service or host.endswith(f".{service}") for service in PUSH_SERVICES)
 
 
 class PushSubscriptionWrite(BaseModel):
@@ -172,7 +178,8 @@ class PushSubscriptionService:
     ) -> PushSubscriptionRead:
         """Keeps this browser's subscription for the caller: new, or the same endpoint
         again with fresh keys, or the endpoint of a browser somebody else subscribed from,
-        which is theirs no longer."""
+        which is theirs no longer. A person keeps at most `MAX_PER_USER` browsers: the
+        oldest goes when another is added."""
         user_id = self._user(actor)
         agent = user_agent[:USER_AGENT_MAX_LENGTH] if user_agent else None
         statement = insert(PushSubscription).values(
@@ -190,10 +197,32 @@ class PushSubscriptionService:
                     "p256dh": statement.excluded.p256dh,
                     "auth": statement.excluded.auth,
                     "user_agent": statement.excluded.user_agent,
+                    # A browser that changes hands starts over for its new person: its age
+                    # is what keeps a person from being sent the backlog (`push.py`), and
+                    # the previous person's age says nothing about this one.
+                    "created_at": case(
+                        (
+                            PushSubscription.user_id != statement.excluded.user_id,
+                            func.now(),
+                        ),
+                        else_=PushSubscription.created_at,
+                    ),
                     "updated_at": func.now(),
                 },
-            ).returning(PushSubscription)
+            ).returning(PushSubscription),
+            # The row may already be in this session (a second subscribe, a test): what the
+            # statement wrote, not what the session remembers.
+            execution_options={"populate_existing": True},
         ).scalar_one()
+        kept = select(PushSubscription.id).where(PushSubscription.user_id == user_id)
+        kept = kept.order_by(PushSubscription.created_at.desc(), PushSubscription.id.desc()).limit(
+            MAX_PER_USER
+        )
+        self.session.execute(
+            delete(PushSubscription).where(
+                PushSubscription.user_id == user_id, PushSubscription.id.not_in(kept)
+            )
+        )
         self.session.commit()
         return PushSubscriptionRead.model_validate(row)
 

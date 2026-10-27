@@ -31,6 +31,9 @@ function currentPermission(): NotificationPermission {
   return 'Notification' in window ? Notification.permission : 'default'
 }
 
+/** How long the page waits for its worker to be active before saying it is not. */
+const WORKER_WAIT_MS = 8000
+
 /** This browser's own subscription, or `null`: from the worker of the space this page is
  *  in (`navigator.serviceWorker.ready` is the registration whose scope holds the page). */
 async function browserSubscription(): Promise<PushSubscription | null> {
@@ -71,18 +74,38 @@ export function usePush(): PushControls {
   })
   const support = currentSupport()
   // What this browser holds: `undefined` until it has been asked, `null` for nothing.
-  const [held, setHeld] = useState<{ endpoint: string; key: ArrayBuffer | null } | null | undefined>(undefined)
+  const [held, setHeld] = useState<{ endpoint: string; key: ArrayBuffer | null } | null | undefined>(
+    undefined,
+  )
+  const [workerMissing, setWorkerMissing] = useState(false)
   const [permission, setPermission] = useState<NotificationPermission>(currentPermission)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (support !== 'supported') return
     let live = true
+    // `serviceWorker.ready` never settles when no worker is going to become active, so the
+    // wait has an end: a page the worker is not ready for says so instead of waiting.
+    const gaveUp = window.setTimeout(() => {
+      if (!live) return
+      setWorkerMissing(true)
+      setHeld(null)
+    }, WORKER_WAIT_MS)
     browserSubscription()
-      .then((subscription) => live && setHeld(heldBy(subscription)))
-      .catch(() => live && setHeld(null))
+      .then((subscription) => {
+        if (!live) return
+        window.clearTimeout(gaveUp)
+        setWorkerMissing(false)
+        setHeld(heldBy(subscription))
+      })
+      .catch(() => {
+        if (!live) return
+        window.clearTimeout(gaveUp)
+        setHeld(null)
+      })
     return () => {
       live = false
+      window.clearTimeout(gaveUp)
     }
   }, [support])
 
@@ -167,6 +190,8 @@ export function usePush(): PushControls {
   return {
     state: pushState({
       loading,
+      failed: config.isError || mine.isError,
+      workerMissing,
       serverEnabled: config.data?.enabled === true,
       support,
       permission,

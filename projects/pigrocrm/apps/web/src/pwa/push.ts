@@ -31,10 +31,15 @@ export function pushSupport(inputs: PushSupportInputs): PushSupport {
 /** What the section shows, in the order the reasons apply. */
 export type PushState =
   | 'loading'
+  /** The installation's push settings or this person's browsers could not be read. */
+  | 'error'
   /** This installation has no VAPID key: the server cannot send push at all. */
   | 'unavailable'
   | 'unsupported'
   | 'ios-needs-install'
+  /** No service worker became active for this page: a development server, a registration
+   *  that failed, or the page opened before the worker was ready. */
+  | 'worker-missing'
   /** The person blocked notifications for this site in the browser. */
   | 'denied'
   | 'off'
@@ -42,6 +47,10 @@ export type PushState =
 
 export interface PushStateInputs {
   loading: boolean
+  /** Reading `GET /api/push/config` or the person's subscriptions failed. */
+  failed: boolean
+  /** The browser never reported an active worker for this page. */
+  workerMissing: boolean
   /** `GET /api/push/config`'s `enabled`. */
   serverEnabled: boolean
   support: PushSupport
@@ -52,14 +61,18 @@ export interface PushStateInputs {
 
 export function pushState({
   loading,
+  failed,
+  workerMissing,
   serverEnabled,
   support,
   permission,
   subscribed,
 }: PushStateInputs): PushState {
   if (loading) return 'loading'
+  if (failed) return 'error'
   if (!serverEnabled) return 'unavailable'
   if (support !== 'supported') return support
+  if (workerMissing) return 'worker-missing'
   if (subscribed) return 'on'
   return permission === 'denied' ? 'denied' : 'off'
 }

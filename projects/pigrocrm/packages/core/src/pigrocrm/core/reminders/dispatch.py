@@ -26,6 +26,7 @@ delivery covers its rank and below».
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -44,6 +45,8 @@ from pigrocrm.core.reminders.preferences import (
     EffectiveSettings,
     ReminderSettings,
 )
+
+logger = logging.getLogger(__name__)
 
 IN_APP = "in_app"
 
@@ -108,7 +111,7 @@ class ChannelResult:
     by channel."""
 
     accepted: list[Accepted] = field(default_factory=list)
-    # `(user, day)` of the daily summaries that went, or were due and had nothing to say.
+    # `(user, day)` of the daily summaries that went.
     summaries: list[tuple[UUID, date]] = field(default_factory=list)
     # Push subscriptions the push service reported gone: deleted with the ledger writes.
     gone_endpoints: list[str] = field(default_factory=list)
@@ -204,7 +207,15 @@ class ChannelDispatcher:
 
     @staticmethod
     def send(prepared: Sequence[Prepared]) -> ChannelResult:
+        """Runs every channel's sends and gathers what they accepted. A channel's own `send`
+        never raises, and the guard here is for the one that does anyway (a bug, a row
+        nobody foresaw): its messages are left unrecorded, and so retried, and the others
+        and the pass's own writes go on. The type is logged and never the message, which
+        may quote an address."""
         result = ChannelResult()
         for plan in prepared:
-            result.merge(plan.send())
+            try:
+                result.merge(plan.send())
+            except Exception as exc:  # noqa: BLE001 - one channel must not cost the pass
+                logger.error("canale %s: invio fallito (%s)", plan.channel, type(exc).__name__)
         return result

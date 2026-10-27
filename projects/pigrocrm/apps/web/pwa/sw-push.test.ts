@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { clickTarget, notificationOptions, readMessage, registerPush } from '../sw/push'
+import { clickTarget, inScope, notificationOptions, readMessage, registerPush } from '../sw/push'
 
 /**
  * The push listeners (REB-738): what a message becomes on screen, where a tap goes, and
@@ -74,6 +74,16 @@ describe('clickTarget', () => {
   )
 })
 
+describe('inScope', () => {
+  it('holds a page by path segment, not by string prefix', () => {
+    expect(inScope(`${SCOPE}`, SCOPE)).toBe(true)
+    expect(inScope(`${SCOPE}/customers`, SCOPE)).toBe(true)
+    expect(inScope(`${SCOPE}?tab=anno`, SCOPE)).toBe(true)
+    expect(inScope('https://pigro.example/acme/application', SCOPE)).toBe(false)
+    expect(inScope('https://pigro.example/other/app', SCOPE)).toBe(false)
+  })
+})
+
 type Listener = (event: never) => void
 
 function worker(windows: Array<Record<string, unknown>> = []) {
@@ -132,7 +142,10 @@ describe('registerPush', () => {
   })
 
   it('opens a new window on the record when none of this space is open', async () => {
-    const { listeners, sw } = worker([{ url: 'https://pigro.example/other/app/x', navigate: vi.fn() }])
+    const { listeners, sw } = worker([
+      { url: 'https://pigro.example/other/app/x', navigate: vi.fn() },
+      { url: 'https://pigro.example/acme/application', navigate: vi.fn() },
+    ])
     const close = await tap(listeners, { url: '/acme/app/invoices/1' })
     expect(close).toHaveBeenCalled()
     expect(sw.clients.openWindow).toHaveBeenCalledWith('https://pigro.example/acme/app/invoices/1')

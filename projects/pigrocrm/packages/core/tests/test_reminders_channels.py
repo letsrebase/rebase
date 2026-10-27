@@ -571,3 +571,75 @@ def test_a_reminder_is_pushed_only_to_the_person_it_is_for(
     _run(settings, engine, None, pusher, at(TUESDAY, 10))
 
     assert [target.endpoint for target, _ in pusher.sent] == ["https://push.example.test/owner"]
+
+
+class _RaisingPusher:
+    def send(self, target: object, message: object) -> str:
+        raise RuntimeError("a bug nobody foresaw: postgresql://user:secret@host/db")
+
+
+def test_a_channel_that_raises_does_not_cost_the_pass_its_writes_or_the_other_channel(
+    settings: Settings,
+    engine: Engine,
+    session: Session,
+    owner: User,
+    resend: FakeResend,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    _subscribe(session, owner, at_=at(TUESDAY, 9))
+    _overdue(session, owner, days=20, title="Contratto firmato")
+
+    result = _run(settings, engine, resend, _RaisingPusher(), at(TUESDAY, 10))  # type: ignore[arg-type]
+
+    assert result.delivered == 1, "the list is written whatever a channel does"
+    assert result.pushes == 0
+    assert result.emails == 1, "and the other channel still sent"
+    assert _count(engine, "reminder_job_run") == 1, "the clock too"
+    assert _count(engine, "reminder_delivery", "channel = 'push'") == 0, "so push is retried"
+    assert "RuntimeError" in caplog.text and "secret" not in caplog.text, "the type, never the text"
+
+
+def test_a_reminder_that_has_been_listed_longer_than_a_push_service_holds_it_is_not_news(
+    settings: Settings, engine: Engine, session: Session, owner: User, pusher: RecordingPushSender
+) -> None:
+    """Turning a channel back on, or a long outage, must not send the backlog."""
+    _subscribe(session, owner, at_=at(TUESDAY, 9) - timedelta(days=3))
+    attivita = _overdue(session, owner, days=20)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "insert into reminder_delivery "
+                "(id, key, type, user_id, channel, mode, period, severity_rank, delivered_at) "
+                "values (gen_random_uuid(), :key, 'attivita_overdue', :user, 'in_app', "
+                "'immediate', :period, 3, :at)"
+            ),
+            {
+                "key": f"attivita_overdue:{attivita}",
+                "user": owner.id,
+                "period": TUESDAY,
+                "at": at(TUESDAY, 10) - timedelta(hours=30),
+            },
+        )
+
+    assert _run(settings, engine, None, pusher, at(TUESDAY, 10)).pushes == 0
+    assert pusher.sent == []
+
+
+def test_a_browser_a_second_person_took_over_gets_them_only_what_comes_after(
+    settings: Settings, engine: Engine, session: Session, owner: User, pusher: RecordingPushSender
+) -> None:
+    other = User(email="altro@studio.example", nome="Altro", ruolo="collaboratore", attivo=True)
+    session.add(other)
+    session.commit()
+    _overdue(session, other, days=20, title="Cosa di Altro")
+    _run(settings, engine, None, pusher, at(TUESDAY, 10))  # listed for Altro, nobody subscribed
+    _subscribe(session, owner, "https://push.example.test/a", at_=at(TUESDAY, 9))
+    # The browser moves to Altro at 11:00, as `PushSubscriptionService.subscribe` does.
+    with engine.begin() as connection:
+        connection.execute(
+            text("update push_subscription set user_id = :user, created_at = :at"),
+            {"user": other.id, "at": at(TUESDAY, 11)},
+        )
+
+    assert _run(settings, engine, None, pusher, at(TUESDAY, 12)).pushes == 0
+    assert pusher.sent == []

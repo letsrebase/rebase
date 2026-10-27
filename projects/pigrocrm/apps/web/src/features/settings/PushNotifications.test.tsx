@@ -164,6 +164,25 @@ describe('PushNotifications', () => {
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })
 
+  it('says so when the settings cannot be read, and not that push is off', async () => {
+    apiMock.GET.mockResolvedValue({ error: { detail: 'boom' }, response: new Response(null, { status: 500 }) })
+    stubBrowser()
+    renderIt()
+    expect(await screen.findByText(/Non riesco a leggere lo stato delle notifiche/)).toBeInTheDocument()
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  it('stops waiting for a worker that never becomes active and says to reload', async () => {
+    serve()
+    stubBrowser()
+    vi.stubGlobal('navigator', { ...navigator, serviceWorker: { ready: new Promise(() => {}) } })
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    renderIt()
+    await vi.advanceTimersByTimeAsync(8100)
+    expect(await screen.findByText(/non ha ancora attivato l’app per le notifiche/)).toBeInTheDocument()
+    vi.useRealTimers()
+  })
+
   it('says the browser does not support it', async () => {
     serve()
     stubBrowser({ support: false })
