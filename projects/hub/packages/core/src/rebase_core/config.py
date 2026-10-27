@@ -148,6 +148,17 @@ class Settings(BaseSettings):
     # proposal that asked no model (an empty catalogue) cost nothing and does not count.
     team_builder_daily_cap: int = Field(default=300, ge=1)
 
+    # --- the model providers' keys at rest, and GitHub (REB-829) -----------------------
+    # `secrets_key`: 32 bytes in base64, the AES-256-GCM key (`secrets.py`) under which
+    # «Modelli AI» stores each provider's API key. Empty or malformed: the app refuses to
+    # save or use a provider key and says so, never a plain-text fallback. It lives in
+    # the server's `.env`, outside the database, so a backup does not carry a key that
+    # opens it. `github_token`: a read-only token for the GitHub source of the card
+    # (public data only); empty means unauthenticated calls with the lower rate limit.
+    # `repr=False`, so neither shows in a logged `Settings()` or a stack trace.
+    secrets_key: str = Field(default="", repr=False)
+    github_token: str = Field(default="", repr=False)
+
     @model_validator(mode="after")
     def _reserve_leaves_room(self) -> "Settings":
         # A reserve that eats the whole quota would hold every campaign for good while

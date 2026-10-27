@@ -85,3 +85,31 @@ class TeamBuilderBusy(DomainError):
     the same thing either way. A 503 with `Retry-After`, like the limiter's 429."""
 
     code = "team_builder_busy"
+
+
+class SecretsKeyMissing(DomainError):
+    """`REBASE_SECRETS_KEY` is empty or is not 32 bytes in base64 (`secrets.py`, REB-829):
+    a provider key is neither saved nor read, and nothing falls back to plain text. A 409
+    in the API with the sentence, which «Modelli AI» shows as its banner."""
+
+    code = "secrets_key_missing"
+
+    def __init__(self) -> None:
+        super().__init__(
+            "REBASE_SECRETS_KEY manca o non è valida: servono 32 byte in base64. "
+            "Senza, le chiavi dei modelli non si salvano né si leggono."
+        )
+
+
+class SecretsKeyInvalid(DomainError):
+    """A stored secret does not open with the current `REBASE_SECRETS_KEY`. `message` names
+    the variable and nothing else: never the ciphertext, the key or a partial text, and
+    never which of «wrong key» or «row altered» it was (`secrets.py`, REB-829)."""
+
+    code = "secrets_key_invalid"
+
+    def __init__(self) -> None:
+        super().__init__(
+            "Una chiave salvata non si decifra: verifica REBASE_SECRETS_KEY, "
+            "oppure salva di nuovo la chiave del fornitore."
+        )

@@ -26,6 +26,9 @@ dependencies = [
   # card writer (spec § 5.1) and the team-proposal engine (spec § 3.4). Pinned exactly,
   # the current release on PyPI the day the seam was written.
   "anthropic==1.13.0",
+  # AES-256-GCM for the model providers' keys at rest (`secrets.py`, REB-829): the same
+  # pin as pigrocrm-core, whose `gmail/crypto.py` this was written after.
+  "cryptography==50.0.1",
 ]
 
 [project.scripts]
