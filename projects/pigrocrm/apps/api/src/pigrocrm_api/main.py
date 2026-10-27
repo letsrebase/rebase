@@ -41,6 +41,7 @@ from pigrocrm_api.routers import (
     period_locks,
     pipeline,
     proposals,
+    push,
     reminders,
     schema,
     search,
@@ -139,6 +140,8 @@ def create_app() -> FastAPI:
         approval_requests,
         # REB-732: what the CRM raises on its own, and what a person does about it.
         reminders,
+        # REB-738: the browsers a person receives reminders on.
+        push,
     ):
         app.include_router(module.router)
 

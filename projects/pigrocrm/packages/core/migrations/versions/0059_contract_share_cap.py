@@ -1,7 +1,7 @@
 """contracts: a cap on one customer's share of the azienda's revenue
 
-Revision ID: 0058
-Revises: 0057
+Revision ID: 0059
+Revises: 0058
 
 REB-761. One nullable column, `tetto_quota_cliente`, a percentage (`50.00`) strictly
 between 0 and 100: the largest share of the azienda's invoiced revenue the contract's
@@ -15,8 +15,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0058"
-down_revision: str | Sequence[str] | None = "0057"
+revision: str = "0059"
+down_revision: str | Sequence[str] | None = "0058"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

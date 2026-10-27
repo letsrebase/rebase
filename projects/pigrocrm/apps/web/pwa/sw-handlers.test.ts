@@ -46,6 +46,7 @@ function setup() {
   vi.stubGlobal('fetch', fetchMock)
   vi.stubGlobal('__BUILD_ID__', 'abc')
   vi.stubGlobal('__SHELL_PATHS__', ['/app/assets/offline-A.js'])
+  vi.stubGlobal('__NOTIFICATION_ICON__', '/app/assets/icons/icon-192.png')
   return { listeners, stored, sw, fetchMock }
 }
 

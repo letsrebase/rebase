@@ -245,6 +245,17 @@ class Settings(BaseSettings):
     # How long a link by mail is good for. Fifteen, like the hub's.
     magic_link_minutes: int = Field(default=15, ge=1, le=120)
 
+    # --- Web push (spec 2026-10-26 §6.1, REB-738). The environment's VAPID identity: the
+    # private half of a P-256 key pair, base64url, from `pigrocrm vapid-keys`. Only the
+    # private half is configured: the public half the browser subscribes with is derived
+    # from it, so a pair that does not match cannot be set. Empty: push is not available,
+    # the settings say so, and the reminders go by the other channels. A secret, so
+    # `repr=False`, for the reason the Resend key's is.
+    vapid_private_key: str = Field(default="", repr=False)
+    # Who the push services may write to about this server (RFC 8292 `sub`): a `mailto:` or
+    # an `https:` URL.
+    vapid_subject: str = "mailto:ciao@letsrebase.com"
+
     # --- Product analytics (docs/design/2026-09-12-posthog-analytics-design.md). The
     # MCP server reports every tool call to PostHog when this holds the project key,
     # the same public `phc_` key the browsers carry in `shared/analytics`. Empty: the

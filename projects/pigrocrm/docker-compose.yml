@@ -58,6 +58,10 @@ x-api-environment: &api-environment
   # key: no mail, the endpoints answer 503, the password login still works.
   PIGROCRM_RESEND_API_KEY: ${PIGROCRM_RESEND_API_KEY:-}
   PIGROCRM_MAIL_FROM: ${PIGROCRM_MAIL_FROM:-PigroCRM <ciao@letsrebase.com>}
+  # The VAPID identity of the push channel (REB-738); the public key is derived from the
+  # private one. Empty: no push, the settings page says so.
+  PIGROCRM_VAPID_PRIVATE_KEY: ${PIGROCRM_VAPID_PRIVATE_KEY:-}
+  PIGROCRM_VAPID_SUBJECT: ${PIGROCRM_VAPID_SUBJECT:-mailto:ciao@letsrebase.com}
   # Where the signup asks the rebase hub who is a member (ORB-173).
   PIGROCRM_HUB_URL: ${PIGROCRM_HUB_URL:-https://letsrebase.com}
   # The MCP server, on both transports (the `mcp` service and the on-demand stdio

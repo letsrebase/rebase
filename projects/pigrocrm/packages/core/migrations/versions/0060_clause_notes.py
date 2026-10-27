@@ -1,7 +1,7 @@
 """clause_notes: a contract's written readings of its own clauses
 
-Revision ID: 0059
-Revises: 0058
+Revision ID: 0060
+Revises: 0059
 
 REB-762. One table, keyed on a contract: the clause's reference, its verbatim text, the
 interpretation adopted and an optional note. It carries the row-level policy every table
@@ -15,8 +15,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0059"
-down_revision: str | Sequence[str] | None = "0058"
+revision: str = "0060"
+down_revision: str | Sequence[str] | None = "0059"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

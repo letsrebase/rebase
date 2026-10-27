@@ -20,8 +20,8 @@
  * that lets it (deploy/nginx/spa.conf). A worker scoped to `/` would see every space and
  * the API of all of them.
  *
- * **Adding a feature** (web push, REB-738, is the first): put its listeners in their own
- * file under `sw/` and import it below, beside `registerShell`. Each feature owns its
+ * **Adding a feature** (web push, `push.ts`, REB-738, was the first): put its listeners in
+ * their own file under `sw/` and import it below, beside `registerShell`. Each feature owns its
  * events and its caches; `staleCacheNames` only ever deletes this worker's.
  *
  * Checked by `tsconfig.sw.json`, whose lib is `webworker` and not `dom`. The handler
@@ -30,9 +30,11 @@
  * use a DOM-only type, and nothing in the page may import it.
  */
 import { decideFetch, shellCacheName, staleCacheNames } from './policy'
+import { registerPush } from './push'
 
 declare const __BUILD_ID__: string
 declare const __SHELL_PATHS__: readonly string[]
+declare const __NOTIFICATION_ICON__: string
 
 const sw = self as unknown as ServiceWorkerGlobalScope
 
@@ -126,3 +128,4 @@ async function shellFile(request: Request): Promise<Response> {
 }
 
 registerShell()
+registerPush(sw, __NOTIFICATION_ICON__)

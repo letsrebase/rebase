@@ -312,6 +312,20 @@ _CREDENZIALI: dict[Method, str] = {
         "(`pigrocrm resetpassword`) a farlo, mai un agente, per la stessa ragione per cui "
         "`create` non e' un tool"
     ),
+    ("PushSubscriptionService", "mine"): (
+        "elenca i browser su cui la persona ha attivato le notifiche push (REB-738): sono "
+        "dispositivi suoi, e l'endpoint di ciascuno e' un indirizzo capace di far "
+        "comparire una notifica su quello schermo, che un agente non ha motivo di leggere"
+    ),
+    ("PushSubscriptionService", "subscribe"): (
+        "iscrive un browser, e il browser e' un oggetto che solo il browser puo' fabbricare "
+        "(chiavi e endpoint nascono dal suo `pushManager.subscribe`, dopo il permesso che "
+        "la persona da' davanti allo schermo): nessun agente potrebbe fornirne uno vero, e "
+        "uno falso farebbe chiamare al server un indirizzo scelto da chi lo scrive"
+    ),
+    ("PushSubscriptionService", "unsubscribe"): (
+        "toglie un browser: il verso opposto di `subscribe`, della persona per la stessa ragione"
+    ),
     ("GmailOAuthService", "start"): "il consenso Google si da' da un browser, non da "
     "un tool: l'URL di autorizzazione non e' percorribile da un agente",
     ("GmailOAuthService", "complete"): "il `code` esiste solo dentro il redirect di "
@@ -636,6 +650,12 @@ _COPERTE_O_UMANE: dict[Method, str] = {
         "Gmail della Home e di Clienti (REB-223): un agente crea gli stessi clienti e le "
         "stesse persone con `create_customer` e `create_person`, e il confine della "
         "transazione e' quello della lista di caselle, che un agente non ha"
+    ),
+    ("CustomerService", "add_person_from_mail"): (
+        "adds an address found at the customer's domain as a person of that customer "
+        "(REB-766): an agent finds the same addresses with "
+        "`discover_gmail_correspondents` and saves them with `create_person`; this "
+        "button only avoids copying the name and address"
     ),
     ("DigestService", "build"): (
         "compone il resoconto settimanale che `pigrocrm digest` manda per mail il lunedi' "

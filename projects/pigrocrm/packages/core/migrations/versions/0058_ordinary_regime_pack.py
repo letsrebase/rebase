@@ -1,7 +1,7 @@
 """fiscal_profile: the ordinary regime moves to its own pack, it-standard
 
-Revision ID: 0057
-Revises: 0056
+Revision ID: 0058
+Revises: 0057
 
 REB-760. Until now `RF01` was a regime code beside the only Italian pack, `it-flat-rate`,
 so an ordinary azienda pointed at the forfettario's pack and the ceilings code had to look
@@ -25,8 +25,8 @@ from collections.abc import Sequence
 
 from alembic import op
 
-revision: str = "0057"
-down_revision: str | Sequence[str] | None = "0056"
+revision: str = "0058"
+down_revision: str | Sequence[str] | None = "0057"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

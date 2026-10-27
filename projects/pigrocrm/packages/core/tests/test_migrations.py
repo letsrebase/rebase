@@ -1729,10 +1729,10 @@ def test_0051_adds_the_invitation_mail_columns_and_its_downgrade_drops_them(
         assert _invitation_mail_columns(url) == mail
 
 
-def test_0057_repoints_an_ordinary_profile_at_its_own_pack_and_clears_the_forfettarios_figures(
+def test_0058_repoints_an_ordinary_profile_at_its_own_pack_and_clears_the_forfettarios_figures(
     pigrocrm_postgres: Any,
 ) -> None:
-    """REB-760 over real rows planted at 0056: an `RF01` profile left on the forfettario's
+    """REB-760 over real rows planted at 0057: an `RF01` profile left on the forfettario's
     pack with its coefficients, and a forfettario beside it. The first moves to
     `it-standard` with the forfettario's figures and the bollo cleared; the second is
     untouched; the downgrade points the first back."""
@@ -1743,7 +1743,7 @@ def test_0057_repoints_an_ordinary_profile_at_its_own_pack_and_clears_the_forfet
     with pigrocrm_postgres.fresh_container() as container:
         url = container.get_connection_url()
         config = _alembic_config(url)
-        upgrade(config, "0056")
+        upgrade(config, "0057")
         engine: Engine = create_engine(url)
         with engine.begin() as connection:
             for azienda, nome, regime, rate, bollo, params in (
@@ -1801,7 +1801,7 @@ def test_0057_repoints_an_ordinary_profile_at_its_own_pack_and_clears_the_forfet
             finally:
                 engine.dispose()
 
-        upgrade(config, "0057")
+        upgrade(config, "0058")
         after = read()
         assert after[ordinary] == ("it-standard", False, None, None, None, None, None)
         assert after[forfettario] == (
@@ -1814,7 +1814,7 @@ def test_0057_repoints_an_ordinary_profile_at_its_own_pack_and_clears_the_forfet
             "L. 190/2014",
         )
 
-        downgrade(config, "0056")
+        downgrade(config, "0057")
         assert read()[ordinary][0] == "it-flat-rate"
         assert read()[forfettario][0] == "it-flat-rate"
 
@@ -1844,23 +1844,23 @@ def _cap_shape(url: str) -> tuple[set[str], set[str]]:
         engine.dispose()
 
 
-def test_0058_adds_the_share_cap_column_and_its_range_check_both_ways(
+def test_0059_adds_the_share_cap_column_and_its_range_check_both_ways(
     pigrocrm_postgres: Any,
 ) -> None:
     """REB-761: one nullable column and one CHECK, no backfill, both ways."""
     with pigrocrm_postgres.fresh_container() as container:
         url = container.get_connection_url()
         config = _alembic_config(url)
-        upgrade(config, "0057")
-        assert _cap_shape(url) == (set(), set())
         upgrade(config, "0058")
+        assert _cap_shape(url) == (set(), set())
+        upgrade(config, "0059")
         assert _cap_shape(url) == (
             {"tetto_quota_cliente"},
             {"ck_contracts_tetto_quota_cliente_range"},
         )
-        downgrade(config, "0057")
+        downgrade(config, "0058")
         assert _cap_shape(url) == (set(), set())
-        upgrade(config, "0058")
+        upgrade(config, "0059")
         assert _cap_shape(url)[1] == {"ck_contracts_tetto_quota_cliente_range"}
 
 
@@ -1891,7 +1891,7 @@ def _clause_notes_shape(url: str) -> tuple[set[str], bool, set[str]]:
         engine.dispose()
 
 
-def test_0059_creates_clause_notes_under_the_aziende_policy_and_its_downgrade_drops_it(
+def test_0060_creates_clause_notes_under_the_aziende_policy_and_its_downgrade_drops_it(
     pigrocrm_postgres: Any,
 ) -> None:
     """REB-762: one table keyed on a contract, with the row-level policy every table that
@@ -1909,11 +1909,11 @@ def test_0059_creates_clause_notes_under_the_aziende_policy_and_its_downgrade_dr
     with pigrocrm_postgres.fresh_container() as container:
         url = container.get_connection_url()
         config = _alembic_config(url)
-        upgrade(config, "0058")
-        assert _clause_notes_shape(url) == (set(), False, set())
         upgrade(config, "0059")
+        assert _clause_notes_shape(url) == (set(), False, set())
+        upgrade(config, "0060")
         assert _clause_notes_shape(url) == (columns, True, {"ambito_azienda"})
-        downgrade(config, "0058")
+        downgrade(config, "0059")
         assert _clause_notes_shape(url) == (set(), False, set())
-        upgrade(config, "0059")
+        upgrade(config, "0060")
         assert _clause_notes_shape(url)[0] == columns

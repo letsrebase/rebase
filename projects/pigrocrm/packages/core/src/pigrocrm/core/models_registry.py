@@ -53,6 +53,7 @@ from pigrocrm.core.reminders.models import (  # noqa: F401
     ReminderSnooze,
     ReminderSummaryRun,
 )
+from pigrocrm.core.reminders.push_subscriptions import PushSubscription  # noqa: F401
 from pigrocrm.core.space_settings.models import SpaceSetting  # noqa: F401
 from pigrocrm.core.templates.models import Template  # noqa: F401
 from pigrocrm.core.timetracking.models import (  # noqa: F401

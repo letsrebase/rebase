@@ -325,6 +325,11 @@ ROWS: list[Row] = [
     Row("DELETE", "/api/customers/{customer_id}"),
     Row("PATCH", "/api/customers/{customer_id}", body={}),
     Row("POST", "/api/customers/{customer_id}/restore"),
+    Row(
+        "POST",
+        "/api/customers/{customer_id}/people-from-mail",
+        body={"indirizzo": "marco@acme.it", "nome": "Marco"},
+    ),
     Row("POST", "/api/deals", body={"nome": "matrice-deal", "customer_id": "__CUST__"}),
     Row("DELETE", "/api/deals/{deal_id}"),
     Row("PATCH", "/api/deals/{deal_id}", body={}),
@@ -454,6 +459,8 @@ ROWS: list[Row] = [
     # A GET, and gated all the same: the proposals spend the owner's Gmail quota, as
     # discovery does (REB-223), so a readonly person is refused like on `sync`.
     Row("GET", "/api/gmail/customer-suggestions", google=True),
+    # The same for one customer's domain (REB-766).
+    Row("GET", "/api/gmail/customers/{customer_id}/correspondents", google=True),
     Row("GET", "/api/gmail/oauth/start", google=True),
     Row(
         "GET",
@@ -686,6 +693,17 @@ PUBLIC_ROUTES: dict[tuple[str, str], str] = {
         "page's path. No role exists before a space's database is open, the three role "
         "clients hold no identity session, and calling it would rotate a token no test "
         "minted."
+    ),
+    ("POST", "/api/push/subscribe"): (
+        "A person's own browser (REB-738, spec 2026-10-26 §6.1), open to every role like "
+        "their profile: the row is keyed by the caller's user id and carries nothing of "
+        "the space. It needs a real push subscription body (keys that decode, an endpoint "
+        "of a push service), which the sweep's `{}` bodies are not; `test_push_api.py` "
+        "walks it for every role."
+    ),
+    ("POST", "/api/push/unsubscribe"): (
+        "The same as subscribe, in reverse: it removes only the caller's own row. Any "
+        "role; `test_push_api.py` walks it."
     ),
     ("POST", "/api/reminders/acknowledge"): (
         "A person's own bookkeeping (REB-732, spec 2026-10-26 §8.2), open to every role "

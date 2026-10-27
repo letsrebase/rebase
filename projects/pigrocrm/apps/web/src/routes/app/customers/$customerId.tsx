@@ -200,7 +200,15 @@ export function CustomerDetail() {
         contracts={<ContractsTab customerId={customerId} />}
         economics={<EconomicsTab customerId={customerId} />}
         attivita={<EntityAttivita link={{ kind: 'customer', id: customerId }} />}
-        emails={gmailConfigured ? <EmailTab entityType="customer" entityId={customerId} /> : undefined}
+        emails={
+          gmailConfigured ? (
+            <EmailTab
+              entityType="customer"
+              entityId={customerId}
+              domainSource={`${customer.sito_web ?? ''}|${customer.email ?? ''}`}
+            />
+          ) : undefined
+        }
         actions={
           canWrite && (
             <>

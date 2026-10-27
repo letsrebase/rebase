@@ -107,6 +107,8 @@ from sqlalchemy.orm import Session  # noqa: E402
 from pigrocrm.core.actor import Actor  # noqa: E402
 from pigrocrm.core.customers.models import Customer  # noqa: E402
 from pigrocrm.core.errors import AgentForbidden, Conflict, NotFound  # noqa: E402
+from pigrocrm.core.gmail import sync as sync_module  # noqa: E402
+from pigrocrm.core.gmail.errors import GmailUnavailable  # noqa: E402
 from pigrocrm.core.gmail.models import GmailMessage  # noqa: E402
 
 DOMAIN_CLAUSE = "(from:@example.com OR to:@example.com)"
@@ -167,11 +169,26 @@ def test_discovery_answers_who_at_the_domain_wrote_or_was_written_to(db_session:
     marco = found["marco@example.com"]
     assert marco.nome == "Marco Bianchi"
     assert marco.messaggi == 2
+    # Two messages in one conversation: the page counts conversations, so this is one.
+    assert marco.conversazioni == 1
     assert marco.ultimo_messaggio == datetime.fromtimestamp(
         fake.messages["m2"].internal_date_ms / 1000, tz=UTC
     )
     assert found["sarah@example.com"].nome == "Sarah Miller"
     assert found["sarah@example.com"].messaggi == 1
+
+
+def test_a_display_name_longer_than_a_person_takes_is_clipped(db_session: Session) -> None:
+    """The page sends the name back to add the address as a person, and that request
+    refuses what the schema does not hold."""
+    account = connected_account(db_session)
+    customer = _example(db_session)
+    fake = FakeGmail()
+    fake.messages["m1"] = _mail(1, frm=f"{'A' * 400} <marco@example.com>", to=MAILBOX, thread="t1")
+
+    report = sync_service(db_session, fake).discover(customer.id, actor=actor_for(account))
+
+    assert [len(row.nome) for row in report.corrispondenti] == [255]
 
 
 def test_the_most_frequent_correspondent_comes_first(db_session: Session) -> None:
@@ -288,3 +305,38 @@ def test_an_agent_without_full_access_is_refused_before_gmail_is_asked(
     trusted = Actor(id=account.user_id, type="mcp", role="admin", full_access=True)
     report = sync_service(db_session, fake).discover(customer.id, actor=trusted)
     assert [row.indirizzo for row in report.corrispondenti] == ["marco@example.com"]
+
+
+def test_gmail_failing_is_a_sentence_to_retry_not_a_server_error(db_session: Session) -> None:
+    """A press on the customer's Email tab reaches this (REB-766): Gmail failing after
+    every retry answers the same retry sentence the proposals do, never a 500."""
+    account = connected_account(db_session)
+    customer = _example(db_session)
+    fake = FakeGmail()
+    service = sync_service(db_session, fake)
+    service._access_token = lambda _account: "ya29.token"  # type: ignore[method-assign]
+    fake.fail_with = [(503, b"{}", {})] * 10
+    with pytest.raises(GmailUnavailable):
+        service.discover(customer.id, actor=actor_for(account))
+
+
+def test_only_the_most_recent_conversations_are_read(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The read stops at the cap, so a customer with years of mail does not turn one
+    press into a minutes-long request."""
+    monkeypatch.setattr(sync_module, "DISCOVER_MAX_THREADS", 2)
+    account = connected_account(db_session)
+    customer = _example(db_session)
+    fake = FakeGmail()
+    for index, who in enumerate(("nuovo", "medio", "vecchio"), start=1):
+        fake.messages[f"m{index}"] = _mail(
+            index, frm=f"{who}@example.com", to=MAILBOX, thread=f"t{index}", days_ago=index
+        )
+
+    report = sync_service(db_session, fake).discover(customer.id, actor=actor_for(account))
+
+    # Which two is Gmail's order (newest first); the fake lists oldest first, so the
+    # test claims the cap and not the order.
+    assert report.threads_scanned == 2
+    assert len(report.corrispondenti) == 2

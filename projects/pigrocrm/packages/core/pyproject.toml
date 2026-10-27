@@ -50,6 +50,18 @@ dependencies = [
   "pypdf==6.19.0",
   # The same pin as hub's `rebase-core`: the weekly digest's own PostHog event (REB-221).
   "posthog==7.60.1",
+  # Web Push for the reminders (REB-738): the RFC 8291 payload encryption and the RFC 8292
+  # VAPID signature, which are the two things nobody should write twice. Maintained by the
+  # web-push-libs organisation (the reference the `web-push` npm package belongs to), 2.5.0
+  # of 2026-08-30. Declared here because `test_architecture.py` builds core's import
+  # allowlist from this list; the distribution imports as `pywebpush`.
+  "pywebpush==2.5.0",
+  # The two it brings that `reminders/push.py` also imports directly: the VAPID key
+  # (`py_vapid.Vapid`, derived and generated there) and the HTTP session whose redirects
+  # are refused (`requests`). Direct imports are declared in their own right, as
+  # `cryptography` above is, and pinned to what `uv.lock` already resolves.
+  "py-vapid==1.9.6",
+  "requests==2.34.2",
 ]
 
 [project.scripts]

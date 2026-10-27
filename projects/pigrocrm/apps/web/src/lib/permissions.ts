@@ -136,6 +136,9 @@ export const MIN_ROLE = {
   "inviare un'email": 'collaboratore',
   "verificare l'esito di un'email": 'collaboratore',
   delete_email_draft: 'collaboratore',
+  // «Cerca chi ha scritto» on a customer's Email tab (REB-766): the read spends the
+  // owner's Gmail quota, so the service guards it like a write.
+  discover_gmail_correspondents: 'collaboratore',
   // Impostazioni: the write behind each tab. The Gmail and Drive strings are Italian
   // because those services build the sentence themselves and surface the action
   // inside it; they guard with `require_write`, and the table says so. What a

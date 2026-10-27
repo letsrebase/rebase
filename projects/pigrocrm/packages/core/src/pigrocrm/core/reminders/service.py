@@ -18,7 +18,8 @@ from pigrocrm.core.config import Settings
 from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.errors import Conflict
 from pigrocrm.core.reminders.catalogue import REMINDER_TYPES, SEVERITY_RANK
-from pigrocrm.core.reminders.engine import IN_APP, ReminderEngine
+from pigrocrm.core.reminders.dispatch import IN_APP
+from pigrocrm.core.reminders.engine import ReminderEngine
 from pigrocrm.core.reminders.models import ReminderDelivery
 from pigrocrm.core.reminders.schemas import ReminderRead
 from pigrocrm.core.reminders.state import states_for
