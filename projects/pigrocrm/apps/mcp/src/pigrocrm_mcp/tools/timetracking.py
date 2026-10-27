@@ -216,7 +216,7 @@ def list_cost_categories(context: McpContext, include_archived: bool) -> dict[st
 # now says "seven" rather than "four": a count
 # that is never updated is worse than no count. `bind_time_to_invoice` and
 # `get_fiscal_estimate` are absent by decision, not by omission -- see
-# `tools/params.py`'s own note for the two (different) reasons, and
+# `tools/families/analytics.py`'s own note for the two (different) reasons, and
 # `apps/mcp/tests/test_mcp_invoice_ban.py`, which scans every file in this package
 # and fails the build if either method is ever called from one of them, whatever
 # the tool that reaches it is called. Ceiling headroom and its simulator are absent
