@@ -5,6 +5,7 @@ import {
   Boxes,
   Briefcase,
   Cloud,
+  Cpu,
   Handshake,
   Home,
   LogIn,
@@ -47,6 +48,7 @@ const ADMIN_NAV = [
     { to: '/admin/access', label: 'Accessi', icon: LogIn },
     { to: '/admin/admins', label: 'Amministratori', icon: ShieldCheck },
     { to: '/admin/agents', label: 'Agenti', icon: Plug },
+    { to: '/admin/modelli-ai', label: 'Modelli AI', icon: Cpu },
   ],
 ] as const
 

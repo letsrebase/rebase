@@ -1642,6 +1642,97 @@ export const admin = {
       ...json({ rate_freelancer: rateFreelancer, rate_company: rateCompany }),
       method: 'PUT',
     }),
+  /** «Modelli AI» (REB-833): the providers' keys are write-only, the answer carries the hint. */
+  aiConfig: () => request<AiConfig>('/api/hub/admin/ai'),
+  aiSaveKey: (provider: string, key: string) =>
+    request<AiProvider>(`/api/hub/admin/ai/providers/${provider}/key`, { ...json({ key }), method: 'PUT' }),
+  aiSetEnabled: (provider: string, enabled: boolean) =>
+    request<AiProvider>(`/api/hub/admin/ai/providers/${provider}/enabled`, {
+      ...json({ enabled }),
+      method: 'PUT',
+    }),
+  aiUpdateTask: (task: string, body: AiTaskUpdate) =>
+    request<AiTask>(`/api/hub/admin/ai/tasks/${task}`, { ...json(body), method: 'PUT' }),
+  aiUpsertPrice: (body: AiPriceUpdate) =>
+    request<AiPrice>('/api/hub/admin/ai/prices', { ...json(body), method: 'PUT' }),
+  aiProva: (task: string) => request<AiProva>(`/api/hub/admin/ai/tasks/${task}/prova`, json({})),
+}
+
+// ---- «Modelli AI» (REB-833) -------------------------------------------------------------
+
+export interface AiProvider {
+  provider: string
+  configured: boolean
+  /** «configurata, finisce con …abcd», the most a key ever shows; `null` without one. */
+  key_hint: string | null
+  enabled: boolean
+  saved_at: string | null
+  saved_by_name: string | null
+}
+
+export interface AiTask {
+  task: string
+  provider: string
+  model: string
+  effort: string | null
+  max_output_tokens: number
+  daily_cap_eur: string | null
+  enabled: boolean
+  spent_today_eur: string
+  cap_reached: boolean
+  /** Why the task cannot be called now, a sentence to show as it stands. */
+  reason: string | null
+}
+
+export interface AiPrice {
+  provider: string
+  model: string
+  input_eur_per_mtok: string
+  output_eur_per_mtok: string
+  thinking_eur_per_mtok: string | null
+  cache_read_eur_per_mtok: string | null
+}
+
+export interface AiSpendRow {
+  task: string
+  provider: string
+  cost_eur: string
+  calls: number
+  unpriced_calls: number
+}
+
+export interface AiConfig {
+  secrets_key_present: boolean
+  providers: AiProvider[]
+  tasks: AiTask[]
+  prices: AiPrice[]
+  spend: { month: string; rows: AiSpendRow[] }
+  known_models: Record<string, string[]>
+}
+
+export interface AiTaskUpdate {
+  provider: string
+  model: string
+  effort: string | null
+  max_output_tokens: number
+  daily_cap_eur: string | null
+  enabled: boolean
+}
+
+export interface AiPriceUpdate {
+  provider: string
+  model: string
+  input_eur_per_mtok: string
+  output_eur_per_mtok: string
+  thinking_eur_per_mtok: string | null
+  cache_read_eur_per_mtok: string | null
+}
+
+export interface AiProva {
+  answer: string
+  latency_ms: number
+  cost_eur: string | null
+  error: string | null
 }
 
 /** One match's link to its deal on Pigro and the hours read from there (REB-498), the

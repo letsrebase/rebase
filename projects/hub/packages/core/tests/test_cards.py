@@ -25,8 +25,6 @@ from sqlalchemy.orm import Session
 from rebase_core.bands import Band
 from rebase_core.card_level import LEAD_FROM, MID_FROM, SENIOR_FROM
 from rebase_core.cards import (
-    CARD_MAX_TOKENS,
-    CARD_SCHEMA,
     NEUTRAL_AGAIN,
     NO_TEXT,
     CardWriter,
@@ -36,8 +34,16 @@ from rebase_core.cards import (
 )
 from rebase_core.cv_text import CvText
 from rebase_core.db import session_factory
+from rebase_core.errors import LlmCapReached, LlmNotConfigured
 from rebase_core.freelancers import FreelancerService
-from rebase_core.llm import LlmRequest, LlmResponse, LlmUnavailable, RecordingCall
+from rebase_core.llm import (
+    LlmMessage,
+    LlmRequest,
+    LlmResponse,
+    LlmUnavailable,
+    RecordingCall,
+    _parameters,
+)
 from rebase_core.members import MemberService
 from rebase_core.models import Freelancer, FreelancerCard, User
 from rebase_core.schemas import FreelancerCreate, FreelancerOverride
@@ -97,11 +103,11 @@ def _card_is_sql_null(session: Session, freelancer_id: UUID) -> bool:
 
 
 def _user_text(request: LlmRequest) -> str:
-    return "\n".join(block["text"] for message in request.messages for block in message["content"])
+    return "\n".join(message.text for message in request.messages)
 
 
 def _down() -> LlmUnavailable:
-    """The seam failing the way `AnthropicCall` does on an outage or a run of 429s."""
+    """The seam failing the way `AiCall` does on an outage or a run of 429s."""
     return LlmUnavailable("Non riesco a proporre un team adesso: riprova tra poco.")
 
 
@@ -171,22 +177,15 @@ def test_card_from_a_cv(clean: Session) -> None:
     assert (stored.error, stored.error_cv_sha256) == (None, None)
     assert stored.card == CARD
 
-    # One call, shaped for a card: the schema is `Card`'s own, closed, every property
-    # required; the seam strips what the API refuses (`test_llm.py`), and `Card` still
-    # enforces it on the answer (the over-limit cases below).
+    # One call, shaped for a card: the answer is `Card`, whose schema the seam sends
+    # closed, every property required, without its docstring (`test_llm.py`), and which
+    # still enforces every limit on the answer (the over-limit cases below). No ceiling
+    # of its own: the `card` task's is the one that applies.
     [request] = llm.requests
-    assert request.max_tokens == CARD_MAX_TOKENS == 2000
-    # `Card`'s schema without its docstring, which is written for developers, not for
-    # the model.
-    assert "description" not in CARD_SCHEMA
-    assert {
-        key: value for key, value in Card.model_json_schema().items() if key != "description"
-    } == CARD_SCHEMA
-    assert request.json_schema == CARD_SCHEMA
-    assert CARD_SCHEMA["additionalProperties"] is False
-    assert CARD_SCHEMA["required"] == list(Card.model_fields)
-    assert {"type": "null"} in CARD_SCHEMA["properties"]["luogo"]["anyOf"]
-    system = request.system[0]["text"]
+    assert request.output_model is Card
+    assert request.max_tokens is None
+    assert request.system_cached is None
+    system = request.system
     assert "Italian" in system and "null" in system
     user = _user_text(request)
     assert "Backend developer" in user
@@ -200,6 +199,44 @@ def test_card_from_a_cv(clean: Session) -> None:
     row.remoto = "ibrido"
     clean.commit()
     assert CardWriter(clean, None).read(freelancer_id).modalita == "ibrido"
+
+
+CV_TEXT = CvText(filename="cv.pdf", pagine=1, testo="Ada Lovelace", troncato=False)
+
+
+def test_card_prompt_is_byte_identical_in_substance_to_before() -> None:
+    """REB-831 moved the card onto the provider-neutral request: the model still reads
+    the same words. The hashes and the user turn were taken from the version before it
+    (`card_prompt` of 1ccb4167, run on this CV): the system text, the user turn, and the
+    schema `Card` goes out with."""
+    cv = CvText(
+        filename="cv.pdf",
+        pagine=1,
+        testo="Ada Lovelace, backend developer a Torino",
+        troncato=True,
+    )
+
+    request = card_prompt(cv, "Backend developer")
+
+    assert hashlib.sha256(request.system.encode()).hexdigest() == (
+        "7f1ec3a8ad6dc72b8151f2f9bb11e8a7dadbaf791f445b507d7e90f8b4095c2e"
+    )
+    assert request.messages == [
+        LlmMessage(
+            role="user",
+            text=(
+                "Position on the profile: Backend developer\n\nThe CV's text (cut short: "
+                "the file is longer than what follows):\n<cv>\nAda Lovelace, backend "
+                "developer a Torino\n</cv>"
+            ),
+        )
+    ]
+    schema = _parameters(request).output_object
+    assert schema is not None
+    assert hashlib.sha256(json.dumps(schema.json_schema, sort_keys=True).encode()).hexdigest() == (
+        "e9e1dce905c296b18ee068b8ee49fff661fc1807eccdaee9504cd5e3aedcfa54"
+    )
+    assert "description" not in schema.json_schema
 
 
 def test_the_read_carries_the_clients_band_from_the_rate(clean: Session) -> None:
@@ -489,7 +526,7 @@ def test_the_prompt_keeps_the_gender_out() -> None:
     """REB-574: the card never tells the person's gender, and the rule saying so is the
     prompt's, in Italian, beside the ones it already had."""
     cv = CvText(filename="cv.pdf", pagine=1, testo="Backend developer, Python.", troncato=False)
-    system = card_prompt(cv, "Backend developer").system[0]["text"]
+    system = card_prompt(cv, "Backend developer").system
 
     assert "La scheda non rivela mai il genere della persona." in system
     for rule in (
@@ -607,24 +644,18 @@ def test_a_gendered_card_is_asked_again_once_and_the_neutral_one_is_written(
     assert (stored.error, stored.error_cv_sha256) == (None, None)
 
     first, retry = llm.requests
-    assert (retry.system, retry.json_schema, retry.max_tokens) == (
+    assert (retry.system, retry.output_model, retry.max_tokens) == (
         first.system,
-        first.json_schema,
+        first.output_model,
         first.max_tokens,
     )
     asked, answered, corrected = retry.messages
     assert asked == first.messages[0]
-    assert answered == {
-        "role": "assistant",
-        "content": [{"type": "text", "text": json.dumps(SVILUPPATRICE)}],
-    }
-    assert corrected["role"] == "user"
-    assert corrected["content"] == [
-        {
-            "type": "text",
-            "text": f"{NEUTRAL_AGAIN} Parole da cambiare: «sviluppatrice», «specializzata».",
-        }
-    ]
+    assert answered == LlmMessage(role="assistant", text=json.dumps(SVILUPPATRICE))
+    assert corrected == LlmMessage(
+        role="user",
+        text=f"{NEUTRAL_AGAIN} Parole da cambiare: «sviluppatrice», «specializzata».",
+    )
     assert NEUTRAL_AGAIN == (
         "La scheda rivela il genere: riscrivila con «il profilo» come soggetto e ruoli in "
         "forma neutra."
@@ -796,6 +827,39 @@ def test_an_outage_on_a_new_cv_retires_the_old_card(clean: Session) -> None:
     again = CardWriter(clean, RecordingCall([card_response()])).write(freelancer_id)
     assert again.card == CardRead.model_validate(CARD) and again.cv_sha256 == _sha(CV_2026)
     assert again.error is None
+
+
+@pytest.mark.parametrize(
+    ("error", "reason"),
+    [
+        (LlmCapReached("Tetto giornaliero raggiunto"), "Tetto giornaliero raggiunto"),
+        (LlmNotConfigured("Manca la chiave del fornitore"), "Manca la chiave del fornitore"),
+    ],
+    ids=["cap", "not configured"],
+)
+def test_a_call_refused_for_the_cap_or_the_config_says_why_and_retires_nothing(
+    clean: Session, error: LlmUnavailable, reason: str
+) -> None:
+    """Review of #666, minor 6: not «Claude non ha risposto», and not an outage's side
+    effect: a new CV's previous card stays until a model answers, the sentence is the
+    reason «Modelli AI» shows, the CV is not parked, and the batch stops."""
+    freelancer_id = _apply(clean)
+    CardWriter(clean, RecordingCall([card_response()])).write(freelancer_id)
+    MemberService(clean).replace_cv(freelancer_id, CV_2026, "cv 2026.pdf", "application/pdf")
+
+    refused = CardWriter(clean, _Scripted([error])).write(freelancer_id)
+
+    assert refused.error == reason
+    assert refused.card == CardRead.model_validate(CARD)  # nothing was retired
+    assert not _card_is_sql_null(clean, freelancer_id)
+    stored = _stored(clean, freelancer_id)
+    assert stored is not None and stored.error_cv_sha256 is None
+
+    assert CardWriter(clean, _Scripted([error])).refresh_stale() == CardsRefreshed(
+        written=0, failed=1, stopped=True
+    )
+    again = CardWriter(clean, RecordingCall([card_response()])).write(freelancer_id)
+    assert again.error is None and again.cv_sha256 == _sha(CV_2026)
 
 
 def test_an_outage_on_the_same_cv_keeps_its_card(clean: Session) -> None:
@@ -1069,7 +1133,7 @@ def test_the_prompt_states_the_bands_the_parser_enforces() -> None:
     rule the parser applies cannot drift apart; `anni` is asked from dated roles and may
     be null, and `lead` needs leadership as well as years."""
     cv = CvText(filename="cv.pdf", pagine=1, testo="Backend developer, Python.", troncato=False)
-    system = card_prompt(cv, "Backend developer").system[0]["text"]
+    system = card_prompt(cv, "Backend developer").system
 
     assert f"junior under {MID_FROM} years" in system
     assert f"mid from {MID_FROM} to {SENIOR_FROM - 1}" in system
@@ -1086,8 +1150,12 @@ def test_the_prompt_states_the_bands_the_parser_enforces() -> None:
 def test_the_schema_lets_the_model_say_the_years_are_unknown() -> None:
     """`anni` is required (a key silently missing is a shape failure) and nullable, and
     comes before `seniority`, which is read from it."""
-    properties = CARD_SCHEMA["properties"]
-    assert "anni" in CARD_SCHEMA["required"]
+    schema = _parameters(card_prompt(CV_TEXT, None)).output_object
+    assert schema is not None
+    properties = schema.json_schema["properties"]
+    assert "anni" in schema.json_schema["required"]
+    assert schema.json_schema["additionalProperties"] is False
+    assert {"type": "null"} in properties["luogo"]["anyOf"]
     assert {"type": "null"} in properties["anni"]["anyOf"]
     assert list(properties).index("anni") < list(properties).index("seniority")
 

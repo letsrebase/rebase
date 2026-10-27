@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import Engine, text
 from sqlalchemy.orm import Session
 
-from rebase_api.deps import get_llm, get_sender, get_session, get_session_opener
+from rebase_api.deps import get_card_llm, get_sender, get_session, get_session_opener, get_team_llm
 from rebase_api.main import create_app
 from rebase_api.ratelimit import reset_rate_limit
 from rebase_core.config import Settings, get_settings
@@ -44,6 +44,10 @@ def client(api_session: Session) -> Iterator[TestClient]:
     app.dependency_overrides[get_session] = lambda: api_session
     # Declared, never inherited from a developer's `.env`: no pixel unless a test says so.
     app.dependency_overrides[get_settings] = lambda: Settings(_env_file=None)  # type: ignore[call-arg]
+    # No model configured unless a test hands one (`llm` here, `_llm` in the team tests):
+    # the real dependencies read «Modelli AI» through the default database URL.
+    app.dependency_overrides[get_card_llm] = lambda: None
+    app.dependency_overrides[get_team_llm] = lambda: None
     # The limiter counts requests per process, so one test's posts would otherwise be
     # spent out of the next test's budget.
     reset_rate_limit()
@@ -69,6 +73,6 @@ def llm(client: TestClient, api_session: Session) -> Iterator[RecordingCall]:
     tests hand its follow-up one, so the card lands where the test reads it."""
     recording = RecordingCall([card_response() for _ in range(4)])
     overrides = client.app.dependency_overrides  # type: ignore[attr-defined]
-    overrides[get_llm] = lambda: recording
+    overrides[get_card_llm] = lambda: recording
     overrides[get_session_opener] = lambda: lambda: nullcontext(api_session)
     yield recording

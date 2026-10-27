@@ -3,6 +3,9 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
@@ -11,6 +14,7 @@ from rebase_api.ratelimit import RETRY_AFTER_SECONDS
 from rebase_api.routers import (
     admin,
     admin_team,
+    ai,
     campaigns,
     cloud,
     companies,
@@ -100,13 +104,27 @@ async def domain_error_handler(request: Request, exc: Exception) -> JSONResponse
     return JSONResponse({"detail": exc.message}, status_code=409)
 
 
+async def validation_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    """FastAPI's own 422, except on a provider key's route: the default answer echoes each
+    error's `input`, which there is the submitted key (a body that is a bare string, a key
+    over the length limit), and a key never comes back in a response (REB-833)."""
+    assert isinstance(exc, RequestValidationError)
+    path = request.url.path
+    if path.startswith("/api/hub/admin/ai/providers/") and path.endswith("/key"):
+        errors = [{k: v for k, v in e.items() if k != "input"} for e in exc.errors()]
+        return JSONResponse({"detail": jsonable_encoder(errors)}, status_code=422)
+    return await request_validation_exception_handler(request, exc)
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="rebase API", version="0.1.0", lifespan=lifespan)
     app.add_exception_handler(DomainError, domain_error_handler)
+    app.add_exception_handler(RequestValidationError, validation_error_handler)
     app.include_router(signups.router)
     app.include_router(freelancers.router)
     app.include_router(companies.router)
     app.include_router(admin.router)
+    app.include_router(ai.router)
     app.include_router(matches.router)
     app.include_router(documenso.router)
     app.include_router(members.router)

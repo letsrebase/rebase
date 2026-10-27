@@ -1,15 +1,21 @@
 """`rebase`: the operator's commands."""
 
 import argparse
+import base64
+import binascii
+import os
 import sys
 from collections.abc import Sequence
+from contextlib import closing
 from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
 from uuid import UUID
 
 from sqlalchemy import bindparam, select, text
 from sqlalchemy.orm import Session
 
 from rebase_core.admin_tokens import DEFAULT_NAME, AdminTokenService
+from rebase_core.ai_config import AiConfigService
 from rebase_core.campaigns.sender import campaign_sender_from_settings
 from rebase_core.campaigns.tick import run_tick
 from rebase_core.cards import CardWriter
@@ -28,10 +34,11 @@ from rebase_core.duplicates import UNIQUE_INDEXES, ensure_unique_indexes, find_d
 from rebase_core.errors import DocumensoFailed, DomainError
 from rebase_core.freelancers import freelancer_read
 from rebase_core.http import HttpCall
-from rebase_core.llm import call_from_settings
+from rebase_core.llm import call_for_task
 from rebase_core.mail import CardSummary, EmailSender, sender_from_settings, welcome_mail
 from rebase_core.merge import MergeRead, PersonMergeService
 from rebase_core.models import USER_ROLES, Freelancer, Signup, User
+from rebase_core.secrets import KEY_BYTES
 from rebase_core.signing import signing_from_settings
 from rebase_core.users import UserService
 
@@ -219,30 +226,97 @@ def cards_refresh(limit: int) -> int:
     Run once after the deploy that brings the key, and again until it prints «0 schede
     scritte, 0 non riuscite». A CV that failed on its own account is not tried again
     until it changes, so the runs end; a batch that met an outage stops there, counts it
-    among «non riuscite», says «fermato: Claude non disponibile» and leaves it and the
+    among «non riuscite», says «fermato: modello non disponibile» and leaves it and the
     rest to the next run. A card still giving the gender away after its rewrite is among
-    «non riuscite» (REB-802), and not tried again until its CV changes. Without a key it
-    says so, rather than printing «0 schede scritte» for ever."""
+    «non riuscite» (REB-802), and not tried again until its CV changes. Without a model
+    configured for the `card` task it says so, rather than printing «0 schede scritte» for
+    ever."""
     if limit < 1:
         print("--limit deve essere almeno 1.", file=sys.stderr)
         return 2
     settings = get_settings()
-    llm = call_from_settings(settings)
+    open_session = session_factory(create_engine_from_settings(settings))
+    llm = call_for_task(lambda: closing(open_session()), settings, "card")
     if llm is None:
         print(
-            "Nessuna chiave per Claude: serve REBASE_ANTHROPIC_API_KEY.",
+            "Nessun modello configurato per le schede: apri «Modelli AI».",
             file=sys.stderr,
         )
         return 1
-    session = session_factory(create_engine_from_settings(settings))()
+    session = open_session()
     try:
         result = CardWriter(session, llm).refresh_stale(limit)
     finally:
         session.close()
     summary = f"{result.written} schede scritte, {result.failed} non riuscite"
     if result.stopped:
-        summary += ", fermato: Claude non disponibile"
+        summary += ", fermato: modello non disponibile"
     print(summary)
+    return 0
+
+
+def ai_seed(eur_per_usd: str) -> int:
+    """`rebase ai-seed --eur-per-usd 0.92`: once, moves `REBASE_ANTHROPIC_API_KEY` and
+    `REBASE_TEAM_BUILDER_MODEL` (read from the environment: the Settings fields are gone,
+    REB-831) into «Modelli AI»: the key sealed, `anthropic` on, both tasks on that model,
+    and the prices of the Claude models in euros at `--eur-per-usd` (EUR per 1 USD, the
+    inverse of the ECB's quote). Prints the hint of the key, never the key (REB-832)."""
+    try:
+        rate = Decimal(eur_per_usd)
+    except InvalidOperation:
+        print("--eur-per-usd deve essere un numero, per esempio 0.92.", file=sys.stderr)
+        return 2
+    api_key = os.environ.get("REBASE_ANTHROPIC_API_KEY", "").strip()
+    if not api_key:
+        print("REBASE_ANTHROPIC_API_KEY manca: non c'è niente da spostare.", file=sys.stderr)
+        return 1
+    model = os.environ.get("REBASE_TEAM_BUILDER_MODEL", "").strip() or "claude-opus-5"
+    settings = get_settings()
+    session = session_factory(create_engine_from_settings(settings))()
+    try:
+        result = AiConfigService(session, settings).seed_from_env(None, api_key, model, rate)
+    except DomainError as exc:
+        print(exc.message, file=sys.stderr)
+        return 1
+    finally:
+        session.close()
+    print(f"chiave salvata, finisce con …{result.key_hint[-4:]}")
+    print(f"modello {result.model} per le schede e per il team, {result.prices} prezzi scritti")
+    return 0
+
+
+def _key_from_argument(value: str) -> bytes | None:
+    try:
+        key = base64.b64decode(value.strip(), validate=True)
+    except (binascii.Error, ValueError):
+        return None
+    return key if len(key) == KEY_BYTES else None
+
+
+def ai_rotate_secrets() -> int:
+    """`rebase ai-rotate-secrets`: re-seals every stored provider key from the old
+    `REBASE_SECRETS_KEY` to the new one, in one transaction, and prints how many. Both
+    values come from the environment (`REBASE_SECRETS_KEY_OLD`, `REBASE_SECRETS_KEY_NEW`),
+    never from the command line, where `ps`, the shell history and `docker exec` would show
+    what opens every stored key. Put the new value in `.env` afterwards (REB-832)."""
+    old = _key_from_argument(os.environ.get("REBASE_SECRETS_KEY_OLD", ""))
+    new = _key_from_argument(os.environ.get("REBASE_SECRETS_KEY_NEW", ""))
+    if old is None or new is None:
+        print(
+            "REBASE_SECRETS_KEY_OLD e REBASE_SECRETS_KEY_NEW devono essere 32 byte in base64.",
+            file=sys.stderr,
+        )
+        return 2
+    settings = get_settings()
+    session = session_factory(create_engine_from_settings(settings))()
+    try:
+        count = AiConfigService(session, settings).rotate(old, new)
+    except DomainError as exc:
+        print(exc.message, file=sys.stderr)
+        return 1
+    finally:
+        session.close()
+    print(f"{count} chiavi ricifrate")
     return 0
 
 
@@ -564,6 +638,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Scrive la scheda anonima di chi ha un CV nuovo o cambiato, i più vecchi prima",
     )
     cards_parser.add_argument("--limit", type=int, default=50)
+    seed_parser = sub.add_parser(
+        "ai-seed",
+        help="Sposta la chiave Anthropic e il modello vecchi in «Modelli AI», con i prezzi",
+    )
+    seed_parser.add_argument("--eur-per-usd", required=True)
+    sub.add_parser(
+        "ai-rotate-secrets",
+        help="Ricifra le chiavi dei modelli: REBASE_SECRETS_KEY_OLD e REBASE_SECRETS_KEY_NEW",
+    )
     dup_parser = sub.add_parser(
         "talent-duplicates",
         help="Elenca chi è in lista due volte (a secco) e con --apply unisce le schede",
@@ -604,6 +687,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return campaigns_tick()
     if args.command == "cards-refresh":
         return cards_refresh(args.limit)
+    if args.command == "ai-seed":
+        return ai_seed(args.eur_per_usd)
+    if args.command == "ai-rotate-secrets":
+        return ai_rotate_secrets()
     if args.command == "talent-duplicates":
         return talent_duplicates_command(
             args.apply, args.admin, args.survivor, args.absorbed, args.undo

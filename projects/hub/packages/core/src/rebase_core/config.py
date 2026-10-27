@@ -127,17 +127,11 @@ class Settings(BaseSettings):
     # The `whsec_` secret Resend shows for this environment's webhook (spec § 6.1).
     # Empty: the webhook answers 503 and delivery, bounces and complaints are not read.
     resend_webhook_secret: str = ""
-    # --- Claude: the team builder's seam (`llm.py`, REB-508) --------------------------
-    # `AnthropicCall`'s key, for its two callers: the anonymous card (spec § 5.1) and the
-    # team proposal (spec § 3.4). Empty: `call_from_settings` answers `None` and each
-    # caller refuses with its own sentence, the same shape as `resend_api_key` and
-    # `documenso_api_token`. `repr=False` so the key never shows up in a logged
-    # `Settings()` or a stack trace, unlike the other secrets above -- this one is new
-    # enough to start the habit the rest never had.
-    anthropic_api_key: str = Field(default="", repr=False)
-    team_builder_model: str = "claude-opus-5"
-    # Off switches the feature without touching the key above: the two callers read it,
-    # this file only declares it.
+    # --- The team builder (`team_builder.py`, REB-508) --------------------------------
+    # Which model answers, and its key, are not settings: they live in «Modelli AI»
+    # (`ai_config.py`, `llm.py`), saved by an admin and read from the database per call.
+    # Off switches the feature without touching the model configuration: the two callers
+    # read it, this file only declares it.
     team_builder_enabled: bool = True
     # How many proposals the API process runs at once (spec § 5): the next one answers
     # 503 «Troppe richieste» at once rather than queue on the thread pool the member
@@ -147,6 +141,17 @@ class Settings(BaseSettings):
     # midnight in Rome (`team_caps.py`); once reached, the same 503 until tomorrow. A
     # proposal that asked no model (an empty catalogue) cost nothing and does not count.
     team_builder_daily_cap: int = Field(default=300, ge=1)
+
+    # --- the model providers' keys at rest, and GitHub (REB-829) -----------------------
+    # `secrets_key`: 32 bytes in base64, the AES-256-GCM key (`secrets.py`) under which
+    # «Modelli AI» stores each provider's API key. Empty or malformed: the app refuses to
+    # save or use a provider key and says so, never a plain-text fallback. It lives in
+    # the server's `.env`, outside the database, so a backup does not carry a key that
+    # opens it. `github_token`: a read-only token for the GitHub source of the card
+    # (public data only); empty means unauthenticated calls with the lower rate limit.
+    # `repr=False`, so neither shows in a logged `Settings()` or a stack trace.
+    secrets_key: str = Field(default="", repr=False)
+    github_token: str = Field(default="", repr=False)
 
     @model_validator(mode="after")
     def _reserve_leaves_room(self) -> "Settings":

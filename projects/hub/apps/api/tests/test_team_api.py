@@ -21,7 +21,7 @@ from sqlalchemy import func, select, text, update
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
-from rebase_api.deps import get_clock, get_llm, get_sender, get_session_opener
+from rebase_api.deps import get_clock, get_sender, get_session_opener, get_team_llm
 from rebase_api.ratelimit import SIGNUPS_PER_MINUTE, reset_rate_limit
 from rebase_core.config import Settings, get_settings
 from rebase_core.errors import LlmUnavailable
@@ -36,7 +36,7 @@ from rebase_core.models import (
     TeamRequestTalent,
     User,
 )
-from rebase_core.team_builder import TeamBuilder
+from rebase_core.team_builder import ProposalAnswer, TeamBuilder
 
 ADMIN_EMAIL = "ivan@rebase.it"
 MISSING = "00000000-0000-7000-8000-000000000000"
@@ -80,7 +80,7 @@ def _settings(client: TestClient, **overrides: Any) -> None:
 
 
 def _llm(client: TestClient, call: Any) -> None:
-    client.app.dependency_overrides[get_llm] = lambda: call  # type: ignore[attr-defined]
+    client.app.dependency_overrides[get_team_llm] = lambda: call  # type: ignore[attr-defined]
 
 
 def _clock(client: TestClient, now: datetime) -> None:
@@ -174,6 +174,7 @@ def proposal_response(team: list[dict[str, Any]] | None = None) -> LlmResponse:
     }
     return LlmResponse(
         text=json.dumps(body),
+        parsed=ProposalAnswer.model_validate(body),
         stop_reason="end_turn",
         refusal_category=None,
         model=MODEL,
@@ -260,10 +261,10 @@ def test_public_proposal_is_503_when_off(client: TestClient, team: Session) -> N
     assert refused.status_code == 503
     assert refused.json() == {"detail": OFF}
 
-    # A key, and the switch off.
+    # A model, and the switch off.
     recording = RecordingCall([proposal_response()])
     _llm(client, recording)
-    _settings(client, anthropic_api_key="sk-ant-test", team_builder_enabled=False)
+    _settings(client, team_builder_enabled=False)
     refused = _propose(client)
     assert refused.status_code == 503
     assert refused.json() == {"detail": OFF}

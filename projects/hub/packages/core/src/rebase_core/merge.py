@@ -276,6 +276,8 @@ LEFT_IN_PLACE: dict[str, str] = {
     "talent_cloud_grants.revoked_by": "the admin who revoked it",
     "referral_rewards.confirmed_by": "the admin who confirmed it",
     "referral_settings.updated_by": "the admin who set it",
+    "ai_providers.saved_by": "the admin who saved the key",
+    "ai_usage.freelancer_id": "the cost of a call as made, about the card it was written for",
 }
 
 

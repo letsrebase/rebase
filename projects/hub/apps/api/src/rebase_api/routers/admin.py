@@ -24,7 +24,7 @@ from uuid import UUID
 from fastapi import APIRouter, BackgroundTasks, Query, Response, status
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-from rebase_api.deps import AdminDep, HttpCallDep, LlmDep, SenderDep, SessionDep, SettingsDep
+from rebase_api.deps import AdminDep, CardLlmDep, HttpCallDep, SenderDep, SessionDep, SettingsDep
 from rebase_api.downloads import cv_response
 from rebase_core.admin_tokens import AdminList, AdminRead
 from rebase_core.audit import AdminActionRead
@@ -250,7 +250,7 @@ def get_freelancer_card(
 
 @router.post("/freelancers/{freelancer_id}/card", response_model=FreelancerCardRead)
 def regenerate_freelancer_card(
-    _: AdminDep, session: SessionDep, llm: LlmDep, freelancer_id: UUID
+    _: AdminDep, session: SessionDep, llm: CardLlmDep, freelancer_id: UUID
 ) -> FreelancerCardRead:
     """«Rigenera scheda»: the card written again from the current CV, now, even from the
     CV that last failed, which is otherwise not tried again until it changes. A failure

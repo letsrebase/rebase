@@ -33,7 +33,7 @@ Paths below are relative to `projects/hub/`. Tests: `uv run pytest -q packages/c
 - Evaluation set (~15 real profiles) lives **in the database, never the repository**; deleted with its person. Metric: `anni` within one year of expected (or both null), seniority equal, guard clean; role/skills/summary rated by an admin on a 3-point scale. A change goes live when no worse than baseline on the first three and an admin accepts the ratings.
 - Every config change is an `AdminAction` (who, when, before/after). MCP exposes `list_ai_config` (read-only, no keys) and **nothing that writes keys**.
 - Steps 3 and 4 stay **off in production** until Lorenzo and Ivan confirm the privacy notice is updated: per-source (`github`, `links`) and per-provider (`openai`, `google`) switches, default off, on the «Modelli AI» page. Only Anthropic is enabled by default.
-- UI copy Italian, no new UI primitive (components from `@rebase/ui`), copy an existing admin page's pattern. Migrations: next revision after `0034`, `IF NOT EXISTS`/`DROP CONSTRAINT IF EXISTS` idempotent style, each with a `test_migration_00NN_*.py`; no hub table is added to `WAREHOUSE_TABLES`, and `test_warehouse_contract.py` must stay green.
+- UI copy Italian, no new UI primitive (components from `@rebase/ui`), copy an existing admin page's pattern. Migrations: next revision after `0035` (REB-800 took 0035 first; the AI tables are 0036), `IF NOT EXISTS`/`DROP CONSTRAINT IF EXISTS` idempotent style, each with a `test_migration_00NN_*.py`; no hub table is added to `WAREHOUSE_TABLES`, and `test_warehouse_contract.py` must stay green.
 - The docs travel with the code: `projects/hub/AGENTS.md` and `.env.example` updated in each phase's last task. Commit after every task; the coordinator pushes.
 
 ## Review Focus
@@ -71,12 +71,12 @@ Paths below are relative to `projects/hub/`. Tests: `uv run pytest -q packages/c
 - [ ] **Step 4:** Run; expect PASS.
 - [ ] **Step 5:** Commit `feat(hub): AES-GCM secrets helper (REB-829)`.
 
-### Task 2: Migration 0035 and models for providers, tasks, prices, usage
+### Task 2: Migration 0036 and models for providers, tasks, prices, usage
 
 **Files:**
-- Create: `packages/core/migrations/versions/0035_ai_providers_tasks_usage.py`
+- Create: `packages/core/migrations/versions/0036_ai_providers_tasks_usage.py`
 - Modify: `packages/core/src/rebase_core/models.py` (four models, `AI_PROVIDERS = ("anthropic", "openai", "google")`, `AI_TASKS = ("card", "team_proposal")`)
-- Test: `packages/core/tests/test_migration_0035_ai_config.py`
+- Test: `packages/core/tests/test_migration_0036_ai_config.py`
 
 **Interfaces:**
 - Produces (columns are the contract):
@@ -86,9 +86,9 @@ Paths below are relative to `projects/hub/`. Tests: `uv run pytest -q packages/c
   - `AiUsage(id, at tz, task varchar(20) (the configured task whose cap the call consumes: `card` or `team_proposal`), purpose varchar(20) (`run`, `prova`, `eval`), provider, model, input_tokens, output_tokens, thinking_tokens, cache_read_tokens int, cost_eur numeric(12,6) null, priced bool, freelancer_id null)`, index `(task, at)`.
   - Spec's currency is euro: prices are entered in euro by admins; no FX in code.
 
-- [ ] **Step 1: Write failing tests** in `test_migration_0035_ai_config.py` (pattern of `test_migration_0034_card_level_override.py`): `test_upgrade_creates_four_tables_and_columns`, `test_upgrade_is_idempotent` (run twice), `test_downgrade_drops_them`, `test_no_key_column_is_plain_text` (no column in `ai_providers` of type text/varchar holding a key; only `key_ciphertext` bytea).
+- [ ] **Step 1: Write failing tests** in `test_migration_0036_ai_config.py` (pattern of `test_migration_0034_card_level_override.py`, rewinding to the parent read from the script): `test_upgrade_creates_four_tables_and_columns`, `test_upgrade_is_idempotent` (run twice), `test_downgrade_drops_them`, `test_no_key_column_is_plain_text` (no column in `ai_providers` of type text/varchar holding a key; only `key_ciphertext` bytea).
 - [ ] **Step 2:** Run; expect FAIL.
-- [ ] **Step 3:** Write migration `revision = "0035"`, `down_revision = "0034"`, hand-written SQL with `IF NOT EXISTS`; add models. Seed rows for `ai_providers` (three, `enabled` true only for `anthropic` is done by the seed command in Task 5, not here) and `ai_tasks` are inserted by the migration with `enabled` defaults: providers rows `(anthropic|openai|google, no key, enabled false)`; tasks `card`, `team_proposal` → `anthropic`, `claude-opus-5`, `effort 'medium'`, `max_output_tokens` 2000 / the team builder's current value (read `team_builder.py` constant), cap null.
+- [ ] **Step 3:** Write migration `revision = "0036"`, `down_revision = "0035"`, hand-written SQL with `IF NOT EXISTS`; add models. Seed rows for `ai_providers` (three, `enabled` true only for `anthropic` is done by the seed command in Task 5, not here) and `ai_tasks` are inserted by the migration with `enabled` defaults: providers rows `(anthropic|openai|google, no key, enabled false)`; tasks `card`, `team_proposal` → `anthropic`, `claude-opus-5`, `effort 'medium'`, `max_output_tokens` 2000 / the team builder's current value (read `team_builder.py` constant), cap null.
 - [ ] **Step 4:** Run the migration test plus `test_migrations.py` and `test_warehouse_contract.py`; expect PASS.
 - [ ] **Step 5:** Commit.
 
@@ -243,10 +243,10 @@ Paths below are relative to `projects/hub/`. Tests: `uv run pytest -q packages/c
 
 ## Phase 2: Evaluation set and `rebase cards-eval`
 
-### Task 10: Evaluation storage (migration 0036) and service
+### Task 10: Evaluation storage (migration 0037) and service
 
 **Files:**
-- Create: `packages/core/migrations/versions/0036_card_eval.py`, `packages/core/src/rebase_core/card_eval.py`, `packages/core/tests/test_migration_0036_card_eval.py`, `packages/core/tests/test_card_eval.py`
+- Create: `packages/core/migrations/versions/0037_card_eval.py`, `packages/core/src/rebase_core/card_eval.py`, `packages/core/tests/test_migration_0037_card_eval.py`, `packages/core/tests/test_card_eval.py`
 - Modify: `models.py` (`CardEvalProfile`, `CardEvalRun`)
 
 **Interfaces:**
@@ -327,10 +327,10 @@ Paths below are relative to `projects/hub/`. Tests: `uv run pytest -q packages/c
 - [ ] **Step 1: Tests** (fake `HttpCall` with canned JSON): `test_login_from_profile_and_repo_urls`, `test_login_none_when_no_github_link`, `test_only_owned_public_repos_listed`, `test_forks_and_archived_sorted_last_and_marked`, `test_hash_material_ignores_stars_and_pushed_at` (two snapshots differing only there hash equal), `test_hash_changes_when_description_changes`, `test_token_sent_only_when_configured`, `test_rate_limit_403_gives_unreadable_not_exception`, `test_404_user_gives_unreadable`, `test_account_age_never_in_text` (no `created_at` year present).
 - [ ] **Step 2–5:** FAIL, implement (REST: `/users/{login}`, `/users/{login}/repos?type=owner&per_page=100`, languages per top-N repos only), PASS, commit.
 
-### Task 16: Source storage, hashing, refetch, deletion (migration 0037)
+### Task 16: Source storage, hashing, refetch, deletion (migration 0038)
 
 **Files:**
-- Create: `migrations/versions/0037_sources_and_provenance.py`, `packages/core/src/rebase_core/sources.py`, tests `test_migration_0037_sources.py`, `test_sources.py`
+- Create: `migrations/versions/0038_sources_and_provenance.py`, `packages/core/src/rebase_core/sources.py`, tests `test_migration_0038_sources.py`, `test_sources.py`
 - Modify: `models.py` (`FreelancerSource`, `AiSource` switch rows, new `FreelancerCard` columns `prompt_version int null`, `provider varchar(20) null`, `fonti JSONB null`, `source_hashes JSONB null`, `conflicts JSONB null`, `thinking_tokens int null`), `freelancers.py` (hook the person's delete/erasure to `SourceService.delete_all`; read how `delete`/erasure removes the CV first)
 
 **Interfaces:**

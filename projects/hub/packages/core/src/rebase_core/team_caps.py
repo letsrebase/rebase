@@ -24,13 +24,11 @@ from rebase_core.audit import utcnow
 from rebase_core.config import Settings
 from rebase_core.errors import TeamBuilderBusy
 from rebase_core.models import TeamProposal
-from rebase_core.team_builder import NO_CALL_MODEL
+from rebase_core.team_builder import BUSY_SENTENCE, NO_CALL_MODEL
 
 logger = logging.getLogger(__name__)
 
 ROME = ZoneInfo("Europe/Rome")
-# The one sentence both caps answer (spec § 3.2): a visitor does the same thing either way.
-BUSY_SENTENCE = "Troppe richieste in questo momento: riprova tra un minuto."
 # The origins a stranger can repeat: the public page and the cloud (spec § 5).
 CAPPED_ORIGINS = ("pubblico", "cloud")
 
