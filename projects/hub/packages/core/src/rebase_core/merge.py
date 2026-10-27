@@ -31,6 +31,7 @@ different tax codes, a live framework agreement of the same regime on both sides
 active match with the same company on both.
 """
 
+import hashlib
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -38,7 +39,7 @@ from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import Text, cast, delete, func, select, update
 from sqlalchemy.orm import InstrumentedAttribute, Session
 
 from rebase_core.audit import utcnow
@@ -320,6 +321,7 @@ class PersonMergeService:
         absorbed = self._live(absorbed_id)
         s_user, a_user = self._user(survivor), self._user(absorbed)
         self._lock(s_user, a_user, survivor, absorbed)
+        self._still_live(survivor, absorbed, s_user, a_user)
         self._check(survivor, absorbed, s_user, a_user)
         admin = self.session.get(User, admin_id)
         assert admin is not None
@@ -343,10 +345,14 @@ class PersonMergeService:
         undo: dict[str, Any] = {}
         undo["filled"] = self._fill_profile(survivor, absorbed)
         undo["cv_swapped"], cv = self._keep_newest_cv(survivor, absorbed)
+        undo["cv_sha_after"] = (
+            hashlib.sha256(survivor.cv_bytes).hexdigest() if survivor.cv_bytes else None
+        )
         undo["card_error_cleared"] = self._clear_failed_card(survivor)
         undo["filled_after"] = {field: _plain(getattr(survivor, field)) for field in undo["filled"]}
         undo["user"] = self._merge_identity(s_user, a_user)
         undo["optout_copied"] = self._carry_optout(a_user, s_user)
+        undo["team_refs"] = self._retarget_proposals(absorbed.id, survivor.id)
         absorbed.deleted_at = utcnow()
         self.session.flush()
         flagged = self._needs_card(survivor)
@@ -469,6 +475,13 @@ class PersonMergeService:
                 "annulla prima quella unione."
             )
         payload = action.payload
+        if payload["cv_swapped"]:
+            now = hashlib.sha256(survivor.cv_bytes).hexdigest() if survivor.cv_bytes else None
+            if now != payload["cv_sha_after"]:
+                raise MergeRefused(
+                    "Dopo l'unione la scheda ha un CV diverso: annullare rimetterebbe quello "
+                    "vecchio al suo posto. Rimetti a mano i CV, poi annulla."
+                )
         ctx = Context(s_user.id, a_user.id, survivor.id, absorbed.id)
 
         # A field the survivor has changed since the merge keeps its new value: it is
@@ -510,6 +523,15 @@ class PersonMergeService:
         self._restore_card_error(survivor, payload["card_error_cleared"])
         if payload["cv_swapped"]:
             self._swap_cv_and_card(survivor, absorbed)
+        for proposal_id in payload.get("team_refs", []):
+            proposal = self.session.get(TeamProposal, UUID(proposal_id))
+            if proposal is not None:
+                proposal.team = [
+                    {**member, "freelancer_id": str(absorbed.id)}
+                    if member.get("freelancer_id") == str(survivor.id)
+                    else member
+                    for member in proposal.team
+                ]
         changed_since = 0
         for field, before in payload["filled"].items():
             if _plain(getattr(survivor, field)) == payload["filled_after"][field]:
@@ -754,6 +776,38 @@ class PersonMergeService:
                 .with_for_update()
                 .execution_options(populate_existing=True)
             ).all()
+
+    @staticmethod
+    def _still_live(survivor: Freelancer, absorbed: Freelancer, s_user: User, a_user: User) -> None:
+        """After the lock the rows are what the other transaction left: if it merged either
+        card away first, this one must not merge on top of that."""
+        if (
+            survivor.deleted_at is not None
+            or absorbed.deleted_at is not None
+            or s_user.merged_into_id is not None
+            or a_user.merged_into_id is not None
+        ):
+            raise MergeRefused(
+                "Una delle due schede è appena stata unita o cancellata: ricarica la pagina."
+            )
+
+    def _retarget_proposals(self, source: UUID, target: UUID) -> list[str]:
+        """A saved team proposal names its talents by card id inside its JSON: the ones that
+        name the absorbed card name the survivor now, or «Assumi team» would hire nobody.
+        Answers the proposals touched, which is what the undo turns back."""
+        rows = self.session.scalars(
+            select(TeamProposal).where(cast(TeamProposal.team, Text).contains(str(source)))
+        ).all()
+        touched: list[str] = []
+        for row in rows:
+            row.team = [
+                {**member, "freelancer_id": str(target)}
+                if member.get("freelancer_id") == str(source)
+                else member
+                for member in row.team
+            ]
+            touched.append(str(row.id))
+        return touched
 
     def _carry_optout(self, absorbed: User, survivor: User) -> bool:
         """An address that asked for no campaign mail asked it for the person: the

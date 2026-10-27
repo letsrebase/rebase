@@ -182,3 +182,15 @@ def test_a_member_is_refused_the_pairs_and_the_merge(
         f"/api/hub/freelancers/{ids['uno@studio.it']}/merge", json={"da": ids["due@studio.it"]}
     )
     assert merge.status_code == 403
+
+
+def test_an_address_with_no_card_and_a_profile_on_a_card_mails_the_cards_owner(
+    client: TestClient, api_session: Session, sender: RecordingSender, admin: User
+) -> None:
+    _apply(client, "vecchia@studio.it", ADA)
+    api_session.add(User(email="senzascheda@studio.it", nome="Wile", cognome="Coyote"))
+    api_session.commit()
+    sender.sent.clear()
+    _apply(client, "senzascheda@studio.it", ADA)
+    (mail,) = sender.sent
+    assert mail.to == "vecchia@studio.it" and "profilo LinkedIn" in mail.text

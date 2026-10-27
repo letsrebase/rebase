@@ -171,7 +171,8 @@ def apply(
         # The address typed is on file (or was merged into a card, REB-800): the mail goes
         # there. Otherwise the card was found by its LinkedIn profile, and the mail goes to
         # the address on file, which the person controls and the form never reveals.
-        if users.by_email(data.email) is not None:
+        typed = users.person(data.email)
+        if typed is not None and typed.email.lower() == read.email.lower():
             mail = users.request_link(data.email, note=ALREADY_HAS_CARD_NOTE)
         else:
             mail = users.request_link(read.email, note=ALREADY_HAS_CARD_BY_LINKEDIN_NOTE)

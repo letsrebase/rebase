@@ -733,3 +733,52 @@ def test_a_role_is_not_given_to_an_address_merged_into_somebody(
     PersonMergeService(clean).merge(a.id, b.id, admin.id)
     with pytest.raises(ValidationFailed, match="unito a un'altra scheda"):
         UserService(clean, settings).set_role("vecchia@studio.it", "admin")
+
+
+def test_a_saved_team_proposal_names_the_survivor_after_a_merge_and_the_absorbed_after_undo(
+    clean: Session,
+) -> None:
+    a, b, _, _, admin = _pair(clean)
+    proposal = TeamProposal(
+        descrizione="d",
+        riassunto="r",
+        luogo={},
+        team=[
+            {"freelancer_id": str(b.id), "ruolo": "Backend"},
+            {"freelancer_id": str(UUID(int=7))},
+        ],
+        economia={},
+        model="m",
+        input_tokens=1,
+        output_tokens=1,
+        cache_read_tokens=0,
+        origine="pubblico",
+    )
+    clean.add(proposal)
+    clean.commit()
+    service = PersonMergeService(clean)
+    done = service.merge(a.id, b.id, admin.id)
+    clean.refresh(proposal)
+    assert [m["freelancer_id"] for m in proposal.team] == [str(a.id), str(UUID(int=7))]
+    service.undo(done.action_id, admin.id)
+    clean.refresh(proposal)
+    assert [m["freelancer_id"] for m in proposal.team] == [str(b.id), str(UUID(int=7))]
+
+
+def test_undo_is_refused_when_the_survivor_has_a_new_cv_after_a_swap(clean: Session) -> None:
+    a, b, _, _, admin = _pair(clean)
+    a.cv_uploaded_at, b.cv_uploaded_at = NOW - timedelta(days=90), NOW
+    clean.commit()
+    service = PersonMergeService(clean)
+    done = service.merge(a.id, b.id, admin.id)
+    clean.get(Freelancer, a.id).cv_bytes = PDF + b"%new"  # type: ignore[union-attr]
+    clean.commit()
+    with pytest.raises(InvalidState, match="CV diverso"):
+        service.undo(done.action_id, admin.id)
+
+
+def test_a_merge_does_not_run_on_cards_another_transaction_just_merged(clean: Session) -> None:
+    a, b, a_user, b_user, admin = _pair(clean)
+    b.deleted_at = NOW
+    with pytest.raises(InvalidState, match="appena stata unita"):
+        PersonMergeService._still_live(a, b, a_user, b_user)
