@@ -342,6 +342,21 @@ def compare(
     mine = aggregate([r for r in results if r.freelancer_id in shared])
     theirs = aggregate([r for r in baseline if r.freelancer_id in shared])
     now, before = _measures(mine), _measures(theirs)
+    # What the judge said is compared only on the people it judged in both runs: a judge that
+    # failed on a person must not make the candidate read better or worse.
+    clean = {
+        r.freelancer_id
+        for r in results
+        if r.judgement is not None and r.judgement.get("failure") is None
+    } & {
+        r.freelancer_id
+        for r in baseline
+        if r.judgement is not None and r.judgement.get("failure") is None
+    }
+    judged_now = _measures(aggregate([r for r in results if r.freelancer_id in clean]))
+    judged_before = _measures(aggregate([r for r in baseline if r.freelancer_id in clean]))
+    for name in ("supported_rate", "contradicted_rate", "invented_per_profile"):
+        now[name], before[name] = judged_now[name], judged_before[name]
     table: dict[str, dict[str, Any]] = {}
     for name, higher_is_better in MEASURES:
         a, b = now[name], before[name]

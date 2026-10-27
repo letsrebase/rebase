@@ -192,3 +192,9 @@ def test_anonymity_is_read_against_everything_the_person_holds() -> None:
         _card(sintesi="Ha scritto analytical-engine, una libreria per i calcoli."), known
     ) == ["sintesi"]
     assert anonymity_leaks(_card(ruolo="Lovelace backend developer"), known) == ["ruolo"]
+
+
+def test_a_two_digit_number_that_wraps_the_century_is_no_period() -> None:
+    parsed = parse("Dev Acme 2019 - 18 mesi in team", TODAY)
+
+    assert parsed.periods == [] and parsed.complete is False

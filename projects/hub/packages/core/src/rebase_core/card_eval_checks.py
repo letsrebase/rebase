@@ -118,6 +118,8 @@ def _month(token: str, today: date, *, end: bool, start_year: int | None = None)
             return None
         year = start_year - start_year % 100 + int(token)
         year += 100 if year < start_year else 0
+        if year > today.year:  # «2019 - 18 mesi»: not a period that runs to today
+            return None
         return _Date(year * 12 + 5, year * 12 + 11)
     parts = _PARTS.fullmatch(token)
     if parts is None:
