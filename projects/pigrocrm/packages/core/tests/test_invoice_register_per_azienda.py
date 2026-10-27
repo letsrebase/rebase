@@ -366,6 +366,12 @@ def test_the_confirm_writes_the_invoice_on_the_matched_aziendas_register(
     service: InvoiceService, db_session: Session, local_storage: LocalFileStorage, customer_id: UUID
 ) -> None:
     second = _second_azienda(db_session)
+    # The customer the person chose is on the azienda the file landed on: the confirmation
+    # refuses one of another azienda (REB-783).
+    chosen = db_session.get(Customer, customer_id)
+    assert chosen is not None
+    chosen.azienda_id = second.id
+    db_session.flush()
     document_id = _document(db_session, local_storage, _fixture(CONSULENZA), customer_id)
     [row] = service.confirm_import(document_id, ADMIN, customer_id=customer_id)
     assert row.outcome == "imported", row

@@ -231,6 +231,67 @@ class InvoiceService:
             )
         return customer
 
+    def _check_import_customer(
+        self, customer_id: UUID, azienda: LegalEntity, party: ParsedInvoiceParty
+    ) -> None:
+        """The customer a person chose for an imported invoice (`decisioni.clienti.
+        <party_key>.customer_id`, REB-783) has to be one this invoice can be written
+        for: on the azienda the file's issuer resolved to, and not archived. The
+        dialog lists only such customers, but the server is the contract: without this
+        an invoice would land on one azienda's register for another's customer, a
+        state `_azienda_of_parent` derives away on every other path. An unknown id
+        stays `import_issued`'s own `NotFound`."""
+        customer = self.session.get(Customer, customer_id)
+        if customer is None:
+            return
+        if customer.deleted_at is not None:
+            raise ValidationFailed(
+                ENTITY,
+                "customer_id",
+                f"il cliente scelto per «{party.ragione_sociale}» è archiviato",
+                expected="un cliente non archiviato",
+            )
+        if customer.azienda_id != azienda.id:
+            raise ValidationFailed(
+                ENTITY,
+                "customer_id",
+                f"il cliente scelto per «{party.ragione_sociale}» appartiene a un'altra "
+                f"azienda: la fattura è scritta su «{azienda.ragione_sociale}»",
+                expected=f"un cliente dell'azienda {azienda.id}",
+            )
+
+    def _refuse_chosen_customers(
+        self,
+        contents: Sequence[bytes],
+        aziende: Sequence[LegalEntity],
+        decide: Callable[[ParsedInvoiceParty], tuple[UUID | None, bool, bool]],
+    ) -> None:
+        """`_check_import_customer` for every invoice a confirmation is about to write,
+        before the first of them is. Each invoice commits on its own, so a refusal found
+        while writing would leave the earlier invoices of the same request on the
+        register and give the caller a 422 that hides them; read first, the 422 means
+        nothing was written. Reads exactly what `_confirm_content` will classify."""
+        for content in contents:
+            adapter = detect_adapter(content)
+            if adapter is None:
+                continue
+            try:
+                invoices = adapter.parse(content)
+            except ValueError:
+                continue
+            for invoice in invoices:
+                classification, azienda = classify_parsed_invoice(
+                    invoice,
+                    aziende,
+                    existing_for=register_lookup(self.session, invoice),
+                    content=content,
+                )
+                if classification != "ready" or azienda is None:
+                    continue
+                customer_id, _create, skip = decide(invoice.cliente)
+                if customer_id is not None and not skip:
+                    self._check_import_customer(customer_id, azienda, invoice.cliente)
+
     def _regime(self, azienda_id: UUID | None = None) -> tuple[RegimeStrategy, FiscalSnapshot]:
         """The strategy and the parameters of one azienda, read together so a caller
         cannot pair a profile with the wrong strategy; `None` is the default azienda
@@ -1262,7 +1323,10 @@ class InvoiceService:
         `customer_id` is the one human decision this issue's scope adds: which
         `Customer` this invoice attaches to. When omitted, the current exact
         tax-id match (`import_review.match_customer`, re-run against the
-        database's current state, never review time's) is used.
+        database's current state, never review time's) is used. A `customer_id` that is
+        archived, or that is not on the azienda the invoice's issuer resolves to, is a
+        `ValidationFailed` naming the counterparty, raised before any invoice is
+        written (REB-783).
 
         `create_customer` is REB-367's own addition (design §7 item 5): when
         still unresolved after both of the above, and `create_customer` is
@@ -1292,6 +1356,11 @@ class InvoiceService:
         actor.require_admin(CONFIRM_ACTION)
         aziende = self._importing_aziende()
         content, _content_type, _filename = self.documents.download(document_id, None, actor)
+
+        def decide(_party: ParsedInvoiceParty) -> tuple[UUID | None, bool, bool]:
+            return customer_id, create_customer, False
+
+        self._refuse_chosen_customers([content], aziende, decide)
         return [
             ConfirmedInvoiceRead(
                 document_id=document_id,
@@ -1306,7 +1375,7 @@ class InvoiceService:
                 actor,
                 stored_as=document_id,
                 origin=None,
-                decide=lambda _party: (customer_id, create_customer, False),
+                decide=decide,
                 created_customers={},
             )
         ]
@@ -1355,7 +1424,10 @@ class InvoiceService:
         refused invoice are the same ones. `decisions` is keyed by the counterparty's
         `party_key`, and a customer created for one invoice is the customer of every
         later invoice of that counterparty in this request, whether or not the register
-        could match it again by tax id.
+        could match it again by tax id. A `customer_id` that is archived, or that is not
+        on the azienda the invoice's issuer resolves to, is a `ValidationFailed` naming
+        the counterparty, raised before the first invoice of the request is written
+        (REB-783).
 
         The one difference is where a single-invoice file's XML ends up. `confirm_import`
         points the invoice at the document it was handed; here there is none, so the
@@ -1372,9 +1444,11 @@ class InvoiceService:
                 return None, False, False
             return decision.customer_id, decision.create_customer, decision.skip
 
-        created_customers: dict[str, UUID] = {}
+        created_customers: dict[tuple[UUID, str], UUID] = {}
+        uploaded = expand_uploads(files)
+        self._refuse_chosen_customers([file.content for file in uploaded], aziende, decide)
         rows: list[UploadedInvoiceConfirmRead] = []
-        for file in expand_uploads(files):
+        for file in uploaded:
             for row in self._confirm_content(
                 file.content,
                 aziende,
@@ -1407,7 +1481,7 @@ class InvoiceService:
         stored_as: UUID | None,
         origin: str | None,
         decide: Callable[[ParsedInvoiceParty], tuple[UUID | None, bool, bool]],
-        created_customers: dict[str, UUID],
+        created_customers: dict[tuple[UUID, str], UUID],
     ) -> list[ConfirmedInvoice]:
         """The write both `confirm_import` and `confirm_upload` run, on one file's bytes
         (their docstrings carry the rules). `stored_as` is the document the bytes were
@@ -1416,7 +1490,7 @@ class InvoiceService:
         the provenance of the document archived for them. `decide` answers, for an
         invoice's customer, the `customer_id` to attach, whether to create the
         counterparty when none matches, and whether to leave the invoice out altogether.
-        `created_customers`, keyed by `party_key`, is
+        `created_customers`, keyed by the azienda and the `party_key`, is
         owned by the caller so it outlives one file."""
         adapter = detect_adapter(content)
         if adapter is None:
@@ -1479,6 +1553,8 @@ class InvoiceService:
                     )
                 )
                 continue
+            if customer_id is not None:
+                self._check_import_customer(customer_id, azienda, invoice.cliente)
             resolved_customer_id = customer_id
             if resolved_customer_id is None:
                 resolved_customer_id = match_customer(self.session, invoice.cliente)
@@ -1490,7 +1566,7 @@ class InvoiceService:
             # only once `import_issued` for *this* invoice has actually committed.
             new_customer_id: UUID | None = None
             if resolved_customer_id is None and create_customer:
-                resolved_customer_id = created_customers.get(party)
+                resolved_customer_id = created_customers.get((azienda.id, party))
                 if resolved_customer_id is None:
                     # On the azienda the file landed on (§1.5), not the one the nation
                     # would propose: the customer was billed by this azienda already.
@@ -1561,7 +1637,7 @@ class InvoiceService:
                 )
                 continue
             if new_customer_id is not None:
-                created_customers[party] = new_customer_id
+                created_customers[(azienda.id, party)] = new_customer_id
             rows.append(
                 ConfirmedInvoice(
                     outcome="imported",
