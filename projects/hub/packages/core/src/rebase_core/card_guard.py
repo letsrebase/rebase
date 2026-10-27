@@ -334,6 +334,8 @@ def identifying(card: Card, known: KnownIdentifiers) -> list[str]:
     # card speaks of the person's work, the role, the summary and the sectors, and there
     # with the card's own skills blanked out first: «Lavora in Google» is caught, «esperto
     # di Google Cloud» for a person who lists that skill is not.
+    # A skill that is exactly an employer's name (legal form aside) is still a leak
+    # («Initech» for «Initech Srl»); one that only contains it is not.
     employers = [
         phrase
         for phrase in (_phrase(employer, legal=True) for employer in known.employers)
@@ -351,6 +353,7 @@ def identifying(card: Card, known: KnownIdentifiers) -> list[str]:
                     and any(_names(_without_skills(value, card.competenze), g) for g in given)
                 )
                 or any(_contains(_tokens(value), phrase) for phrase in searched)
+                or (name == "competenze" and _phrase(value, legal=True) in employers)
                 or (
                     name in EMPLOYER_FIELDS
                     and any(
