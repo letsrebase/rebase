@@ -32,7 +32,7 @@ from rebase_core.errors import LlmCapReached
 from rebase_core.freelancers import FreelancerService
 from rebase_core.http import urllib_engagements_call
 from rebase_core.llm import RecordingCall, TaskOverride
-from rebase_core.models import CardEvalProfile, FreelancerCard, User
+from rebase_core.models import CardEvalProfile, CardEvalRun, FreelancerCard, User
 from rebase_core.schemas import FreelancerCreate
 from rebase_core.signing import SweepResult
 from rebase_core.team_schemas import Card, CardsRefreshed
@@ -612,8 +612,11 @@ def test_cards_eval_exits_1_when_no_accepted_profiles(
 ) -> None:
     monkeypatch.setattr(cli, "AiCall", lambda *args, **kwargs: RecordingCall([]))
 
-    assert main(["cards-eval", "--provider", "anthropic", "--model", "claude-opus-5"]) == 1
+    code = main(
+        ["cards-eval", "--provider", "anthropic", "--model", "claude-opus-5", "--allow-disabled"]
+    )
 
+    assert code == 1
     assert "Nessun profilo accettato" in capsys.readouterr().err
 
 
@@ -632,7 +635,7 @@ def test_cards_eval_prints_the_report_for_the_provider_and_model_it_was_asked(
 
     code = main(
         ["cards-eval", "--task", "card", "--provider", "openai", "--model", "gpt-5"]
-        + ["--effort", "high"]
+        + ["--effort", "high", "--allow-disabled"]
     )
 
     assert code == 0
@@ -642,7 +645,8 @@ def test_cards_eval_prints_the_report_for_the_provider_and_model_it_was_asked(
     assert "Lovelace" not in out and "Backend developer" not in out
     [call] = built
     assert call["task"] == "card" and call["purpose"] == "eval"
-    assert call["override"] == TaskOverride("openai", "gpt-5", "high")
+    assert call["override"] == TaskOverride("openai", "gpt-5", "high", allow_disabled=True)
+    assert "ATTENZIONE: --allow-disabled" in out
     assert call["freelancer_id"] == person
     assert eval_db.scalars(select(FreelancerCard)).all() == []
 
@@ -658,8 +662,41 @@ def test_cards_eval_exits_1_and_says_so_when_the_cap_stops_it(
 
     monkeypatch.setattr(cli, "AiCall", lambda *args, **kwargs: Spent())
 
-    assert main(["cards-eval", "--provider", "anthropic", "--model", "claude-opus-5"]) == 1
+    code = main(
+        ["cards-eval", "--provider", "anthropic", "--model", "claude-opus-5", "--allow-disabled"]
+    )
+    assert code == 1
     assert "INCOMPLETA, fermata qui: Tetto giornaliero raggiunto" in capsys.readouterr().out
+
+
+def test_cards_eval_refuses_a_provider_that_is_off_unless_allowed(
+    eval_db: Session, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _accept(eval_db, _person(eval_db, "ada@studio.it"))
+    built: list[object] = []
+    monkeypatch.setattr(cli, "AiCall", lambda *args, **kwargs: built.append(kwargs))
+
+    assert main(["cards-eval", "--provider", "openai", "--model", "gpt-5"]) == 1
+
+    err = capsys.readouterr().err
+    assert "Il fornitore è spento" in err and "--allow-disabled" in err
+    assert built == []
+    assert eval_db.scalars(select(CardEvalRun)).all() == []
+
+
+def test_cards_eval_passes_an_explicit_baseline_and_refuses_one_that_is_not_there(
+    eval_db: Session, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _accept(eval_db, _person(eval_db, "ada@studio.it"))
+    monkeypatch.setattr(cli, "AiCall", lambda *args, **kwargs: RecordingCall([card_response()]))
+
+    code = main(
+        ["cards-eval", "--provider", "openai", "--model", "gpt-5", "--allow-disabled"]
+        + ["--baseline", str(uuid4())]
+    )
+
+    assert code == 1
+    assert "non trovato" in capsys.readouterr().err
 
 
 def test_cards_eval_takes_only_a_known_provider_and_effort() -> None:

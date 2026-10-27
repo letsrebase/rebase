@@ -20,6 +20,7 @@ from test_warehouse_contract import WAREHOUSE_TABLES
 
 from rebase_core.ai_config import CAP_REACHED, AiConfigService
 from rebase_core.card_eval import (
+    INTERRUPTED,
     AgreementRow,
     CardEvalService,
     agreement,
@@ -172,6 +173,20 @@ def test_any_edit_of_an_accepted_card_makes_it_a_bozza_again(clean: Session) -> 
 
     assert edited.status == "bozza"
     assert edited.expected is not None and edited.expected.anni == 10
+
+
+def test_saving_nothing_new_neither_demotes_nor_hides_a_demotion(clean: Session) -> None:
+    person, admin = _person(clean), _admin(clean)
+    service = CardEvalService(clean)
+    service.add(admin, person, "lead")
+    service.set_expected(admin, person, _card())
+    service.accept(admin, person)
+    kinds = [a.kind for a in _actions(clean)]
+
+    again = service.set_expected(admin, person, _card())
+
+    assert again.status == "accettata"
+    assert [a.kind for a in _actions(clean)] == kinds
 
 
 def test_a_draft_never_overwrites_an_accepted_profile(clean: Session) -> None:
@@ -348,9 +363,11 @@ def test_a_draft_does_not_overwrite_what_an_admin_corrected(clean: Session) -> N
     service = CardEvalService(clean)
     service.add(admin, person, "lead")
     service.set_expected(admin, person, _card(anni=12, seniority="lead"))
+    llm = RecordingCall([card_response()])
 
     with pytest.raises(InvalidState):
-        draft_expected(clean, person, RecordingCall([card_response()]))
+        draft_expected(clean, person, llm)
+    assert llm.requests == []  # refused before any model was paid
     expected = service.profile_read(person).expected
     assert expected is not None and expected.anni == 12
 
@@ -371,10 +388,21 @@ def _accepted(session: Session, admin: UUID, person: UUID, label: str, **changes
 
 
 def _run(
-    session: Session, llm: Any, *, provider: str = "anthropic", model: str = MODEL
+    session: Session,
+    llm: Any,
+    *,
+    provider: str = "anthropic",
+    model: str = MODEL,
+    baseline_run_id: UUID | None = None,
 ) -> EvalRunRead:
     return run_eval(
-        session, lambda _person: llm, task="card", provider=provider, model=model, effort=None
+        session,
+        lambda _person: llm,
+        task="card",
+        provider=provider,
+        model=model,
+        effort=None,
+        baseline_run_id=baseline_run_id,
     )
 
 
@@ -456,6 +484,43 @@ def test_guard_failure_counted(clean: Session) -> None:
     assert run.summary["guard_clean"] == 0
 
 
+def test_a_refusal_is_not_a_guard_failure(clean: Session) -> None:
+    person, admin = _person(clean), _admin(clean)
+    _accepted(clean, admin, person, "lead")
+
+    run = _run(clean, RecordingCall([card_response(stop_reason="refusal")]))
+
+    [result] = run.results
+    assert (result.failure, result.guard_clean) == ("refusal", None)
+    assert (run.summary["guard_clean"], run.summary["guard_failures"]) == (1, 0)
+    assert "guardia 1/1 (0 respinte dalla guardia), 1 senza scheda" in format_report(run)
+
+
+def test_what_ran_is_kept_when_the_run_ends_early_for_any_reason(clean: Session) -> None:
+    ada, grace, admin = _person(clean), _person(clean, "grace@studio.it", "Hopper"), _admin(clean)
+    _accepted(clean, admin, ada, "a")
+    _accepted(clean, admin, grace, "b")
+    first = RecordingCall([card_response()])
+    calls: list[UUID] = []
+
+    def llm_for(person: UUID) -> Any:
+        calls.append(person)
+        if len(calls) == 2:
+            raise KeyboardInterrupt
+        return first
+
+    with pytest.raises(KeyboardInterrupt):
+        run_eval(clean, llm_for, task="card", provider="anthropic", model=MODEL, effort=None)
+
+    [run] = clean.scalars(select(CardEvalRun)).all()
+    assert run.summary["complete"] is False and run.summary["stopped"] == INTERRUPTED
+    assert (run.summary["ran"], run.summary["profiles"]) == (1, 2)
+    assert len(clean.scalars(select(CardEvalResult)).all()) == 1
+    # An interrupted run is no reference for the next.
+    again = _run(clean, RecordingCall([card_response(), card_response()]))
+    assert again.summary["baseline"] is None
+
+
 def test_run_without_an_accepted_profile_is_refused_before_any_call(clean: Session) -> None:
     person, admin = _person(clean), _admin(clean)
     CardEvalService(clean).add(admin, person, "lead")
@@ -497,38 +562,81 @@ def test_a_cap_or_an_outage_stops_the_run_and_it_is_never_a_baseline(clean: Sess
     # The next finished run has no baseline to be compared with: this one is not one.
     again = _run(clean, RecordingCall([card_response(), card_response()]))
     assert again.summary["baseline"] is None and again.summary["complete"]
-    assert "base" in format_report(again)
+    assert "Nessun riferimento" in format_report(again)
 
 
-def test_report_marks_regression_against_baseline(clean: Session) -> None:
+def test_report_marks_regression_against_the_live_configuration(clean: Session) -> None:
+    """The baseline is the newest finished run of what production runs (the card task's
+    provider and model, the current prompt), not the last candidate tried."""
     person, admin = _person(clean), _admin(clean)
     _accepted(clean, admin, person, "lead")
     first = _run(clean, RecordingCall([card_response()]))
     assert first.summary["baseline"] is None
+    assert "Nessun riferimento" in format_report(first)
+    mid = {**CARD, "anni": 3, "seniority": "mid"}
 
-    worse = _run(
-        clean,
-        RecordingCall([card_response({**CARD, "anni": 3, "seniority": "mid"})]),
-        provider="openai",
-        model="gpt-5",
-    )
-    same = _run(clean, RecordingCall([card_response({**CARD, "anni": 3, "seniority": "mid"})]))
+    worse = _run(clean, RecordingCall([card_response(mid)]), provider="openai", model="gpt-5")
+    again = _run(clean, RecordingCall([card_response(mid)]), provider="openai", model="gpt-5")
 
-    baseline = worse.summary["baseline"]
-    assert baseline["run_id"] == str(first.id)
-    assert baseline["delta"] == {
-        "anni_ok": "peggio",
-        "seniority_ok": "peggio",
-        "guard_clean": "uguale",
-    }
-    assert same.summary["baseline"]["delta"] == {
-        "anni_ok": "uguale",
-        "seniority_ok": "uguale",
-        "guard_clean": "uguale",
-    }
+    for candidate in (worse, again):
+        assert candidate.summary["baseline"]["run_id"] == str(first.id)
+        assert candidate.summary["baseline"]["delta"] == {
+            "anni_ok": "peggio",
+            "seniority_ok": "peggio",
+            "guard_clean": "uguale",
+        }
     report = format_report(worse)
     assert "anni peggio, seniority peggio, guardia uguale" in report
     assert "openai/gpt-5" in report
+    # A run of another model of the same provider is a candidate too, not a reference.
+    other = _run(clean, RecordingCall([card_response()]), model="claude-other")
+    assert other.summary["baseline"]["run_id"] == str(first.id)
+
+
+def test_an_explicit_baseline_replaces_the_default_and_must_be_a_finished_run(
+    clean: Session,
+) -> None:
+    person, admin = _person(clean), _admin(clean)
+    _accepted(clean, admin, person, "lead")
+    mid = {**CARD, "anni": 3, "seniority": "mid"}
+    _run(clean, RecordingCall([card_response()]))
+    candidate = _run(clean, RecordingCall([card_response(mid)]), provider="openai", model="gpt-5")
+
+    same = _run(
+        clean,
+        RecordingCall([card_response(mid)]),
+        provider="openai",
+        model="gpt-5-mini",
+        baseline_run_id=candidate.id,
+    )
+
+    assert same.summary["baseline"]["run_id"] == str(candidate.id)
+    assert same.summary["baseline"]["delta"]["anni_ok"] == "uguale"
+    with pytest.raises(NotFound):
+        _run(clean, RecordingCall([]), baseline_run_id=uuid4())
+    cut = CardEvalRun(
+        task="card",
+        provider="anthropic",
+        model=MODEL,
+        prompt_version=PROMPT_VERSION,
+        summary={"complete": False},
+    )
+    clean.add(cut)
+    clean.commit()
+    llm = RecordingCall([])
+    with pytest.raises(InvalidState):
+        _run(clean, llm, baseline_run_id=cut.id)
+    assert llm.requests == []
+
+
+def test_a_run_with_no_reference_says_so(clean: Session) -> None:
+    person, admin = _person(clean), _admin(clean)
+    _accepted(clean, admin, person, "lead")
+
+    run = _run(clean, RecordingCall([card_response()]), provider="openai", model="gpt-5")
+
+    assert run.summary["baseline"] is None
+    assert "Nessun riferimento" in format_report(run)
 
 
 def test_the_report_waits_for_ratings_and_carries_no_name_or_card_text(clean: Session) -> None:

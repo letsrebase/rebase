@@ -15,7 +15,7 @@ from sqlalchemy import bindparam, select, text
 from sqlalchemy.orm import Session
 
 from rebase_core.admin_tokens import DEFAULT_NAME, AdminTokenService
-from rebase_core.ai_config import AiConfigService
+from rebase_core.ai_config import PROVIDER_OFF, AiConfigService
 from rebase_core.ai_verify import verify
 from rebase_core.campaigns.sender import campaign_sender_from_settings
 from rebase_core.campaigns.tick import run_tick
@@ -43,6 +43,7 @@ from rebase_core.models import (
     AI_EFFORTS,
     AI_PROVIDERS,
     USER_ROLES,
+    AiProvider,
     CardEvalProfile,
     Freelancer,
     Signup,
@@ -319,13 +320,23 @@ def cards_eval_draft(freelancers: Sequence[UUID], labels: Sequence[str]) -> int:
     return 1 if failed else 0
 
 
-def cards_eval(provider: str, model: str, effort: str | None) -> int:
+def cards_eval(
+    provider: str,
+    model: str,
+    effort: str | None,
+    baseline: UUID | None = None,
+    allow_disabled: bool = False,
+) -> int:
     """`rebase cards-eval --provider P --model M [--effort E]` (REB-835): runs the accepted
     profiles of the evaluation set through the `card` task, answered by that provider and
     model instead of the task's own, and prints per person whether the years are within a
     year of the expected card, the seniority is equal and the guard is clean, with the
     latency and the cost, the three ratings an admin gives in «Valutazione», the totals
-    and how it stands against the previous finished run. The run is stored for the admin
+    and how it stands against a baseline: `--baseline RUN_ID`, or the newest finished run of
+    the live configuration (the provider and model the task is set to and the current
+    prompt version), or «nessun riferimento». A provider that is switched off is refused,
+    «Il fornitore è spento», unless `--allow-disabled` says this evaluation may send CVs
+    to it (the report says so). The run is stored for the admin
     to rate; no live card and no task setting is touched. Its calls are recorded under the
     `card` task with `purpose="eval"`, so they count against the task's daily cap, which
     can end the run early: it then says so, exits 1 and is never taken as a baseline.
@@ -338,14 +349,31 @@ def cards_eval(provider: str, model: str, effort: str | None) -> int:
             lambda: closing(open_session()),
             settings,
             "card",
-            override=TaskOverride(provider, model, effort),
+            override=TaskOverride(provider, model, effort, allow_disabled),
             purpose="eval",
             freelancer_id=freelancer_id,
         )
 
     session = open_session()
     try:
-        run = run_eval(session, llm_for, task="card", provider=provider, model=model, effort=effort)
+        account = session.get(AiProvider, provider)
+        if not allow_disabled and (account is None or not account.enabled):
+            print(
+                f"{PROVIDER_OFF}: una valutazione manda i CV al fornitore, quindi serve "
+                "--allow-disabled.",
+                file=sys.stderr,
+            )
+            return 1
+        run = run_eval(
+            session,
+            llm_for,
+            task="card",
+            provider=provider,
+            model=model,
+            effort=effort,
+            baseline_run_id=baseline,
+            allow_disabled=allow_disabled,
+        )
     except DomainError as exc:
         print(exc.message, file=sys.stderr)
         return 1
@@ -802,6 +830,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     eval_parser.add_argument("--provider", choices=AI_PROVIDERS, required=True)
     eval_parser.add_argument("--model", required=True)
     eval_parser.add_argument("--effort", choices=AI_EFFORTS)
+    eval_parser.add_argument("--baseline", type=UUID)
+    eval_parser.add_argument("--allow-disabled", action="store_true")
     seed_parser = sub.add_parser(
         "ai-seed",
         help="Sposta la chiave Anthropic e il modello vecchi in «Modelli AI», con i prezzi",
@@ -865,7 +895,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "cards-eval-draft":
         return cards_eval_draft(args.freelancer, args.label)
     if args.command == "cards-eval":
-        return cards_eval(args.provider, args.model, args.effort)
+        return cards_eval(
+            args.provider, args.model, args.effort, args.baseline, args.allow_disabled
+        )
     if args.command == "ai-seed":
         return ai_seed(args.eur_per_usd)
     if args.command == "ai-prices-seed":

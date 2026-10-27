@@ -540,24 +540,33 @@ three tables are not in `WAREHOUSE_TABLES`.
    corrected or accepted is never overwritten by a model.
 2. An admin corrects the card and accepts it in «Valutazione»; any later edit makes it a
    `bozza` again. Only accepted profiles take part in a run.
-3. `rebase cards-eval --task card --provider P --model M [--effort E]` runs the accepted
-   profiles with `AiCall(override=TaskOverride(P, M, E))`: the seam as the `card` task, answered
+3. `rebase cards-eval --task card --provider P --model M [--effort E] [--baseline RUN_ID]
+   [--allow-disabled]` runs the accepted profiles with `AiCall(override=TaskOverride(P, M, E))`: the seam as the `card` task, answered
    by that provider and model, so every call is recorded in `ai_usage` under task `card` with
    `purpose="eval"` and **counts against the task's daily euro cap**, which can end the run
-   early (it then says `INCOMPLETA`, exits 1 and is never taken as a baseline). It never writes
-   a live card and never touches `ai_tasks`. Run it from the `api` container like
+   early or anything else ends it (it then says `INCOMPLETA`, exits 1 and is never taken as a
+   baseline; every person's result is stored as it comes, so what was paid for is kept). It never
+   writes a live card and never touches `ai_tasks`. Run it from the `api` container like
    `cards-refresh` (`docker compose -p rebase --env-file /opt/hub/.env exec api uv run
    --no-sync rebase cards-eval …`, `-p rebase-preview --env-file /opt/hub-preview/.env` on the
-   preview). The provider must be on and have a key and a price for the model.
+   preview). The provider must be on and have a key and a price for the model: a provider that
+   is off is refused («Il fornitore è spento») unless `--allow-disabled` says this evaluation
+   may send CVs to it, and the report then carries that warning. The processors gate of
+   «OpenAI and Google» below is about production use; the flag is the explicit, printed
+   exception for evaluating.
 
 Reading the report: one line per person (label and the first characters of the id, never a
 name) with `anni` (within one year of the expected value, or both null), `seniority` (equal)
-and `guardia` (the guards of `cards.py` did not refuse the card) as `ok`/`no`, the ratings of
+and `guardia` (no guard of `cards.py` refused the card: a refusal, a cut-off answer or an
+outage is counted under «senza scheda», not as a guard failure) as `ok`/`no`, the ratings of
 `ruolo`, `competenze` and `sintesi` («da valutare» until an admin rates them 1 to 3 in
 «Valutazione»), latency and cost in euro; then the totals, and the change against the
-previous finished run of the task as «meglio/uguale/peggio» per measure. **A change goes live
-when it is no worse than the baseline on the first three and an admin accepts the ratings.**
-The baseline is the run of the current prompt and model: record its id in the PR that
+baseline as «meglio/uguale/peggio» per measure. **A change goes live when it is no worse than
+the baseline on the first three and an admin accepts the ratings.** The baseline is
+`--baseline RUN_ID`, or by default the newest finished run whose provider and model are the
+`card` task's now and whose prompt version is the current `PROMPT_VERSION`: production as it
+runs, never the last candidate tried. With none the report says «Nessun riferimento»: run
+the live configuration first and that run is the baseline. Record its id in the PR that
 changes the prompt (`PROMPT_VERSION` in `cards.py`).
 
 **Every «Proponi il team» is a row, answered or not** (migration 0028, Ivan 2026-09-29:
@@ -808,7 +817,8 @@ holds for each: the privacy notice lists the provider, a data processing agreeme
 with it, and its no-training and retention terms were read. Lorenzo and Ivan decide that;
 nothing in the code or a deploy turns a provider on, and a task pointed at a provider that
 is off is refused with «Il fornitore è spento» (an evaluation run needs the explicit
-`--allow-disabled`, because it sends CVs).
+`--allow-disabled`, because it sends CVs; see «A provider, a model or a prompt change is
+measured»).
 
 - `rebase ai-prices-seed --eur-per-usd <rate>`: writes the reviewed price table
   (`SEED_USD_PRICES` in `ai_config.py`: USD per million tokens, Standard tier, short
@@ -827,8 +837,8 @@ is off is refused with «Il fornitore è spento» (an evaluation run needs the e
   Gemini key exists yet. When one is saved on the preview, run it for each provider with the
   model chosen; if `key_injected` or `native_output_ok` is `False`, stop and fix `build_model`
   before enabling that provider, and record the verified model and date here.
-- Evaluation per provider (`cards-eval`, `--allow-disabled`, the report saved) waits for the
-  evaluation set of the Phase 2 milestone to be on `main`.
+- Evaluation per provider (`cards-eval --allow-disabled`, the report saved) is the
+  evaluation set of the Phase 2 milestone (REB-835): run it once the profiles are accepted.
 
 ### Database backups
 

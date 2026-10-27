@@ -9,18 +9,20 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
-from fakes_cards import text_pdf
+from fakes_cards import card_response, text_pdf
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from rebase_api.deps import get_admin
 from rebase_core.admin_tokens import AdminRead
-from rebase_core.card_eval import CardEvalService
+from rebase_core.card_eval import CardEvalService, run_eval
 from rebase_core.freelancers import FreelancerService
+from rebase_core.llm import RecordingCall
 from rebase_core.mail import RecordingSender
 from rebase_core.models import User
 from rebase_core.schemas import FreelancerCreate
+from rebase_core.team_schemas import Card
 
 BASE = "/api/hub/admin/card-eval"
 SOME_ID = UUID("00000000-0000-4000-8000-000000000836")
@@ -153,8 +155,31 @@ def test_unknown_profile_404(client: TestClient, admin: User) -> None:
 
 
 def test_ratings_outside_one_to_three_422_and_unknown_run_404(
-    client: TestClient, admin: User
+    client: TestClient, admin: User, api_session: Session
 ) -> None:
-    body = {"ratings": {str(uuid4()): {"ruolo": 4}}}
-    assert client.post(f"{BASE}/runs/{uuid4()}/ratings", json=body).status_code in (404, 422)
-    assert client.post(f"{BASE}/runs/{uuid4()}/ratings", json={"ratings": "x"}).status_code == 422
+    fid = _profile(api_session, admin)
+    service = CardEvalService(api_session)
+    service.set_expected(admin.id, fid, Card.model_validate(CARD))
+    service.accept(admin.id, fid)
+    llm = RecordingCall([card_response(CARD)])
+    run = run_eval(
+        api_session,
+        lambda _person: llm,
+        task="card",
+        provider="anthropic",
+        model="claude-opus-5",
+        effort=None,
+    )
+    url = f"{BASE}/runs/{run.id}/ratings"
+
+    assert client.post(url, json={"ratings": {str(fid): {"ruolo": 4}}}).status_code == 422
+    assert client.post(url, json={"ratings": {str(fid): {"ruolo": 0}}}).status_code == 422
+    assert client.post(url, json={"ratings": {str(fid): {"anni": 2}}}).status_code == 422
+    stored = client.get(BASE).json()["runs"][0]["results"][0]["ratings"]
+    assert stored is None  # nothing from the refused calls
+    ok = client.post(url, json={"ratings": {str(fid): {"ruolo": 3, "sintesi": 1}}})
+    assert ok.status_code == 200
+    assert ok.json()["results"][0]["ratings"] == {"ruolo": 3, "sintesi": 1}
+    unknown = client.post(f"{BASE}/runs/{uuid4()}/ratings", json={"ratings": {str(fid): {}}})
+    assert unknown.status_code == 404
+    assert client.post(url, json={"ratings": "x"}).status_code == 422
