@@ -59,7 +59,10 @@ async def test_the_talent_list_is_newest_first_and_the_total_counts_everything(
 ) -> None:
     _seed(factory, ["uno@studio.it", "due@studio.it"])
     async with Client(build_server(factory, lambda: IVAN)) as client:
-        result = await client.call_tool("list_talenti", {"limit": 1})
+        result = await client.call_tool(
+            "list_talenti",
+            {"limit": 1, "campi": ["nome", "cognome", "stato", "email", "linkedin_url"]},
+        )
     body = _payload(result)
     assert body["totale"] == 2
     assert [item["email"] for item in body["items"]] == ["due@studio.it"]
@@ -134,7 +137,7 @@ async def test_the_admin_tools_read_and_move_a_candidate_without_the_cv(
         session.close()
 
     async with Client(build_server(factory, lambda: IVAN)) as client:
-        listed = _payload(await client.call_tool("list_talenti", {}))
+        listed = _payload(await client.call_tool("list_talenti", {"campi": ["email"]}))
         assert listed["totale"] == 1
         assert listed["items"][0]["email"] == "ada@studio.it"
         assert "cv_bytes" not in listed["items"][0]
@@ -769,7 +772,7 @@ async def test_freelancer_card_tools_read_write_and_off_is_the_sentence(
         )
         assert read_back["card"] == written["card"]
 
-        listed = _payload(await client.call_tool("list_talenti", {}))
+        listed = _payload(await client.call_tool("list_talenti", {"campi": ["tutti"]}))
         assert listed["items"][0]["ha_scheda_anonima"] is True
         detail = _payload(await client.call_tool("get_talento", {"talento_id": freelancer_id}))
         assert detail["ha_scheda_anonima"] is True
@@ -787,7 +790,7 @@ async def test_set_freelancer_vetted_toggles_and_a_repeat_keeps_the_first_date(
     freelancer_id = _seed_freelancer(factory)
     _seed_admin(factory)
     async with Client(build_server(factory, lambda: IVAN)) as client:
-        before = _payload(await client.call_tool("list_talenti", {}))["items"][0]
+        before = _payload(await client.call_tool("list_talenti", {"campi": ["tutti"]}))["items"][0]
         assert before["vetted_at"] is None and before["ha_scheda_anonima"] is False
         card = _payload(await client.call_tool("get_talento", {"talento_id": freelancer_id}))
         assert card["vetted_at"] is None and card["ha_scheda_anonima"] is False
@@ -807,7 +810,7 @@ async def test_set_freelancer_vetted_toggles_and_a_repeat_keeps_the_first_date(
         )
         assert again["vetted_at"] == first
 
-        listed = _payload(await client.call_tool("list_talenti", {}))
+        listed = _payload(await client.call_tool("list_talenti", {"campi": ["tutti"]}))
         assert listed["items"][0]["vetted_at"] == first
 
         off = _payload(

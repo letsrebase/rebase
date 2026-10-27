@@ -287,7 +287,7 @@ def test_list_filters_by_stato_oldest_first(db_session: Session) -> None:
         ),
         ADMIN,
     )
-    service.reject(second.id, ProposalReject(deciso_da="Lorenzo"), ADMIN)
+    service.reject(second.id, ProposalReject(), ADMIN)
 
     pending = service.list(ProposalListQuery(stato="in_attesa"), ADMIN)
     assert [p.id for p in pending.items] == [first.id]
@@ -308,9 +308,9 @@ def test_reject_moves_a_proposal_to_rifiutata_and_records_who_and_when(
         ),
         ADMIN,
     )
-    rejected = service.reject(proposal.id, ProposalReject(deciso_da="Lorenzo Fiore"), ADMIN)
+    rejected = service.reject(proposal.id, ProposalReject(), ADMIN)
     assert rejected.stato == "rifiutata"
-    assert rejected.deciso_da == "Lorenzo Fiore"
+    assert rejected.deciso_da == "system"
     assert rejected.deciso_il is not None
 
 
@@ -324,14 +324,14 @@ def test_reject_of_an_already_decided_proposal_is_a_conflict(db_session: Session
         ),
         ADMIN,
     )
-    service.reject(proposal.id, ProposalReject(deciso_da="Lorenzo"), ADMIN)
+    service.reject(proposal.id, ProposalReject(), ADMIN)
     with pytest.raises(Conflict):
-        service.reject(proposal.id, ProposalReject(deciso_da="Lorenzo"), ADMIN)
+        service.reject(proposal.id, ProposalReject(), ADMIN)
 
 
 def test_reject_of_an_unknown_proposal_is_not_found(db_session: Session) -> None:
     with pytest.raises(NotFound):
-        ProposalService(db_session).reject(uuid4(), ProposalReject(deciso_da="Lorenzo"), ADMIN)
+        ProposalService(db_session).reject(uuid4(), ProposalReject(), ADMIN)
 
 
 # ---- accept: 'contratto' -----------------------------------------------------------
@@ -350,7 +350,7 @@ def test_accept_contratto_creates_a_contract_and_its_first_rate_card(
         ADMIN,
     )
 
-    accepted = service.accept(proposal.id, ProposalAccept(deciso_da="Lorenzo Fiore"), ADMIN)
+    accepted = service.accept(proposal.id, ProposalAccept(), ADMIN)
 
     assert accepted.stato == "accettata"
     assert accepted.id_risultato is not None
@@ -375,7 +375,7 @@ def test_accept_contratto_repoints_the_originating_documents_ownership(
         ADMIN,
     )
 
-    accepted = service.accept(proposal.id, ProposalAccept(deciso_da="Lorenzo Fiore"), ADMIN)
+    accepted = service.accept(proposal.id, ProposalAccept(), ADMIN)
 
     db_session.refresh(document)
     assert document.contract_id == accepted.id_risultato
@@ -399,9 +399,7 @@ def test_accept_preserves_campi_proposti_and_stores_the_override_separately(
 
     edited_contract = {**original_campi["contract"], "titolo": "Consulenza (corretta)"}
     edited_campi = _contratto_campi(customer.id, contract=edited_contract)
-    accepted = service.accept(
-        proposal.id, ProposalAccept(deciso_da="Lorenzo", campi_accettati=edited_campi), ADMIN
-    )
+    accepted = service.accept(proposal.id, ProposalAccept(campi_accettati=edited_campi), ADMIN)
 
     assert accepted.campi_proposti["contract"]["titolo"] == "Consulenza annuale"
     assert accepted.campi_accettati["contract"]["titolo"] == "Consulenza (corretta)"
@@ -419,9 +417,9 @@ def test_accept_of_an_already_decided_proposal_is_a_conflict(db_session: Session
         ),
         ADMIN,
     )
-    service.reject(proposal.id, ProposalReject(deciso_da="Lorenzo"), ADMIN)
+    service.reject(proposal.id, ProposalReject(), ADMIN)
     with pytest.raises(Conflict):
-        service.accept(proposal.id, ProposalAccept(deciso_da="Lorenzo"), ADMIN)
+        service.accept(proposal.id, ProposalAccept(), ADMIN)
 
 
 # ---- accept: 'giornata' -------------------------------------------------------------
@@ -443,7 +441,7 @@ def test_accept_giornata_creates_an_approval_and_a_work_unit_at_approvato_in_one
         ADMIN,
     )
 
-    accepted = service.accept(proposal.id, ProposalAccept(deciso_da="Lorenzo Fiore"), ADMIN)
+    accepted = service.accept(proposal.id, ProposalAccept(), ADMIN)
 
     assert accepted.stato == "accettata"
     work_unit = db_session.get(WorkUnit, accepted.id_risultato)
@@ -479,9 +477,7 @@ def test_accept_giornata_rejects_an_edited_contract_id_that_diverges_from_the_pr
 
     diverging = _giornata_campi(other_contract.id)
     with pytest.raises(ValidationFailed) as excinfo:
-        service.accept(
-            proposal.id, ProposalAccept(deciso_da="Lorenzo", campi_accettati=diverging), ADMIN
-        )
+        service.accept(proposal.id, ProposalAccept(campi_accettati=diverging), ADMIN)
     assert excinfo.value.details["field"] == "campi_accettati.contract_id"
     assert db_session.query(WorkUnit).count() == 0
     assert db_session.query(Approval).count() == 0
@@ -524,7 +520,7 @@ def test_accept_giornata_is_atomic_when_the_work_unit_write_conflicts(
     approvals_before = db_session.query(Approval).filter_by(contract_id=contract.id).count()
 
     with pytest.raises(Conflict):
-        service.accept(proposal.id, ProposalAccept(deciso_da="Lorenzo Fiore"), ADMIN)
+        service.accept(proposal.id, ProposalAccept(), ADMIN)
 
     approvals_after = db_session.query(Approval).filter_by(contract_id=contract.id).count()
     assert approvals_after == approvals_before

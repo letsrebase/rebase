@@ -2,7 +2,7 @@
 
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -116,6 +116,14 @@ class Settings(BaseSettings):
     # Nobody gets two campaigns closer than this many days (spec § 5.3). It also makes a
     # wave of several campaigns scheduled for the same minute one mail per person.
     campaign_gap_days: int = 3
+    # Mails Resend lets this key send in a day: 100 on the free plan (REB-779). The
+    # campaigns tick counts the rows sent since midnight in Rome across every campaign
+    # and holds the rest for the next day, so a long list never reaches Resend's 429.
+    resend_daily_quota: int = Field(default=100, ge=1)
+    # Of that quota, what a campaign never spends: the magic links, the member area's
+    # mails and the campaign test mails (not rows, so not counted) all share the key. A
+    # campaign may send `resend_daily_quota - campaign_daily_reserve` a day.
+    campaign_daily_reserve: int = Field(default=20, ge=0)
     # The `whsec_` secret Resend shows for this environment's webhook (spec § 6.1).
     # Empty: the webhook answers 503 and delivery, bounces and complaints are not read.
     resend_webhook_secret: str = ""
@@ -139,6 +147,16 @@ class Settings(BaseSettings):
     # midnight in Rome (`team_caps.py`); once reached, the same 503 until tomorrow. A
     # proposal that asked no model (an empty catalogue) cost nothing and does not count.
     team_builder_daily_cap: int = Field(default=300, ge=1)
+
+    @model_validator(mode="after")
+    def _reserve_leaves_room(self) -> "Settings":
+        # A reserve that eats the whole quota would hold every campaign for good while
+        # the page kept promising tomorrow (REB-779).
+        if self.campaign_daily_reserve >= self.resend_daily_quota:
+            raise ValueError(
+                "REBASE_CAMPAIGN_DAILY_RESERVE must be below REBASE_RESEND_DAILY_QUOTA"
+            )
+        return self
 
 
 @lru_cache(maxsize=1)

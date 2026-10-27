@@ -265,8 +265,8 @@ ROWS: list[Row] = [
             "confidenza": "0.90",
         },
     ),
-    Row("POST", "/api/proposals/{proposal_id}/accept", body={"deciso_da": "Matrice"}),
-    Row("POST", "/api/proposals/{proposal_id}/reject", body={"deciso_da": "Matrice"}),
+    Row("POST", "/api/proposals/{proposal_id}/accept", body={}),
+    Row("POST", "/api/proposals/{proposal_id}/reject", body={}),
     # --- the day ledger (REB-745): `require_write` (work_units/service.py) ----------
     Row(
         "POST",

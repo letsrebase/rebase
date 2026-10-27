@@ -220,6 +220,29 @@ def test_a_card_drafted_from_research_reads_origine_admin_on_talenti(
     assert item["origine"] == "admin" and item["stato"] == "nuovo"
 
 
+def test_talenti_origine_filters_the_row_channel_and_pagina_origine_the_page(
+    client: TestClient, admin: None, sender: RecordingSender
+) -> None:
+    """REB-798: `origine` selects what the row shows (`form`/`wizard`/`admin`), the
+    marketing page the admin screen filters on is `pagina_origine`, and a value `origine`
+    does not know is a 422 rather than an empty list."""
+    _signup(client, sender, "lead@studio.it")
+    _apply(client, "ada@studio.it")
+
+    def emails(**params: str) -> list[str]:
+        return [
+            item["email"] for item in client.get("/api/hub/talent", params=params).json()["items"]
+        ]
+
+    assert emails(origine="wizard") == ["ada@studio.it"]
+    assert emails(origine="form") == ["lead@studio.it"]
+    assert emails(origine="admin") == []
+    assert emails(pagina_origine="home") == []
+    refused = client.get("/api/hub/talent", params={"origine": "home"})
+    assert refused.status_code == 422
+    assert refused.json()["detail"][0]["loc"][-1] == "origine"
+
+
 def test_a_signed_in_member_hitting_talenti_is_403_not_401(
     client: TestClient, admin: None, sender: RecordingSender
 ) -> None:

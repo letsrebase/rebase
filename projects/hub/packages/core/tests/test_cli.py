@@ -186,33 +186,26 @@ def test_cards_refresh_prints_the_counts(
     ("result", "line"),
     [
         (
-            CardsRefreshed(written=3, failed=1, gender_warnings=2),
-            "3 schede scritte, 1 non riuscite, 2 con avviso di genere",
+            CardsRefreshed(written=3, failed=1),
+            "3 schede scritte, 1 non riuscite",
         ),
-        # An outage on a first call: counted among the failed, and the stop said.
+        # An outage: counted among the failed, and the stop said.
         (
             CardsRefreshed(written=1, failed=1, stopped=True),
             "1 schede scritte, 1 non riuscite, fermato: Claude non disponibile",
         ),
-        # An outage on the rewrite: the first card written with its warning, then the stop.
-        (
-            CardsRefreshed(written=1, failed=0, gender_warnings=1, stopped=True),
-            "1 schede scritte, 0 non riuscite, 1 con avviso di genere, "
-            "fermato: Claude non disponibile",
-        ),
     ],
-    ids=["warnings", "outage", "outage_on_the_rewrite"],
+    ids=["failures", "outage"],
 )
-def test_cards_refresh_counts_the_gender_warnings_and_says_the_stop(
+def test_cards_refresh_says_the_stop(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     result: CardsRefreshed,
     line: str,
 ) -> None:
-    """REB-574: cards written with the gender still showing after their rewrite are
-    among the written ones, and named apart; a batch stopped by an outage says so,
-    whether the outage met a first call or a rewrite. With neither, the line is the one
-    above, so «0 schede scritte, 0 non riuscite» still says the backlog is done."""
+    """A batch stopped by an outage says so; with no stop, the line is the plain one, so
+    «0 schede scritte, 0 non riuscite» still says the backlog is done. A card still
+    gendered after its rewrite is among the «non riuscite» (REB-802)."""
     _FakeCardWriter.instances = []
     monkeypatch.setattr(
         cli,

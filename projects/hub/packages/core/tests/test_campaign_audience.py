@@ -165,6 +165,25 @@ def test_filters_reuse_talenti_and_merge_one_person_across_cases(
     assert [c.email for c in candidates(clean, campaign)] == ["giulia@studio.it"]
 
 
+def test_a_stored_origine_filter_is_still_the_marketing_page(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    """REB-798: the list's `origine` became the channel a row shows; a campaign stored
+    before that keeps `origine` for the page the person started from, and the replay
+    asks the list for `pagina_origine`."""
+    ada = person(clean, "ada@studio.it", tariffa=False)
+    ada.origine = "pigrocrm"
+    person(clean, "bob@studio.it", nome="Bob")
+    clean.commit()
+    campaign = campaign_row(
+        clean,
+        fonte="filtri",
+        stato_percorso=None,
+        filtri={"lista": "talenti", "origine": "pigrocrm"},
+    )
+    assert [c.email for c in candidates(clean, campaign)] == ["ada@studio.it"]
+
+
 def test_every_exclusion_names_its_reason(clean: Session) -> None:  # noqa: F811  (fixture)
     person(clean, "boss@rebase.it", role="admin", cv=False)
     person(clean, "gone@studio.it", cv=False)

@@ -205,7 +205,7 @@ function mount(path: string) {
           : undefined,
       tariffa_min: strParam(search.tariffa_min),
       tariffa_max: strParam(search.tariffa_max),
-      origine: strParam(search.origine),
+      pagina_origine: strParam(search.pagina_origine),
       utm_source: strParam(search.utm_source),
       has_cv: search.has_cv === true || search.has_cv === 'true' ? true : search.has_cv === false || search.has_cv === 'false' ? false : undefined,
       con_accessi:
@@ -874,6 +874,25 @@ describe('every filter and the search box live in the URL, both ways (REB-286)',
     mount('/admin/talent?posizione=CTO&stato=nuovo')
     await screen.findByRole('heading', { name: 'Talenti' })
     expect(screen.getByLabelText('Posizione')).toHaveValue('CTO')
+  })
+
+  it('sends the page filter of Talenti as pagina_origine, never as origine, which is the row channel (REB-798)', async () => {
+    const fetch = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(answer(200, { totale: 0, items: [], per_stato: {} }))
+    const router = mount('/admin/talent')
+    await screen.findByRole('heading', { name: 'Talenti' })
+
+    await userEvent.type(screen.getByLabelText('Pagina di provenienza'), 'home')
+
+    await waitFor(() =>
+      expect(router.state.location.search).toMatchObject({ pagina_origine: 'home' }),
+    )
+    await waitFor(() => {
+      const urls = fetch.mock.calls.map(([url]) => String(url))
+      expect(urls.some((url) => url.includes('pagina_origine=home'))).toBe(true)
+      expect(urls.some((url) => /[?&]origine=/.test(url))).toBe(false)
+    })
   })
 
   it('keeps a purely numeric filter value on a fresh load, not just an in-app navigation', async () => {

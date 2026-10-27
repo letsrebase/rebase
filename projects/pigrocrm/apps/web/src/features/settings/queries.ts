@@ -261,6 +261,10 @@ export function useUpdateUser() {
       queryClient.setQueryData<UserRecord[]>(queryKeys.users, (previous) =>
         previous?.map((user) => (user.id === updated.id ? updated : user)),
       )
+      // A name or a role changed on the signed-in admin's own row is what the shell and
+      // the owner pickers read from `useAuth().user` (REB-796); with no observer on `me`
+      // this costs nothing.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.me })
     },
   })
 }

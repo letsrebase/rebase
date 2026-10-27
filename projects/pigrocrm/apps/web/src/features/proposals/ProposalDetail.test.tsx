@@ -93,7 +93,7 @@ describe('a proposal waiting for a decision', () => {
     await waitFor(() => expect(api.POST).toHaveBeenCalledTimes(1))
     expect(api.POST).toHaveBeenCalledWith('/api/proposals/{proposal_id}/accept', {
       params: { path: { proposal_id: 'p1' } },
-      body: { deciso_da: 'Lorenzo Fiore' },
+      body: {},
     })
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Proposta accettata: la giornata è registrata'))
     expect(navigate).toHaveBeenCalledWith({ to: '/app/proposals', search: { stato: 'in_attesa' } })
@@ -135,7 +135,7 @@ describe('a proposal waiting for a decision', () => {
     await waitFor(() => expect(api.POST).toHaveBeenCalledTimes(1))
     expect(api.POST).toHaveBeenCalledWith('/api/proposals/{proposal_id}/reject', {
       params: { path: { proposal_id: 'p1' } },
-      body: { deciso_da: 'Lorenzo Fiore', motivo: 'La data non è quella della mail.' },
+      body: { motivo: 'La data non è quella della mail.' },
     })
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Proposta rifiutata'))
     expect(navigate).toHaveBeenCalledWith({ to: '/app/proposals', search: { stato: 'in_attesa' } })
@@ -169,16 +169,6 @@ describe('a proposal waiting for a decision', () => {
     await screen.findByRole('heading', { level: 1 })
     expect(screen.queryByRole('button', { name: 'Accetta' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Rifiuta' })).toBeNull()
-  })
-
-  it('signs a decision with the email when the account has no name', async () => {
-    auth.nome = ''
-    serving()
-    vi.mocked(api.POST).mockResolvedValue(ok(proposal({ stato: 'accettata' })) as never)
-    renderWithQuery(<ProposalDetail proposalId="p1" />)
-    await userEvent.click(await screen.findByRole('button', { name: 'Accetta' }))
-    await waitFor(() => expect(api.POST).toHaveBeenCalledTimes(1))
-    expect(vi.mocked(api.POST).mock.calls[0]?.[1]).toMatchObject({ body: { deciso_da: 'lorenzo@example.it' } })
   })
 
   it('reads the proposal again when it was decided elsewhere first, and redraws it as decided', async () => {

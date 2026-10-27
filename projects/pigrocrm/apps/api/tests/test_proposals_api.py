@@ -6,7 +6,10 @@ stack" -- the same division `test_role_matrix.py` draws for authorization.
 
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
+
+from pigrocrm.core.config import Settings
 
 
 def _customer(client: TestClient) -> str:
@@ -127,14 +130,12 @@ def test_accept_a_giornata_proposal_creates_an_approved_work_unit(logged_in: Tes
     created = logged_in.post("/api/proposals", json=_giornata_body(document_id, contract_id))
     proposal_id = created.json()["id"]
 
-    accepted = logged_in.post(
-        f"/api/proposals/{proposal_id}/accept", json={"deciso_da": "Lorenzo Fiore"}
-    )
+    accepted = logged_in.post(f"/api/proposals/{proposal_id}/accept", json={})
     assert accepted.status_code == 200, accepted.text
     body = accepted.json()
     assert body["stato"] == "accettata"
     assert body["id_risultato"] is not None
-    assert body["deciso_da"] == "Lorenzo Fiore"
+    assert body["deciso_da"] == "Admin"
 
 
 def test_accept_a_contratto_proposal_creates_a_contract_and_repoints_the_document(
@@ -145,9 +146,7 @@ def test_accept_a_contratto_proposal_creates_a_contract_and_repoints_the_documen
     created = logged_in.post("/api/proposals", json=_contratto_body(document_id, customer_id))
     proposal_id = created.json()["id"]
 
-    accepted = logged_in.post(
-        f"/api/proposals/{proposal_id}/accept", json={"deciso_da": "Lorenzo Fiore"}
-    )
+    accepted = logged_in.post(f"/api/proposals/{proposal_id}/accept", json={})
     assert accepted.status_code == 200, accepted.text
     contract_id = accepted.json()["id_risultato"]
     assert contract_id is not None
@@ -170,7 +169,7 @@ def test_reject_a_proposal_creates_nothing(logged_in: TestClient) -> None:
 
     rejected = logged_in.post(
         f"/api/proposals/{proposal_id}/reject",
-        json={"deciso_da": "Lorenzo Fiore", "motivo": "date sbagliate"},
+        json={"motivo": "date sbagliate"},
     )
     assert rejected.status_code == 200, rejected.text
     body = rejected.json()
@@ -186,14 +185,14 @@ def test_timeline_keeps_the_rejection_reason(logged_in: TestClient) -> None:
     proposal_id = created.json()["id"]
     logged_in.post(
         f"/api/proposals/{proposal_id}/reject",
-        json={"deciso_da": "Lorenzo Fiore", "motivo": "date sbagliate"},
+        json={"motivo": "date sbagliate"},
     )
 
     response = logged_in.get(f"/api/proposals/{proposal_id}/timeline")
     assert response.status_code == 200, response.text
     rejected = [row for row in response.json() if row["kind"] == "rejected"]
     assert len(rejected) == 1
-    assert rejected[0]["payload"] == {"deciso_da": "Lorenzo Fiore", "motivo": "date sbagliate"}
+    assert rejected[0]["payload"] == {"deciso_da": "Admin", "motivo": "date sbagliate"}
     assert {row["kind"] for row in response.json()} == {"created", "rejected"}
 
 
@@ -210,9 +209,9 @@ def test_accept_of_an_already_decided_proposal_is_a_409(logged_in: TestClient) -
     document_id = _document(logged_in, contract_id=contract_id)
     created = logged_in.post("/api/proposals", json=_giornata_body(document_id, contract_id))
     proposal_id = created.json()["id"]
-    logged_in.post(f"/api/proposals/{proposal_id}/reject", json={"deciso_da": "Lorenzo"})
+    logged_in.post(f"/api/proposals/{proposal_id}/reject", json={})
 
-    response = logged_in.post(f"/api/proposals/{proposal_id}/accept", json={"deciso_da": "Lorenzo"})
+    response = logged_in.post(f"/api/proposals/{proposal_id}/accept", json={})
     assert response.status_code == 409, response.text
     assert response.json()["code"] == "conflict"
 
@@ -236,7 +235,7 @@ def test_list_filters_by_stato(logged_in: TestClient) -> None:
             },
         ),
     ).json()
-    logged_in.post(f"/api/proposals/{second['id']}/reject", json={"deciso_da": "Lorenzo"})
+    logged_in.post(f"/api/proposals/{second['id']}/reject", json={})
 
     response = logged_in.get("/api/proposals", params={"stato": "in_attesa"})
     assert response.status_code == 200, response.text
@@ -256,8 +255,8 @@ def test_list_orders_decided_proposals_newest_decision_first(logged_in: TestClie
         ids.append(logged_in.post("/api/proposals", json=body).json()["id"])
     # The first and the last to arrive are decided, the last one most recently; the middle
     # one is left waiting.
-    logged_in.post(f"/api/proposals/{ids[0]}/reject", json={"deciso_da": "Lorenzo"})
-    logged_in.post(f"/api/proposals/{ids[2]}/reject", json={"deciso_da": "Lorenzo"})
+    logged_in.post(f"/api/proposals/{ids[0]}/reject", json={})
+    logged_in.post(f"/api/proposals/{ids[2]}/reject", json={})
 
     arrival = logged_in.get("/api/proposals", params={"stato": "rifiutata"})
     assert [item["id"] for item in arrival.json()["items"]] == [ids[0], ids[2]]
@@ -280,3 +279,49 @@ def test_get_of_an_unknown_proposal_is_a_404(logged_in: TestClient) -> None:
 
     response = logged_in.get(f"/api/proposals/{uuid4()}")
     assert response.status_code == 404
+
+
+def test_a_decider_name_in_the_body_is_refused_not_stored(logged_in: TestClient) -> None:
+    """REB-806: who decided is the session, never a field."""
+    customer_id = _customer(logged_in)
+    contract_id = _contract(logged_in, customer_id)
+    document_id = _document(logged_in, contract_id=contract_id)
+    proposal_id = logged_in.post(
+        "/api/proposals", json=_giornata_body(document_id, contract_id)
+    ).json()["id"]
+
+    response = logged_in.post(
+        f"/api/proposals/{proposal_id}/accept", json={"deciso_da": "Il Titolare"}
+    )
+
+    assert response.status_code == 422, response.text
+    assert logged_in.get(f"/api/proposals/{proposal_id}").json()["stato"] == "in_attesa"
+
+
+@pytest.mark.parametrize("full_access", [False, True])
+def test_an_agent_token_can_never_decide_a_proposal(
+    logged_in: TestClient, monkeypatch: pytest.MonkeyPatch, full_access: bool
+) -> None:
+    """REB-806: the credential an agent holds proposes and cannot decide, with the
+    full-access switch on as much as off, and with an administrator's role."""
+    customer_id = _customer(logged_in)
+    contract_id = _contract(logged_in, customer_id)
+    document_id = _document(logged_in, contract_id=contract_id)
+    proposal_id = logged_in.post(
+        "/api/proposals", json=_giornata_body(document_id, contract_id)
+    ).json()["id"]
+    token = logged_in.post("/api/tokens", json={"nome": "Claude"}).json()["token"]
+    monkeypatch.setattr(
+        "pigrocrm.core.auth.pat_service.get_settings",
+        lambda: Settings(_env_file=None, mcp_full_access=full_access),  # type: ignore[call-arg]
+    )
+    agent = TestClient(logged_in.app, base_url="https://testserver")
+    agent.headers["Authorization"] = f"Bearer {token}"
+
+    accepted = agent.post(f"/api/proposals/{proposal_id}/accept", json={})
+    rejected = agent.post(f"/api/proposals/{proposal_id}/reject", json={})
+
+    assert accepted.status_code == 403, accepted.text
+    assert accepted.json()["code"] == "agent_forbidden"
+    assert rejected.status_code == 403, rejected.text
+    assert logged_in.get(f"/api/proposals/{proposal_id}").json()["stato"] == "in_attesa"
