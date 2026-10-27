@@ -44,7 +44,8 @@ import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime, time as day_time, timedelta
+from datetime import UTC, datetime, timedelta
+from datetime import time as day_time
 from uuid import UUID
 
 from sqlalchemy import and_, func, or_, select, text, update

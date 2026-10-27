@@ -63,7 +63,9 @@ def test_a_429_naming_the_quota_is_not_a_retry() -> None:
     its own outcome, with which quota kept for the page; a bare 429 is still a retry."""
     for name in ("daily_quota_exceeded", "monthly_quota_exceeded"):
         http = FakeHttp(429, b'{"name": "%s"}' % name.encode())
-        assert ResendCampaignSender("k", "s", http).send(MAIL, "x") == SendOutcome("quota", None, name)
+        assert ResendCampaignSender("k", "s", http).send(MAIL, "x") == SendOutcome(
+            "quota", None, name
+        )
     rate = FakeHttp(429, b'{"name": "rate_limit_exceeded"}')
     assert ResendCampaignSender("k", "s", rate).send(MAIL, "x").esito == "riprova"
 
