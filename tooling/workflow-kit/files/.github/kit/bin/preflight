@@ -211,9 +211,10 @@ def changed_paths(root: Path, base: str) -> tuple[list[str], str]:
         if len(line) < 4:
             continue
         paths.add(line[3:])
-        # A rename or copy is "R  new\0old": the second record is a bare path with
-        # no status prefix, taken whole rather than cut like a status line.
-        if line[0] in "RC" and i < len(status_z):
+        # A rename or copy is "R  new\0old" (or " R new\0old" when the worktree side
+        # renamed an intent-to-add file): the second record is a bare path with no
+        # status prefix, taken whole rather than cut like a status line.
+        if any(c in "RC" for c in line[:2]) and i < len(status_z):
             paths.add(status_z[i])
             i += 1
     return sorted(p for p in paths if p), merge_base

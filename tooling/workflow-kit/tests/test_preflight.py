@@ -45,6 +45,15 @@ class ChangedPaths(unittest.TestCase):
         self.assertIn("projects/hub/old.txt", paths)
         self.assertIn("docs_new.txt", paths)
 
+    def test_a_worktree_side_rename_reports_both_paths_whole(self):
+        # `mv` plus `add -N` is the rename git reports in the worktree column, " R".
+        (self.root / "projects" / "hub" / "old.txt").rename(self.root / "docs_new.txt")
+        git(self.root, "add", "-N", "docs_new.txt")
+        paths, _ = preflight.changed_paths(self.root, "main")
+        self.assertIn("projects/hub/old.txt", paths)
+        self.assertIn("docs_new.txt", paths)
+        self.assertNotIn("jects/hub/old.txt", paths)
+
     def test_a_committed_move_reports_the_directory_it_left(self):
         git(self.root, "checkout", "-q", "-b", "work")
         git(self.root, "mv", "projects/hub/old.txt", "docs_new.txt")
