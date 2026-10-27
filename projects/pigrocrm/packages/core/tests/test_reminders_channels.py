@@ -684,3 +684,31 @@ def test_what_a_browser_took_before_the_deadline_is_recorded_and_not_sent_again(
     assert _count(engine, "reminder_delivery", "channel = 'push'") == 1, "recorded"
     monkeypatch.undo()
     assert _run(settings, engine, None, pusher, at(TUESDAY, 10, 15)).pushes == 0
+
+
+def test_a_reminder_held_overnight_expires_a_day_after_the_quiet_hours_ended(
+    settings: Settings, engine: Engine, session: Session, owner: User, pusher: RecordingPushSender
+) -> None:
+    """The extra waiting is the quiet window's, not a permanent exemption: turning a channel
+    back on days later does not send what was held days ago."""
+    friday = date(2026, 10, 30)
+    wednesday = date(2026, 11, 4)
+    _subscribe(session, owner, at_=at(friday, 9))
+    attivita = _overdue(session, owner, days=20, today=wednesday)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "insert into reminder_delivery "
+                "(id, key, type, user_id, channel, mode, period, severity_rank, delivered_at) "
+                "values (gen_random_uuid(), :key, 'attivita_overdue', :user, 'in_app', "
+                "'immediate', :period, 3, :at)"
+            ),
+            {
+                "key": f"attivita_overdue:{attivita}",
+                "user": owner.id,
+                "period": wednesday,
+                "at": at(friday, 21),
+            },
+        )
+
+    assert _run(settings, engine, None, pusher, at(wednesday, 10)).pushes == 0

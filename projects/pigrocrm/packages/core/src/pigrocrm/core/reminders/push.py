@@ -274,6 +274,19 @@ def push_sender_from_settings(settings: Settings) -> PushSender | None:
 # ---- the channel -------------------------------------------------------------------
 
 
+def _released_at(candidate: Candidate, context: PassContext) -> datetime:
+    """When the quiet hours that held this reminder ended, or the moment it was listed when
+    none did. Stepped by half hours: a weekend is a few hundred steps at most."""
+    zone = ZoneInfo(context.settings.timezone)
+    moment = candidate.listed_at
+    for _ in range(24 * 2 * 4):
+        local = moment.astimezone(zone)
+        if not candidate.general.quiet_at(local.weekday(), local.time()):
+            return moment
+        moment += timedelta(minutes=30)
+    return moment
+
+
 class PushChannel(Channel):
     name = PUSH
 
@@ -308,12 +321,11 @@ class PushChannel(Channel):
             if context.covered(identity, reminder.severity):
                 continue
             # A browser announces what reached the list after it subscribed, and a reminder
-            # that has been there longer than a push service would hold it is not news. One
-            # listed inside the person's quiet hours was being held, not left behind, so
-            # a Friday night's reminder is still news on Monday morning.
-            listed_local = candidate.listed_at.astimezone(ZoneInfo(context.settings.timezone))
-            held = candidate.general.quiet_at(listed_local.weekday(), listed_local.time())
-            if not held and context.now - candidate.listed_at > timedelta(seconds=TTL_SECONDS):
+            # that has been there longer than a push service would hold it is not news. The
+            # clock starts when the quiet hours that held a reminder end, not when it was
+            # listed: a Friday night's reminder is still news on Monday morning, and not on
+            # Wednesday.
+            if context.now - _released_at(candidate, context) > timedelta(seconds=TTL_SECONDS):
                 continue
             reachable = [
                 t for t in targets[reminder.user_id] if t.created_at <= candidate.listed_at
