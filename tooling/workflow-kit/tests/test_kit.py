@@ -112,6 +112,13 @@ class KitSyncAndCheck(unittest.TestCase):
             kit.sync(self.repo, KIT)
         self.assertTrue((self.repo / ".claude/skills/own-skill/SKILL.md").is_file())
 
+    def test_a_never_mirrored_skill_beside_an_empty_agents_directory_is_not_discarded(self):
+        write(self.repo / ".claude/skills/fresh/SKILL.md", "---\nname: fresh\n---\nonly here\n")
+        (self.repo / ".agents/skills/fresh").mkdir(parents=True)
+        with self.assertRaises(kit.ConfigError):
+            kit.sync(self.repo, KIT)
+        self.assertTrue((self.repo / ".claude/skills/fresh/SKILL.md").is_file())
+
     def test_the_template_ends_with_a_card_line_the_lint_refuses(self):
         text = (self.repo / ".github/PULL_REQUEST_TEMPLATE.md").read_text(encoding="utf-8")
         self.assertTrue(text.rstrip().endswith("Linear: ABC-<number>."))

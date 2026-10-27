@@ -280,8 +280,8 @@ def pending_losses(repo: Path, files: Path, mirrored: dict[str, str]) -> list[st
             # there): every file must still be what the last sync mirrored.
             theirs = tree(agents / entry.name) if (agents / entry.name).is_dir() else {}
             was_mirrored = any(key.startswith(f"{entry.name}/") for key in mirrored)
-            if not theirs and not was_mirrored:
-                continue  # never mirrored: migrated to .agents below, nothing lost
+            if not (agents / entry.name).exists() and not was_mirrored:
+                continue  # migrated to .agents below, so nothing is lost
             for name, digest_ in tree(entry).items():
                 if digest_ not in (theirs.get(name), mirrored.get(f"{entry.name}/{name}")):
                     out.append(f"{rel}/{name}: edited here, not in {AGENTS_SKILLS.as_posix()}")
