@@ -8,25 +8,48 @@ one fixed, non-personal prompt; the seam records the call as `purpose="prova"`, 
 probe spends the task's daily cap like a real card does."""
 
 import time
+from collections import Counter
 from decimal import Decimal
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 
-from rebase_api.deps import AdminDep, ProvaCallDep, SessionDep, SettingsDep
+from rebase_api.deps import (
+    AdminDep,
+    CardLlmDep,
+    ProvaCallDep,
+    SessionDep,
+    SessionOpenerDep,
+    SettingsDep,
+)
 from rebase_core.ai_config import MAX_AMOUNT_EUR, AiConfigService
-from rebase_core.ai_schemas import AiConfigRead, PriceRead, ProviderRead, TaskRead
-from rebase_core.errors import LlmUnavailable, NotFound
+from rebase_core.ai_schemas import (
+    AiConfigRead,
+    PriceRead,
+    ProviderRead,
+    RegenerationStarted,
+    SourceSwitchRead,
+    StaleCardRead,
+    StaleCardsRead,
+    TaskRead,
+)
+from rebase_core.cards import CardWriter, regenerate_after_response
+from rebase_core.errors import LlmUnavailable, NotFound, TeamBuilderOff
 from rebase_core.llm import LlmMessage, LlmRequest
 from rebase_core.models import AI_TASKS, AiUsage
+from rebase_core.sources import default_source_service
 
 router = APIRouter(prefix="/api/hub/admin/ai", tags=["hub-admin"])
 
 PROVA_SYSTEM = "Rispondi in modo brevissimo."
 PROVA_PROMPT = "Rispondi solo con la parola: ok."
 PROVA_MAX_TOKENS = 64
+# The most cards one start writes again, and the most the list shows: one start is a few
+# minutes of calls, which the page does not wait for (they are written after the response).
+REGENERATE_MAX = 50
+STALE_ITEMS_SHOWN = 50
 
 
 class KeyBody(BaseModel):
@@ -63,6 +86,12 @@ class PriceBody(BaseModel):
     cache_read_eur_per_mtok: Decimal | None = Field(default=None, ge=0, le=MAX_AMOUNT_EUR)
 
 
+class RegenerateBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    limit: int = Field(ge=1, le=REGENERATE_MAX)
+
+
 class ProvaRead(BaseModel):
     answer: str
     latency_ms: int
@@ -97,6 +126,60 @@ def set_enabled(
     admin: AdminDep, service: ServiceDep, provider: str, body: EnabledBody
 ) -> ProviderRead:
     return service.set_provider_enabled(admin.id, provider, body.enabled)
+
+
+@router.put("/sources/{kind}/enabled", response_model=SourceSwitchRead)
+def set_source_enabled(
+    admin: AdminDep, service: ServiceDep, session: SessionDep, kind: str, body: EnabledBody
+) -> SourceSwitchRead:
+    """Turns one kind of source the card is written from (`github`, `links`) on or off.
+    Off deletes the text already read at once (`SourceService.set_enabled`); both are off
+    until the privacy notice covers reading what people linked."""
+    default_source_service(session).set_enabled(admin.id, kind, body.enabled)
+    return next(row for row in service.sources() if row.kind == kind)
+
+
+@router.get("/cards/stale", response_model=StaleCardsRead)
+def stale_cards(admin: AdminDep, session: SessionDep) -> StaleCardsRead:
+    """«Schede da aggiornare»: the cards a newer prompt version or a change of the hub's
+    facts, the position or a source has left behind, with what writing them again would
+    cost. A card whose CV changed is not here: the hourly loop writes it by itself."""
+    writer = CardWriter(session, None)
+    waiting = writer.stale_cards()
+    return StaleCardsRead(
+        count=len(waiting),
+        by_reason=dict(Counter(item.reason for item in waiting)),
+        estimated_cost_eur=writer.estimate_cost(len(waiting)) if waiting else None,
+        items=[
+            StaleCardRead(
+                freelancer_id=item.freelancer_id,
+                nome=item.nome,
+                reason=item.reason,
+                generated_at=item.generated_at,
+            )
+            for item in waiting[:STALE_ITEMS_SHOWN]
+        ],
+    )
+
+
+@router.post("/cards/regenerate-stale", response_model=RegenerationStarted)
+def regenerate_stale(
+    admin: AdminDep,
+    session: SessionDep,
+    llm: CardLlmDep,
+    open_session: SessionOpenerDep,
+    background: BackgroundTasks,
+    body: RegenerateBody,
+) -> RegenerationStarted:
+    """An admin's start: the oldest `limit` stale cards are written again, one at a time,
+    after the response (`AdminAction` `cards_regenerate` is written when the batch starts).
+    No model configured answers the team builder's own 503, as «Rigenera scheda» does."""
+    if llm is None:
+        raise TeamBuilderOff("Il team builder è spento.")
+    queued = min(body.limit, len(CardWriter(session, None).stale_cards()))
+    if queued:
+        background.add_task(regenerate_after_response, open_session, llm, admin.id, body.limit)
+    return RegenerationStarted(queued=queued)
 
 
 @router.put("/tasks/{task}", response_model=TaskRead)

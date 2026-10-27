@@ -703,7 +703,10 @@ ADMIN_ACTION_ENTITY_TYPES = (
 # took in) and `unmerged` (the undo, on both). REB-835 adds the evaluation set's trail,
 # on entity type `card_eval` (the freelancer's id): `eval_add`, `eval_remove`,
 # `eval_expected` (its payload names the fields that changed, never their values: an
-# expected card is personal data), `eval_accept` and `eval_rate`.
+# expected card is personal data), `eval_accept` and `eval_rate`. REB-839 adds
+# `cards_regenerate` on `ai_config`: an admin's start of the regeneration of the cards
+# that are stale by prompt version or by their inputs (its payload: the limit and how
+# many were queued).
 ADMIN_ACTION_KINDS = (
     "overridden",
     "cleared",
@@ -732,6 +735,7 @@ ADMIN_ACTION_KINDS = (
     "eval_expected",
     "eval_accept",
     "eval_rate",
+    "cards_regenerate",
 )
 
 

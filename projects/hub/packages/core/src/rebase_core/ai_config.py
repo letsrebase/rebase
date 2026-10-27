@@ -34,6 +34,7 @@ from rebase_core.ai_schemas import (
     AiConfigRead,
     PriceRead,
     ProviderRead,
+    SourceSwitchRead,
     SpendRead,
     SpendRow,
     TaskRead,
@@ -54,6 +55,7 @@ from rebase_core.models import (
     CARD_MODEL_MAX_LENGTH,
     AiPrice,
     AiProvider,
+    AiSource,
     AiTask,
     AiUsage,
     User,
@@ -210,6 +212,7 @@ class AiConfigService:
                 )
             ],
             spend=self._spend(now),
+            sources=self.sources(),
             known_models=KNOWN_MODELS,
         )
 
@@ -585,6 +588,25 @@ class AiConfigService:
             saved_at=row.saved_at,
             saved_by_name=saved_by_name,
         )
+
+    def sources(self) -> list[SourceSwitchRead]:
+        """The two source switches, `github` then `links`, off until an admin turns them
+        on (`SourceService.set_enabled`, which owns the writes and their audit)."""
+        rows = self.session.scalars(select(AiSource).order_by(AiSource.kind)).all()
+        names = {
+            row.updated_by: f"{user.nome} {user.cognome}".strip()
+            for row in rows
+            if row.updated_by is not None and (user := self.session.get(User, row.updated_by))
+        }
+        return [
+            SourceSwitchRead(
+                kind=row.kind,  # type: ignore[arg-type]
+                enabled=row.enabled,
+                updated_at=row.updated_at,
+                updated_by_name=names.get(row.updated_by) if row.updated_by else None,
+            )
+            for row in rows
+        ]
 
     def _reason(self, task: AiTask, spent: Decimal) -> str | None:
         if task.daily_cap_eur is not None and spent >= task.daily_cap_eur:

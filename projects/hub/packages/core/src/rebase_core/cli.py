@@ -51,6 +51,7 @@ from rebase_core.models import (
 )
 from rebase_core.secrets import KEY_BYTES
 from rebase_core.signing import signing_from_settings
+from rebase_core.sources import default_source_service
 from rebase_core.users import UserService
 
 
@@ -263,6 +264,33 @@ def cards_refresh(limit: int) -> int:
     if result.stopped:
         summary += ", fermato: modello non disponibile"
     print(summary)
+    return 0
+
+
+def sources_refetch(limit: int) -> int:
+    """`rebase sources-refetch [--limit N]` (REB-839): the weekly pass over the sources a
+    card is written from. Reads, for up to `limit` people at a time, the GitHub account
+    and the links whose text is a week old, missing, or no longer matches what the person
+    gave, and deletes the text of a link the person removed. It never calls a model and
+    never writes a card: a source that changed only marks the card, for an admin's start
+    («Schede da aggiornare»). `cards-refresh` does the same pass before its own, so this
+    is for a machine with no model configured, or to run it by hand. With every switch
+    off it says so and reads nothing."""
+    if limit < 1:
+        print("--limit deve essere almeno 1.", file=sys.stderr)
+        return 2
+    settings = get_settings()
+    open_session = session_factory(create_engine_from_settings(settings))
+    session = open_session()
+    try:
+        service = default_source_service(session)
+        if not service.enabled_kinds():
+            print("Nessuna fonte accesa: apri «Modelli AI».")
+            return 0
+        refetched = service.refetch_due(limit)
+    finally:
+        session.close()
+    print(f"{refetched} persone riviste")
     return 0
 
 
@@ -816,6 +844,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Scrive la scheda anonima di chi ha un CV nuovo o cambiato, i più vecchi prima",
     )
     cards_parser.add_argument("--limit", type=int, default=50)
+    sources_parser = sub.add_parser(
+        "sources-refetch",
+        help="Rilegge GitHub e i link da cui si scrive la scheda, senza chiamare un modello",
+    )
+    sources_parser.add_argument("--limit", type=int, default=50)
     draft_parser = sub.add_parser(
         "cards-eval-draft",
         help="Scrive la bozza della scheda attesa di chi è nel set di valutazione",
@@ -892,6 +925,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return campaigns_tick()
     if args.command == "cards-refresh":
         return cards_refresh(args.limit)
+    if args.command == "sources-refetch":
+        return sources_refetch(args.limit)
     if args.command == "cards-eval-draft":
         return cards_eval_draft(args.freelancer, args.label)
     if args.command == "cards-eval":
