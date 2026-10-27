@@ -116,8 +116,8 @@ def test_the_hub_compose_file_runs_the_cards_backlog_hourly_with_no_port() -> No
     """`rebase cards-refresh --limit 50` (REB-552): a loop like the sweep's, once an
     hour, so a card a provider outage retired comes back within the hour, without a
     manual run. It sleeps first, like `sweep`, so the first pass waits for the api's
-    migrations, and it is gated by `REBASE_CARDS_LOOP`. The weekly source pass (`sources-refetch`, REB-839)
-    runs first whatever the gate says: it sends no CV anywhere."""
+    migrations, and it is gated by `REBASE_CARDS_LOOP`. The weekly source pass
+    (`sources-refetch`, REB-839) runs first whatever the gate says: it sends no CV anywhere."""
     services = _compose().split("\nservices:", 1)[1]
     cards = services.split("\n  cards:", 1)[1].split("\n  web:", 1)[0]
     assert (
