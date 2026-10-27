@@ -111,6 +111,7 @@ def test_the_account_is_readable_with_slack_off_and_says_so(logged_in: TestClien
     assert response.status_code == 200, response.text
     assert response.json() == {"configured": False, "workspace": None, "members": []}
     assert logged_in.get("/api/slack/me").json() == {
+        "configured": False,
         "connected": False,
         "team_name": None,
         "matched": False,
@@ -142,6 +143,7 @@ def test_an_admin_connects_sees_who_was_matched_and_disconnects(
     assert "ciphertext" not in body and "nonce" not in body
 
     assert logged_in.get("/api/slack/me").json() == {
+        "configured": True,
         "connected": True,
         "team_name": "Acme Test",
         "matched": True,
@@ -231,7 +233,12 @@ def test_only_an_admin_manages_slack_and_anyone_reads_their_own_state(
     assert refused.status_code == 403
     mine = member.get("/api/slack/me")
     assert mine.status_code == 200
-    assert mine.json() == {"connected": True, "team_name": "Acme Test", "matched": False}
+    assert mine.json() == {
+        "configured": True,
+        "connected": True,
+        "team_name": "Acme Test",
+        "matched": False,
+    }
 
 
 def test_a_mismatch_is_fixed_by_hand_and_undone(

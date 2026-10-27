@@ -1,4 +1,5 @@
 import { ReminderPreferences } from '@/features/reminders/ReminderPreferences'
+import { SlackNotice } from '@/features/slack/SlackNotice'
 import { DigestPreference } from './DigestPreference'
 import { PushNotifications } from './PushNotifications'
 
@@ -30,6 +31,7 @@ export function NotificationsPanel() {
             su quali altri canali e da quando è urgente.
           </p>
         </div>
+        <SlackNotice />
         <ReminderPreferences scope="me" />
       </div>
     </div>

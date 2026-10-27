@@ -85,6 +85,7 @@ class SlackMine(BaseModel):
     """What one person is told about their own Slack: whether the space has a workspace and
     whether they are in it, for the Notifiche page."""
 
+    configured: bool
     connected: bool
     team_name: str | None
     matched: bool

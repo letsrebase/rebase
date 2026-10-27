@@ -95,11 +95,13 @@ class SlackService:
         """Whether the space has a working workspace and whether this person is in it.
         Anyone may read it: it is what explains, on their own Notifiche page, why a switch
         for Slack reaches nobody."""
-        workspace = self.repo.active_workspace() if slack_configured(self.settings) else None
+        configured = slack_configured(self.settings)
+        workspace = self.repo.active_workspace() if configured else None
         if workspace is None or actor.id is None:
-            return SlackMine(connected=False, team_name=None, matched=False)
+            return SlackMine(configured=configured, connected=False, team_name=None, matched=False)
         link = self.repo.link_for(actor.id)
         return SlackMine(
+            configured=True,
             connected=True,
             team_name=workspace.team_name,
             matched=link is not None and link.slack_user_id is not None,

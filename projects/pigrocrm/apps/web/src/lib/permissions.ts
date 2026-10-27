@@ -248,6 +248,7 @@ export const SETTINGS_TAB_MIN_ROLE: Record<
   periods: 'admin',
   gmail: 'admin',
   drive: 'collaboratore',
+  slack: 'admin',
   reminders: 'admin',
   automations: 'admin',
   jobs: 'admin',
