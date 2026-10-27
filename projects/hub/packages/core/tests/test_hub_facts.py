@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from rebase_core.errors import NotFound
 from rebase_core.hub_facts import HubFacts, hub_facts
-from rebase_core.models import Comment, Company, Freelancer, Match, User
+from rebase_core.models import AdminAction, Comment, Company, Freelancer, Match, User
 
 TODAY = date(2026, 10, 27)
 CLIENT = "Initech Italia srl"
@@ -22,7 +22,7 @@ CLIENT = "Initech Italia srl"
 def clean(hub_session: Session) -> Iterator[Session]:
     yield hub_session
     hub_session.rollback()
-    for table in ("comments", "matches", "companies", "freelancers", "users"):
+    for table in ("admin_actions", "comments", "matches", "companies", "freelancers", "users"):
         hub_session.execute(text(f"DELETE FROM {table}"))
     hub_session.commit()
 
@@ -226,3 +226,28 @@ def test_client_names_are_kept_for_the_guard_and_in_no_text(clean: Session) -> N
 
     assert facts.clients == [CLIENT]
     assert CLIENT not in facts.text() and CLIENT not in facts.hash_material()
+
+
+def test_the_close_date_is_the_trails_not_the_last_edit(clean: Session) -> None:
+    """`updated_at` moves with any later edit of the match: the months, the outcome and the
+    completed months would move with it, and the cards with them."""
+    person = _person(clean)
+    match = _match(
+        clean, person, inizio=date(2025, 1, 1), fine=None, closed=datetime(2026, 3, 10, tzinfo=UTC)
+    )
+    clean.add(
+        AdminAction(
+            entity_type="match",
+            entity_id=match.id,
+            kind="match_closed",
+            admin_id=_user(clean, "boss@rebase.it", role="admin").id,
+            payload={},
+            created_at=datetime(2025, 7, 1, tzinfo=UTC),
+        )
+    )
+    clean.flush()
+
+    facts = _facts(clean, person)
+
+    assert [(m.mesi, m.esito) for m in facts.matches] == [(6, "completato")]
+    assert facts.completed_months == 6

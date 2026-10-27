@@ -19,13 +19,13 @@ from datetime import date
 from typing import Literal
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from rebase_core.audit import utcnow
 from rebase_core.card_guard import STOPLIST
 from rebase_core.errors import NotFound
-from rebase_core.models import Company, Freelancer, Match
+from rebase_core.models import AdminAction, Company, Freelancer, Match
 
 Esito = Literal["completato", "in corso", "chiuso prima"]
 
@@ -161,6 +161,21 @@ def hub_facts(session: Session, freelancer_id: UUID, today: date | None = None) 
         .order_by(Match.lettera_data_inizio, Match.created_at)
     ).all()
 
+    # The day an admin closed each engagement is in the trail, and does not move when the
+    # match is edited afterwards, as `updated_at` does; it is the fallback only for a match
+    # closed before the trail kept it.
+    closed_on = {
+        entity: stamp.date()
+        for entity, stamp in session.execute(
+            select(AdminAction.entity_id, func.max(AdminAction.created_at))
+            .where(
+                AdminAction.entity_type == "match",
+                AdminAction.kind == "match_closed",
+                AdminAction.entity_id.in_([match.id for match, _ in rows]),
+            )
+            .group_by(AdminAction.entity_id)
+        )
+    }
     facts: list[MatchFact] = []
     completed: list[tuple[date, date]] = []
     clients: set[str] = set()
@@ -173,7 +188,7 @@ def hub_facts(session: Session, freelancer_id: UUID, today: date | None = None) 
             esito: Esito = "in corso"
             end = min(today, planned) if planned is not None else today
         else:
-            closed = match.updated_at.date()
+            closed = closed_on.get(match.id) or match.updated_at.date()
             if planned is not None and closed < planned:
                 esito, end = "chiuso prima", closed
             else:

@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from test_hub_facts import _match
 from test_sources import FakeFetcher, FakeGithub, snapshot_of
 
-from rebase_core.cards import PROMPT_VERSION, CardWriter, stale_reason
+from rebase_core.cards import ESTIMATE_CALLS, PROMPT_VERSION, CardWriter, stale_reason
 from rebase_core.db import session_factory
 from rebase_core.errors import LlmCapReached
 from rebase_core.freelancers import FreelancerService
@@ -276,6 +276,11 @@ def test_stale_cards_lists_oldest_first_with_the_estimate(clean: Session) -> Non
     clean.add_all([usage("0.10"), usage("0.30"), usage(None), usage("9.00", "eval")])
     clean.commit()
     assert writer.estimate_cost(3) == Decimal("0.6000")  # the average of the real, priced ones
+
+    # Only the latest calls count: fifty at 1.00 push the early, cheaper ones out.
+    clean.add_all([usage("1.00") for _ in range(ESTIMATE_CALLS)])
+    clean.commit()
+    assert writer.estimate_cost(2) == Decimal("2.0000")
 
 
 def test_regenerate_requires_admin_action_and_respects_limit_and_cap(clean: Session) -> None:

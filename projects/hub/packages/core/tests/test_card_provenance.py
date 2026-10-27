@@ -9,6 +9,7 @@ The model is a `RecordingCall` with canned drafts; GitHub and the pages are the 
 """
 
 import json
+import re
 from collections.abc import Iterator
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -526,3 +527,20 @@ def test_a_client_of_the_hub_in_the_card_is_one_rewrite_then_a_failure(clean: Se
 
     assert read.card is None and read.error is not None and len(llm.requests) == 2
     assert "Zorgon" not in read.error
+
+
+def test_the_sources_in_a_prompt_are_capped_in_total() -> None:
+    from rebase_core.cards import MAX_SOURCE_CHARS
+
+    pages = [
+        SourceItem("link", f"https://p{n}.example/", n, "x" * 20_000, "e" * 64, "ok", NOW)
+        for n in range(1, 5)
+    ]
+
+    request = card_prompt(CV_TEXT, "Backend developer", SourceSet(pages))
+
+    [message] = request.messages
+    assert sum(len(run) for run in re.findall(r"x{50,}", message.text)) == MAX_SOURCE_CHARS
+    # The page the budget never reached is not in the prompt, and cannot be named in `fonti`.
+    assert '<source key="link:1">' in message.text and '<source key="link:3">' not in message.text
+    assert "Sources available: cv, link:1, link:2" in message.text

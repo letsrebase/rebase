@@ -329,11 +329,33 @@ def _system(with_sources: bool) -> str:
     return "\n\n".join(parts)
 
 
+# The most source text one prompt carries, all sources together: GitHub's text and up to
+# eight pages of 20,000 characters would otherwise make a person's call several times the
+# CV's cost, beside what the stale list estimates. The sources are kept in order, a page
+# is cut where the budget ends and the ones after it are left out of the prompt.
+MAX_SOURCE_CHARS = 30_000
+# How many of the latest `card` calls the stale list's estimate averages.
+ESTIMATE_CALLS = 50
+
+
+def prompt_sources(sources: SourceSet) -> list[SourceItem]:
+    """The readable sources as the prompt carries them, within `MAX_SOURCE_CHARS`."""
+    left = MAX_SOURCE_CHARS
+    kept: list[SourceItem] = []
+    for item in sources.readable():
+        if left <= 0:
+            break
+        kept.append(item if len(item.text) <= left else replace(item, text=item.text[:left]))
+        left -= len(item.text)
+    return kept
+
+
 def source_keys(sources: SourceSet, facts: HubFacts) -> list[str]:
     """The keys a card's `fonti` may name for this person, in the order the prompt lists
-    them: the CV always, each source that was read, and `hub` when it has anything to
+    them: the CV always, each source the prompt carries, and `hub` when it has anything to
     say."""
-    return [CV, *(item.key for item in sources.readable()), *([] if facts.empty else [HUB])]
+    kept = prompt_sources(sources)
+    return [CV, *(item.key for item in kept), *([] if facts.empty else [HUB])]
 
 
 _SOURCE_TAG = re.compile(r"<(\s*/?\s*source)", re.IGNORECASE)
@@ -376,7 +398,7 @@ def card_prompt(
         f"Position on the profile: {posizione or 'not given'}\n\n"
         f"The CV's text{cut}:\n<cv>\n{cv.testo}\n</cv>"
     )
-    blocks = [_source_block(item) for item in sources.readable()]
+    blocks = [_source_block(item) for item in prompt_sources(sources)]
     if not facts.empty:
         header, _, body = facts.text().partition("\n")
         blocks.append(_block(HUB, header, body))
@@ -770,15 +792,22 @@ class CardWriter:
         return waiting
 
     def estimate_cost(self, count: int) -> Decimal | None:
-        """What `count` cards would cost to write: the average cost of the `card` calls
-        recorded so far (a real one, not a «Prova» or an evaluation, and one that had a
-        price) times `count`. `None` while nothing is recorded: never zero, which would
-        read as free."""
-        average = self.session.scalar(
-            select(func.avg(AiUsage.cost_eur)).where(
-                AiUsage.task == "card", AiUsage.purpose == "run", AiUsage.priced.is_(True)
-            )
+        """What `count` cards would cost to write: the average cost of the latest
+        `ESTIMATE_CALLS` `card` calls recorded (a real one, not a «Prova» or an evaluation,
+        and one that had a price) times `count`. The latest, not all of them: a call is not
+        marked with the prompt it ran, and the recent ones are the nearest to what the
+        prompt carries now, sources included, where the average of every call since the
+        first card would stay on the CV-only calls of version 1 (the most a prompt adds is
+        `MAX_SOURCE_CHARS`). `None` while nothing is recorded: never zero, which would read
+        as free."""
+        latest = (
+            select(AiUsage.cost_eur)
+            .where(AiUsage.task == "card", AiUsage.purpose == "run", AiUsage.priced.is_(True))
+            .order_by(AiUsage.at.desc())
+            .limit(ESTIMATE_CALLS)
+            .subquery()
         )
+        average = self.session.scalar(select(func.avg(latest.c.cost_eur)))
         if average is None:
             return None
         return (Decimal(average) * count).quantize(Decimal("0.0001"))
