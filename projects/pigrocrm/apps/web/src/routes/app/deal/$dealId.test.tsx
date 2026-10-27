@@ -29,6 +29,8 @@ vi.mock('@/lib/auth', () => ({
   // table (`NewProformaButton`, `DocumentsTab`); they follow the same switch, so a
   // test asking for a writer gets every writer control and a reader gets none.
   useCan: () => auth.canWrite,
+  // The owner row names the signed-in person (REB-780).
+  useAuth: () => ({ user: { id: 'u-me', nome: 'Io' } }),
 }))
 
 // `api.GET` is spied on directly, mirroring `customers/$customerId.test.tsx`: what
@@ -48,7 +50,7 @@ function failed(error: unknown, status: number) {
 
 function mockDealFetch(result: ReturnType<typeof ok> | ReturnType<typeof failed>) {
   mockGet.mockImplementation(
-    ((path: string) => (path === '/api/deals/{deal_id}' ? result : ok({ items: [] }))) as never,
+    ((path: string) => (path === '/api/deals/{deal_id}' ? result : path === '/api/users/directory' ? ok([]) : ok({ items: [] }))) as never,
   )
 }
 
@@ -122,6 +124,8 @@ describe('DealDetail', () => {
       mockGet.mockImplementation(
         ((path: string) => {
           if (path === '/api/deals/{deal_id}') return ok(DEAL)
+          // The member directory is a bare array too (REB-780).
+          if (path === '/api/users/directory') return ok([])
           // `useStages` unwraps to a bare array, not to a page.
           if (path === '/api/pipeline-stages')
             return ok([

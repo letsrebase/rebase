@@ -612,6 +612,7 @@ ROWS: list[Row] = [
         body={"email": "matrice-nuovo@pigro.it", "nome": "Matrice", "password": ADMIN_PASSWORD},
     ),
     Row("GET", "/api/users", admin_only=True),
+    Row("GET", "/api/users/directory", expect="open"),
     # `google=True` here is "the installation is configured", not Google: the invite
     # router resolves a sender before its body runs, and an installation without
     # `PIGROCRM_RESEND_API_KEY` answers 503 whatever the role, the same class as the

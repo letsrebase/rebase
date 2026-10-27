@@ -8,6 +8,7 @@ import { Button } from '@rebase/ui/button'
 import { Skeleton } from '@rebase/ui/skeleton'
 import { DealForm } from '@/features/deals/DealForm'
 import { KanbanBoard } from '@/features/deals/KanbanBoard'
+import { useMemberDirectory } from '@/features/users/directory'
 import { useCreateDeal, useDeals, useMoveDeal, useStages } from '@/features/deals/queries'
 import { toProblem, type ProblemDetail } from '@/lib/api'
 import { useCanWrite } from '@/lib/auth'
@@ -46,6 +47,7 @@ function DealsKanban() {
   const deals = useDeals()
   const move = useMoveDeal()
   const create = useCreateDeal()
+  const directory = useMemberDirectory()
 
   if (stages.isLoading || deals.isLoading) return <Skeleton className="m-8 h-96" />
 
@@ -106,6 +108,7 @@ function DealsKanban() {
               stages={stages.data ?? []}
               deals={deals.data?.items ?? []}
               canDrag={canWrite}
+              ownerName={directory.nameOf}
               onOpen={(dealId) => void navigate({ to: '/app/deal/$dealId', params: { dealId } })}
               // No per-call `onError` here: `useMoveDeal` itself toasts the
               // server's message on its own mutation-level `onError`, precisely
@@ -126,6 +129,8 @@ function DealsKanban() {
         open={open}
         onOpenChange={setOpen}
         customFields={schema.data?.custom_fields ?? []}
+        owners={directory.members}
+        defaultOwnerId={directory.me}
         problem={problem}
         busy={create.isPending}
         onSubmit={(values) => {

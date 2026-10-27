@@ -893,3 +893,53 @@ async def test_the_broadened_rollback_guard_still_does_not_disguise_a_programmin
     message = result.content[0].text
     assert message == "Error executing tool list_pipeline_stages"
     assert "boom" not in message
+
+
+async def test_an_agent_sets_a_deals_owner_and_a_new_deal_defaults_to_its_creator(
+    server, mcp_session: Session
+) -> None:
+    """REB-780: `create_deal` takes `owner_id`; `update_deal` takes it in `changes`, and
+    `list_members` is where an agent finds the id of an active colleague."""
+    from pigrocrm.core.auth.models import User
+
+    colleague = User(
+        email=f"c-{uuid4()}@example.test", password_hash="x", nome="Collega", ruolo="admin"
+    )
+    gone = User(
+        email=f"g-{uuid4()}@example.test",
+        password_hash="x",
+        nome="Andata",
+        ruolo="admin",
+        attivo=False,
+    )
+    mcp_session.add_all([colleague, gone])
+    mcp_session.flush()
+    PipelineService(mcp_session).seed_defaults(ADMIN)
+
+    async with Client(server) as client:
+        members = _payload(await client.call_tool("list_members", {}))["result"]
+        assert str(colleague.id) in {m["id"] for m in members}
+        assert str(gone.id) not in {m["id"] for m in members}
+        assert set(members[0]) == {"id", "nome"}
+
+        customer = _payload(await client.call_tool("create_customer", {"ragione_sociale": "ACME"}))
+        named = _payload(
+            await client.call_tool(
+                "create_deal",
+                {"nome": "A", "customer_id": customer["id"], "owner_id": str(colleague.id)},
+            )
+        )
+        assert named["owner_id"] == str(colleague.id)
+
+        cleared = _payload(
+            await client.call_tool(
+                "update_deal", {"deal_id": named["id"], "changes": {"owner_id": None}}
+            )
+        )
+        assert cleared["owner_id"] is None
+
+        refused = await client.call_tool(
+            "update_deal",
+            {"deal_id": named["id"], "changes": {"owner_id": str(gone.id)}},
+        )
+        assert refused.is_error

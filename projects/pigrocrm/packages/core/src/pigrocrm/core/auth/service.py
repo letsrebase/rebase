@@ -12,7 +12,13 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.auth.passwords import dummy_hash, hash_password, verify_password
 from pigrocrm.core.auth.repository import UserRepository
-from pigrocrm.core.auth.schemas import MIN_PASSWORD_LENGTH, UserCreate, UserRead, UserUpdate
+from pigrocrm.core.auth.schemas import (
+    MIN_PASSWORD_LENGTH,
+    MemberRead,
+    UserCreate,
+    UserRead,
+    UserUpdate,
+)
 from pigrocrm.core.auth.scope import apply_scope, check_scope
 from pigrocrm.core.errors import Conflict, DomainError, NotFound, ValidationFailed
 from pigrocrm.core.schemas import reject_cleared_columns, supplied_changes
@@ -373,6 +379,12 @@ class UserService:
         self.activities.record(ENTITY, user.id, "password_reset", actor, {"email": user.email})
         self.session.commit()
         return UserRead.model_validate(user)
+
+    def members(self) -> list[MemberRead]:
+        """The active users of the space by name, for a picker (REB-780). Open to every
+        role, an agent credential included: `list` is the administrators' because it
+        carries emails, roles and rates, and this carries none of them."""
+        return [MemberRead.model_validate(u) for u in self.repo.list_active()]
 
     def list(self, actor: Actor) -> list[UserRead]:
         actor.require_admin("list_users")

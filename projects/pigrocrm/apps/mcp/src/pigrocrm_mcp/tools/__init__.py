@@ -10,6 +10,7 @@ from pydantic import WithJsonSchema
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.analytics.schemas import BudgetQuery, CeilingSimulationQuery, PeriodPnlQuery
 from pigrocrm.core.attivita.schemas import AttivitaUpdate
+from pigrocrm.core.auth.service import UserService
 from pigrocrm.core.contract_expenses.schemas import ContractExpenseUpdate
 from pigrocrm.core.contracts.schemas import (
     ClauseNoteUpdate,
@@ -518,10 +519,14 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         ore_preventivate: OptionalMoney = None,
         valore_preventivato: OptionalMoney = None,
         custom_fields: dict[str, Any] | None = None,
+        owner_id: str | None = None,
     ) -> dict[str, Any]:
         """Crea un deal. Il cliente è obbligatorio; lo stato iniziale è il primo della
         pipeline. `data_chiusura_prevista` va in formato YYYY-MM-DD. Chiama prima
         `describe_schema` per i campi personalizzati.
+
+        `owner_id` e' la persona che segue il deal, a cui arrivano i suoi promemoria:
+        omesso, e' chi lo crea. Deve essere un utente attivo.
         """
         return deals.create(
             context,
@@ -535,13 +540,16 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
                 "ore_preventivate": ore_preventivate,
                 "valore_preventivato": valore_preventivato,
                 "custom_fields": custom_fields or {},
+                "owner_id": UUID(owner_id) if owner_id else None,
             },
         )
 
     @mcp.tool()
     @guard
     def update_deal(deal_id: str, changes: DealChanges) -> dict[str, Any]:
-        """Aggiorna un deal. Per cambiare stato usa `move_deal`."""
+        """Aggiorna un deal. Per cambiare stato usa `move_deal`.
+
+        `owner_id` cambia chi segue il deal (un utente attivo); `null` lo toglie."""
         return deals.update(context, deal_id, changes)
 
     @mcp.tool()
@@ -1779,6 +1787,13 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         """Registra un incasso o lo annulla. Non cambia lo stato fiscale della
         fattura, che resta emessa."""
         return invoices.set_payment_state(context, invoice_id, stato_pagamento, data_incasso)
+
+    @mcp.tool()
+    @guard
+    def list_members() -> list[dict[str, Any]]:
+        """Le persone attive dello spazio, per nome: id e nome. Serve a trovare
+        l'`owner_id` da dare a un deal (`create_deal`, `update_deal`)."""
+        return [member.model_dump(mode="json") for member in UserService(context.session).members()]
 
     @mcp.tool()
     @guard

@@ -10,6 +10,7 @@ from pigrocrm.core.auth.repository import UserRepository
 from pigrocrm.core.auth.schemas import (
     InvitationCreate,
     InvitationRead,
+    MemberRead,
     UserCreate,
     UserRead,
     UserUpdate,
@@ -35,6 +36,12 @@ def create(data: UserCreate, session: SessionDep, actor: ActorDep) -> UserRead:
 @router.get("", response_model=list[UserRead])
 def list_users(session: SessionDep, actor: ActorDep) -> list[UserRead]:
     return UserService(session).list(actor)
+
+
+@router.get("/directory", response_model=list[MemberRead])
+def directory(session: SessionDep, actor: ActorDep) -> list[MemberRead]:
+    """The active members' names, for the owner and assignee pickers (REB-780)."""
+    return UserService(session).members()
 
 
 # ---- invitations (spec 2026-09-17, REB-290) -----------------------------------------

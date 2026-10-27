@@ -359,3 +359,103 @@ describe('DealForm', () => {
     })
   })
 })
+
+describe('the «Responsabile» picker (REB-780)', () => {
+  const OWNERS = [
+    { id: 'u-1', nome: 'Giulia' },
+    { id: 'u-2', nome: 'Marco' },
+  ]
+
+  it('shows the stored owner and sends nothing while it is unchanged', async () => {
+    const onSubmit = vi.fn()
+    renderWithClient(
+      <DealForm
+        title="Modifica deal"
+        open
+        onOpenChange={vi.fn()}
+        customFields={[]}
+        owners={OWNERS}
+        initial={dealToFormValues({ ...BASE_DEAL, owner_id: 'u-1' })}
+        onSubmit={onSubmit}
+      />,
+    )
+    expect(screen.getByLabelText('Responsabile')).toHaveTextContent('Giulia')
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    expect(submitted(onSubmit)).not.toHaveProperty('owner_id')
+  })
+
+  it('sends the colleague chosen instead, and null for «Nessuno»', async () => {
+    const onSubmit = vi.fn()
+    renderWithClient(
+      <DealForm
+        title="Modifica deal"
+        open
+        onOpenChange={vi.fn()}
+        customFields={[]}
+        owners={OWNERS}
+        initial={dealToFormValues({ ...BASE_DEAL, owner_id: 'u-1' })}
+        onSubmit={onSubmit}
+      />,
+    )
+    await userEvent.click(screen.getByLabelText('Responsabile'))
+    await userEvent.click(await screen.findByRole('option', { name: 'Marco' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    expect(submitted(onSubmit).owner_id).toBe('u-2')
+  })
+
+  it('shows the signed-in person on a new deal and leaves the default to the server', async () => {
+    const onSubmit = vi.fn()
+    renderWithClient(
+      <DealForm
+        title="Nuovo deal"
+        open
+        onOpenChange={vi.fn()}
+        customFields={[]}
+        owners={OWNERS}
+        defaultOwnerId="u-2"
+        onSubmit={onSubmit}
+      />,
+    )
+    expect(screen.getByLabelText('Responsabile')).toHaveTextContent('Marco')
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    expect(submitted(onSubmit)).not.toHaveProperty('owner_id')
+  })
+})
+
+describe('«Nessuno» on the owner picker (REB-780)', () => {
+  it('clears the owner of an existing deal, and is not offered on a new one', async () => {
+    const onSubmit = vi.fn()
+    const owners = [{ id: 'u-1', nome: 'Giulia' }]
+    const { unmount } = renderWithClient(
+      <DealForm
+        title="Modifica deal"
+        open
+        onOpenChange={vi.fn()}
+        customFields={[]}
+        owners={owners}
+        initial={dealToFormValues({ ...BASE_DEAL, owner_id: 'u-1' })}
+        onSubmit={onSubmit}
+      />,
+    )
+    await userEvent.click(screen.getByLabelText('Responsabile'))
+    await userEvent.click(await screen.findByRole('option', { name: 'Nessuno' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    expect(submitted(onSubmit).owner_id).toBeNull()
+    unmount()
+
+    renderWithClient(
+      <DealForm
+        title="Nuovo deal"
+        open
+        onOpenChange={vi.fn()}
+        customFields={[]}
+        owners={owners}
+        defaultOwnerId="u-1"
+        onSubmit={vi.fn()}
+      />,
+    )
+    await userEvent.click(screen.getByLabelText('Responsabile'))
+    await screen.findByRole('option', { name: 'Giulia' })
+    expect(screen.queryByRole('option', { name: 'Nessuno' })).not.toBeInTheDocument()
+  })
+})
