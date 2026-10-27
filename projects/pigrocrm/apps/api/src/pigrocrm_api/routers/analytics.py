@@ -190,18 +190,34 @@ def simulate_ceiling(
     ore_preventivate: Annotated[Decimal | None, Query(ge=0)] = None,
     valore_preventivato: Annotated[Decimal | None, Query(ge=0)] = None,
     tariffa_oraria: Annotated[Decimal | None, Query(ge=0)] = None,
+    contract_id: Annotated[
+        UUID | None,
+        Query(
+            description=(
+                "Un contratto con un tetto sulla quota del cliente (REB-761): la stessa "
+                "aggiunta è letta anche contro il suo tetto, sull'anno di anniversario "
+                "del contratto che contiene `data_prevista`, in `tetto_contratto`."
+            )
+        ),
+    ] = None,
+    data_prevista: Annotated[
+        date | None,
+        Query(description="Il giorno in cui arriva il ricavo, YYYY-MM-DD; assente, oggi."),
+    ] = None,
     azienda_id: LegalEntityRequired = None,
 ) -> CeilingSimulation:
     """Il simulatore "ci sta?" (REB-352 §1.4): la stima di un deal non ancora vinto,
     aggiunta ai ricavi reali e rivalutata su ogni soglia attiva, senza salvare
     nulla. Serve `valore_preventivato`, oppure `ore_preventivate` insieme a
-    `tariffa_oraria`."""
+    `tariffa_oraria`. Con `contract_id` risponde anche sul tetto di quel contratto."""
     return AnalyticsService(session).simulate_ceiling(
         anno,
         CeilingSimulationQuery(
             ore_preventivate=ore_preventivate,
             valore_preventivato=valore_preventivato,
             tariffa_oraria=tariffa_oraria,
+            contract_id=contract_id,
+            data_prevista=data_prevista,
         ),
         actor,
         azienda_id,

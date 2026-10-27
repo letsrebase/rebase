@@ -32,6 +32,11 @@ ORE_MINIME_MAX_DIGITS = 6
 FRAZIONE_MAX_DIGITS = 4
 DECIMAL_PLACES = 2
 
+# `tetto_quota_cliente` mirrors `Contract.tetto_quota_cliente`'s Numeric(5, 2): a
+# percentage strictly between 0 and 100 (the CHECK says why), two decimals as the rates on
+# `FiscalProfile` have.
+TETTO_MAX_DIGITS = 5
+
 EXPENSE_POLICY_KINDS: tuple[str, ...] = (
     "non_rimborsabile",
     "rimborsabile",
@@ -94,6 +99,11 @@ class ContractCreate(BaseModel):
     divisa: SafeStr = Field(default="EUR", max_length=DIVISA_MAX_LENGTH)
     requires_prior_approval: bool = False
     applies_social_charge: bool = False
+    # REB-761: the largest share of the azienda's invoiced revenue this customer may be
+    # over the contract's own anniversary year, as a percentage (`50.00`). Absent, no cap.
+    tetto_quota_cliente: Decimal | None = Field(
+        default=None, max_digits=TETTO_MAX_DIGITS, decimal_places=DECIMAL_PLACES, gt=0, lt=100
+    )
     # mastro's ExpensePolicy (contract.ts:90-99), kept as an open tagged JSONB union
     # -- see models.py's Contract.politica_spese for why this is not deeply
     # validated here.
@@ -132,6 +142,9 @@ class ContractUpdate(BaseModel):
     divisa: SafeStr | None = Field(default=None, max_length=DIVISA_MAX_LENGTH)
     requires_prior_approval: bool | None = None
     applies_social_charge: bool | None = None
+    tetto_quota_cliente: Decimal | None = Field(
+        default=None, max_digits=TETTO_MAX_DIGITS, decimal_places=DECIMAL_PLACES, gt=0, lt=100
+    )
     politica_spese: dict[str, Any] | None = None
     note: SafeStr | None = None
     custom_fields: dict[str, Any] | None = None
@@ -172,6 +185,7 @@ class ContractRead(BaseModel):
     divisa: str
     requires_prior_approval: bool
     applies_social_charge: bool
+    tetto_quota_cliente: Decimal | None
     politica_spese: dict[str, Any]
     stato: str
     contratto_precedente_id: UUID | None
@@ -306,12 +320,13 @@ class ContractConcentrationCap(BaseModel):
     invoice at all answers one row in the contract's currency, all zero, so a reader
     never gets an empty list for a quiet year.
 
-    `soglia` is never persisted: no threshold column exists on `contracts` yet (a
-    future ceiling entity's own concern, REB-361), so a caller names the share it
-    wants checked against, per REB-352 §5 item 4's "would this fit" reading -- a
-    live comparison with no persistence required. Each row's `superata` mirrors
-    mastro's own `crossed` (`ceiling.ts:257`) and stays `None` until a `soglia` is
-    supplied.
+    `soglia` is the share each row is compared with, in [0, 1]. A caller may name one,
+    per REB-352 §5 item 4's "would this fit" reading: a live comparison, never stored.
+    Without one it is the contract's own cap (`Contract.tetto_quota_cliente`, REB-761,
+    divided by 100), and `soglia_da_contratto` says so, so a reader can tell the clause
+    from a figure somebody tried. Each row's `superata` mirrors mastro's own `crossed`
+    (`ceiling.ts:257`: the share reaching the cap) and stays `None` when neither a
+    `soglia` nor a cap exists.
     """
 
     contract_id: UUID
@@ -319,7 +334,35 @@ class ContractConcentrationCap(BaseModel):
     periodo_da: date
     periodo_a: date
     soglia: float | None = None
+    soglia_da_contratto: bool = False
     valute: list[ConcentrationFigures]
+
+
+class ContractCapSimulation(BaseModel):
+    """REB-761: the «ci sta?» simulator's answer for one contract's cap. The customer's
+    share of the azienda's invoiced revenue over the contract's own anniversary year
+    containing `data_prevista`, before and after a synthetic addition that goes entirely
+    to this customer: both the customer's revenue and the total grow by it, which is why
+    the share moves less than the addition. In the contract's own currency, since a cap
+    compares one currency with itself (REB-776). `rientra` is the share staying under the
+    cap, which it must not reach: the same reading `ConcentrationFigures.superata` has.
+    """
+
+    contract_id: UUID
+    titolo: str
+    customer_id: UUID
+    divisa: str
+    periodo_da: date
+    periodo_a: date
+    # The contract's cap as a share in [0, 1] (`tetto_quota_cliente` / 100).
+    tetto: float
+    ricavi_cliente_attuali: Decimal = Field(max_digits=12, decimal_places=2)
+    ricavi_totali_attuali: Decimal = Field(max_digits=12, decimal_places=2)
+    quota_attuale: float
+    ricavi_cliente_simulati: Decimal = Field(max_digits=12, decimal_places=2)
+    ricavi_totali_simulati: Decimal = Field(max_digits=12, decimal_places=2)
+    quota_simulata: float
+    rientra: bool
 
 
 # ---- renewal assumptions and the projected figure (REB-375) -----------------------

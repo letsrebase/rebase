@@ -4,8 +4,10 @@ carry the rules and `test_contracts_service.py` proves them; the role gate is
 `test_role_matrix.py`'s. This file proves the routes exist, answer in the shapes the
 generated types promise, and map a refusal to the status the page reads."""
 
+from decimal import Decimal
 from typing import Any
 
+from aziende_helpers import azienda_url
 from fastapi.testclient import TestClient
 
 
@@ -125,3 +127,64 @@ def test_a_new_rate_closes_the_open_one_the_day_before_and_an_edit_overlap_is_a_
     )
     assert edited.status_code == 200, edited.text
     assert edited.json()["importo"] == "475.00"
+
+
+# ---- the cap on one customer's share (REB-761) ----------------------------------------
+
+
+def test_a_cap_is_written_read_back_and_refused_outside_zero_and_a_hundred(
+    logged_in: TestClient,
+) -> None:
+    contract_id = _contract(logged_in, tetto_quota_cliente="50.00")
+    assert logged_in.get(f"/api/contracts/{contract_id}").json()["tetto_quota_cliente"] == "50.00"
+
+    changed = logged_in.patch(f"/api/contracts/{contract_id}", json={"tetto_quota_cliente": "40"})
+    assert changed.status_code == 200, changed.text
+    assert Decimal(changed.json()["tetto_quota_cliente"]) == Decimal("40")
+
+    cleared = logged_in.patch(f"/api/contracts/{contract_id}", json={"tetto_quota_cliente": None})
+    assert cleared.json()["tetto_quota_cliente"] is None
+
+    for value in ("0", "100", "150"):
+        refused = logged_in.patch(
+            f"/api/contracts/{contract_id}", json={"tetto_quota_cliente": value}
+        )
+        assert refused.status_code == 422, (value, refused.text)
+
+
+def test_the_concentration_answers_against_the_contracts_own_cap(logged_in: TestClient) -> None:
+    contract_id = _contract(logged_in, tetto_quota_cliente="50.00")
+
+    body = logged_in.get(
+        f"/api/contracts/{contract_id}/concentration", params={"as_of": "2026-06-01"}
+    ).json()
+
+    assert body["soglia"] == 0.5
+    assert body["soglia_da_contratto"] is True
+    assert [row["superata"] for row in body["valute"]] == [False]
+
+
+def test_the_simulator_answers_the_contracts_cap(logged_in: TestClient) -> None:
+    """Nothing invoiced, so the customer alone would be all of the revenue: any addition
+    takes it past a 50% cap, and the answer names the contract and the window."""
+    logged_in.put(
+        azienda_url(logged_in, "/fiscal-profile"), json={"pack_id": "it-standard"}
+    ).raise_for_status()
+    contract_id = _contract(logged_in, tetto_quota_cliente="50.00")
+
+    response = logged_in.get(
+        "/api/analytics/ceilings/simulate",
+        params={
+            "anno": 2026,
+            "valore_preventivato": "1000.00",
+            "contract_id": contract_id,
+            "data_prevista": "2026-06-01",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["soglie"] == []
+    assert body["tetto_contratto"]["contract_id"] == contract_id
+    assert body["tetto_contratto"]["rientra"] is False
+    assert body["tetto_contratto"]["periodo_da"] == "2026-01-01"

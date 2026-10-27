@@ -94,3 +94,47 @@ async def test_a_rate_card_is_replaced_and_edited(server, mcp_session) -> None:
             },
         )
         assert edited.structured_content["importo"] == "475.00"
+
+
+async def test_a_cap_on_the_customers_share_is_set_read_and_simulated(
+    server, mcp_session: Session
+) -> None:
+    """REB-761: an agent sets `tetto_quota_cliente`, reads it back with `get_contract`,
+    sees the concentration compared with it and hears from `simulate_ceiling` that an
+    addition takes the customer past it."""
+    from pigrocrm.core.actor import Actor
+    from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
+    from pigrocrm.core.fiscal.service import FiscalProfileService
+
+    FiscalProfileService(mcp_session).upsert(
+        FiscalProfileUpsert(pack_id="it-standard"), Actor(id=None, type="mcp", role="admin")
+    )
+    mcp_session.commit()
+    contract_id = _contract_id(mcp_session)
+
+    async with Client(server) as client:
+        edited = await client.call_tool(
+            "update_contract",
+            {"contract_id": contract_id, "changes": {"tetto_quota_cliente": "50.00"}},
+        )
+        assert edited.structured_content["tetto_quota_cliente"] == "50.00"
+        read = await client.call_tool("get_contract", {"contract_id": contract_id})
+        assert read.structured_content["tetto_quota_cliente"] == "50.00"
+
+        concentration = await client.call_tool(
+            "get_contract_concentration", {"contract_id": contract_id, "as_of": "2026-06-01"}
+        )
+        assert concentration.structured_content["soglia"] == 0.5
+        assert concentration.structured_content["soglia_da_contratto"] is True
+
+        simulated = await client.call_tool(
+            "simulate_ceiling",
+            {
+                "anno": 2026,
+                "valore_preventivato": "1000.00",
+                "contract_id": contract_id,
+                "data_prevista": "2026-06-01",
+            },
+        )
+        assert simulated.structured_content["soglie"] == []
+        assert simulated.structured_content["tetto_contratto"]["rientra"] is False

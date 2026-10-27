@@ -622,6 +622,7 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         divisa: str = "EUR",
         requires_prior_approval: bool = False,
         applies_social_charge: bool = False,
+        tetto_quota_cliente: OptionalMoney = None,
         note: str | None = None,
         custom_fields: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
@@ -629,7 +630,11 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         uno fra `nessuno`/`esplicito`/`opzione_controparte`/`tacito`;
         `preavviso_rinnovo_giorni` è obbligatorio per ogni valore diverso da
         `nessuno`. `giorni_pagamento`/`pagamento_fine_mese` vanno impostati insieme, o
-        nessuno dei due -- assenti, ereditano i termini del cliente. Chiama prima
+        nessuno dei due -- assenti, ereditano i termini del cliente.
+        `tetto_quota_cliente` (REB-761) è facoltativo: la quota massima, in percentuale
+        (`50` o `50.00`, fra 0 e 100 esclusi), che questo cliente può avere dei ricavi
+        fatturati dell'azienda sull'anno di anniversario del contratto;
+        `get_contract_concentration` e `simulate_ceiling` lo leggono. Chiama prima
         `describe_schema` per i campi personalizzati.
         """
         return contracts.create(
@@ -648,6 +653,7 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
                 "divisa": divisa,
                 "requires_prior_approval": requires_prior_approval,
                 "applies_social_charge": applies_social_charge,
+                "tetto_quota_cliente": tetto_quota_cliente,
                 "politica_spese": politica_spese,
                 "note": note,
                 "custom_fields": custom_fields or {},
@@ -821,7 +827,9 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         contratto, non sull'anno solare. Le cifre sono una riga per valuta in `valute`
         (ricavi del cliente e totali, mai convertiti, con la loro `quota`). `soglia` (0..1) è
         facoltativa e non viene mai salvata: se presente, `superata` di ogni riga dice se la
-        quota la supera."""
+        quota la raggiunge. Senza `soglia` vale il tetto del contratto
+        (`tetto_quota_cliente`, REB-761) e `soglia_da_contratto` lo dice; senza nessuno dei
+        due `superata` è `null`."""
         return contracts.concentration_cap(
             context,
             contract_id,
@@ -2240,12 +2248,19 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         valore_preventivato: OptionalFactor = None,
         tariffa_oraria: OptionalFactor = None,
         azienda_id: str | None = None,
+        contract_id: str | None = None,
+        data_prevista: IsoDateStr = None,
     ) -> dict[str, Any]:
         """Il simulatore "ci sta?" (REB-352 §1.4): aggiunge la stima di un deal non
         ancora vinto ai ricavi reali dell'anno e rivaluta ogni soglia attiva, senza
         salvare nulla. Serve `valore_preventivato`, oppure `ore_preventivate` insieme
         a `tariffa_oraria` -- le stesse tre colonne che legge `get_budget_vs_actual`.
-        `azienda_id` come in `get_ceiling_headroom`: l'unica azienda, o quella indicata."""
+        `azienda_id` come in `get_ceiling_headroom`: l'unica azienda, o quella indicata.
+        Con `contract_id` (REB-761) la stessa aggiunta, attribuita al cliente di quel
+        contratto, è letta anche contro il suo tetto sulla quota del cliente
+        (`tetto_quota_cliente`), sull'anno di anniversario del contratto che contiene
+        `data_prevista` (YYYY-MM-DD, assente: oggi): `tetto_contratto` dice la quota di
+        prima e di dopo e se `rientra`. Funziona anche per un'azienda senza soglie."""
         return timetracking.simulate_ceiling(
             context,
             anno,
@@ -2259,6 +2274,8 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
                 tariffa_oraria=cast(Decimal, tariffa_oraria)
                 if tariffa_oraria is not None
                 else None,
+                contract_id=UUID(contract_id) if contract_id else None,
+                data_prevista=_iso_date(data_prevista),
             ),
             parse_legal_entity_id(azienda_id),
         )

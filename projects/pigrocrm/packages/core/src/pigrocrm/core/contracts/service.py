@@ -22,6 +22,7 @@ from pigrocrm.core.contracts.repository import (
 from pigrocrm.core.contracts.schemas import (
     CONTRACT_SORTS,
     ConcentrationFigures,
+    ContractCapSimulation,
     ContractConcentrationCap,
     ContractCreate,
     ContractListQuery,
@@ -44,12 +45,24 @@ from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.fields.schemas import EntityType
 from pigrocrm.core.fields.service import FieldDefinitionService
 from pigrocrm.core.fields.validator import validate_custom_fields
+from pigrocrm.core.money import round_money
 from pigrocrm.core.schemas import reject_cleared_columns, supplied_changes
 
 # Typed as the fields module's own EntityType (not a bare `str`), matching
 # CustomerService.ENTITY/DealService.ENTITY exactly -- see those classes for why a
 # plain `str` would fail mypy strict at `specs_for`'s own call site.
 ENTITY: EntityType = "contract"
+
+
+def _share(tetto: Decimal) -> float:
+    """A cap stored as a percentage (`50.00`) as the share in [0, 1] every `quota` is."""
+    return float(tetto / 100)
+
+
+def _quota(ricavi_cliente: Decimal, ricavi_totali: Decimal) -> float:
+    """The customer's share of the total, `0.0` when there is nothing to scale against:
+    the same reading every `quota` on this schema carries."""
+    return float(ricavi_cliente / ricavi_totali) if ricavi_totali > 0 else 0.0
 
 
 def check_payment_terms_together(payload: dict[str, Any]) -> None:
@@ -250,22 +263,17 @@ class ContractService:
         """REB-352 §1.5: one engagement's own share of total invoiced revenue over
         the anniversary year containing `as_of` (today, in the emitter's own zone,
         when not given). Read-only, like every other figure `AnalyticsService`
-        exposes -- no `require_write`. `soglia` is a caller-supplied share in [0, 1];
-        `superata` stays `None` until one is given, the same "no persistence
-        required" reading REB-352 §5 item 4 gives the ceiling simulator.
+        exposes -- no `require_write`. `soglia` is a caller-supplied share in [0, 1]
+        and is never stored; without one the share is compared with the contract's own
+        cap when it has one (REB-761), and `superata` stays `None` when it has neither.
         """
         contract = self.repo.get(contract_id)
         if contract is None:
             raise NotFound(ENTITY, contract_id)
-        reference = as_of if as_of is not None else today_local()
-        if reference < contract.inizio:
-            raise ValidationFailed(
-                ENTITY,
-                "as_of",
-                "precede l'inizio del contratto",
-                expected=f">= {contract.inizio.isoformat()}",
-            )
-        periodo_da, periodo_a = anniversary_year_bounds(contract.inizio, reference)
+        periodo_da, periodo_a = self._anniversary_window(contract, as_of)
+        soglia_da_contratto = soglia is None and contract.tetto_quota_cliente is not None
+        if soglia is None and contract.tetto_quota_cliente is not None:
+            soglia = _share(contract.tetto_quota_cliente)
         # Within the contract's own azienda (REB-630, spec 2026-10-03 §1.9): a share of
         # revenue is a share of one azienda's revenue, and the contract names which.
         # Per currency, never converted (REB-776): the contract's own `divisa` says what
@@ -277,7 +285,7 @@ class ContractService:
             revenue = [(contract.divisa, Decimal("0.00"), Decimal("0.00"))]
         valute = []
         for divisa, ricavi_cliente, ricavi_totali in revenue:
-            quota = float(ricavi_cliente / ricavi_totali) if ricavi_totali > 0 else 0.0
+            quota = _quota(ricavi_cliente, ricavi_totali)
             valute.append(
                 ConcentrationFigures(
                     divisa=divisa,
@@ -293,8 +301,74 @@ class ContractService:
             periodo_da=periodo_da,
             periodo_a=periodo_a,
             soglia=soglia,
+            soglia_da_contratto=soglia_da_contratto,
             valute=valute,
         )
+
+    def simulate_cap(
+        self, contract_id: UUID, aggiunta: Decimal, data_prevista: date | None, actor: Actor
+    ) -> ContractCapSimulation:
+        """REB-761: the contract's cap against its customer's share after a synthetic
+        addition, the «ci sta?» simulator's own reading (`AnalyticsService.simulate_ceiling`
+        calls this when it is given a contract). The addition is revenue of this customer
+        on the anniversary year containing `data_prevista` (today when not given), so it
+        raises the customer's figure and the total together. Nothing is written.
+
+        A contract with no cap has nothing to be checked against, and says so naming the
+        field instead of answering that everything fits.
+        """
+        contract = self.repo.get(contract_id)
+        if contract is None:
+            raise NotFound(ENTITY, contract_id)
+        if contract.tetto_quota_cliente is None:
+            raise ValidationFailed(
+                ENTITY,
+                "tetto_quota_cliente",
+                "il contratto non ha un tetto sulla quota del cliente",
+                expected="un contratto con un tetto, da impostare sul contratto",
+            )
+        periodo_da, periodo_a = self._anniversary_window(contract, data_prevista, "data_prevista")
+        revenue = self.analytics.revenue_for_customer_in_window(
+            contract.customer_id, periodo_da, periodo_a, azienda_id=contract.azienda_id
+        )
+        cliente, totale = next(
+            ((c, t) for divisa, c, t in revenue if divisa == contract.divisa),
+            (Decimal("0.00"), Decimal("0.00")),
+        )
+        tetto = _share(contract.tetto_quota_cliente)
+        quota_simulata = _quota(cliente + aggiunta, totale + aggiunta)
+        return ContractCapSimulation(
+            contract_id=contract.id,
+            titolo=contract.titolo,
+            customer_id=contract.customer_id,
+            divisa=contract.divisa,
+            periodo_da=periodo_da,
+            periodo_a=periodo_a,
+            tetto=tetto,
+            ricavi_cliente_attuali=cliente,
+            ricavi_totali_attuali=totale,
+            quota_attuale=_quota(cliente, totale),
+            ricavi_cliente_simulati=round_money(cliente + aggiunta),
+            ricavi_totali_simulati=round_money(totale + aggiunta),
+            quota_simulata=quota_simulata,
+            rientra=quota_simulata < tetto,
+        )
+
+    @staticmethod
+    def _anniversary_window(
+        contract: Contract, as_of: date | None, field: str = "as_of"
+    ) -> tuple[date, date]:
+        """The anniversary year of `contract` that contains `as_of` (today when not given):
+        the window a cap resets on, never the calendar year."""
+        reference = as_of if as_of is not None else today_local()
+        if reference < contract.inizio:
+            raise ValidationFailed(
+                ENTITY,
+                field,
+                "precede l'inizio del contratto",
+                expected=f">= {contract.inizio.isoformat()}",
+            )
+        return anniversary_year_bounds(contract.inizio, reference)
 
     # `list` is defined LAST in this class on purpose -- see ContractRepository.list's
     # own comment for the Python 3.13 annotation-evaluation reason.

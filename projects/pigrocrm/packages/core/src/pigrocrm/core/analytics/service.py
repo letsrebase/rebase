@@ -45,6 +45,7 @@ from pigrocrm.core.analytics.year_csv import render_year_csv, year_csv_filename
 from pigrocrm.core.config import get_settings
 from pigrocrm.core.contracts.dates import irrevocability_window_end, renewal_deadline
 from pigrocrm.core.contracts.repository import ContractRepository
+from pigrocrm.core.contracts.service import ContractService
 from pigrocrm.core.db import today_local
 from pigrocrm.core.deals.repository import DealRepository
 from pigrocrm.core.emitter.service import LegalEntityService
@@ -535,6 +536,11 @@ class AnalyticsService:
         deal's own estimate, read raw off its own three columns rather than by
         `deal_id`, so nothing has to be saved to ask the question. The azienda
         resolves as in `ceiling_headroom` (REB-630).
+
+        With a `contract_id` (REB-761) the same addition is also read against that
+        contract's cap on its customer's share, in `tetto_contratto`: a clause of the
+        contract and not of the pack, so it is answered whatever the regime, and the
+        contract has to be of the azienda the simulation is for.
         """
         azienda = LegalEntityService(self.session).require_single(azienda_id, entity=ENTITY)
         profile = FiscalProfileService(self.session).get(actor, azienda.id)
@@ -559,6 +565,19 @@ class AnalyticsService:
                     livello_allerta_simulato=dopo.livello_allerta,
                 )
             )
+        tetto = None
+        if query.contract_id is not None:
+            contratto = ContractService(self.session).get(query.contract_id, actor)
+            if contratto.azienda_id != azienda.id:
+                raise ValidationFailed(
+                    ENTITY,
+                    "contract_id",
+                    "il contratto è di un'altra azienda",
+                    expected=f"un contratto di {azienda.nome}",
+                )
+            tetto = ContractService(self.session).simulate_cap(
+                query.contract_id, aggiunta, query.data_prevista, actor
+            )
         return CeilingSimulation(
             anno=anno,
             azienda_id=azienda.id,
@@ -566,6 +585,7 @@ class AnalyticsService:
             pack_version=pack.version,
             aggiunta_sintetica=aggiunta,
             soglie=risultati,
+            tetto_contratto=tetto,
         )
 
     def year_overview(
