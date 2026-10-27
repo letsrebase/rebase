@@ -893,3 +893,52 @@ def test_recording_call_answers_in_order_and_keeps_requests() -> None:
     assert recording.complete(_request()) == first
     assert recording.complete(_request(max_tokens=10)) == second
     assert [request.max_tokens for request in recording.requests] == [None, 10]
+
+
+@pytest.mark.parametrize(
+    ("provider", "model", "effort"),
+    [("openai", "gpt-6.1-terra", "high"), ("google", "gemini-3.8-flash", "low")],
+)
+def test_openai_and_google_calls_use_each_providers_effort_setting(
+    opener: SessionOpener, provider: str, model: str, effort: str
+) -> None:
+    """End to end through `AiCall`: the task's provider, model and effort reach the model
+    factory, which hands each provider its own knob (`build_model`, tested above)."""
+    with opener() as session:
+        admin = session.scalars(select(User)).one()
+        service = AiConfigService(session, _settings(), now=lambda: NOON)
+        service.save_key(admin.id, provider, "provider-key-wxyz")
+        service.set_provider_enabled(admin.id, provider, True)
+        service.upsert_price(admin.id, provider, model, Decimal("1"), Decimal("5"))
+        session.execute(
+            text("UPDATE ai_tasks SET provider = :p, model = :m, effort = :e WHERE task = 'card'"),
+            {"p": provider, "m": model, "e": effort},
+        )
+        session.commit()
+    stub = Stub()
+
+    response = _call(opener, stub).complete(_request())
+
+    assert response.provider == provider
+    assert stub.built == [(provider, model, "provider-key-wxyz", effort)]
+
+
+def test_task_on_disabled_provider_refused(opener: SessionOpener) -> None:
+    with opener() as session:
+        admin = session.scalars(select(User)).one()
+        service = AiConfigService(session, _settings(), now=lambda: NOON)
+        service.save_key(admin.id, "openai", "provider-key-wxyz")
+        service.upsert_price(admin.id, "openai", "gpt-6.1-terra", Decimal("1"), Decimal("5"))
+        session.execute(
+            text(
+                "UPDATE ai_tasks SET provider = 'openai', model = 'gpt-6.1-terra' "
+                "WHERE task = 'card'"
+            )
+        )
+        session.commit()
+    stub = Stub()
+
+    with pytest.raises(LlmNotConfigured, match="spento"):
+        _call(opener, stub).complete(_request())
+
+    assert stub.built == []

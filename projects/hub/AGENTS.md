@@ -756,6 +756,36 @@ changes nothing. Then put the new value in `.env` and recreate **api, mcp and ca
 with a sentence naming `REBASE_SECRETS_KEY` and the card would carry it. Between the command and the recreate the
 old value no longer opens the keys, so keep `REBASE_CARDS_LOOP=off` for the gap.
 
+### OpenAI and Google (REB-840): prices, verification, the processors gate
+
+The seam supports all three providers; only Anthropic has run against the real API. OpenAI
+and Google **stay `enabled=false` in production** until the processors check of the design
+holds for each: the privacy notice lists the provider, a data processing agreement exists
+with it, and its no-training and retention terms were read. Lorenzo and Ivan decide that;
+nothing in the code or a deploy turns a provider on, and a task pointed at a provider that
+is off is refused with «Il fornitore è spento» (an evaluation run needs the explicit
+`--allow-disabled`, because it sends CVs).
+
+- `rebase ai-prices-seed --eur-per-usd <rate>`: writes the reviewed price table
+  (`SEED_USD_PRICES` in `ai_config.py`: USD per million tokens, Standard tier, short
+  context, from developers.openai.com/api/docs/pricing and
+  ai.google.dev/gemini-api/docs/pricing, read 2026-10-27) in euros, `<rate>` being euros per
+  one dollar as for `ai-seed`. A row that exists, an admin's edit included, is never
+  overwritten; no provider is turned on. Google's page announces dated steps (`gemini-4-argon`
+  doubles on 2026-12-01, `gemini-3.8-flash` on 2027-01-01): edit those rows in «Modelli AI»
+  when the date comes, and re-read both pages before trusting the table after that.
+- `rebase ai-verify --provider openai|google --model <model>`: with the key saved in «Modelli
+  AI» (the provider may still be off), one call with a fixed prompt that carries no personal
+  data and the seam's native structured output, then the same with the effort setting. It
+  prints `key_injected= native_output_ok= thinking_ok= usage_present=` and exits 0 only when
+  the first three hold; it prints an exception class and a status, never the key nor the
+  provider's text. Tests use stub models. **The live run has not happened:** no OpenAI or
+  Gemini key exists yet. When one is saved on the preview, run it for each provider with the
+  model chosen; if `key_injected` or `native_output_ok` is `False`, stop and fix `build_model`
+  before enabling that provider, and record the verified model and date here.
+- Evaluation per provider (`cards-eval`, `--allow-disabled`, the report saved) waits for the
+  evaluation set of the Phase 2 milestone to be on `main`.
+
 ### Database backups
 
 Both of production's databases are backed up off the origin every night (REB-715,
