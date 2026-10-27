@@ -823,3 +823,8 @@ def test_a_monthly_quota_says_so(clean: Session) -> None:  # noqa: F811  (fixtur
     run_tick(clean, full, SETTINGS, clock=clock, pause=NO_PAUSE)
     stalled = CampaignService(clean, SETTINGS, clock=clock).detail(campaign.id).campagna
     assert stalled.fermo_motivo == STALLED_QUOTA_MONTH
+
+
+def test_a_reserve_that_takes_the_whole_quota_is_refused_at_start_up() -> None:
+    with pytest.raises(ValueError, match="REBASE_CAMPAIGN_DAILY_RESERVE"):
+        SETTINGS.model_validate({**SETTINGS.model_dump(), "resend_daily_quota": 10})

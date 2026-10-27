@@ -2,7 +2,7 @@
 
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -147,6 +147,16 @@ class Settings(BaseSettings):
     # midnight in Rome (`team_caps.py`); once reached, the same 503 until tomorrow. A
     # proposal that asked no model (an empty catalogue) cost nothing and does not count.
     team_builder_daily_cap: int = Field(default=300, ge=1)
+
+    @model_validator(mode="after")
+    def _reserve_leaves_room(self) -> "Settings":
+        # A reserve that eats the whole quota would hold every campaign for good while
+        # the page kept promising tomorrow (REB-779).
+        if self.campaign_daily_reserve >= self.resend_daily_quota:
+            raise ValueError(
+                "REBASE_CAMPAIGN_DAILY_RESERVE must be below REBASE_RESEND_DAILY_QUOTA"
+            )
+        return self
 
 
 @lru_cache(maxsize=1)
