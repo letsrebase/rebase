@@ -1077,6 +1077,7 @@ def test_the_prompt_states_the_bands_the_parser_enforces() -> None:
     assert f"senior from {LEAD_FROM} years up when the CV states" in system
     assert f"never has fewer than {LEAD_FROM} years" in system
     assert "counted only from roles the CV dates" in system
+    assert "gaps between roles left out, not the span from the first start" in system
     assert "null, never a guess, when the CV dates no professional role at all" in system
     assert "When anni is null, give seniority as your reading of the responsibility" in system
     assert system.index("- anni:") < system.index("- seniority:")

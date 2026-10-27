@@ -251,10 +251,11 @@ CV. Answer with the card alone, in the JSON schema you are given:
 
 - ruolo: the professional role, as a short title (for example "Backend developer").
 - anni: the years of professional experience in the role's field, a whole number \
-between 0 and 60, counted only from roles the CV dates: from the start of the first \
-dated role to the end of the last (to today for a role still going), overlapping \
-roles counted once, studies, theses, internships under three months and undated \
-projects left out. null, never a guess, when the CV dates no professional role at all.
+between 0 and 60, counted only from roles the CV dates: add up the dated periods \
+(a role still going ends today), overlapping roles counted once and the gaps between \
+roles left out, not the span from the first start to the last end; studies, theses, \
+internships under three months and undated projects left out. null, never a guess, \
+when the CV dates no professional role at all.
 - seniority: junior, mid, senior or lead, by these bands of anni: junior under 3 \
 years, mid from 3 to 5, senior from 6 up. lead is senior from 8 years up when the CV \
 states that the person leads people or a technical area (reporting lines, a team, a \
