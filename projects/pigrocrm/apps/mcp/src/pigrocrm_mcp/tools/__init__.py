@@ -818,14 +818,46 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
     ) -> dict[str, Any]:
         """La quota dei ricavi fatturati di un cliente sull'anno di anniversario di
         un contratto (REB-352 §1.5): il periodo si resetta sulla data di inizio del
-        contratto, non sull'anno solare. `soglia` (0..1) è facoltativa e non viene
-        mai salvata: se presente, `superata` dice se la quota la supera."""
+        contratto, non sull'anno solare. Le cifre sono una riga per valuta in `valute`
+        (ricavi del cliente e totali, mai convertiti, con la loro `quota`). `soglia` (0..1) è
+        facoltativa e non viene mai salvata: se presente, `superata` di ogni riga dice se la
+        quota la supera."""
         return contracts.concentration_cap(
             context,
             contract_id,
             _iso_date(as_of),
             cast(float, soglia) if soglia is not None else None,
         )
+
+    @mcp.tool()
+    @guard
+    def get_contract_register(contract_id: str, da: str, a: str) -> dict[str, Any]:
+        """Il registro delle giornate fatturate di un contratto fra `da` e `a` (YYYY-MM-DD,
+        estremi inclusi): ogni giornata con la prova di approvazione che la regge (canale,
+        mittente, giorno di arrivo, id del messaggio) e il numero della fattura su cui sta,
+        e il totale. Una giornata senza approvazione resta nell'elenco con l'approvazione
+        vuota e `senza_approvazione` le conta. Sola lettura: il PDF e il CSV si scaricano
+        dalla pagina del contratto, mai da qui."""
+        return contracts.register(
+            context, contract_id, date.fromisoformat(da), date.fromisoformat(a)
+        )
+
+    @mcp.tool()
+    @guard
+    def list_contract_email_templates(contract_id: str) -> dict[str, Any]:
+        """I modelli di email salvati su un contratto: oggetto, corpo con le sue variabili
+        `{{nome}}` e gli allegati che portano (fattura, registro)."""
+        return {"items": contracts.email_templates(context, contract_id)}
+
+    @mcp.tool()
+    @guard
+    def preview_contract_email(
+        contract_id: str, template_id: str, invoice_id: str
+    ) -> dict[str, Any]:
+        """Oggetto e testo che partirebbero con un modello per una fattura emessa del
+        contratto, i destinatari che le persone del cliente suggeriscono e gli allegati.
+        Non scrive niente e non invia: l'invio è della persona."""
+        return contracts.email_preview(context, contract_id, template_id, invoice_id)
 
     @mcp.tool()
     @guard

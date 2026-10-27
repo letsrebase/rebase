@@ -116,7 +116,11 @@ _TEMPLATE = "pigrocrm_template"
 # The revisions whose DDL `create_all` cannot express and the template applies after it,
 # in the order Alembic runs them: the policies of 0048 (REB-633), then 0049's rewrite of
 # the through-the-parent ones with the «tutte» fast path first (REB-656).
-_AZIENDA_SCOPE_REVISIONS = ("0048_azienda_scope.py", "0049_azienda_scope_fast_path.py")
+_AZIENDA_SCOPE_REVISIONS = (
+    "0048_azienda_scope.py",
+    "0049_azienda_scope_fast_path.py",
+    "0056_contract_email_templates.py",
+)
 
 
 def _azienda_scope_statements() -> list[str]:

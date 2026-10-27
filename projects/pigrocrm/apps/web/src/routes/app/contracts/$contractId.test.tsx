@@ -70,9 +70,33 @@ function mockApi(contract: ReturnType<typeof ok> | ReturnType<typeof failed>) {
       return ok({
         periodo_da: '2026-01-01',
         periodo_a: '2026-12-31',
-        ricavi_cliente: '0.00',
-        ricavi_totali: '0.00',
-        quota: 0,
+        valute: [{ divisa: 'EUR', ricavi_cliente: '0.00', ricavi_totali: '0.00', quota: 0 }],
+      })
+    }
+    if (path.endsWith('/billable-days')) {
+      return ok({
+        contract_id: 'c1',
+        divisa: 'EUR',
+        righe: [],
+        mesi: [],
+        giornate: 0,
+        quantita: '0',
+        imponibile: '0.00',
+        senza_tariffa: [],
+        senza_approvazione: 0,
+        fatturabile: false,
+      })
+    }
+    if (path.endsWith('/register')) {
+      return ok({
+        contract_id: 'c1',
+        titolo: 'Sviluppo piattaforma',
+        cliente: 'ACME Srl',
+        da: '2026-10-01',
+        a: '2026-10-31',
+        voci: [],
+        totale_quantita: '0',
+        senza_approvazione: 0,
       })
     }
     return ok([])
@@ -106,6 +130,8 @@ describe('ContractDetail', () => {
     expect(screen.getByText('Rimborsate fino a un tetto, tetto 500,00 €')).toBeInTheDocument()
     expect(await screen.findByRole('heading', { name: 'Tariffe' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Spese' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Giornate da fatturare' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Registro giornate' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Rinnovo e ricavi programmati' })).toBeInTheDocument()
     // The contract's days (REB-745): its own section, with the empty state of a contract that has none.
     expect(screen.getByRole('heading', { name: 'Giornate' })).toBeInTheDocument()

@@ -248,12 +248,15 @@ export function RenewalSection({ contract }: { contract: Contract }) {
                 ) : concentration.isError ? (
                   <QueryErrorBanner error={concentration.error} />
                 ) : concentration.data !== undefined ? (
-                  <dl>
-                    <Figure
-                      label={`Anno dal ${formatDate(concentration.data.periodo_da)} al ${formatDate(concentration.data.periodo_a)}`}
-                      value={share.format(concentration.data.quota)}
-                      hint={`${formatAmount(concentration.data.ricavi_cliente, contract.divisa)} su ${formatAmount(concentration.data.ricavi_totali, contract.divisa)} fatturati`}
-                    />
+                  <dl className="space-y-3">
+                    {concentration.data.valute.map((row) => (
+                      <Figure
+                        key={row.divisa}
+                        label={`Anno dal ${formatDate(concentration.data.periodo_da)} al ${formatDate(concentration.data.periodo_a)}${concentration.data.valute.length > 1 ? ` (${row.divisa})` : ''}`}
+                        value={share.format(row.quota)}
+                        hint={`${formatAmount(row.ricavi_cliente, row.divisa)} su ${formatAmount(row.ricavi_totali, row.divisa)} fatturati`}
+                      />
+                    ))}
                   </dl>
                 ) : null}
               </div>

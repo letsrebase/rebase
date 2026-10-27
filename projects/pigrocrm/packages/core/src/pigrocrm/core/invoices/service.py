@@ -123,6 +123,12 @@ from pigrocrm.core.invoices.totals import (
 )
 from pigrocrm.core.schemas import reject_cleared_columns, supplied_changes
 from pigrocrm.core.storage.base import DocumentStorage
+from pigrocrm.core.work_units.release import (
+    ANNULLED_INVOICE_REASON,
+    DELETED_DRAFT_REASON,
+    count_days_billed_on,
+    release_days_of_invoice,
+)
 
 ENTITY: EntityType = "invoice"
 ZERO = Decimal("0.00")
@@ -452,13 +458,24 @@ class InvoiceService:
 
     # ---- writes ---------------------------------------------------------------
 
-    def create(self, data: InvoiceCreate, actor: Actor) -> InvoiceRead:
+    def create(
+        self, data: InvoiceCreate, actor: Actor, *, azienda_id: UUID | None = None
+    ) -> InvoiceRead:
         """A draft or a proforma. Neither has a number, which is why a failed creation
         cannot burn one -- not as a matter of care, but because there is nothing to
-        burn until `issue` runs."""
+        burn until `issue` runs.
+
+        `azienda_id` names the azienda the draft is issued under when it is not its
+        parent's: a contract's days are billed under the contract's own azienda, which a
+        customer moved since no longer shares. In-process only, never on `InvoiceCreate`,
+        so the REST surface keeps taking its azienda from the customer or the deal."""
         actor.require_write("create_invoice")
         customer = self._check_owner(data.customer_id, data.deal_id)
-        azienda_id = self._azienda_of_parent(customer, data.deal_id)
+        azienda_id = (
+            LegalEntityService(self.session).inherited(azienda_id, ENTITY)
+            if azienda_id is not None
+            else self._azienda_of_parent(customer, data.deal_id)
+        )
         _, profile = self._regime(azienda_id)
         self._check_competenza(data.competenza_da, data.competenza_a)
         ordine = checked_ordine(
@@ -596,6 +613,14 @@ class InvoiceService:
         actor.require_write("replace_invoice_lines")
         invoice = self._require(invoice_id)
         self._require_editable(invoice, "righe")
+        billed = count_days_billed_on(self.session, invoice.id)
+        if billed:
+            raise Conflict(
+                ENTITY,
+                f"questa bozza porta {billed} giornate fatturate: per cambiare le righe "
+                "elimina la bozza e rifai la fattura dal contratto",
+                giornate=billed,
+            )
         customer = self._check_owner(invoice.customer_id, None)
         _, profile = self._regime(invoice.azienda_id)
         computed = self._computed_lines(righe, profile, nazione_cliente=customer.nazione)
@@ -697,6 +722,8 @@ class InvoiceService:
             document.deleted_at = now
             self.activities.record(DOCUMENT_ENTITY, document.id, "deleted", actor)
         self.activities.record(ENTITY, invoice.id, "deleted", actor)
+        # The days billed on it are billable again (REB-751): the draft that held them is gone.
+        release_days_of_invoice(self.session, invoice.id, actor, DELETED_DRAFT_REASON)
         self.session.commit()
 
     def set_payment_state(self, invoice_id: UUID, data: PaymentState, actor: Actor) -> InvoiceRead:
@@ -2317,6 +2344,9 @@ class InvoiceService:
             actor,
             {"numero": invoice.numero, "anno": invoice.anno, "motivo": data.motivo},
         )
+        # The days billed on it are billable again, as the hours are: an annulled invoice
+        # keeps its number but not its revenue (REB-751).
+        release_days_of_invoice(self.session, invoice.id, actor, ANNULLED_INVOICE_REASON)
         self.session.commit()
         return self._read(invoice)
 

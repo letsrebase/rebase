@@ -276,6 +276,23 @@ class RateCardRead(BaseModel):
     updated_at: datetime
 
 
+class ConcentrationFigures(BaseModel):
+    """One currency's side of a concentration cap: the customer's invoiced revenue and
+    the azienda's total, both in `divisa` and never converted, with the share one is of
+    the other. A customer billed in euros on a USD contract is a `EUR` row, not a figure
+    labelled with the contract's own currency (REB-776)."""
+
+    divisa: str
+    ricavi_cliente: Decimal = Field(max_digits=12, decimal_places=2)
+    ricavi_totali: Decimal = Field(max_digits=12, decimal_places=2)
+    # The client's share of `ricavi_totali`, in [0, 1] -- 0.0 when nothing has been
+    # invoiced yet in the period, the same "zero when there is nothing to scale
+    # against" reading every other `quota` field on this schema already carries
+    # (`dashboard/schemas.py`'s `EsposizioneCliente.quota`, `_quota`).
+    quota: float
+    superata: bool | None = None
+
+
 class ContractConcentrationCap(BaseModel):
     """REB-352 §1.5's contract-anchored concentration cap: one engagement's own
     share of total invoiced revenue over the anniversary year containing `as_of`,
@@ -284,26 +301,25 @@ class ContractConcentrationCap(BaseModel):
     (`ceiling.ts:55-75, 197-233`), anchored to `Contract.inizio` instead of a
     ledger row.
 
+    The figures are per currency (`valute`), since an invoice's `divisa` is its own and
+    nothing here converts: a share of euros of dollars is not a number. A window with no
+    invoice at all answers one row in the contract's currency, all zero, so a reader
+    never gets an empty list for a quiet year.
+
     `soglia` is never persisted: no threshold column exists on `contracts` yet (a
     future ceiling entity's own concern, REB-361), so a caller names the share it
     wants checked against, per REB-352 §5 item 4's "would this fit" reading -- a
-    live comparison with no persistence required. `superata` mirrors mastro's own
-    `crossed` (`ceiling.ts:257`) and stays `None` until a `soglia` is supplied.
+    live comparison with no persistence required. Each row's `superata` mirrors
+    mastro's own `crossed` (`ceiling.ts:257`) and stays `None` until a `soglia` is
+    supplied.
     """
 
     contract_id: UUID
     customer_id: UUID
     periodo_da: date
     periodo_a: date
-    ricavi_cliente: Decimal = Field(max_digits=12, decimal_places=2)
-    ricavi_totali: Decimal = Field(max_digits=12, decimal_places=2)
-    # The client's share of `ricavi_totali`, in [0, 1] -- 0.0 when nothing has been
-    # invoiced yet in the period, the same "zero when there is nothing to scale
-    # against" reading every other `quota` field on this schema already carries
-    # (`dashboard/schemas.py`'s `EsposizioneCliente.quota`, `_quota`).
-    quota: float
     soglia: float | None = None
-    superata: bool | None = None
+    valute: list[ConcentrationFigures]
 
 
 # ---- renewal assumptions and the projected figure (REB-375) -----------------------

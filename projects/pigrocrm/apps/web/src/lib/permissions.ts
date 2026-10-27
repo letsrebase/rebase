@@ -102,6 +102,7 @@ export const MIN_ROLE = {
   annul_invoice: 'admin',
   mark_transmitted_externally: 'admin',
   bind_time_to_invoice: 'admin',
+  bill_contract_days: 'admin',
   // Registering an invoice issued elsewhere: the start page's invoice door (REB-224) is
   // the admin's, because the import its handoff asks the assistant for is.
   import_issued_invoice: 'admin',
@@ -115,6 +116,10 @@ export const MIN_ROLE = {
   reopen_period: 'admin',
   // Contratti: the page's own writes (REB-741..744). `require_write` in the services.
   create_contract: 'collaboratore',
+  render_contract_register: 'collaboratore',
+  create_contract_email_template: 'collaboratore',
+  update_contract_email_template: 'collaboratore',
+  prepare_contract_email: 'collaboratore',
   update_contract: 'collaboratore',
   set_contract_state: 'collaboratore',
   create_rate_card: 'collaboratore',

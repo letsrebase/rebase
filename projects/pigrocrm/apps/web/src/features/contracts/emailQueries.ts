@@ -1,0 +1,189 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useRef } from 'react'
+import { api, unwrap } from '@/lib/api'
+import type { components } from '@/lib/api-types'
+
+export type EmailTemplate = components['schemas']['ContractEmailTemplateRead']
+export type EmailTemplateCreateBody = components['schemas']['ContractEmailTemplateCreate']
+export type EmailTemplateUpdateBody = components['schemas']['ContractEmailTemplateUpdate']
+export type EmailPreview = components['schemas']['ContractEmailPreview']
+export type AttachmentKind = EmailTemplate['allegati'][number]
+
+const templatesKey = (contractId: string) => ['contract', contractId, 'email-templates'] as const
+
+export function useEmailTemplates(contractId: string) {
+  return useQuery({
+    queryKey: templatesKey(contractId),
+    queryFn: () =>
+      unwrap(
+        api.GET('/api/contracts/{contract_id}/email-templates', {
+          params: { path: { contract_id: contractId } },
+        }),
+      ),
+  })
+}
+
+export function useEmailVariables(contractId: string) {
+  return useQuery({
+    queryKey: ['contract', contractId, 'email-template-variables'] as const,
+    queryFn: () =>
+      unwrap(
+        api.GET('/api/contracts/{contract_id}/email-template-variables', {
+          params: { path: { contract_id: contractId } },
+        }),
+      ),
+  })
+}
+
+export function useCreateEmailTemplate(contractId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: EmailTemplateCreateBody) =>
+      unwrap(
+        api.POST('/api/contracts/{contract_id}/email-templates', {
+          params: { path: { contract_id: contractId } },
+          body,
+        }),
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: templatesKey(contractId) })
+      // What a send would say depends on the template: a cached preview is now another text.
+      void queryClient.invalidateQueries({ queryKey: ['contract', contractId, 'email-preview'] })
+    },
+  })
+}
+
+export function useUpdateEmailTemplate(contractId: string, templateId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: EmailTemplateUpdateBody) =>
+      unwrap(
+        api.PATCH('/api/contracts/{contract_id}/email-templates/{template_id}', {
+          params: { path: { contract_id: contractId, template_id: templateId } },
+          body,
+        }),
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: templatesKey(contractId) })
+      // What a send would say depends on the template: a cached preview is now another text.
+      void queryClient.invalidateQueries({ queryKey: ['contract', contractId, 'email-preview'] })
+    },
+  })
+}
+
+/** What would leave, with nothing written. Asked once both choices are made. */
+export function useEmailPreview(
+  contractId: string,
+  templateId: string | undefined,
+  invoiceId: string | undefined,
+) {
+  return useQuery({
+    enabled: templateId !== undefined && invoiceId !== undefined,
+    staleTime: 0,
+    queryKey: ['contract', contractId, 'email-preview', templateId, invoiceId] as const,
+    queryFn: () =>
+      unwrap(
+        api.POST('/api/contracts/{contract_id}/email/preview', {
+          params: { path: { contract_id: contractId } },
+          body: { template_id: templateId ?? '', invoice_id: invoiceId ?? '' },
+        }),
+      ),
+  })
+}
+
+/**
+ * «Invia»: the draft with the files attached, then its send, which is the one request in
+ * the product that emails anybody and is the person's alone. Two calls on purpose: the
+ * draft is durable once written, so a send that fails (Gmail not connected, a revoked
+ * grant) leaves a draft in the customer's Email tab to send from there, not a lost text.
+ */
+/** What a draft says to its reader: recipients, subject, text and files, not its revision. */
+function reviewed(draft: {
+  to_addresses: string[]
+  subject: string
+  body_markdown: string
+  attachment_version_ids: string[]
+}): string {
+  return JSON.stringify([
+    draft.to_addresses,
+    draft.subject,
+    draft.body_markdown,
+    draft.attachment_version_ids,
+  ])
+}
+
+export function useSendContractEmail(contractId: string) {
+  const queryClient = useQueryClient()
+  // The draft of the last attempt, kept for as long as it was not sent: pressing «Invia»
+  // again after a failed send sends that draft, not a second one with a second archived
+  // register behind it.
+  const pending = useRef<{ key: string; id: string; seen: string } | null>(null)
+  return useMutation({
+    mutationFn: async (variables: {
+      templateId: string
+      invoiceId: string
+      to: string[]
+      /** The subject and text the dialog showed: what is sent must be what was read. */
+      shown: { subject: string; body: string }
+    }) => {
+      const key = [variables.templateId, variables.invoiceId, ...variables.to].join('|')
+      let draftId = pending.current?.key === key ? pending.current.id : undefined
+      if (draftId === undefined) {
+        const created = await unwrap(
+          api.POST('/api/contracts/{contract_id}/email/draft', {
+            params: { path: { contract_id: contractId } },
+            body: {
+              template_id: variables.templateId,
+              invoice_id: variables.invoiceId,
+              to_addresses: variables.to,
+            },
+          }),
+        )
+        if (created.subject !== variables.shown.subject || created.body_markdown !== variables.shown.body) {
+          // The template changed between the preview and the press (another tab): the draft
+          // is what it says now, not what the person read, and it is not sent from here.
+          throw {
+            type: 'about:blank',
+            title: 'Modello modificato',
+            status: 409,
+            code: 'template_changed',
+            detail:
+              'Il modello è cambiato dopo che hai visto l’anteprima: riapri la finestra e rileggi il testo. La bozza è nella scheda Email del cliente.',
+          }
+        }
+        draftId = created.id
+        pending.current = { key, id: created.id, seen: reviewed(created) }
+      }
+      // Read again: the revision to send is the one the row holds now, which a failed
+      // attempt may have moved. But what leaves is what the dialog showed: a draft edited
+      // in the customer's Email tab since is no longer that, and is not sent from here.
+      const draft = await unwrap(
+        api.GET('/api/email-drafts/{draft_id}', { params: { path: { draft_id: draftId } } }),
+      )
+      if (pending.current !== null && reviewed(draft) !== pending.current.seen) {
+        pending.current = null
+        // A problem document, so the banner shows the sentence and not a generic failure.
+        throw {
+          type: 'about:blank',
+          title: 'Bozza modificata',
+          status: 409,
+          code: 'draft_changed',
+          detail:
+            'La bozza è stata modificata dopo che l’hai vista: aprila dalla scheda Email del cliente per inviarla.',
+        }
+      }
+      const sent = await unwrap(
+        api.POST('/api/email-drafts/{draft_id}/send', {
+          params: { path: { draft_id: draft.id } },
+          body: { updated_at: draft.updated_at },
+        }),
+      )
+      pending.current = null
+      return sent
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['email-drafts'] })
+      void queryClient.invalidateQueries({ queryKey: ['documents'] })
+    },
+  })
+}

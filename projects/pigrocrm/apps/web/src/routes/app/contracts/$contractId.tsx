@@ -9,7 +9,9 @@ import { Card, CardContent } from '@rebase/ui/card'
 import { Skeleton } from '@rebase/ui/skeleton'
 import { ContractForm } from '@/features/contracts/ContractForm'
 import { ContractDays } from '@/features/days/ContractDays'
+import { ContractEmailSection } from '@/features/contracts/ContractEmailSection'
 import { ContractStateActions } from '@/features/contracts/ContractStateActions'
+import { DaysToInvoiceSection } from '@/features/contracts/DaysToInvoiceSection'
 import { ExpensesSection } from '@/features/contracts/ExpensesSection'
 import {
   EXPENSE_POLICY_LABELS,
@@ -21,6 +23,7 @@ import {
   stateTone,
 } from '@/features/contracts/labels'
 import { RateCardsSection } from '@/features/contracts/RateCardsSection'
+import { RegisterSection } from '@/features/contracts/RegisterSection'
 import { RenewalSection } from '@/features/contracts/RenewalSection'
 import { useContract, type Contract } from '@/features/contracts/queries'
 import { useCustomer } from '@/features/customers/queries'
@@ -160,6 +163,15 @@ export function ContractDetail() {
             </div>
             <div className="lg:col-span-2">
               <ExpensesSection contractId={row.id} divisa={row.divisa} />
+            </div>
+            <div className="lg:col-span-2">
+              <DaysToInvoiceSection contractId={row.id} divisa={row.divisa} />
+            </div>
+            <div className="lg:col-span-2">
+              <RegisterSection contractId={row.id} />
+            </div>
+            <div className="lg:col-span-2">
+              <ContractEmailSection contractId={row.id} customerId={row.customer_id} />
             </div>
             <div className="lg:col-span-2">
               <RenewalSection contract={row} />

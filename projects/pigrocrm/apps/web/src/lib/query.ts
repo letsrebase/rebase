@@ -160,4 +160,8 @@ export const queryKeys = {
   // both. A key of its own, not a child of `reminders`: a write invalidates the Avvisi list
   // too, and the two are different reads.
   reminderPreferences: ['reminder-preferences'] as const,
+  contractBillableDays: (id: string, params?: unknown) =>
+    ['contract', id, 'billable-days', params ?? {}] as const,
+  contractRegister: (id: string, params?: unknown) =>
+    ['contract', id, 'register', params ?? {}] as const,
 }

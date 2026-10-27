@@ -155,7 +155,7 @@ test.describe('contract days', () => {
 
     // From the contract's own page: its days, and the way to record an approval.
     await page.goto(`/app/contracts/${contractId}`)
-    await expect(page.getByRole('heading', { name: 'Giornate' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Giornate', exact: true })).toBeVisible()
     await page.getByRole('link', { name: 'Registra approvazione' }).click()
     await expect(page).toHaveURL(/\/app\/approvals\/new\?contract=/)
 

@@ -1,6 +1,7 @@
+from datetime import date
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.contracts.models import Contract
@@ -23,11 +24,17 @@ class WorkUnitRepository:
         return work_unit
 
     def unbilled_for_contract(
-        self, contract_id: UUID, *, stato: str = "lavorato"
+        self,
+        contract_id: UUID,
+        *,
+        stato: str = "lavorato",
+        da: date | None = None,
+        a: date | None = None,
     ) -> list[WorkUnit]:
         """Every day in `stato` with no invoice line yet, oldest first -- the same
         shape `won_with_unbilled_hours_predicate` (`timetracking/repository.py`)
-        already gives `TimeEntry` for its own unbilled figure (spec §9's citation)."""
+        already gives `TimeEntry` for its own unbilled figure (spec §9's citation).
+        `da` and `a`, both inclusive, narrow it to a period: «fattura ottobre»."""
         stmt = (
             select(WorkUnit)
             .where(
@@ -37,6 +44,10 @@ class WorkUnitRepository:
             )
             .order_by(WorkUnit.data.asc(), WorkUnit.id.asc())
         )
+        if da is not None:
+            stmt = stmt.where(WorkUnit.data >= da)
+        if a is not None:
+            stmt = stmt.where(WorkUnit.data <= a)
         return list(self.session.execute(stmt).scalars())
 
     def labelled(self, work_unit_id: UUID) -> tuple[WorkUnit, Contract, Customer] | None:
@@ -50,6 +61,19 @@ class WorkUnitRepository:
             .where(WorkUnit.id == work_unit_id)
         ).first()
         return None if row is None else (row[0], row[1], row[2])
+
+    def count_without_approval(self, contract_id: UUID) -> int:
+        """Days worked on a contract that requires prior approval and has none: the ones
+        `unbilled_for_contract` leaves out on purpose, so the page can say so."""
+        return int(
+            self.session.execute(
+                select(func.count(WorkUnit.id)).where(
+                    WorkUnit.contract_id == contract_id,
+                    WorkUnit.stato == "lavorato_senza_approvazione",
+                    WorkUnit.invoice_line_id.is_(None),
+                )
+            ).scalar_one()
+        )
 
     # `list` stays the last method in this class -- the unconditional project rule
     # (see `ContractRepository`): a later `def list(...)` rebinds `list` in the class

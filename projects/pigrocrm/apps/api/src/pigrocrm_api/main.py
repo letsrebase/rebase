@@ -18,6 +18,8 @@ from pigrocrm_api.routers import (
     auth,
     automations,
     calendar,
+    contract_billing,
+    contract_emails,
     contract_expenses,
     contracts,
     cost_categories,
@@ -122,6 +124,10 @@ def create_app() -> FastAPI:
         contracts,
         # REB-360: rebillable expenses against a contract's own spending policy.
         contract_expenses,
+        # REB-751/752: billing a contract's days and the register that goes with the invoice.
+        contract_billing,
+        # REB-753: saved email templates per contract and the draft they make.
+        contract_emails,
         # REB-362: the review-before-write step -- a contract's first draft, or a
         # day's evidence -- accepted or rejected by a human.
         proposals,

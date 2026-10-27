@@ -160,8 +160,8 @@ FORBIDDEN = (
 #
 # Enumerated here, and this is why the equality above is a union rather than a plain
 # `==`: the two lists still have to be one list, but "in `AGENT_FORBIDDEN_ACTIONS` and
-# not in `FORBIDDEN`" now has exactly eight admissible answers, written down with their
-# justification instead of left as slack in the assertion. A ninth added to the ban
+# not in `FORBIDDEN`" now has exactly twelve admissible answers, written down with their
+# justification instead of left as slack in the assertion. A thirteenth added to the ban
 # list without a tool -- or one of these growing a tool and staying here -- fails. The last
 # five are the day ledger's writes (REB-745, REB-749): a person's acts, reached by the web app over
 # REST, which an agent token could reach too without the ban.
@@ -184,6 +184,16 @@ REST_ONLY_FORBIDDEN = frozenset(
         "create_approval",
         # REB-749: the request for approval, prepared from the contract page.
         "request_approval",
+        # REB-751: a draft invoice from a contract's days. The rung `bind_time_to_invoice`
+        # sits on, for days, and like it closed to an agent; unlike it, with no tool at all,
+        # since an agent has no business choosing what an issue will freeze.
+        "bill_contract_days",
+        # REB-753: the wording a contract's emails go out with, and the draft that attaches
+        # the invoice and the register. The MCP reads templates and previews; writing them
+        # and preparing the draft are the person's, as the send they lead to is.
+        "create_contract_email_template",
+        "update_contract_email_template",
+        "prepare_contract_email",
     }
 )
 
@@ -630,9 +640,9 @@ def test_the_structural_ban_has_a_second_line_on_the_credential_itself() -> None
     statement rather than a loose fit: the ban list is keyed on the *operation*, so it
     can legitimately hold one this package offers no tool for -- Drive's three
     configuration operations and the day ledger's five writes, reachable only over REST
-    and only by a person. Those eight are enumerated there with their justification, so
-    "banned but toolless" has eight named answers instead of being slack in this
-    assertion. A ninth, or one of these growing a tool and staying in that set, fails
+    and only by a person. Those twelve are enumerated there with their justification, so
+    "banned but toolless" has twelve named answers instead of being slack in this
+    assertion. A thirteenth, or one of these growing a tool and staying in that set, fails
     here.
     """
     from pigrocrm.core.actor import AGENT_FORBIDDEN_ACTIONS
