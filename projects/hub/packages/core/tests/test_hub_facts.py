@@ -216,3 +216,13 @@ def test_nothing_known_hashes_to_nothing(clean: Session) -> None:
 def test_unknown_freelancer_is_not_found(clean: Session) -> None:
     with pytest.raises(NotFound):
         hub_facts(clean, UUID(int=1), TODAY)
+
+
+def test_client_names_are_kept_for_the_guard_and_in_no_text(clean: Session) -> None:
+    person = _person(clean)
+    _match(clean, person, figura="Backend developer")
+
+    facts = _facts(clean, person)
+
+    assert facts.clients == [CLIENT]
+    assert CLIENT not in facts.text() and CLIENT not in facts.hash_material()

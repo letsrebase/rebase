@@ -55,6 +55,10 @@ class HubFacts:
     anni_admin: int | None
     matches: list[MatchFact] = field(default_factory=list)
     completed_months: int = 0
+    # The names of the clients the engagements were for: given to the anonymity guard and
+    # to nothing else (not `text()`, not `hash_material()`, not the prompt), so a form of a
+    # name the role's scrub missed still cannot reach a card.
+    clients: list[str] = field(default_factory=list)
 
     @property
     def empty(self) -> bool:
@@ -159,6 +163,7 @@ def hub_facts(session: Session, freelancer_id: UUID, today: date | None = None) 
 
     facts: list[MatchFact] = []
     completed: list[tuple[date, date]] = []
+    clients: set[str] = set()
     for match, company in rows:
         start = match.lettera_data_inizio
         if start is None:  # the query asks for a start: this is the type's word, not a case
@@ -174,6 +179,11 @@ def hub_facts(session: Session, freelancer_id: UUID, today: date | None = None) 
             else:
                 esito, end = "completato", planned if planned is not None else closed
         end = max(end, start)
+        clients.update(
+            name.strip()
+            for name in (company.nome_azienda, match.cliente_ragione_sociale)
+            if name and name.strip()
+        )
         facts.append(
             MatchFact(
                 ruolo=_role(
@@ -191,4 +201,5 @@ def hub_facts(session: Session, freelancer_id: UUID, today: date | None = None) 
         anni_admin=freelancer.anni_admin,
         matches=facts,
         completed_months=_span_months(_union_days(completed)),
+        clients=sorted(clients),
     )

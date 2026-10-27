@@ -134,3 +134,54 @@ def test_a_source_that_names_nothing_adds_nothing() -> None:
     known = KnownIdentifiers(cognome="Lovelace", github_login=None, repo_names=[], hostnames=[])
     assert identifying(_card(), known) == []
     assert identifying(_card(), KnownIdentifiers.empty()) == []
+
+
+# ---- review of #671: the label without the TLD, ordinary words, the skill exemption -----
+
+
+@pytest.mark.parametrize(
+    ("host", "written"),
+    [
+        ("acme-labs.io", "Ha lavorato per Acme Labs."),
+        ("acmelabs.com", "Scrive per Acmelabs."),
+        ("mario-rossi.dev", "Il blog di Mario Rossi."),
+        ("blog.acme-labs.co.uk", "Sviluppa per ACME-LABS."),
+        ("mario.github.io", "Pagina personale di mario."),
+    ],
+)
+def test_a_links_label_is_caught_without_its_tld(host: str, written: str) -> None:
+    known = KnownIdentifiers(cognome="Zz", hostnames=[host])
+
+    assert identifying(_card(sintesi=written), known) == ["sintesi"]
+
+
+def test_a_platform_or_an_ordinary_label_is_not_a_leak() -> None:
+    known = KnownIdentifiers(
+        cognome="Zz", hostnames=["mario.github.io", "blog.medium.com", "website.dev"]
+    )
+
+    card = _card(sintesi="Pubblica su GitHub e Medium, con un website e un blog.")
+
+    assert identifying(card, known) == []
+
+
+@pytest.mark.parametrize("name", ["website", "todo", "shop", "notes", "chat"])
+def test_ordinary_repository_names_do_not_fail_every_card(name: str) -> None:
+    known = KnownIdentifiers(cognome="Zz", repo_names=[name])
+
+    assert identifying(_card(sintesi=f"Costruisce un {name} e una chat."), known) == []
+
+
+def test_a_login_or_a_label_equal_to_the_cards_own_skill_is_the_technology() -> None:
+    skills = {"competenze": ["Python", "Flask", "Rust"]}
+    known = KnownIdentifiers(cognome="Zz", github_login="flask", hostnames=["rust.example"])
+
+    assert identifying(_card(sintesi="Sviluppa API in Flask e Rust.", **skills), known) == []
+    # The same words with no such skill on the card are still the person.
+    assert identifying(_card(sintesi="Sviluppa API in Flask."), known) == ["sintesi"]
+
+
+def test_a_clients_name_is_read_like_an_employer() -> None:
+    known = KnownIdentifiers(cognome="Zz", employers=["Azienda Finta S.r.l."])
+
+    assert identifying(_card(sintesi="Un progetto per Azienda Finta."), known) == ["sintesi"]

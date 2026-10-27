@@ -300,9 +300,10 @@ The answer has three parts, in the JSON schema you are given:
 - fonti: for each field of the card, the keys of the sources that said it, taken only \
 from the "Sources available" line of the user turn (without that line the only source is \
 "cv", the CV). An empty list when none did. Never invent a key.
-- employers: the name of every employer, client or other organisation the CV names, as \
-the CV writes it, whether or not the card mentions it. A check keeps them out of the \
-card; they are never shown or kept."""
+- employers: the name of every employer, client or other organisation the CV or any \
+source block names, as it is written there, whether or not the card mentions it (a \
+GitHub bio that says "Backend @ Acme", a page that says "ex-Globex"). A check keeps them \
+out of the card; they are never shown or kept."""
 _SOURCES_V2 = """\
 The user turn also holds sources beside the CV, each in a <source key="..."> block that \
 starts with a header line (FONTE: ...):
@@ -335,10 +336,16 @@ def source_keys(sources: SourceSet, facts: HubFacts) -> list[str]:
     return [CV, *(item.key for item in sources.readable()), *([] if facts.empty else [HUB])]
 
 
+_SOURCE_TAG = re.compile(r"<(\s*/?\s*source)", re.IGNORECASE)
+
+
 def _block(key: str, header: str, text: str) -> str:
-    # A source cannot close its own block and speak as the prompt.
-    body = text.replace("</source", "<\\/source")
-    return f'<source key="{key}">\n{header}\n{body}\n</source>'
+    # A source cannot open or close a block and speak as the prompt, in any case, in its
+    # text or in the header line made of its address.
+    def inert(value: str) -> str:
+        return _SOURCE_TAG.sub(r"&lt;\1", value)
+
+    return f'<source key="{key}">\n{inert(header)}\n{inert(text)}\n</source>'
 
 
 def _source_block(item: SourceItem) -> str:
@@ -440,12 +447,13 @@ def _draft_from(response: LlmResponse, known: KnownIdentifiers) -> CardDraft | F
 
 
 def _known_identifiers(
-    cognome: str, nome: str, links: list[str], sources: SourceSet
+    cognome: str, nome: str, links: list[str], sources: SourceSet, facts: HubFacts
 ) -> KnownIdentifiers:
     """What could name this person beyond their name: the account their links name and
-    the hostname of every link (the person's own, whether or not a source is read), and
-    the repositories they own from the GitHub source as stored. The employers are the
-    model's own report, added by the caller for the one call."""
+    the hostname of every link (the person's own, whether or not a source is read), the
+    repositories they own from the GitHub source as stored, and the names of the clients
+    the hub's engagements were for. The employers the model reports are added by the
+    caller for the one call."""
     repos: list[str] = []
     for item in sources.readable():
         if item.kind == "github":
@@ -456,6 +464,7 @@ def _known_identifiers(
         github_login=github_login_of(links),
         repo_names=repos,
         hostnames=link_hostnames(links),
+        employers=list(facts.clients),
     )
 
 
@@ -869,7 +878,7 @@ class CardWriter:
         nome = owner.nome if owner is not None else ""
         sources = self._sources().current(freelancer_id)
         facts = hub_facts(self.session, freelancer_id)
-        known = _known_identifiers(cognome, nome, row.links, sources)
+        known = _known_identifiers(cognome, nome, row.links, sources, facts)
         request = card_prompt(cv, row.posizione, sources, facts)
         hashes = hash_inputs(row.posizione, sources, facts)
         # Claude takes seconds: the transaction ends here, so no pooled connection and
@@ -889,7 +898,7 @@ class CardWriter:
                 input_hashes=hashes,
             )
         draft = first
-        employers = list(first.employers)
+        employers = [*known.employers, *first.employers]
         model, provider = response.model, response.provider
         input_tokens = response.input_tokens
         output_tokens = response.output_tokens

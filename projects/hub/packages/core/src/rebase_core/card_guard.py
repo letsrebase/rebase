@@ -109,6 +109,54 @@ STOPLIST = frozenset(
         "delle",
         "prova",
         "codice",
+        # What a repository or a page is often called, and the sites a person's page sits
+        # on (`mario.github.io`: the platform is not the person).
+        "website",
+        "webapp",
+        "homepage",
+        "home",
+        "main",
+        "todo",
+        "shop",
+        "store",
+        "notes",
+        "note",
+        "chat",
+        "tool",
+        "tools",
+        "lib",
+        "libs",
+        "util",
+        "utils",
+        "core",
+        "learning",
+        "tutorial",
+        "tutorials",
+        "course",
+        "resume",
+        "page",
+        "pages",
+        "github",
+        "gitlab",
+        "bitbucket",
+        "medium",
+        "behance",
+        "dribbble",
+        "kaggle",
+        "huggingface",
+        "stackoverflow",
+        "linkedin",
+        "notion",
+        "wordpress",
+        "wixsite",
+        "netlify",
+        "vercel",
+        "herokuapp",
+        "com",
+        "net",
+        "org",
+        "dev",
+        "www",
     ]
 )
 
@@ -199,9 +247,24 @@ def _phrase(identifier: str, *, legal: bool = False) -> tuple[str, ...] | None:
     return tokens
 
 
-def _hostname_phrase(hostname: str) -> tuple[str, ...] | None:
+# A second-level label that is a category and not a name (`co.uk`, `com.au`).
+_GENERIC_SECOND_LEVEL = frozenset(["co", "com", "org", "net", "gov", "ac", "edu"])
+
+
+def _hostname_phrases(hostname: str) -> list[tuple[str, ...]]:
+    """What a card is searched for to keep a link's address out of it: the whole host
+    (`acme-labs.io` written with its TLD), and each label of it but the TLD on its own
+    (`acme-labs`, so «Acme Labs» is caught, and the `mario` of `mario.github.io`), every
+    one under `_phrase`'s rules: a label that is an ordinary word or a well-known platform
+    is ignored."""
     host = hostname.strip().lower().removeprefix("www.")
-    return _phrase(host)
+    labels = [label for label in host.split(".") if label]
+    if len(labels) >= 3 and labels[-2] in _GENERIC_SECOND_LEVEL:
+        labels = labels[:-2]
+    elif len(labels) >= 2:
+        labels = labels[:-1]
+    found = [_phrase(host), *(_phrase(label) for label in labels)]
+    return [phrase for phrase in dict.fromkeys(found) if phrase is not None]
 
 
 def _contains(text: tuple[str, ...], phrase: tuple[str, ...]) -> bool:
@@ -249,15 +312,22 @@ def identifying(card: Card, known: KnownIdentifiers) -> list[str]:
         for name in known.repo_names
         if (phrase := _phrase(name)) is not None and phrase not in skills
     ]
+    # A login, or a link's label, that is exactly one of the card's own skills is the
+    # technology (a login `flask`, a site `rust.example`), as a repository named so is.
+    own = [
+        phrase
+        for phrase in (
+            _phrase(known.github_login) if known.github_login else None,
+            *(p for host in known.hostnames for p in _hostname_phrases(host)),
+        )
+        if phrase is not None and phrase not in skills
+    ]
     searched = [
         *repos,
+        *own,
         *(
             phrase
-            for phrase in (
-                _phrase(known.github_login) if known.github_login else None,
-                *(_hostname_phrase(host) for host in known.hostnames),
-                *(_phrase(employer, legal=True) for employer in known.employers),
-            )
+            for phrase in (_phrase(employer, legal=True) for employer in known.employers)
             if phrase is not None
         ),
     ]
