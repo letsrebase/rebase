@@ -6,9 +6,8 @@ then cross-checks every card against the sources it was written from, with no ad
 The cross-check is two things, kept apart in what is stored and what is reported:
 
 * **rules**, where one exists (`card_eval_checks`): the card validates and no guard of
-  `cards.py` refused it, nothing of the person's identifiers is left in it, the seniority
-  is the years' band, and the years are recomputed from the CV's dated periods when the
-  text allows a reliable parse;
+  `cards.py` refused it, nothing of the person's identifiers is left in it, and the years
+  are recomputed from the CV's dated periods when the text allows a reliable parse;
 * **a judging call** (`card_judge`), separate from the writing one and answered by the
   `card` task's provider and model or another provider's, that is given the card and the
   sources as data and marks each field supported, unsupported or contradicted, with a
@@ -45,7 +44,6 @@ from rebase_core.card_eval_checks import (
     YearsCheck,
     anonymity_leaks,
     check_years,
-    seniority_in_band,
 )
 from rebase_core.card_guard import KnownIdentifiers
 from rebase_core.card_judge import CardJudgement, JudgeFailure, judge
@@ -97,19 +95,24 @@ class Target:
 def sample(session: Session, count: int | None = None) -> list[Target]:
     """The fixed sample, live people only, in the order `--sample N` takes them: one person
     of each label in turn (labels and ids sorted, so the same N is always the same people),
-    until `count` are taken, or all of them with no `count`. The whole sample is in label
-    order. Raises `InvalidState` when the sample is empty or `count` is under one."""
+    until `count` are taken, or all of them with no `count`. The result is in label order.
+    Raises `InvalidState` when the sample is empty and `ValidationFailed` when `count` is
+    under one."""
     if count is not None and count < 1:
         raise ValidationFailed(EVAL_ENTITY, "sample", "almeno 1 profilo")
     rows = session.execute(
         select(CardEvalProfile.freelancer_id, CardEvalProfile.label)
         .join(Freelancer, Freelancer.id == CardEvalProfile.freelancer_id)
         .where(Freelancer.deleted_at.is_(None))
-        .order_by(CardEvalProfile.label, CardEvalProfile.freelancer_id)
     ).all()
     if not rows:
         raise InvalidState("Il campione di valutazione è vuoto")
-    everyone = [Target(freelancer_id, label) for freelancer_id, label in rows]
+    # Sorted here, never by the database: its collation is not the order the same N must
+    # always give.
+    everyone = sorted(
+        (Target(freelancer_id, label) for freelancer_id, label in rows),
+        key=lambda target: (target.label, target.freelancer_id),
+    )
     if count is None or count >= len(everyone):
         return everyone
     by_label: dict[str, list[Target]] = {}
@@ -178,7 +181,6 @@ class Checked:
     """The rules' findings on one card."""
 
     years: YearsCheck
-    band_ok: bool
     leaks: list[str]
 
     def as_json(self) -> dict[str, Any]:
@@ -189,7 +191,6 @@ class Checked:
                 "low": self.years.low,
                 "high": self.years.high,
             },
-            "seniority_in_band": self.band_ok,
             "anonymity": self.leaks,
         }
 
@@ -206,7 +207,6 @@ def check(card: Card, inputs: Inputs, today: date) -> Checked:
             anni_admin=inputs.facts.anni_admin,
             today=today,
         ),
-        band_ok=seniority_in_band(card),
         leaks=anonymity_leaks(card, inputs.known),
     )
 
@@ -214,8 +214,8 @@ def check(card: Card, inputs: Inputs, today: date) -> Checked:
 def verdicts(checked: Checked, judgement: CardJudgement | None) -> dict[str, dict[str, str]]:
     """The verdict of each field of the card, `by` whoever settled it. A field a rule
     settled keeps the rule's verdict whatever the judge said: the years when the CV allowed
-    a reliable parse (`YearsCheck.ok`), and a seniority outside its band. Without a
-    judgement (the judge's own failure), only those fields have one."""
+    a reliable parse (`YearsCheck.ok`). Without a judgement (the judge's own failure), only
+    that field has one."""
     result: dict[str, dict[str, str]] = {}
     if judgement is not None:
         result = {
@@ -228,12 +228,6 @@ def verdicts(checked: Checked, judgement: CardJudgement | None) -> dict[str, dic
             "reason": f"years recomputed from the dated periods ({checked.years.mode})",
             "by": BY_RULE,
         }
-    if not checked.band_ok:
-        result["seniority"] = {
-            "verdict": "contradicted",
-            "reason": "seniority outside the band the years fall in",
-            "by": BY_RULE,
-        }
     return result
 
 
@@ -241,7 +235,13 @@ def verdicts(checked: Checked, judgement: CardJudgement | None) -> dict[str, dic
 
 
 def _fields(result: CardEvalResult) -> dict[str, dict[str, str]]:
-    return (result.judgement or {}).get("fields", {})
+    fields: dict[str, dict[str, str]] = (result.judgement or {}).get("fields", {})
+    return fields
+
+
+def _years_ok(result: CardEvalResult) -> bool | None:
+    verdict: bool | None = ((result.checks or {}).get("years") or {}).get("ok")
+    return verdict
 
 
 def _leaks_rule(result: CardEvalResult) -> bool:
@@ -291,8 +291,10 @@ def aggregate(results: Sequence[CardEvalResult]) -> dict[str, Any]:
         "leaks_rule": sum(_leaks_rule(result) for result in results),
         "leaks_judge": sum(_leaks_judge(result) for result in results),
         "leaks": sum(_leaks_rule(r) or _leaks_judge(r) for r in results),
-        "anni_checked": sum(result.anni_ok is not None for result in results),
-        "anni_ok": sum(result.anni_ok is True for result in results),
+        # From the rules' own record, so a result of the manual evaluation (whose `anni_ok`
+        # was a comparison with an expected card) counts for nothing here.
+        "anni_checked": sum(_years_ok(result) is not None for result in results),
+        "anni_ok": sum(_years_ok(result) is True for result in results),
         "latency_ms_avg": _average([result.latency_ms for result in results]),
         "judge_latency_ms_avg": _average([result.judge_latency_ms for result in results]),
         "cost_eur": str(_sum([result.cost_eur for result in results])),
@@ -373,10 +375,11 @@ def results_of(session: Session, run_id: UUID) -> list[CardEvalResult]:
 def _baseline(session: Session, task: str, run_id: UUID | None) -> CardEvalRun | None:
     """What a run is compared with. With `run_id`, that run: it has to exist, be of the
     task and be finished. Without, the newest finished run of the live configuration (the
-    provider and model the task is set to now and the current `PROMPT_VERSION`) that has
-    the automatic evaluation's totals, so a candidate is measured against production and
-    not against the last candidate tried. `None` when there is none: the report then says
-    so. A run cut short by an outage or the cap is never a reference."""
+    provider, model and effort the task is set to now, the current `PROMPT_VERSION`, and
+    the whole sample) that has the automatic evaluation's totals, so a candidate is
+    measured against production and not against the last candidate tried. `None` when
+    there is none: the report then says so. A run cut short by an outage or the cap is
+    never a reference."""
     finished = CardEvalRun.summary["complete"].as_boolean().is_(True)
     if run_id is not None:
         run = session.get(CardEvalRun, run_id)
@@ -388,14 +391,24 @@ def _baseline(session: Session, task: str, run_id: UUID | None) -> CardEvalRun |
     live = session.get(AiTask, task)
     if live is None:
         return None
+    people = session.scalar(
+        select(func.count())
+        .select_from(CardEvalProfile)
+        .join(Freelancer, Freelancer.id == CardEvalProfile.freelancer_id)
+        .where(Freelancer.deleted_at.is_(None))
+    )
     return session.scalars(
         select(CardEvalRun)
         .where(
             CardEvalRun.task == task,
             finished,
             CardEvalRun.summary["format"].as_integer() == SUMMARY_FORMAT,
+            # The whole sample, as production runs: a run of a few people, or of another
+            # effort, is a candidate or a probe, not the reference.
+            CardEvalRun.summary["ran"].as_integer() >= (people or 0),
             CardEvalRun.provider == live.provider,
             CardEvalRun.model == live.model,
+            CardEvalRun.effort.is_not_distinct_from(live.effort),
             CardEvalRun.prompt_version == PROMPT_VERSION,
         )
         .order_by(CardEvalRun.created_at.desc())
@@ -424,10 +437,6 @@ def _spent(
     if not rows or any(cost is None for cost in rows):
         return None
     return sum((cost for cost in rows if cost is not None), Decimal(0))
-
-
-def _now(session: Session) -> datetime:
-    return session.execute(select(func.clock_timestamp())).scalar_one()
 
 
 def _summary(
@@ -543,7 +552,7 @@ def _evaluate(
     that must end the run, or `None` when the person was done (a card that failed a guard
     is done)."""
     freelancer_id = target.freelancer_id
-    started = _now(session)
+    started = utcnow()
     clock = time.perf_counter()
     card: Card | None = None
     failure: str | None = None
@@ -558,7 +567,7 @@ def _evaluate(
     except LlmUnavailable as exc:
         failure, unanswered = "unavailable", exc.message
     latency = round((time.perf_counter() - clock) * 1000)
-    written = _now(session)
+    written = utcnow()
     result = CardEvalResult(
         run_id=run.id,
         freelancer_id=freelancer_id,
@@ -573,7 +582,6 @@ def _evaluate(
         checked = check(card, found, today)
         result.checks = checked.as_json()
         result.anni_ok = checked.years.ok
-        result.seniority_ok = checked.band_ok
         judge_clock = time.perf_counter()
         judged: CardJudgement | None = None
         judge_failure: JudgeFailure | Literal["unavailable"] | None = None

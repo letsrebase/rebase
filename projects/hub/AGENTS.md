@@ -554,15 +554,17 @@ is in `WAREHOUSE_TABLES`. The admin area has no page for it and the API no route
 - **The rules** (`card_eval_checks.py`), where a rule exists: the card validates and no guard of
   `cards.py` refused it (`guardia`); `identifying` read again against everything the person's data
   holds (their name, the GitHub login, the owned repositories, the links' hostnames, the hub's
-  clients), **for every prompt version**, so a v1 card is held to the rule the v2 card is; the
-  seniority is the years' band; and the years. The years are recomputed from the CV's dated periods
-  only when the text allows a reliable parse: the periods are counted twice, all of them and
-  without those beside a study («laurea», «università»…), and the count is taken as a fact only
-  when the two differ by at most a year, or when the CV has no year in it at all (it dates
-  nothing: the card has none). More years than every period adds up to is a contradiction
-  whatever the parse. An admin's years (`anni_admin`) are a fact; the hub's completed engagements
-  add their years. Anything else is left to the judge. A field a rule settled keeps the rule's
-  verdict whatever the judge said.
+  clients), **for every prompt version**, so a v1 card is held to the rule the v2 card is; and the
+  years. (The seniority is no check of its own: `compose` brings it inside the years' bands for
+  every prompt.) The years are recomputed from the CV's dated periods only when the parse is
+  **reliable**: every year the CV writes belongs to a period that was read («Python (2019)», an
+  open «2019 -» and «dal 2016» are not, and go to the judge), and the periods counted at their
+  shortest (a period written with bare years may have lasted from the difference of the years to
+  that plus one) and without those beside a study («laurea», «università»…) are within a year of
+  the periods counted at their longest and with them. Then the card's `anni` must be between the
+  first, less a year, and the second plus the hub's completed years and a year; a CV with no year at
+  all dates nothing, so the card has none. An admin's years (`anni_admin`) are a fact. Anything else
+  is left to the judge. A field a rule settled keeps the rule's verdict whatever the judge said.
 - **The judge** (`card_judge.py`): a call apart from the writing one, given the card and the sources
   as data (the same blocks the writer reads, whichever prompt wrote the card, so a card of the CV
   alone is judged against everything we hold), which marks each of the eight fields `supported`,
@@ -589,8 +591,9 @@ identifiers found by the rules and by the judge, latency, cost), who judged, and
 the baseline on the people both runs wrote, a measure at a time «meglio/uguale/peggio». **A change
 goes live when it is no worse than the baseline on supported fields, contradictions, years,
 guard refusals and identifiers.** The baseline is `--baseline RUN_ID`, or by default the newest
-finished run of the automatic evaluation whose provider and model are the `card` task's now and whose
-prompt version is the current `PROMPT_VERSION`: production as it runs, never the last candidate
+finished run of the automatic evaluation, of the whole sample, whose provider, model and effort are
+the `card` task's now and whose prompt version is the current `PROMPT_VERSION`: production as it
+runs, never the last candidate
 tried. With none the report says «Nessun riferimento»: run the live configuration first and that run
 is the baseline. To measure the sources, write the baseline first with `--prompt-version 1`, then run
 the current prompt with `--baseline <that run>`. Record the ids in the PR that changes the prompt

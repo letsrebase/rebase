@@ -11,11 +11,14 @@ card by hand and nobody rates anything.
   fixed sample `rebase cards-eval` draws from. Its `expected_card`, `status`, `corrected_by`
   and `updated_at` go, and with them every expected card an admin or a model wrote. The ids
   stay: the fifteen people drafted under REB-835 are the sample.
-* `card_eval_results` loses `ratings` and gains `checks` (what the rules found: years,
-  seniority band, anonymity), `judgement` (the verdict of the judging call per field, what it
-  flagged as invented and the identifiers it found), and the judging call's own latency and
-  cost, beside the generation's `latency_ms` and `cost_eur`. The earlier rows keep their three
-  measures and read `NULL` in the new columns.
+* `card_eval_results` loses `ratings` (an admin's marks) and `seniority_ok` (the comparison
+  with an expected card) and gains `checks` (what the rules found: the years and the
+  anonymity), `judgement` (the verdict of the judging call per field, what it flagged as
+  invented and the identifiers it found), and the judging call's own latency and cost,
+  beside the generation's `latency_ms` and `cost_eur`. The earlier rows keep their card,
+  `guard_clean`, `failure`, latency and cost, and read `NULL` in the new columns; their
+  `anni_ok` was the comparison with an expected card, which no report reads any more (the
+  column now holds the years rule's result).
 
 `IF EXISTS` / `IF NOT EXISTS` throughout, so a retried deploy lands on the same schema. The
 downgrade puts the columns back empty: what was dropped is not recoverable.
@@ -48,7 +51,13 @@ def upgrade() -> None:
             DROP COLUMN IF EXISTS updated_at
         """
     )
-    op.execute("ALTER TABLE card_eval_results DROP COLUMN IF EXISTS ratings")
+    op.execute(
+        """
+        ALTER TABLE card_eval_results
+            DROP COLUMN IF EXISTS ratings,
+            DROP COLUMN IF EXISTS seniority_ok
+        """
+    )
     op.execute(
         """
         ALTER TABLE card_eval_results
@@ -70,7 +79,13 @@ def downgrade() -> None:
             DROP COLUMN IF EXISTS checks
         """
     )
-    op.execute("ALTER TABLE card_eval_results ADD COLUMN IF NOT EXISTS ratings JSONB")
+    op.execute(
+        """
+        ALTER TABLE card_eval_results
+            ADD COLUMN IF NOT EXISTS ratings JSONB,
+            ADD COLUMN IF NOT EXISTS seniority_ok BOOLEAN
+        """
+    )
     op.execute(
         """
         ALTER TABLE card_eval_profiles

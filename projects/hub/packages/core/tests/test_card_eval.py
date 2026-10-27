@@ -140,6 +140,7 @@ def _run(
     prompt_version: int = PROMPT_VERSION,
     baseline_run_id: UUID | None = None,
     judge_by: tuple[str, str] = ("anthropic", MODEL),
+    effort: str | None = "medium",  # the card task's, as migration 0036 seeds it
 ) -> CardEvalRun:
     return run_eval(
         session,
@@ -148,7 +149,7 @@ def _run(
         task="card",
         provider=provider,
         model=model,
-        effort=None,
+        effort=effort,
         targets=targets if targets is not None else sample(session),
         prompt_version=prompt_version,
         judge_by=judge_by,
@@ -262,13 +263,12 @@ def test_a_run_writes_checks_and_judges_each_card_and_stores_no_live_card(clean:
     [result] = results_of(clean, run.id)
     assert result.freelancer_id == person and result.label == "senza date"
     assert result.card == _card() and result.failure is None
-    # The rules: the years are the CV's 2017 - 2025, the band holds, no identifier is left.
+    # The rules: the years are the CV's 2017 - 2025 (8 to 9 years), no identifier is left.
     assert result.checks == {
-        "years": {"mode": "recomputed", "ok": True, "low": 9, "high": 9},
-        "seniority_in_band": True,
+        "years": {"mode": "recomputed", "ok": True, "low": 8, "high": 9},
         "anonymity": [],
     }
-    assert (result.anni_ok, result.seniority_ok, result.guard_clean) == (True, True, True)
+    assert (result.anni_ok, result.guard_clean) == (True, True)
     # The judge's verdicts, and a rule's over the judge's on the years.
     assert result.judgement is not None
     fields = result.judgement["fields"]
@@ -548,7 +548,7 @@ def _result(**changes: Any) -> CardEvalResult:
         "guard_clean": True,
         "card": CARD,
         "judgement": {"failure": None, "fields": fields, "invented": [], "identifying": []},
-        "checks": {"anonymity": []},
+        "checks": {"anonymity": [], "years": {"ok": True}},
         "latency_ms": 1000,
         "cost_eur": Decimal("0.01"),
         "judge_latency_ms": 2000,
@@ -566,12 +566,16 @@ def _worse(freelancer_id: UUID) -> CardEvalResult:
         freelancer_id=freelancer_id,
         anni_ok=False,
         judgement={"failure": None, "fields": fields, "invented": ["x", "y"], "identifying": []},
-        checks={"anonymity": ["sintesi"]},
+        checks={"anonymity": ["sintesi"], "years": {"ok": False}},
     )
 
 
 def test_the_totals_count_verdicts_costs_and_what_went_wrong() -> None:
-    results = [_result(), _worse(uuid4()), _result(card=None, judgement=None, guard_clean=False)]
+    results = [
+        _result(),
+        _worse(uuid4()),
+        _result(card=None, judgement=None, checks=None, guard_clean=False),
+    ]
 
     totals = aggregate(results)
 
@@ -579,7 +583,7 @@ def test_the_totals_count_verdicts_costs_and_what_went_wrong() -> None:
     assert (totals["contradicted"], totals["contradicted_profiles"]) == (1, 1)
     assert (totals["invented"], totals["leaks_rule"], totals["leaks"]) == (2, 1, 1)
     assert (totals["failed"], totals["judged"], totals["guard_failures"]) == (1, 2, 1)
-    assert (totals["anni_checked"], totals["anni_ok"]) == (3, 2)
+    assert (totals["anni_checked"], totals["anni_ok"]) == (2, 1)
     assert (totals["cost_eur"], totals["judge_cost_eur"]) == ("0.03", "0.06")
     assert (totals["latency_ms_avg"], totals["judge_latency_ms_avg"]) == (1000, 2000)
 
@@ -645,6 +649,31 @@ def test_the_default_baseline_is_the_live_configuration_and_an_explicit_one_repl
     report = format_report(better, results_of(clean, better.id))
     assert f"run di riferimento {first.id}" in report
     assert "campi contraddetti 0% contro 12% (meglio)" in report
+
+
+def test_a_run_of_another_effort_or_of_a_few_people_is_no_default_reference(
+    clean: Session,
+) -> None:
+    _person(clean, label="a")
+    _person(clean, "grace@studio.it", "Hopper", label="b")
+
+    def run(targets: list[Target] | None = None, **options: Any) -> CardEvalRun:
+        count = len(targets) if targets is not None else 2
+        return _run(
+            clean,
+            RecordingCall([card_response()] * count),
+            RecordingCall([judge_response()] * count),
+            targets,
+            **options,
+        )
+
+    run(effort="high")  # a probe at another effort
+    run(sample(clean, 1))  # a run of one person of two
+    assert run().summary["baseline"] is None
+
+    full = run()
+    assert full.summary["baseline"] is not None
+    assert full.summary["baseline"]["profiles"] == 2
 
 
 def test_a_baseline_must_exist_be_finished_and_of_the_task(clean: Session) -> None:

@@ -46,7 +46,6 @@ RESULT_COLUMNS = {
     "freelancer_id",
     "label",
     "anni_ok",
-    "seniority_ok",
     "guard_clean",
     "failure",
     "latency_ms",
