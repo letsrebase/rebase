@@ -7,7 +7,7 @@ called by anything else, which these tests hold with a `RecordingCall` that has 
 answers left (calling it raises `IndexError`).
 """
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -15,12 +15,13 @@ from uuid import UUID
 
 import pytest
 from fakes_cards import CARD, card_response, text_pdf
-from sqlalchemy import select, text
+from sqlalchemy import Engine, select, text
 from sqlalchemy.orm import Session
 from test_hub_facts import _match
 from test_sources import FakeFetcher, FakeGithub, snapshot_of
 
 from rebase_core.cards import PROMPT_VERSION, CardWriter, stale_reason
+from rebase_core.db import session_factory
 from rebase_core.errors import LlmCapReached
 from rebase_core.freelancers import FreelancerService
 from rebase_core.llm import LlmResponse, RecordingCall
@@ -360,15 +361,80 @@ def test_weekly_refetch_makes_no_model_call(clean: Session) -> None:
     assert CardWriter(clean, NO_ANSWERS, sources=service).stale_of(person) == "source"
 
 
+def test_a_second_start_while_one_runs_pays_for_nothing(clean: Session, hub_engine: Engine) -> None:
+    """Two sessions, as two processes would be: while the first start is inside its model
+    call, a second start, and an admin's «Rigenera scheda» on the card being written, find
+    it taken and make no call. The first click is then the only one that paid."""
+    people = _cards(clean)
+    _backdate(clean, 1)
+    admin = _admin(clean)
+    second_llm = _answers(5)
+    seen: dict[str, Any] = {}
+
+    def meanwhile() -> None:
+        other = session_factory(hub_engine)()
+        try:
+            writer = CardWriter(other, second_llm, now=lambda: NOW)
+            seen["running"] = writer.regeneration_running()
+            seen["start"] = writer.regenerate_stale(admin, 5)
+            first = other.scalars(select(FreelancerCard.freelancer_id)).first()
+            assert first is not None
+            writer.write(first, force=True)
+        finally:
+            other.close()
+
+    llm = _Scripted([card_response(), card_response(), card_response()], during=meanwhile)
+
+    done = CardWriter(clean, llm, now=lambda: NOW).regenerate_stale(admin, 3)
+
+    assert seen["running"] is True
+    assert seen["start"] == CardsRefreshed(written=0, failed=0)
+    assert second_llm.requests == []
+    assert done == CardsRefreshed(written=3, failed=0)
+    assert len(llm.requests) == 3
+    assert CardWriter(clean, None).regeneration_running() is False
+    assert {p for p in people if p not in _reasons(clean)} == set(people)
+    actions = clean.scalars(select(AdminAction).where(AdminAction.kind == "cards_regenerate"))
+    assert len(actions.all()) == 1
+
+
+def test_a_card_that_keeps_failing_does_not_take_every_start(clean: Session) -> None:
+    """Its last try failed on its own account, so it goes last: the other cards get the
+    start's limited calls first, and it is tried once they are done."""
+    people = _cards(clean)
+    _backdate(clean, 1)
+    failing = people[0]
+    clean.execute(
+        text(
+            "UPDATE freelancer_cards SET generated_at = '2026-01-01', error = 'no', "
+            "error_cv_sha256 = cv_sha256 WHERE freelancer_id = :i"
+        ),
+        {"i": failing},
+    )
+    clean.commit()
+
+    waiting = CardWriter(clean, None).stale_cards()
+    assert waiting[-1].freelancer_id == failing
+
+    llm = _answers(2)
+    done = CardWriter(clean, llm, now=lambda: NOW).regenerate_stale(_admin(clean), 2)
+
+    assert done == CardsRefreshed(written=2, failed=0)
+    assert _reasons(clean) == {failing: "prompt"}
+
+
 class _Scripted:
     """`RecordingCall` that can raise."""
 
-    def __init__(self, answers: list[Any]) -> None:
+    def __init__(self, answers: list[Any], during: Callable[[], None] | None = None) -> None:
         self._answers = list(answers)
+        self._during = during
         self.requests: list[Any] = []
 
     def complete(self, request: Any) -> LlmResponse:
         self.requests.append(request)
+        if self._during is not None and len(self.requests) == 1:
+            self._during()
         answer = self._answers.pop(0)
         if isinstance(answer, BaseException):
             raise answer

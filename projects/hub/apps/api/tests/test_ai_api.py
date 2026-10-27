@@ -469,3 +469,25 @@ def test_regenerate_stale_needs_a_model_and_a_sane_limit(
     for limit in (0, 51, "tutte"):
         bad = client.post(f"{BASE}/cards/regenerate-stale", json={"limit": limit})
         assert bad.status_code == 422
+
+
+def test_a_start_while_another_is_running_queues_nothing(
+    client: TestClient, written_cards: list[Any], api_session: Session, llm: RecordingCall
+) -> None:
+    """The lock of a running batch is held on a connection of its own, as the batch holds
+    it: a second click finds it and the page is told nothing was queued."""
+    import hashlib
+
+    key = int.from_bytes(
+        hashlib.sha256(b"rebase:regenerate_stale").digest()[:8], "big", signed=True
+    )
+    with api_session.get_bind().connect() as holder:  # type: ignore[union-attr]
+        holder.execute(text("SELECT pg_advisory_lock(:k)"), {"k": key})
+        try:
+            second = client.post(f"{BASE}/cards/regenerate-stale", json={"limit": 5})
+        finally:
+            holder.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": key})
+            holder.commit()
+
+    assert second.json() == {"queued": 0}
+    assert llm.requests == []

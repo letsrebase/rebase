@@ -40,7 +40,8 @@ in the same transaction as the CV's own removal.
 import hashlib
 import logging
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from decimal import Decimal
@@ -48,7 +49,7 @@ from typing import Any, Literal, NamedTuple
 from uuid import UUID
 
 from pydantic import ValidationError
-from sqlalchemy import delete, func, null, select
+from sqlalchemy import delete, func, null, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -95,6 +96,9 @@ from rebase_core.team_schemas import (
 logger = logging.getLogger(__name__)
 
 NO_TEXT = "Il CV non ha testo leggibile."
+
+# The advisory lock of an admin's start of the regeneration (`CardWriter.regenerate_stale`).
+REGENERATE_LOCK = "regenerate_stale"
 
 # The version of the prompt and of the rules above it (`_SYSTEM`, the guards): a card
 # says which one wrote it, and an evaluation run which one it measured. Version 1 is
@@ -715,7 +719,8 @@ class CardWriter:
         return stale_reason(stored, cv_hash, hashes)
 
     def stale_cards(self) -> list[StaleCard]:
-        """The cards that wait for an admin's start, the oldest first: written by another
+        """The cards that wait for an admin's start, the oldest first, those whose last try
+        failed on their own account last: written by another
         prompt version, or from inputs (the hub's facts, the position, a source) that are
         not the ones stored now. A card stale by its CV is not here: the hourly loop
         writes it again by itself. Only a card that exists and whose person is live and
@@ -733,7 +738,14 @@ class CardWriter:
                 Freelancer.cv_bytes.is_not(None),
                 FreelancerCard.card.is_not(None),
             )
-            .order_by(FreelancerCard.generated_at, FreelancerCard.freelancer_id)
+            # A card whose last try failed on its own account goes last: a person whose
+            # card keeps failing the guards would otherwise be first at every start and
+            # pay two calls each time while the rest never get a turn.
+            .order_by(
+                FreelancerCard.error_cv_sha256.is_not(None),
+                FreelancerCard.generated_at,
+                FreelancerCard.freelancer_id,
+            )
         ).all()
         waiting: list[StaleCard] = []
         for card, cv_hash, nome, cognome in rows:
@@ -771,28 +783,57 @@ class CardWriter:
         `refresh_stale` does, and the rest stay stale."""
         if self.llm is None:
             return CardsRefreshed(written=0, failed=0)
-        waiting = self.stale_cards()[:limit]
-        AdminActionService(self.session).record(
-            AI_CONFIG_ENTITY,
-            AI_CONFIG_ENTITY_ID,
-            "cards_regenerate",
-            admin_id,
-            {"limit": limit, "queued": len(waiting)},
+        # One start at a time, for the whole batch: a second click while the first is inside
+        # its calls would see the same cards still stale and pay for each of them again.
+        # It queues nothing and says so (`regeneration_running`).
+        with self._advisory(REGENERATE_LOCK) as started:
+            if not started:
+                return CardsRefreshed(written=0, failed=0)
+            waiting = self.stale_cards()[:limit]
+            AdminActionService(self.session).record(
+                AI_CONFIG_ENTITY,
+                AI_CONFIG_ENTITY_ID,
+                "cards_regenerate",
+                admin_id,
+                {"limit": limit, "queued": len(waiting)},
+            )
+            written = failed = 0
+            stopped = False
+            for item in waiting:
+                if self.stale_of(item.freelancer_id) not in ("prompt", "source"):
+                    continue
+                outcome = self._write(item.freelancer_id, force=True)
+                if outcome == "written":
+                    written += 1
+                elif outcome in ("failed", "unavailable"):
+                    failed += 1
+                if outcome == "unavailable":
+                    stopped = True
+                    break
+            return CardsRefreshed(written=written, failed=failed, stopped=stopped)
+
+    def regeneration_running(self) -> bool:
+        """Whether an admin's start is inside its batch right now, in any process."""
+        with self._advisory(REGENERATE_LOCK) as free:
+            return not free
+
+    @contextmanager
+    def _advisory(self, name: str) -> Iterator[bool]:
+        """A Postgres advisory lock named `name`, taken without waiting and held until the
+        block ends, whether it was got (`True`) or not. Held on a connection of its own:
+        the session commits and gives its connection back many times in a write, and a
+        session-level lock would stay behind on whichever one was returned to the pool."""
+        key = int.from_bytes(
+            hashlib.sha256(f"rebase:{name}".encode()).digest()[:8], "big", signed=True
         )
-        written = failed = 0
-        stopped = False
-        for item in waiting:
-            if self.stale_of(item.freelancer_id) not in ("prompt", "source"):
-                continue
-            outcome = self._write(item.freelancer_id, force=True)
-            if outcome == "written":
-                written += 1
-            elif outcome in ("failed", "unavailable"):
-                failed += 1
-            if outcome == "unavailable":
-                stopped = True
-                break
-        return CardsRefreshed(written=written, failed=failed, stopped=stopped)
+        with self.session.get_bind().connect() as conn:  # type: ignore[union-attr]
+            got = bool(conn.execute(text("SELECT pg_try_advisory_lock(:k)"), {"k": key}).scalar())
+            try:
+                yield got
+            finally:
+                if got:
+                    conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": key})
+                conn.commit()
 
     # ---- helpers ---------------------------------------------------------------------
 
@@ -934,6 +975,15 @@ class CardWriter:
             and digest in (stored.cv_sha256, stored.error_cv_sha256)
         ):
             return "unchanged"
+        # One writer per person at a time: a second one (a double click, «Rigenera scheda»
+        # while an admin's start is on the same card) would pay for the same card twice.
+        # It finds the card is being written and leaves it to the first.
+        with self._advisory(f"card:{freelancer_id}") as claimed:
+            if not claimed:
+                return "unchanged"
+            return self._write_claimed(freelancer_id, digest)
+
+    def _write_claimed(self, freelancer_id: UUID, digest: str) -> Outcome:
         # The sources are read again when a card is written (design, «Sources»): a
         # switch that is off reads nothing, and the weekly pass never gets here.
         sources = self._sources()

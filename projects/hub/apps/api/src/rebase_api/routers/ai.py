@@ -173,10 +173,14 @@ def regenerate_stale(
 ) -> RegenerationStarted:
     """An admin's start: the oldest `limit` stale cards are written again, one at a time,
     after the response (`AdminAction` `cards_regenerate` is written when the batch starts).
-    No model configured answers the team builder's own 503, as «Rigenera scheda» does."""
+    A start while another is running answers `queued` 0. No model configured answers the
+    team builder's own 503, as «Rigenera scheda» does."""
     if llm is None:
         raise TeamBuilderOff("Il team builder è spento.")
-    queued = min(body.limit, len(CardWriter(session, None).stale_cards()))
+    writer = CardWriter(session, None)
+    # A start while one is still inside its batch queues nothing: the cards it is writing
+    # are still stale until it saves them, and a second batch would pay for them again.
+    queued = 0 if writer.regeneration_running() else min(body.limit, len(writer.stale_cards()))
     if queued:
         background.add_task(regenerate_after_response, open_session, llm, admin.id, body.limit)
     return RegenerationStarted(queued=queued)
