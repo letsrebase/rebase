@@ -1256,7 +1256,8 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         """Cronologia di un'entità: per ogni voce chi, quando e da dove. `actor_name` è il
         nome del membro (anche se disattivato) e `actor_type` il canale: `user` dal web,
         `mcp` da un agente col token di quel membro, `rebase` dalla porta di rebase,
-        `system` da un'automazione o da un'operazione di servizio; un'automazione nomina chi l'ha attivata in `triggered_by_name`.
+        `system` da un'automazione o da un'operazione di servizio; un'automazione nomina
+        chi l'ha attivata in `triggered_by_name`.
         `occurred_at` è l'istante esatto."""
         entries = ActivityService(context.session).timeline(
             entity_type, UUID(entity_id), limit=cast(int, limit)
