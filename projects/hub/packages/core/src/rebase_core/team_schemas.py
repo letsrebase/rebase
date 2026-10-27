@@ -47,7 +47,11 @@ __all__ = [
     "CloudTalentList",
     "CloudTalentQuery",
     "CloudTalentRead",
+    "CardProvenance",
+    "ConflictRead",
+    "FreelancerCardAdminRead",
     "FreelancerCardRead",
+    "SourceProvenance",
     "TALENT_ANSWERS",
     "TEAM_PROPOSAL_ERRORS",
     "TEAM_PROPOSAL_ORIGINS",
@@ -133,6 +137,60 @@ class FreelancerCardRead(BaseModel):
     error: str | None
     seniority_admin: str | None = None
     anni_admin: int | None = None
+
+
+class SourceProvenance(BaseModel):
+    """One stored source of a card's person, as the admin reads it: its key (`github`,
+    `link:<n>`), what it is, where it was read (the login or the link the person gave),
+    the outcome of the last read and when it was made. Never the text."""
+
+    key: str
+    kind: Literal["github", "link"]
+    ref: str
+    status: str
+    fetched_at: datetime
+
+
+class ConflictRead(BaseModel):
+    """A disagreement the code found while writing a card (`card_draft.conflicts`):
+    `anni_diversi`, the hub's completed engagements add up to more years than the card's
+    `anni_scheda` (the CV's dates) by more than a year; `anni_scartata`, the model gave
+    `anni_scheda` years on the strength of sources that date no profession (GitHub, a
+    page) and the code dropped it. `anni_hub` is the hub's completed months in whole
+    years, `None` when the hub had no say."""
+
+    kind: Literal["anni_diversi", "anni_scartata"]
+    anni_scheda: int | None
+    anni_hub: int | None
+
+
+class CardProvenance(BaseModel):
+    """What a card was written from and by what, for the admin only (REB-839): never part
+    of `Card`, of a public page, of the cloud or of the talent list.
+
+    `fonti` is what the model *said* supported each field, kept only for sources that
+    existed (`verify_fonti`): the page shows it as «secondo il modello». `{}` and
+    `prompt_version` 1 for a card written before provenance existed. `sources` is what is
+    stored now, with its read times; `source_hashes` what the card was written from;
+    `stale` why the card is no longer what the inputs would give: `cv` (the hourly loop
+    writes it again), `source` (the hub's facts, the position or a source changed) or
+    `prompt` (a newer prompt version); the last two wait for an admin's start."""
+
+    prompt_version: int
+    provider: str | None
+    fonti: dict[str, list[str]]
+    conflicts: list[ConflictRead]
+    sources: list[SourceProvenance]
+    source_hashes: dict[str, str]
+    stale: Literal["cv", "source", "prompt"] | None
+
+
+class FreelancerCardAdminRead(FreelancerCardRead):
+    """`FreelancerCardRead` and the provenance of the card, as the admin's page reads it
+    (`GET /freelancers/{id}/card`). `provenance` is `None` while the person has no card
+    row at all."""
+
+    provenance: CardProvenance | None = None
 
 
 class CardsRefreshed(NamedTuple):

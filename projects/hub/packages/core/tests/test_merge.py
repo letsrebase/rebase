@@ -28,6 +28,7 @@ from rebase_core.models import (
     Freelancer,
     FreelancerCard,
     FreelancerFiscal,
+    FreelancerSource,
     GuideDownload,
     Login,
     MagicLinkToken,
@@ -617,6 +618,61 @@ def test_undo_restores_a_swapped_cv_and_the_survivors_filled_fields(clean: Sessi
     assert clean.get(Freelancer, a.id).posizione is None  # type: ignore[union-attr]
     assert clean.get(FreelancerCard, b.id).card == {"ruolo": "Dev"}  # type: ignore[union-attr]
     assert clean.get(FreelancerCard, a.id) is None
+
+
+def test_the_absorbed_cards_source_text_is_deleted_and_the_survivors_kept(clean: Session) -> None:
+    """What third parties' pages said about a card that no longer exists goes with it
+    (REB-837); the survivor's own stays."""
+    a, b, _, _, admin = _pair(clean)
+    for owner in (a, b):
+        clean.add(
+            FreelancerSource(
+                freelancer_id=owner.id,
+                kind="link",
+                ref="https://ada.example/",
+                position=1,
+                text="a page",
+                content_sha256="c" * 64,
+                status="ok",
+                fetched_at=NOW,
+            )
+        )
+    clean.commit()
+
+    PersonMergeService(clean).merge(a.id, b.id, admin.id)
+
+    owners = clean.scalars(select(FreelancerSource.freelancer_id)).all()
+    assert owners == [a.id]
+
+
+def test_a_swapped_card_keeps_its_provenance(clean: Session) -> None:
+    a, b, _, _, admin = _pair(clean)
+    a.cv_uploaded_at = NOW - timedelta(days=90)
+    b.cv_uploaded_at = NOW
+    clean.add(
+        FreelancerCard(
+            freelancer_id=b.id,
+            cv_sha256="b" * 64,
+            card={"ruolo": "Dev"},
+            prompt_version=2,
+            provider="anthropic",
+            fonti={"ruolo": ["cv"]},
+            source_hashes={"github": "d" * 64},
+            conflicts=[{"campo": "anni"}],
+            thinking_tokens=120,
+        )
+    )
+    clean.commit()
+
+    PersonMergeService(clean).merge(a.id, b.id, admin.id)
+
+    clean.expire_all()
+    card = clean.get(FreelancerCard, a.id)
+    assert card is not None and card.card == {"ruolo": "Dev"}
+    assert (card.prompt_version, card.provider, card.thinking_tokens) == (2, "anthropic", 120)
+    assert card.fonti == {"ruolo": ["cv"]}
+    assert card.source_hashes == {"github": "d" * 64}
+    assert card.conflicts == [{"campo": "anni"}]
 
 
 def test_undo_leaves_what_the_survivor_got_after_the_merge(clean: Session) -> None:

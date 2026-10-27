@@ -259,6 +259,68 @@ def test_cards_refresh_names_modelli_ai_when_no_task_configured(
     )
 
 
+# ---- sources-refetch (REB-839) ------------------------------------------------------------
+
+
+class _FakeSources:
+    """What `sources_refetch` builds in place of the service on the network: the switches
+    it is told, the people it was asked to read."""
+
+    enabled: set[str] = set()
+    asked: list[int] = []
+
+    def __init__(self, session: object) -> None:
+        self.session = session
+
+    def enabled_kinds(self) -> set[str]:
+        return self.enabled
+
+    def refetch_due(self, limit: int) -> int:
+        self.asked.append(limit)
+        return 2
+
+
+@pytest.fixture
+def fake_sources(monkeypatch: pytest.MonkeyPatch, hub_engine: Engine) -> type[_FakeSources]:
+    url = hub_engine.url.render_as_string(hide_password=False)
+    monkeypatch.setattr(
+        cli,
+        "get_settings",
+        lambda: Settings(database_url=url, _env_file=None),  # type: ignore[call-arg]
+    )
+    monkeypatch.setattr(cli, "default_source_service", _FakeSources)
+    _FakeSources.enabled, _FakeSources.asked = set(), []
+    return _FakeSources
+
+
+def test_sources_refetch_reads_nothing_while_every_switch_is_off(
+    fake_sources: type[_FakeSources], capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["sources-refetch"]) == 0
+
+    assert fake_sources.asked == []
+    assert capsys.readouterr().out.strip() == "Nessuna fonte accesa: apri «Modelli AI»."
+
+
+def test_sources_refetch_reads_the_limit_and_calls_no_model(
+    fake_sources: type[_FakeSources],
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The weekly pass is on a machine with no model configured too: it never asks for
+    the `card` task's seam."""
+    fake_sources.enabled = {"github"}
+    monkeypatch.setattr(
+        cli, "call_for_task", lambda *args: pytest.fail("the weekly pass asked for a model")
+    )
+
+    assert main(["sources-refetch", "--limit", "7"]) == 0
+
+    assert fake_sources.asked == [7]
+    assert capsys.readouterr().out.strip() == "2 persone riviste"
+    assert main(["sources-refetch", "--limit", "0"]) == 2
+
+
 # ---- ai-seed / ai-rotate-secrets (REB-832) ----------------------------------------------
 
 _SECRETS_KEY = base64.b64encode(os.urandom(32)).decode()

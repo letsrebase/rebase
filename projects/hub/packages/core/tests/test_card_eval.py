@@ -426,6 +426,8 @@ def test_no_card_measures_nothing_but_a_guard_refusal_is_a_failure() -> None:
     assert agreement(_card(), None, "refusal") == AgreementRow(None, None, None)
     assert agreement(_card(), None, "gendered") == AgreementRow(None, None, False)
     assert agreement(_card(), None, "identifying").guard_clean is False
+    # What a source or an employer would give away (prompt version 2) is a guard failure too.
+    assert agreement(_card(), None, "source_identifying").guard_clean is False
 
 
 def test_a_run_measures_each_accepted_profile_and_stores_the_card_it_wrote(

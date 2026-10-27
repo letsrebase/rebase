@@ -413,6 +413,39 @@ export interface FreelancerCard {
    *  `card.seniority` and `card.anni` show when set. */
   seniority_admin?: Scheda['seniority'] | null
   anni_admin?: number | null
+  /** What the card was written from and by what (REB-839), `null` without a card row. */
+  provenance?: CardProvenance | null
+}
+
+/** One stored source of a person: never its text, only where it was read and how it went. */
+export interface SourceProvenance {
+  /** `github` or `link:<n>`. */
+  key: string
+  kind: 'github' | 'link'
+  ref: string
+  status: string
+  fetched_at: string
+}
+
+/** A disagreement the code found while writing a card. */
+export interface CardConflict {
+  kind: 'anni_diversi' | 'anni_scartata'
+  anni_scheda: number | null
+  anni_hub: number | null
+}
+
+export type CardStale = 'cv' | 'source' | 'prompt'
+
+export interface CardProvenance {
+  /** 1 for a card written before versions were recorded. */
+  prompt_version: number
+  provider: string | null
+  /** What the model said supported each field, `{}` for a card written before. */
+  fonti: Record<string, string[]>
+  conflicts: CardConflict[]
+  sources: SourceProvenance[]
+  source_hashes: Record<string, string>
+  stale: CardStale | null
 }
 
 // ---- the admin area -------------------------------------------------------------------
@@ -1655,6 +1688,16 @@ export const admin = {
     request<AiTask>(`/api/hub/admin/ai/tasks/${task}`, { ...json(body), method: 'PUT' }),
   aiUpsertPrice: (body: AiPriceUpdate) =>
     request<AiPrice>('/api/hub/admin/ai/prices', { ...json(body), method: 'PUT' }),
+  aiSetSourceEnabled: (kind: AiSourceKind, enabled: boolean) =>
+    request<AiSourceSwitch>(`/api/hub/admin/ai/sources/${kind}/enabled`, {
+      ...json({ enabled }),
+      method: 'PUT',
+    }),
+  /** «Schede da aggiornare» (REB-839): the cards a newer prompt or changed sources left behind. */
+  aiStaleCards: () => request<AiStaleCards>('/api/hub/admin/ai/cards/stale'),
+  /** «Avvia rigenerazione»: queues up to `limit` of them; they are written afterwards. */
+  aiRegenerateStale: (limit: number) =>
+    request<AiRegenerationStarted>('/api/hub/admin/ai/cards/regenerate-stale', json({ limit })),
   aiProva: (task: string) => request<AiProva>(`/api/hub/admin/ai/tasks/${task}/prova`, json({})),
   /** «Valutazione» (REB-836): the evaluation set, its runs, a correction, the accept and the ratings. */
   cardEval: () => request<CardEval>('/api/hub/admin/card-eval'),
@@ -1709,8 +1752,38 @@ export interface AiSpendRow {
   unpriced_calls: number
 }
 
+export type AiSourceKind = 'github' | 'links'
+
+/** The switch of one kind of source the card is written from, off until the privacy notice covers it. */
+export interface AiSourceSwitch {
+  kind: AiSourceKind
+  enabled: boolean
+  updated_at: string | null
+  updated_by_name: string | null
+}
+
+export interface AiStaleCard {
+  freelancer_id: string
+  nome: string
+  reason: 'prompt' | 'source'
+  generated_at: string | null
+}
+
+export interface AiStaleCards {
+  count: number
+  by_reason: { prompt?: number; source?: number }
+  /** A decimal as a string; `null` while no `card` call is recorded. */
+  estimated_cost_eur: string | null
+  items: AiStaleCard[]
+}
+
+export interface AiRegenerationStarted {
+  queued: number
+}
+
 export interface AiConfig {
   secrets_key_present: boolean
+  sources: AiSourceSwitch[]
   providers: AiProvider[]
   tasks: AiTask[]
   prices: AiPrice[]

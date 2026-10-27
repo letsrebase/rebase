@@ -15,6 +15,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    UniqueConstraint,
     func,
     text,
 )
@@ -702,7 +703,10 @@ ADMIN_ACTION_ENTITY_TYPES = (
 # took in) and `unmerged` (the undo, on both). REB-835 adds the evaluation set's trail,
 # on entity type `card_eval` (the freelancer's id): `eval_add`, `eval_remove`,
 # `eval_expected` (its payload names the fields that changed, never their values: an
-# expected card is personal data), `eval_accept` and `eval_rate`.
+# expected card is personal data), `eval_accept` and `eval_rate`. REB-839 adds
+# `cards_regenerate` on `ai_config`: an admin's start of the regeneration of the cards
+# that are stale by prompt version or by their inputs (its payload: the limit and how
+# many were queued).
 ADMIN_ACTION_KINDS = (
     "overridden",
     "cleared",
@@ -731,6 +735,7 @@ ADMIN_ACTION_KINDS = (
     "eval_expected",
     "eval_accept",
     "eval_rate",
+    "cards_regenerate",
 )
 
 
@@ -1136,6 +1141,17 @@ class FreelancerCard(Base, TimestampMixin):
     generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     error: Mapped[str | None] = mapped_column(Text, default=None)
     error_cv_sha256: Mapped[str | None] = mapped_column(String(64), default=None)
+    # What the card was written from and by what (REB-837), all `NULL` on a card written
+    # before: the prompt version and provider, the model's claim of which sources
+    # supported each field (`fonti`, checked by code, never public), the hash of every
+    # source it read (`source_hashes`: `github`, `link:<n>`), the conflicts the code found
+    # between the CV and another source, and the thinking tokens the call spent.
+    prompt_version: Mapped[int | None] = mapped_column(Integer, default=None)
+    provider: Mapped[str | None] = mapped_column(String(20), default=None)
+    fonti: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=None)
+    source_hashes: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=None)
+    conflicts: Mapped[list[Any] | None] = mapped_column(JSONB, default=None)
+    thinking_tokens: Mapped[int | None] = mapped_column(Integer, default=None)
 
 
 class TeamProposal(Base, PrimaryKeyMixin):
@@ -1571,6 +1587,61 @@ class AiUsage(Base, PrimaryKeyMixin):
         CheckConstraint("task IN ('card', 'team_proposal')", name="ck_ai_usage_task"),
         CheckConstraint("purpose IN ('run', 'prova', 'eval')", name="ck_ai_usage_purpose"),
         CheckConstraint("priced = (cost_eur IS NOT NULL)", name="ck_ai_usage_priced"),
+    )
+
+
+AI_SOURCE_KINDS = ("github", "links")
+SOURCE_KINDS = ("github", "link")
+SOURCE_STATUSES = ("ok", "unreadable", "blocked", "robots", "too_large", "error")
+
+
+class AiSource(Base):
+    """The switch of one kind of source the card may be written from (REB-837): `github`
+    and `links`, off by default and off in production until the privacy notice covers
+    reading what a person linked (design 2026-10-27, «Privacy and legal»). Off means no
+    fetch, no stored text read and none kept: `SourceService` deletes the rows of a kind
+    that is off the next time it refetches."""
+
+    __tablename__ = "ai_sources"
+
+    kind: Mapped[str] = mapped_column(String(10), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    updated_by: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+
+    __table_args__ = (CheckConstraint("kind IN ('github', 'links')", name="ck_ai_sources_kind"),)
+
+
+class FreelancerSource(Base, PrimaryKeyMixin):
+    """The text of one third-party source a card is written from, per person: the GitHub
+    account (`kind` `github`, `ref` the login) or one link they gave (`kind` `link`, `ref`
+    the URL, `position` its place among the links that are read). `text` is what was read
+    and `content_sha256` the hash of it **without what moves on its own** (stars, last
+    push, page dates), so a source changes the card's staleness only when its content
+    does; both are empty when `status` is not `ok`. Gone with the person (`ON DELETE
+    CASCADE`), and `SourceService.delete_all` removes it when the person is soft-deleted
+    or merged away. LinkedIn is never a row: it is dropped before fetching."""
+
+    __tablename__ = "freelancer_sources"
+
+    freelancer_id: Mapped[UUID] = mapped_column(
+        ForeignKey("freelancers.id", ondelete="CASCADE"), nullable=False
+    )
+    kind: Mapped[str] = mapped_column(String(10), nullable=False)
+    ref: Mapped[str] = mapped_column(Text, nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    content_sha256: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    status: Mapped[str] = mapped_column(String(12), nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("freelancer_id", "kind", "ref", name="uq_freelancer_sources_ref"),
+        CheckConstraint("kind IN ('github', 'link')", name="ck_freelancer_sources_kind"),
+        CheckConstraint(
+            "status IN ('ok', 'unreadable', 'blocked', 'robots', 'too_large', 'error')",
+            name="ck_freelancer_sources_status",
+        ),
     )
 
 

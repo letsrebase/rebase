@@ -923,12 +923,23 @@ def test_an_admin_reads_and_regenerates_the_anonymous_card(
     assert body["cv_sha256"] == hashlib.sha256(CV).hexdigest()
     assert body["model"] == "claude-opus-5" and body["generated_at"] is not None
     assert body["error"] is None
+    # The provenance is the admin's alone (REB-839): the prompt version, what the model says
+    # supported each field, and no source and no conflict for a CV alone. Neither the
+    # talent list nor the cloud carries any of it.
+    assert body["provenance"]["prompt_version"] == 2
+    assert body["provenance"]["fonti"]["ruolo"] == ["cv"]
+    assert (body["provenance"]["sources"], body["provenance"]["conflicts"]) == ([], [])
+    assert body["provenance"]["stale"] is None
+    talents = client.get("/api/hub/talent").text
+    for key in ("fonti", "source_hashes", "conflicts", "provenance", "prompt_version"):
+        assert f'"{key}"' not in talents
 
     # «Rigenera scheda»: the same CV is written again, on request.
     again = client.post(f"/api/hub/freelancers/{freelancer_id}/card")
     assert again.status_code == 200, again.text
     assert len(llm.requests) == 2
     assert again.json()["card"] == {**CARD, "seniority_incerta": False}
+    assert again.json()["provenance"]["prompt_version"] == 2
 
     # A refusal keeps the card and says so; the next «Rigenera» ignores the failed hash.
     refusing = RecordingCall([card_response(stop_reason="refusal"), card_response()])

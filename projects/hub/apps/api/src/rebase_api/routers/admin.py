@@ -72,7 +72,7 @@ from rebase_core.schemas import (
 from rebase_core.search import SEARCH_MAX_LENGTH
 from rebase_core.service import SignupService
 from rebase_core.talenti import TalentiService
-from rebase_core.team_schemas import FreelancerCardRead
+from rebase_core.team_schemas import FreelancerCardAdminRead
 from rebase_core.users import UserService
 from rebase_core.validation import SafeStr
 
@@ -238,27 +238,31 @@ def set_freelancer_vetted(
     return FreelancerService(session).set_vetted(freelancer_id, change.vetted, admin.id)
 
 
-@router.get("/freelancers/{freelancer_id}/card", response_model=FreelancerCardRead)
+@router.get("/freelancers/{freelancer_id}/card", response_model=FreelancerCardAdminRead)
 def get_freelancer_card(
     _: AdminDep, session: SessionDep, freelancer_id: UUID
-) -> FreelancerCardRead:
+) -> FreelancerCardAdminRead:
     """The anonymous card Claude wrote from the CV (REB-510): the card, the work mode
     read from the profile now, the CV and the model it came from, and the last failure,
-    which may sit beside an older card."""
-    return CardWriter(session, None).read(freelancer_id)
+    which may sit beside an older card; and what it was written from (`provenance`: the
+    sources the model says it used, the prompt version, the conflicts), which no other
+    reader of a card sees (REB-839)."""
+    return CardWriter(session, None).read_admin(freelancer_id)
 
 
-@router.post("/freelancers/{freelancer_id}/card", response_model=FreelancerCardRead)
+@router.post("/freelancers/{freelancer_id}/card", response_model=FreelancerCardAdminRead)
 def regenerate_freelancer_card(
     _: AdminDep, session: SessionDep, llm: CardLlmDep, freelancer_id: UUID
-) -> FreelancerCardRead:
+) -> FreelancerCardAdminRead:
     """«Rigenera scheda»: the card written again from the current CV, now, even from the
     CV that last failed, which is otherwise not tried again until it changes. A failure
     answers 200 with the previous card and `error`, as the page shows it; no key answers
     the team builder's own 503, rather than the card unchanged as if written again."""
     if llm is None:
         raise TeamBuilderOff("Il team builder è spento.")
-    return CardWriter(session, llm).write(freelancer_id, force=True)
+    writer = CardWriter(session, llm)
+    writer.write(freelancer_id, force=True)
+    return writer.read_admin(freelancer_id)
 
 
 @router.get("/freelancers/{freelancer_id}/audit", response_model=list[AdminActionRead])

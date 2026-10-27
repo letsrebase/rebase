@@ -229,4 +229,67 @@ describe('«Scheda anonima» on the talent page (REB-514, spec § 2.1, § 5.1)',
     mount()
     expect(await screen.findByText('Non riesco a leggere la scheda anonima.')).toBeInTheDocument()
   })
+
+  it('shows the provenance, the model’s sources labelled «secondo il modello», conflicts and staleness', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      answer(200, {
+        ...WRITTEN,
+        provenance: {
+          prompt_version: 2,
+          provider: 'anthropic',
+          fonti: { ruolo: ['cv', 'github'], competenze: ['cv', 'link:2'], sintesi: ['hub'] },
+          conflicts: [
+            { kind: 'anni_diversi', anni_scheda: 9, anni_hub: 12 },
+            { kind: 'anni_scartata', anni_scheda: 6, anni_hub: null },
+          ],
+          sources: [
+            { key: 'github', kind: 'github', ref: 'ada', status: 'ok', fetched_at: '2026-09-25T10:00:00Z' },
+            { key: 'link:2', kind: 'link', ref: 'https://ada.dev', status: 'non raggiungibile', fetched_at: '2026-09-25T10:00:00Z' },
+          ],
+          source_hashes: {},
+          stale: 'source',
+        },
+      }),
+    )
+    mount()
+    await screen.findByText('Backend developer')
+    const card = section()
+    expect(within(card).getByText('Fonti, secondo il modello')).toBeInTheDocument()
+    expect(within(card).getByText('Ruolo: CV, GitHub')).toBeInTheDocument()
+    expect(within(card).getByText('Competenze: CV, Link 2')).toBeInTheDocument()
+    expect(within(card).getByText('Sintesi: Dati della hub')).toBeInTheDocument()
+    expect(within(card).getByText(/Anthropic · Prompt v2/)).toBeInTheDocument()
+    expect(within(card).getByText(/GitHub: ada, letta il/)).toBeInTheDocument()
+    expect(within(card).getByText(/Link 2: https:\/\/ada.dev, letta il .*\(non raggiungibile\)/)).toBeInTheDocument()
+    expect(
+      within(card).getByText('Gli incarichi completati in hub fanno 12 anni, la scheda ne dichiara 9 (date del CV)'),
+    ).toBeInTheDocument()
+    expect(
+      within(card).getByText('Anni scartati: 6, venivano solo da fonti senza date professionali'),
+    ).toBeInTheDocument()
+    expect(within(card).getByText(/Da aggiornare: le fonti/)).toBeInTheDocument()
+  })
+
+  it('says a card written before the sources were recorded, and that a changed CV rewrites itself', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      answer(200, {
+        ...WRITTEN,
+        provenance: {
+          prompt_version: 1,
+          provider: null,
+          fonti: {},
+          conflicts: [],
+          sources: [],
+          source_hashes: {},
+          stale: 'cv',
+        },
+      }),
+    )
+    mount()
+    await screen.findByText('Backend developer')
+    const card = section()
+    expect(within(card).getByText('Scheda scritta prima della registrazione delle fonti')).toBeInTheDocument()
+    expect(within(card).getByText(/Prompt v1/)).toBeInTheDocument()
+    expect(within(card).getByText('Il CV è cambiato: la scheda si rigenera da sola')).toBeInTheDocument()
+  })
 })

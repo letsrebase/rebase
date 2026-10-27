@@ -12,6 +12,7 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
+from fakes_cards import card_response, text_pdf
 from fastapi.testclient import TestClient
 from pydantic_ai.messages import ModelResponse, TextPart
 from pydantic_ai.models import Model
@@ -30,11 +31,14 @@ from rebase_api.deps import (
 )
 from rebase_core.admin_tokens import AdminRead
 from rebase_core.ai_config import AiConfigService
+from rebase_core.cards import CardWriter
 from rebase_core.config import Settings
 from rebase_core.errors import LlmUnavailable
-from rebase_core.llm import LlmRequest, LlmResponse
+from rebase_core.freelancers import FreelancerService
+from rebase_core.llm import LlmRequest, LlmResponse, RecordingCall
 from rebase_core.mail import RecordingSender
-from rebase_core.models import AdminAction, AiUsage, User
+from rebase_core.models import AdminAction, AiUsage, FreelancerCard, User
+from rebase_core.schemas import FreelancerCreate
 
 SECRET = "sk-secret-abcd"
 SECRETS_KEY = base64.b64encode(os.urandom(32)).decode()
@@ -147,6 +151,9 @@ ROUTES = [
         },
     ),
     ("post", f"{BASE}/tasks/card/prova", {}),
+    ("put", f"{BASE}/sources/github/enabled", {"enabled": True}),
+    ("get", f"{BASE}/cards/stale", None),
+    ("post", f"{BASE}/cards/regenerate-stale", {"limit": 5}),
 ]
 
 
@@ -332,3 +339,155 @@ def test_prova_goes_through_the_real_seam_and_counts_against_cap(
     with Session(api_engine) as check:
         [usage] = check.scalars(select(AiUsage)).all()
         assert (usage.task, usage.purpose) == ("card", "prova")
+
+
+# ---- the sources and the cards that wait for an admin (REB-839) ---------------------------
+
+
+def test_source_switches_default_off_and_toggle(
+    client: TestClient, admin: User, api_session: Session
+) -> None:
+    """Both switches are off until the privacy notice covers reading what people linked;
+    turning one is an `ai_switch` entry with the before and after, and off is read back."""
+    assert [(s["kind"], s["enabled"]) for s in client.get(BASE).json()["sources"]] == [
+        ("github", False),
+        ("links", False),
+    ]
+
+    on = client.put(f"{BASE}/sources/github/enabled", json={"enabled": True})
+    assert on.status_code == 200, on.text
+    assert on.json()["enabled"] is True and on.json()["updated_by_name"] == "Ivan Sala"
+    assert [s["enabled"] for s in client.get(BASE).json()["sources"]] == [True, False]
+    [action] = api_session.scalars(select(AdminAction).where(AdminAction.kind == "ai_switch"))
+    assert action.payload["source"] == "github"
+
+    off = client.put(f"{BASE}/sources/github/enabled", json={"enabled": False})
+    assert off.json()["enabled"] is False
+    assert client.put(f"{BASE}/sources/linkedin/enabled", json={"enabled": True}).status_code == 422
+    api_session.execute(text("UPDATE ai_sources SET enabled = false, updated_by = NULL"))
+    api_session.commit()
+
+
+def test_non_admin_cannot_toggle_sources(
+    client: TestClient, member: User, api_session: Session
+) -> None:
+    response = client.put(f"{BASE}/sources/github/enabled", json={"enabled": True})
+
+    assert response.status_code == 403
+    enabled = api_session.scalar(text("SELECT count(*) FROM ai_sources WHERE enabled"))
+    assert enabled == 0
+
+
+@pytest.fixture
+def written_cards(admin: User, api_session: Session) -> Iterator[list[Any]]:
+    """Two people with a card written by prompt version 1 and a third with a fresh one."""
+    people = []
+    for n in range(1, 4):
+        data = FreelancerCreate(
+            nome=f"Persona{n}",
+            cognome=f"Cognome{n}",
+            email=f"persona{n}@studio.it",
+            tariffa_giornaliera=Decimal("450.00"),
+            posizione="Backend developer",
+            remoto="remoto",
+        )
+        read, _ = FreelancerService(api_session).apply(
+            data, text_pdf(f"Persona{n}, backend developer."), "cv.pdf", ""
+        )
+        CardWriter(api_session, RecordingCall([card_response()])).write(read.id)
+        people.append(read.id)
+    api_session.execute(
+        text("UPDATE freelancer_cards SET prompt_version = 1 WHERE freelancer_id <> :keep"),
+        {"keep": people[2]},
+    )
+    api_session.commit()
+    yield people
+    api_session.rollback()
+    for table in ("ai_usage", "admin_actions", "freelancers"):
+        api_session.execute(text(f"DELETE FROM {table}"))
+    api_session.commit()
+
+
+def test_stale_cards_lists_the_count_the_cost_and_the_reason(
+    client: TestClient, written_cards: list[Any], api_session: Session
+) -> None:
+    waiting = client.get(f"{BASE}/cards/stale")
+
+    assert waiting.status_code == 200, waiting.text
+    body = waiting.json()
+    assert (body["count"], body["by_reason"]) == (2, {"prompt": 2})
+    assert body["estimated_cost_eur"] is None  # no `card` call recorded yet: never «free»
+    assert sorted(item["nome"] for item in body["items"]) == [
+        "Persona1 Cognome1",
+        "Persona2 Cognome2",
+    ]
+    assert {item["reason"] for item in body["items"]} == {"prompt"}
+
+    api_session.add(
+        AiUsage(
+            task="card",
+            purpose="run",
+            provider="anthropic",
+            model="claude-opus-5",
+            priced=True,
+            cost_eur=Decimal("0.25"),
+        )
+    )
+    api_session.commit()
+    assert Decimal(client.get(f"{BASE}/cards/stale").json()["estimated_cost_eur"]) == Decimal("0.5")
+
+
+def test_regenerate_stale_writes_the_limit_after_the_response(
+    client: TestClient, written_cards: list[Any], api_session: Session, llm: RecordingCall
+) -> None:
+    started = client.post(f"{BASE}/cards/regenerate-stale", json={"limit": 1})
+
+    assert started.status_code == 200, started.text
+    assert started.json() == {"queued": 1}
+    # The test client runs the background task before it answers.
+    assert len(llm.requests) == 1
+    assert client.get(f"{BASE}/cards/stale").json()["count"] == 1
+    [action] = api_session.scalars(
+        select(AdminAction).where(AdminAction.kind == "cards_regenerate")
+    )
+    assert action.payload == {"limit": 1, "queued": 1}
+    rows = api_session.scalars(select(FreelancerCard).where(FreelancerCard.prompt_version == 2))
+    assert len(rows.all()) == 2
+
+    # Nothing is stale after the second start, and a start with nothing queues nothing.
+    assert client.post(f"{BASE}/cards/regenerate-stale", json={"limit": 5}).json() == {"queued": 1}
+    assert client.post(f"{BASE}/cards/regenerate-stale", json={"limit": 5}).json() == {"queued": 0}
+    assert len(llm.requests) == 2
+
+
+def test_regenerate_stale_needs_a_model_and_a_sane_limit(
+    client: TestClient, written_cards: list[Any]
+) -> None:
+    no_model = client.post(f"{BASE}/cards/regenerate-stale", json={"limit": 5})
+    assert no_model.status_code == 503
+
+    for limit in (0, 51, "tutte"):
+        bad = client.post(f"{BASE}/cards/regenerate-stale", json={"limit": limit})
+        assert bad.status_code == 422
+
+
+def test_a_start_while_another_is_running_queues_nothing(
+    client: TestClient, written_cards: list[Any], api_session: Session, llm: RecordingCall
+) -> None:
+    """The lock of a running batch is held on a connection of its own, as the batch holds
+    it: a second click finds it and the page is told nothing was queued."""
+    import hashlib
+
+    key = int.from_bytes(
+        hashlib.sha256(b"rebase:regenerate_stale").digest()[:8], "big", signed=True
+    )
+    with api_session.get_bind().connect() as holder:  # type: ignore[union-attr]
+        holder.execute(text("SELECT pg_advisory_lock(:k)"), {"k": key})
+        try:
+            second = client.post(f"{BASE}/cards/regenerate-stale", json={"limit": 5})
+        finally:
+            holder.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": key})
+            holder.commit()
+
+    assert second.json() == {"queued": 0}
+    assert llm.requests == []

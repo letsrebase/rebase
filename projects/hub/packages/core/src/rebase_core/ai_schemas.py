@@ -4,6 +4,8 @@ bytes are not a field of any model in this file."""
 
 from datetime import datetime
 from decimal import Decimal
+from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel
 
@@ -56,11 +58,52 @@ class SpendRead(BaseModel):
     rows: list[SpendRow]
 
 
+class SourceSwitchRead(BaseModel):
+    """The switch of one kind of source the card is written from: `github` or `links`,
+    off until the privacy notice covers reading what people linked."""
+
+    kind: Literal["github", "links"]
+    enabled: bool
+    updated_at: datetime | None
+    updated_by_name: str | None
+
+
+class StaleCardRead(BaseModel):
+    """A card that is no longer what the current prompt and inputs would write, and that
+    only an admin's start regenerates: `prompt` a newer prompt version, `source` the
+    hub's facts, the position or a source changed."""
+
+    freelancer_id: UUID
+    nome: str
+    reason: Literal["prompt", "source"]
+    generated_at: datetime | None
+
+
+class StaleCardsRead(BaseModel):
+    """«Schede da aggiornare»: how many cards are stale (`count`, by reason in
+    `by_reason`), what regenerating them would cost (`estimated_cost_eur`: the average
+    cost of a recorded `card` call times `count`, `None` while none is recorded) and the
+    oldest `items`, the ones the next start works through first."""
+
+    count: int
+    by_reason: dict[str, int]
+    estimated_cost_eur: Decimal | None
+    items: list[StaleCardRead]
+
+
+class RegenerationStarted(BaseModel):
+    """The answer of an admin's start: how many cards were queued; they are written after
+    the response, one at a time."""
+
+    queued: int
+
+
 class AiConfigRead(BaseModel):
     secrets_key_present: bool
     providers: list[ProviderRead]
     tasks: list[TaskRead]
     prices: list[PriceRead]
     spend: SpendRead
+    sources: list[SourceSwitchRead]
     # Suggestions for the model field, per provider; free text is still accepted.
     known_models: dict[str, list[str]]

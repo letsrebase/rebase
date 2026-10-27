@@ -49,6 +49,7 @@ from rebase_core.schemas import (
     SignupUtm,
     StatusChange,
 )
+from rebase_core.sources import delete_sources
 from rebase_core.users import UserService, refuse_linkedin_conflict
 
 ENTITY = "freelancer"
@@ -581,9 +582,14 @@ class FreelancerService:
     def soft_delete(self, freelancer_id: UUID, admin_id: UUID) -> FreelancerRead:
         """Sets `deleted_at`. No hard delete anywhere in this path: an admin's own
         mistake, or a delete aimed at the wrong row, must be reversible (Lorenzo,
-        2026-09-22: «tutto deve essere tracciabile e reversibile da un admin»)."""
+        2026-09-22: «tutto deve essere tracciabile e reversibile da un admin»).
+
+        What third parties' pages said about the person is not part of what an admin can
+        undo: their stored source text goes in the same commit (REB-837), and a restored
+        card reads its links again at the next refetch."""
         row = self._require(freelancer_id)
         row.deleted_at = utcnow()
+        delete_sources(self.session, row.id)
         self.session.commit()
         AdminActionService(self.session).record(ENTITY, row.id, "deleted", admin_id, {})
         user = self.session.get(User, row.user_id)
