@@ -326,6 +326,40 @@ def test_the_command_applies_with_apply_and_a_second_run_has_nothing_left(
     assert "scritti 0" in out
 
 
+def test_a_change_committed_between_the_plan_and_the_apply_is_respected(root: Root) -> None:
+    """The plan loaded the rows; another session then commits an owner on one customer and
+    archives the other. Only a locked read that refreshes what the plan loaded sees it."""
+    engine = create_engine(root.settings.database_url, future=True)
+    try:
+        with session_factory(engine)() as session:
+            plan = plan_owner_backfill(session, generic_emails=[root.generic_email])
+            assert [item.label for item in plan.assignments] == ["ACME Srl"]
+            with engine.begin() as other:
+                other.execute(
+                    text(
+                        "update customers set owner_id = "
+                        "(select id from users where nome = 'rebase') "
+                        "where ragione_sociale = 'ACME Srl'"
+                    )
+                )
+            assert apply_owner_backfill(session, plan) == 0
+        with engine.begin() as other:
+            other.execute(text("update customers set owner_id = null"))
+        with session_factory(engine)() as session:
+            plan = plan_owner_backfill(session)
+            with engine.begin() as other:
+                other.execute(text("update customers set deleted_at = now()"))
+            assert apply_owner_backfill(session, plan) == 0
+        assert _owners(root.settings) == {"ACME Srl": None, "Generico Srl": None}
+        with engine.connect() as connection:
+            updated = connection.execute(
+                text("select count(*) from activities where kind = 'updated'")
+            ).scalar()
+        assert updated == 0
+    finally:
+        engine.dispose()
+
+
 def test_an_unknown_space_is_one_line_on_stderr(
     root_settings: Settings,
     monkeypatch: pytest.MonkeyPatch,

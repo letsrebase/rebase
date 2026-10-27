@@ -154,8 +154,8 @@ def apply_owner_backfill(session: Session, plan: BackfillPlan) -> int:
 
     Each row is locked and read again (`populate_existing`: the plan already loaded it, and
     a locked read alone would hand back that stale copy) and written only while its owner is
-    still empty, so a plan computed a moment ago cannot overwrite an owner somebody set in
-    between."""
+    still empty and the record still live, so a plan computed a moment ago cannot overwrite
+    an owner somebody set, or touch a record somebody archived, in between."""
     activities = ActivityService(session)
     system = Actor.system()
     changed = 0
@@ -165,7 +165,7 @@ def apply_owner_backfill(session: Session, plan: BackfillPlan) -> int:
             if item.entity == "customer"
             else session.get(Deal, item.entity_id, with_for_update=True, populate_existing=True)
         )
-        if record is None or record.owner_id is not None:
+        if record is None or record.owner_id is not None or record.deleted_at is not None:
             continue
         record.owner_id = item.owner_id
         activities.record(
