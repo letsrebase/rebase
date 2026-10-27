@@ -115,15 +115,13 @@ class FreelancerCardRead(BaseModel):
 
 class CardsRefreshed(NamedTuple):
     """What one `rebase cards-refresh` batch did: cards written, CVs that failed (a
-    refusal, a cut or malformed answer, a provider error, a scan with no text), and how
-    many of the written cards still gave the person's gender away after their one
-    rewrite (REB-574), counted among `written` too. `stopped`: the batch ended at a
-    provider outage, on a first call (counted among `failed`) or on a rewrite (its first
-    card written, and counted there)."""
+    refusal, a cut or malformed answer, a card still giving the person's gender away after
+    its one rewrite (REB-802), a provider error, a scan with no text). `stopped`: the
+    batch ended at a provider outage, on a first call or on a rewrite, counted among
+    `failed`."""
 
     written: int
     failed: int
-    gender_warnings: int = 0
     stopped: bool = False
 
 
