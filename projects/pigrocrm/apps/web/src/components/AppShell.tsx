@@ -545,9 +545,9 @@ export function AppShell({
             )}
           >
             <BrandMark className="mr-2.5" />
-            {/* Brand accent, not body text: --color-watermelon (not the AA-adjusted
-                -strong variant) is exactly what the design tokens reserve for this. */}
-            Pigro<span className="text-[var(--color-watermelon)]">CRM</span>
+            {/* The wordmark's accent is the sidebar's own tint of the brand red, not the raw
+                --color-watermelon: that one is 4.17:1 on this ground, under AA at this size. */}
+            Pigro<span className="text-sidebar-wordmark-accent">CRM</span>
           </span>
           <Button
             variant="ghost"

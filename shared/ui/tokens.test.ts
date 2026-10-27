@@ -225,6 +225,17 @@ describe('the palette every slot resolves through', () => {
     expect(contrastRatio('#ffffff', tokenHex('watermelon-strong'))).toBeGreaterThanOrEqual(AA_TEXT)
   })
 
+  it('carries the wordmark accent on the blue sidebar at AA', () => {
+    // The raw brand red is 4.17:1 on Prussian Blue; the sidebar's wordmark uses the
+    // 80% tint the slot declares, and this holds that tint (blended in sRGB, which is
+    // within a hair of the oklab mix the stylesheet asks for) above AA.
+    expect(css).toMatch(
+      /--sidebar-wordmark-accent:\s*color-mix\(in oklab, var\(--color-watermelon\) 80%, #ffffff\)/,
+    )
+    const tint = blendSrgb(tokenHex('watermelon'), '#ffffff', 80)
+    expect(contrastRatio(tint, tokenHex('prussian-blue'))).toBeGreaterThanOrEqual(AA_TEXT)
+  })
+
   it('carries Paper text on the blue sidebar at AA', () => {
     expect(contrastRatio(tokenHex('paper'), tokenHex('prussian-blue'))).toBeGreaterThanOrEqual(AA_TEXT)
   })

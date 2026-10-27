@@ -26,6 +26,7 @@ import { useLogTime } from '@/features/time/queries'
 import { toProblem } from '@/lib/api'
 import { useAuth, useCanWrite } from '@/lib/auth'
 import { formatIsoDateItalian } from '@/lib/dates'
+import { formatItalianQuantity } from '@/lib/decimal'
 import { GIORNATA, MEZZA, normaliseHours } from './hours'
 import type { CalendarDay } from './queries'
 
@@ -94,7 +95,7 @@ function Worked({ data }: { data: CalendarDay | undefined }) {
   return (
     <section aria-labelledby="ore-del-giorno" className="space-y-1">
       <h3 id="ore-del-giorno" className="text-sm font-medium">
-        Ore ({data?.ore})
+        Ore ({data ? formatItalianQuantity(data.ore) : ''})
       </h3>
       <ul className="space-y-1 text-sm">
         {righe.map((riga) => (
@@ -103,7 +104,7 @@ function Worked({ data }: { data: CalendarDay | undefined }) {
               {riga.cliente ? `${riga.cliente} · ` : ''}
               {riga.deal_nome}
             </span>
-            <span className="tabular-nums">{riga.ore} h</span>
+            <span className="tabular-nums">{formatItalianQuantity(riga.ore)} h</span>
           </li>
         ))}
       </ul>
@@ -242,7 +243,7 @@ function LogHours({
           disabled={dealId === '' || valide === null || log.isPending}
           onClick={() => submit(ore)}
         >
-          Registra {valide ?? '—'} h
+          Registra {valide === null ? '—' : formatItalianQuantity(valide)} h
         </Button>
         <Button
           size="sm"
