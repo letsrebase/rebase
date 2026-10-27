@@ -79,8 +79,8 @@ NOT_FORWARDED: dict[str, str] = {
     "google_oauth_state_prefix": "calcolato da space_base_settings, mai dall'ambiente",
     # The same for Slack (REB-739): a space borrows the root's app, so its callback and its
     # state's prefix are computed per space and empty for the root.
-    "slack_callback_base_url": "calcolato da space_base_settings, mai dall'ambiente",
-    "slack_oauth_state_prefix": "calcolato da space_base_settings, mai dall'ambiente",
+    "slack_callback_base_url": "computed by space_base_settings, never from the environment",
+    "slack_oauth_state_prefix": "computed by space_base_settings, never from the environment",
 }
 
 

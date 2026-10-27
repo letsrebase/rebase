@@ -158,6 +158,7 @@ class ReminderRun:
                 now=now,
                 public_url=public_url,
                 slug=None if slug == ROOT_LABEL else slug,
+                raised=evaluation.reminders,
             )
             if dry_run:
                 session.rollback()

@@ -65,6 +65,10 @@ function useHealthMutation<Variables>(mutate: (variables: Variables) => Promise<
       queryClient.setQueryData(slackKeys.health, health)
       void queryClient.invalidateQueries({ queryKey: slackKeys.mine })
     },
+    // A refusal can have changed the row: Slack saying the token is dead is committed as
+    // `revoked` before the error leaves, and the page must show the reconnect and not an
+    // active workspace.
+    onError: () => void queryClient.invalidateQueries({ queryKey: slackKeys.health }),
   })
 }
 

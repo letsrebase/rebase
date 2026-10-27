@@ -296,6 +296,24 @@ describe('SlackPanel', () => {
     expect(screen.getByRole('button', { name: 'Cerca di nuovo' })).toBeDisabled()
   })
 
+  it('reads the workspace again after a refused action, which may have revoked it', async () => {
+    const user = userEvent.setup()
+    GET.mockResolvedValueOnce(ok(CONNECTED))
+    GET.mockResolvedValue(
+      ok({
+        ...CONNECTED,
+        workspace: { ...WORKSPACE, status: 'revoked', last_error: 'Slack ha revocato l’accesso' },
+      }),
+    )
+    POST.mockResolvedValue(failed({ detail: 'Slack ha revocato l’accesso di PigroCRM' }, 409))
+    renderPanel()
+    await screen.findByText('Acme Test')
+
+    await user.click(screen.getByRole('button', { name: 'Cerca di nuovo' }))
+
+    expect(await screen.findByRole('link', { name: 'Ricollega Slack' })).toBeInTheDocument()
+  })
+
   it('shows the problem of a connection that looks live and cannot work', async () => {
     GET.mockResolvedValue(
       ok({ ...CONNECTED, problem: 'il token Slack memorizzato non è decifrabile: verifica PIGROCRM_SLACK_TOKEN_KEY' }),

@@ -655,3 +655,98 @@ def test_a_write_a_channel_asked_for_that_fails_loses_only_itself(db_session: Se
     assert ledger.last_run("reminders") is not None  # the pass's own write stands
     assert ledger.last_run("kept") is not None  # a later hook still runs
     assert ledger.last_run("duplicated") is None  # and the one that failed left nothing
+
+
+# --- the findings of the reviewers on the first round ------------------------------------
+
+
+def test_the_channel_follows_what_the_space_raised_not_what_one_admin_still_has_open(
+    world: World,
+) -> None:
+    from pigrocrm.core.reminders.models import ReminderAck
+
+    world.preference(quiet_hours=NO_QUIET)
+    world.connect()
+    _late_job(world)
+    world.pass_()  # no channel yet: the admin is told in the app and by message
+    with world.session() as session:
+        delivery = session.scalars(
+            select(ReminderDelivery).where(ReminderDelivery.channel == "in_app")
+        ).first()
+        assert delivery is not None
+        session.add(
+            ReminderAck(key=delivery.key, type=delivery.type, user_id=world.admin, severity_rank=3)
+        )
+        session.commit()
+    _choose_channel(world)
+    with world.session() as session:
+        session.execute(text("DELETE FROM reminder_job_run"))
+        session.add(ReminderJobRun(job="reminders", ran_at=datetime.now(UTC) - timedelta(hours=1)))
+        session.commit()
+
+    outcome = world.pass_()
+
+    # The only admin acknowledged it, so nothing is due to them; the channel is the space's.
+    assert outcome.slacks == 1
+    assert [target for target, _ in world.fake.posts].count("C1") == 1
+
+
+def test_a_person_unmatched_for_a_day_is_looked_up_even_when_nothing_new_reached_them(
+    world: World,
+) -> None:
+    world.preference(quiet_hours=NO_QUIET)
+    ada_email = next(m for m in world.fake.members if m.startswith("ada-"))
+    ada_member = world.fake.members.pop(ada_email)
+    world.connect()
+    world.attivita("Richiamare Rossi")
+    world.pass_()  # in the app; Ada is not in Slack
+    world.fake.members[ada_email] = ada_member
+    with world.session() as session:
+        session.execute(text("UPDATE slack_user_links SET checked_at = now() - interval '2 days'"))
+        session.commit()
+
+    outcome = world.pass_()
+
+    assert outcome.slacks == 0  # what was open before is not announced
+    assert world.fake.posts == []
+    with world.session() as session:
+        link = session.execute(
+            select(SlackUserLink).where(SlackUserLink.user_id == world.ada)
+        ).scalar_one()
+        assert (link.source, link.slack_user_id) == ("email", "UADA")
+
+
+def test_what_a_pass_writes_for_an_older_connection_is_ignored(world: World) -> None:
+    from pigrocrm.core.reminders import slack as channel
+
+    world.connect()
+    with world.session() as session:
+        workspace = session.execute(select(SlackWorkspace)).scalar_one()
+        stale = (workspace.id, b"nonce-of-an-older-install")
+        channel._revoke(session, workspace.id, b"nonce-of-an-older-install", "invalid_auth")
+        channel._remember(session, stale, world.ada, "UGHOST", "x@y.example", datetime.now(UTC))
+        session.flush()
+        assert workspace.status == "active"
+        link = session.execute(
+            select(SlackUserLink).where(SlackUserLink.user_id == world.ada)
+        ).scalar_one()
+        assert link.slack_user_id != "UGHOST"
+
+
+def test_a_key_that_is_not_a_key_stops_slack_and_nothing_else(world: World) -> None:
+    world.preference(quiet_hours=NO_QUIET)
+    world.connect()
+    world.attivita("Richiamare Rossi")
+
+    outcome = world.pass_(settings=slack_settings(slack_token_key="not base64 at all!"))
+
+    assert outcome.esito == "eseguito"
+    assert outcome.slacks == 0
+    assert outcome.delivered == 1  # the app list still has it
+    with world.session() as session:
+        health = SlackService(
+            session,
+            settings=slack_settings(slack_token_key="not base64 at all!"),
+            client=slack_client(world.fake),
+        ).health(actor_of(session.get(User, world.admin)))  # type: ignore[arg-type]
+        assert health.problem is not None and "PIGROCRM_SLACK_TOKEN_KEY" in health.problem

@@ -90,6 +90,9 @@ class PassContext:
     # a channel whose credentials are per space (Slack's bot token, sealed under a key
     # derived from it) derives the space's own settings from `settings` and this.
     slug: str | None = None
+    # Every reminder the evaluation raised, before anybody's acknowledge or snooze: what a
+    # channel that speaks for the space and not for a person (Slack's channel) reads.
+    raised: tuple[Reminder, ...] = ()
 
     @property
     def local_now(self) -> datetime:
@@ -172,6 +175,7 @@ class ChannelDispatcher:
         now: datetime,
         public_url: str = "",
         slug: str | None = None,
+        raised: Sequence[Reminder] = (),
     ) -> list[Prepared]:
         """Plans every channel's sends for the reminders the engine left open.
 
@@ -192,6 +196,7 @@ class ChannelDispatcher:
             people=directory.people,
             preferences=preferences,
             slug=slug,
+            raised=tuple(raised),
         )
         local = context.local_now
         candidates: list[Candidate] = []

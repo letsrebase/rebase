@@ -105,7 +105,9 @@ signing secret and the verification token are not used.
 ## 5. Put them on the host
 
 Three lines in each environment's `${DEPLOY_PATH}/.env` (production and the preview), next to
-the Google ones, and `docker compose up -d` the stack:
+the Google ones, then let the approved deployment recreate the containers (a push to
+`main` that touched PigroCRM for the preview, a `pigrocrm-v<semver>` tag for production,
+`docs/adding-a-project.md` §7), never a `docker compose` by hand on the host:
 
 ```
 PIGROCRM_SLACK_CLIENT_ID=<Client ID>

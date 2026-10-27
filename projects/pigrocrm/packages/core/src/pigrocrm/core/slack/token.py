@@ -36,7 +36,9 @@ def bot_token(workspace: SlackWorkspace, settings: Settings) -> str:
             workspace.bot_token_nonce,
             decode_slack_token_key(settings),
         )
-    except Conflict as exc:
+    except (Conflict, ValueError) as exc:
+        # `ValueError` is `decode_slack_token_key` refusing a key that is not 32 bytes of
+        # base64: the same instruction to the operator, and it must not stop the pass.
         raise Conflict(
             SLACK_ENTITY,
             "il token Slack memorizzato non è decifrabile: verifica PIGROCRM_SLACK_TOKEN_KEY, "

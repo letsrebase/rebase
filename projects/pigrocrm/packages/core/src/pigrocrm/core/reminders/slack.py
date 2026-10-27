@@ -48,7 +48,8 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.config import slack_configured
 from pigrocrm.core.errors import Conflict
-from pigrocrm.core.reminders.catalogue import SEVERITY_RANK, Severity, get_type
+from pigrocrm.core.reminders.catalogue import SEVERITY_RANK, Severity, get_type, severity_for
+from pigrocrm.core.reminders.detect import Reminder
 from pigrocrm.core.reminders.dispatch import (
     Accepted,
     Candidate,
@@ -91,12 +92,9 @@ class _Line:
     """One reminder in a message. `accepted` is the ledger row a direct message writes once
     Slack took it, and `None` for a line of the channel post, which writes its own."""
 
-    candidate: Candidate
+    reminder: Reminder
     accepted: Accepted | None
-
-    @property
-    def severity(self) -> Severity:
-        return self.candidate.reminder.severity
+    severity: Severity
 
 
 @dataclass
@@ -111,15 +109,13 @@ class _Dm:
 
 
 def _ordered(lines: list[_Line]) -> list[_Line]:
-    return sorted(
-        lines, key=lambda line: (-SEVERITY_RANK[line.severity], line.candidate.reminder.key)
-    )
+    return sorted(lines, key=lambda line: (-SEVERITY_RANK[line.severity], line.reminder.key))
 
 
 def _body(lines: list[_Line], public_url: str, header: str, footer: bool) -> str:
     rows = []
     for line in lines:
-        reminder = line.candidate.reminder
+        reminder = line.reminder
         title = escape(reminder.title)
         if public_url:
             url = absolute(public_url, record_path(reminder.entity, reminder.entity_id))
@@ -179,25 +175,29 @@ class SlackChannel(Channel):
         links = repo.links()
         taken = {link.slack_user_id: link.user_id for link in links.values() if link.slack_user_id}
         workspace_id = workspace.id
+        # The identity of the token this pass holds: its nonce is fresh at every install, so a
+        # write produced by a pass that sent with an older connection is ignored.
+        nonce = workspace.bot_token_nonce
         dms = self._plan_dms(context, candidates, links)
-        post = self._plan_post(session, context, candidates, workspace)
+        post = self._plan_post(session, context, workspace)
 
         def send() -> ChannelResult:
             result = ChannelResult()
             try:
-                self._send_dms(client, token, dms, taken, context, result)
+                self._send_dms(client, token, dms, taken, context, result, (workspace_id, nonce))
                 if post is not None:
-                    self._send_post(client, token, post, context, result)
+                    self._send_post(client, token, post, context, result, (workspace_id, nonce))
             except SlackTokenRevoked as refusal:
                 code = str(refusal.details.get("error", ""))
-                result.writes.append(lambda s: _revoke(s, workspace_id, code))
+                result.writes.append(lambda s: _revoke(s, workspace_id, nonce, code))
             except Conflict:
                 logger.warning("slack: Slack non ha risposto")
             except Exception:  # noqa: BLE001 - the seam's contract is "never raises"
                 logger.warning("slack: invio non riuscito")
             return result
 
-        return Prepared(SLACK, len(dms) + (1 if post is not None else 0), send)
+        messages = sum(1 for dm in dms if dm.lines)
+        return Prepared(SLACK, messages + (1 if post is not None else 0), send)
 
     # -- planning ------------------------------------------------------------
 
@@ -225,18 +225,22 @@ class SlackChannel(Channel):
             # Announced only what reached the list after the person was matched, as push
             # does; a person about to be looked up is matched now, so only what is new to
             # their list in this pass.
-            if slack_user_id is not None:
-                matched_at = link.matched_at if link is not None else None
-                if matched_at is not None and candidate.listed_at < matched_at:
-                    continue
-            elif candidate.listed_at < context.now:
-                continue
             dm = by_user.get(reminder.user_id)
             if dm is None:
                 dm = by_user[reminder.user_id] = _Dm(
                     reminder.user_id, candidate.person.email, slack_user_id, []
                 )
-            dm.lines.append(_Line(candidate, Accepted(identity, reminder.severity)))
+            if slack_user_id is not None:
+                matched_at = link.matched_at if link is not None else None
+                if matched_at is not None and candidate.listed_at < matched_at:
+                    continue
+            elif candidate.listed_at < context.now:
+                # Old news to a person still to be looked up: they are matched in this pass
+                # (the lookup is due), and told nothing of what was open before.
+                continue
+            dm.lines.append(
+                _Line(reminder, Accepted(identity, reminder.severity), reminder.severity)
+            )
         dms = list(by_user.values())
         for dm in dms:
             dm.lines = _ordered(dm.lines)[:MAX_LINES]
@@ -246,7 +250,6 @@ class SlackChannel(Channel):
     def _plan_post(
         session: Session,
         context: PassContext,
-        candidates: Sequence[Candidate],
         workspace: SlackWorkspace,
     ) -> _Post | None:
         channel_id = workspace.channel_id
@@ -256,21 +259,24 @@ class SlackChannel(Channel):
         local = context.local_now
         if space.general().quiet_at(local.weekday(), local.time()):
             return None
-        # One line per key and day, at the highest severity anybody was raised it at.
+        # The space's own reading, never a person's: what was raised, before anybody's
+        # acknowledge or snooze, with the severity the space's ladder gives its measure. An
+        # admin who snoozes a reminder does not silence the channel.
         by_key: dict[tuple[str, date | None], _Line] = {}
-        for candidate in candidates:
-            reminder = candidate.reminder
-            if get_type(reminder.type).audience != "admins":
+        for reminder in context.raised:
+            kind = get_type(reminder.type)
+            if kind.audience != "admins" or not context.preferences.space_enabled(kind):
                 continue
-            if SLACK not in space.type(reminder.type).channels:
+            effective = space.type(kind)
+            if SLACK not in effective.channels:
+                continue
+            severity = severity_for(kind, reminder.measure, effective.ladder)
+            if severity is None:
                 continue
             slot = (reminder.key, reminder.period)
             current = by_key.get(slot)
-            if (
-                current is None
-                or SEVERITY_RANK[reminder.severity] > SEVERITY_RANK[current.severity]
-            ):
-                by_key[slot] = _Line(candidate, None)
+            if current is None or SEVERITY_RANK[severity] > SEVERITY_RANK[current.severity]:
+                by_key[slot] = _Line(reminder, None, severity)
         if not by_key:
             return None
         posted = {
@@ -301,13 +307,16 @@ class SlackChannel(Channel):
         taken: dict[str, UUID],
         context: PassContext,
         result: ChannelResult,
+        connection: _Connection,
     ) -> None:
         for dm in dms:
             slack_user_id = dm.slack_user_id
             if slack_user_id is None:
-                slack_user_id = self._look_up(client, token, dm, taken, context, result)
+                slack_user_id = self._look_up(client, token, dm, taken, context, result, connection)
                 if slack_user_id is None:
                     continue
+            if not dm.lines:
+                continue  # looked up for the matching alone: nothing is due to say
             try:
                 channel = client.open_dm(token, slack_user_id)
                 client.post_message(token, channel, direct_message(dm.lines, context.public_url))
@@ -327,6 +336,7 @@ class SlackChannel(Channel):
         taken: dict[str, UUID],
         context: PassContext,
         result: ChannelResult,
+        connection: _Connection,
     ) -> str | None:
         """The Slack member of a person not matched yet, written with the pass's ledger.
         `None` when nobody there has their address, or the member is another user's."""
@@ -338,10 +348,12 @@ class SlackChannel(Channel):
             logger.warning("slack: ricerca rifiutata (%s)", refused.code)
             return None
         if member is None or taken.get(member.id, user_id) != user_id:
-            result.writes.append(lambda s: _remember(s, user_id, None, None, now))
+            result.writes.append(lambda s: _remember(s, connection, user_id, None, None, now))
             return None
         taken[member.id] = user_id
-        result.writes.append(lambda s: _remember(s, user_id, member.id, member.email, now))
+        result.writes.append(
+            lambda s: _remember(s, connection, user_id, member.id, member.email, now)
+        )
         return member.id
 
     @staticmethod
@@ -351,6 +363,7 @@ class SlackChannel(Channel):
         post: _Post,
         context: PassContext,
         result: ChannelResult,
+        connection: _Connection,
     ) -> None:
         try:
             client.post_message(
@@ -362,15 +375,16 @@ class SlackChannel(Channel):
             logger.warning("slack: post nel canale rifiutato (%s)", refused.code)
             return
         for line in post.lines:
-            reminder = line.candidate.reminder
+            reminder = line.reminder
             result.writes.append(
                 partial(
                     _record_post,
+                    connection=connection,
                     key=reminder.key,
                     type_=reminder.type,
                     channel_id=post.channel_id,
                     period=reminder.period,
-                    severity=reminder.severity,
+                    severity=line.severity,
                 )
             )
         result.sent[SLACK] = result.sent.get(SLACK, 0) + 1
@@ -385,9 +399,30 @@ class _Post:
 # -- the writes a pass makes for Slack, in its own transaction -------------------------
 
 
+# `(workspace id, bot token nonce)`: which connection a pass sent with. The nonce is fresh at
+# every install, so what a pass writes after an admin reconnected, or disconnected, is ignored.
+_Connection = tuple[UUID, bytes]
+
+
+def _current(session: Session, connection: _Connection) -> bool:
+    workspace = session.get(SlackWorkspace, connection[0])
+    return (
+        workspace is not None
+        and workspace.status == "active"
+        and workspace.bot_token_nonce == connection[1]
+    )
+
+
 def _remember(
-    session: Session, user_id: UUID, slack_user_id: str | None, email: str | None, at: datetime
+    session: Session,
+    connection: _Connection,
+    user_id: UUID,
+    slack_user_id: str | None,
+    email: str | None,
+    at: datetime,
 ) -> None:
+    if not _current(session, connection):
+        return
     repo = SlackRepository(session)
     existing = repo.link_for(user_id)
     if existing is not None and existing.source == "manual":
@@ -405,6 +440,7 @@ def _remember(
 def _record_post(
     session: Session,
     *,
+    connection: _Connection,
     key: str,
     type_: str,
     channel_id: str,
@@ -413,6 +449,8 @@ def _record_post(
 ) -> None:
     """Writes that the channel took a post, keeping the highest rank (an escalation is an
     upsert, as in `ReminderLedger.record`)."""
+    if not _current(session, connection):
+        return
     statement = insert(SlackChannelPost).values(
         key=key,
         type=type_,
@@ -435,9 +473,9 @@ def _record_post(
     )
 
 
-def _revoke(session: Session, workspace_id: UUID, code: str) -> None:
+def _revoke(session: Session, workspace_id: UUID, nonce: bytes, code: str) -> None:
     workspace = session.get(SlackWorkspace, workspace_id)
-    if workspace is None or workspace.status != "active":
+    if workspace is None or workspace.status != "active" or workspace.bot_token_nonce != nonce:
         return
     workspace.status = "revoked"
     workspace.last_error = SlackTokenRevoked(code, workspace.team_name).details["reason"]

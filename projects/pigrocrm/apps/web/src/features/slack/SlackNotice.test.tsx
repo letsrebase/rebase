@@ -85,3 +85,11 @@ describe('the outcome of an install', () => {
     expect(riprovaEsito(undefined)).toBeNull()
   })
 })
+
+describe('an address bar that carries a crafted outcome', () => {
+  it('reads inherited property names as no outcome at all', () => {
+    for (const crafted of ['__proto__', 'constructor', 'toString', 'hasOwnProperty']) {
+      expect(messaggioEsito(crafted)).toBeNull()
+    }
+  })
+})

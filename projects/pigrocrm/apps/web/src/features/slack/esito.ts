@@ -19,7 +19,8 @@ export const ESITO_MESSAGES: Record<string, string> = {
 
 export function messaggioEsito(esito: string | undefined): string | null {
   if (esito === undefined) return null
-  return ESITO_MESSAGES[esito] ?? null
+  // An own property only: `?esito=__proto__` must read as no outcome, not as an object.
+  return Object.hasOwn(ESITO_MESSAGES, esito) ? (ESITO_MESSAGES[esito] ?? null) : null
 }
 
 /** Where «Riprova» under the outcome leads, or null for an outcome that offers none. */
