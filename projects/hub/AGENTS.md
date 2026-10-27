@@ -97,6 +97,12 @@ where an admin replaces a provider's key (write-only: the answer is «configurat
 table and reads the month's spend. «Prova» sends one fixed non-personal prompt through the
 task's own seam, recorded as `purpose="prova"`, so it spends the task's cap.
 
+«Valutazione» (`/hub/admin/valutazione`, REB-836, `routers/card_eval.py` under
+`/api/hub/admin/card-eval`) is where an admin corrects each evaluation profile's expected card
+(a correction sends it back to «bozza»), accepts it, and rates a run's role, skills and summary
+on a three-point scale. The page writes only expected cards and ratings: it never starts a run
+and never touches a live card.
+
 `get_talento` and `list_talenti` carry `vetted_at` and whether an anonymous card exists.
 Since REB-778 each `list_talenti` row also carries the card's `posizione` and the
 anonymous card's `ruolo`, `seniority`, `anni`, `competenze` and `luogo`, and the tool
