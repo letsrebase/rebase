@@ -1634,9 +1634,14 @@ class FreelancerSource(Base, PrimaryKeyMixin):
     content_sha256: Mapped[str] = mapped_column(String(64), nullable=False, default="")
     status: Mapped[str] = mapped_column(String(12), nullable=False)
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # How many reads in a row failed with `error` (REB-844): 0 after a read that worked, and
+    # what `SourceService` turns into the wait before the next try (an hour, doubling, a day
+    # at most). `fetched_at` is the last attempt, not the last success.
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
 
     __table_args__ = (
         UniqueConstraint("freelancer_id", "kind", "ref", name="uq_freelancer_sources_ref"),
+        CheckConstraint("attempts >= 0", name="ck_freelancer_sources_attempts"),
         CheckConstraint("kind IN ('github', 'link')", name="ck_freelancer_sources_kind"),
         CheckConstraint(
             "status IN ('ok', 'unreadable', 'blocked', 'robots', 'too_large', 'error')",

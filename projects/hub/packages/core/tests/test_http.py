@@ -17,6 +17,7 @@ from rebase_core.http import (
     urllib_call,
     urllib_download_call,
     urllib_engagements_call,
+    urllib_headers_call,
 )
 
 
@@ -87,6 +88,38 @@ def test_an_http_error_is_a_status_not_an_exception(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(http_module._OPENER, "open", refuse)
     status, _ = urllib_call("GET", "https://api.example.test/z", {}, b"")
     assert status == 403
+
+
+def test_the_headers_call_answers_the_headers_lower_cased_on_success_and_on_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """GitHub's source reads `x-ratelimit-remaining` and `retry-after` off the answer
+    (REB-844): the names come lower-cased whatever case the server sent, on a 200 and on
+    the 403 `urllib` raises."""
+    import urllib.error
+    from email.message import Message
+
+    sent = Message()
+    sent["X-RateLimit-Remaining"] = "0"
+    sent["Retry-After"] = "30"
+
+    class Answer(_Response):
+        headers = sent
+
+    def answer(request: Any, timeout: float) -> Any:
+        if request.full_url.endswith("/refused"):
+            raise urllib.error.HTTPError(request.full_url, 403, "Forbidden", sent, None)
+        return Answer()
+
+    monkeypatch.setattr(http_module._OPENER, "open", answer)
+
+    status, headers, body = urllib_headers_call("GET", "https://api.example.test/ok", {}, b"")
+    assert (status, body) == (200, b"{}")
+    assert headers == {"x-ratelimit-remaining": "0", "retry-after": "30"}
+
+    status, headers, _ = urllib_headers_call("GET", "https://api.example.test/refused", {}, b"")
+    assert status == 403
+    assert headers == {"x-ratelimit-remaining": "0", "retry-after": "30"}
 
 
 class _Redirecting(BaseHTTPRequestHandler):
