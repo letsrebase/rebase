@@ -187,6 +187,23 @@ def test_non_admin_gets_403_on_every_route(
     assert SECRET not in response.text
 
 
+def test_a_malformed_key_request_does_not_echo_the_key_in_the_422(
+    client: TestClient, admin: User
+) -> None:
+    """Review of #666, minor 7: FastAPI's default 422 carries each error's `input`."""
+    too_long = SECRET + "x" * 600
+    over = client.put(f"{BASE}/providers/anthropic/key", json={"key": too_long})
+    bare = client.put(f"{BASE}/providers/anthropic/key", json=too_long)
+
+    for response in (over, bare):
+        assert response.status_code == 422
+        assert SECRET not in response.text
+        assert "input" not in json.dumps(response.json())
+    # Every other route keeps FastAPI's own answer.
+    other = client.put(f"{BASE}/providers/anthropic/enabled", json={"enabled": "peut-être"})
+    assert other.status_code == 422 and "input" in other.json()["detail"][0]
+
+
 def test_get_never_contains_the_key(client: TestClient, admin: User) -> None:
     saved = client.put(f"{BASE}/providers/anthropic/key", json={"key": SECRET})
     assert saved.status_code == 200
