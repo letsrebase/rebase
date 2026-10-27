@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { CalendarCheck, FileCheck, FileText } from 'lucide-react'
+import { CalendarCheck, Download, FileCheck, FileText } from 'lucide-react'
 import { useState } from 'react'
 import { PageHeader } from '@/components/PageHeader'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
@@ -30,7 +30,7 @@ import {
   type WorkUnitDetail,
   type WorkUnitStato,
 } from './labels'
-import { useMoveDay, useWorkUnit } from './queries'
+import { downloadDisputeBundle, useMoveDay, useWorkUnit } from './queries'
 
 /**
  * `/app/days/$workUnitId`: one day, with its state, the approval it rests on, the log of
@@ -175,6 +175,7 @@ function Loaded({ day }: { day: WorkUnitDetail }) {
 
         <Approval day={day} />
         <History day={day} />
+        <Dossier day={day} />
       </div>
 
       <Dialog open={pending !== null} onOpenChange={(open) => (open ? undefined : close())}>
@@ -272,6 +273,46 @@ function Approval({ day }: { day: WorkUnitDetail }) {
           </Button>
         </>
       )}
+    </section>
+  )
+}
+
+/**
+ * The dispute bundle (REB-759): what an argument about this day needs, in one ZIP to hand to
+ * the other side. Open to every role, since it only reads, and offered on every day rather
+ * than only a contested one: a day is contested after the fact, and the proof is best
+ * collected while the approval is at hand.
+ */
+function Dossier({ day }: { day: WorkUnitDetail }) {
+  const [busy, setBusy] = useState(false)
+  return (
+    <section aria-labelledby="day-bundle" className="space-y-3">
+      <h2 id="day-bundle" className="font-semibold">
+        Fascicolo per la contestazione
+      </h2>
+      <p className="text-sm text-muted-foreground">
+        Un archivio ZIP con il riepilogo della giornata, l’approvazione e il suo estratto, la
+        cronologia, il registro del mese e la riga di fattura.{' '}
+        {day.approval === null
+          ? 'Questa giornata non ha un’approvazione: non c’è un originale da allegare.'
+          : 'Ci mette dentro anche l’originale archiviato su cui poggia l’approvazione, così com’è arrivato.'}
+      </p>
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={busy}
+        onClick={() => {
+          setBusy(true)
+          downloadDisputeBundle(day.id)
+            .catch((error: unknown) =>
+              toast.error(toProblem(error).detail ?? 'Non riesco a scaricare il fascicolo.'),
+            )
+            .finally(() => setBusy(false))
+        }}
+      >
+        <Download className="mr-2 size-4" aria-hidden="true" />
+        Scarica il fascicolo
+      </Button>
     </section>
   )
 }
