@@ -260,3 +260,32 @@ class RenewalAssumption(Base, PrimaryKeyMixin, TimestampMixin):
             "volume_atteso >= 0", name="ck_renewal_assumptions_volume_atteso_non_negative"
         ),
     )
+
+
+class ClauseNote(Base, PrimaryKeyMixin, TimestampMixin):
+    """A reading of one clause of a contract, written down next to the words it was read
+    from -- mastro's `clause_note` (`clause-note.ts`), REB-762.
+
+    A real clause sometimes admits more than one honest reading (a renewal clause that is
+    both «ends unless the client elects to renew» and «either party may refuse renewal
+    with notice»), and the system must not pretend to know which governs. This is where
+    the interpretation actually adopted lives, with the verbatim text it came from, so a
+    later dispute rereads a decision instead of re-guessing one. It is read with the
+    contract (`ContractDetail.note_clausole`), so an agent that opens the contract sees
+    what the person decided about its clauses.
+
+    Owned by its contract, like a rate card: no `SoftDeleteMixin` and no delete, a wrong
+    note is corrected by editing it. `riferimento_clausola` is free text, since numbering
+    follows whatever convention the contract itself uses.
+    """
+
+    __tablename__ = "clause_notes"
+
+    contract_id: Mapped[UUID] = mapped_column(
+        ForeignKey("contracts.id"), nullable=False, index=True
+    )
+    # e.g. "Art. 8.3 Rinnovo".
+    riferimento_clausola: Mapped[str] = mapped_column(String(200), nullable=False)
+    testo_letterale: Mapped[str] = mapped_column(Text, nullable=False)
+    interpretazione_adottata: Mapped[str] = mapped_column(Text, nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, default=None)

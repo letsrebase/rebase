@@ -1858,3 +1858,58 @@ def test_0058_adds_the_share_cap_column_and_its_range_check_both_ways(
         assert _cap_shape(url) == (set(), set())
         upgrade(config, "0058")
         assert _cap_shape(url)[1] == {"ck_contracts_tetto_quota_cliente_range"}
+
+
+def _clause_notes_shape(url: str) -> tuple[set[str], bool, set[str]]:
+    engine: Engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            columns = set(
+                connection.execute(
+                    text(
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_name = 'clause_notes'"
+                    )
+                ).scalars()
+            )
+            forced = bool(
+                connection.execute(
+                    text("SELECT relforcerowsecurity FROM pg_class WHERE relname = 'clause_notes'")
+                ).scalar()
+            )
+            policies = set(
+                connection.execute(
+                    text("SELECT policyname FROM pg_policies WHERE tablename = 'clause_notes'")
+                ).scalars()
+            )
+        return columns, forced, policies
+    finally:
+        engine.dispose()
+
+
+def test_0059_creates_clause_notes_under_the_aziende_policy_and_its_downgrade_drops_it(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-762: one table keyed on a contract, with the row-level policy every table that
+    reaches an azienda carries, forced; no backfill, both ways."""
+    columns = {
+        "id",
+        "contract_id",
+        "riferimento_clausola",
+        "testo_letterale",
+        "interpretazione_adottata",
+        "note",
+        "created_at",
+        "updated_at",
+    }
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0058")
+        assert _clause_notes_shape(url) == (set(), False, set())
+        upgrade(config, "0059")
+        assert _clause_notes_shape(url) == (columns, True, {"ambito_azienda"})
+        downgrade(config, "0058")
+        assert _clause_notes_shape(url) == (set(), False, set())
+        upgrade(config, "0059")
+        assert _clause_notes_shape(url)[0] == columns
