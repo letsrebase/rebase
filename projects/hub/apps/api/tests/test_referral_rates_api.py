@@ -24,6 +24,7 @@ PATH = "/api/hub/referral-rates"
 def settings_row(api_session: Session) -> Iterator[Callable[[str, str], None]]:
     """Gives the test the one settings row it asks for, whatever an earlier test left, and
     takes it away afterwards: no test here leans on the row migration 0024 seeds (REB-647)."""
+    before = set(api_session.scalars(select(User.id)))
 
     def put(rate_freelancer: str, rate_company: str) -> None:
         api_session.execute(text("DELETE FROM referral_settings"))
@@ -35,9 +36,25 @@ def settings_row(api_session: Session) -> Iterator[Callable[[str, str], None]]:
         api_session.commit()
 
     yield put
+    # Only what this test wrote, the users included: a blanket `DELETE FROM users` here
+    # failed whenever an earlier file on the same worker had left a card behind
+    # (`freelancers.user_id`), and the admin it then could not remove collided with the
+    # next test's own (hub-v0.66.0's tag run).
     api_session.rollback()
-    for table in ("sessions", "magic_link_tokens", "referral_settings", "users"):
+    for table in ("sessions", "magic_link_tokens", "referral_settings"):
         api_session.execute(text(f"DELETE FROM {table}"))
+    for user_id in set(api_session.scalars(select(User.id))) - before:
+        api_session.execute(text("DELETE FROM users WHERE id = :id"), {"id": user_id})
+    api_session.commit()
+
+
+def _admin(api_session: Session) -> None:
+    """The admin who edits the rates, reused, as an admin, when an earlier file left one."""
+    admin = api_session.scalar(select(User).where(func.lower(User.email) == ADMIN_EMAIL))
+    if admin is None:
+        api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", cognome="", role="admin"))
+    else:
+        admin.role = "admin"
     api_session.commit()
 
 
@@ -68,8 +85,7 @@ def test_an_admin_edit_is_the_next_anonymous_read(
     """The admin saves on the ledger, with their cookie; the site, which has none, reads
     the new pair on its very next call. Nothing is cached and nothing is typed."""
     settings_row("0.10", "0.30")
-    api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", cognome="", role="admin"))
-    api_session.commit()
+    _admin(api_session)
     _login(client, sender)
     saved = client.put(
         "/api/hub/referral-settings", json={"rate_freelancer": "0.125", "rate_company": "0.35"}
@@ -108,8 +124,7 @@ def test_nothing_but_the_two_rates_is_in_the_answer(
     holds a code and who it brought in. None of that is on this route, in the body or in
     the contract the OpenAPI document publishes."""
     settings_row("0.10", "0.30")
-    api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", cognome="", role="admin"))
-    api_session.commit()
+    _admin(api_session)
     _login(client, sender)
     saved = client.put(
         "/api/hub/referral-settings", json={"rate_freelancer": "0.12", "rate_company": "0.35"}
