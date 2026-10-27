@@ -10,6 +10,7 @@ from rebase_api.deps import SessionDep
 from rebase_api.ratelimit import RETRY_AFTER_SECONDS
 from rebase_api.routers import (
     admin,
+    ai,
     admin_team,
     campaigns,
     cloud,
@@ -107,6 +108,7 @@ def create_app() -> FastAPI:
     app.include_router(freelancers.router)
     app.include_router(companies.router)
     app.include_router(admin.router)
+    app.include_router(ai.router)
     app.include_router(matches.router)
     app.include_router(documenso.router)
     app.include_router(members.router)

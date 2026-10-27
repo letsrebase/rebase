@@ -21,7 +21,7 @@ from rebase_core.db import SessionOpener, create_engine_from_settings, session_f
 from rebase_core.documenso import DocumensoClient, client_from_settings
 from rebase_core.engagements import EngagementService
 from rebase_core.http import HttpCall, urllib_call, urllib_engagements_call
-from rebase_core.llm import LlmCall, call_for_task
+from rebase_core.llm import AiCall, LlmCall, call_for_task
 from rebase_core.mail import EmailSender, sender_from_settings
 from rebase_core.members import MemberService
 from rebase_core.schemas import MeRead
@@ -193,6 +193,14 @@ def get_campaign_sender(settings: SettingsDep) -> CampaignSender | None:
 CampaignSenderDep = Annotated[CampaignSender | None, Depends(get_campaign_sender)]
 
 
+def get_prova_call(settings: SettingsDep) -> Callable[[str], LlmCall]:
+    """«Prova» on «Modelli AI» (REB-833): the seam for one task, recording its usage as
+    `purpose="prova"`. A dependency, so a test hands a stub for the provider."""
+    factory = _get_session_factory()
+    return lambda task: AiCall(factory, settings, task, purpose="prova")
+
+
+ProvaCallDep = Annotated[Callable[[str], LlmCall], Depends(get_prova_call)]
 # The proposals running now in this process (spec § 5): one semaphore for the process,
 # sized by `REBASE_TEAM_BUILDER_CONCURRENCY` when the first proposal arrives. A proposal
 # holds a worker thread for the seconds Claude takes, on the pool the member area and
