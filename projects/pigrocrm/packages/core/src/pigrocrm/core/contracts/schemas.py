@@ -6,6 +6,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from pigrocrm.core.contracts.models import Contract
+from pigrocrm.core.contracts.renewal import RenewalUnit
 from pigrocrm.core.db import CURSOR_MAX_LENGTH, SortDirection, SortSpec, SortWhitelist
 from pigrocrm.core.validation import SafeStr
 
@@ -153,6 +154,36 @@ class ContractUpdate(BaseModel):
     @classmethod
     def _expense_policy_is_readable(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
         return None if value is None else check_expense_policy(value)
+
+
+class RenewalDuration(BaseModel):
+    """How long the renewed term lasts, counted from its first day: `{"conteggio": 12,
+    "unita": "mesi"}` from 1 January ends on 31 December."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    conteggio: int = Field(ge=1, le=1200)
+    unita: RenewalUnit
+
+
+class ContractRenew(BaseModel):
+    """The renewal of a contract (REB-763): its terms stay and its dates move. All three
+    fields are optional, and with none the successor starts the day after the contract
+    ends and lasts as long as it did. `fine` and `durata` are two ways to say the end,
+    so naming both is refused instead of one silently winning."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    inizio: date | None = None
+    fine: date | None = None
+    durata: RenewalDuration | None = None
+    titolo: SafeStr | None = Field(default=None, min_length=1, max_length=TITOLO_MAX_LENGTH)
+
+    @model_validator(mode="after")
+    def _one_way_to_say_the_end(self) -> "ContractRenew":
+        if self.fine is not None and self.durata is not None:
+            raise ValueError("fine e durata sono due modi di dire la stessa cosa: indicane uno")
+        return self
 
 
 class ContractStateChange(BaseModel):
