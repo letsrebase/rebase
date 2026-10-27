@@ -402,11 +402,17 @@ Vertex AI or Bedrock in an EU region, not decided), adaptive thinking at the tas
 response carries (`test_llm.py` drives it over a mocked wire). The tests hand a
 `RecordingCall` and never reach a provider.
 
-**The privacy page goes out before the hub.** From the first card on, CVs go to
-Anthropic, and it is letsrebase.com/privacy, in «La tua scheda e il team builder», that
-tells the people they belong to. So on production the section is live first: the
-`website-v*` tag that carries it, then the key in `.env`, then the `hub-v*` tag. The
-other way round, CVs reach Anthropic while the privacy page still says nothing of it.
+**The privacy page goes out before the hub sends a CV anywhere.** From the first card on,
+CVs go to a model provider (today Anthropic), and it is letsrebase.com/privacy, in «La tua
+scheda e il team builder», that tells the people they belong to. The key is no longer in
+`.env` but in the database, so the gate is no longer «the key lands after the page»: the
+`website-v*` tag that carries the section goes first, and **`rebase ai-seed` (the moment a
+provider has a key and is on) and `REBASE_CARDS_LOOP=on` both come after it**. The other
+way round, CVs reach a provider while the privacy page still says nothing of it. Nor
+enable OpenAI or Google in «Modelli AI» before the processors check of the design (the
+notice lists them, a data-processing agreement exists with each, no-training and retention
+terms are checked): the page lets an admin do it today, and doing it sends CVs to a
+processor the notice does not name.
 
 **The talent cloud** (milestone D, REB-517 to REB-521) shows the same cards by name to a
 company rebase admitted. «Apri il talent cloud» on a company request's page in «Aziende»
@@ -673,35 +679,50 @@ base64, `openssl rand -base64 32`), lives only in the host `.env`, root-only (`c
 600`), never in the database or a backup. Without it the app refuses to save or read a
 provider key and «Modelli AI» says so.
 
-**Order on production, once (REB-832):**
+**Order on production, once (REB-832, REB-831): two tags, so the builder is never without
+a model.** The workflow rsyncs the sources, builds and runs `up -d` in one step
+(`_deploy-compose.yml`), so there is no point between the new image and the new
+containers to run `ai-seed` in, and a single deploy leaves the public builder answering
+503 «Il team builder è spento.» (the old variables are no longer passed to the containers)
+from `up -d` until the command is run. The milestone's commits allow better, because the
+commit that adds `ai-seed` comes before the one that stops reading the environment:
 
-1. Add `REBASE_SECRETS_KEY=<openssl rand -base64 32>` to the host `.env` (root-only),
-   next to the existing `REBASE_ANTHROPIC_API_KEY` and `REBASE_TEAM_BUILDER_MODEL`.
-   Keep a copy in the password manager: losing it loses every stored provider key.
-2. Deploy. From here until step 3 no model is configured: no card is written and the
-   builder answers 503 «Il team builder è spento.» (the old variables are no longer
-   passed to the containers), so do step 3 right after.
-3. In a one-off api container, handing it the two old values from the host `.env` without
-   putting the key in a command line (REB-831):
-   `REBASE_ANTHROPIC_API_KEY="$(sed -n 's/^REBASE_ANTHROPIC_API_KEY=//p' /opt/hub/.env)"
-   REBASE_TEAM_BUILDER_MODEL="$(sed -n 's/^REBASE_TEAM_BUILDER_MODEL=//p' /opt/hub/.env)"
-   docker compose -p rebase --env-file /opt/hub/.env run --rm -e REBASE_ANTHROPIC_API_KEY
-   -e REBASE_TEAM_BUILDER_MODEL api rebase ai-seed --eur-per-usd <rate>` (the model
-   defaults to `claude-opus-5` when the line is not there; `-p rebase-preview --env-file
-   /opt/hub-preview/.env` on the preview). It moves the old key and model into the tables (key sealed,
-   `anthropic` on, both tasks on the model) and writes the Claude prices in euros from
-   claude.com/pricing (USD per million tokens, read 2026-10-27: opus-5 5/25/0.50,
-   opus-5-5 4/20/0.20, thinking billed as output). `<rate>` is **euros per one dollar**,
-   the inverse of the ECB's quote (ECB 1.0870 USD per EUR means `--eur-per-usd 0.9199`),
-   of the day. No rate lives in the code. It prints «chiave salvata, finisce con …abcd»,
-   never the key, and refuses to run twice.
-4. Verify with «Prova» on each task in «Modelli AI».
+1. Add `REBASE_SECRETS_KEY=<openssl rand -base64 32>` to the host `.env` (root-only), next
+   to the existing `REBASE_ANTHROPIC_API_KEY` and `REBASE_TEAM_BUILDER_MODEL`. Keep a
+   copy in the password manager: losing it loses every stored provider key. The privacy
+   page is live (see above).
+2. Tag the `ai-seed` commit of the milestone, not its head (`git log --oneline --grep
+   'add ai-seed and ai-rotate-secrets'`; its CI run must be green, as for any tag). It
+   adds the tables and the command and still reads the key from the environment, so
+   production behaves as before. This needs the milestone merged with its commits, not
+   squashed; if it was squashed, deploy the head and take the outage, running step 3 the
+   moment `up -d` ends.
+3. Inside the running api container, which still has the two old variables:
+   `docker compose -p rebase --env-file /opt/hub/.env exec api rebase ai-seed
+   --eur-per-usd <rate>` (`-p rebase-preview --env-file /opt/hub-preview/.env` on the
+   preview). It moves the old key and model into the tables (key sealed, `anthropic` on,
+   both tasks on the model) and writes the Claude prices in euros from claude.com/pricing
+   (USD per million tokens, read 2026-10-27: opus-5 5/25/0.50, opus-5-5 4/20/0.20,
+   thinking billed as output). `<rate>` is **euros per one dollar**, the inverse of the
+   ECB's quote (ECB 1.0870 USD per EUR means `--eur-per-usd 0.9199`), of the day. No rate
+   lives in the code. It prints «chiave salvata, finisce con …abcd», never the key, and
+   refuses to run twice.
+4. Tag the milestone's head. The new containers read the model and the key from the
+   database; nothing was ever without one.
+5. Verify with «Prova» on each task in «Modelli AI».
 
-**Rotation:** generate a new value, then `docker compose -p rebase exec api rebase
-ai-rotate-secrets --old-key <current> --new-key <new>` (re-seals every stored key in one
-transaction and prints the count; a wrong old key changes nothing), then put the new
-value in `.env` and recreate the api and mcp containers. Between the command and the
-restart the old value no longer opens the keys.
+**Rotation:** generate a new value, then hand both to a one-off container through the
+environment, never the command line (`ps` and the shell history would show what opens every
+stored key): `read -rs REBASE_SECRETS_KEY_OLD; read -rs REBASE_SECRETS_KEY_NEW; export
+REBASE_SECRETS_KEY_OLD REBASE_SECRETS_KEY_NEW; docker compose -p rebase --env-file
+/opt/hub/.env run --rm -e REBASE_SECRETS_KEY_OLD -e REBASE_SECRETS_KEY_NEW api rebase
+ai-rotate-secrets` (`-p rebase-preview --env-file /opt/hub-preview/.env` on the preview).
+It re-seals every stored key in one transaction and prints the count; a wrong old value
+changes nothing. Then put the new value in `.env` and recreate **api, mcp and cards**
+(`docker compose -p rebase --env-file /opt/hub/.env up -d api mcp cards`): all three read
+`REBASE_SECRETS_KEY`, and a `cards` loop on the old value would fail every hourly run
+with a sentence naming `REBASE_SECRETS_KEY` and the card would carry it. Between the command and the recreate the
+old value no longer opens the keys, so keep `REBASE_CARDS_LOOP=off` for the gap.
 
 ### Database backups
 
