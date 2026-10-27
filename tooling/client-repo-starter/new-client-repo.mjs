@@ -22,8 +22,8 @@
 // client, never shared): on the Free plan there is only one such slot alongside
 // "rebase" itself, so check no other client already holds it first.
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync } from "node:fs";
-import { join, dirname, relative } from "node:path";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync, rmSync } from "node:fs";
+import { join, dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import { matchesRemote } from "./retrofit-remote-matches.mjs";
@@ -99,7 +99,7 @@ const REVIEW_GATE_POLICY = args.greptile && args.coderabbit
 
 const GREPTILE_LOOP_LINES = [
   "",
-  "**Then iterate on Greptile until it scores full marks.** It reviews the PR once",
+  "**Iterate on Greptile until it scores full marks.** It reviews the PR once",
   "it is open: inline findings with a severity badge, and a summary headed",
   "`Confidence Score: N/5`, on the PR's own description or as a bot comment,",
   "depending on this repository's Greptile setting (PR Summaries, in",
@@ -149,7 +149,7 @@ const GREPTILE_LOOP_LINES = [
 
 const CODERABBIT_LOOP_LINES = [
   "",
-  "**Then wait for CodeRabbit's review and act on every finding.** It reviews the PR",
+  "**Wait for CodeRabbit's review and act on every finding.** It reviews the PR",
   "once it is open and again on every push (settings in `.coderabbit.yaml`): a",
   "`CodeRabbit` commit status (`Review in progress`, then `Review completed`, or",
   "`Review skipped: ...` with the reason, a draft PR among them), inline findings",
@@ -458,10 +458,146 @@ function resolveFile(text) {
   return result.join("\n");
 }
 
-mkdirSync(targetDir, { recursive: true });
+// ---- everything that can fail comes before the first file is written ----
+
+// kit.py needs Python 3.10+. Resolve the interpreter first: python3, then python, then
+// py -3 (the Windows launcher), the first one that is 3.10 or newer.
+function findPython() {
+  for (const [cmd, ...pre] of [["python3"], ["python"], ["py", "-3"]]) {
+    try {
+      const out = execFileSync(cmd, [...pre, "-c", "import sys; print(sys.version_info >= (3, 10))"], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+      if (out.trim() === "True") return [cmd, ...pre];
+    } catch {
+      // not installed, or not runnable: try the next one
+    }
+  }
+  return null;
+}
+const PYTHON = findPython();
+if (!PYTHON) fail("the workflow kit needs Python 3.10 or newer, and none of `python3`, `python`, `py -3` is one; nothing was written");
+
+// A .gitignore that swallows .claude/ would leave the kit's skills and the Linear gate hook
+// out of every commit. Settle it before anything is written; apply the fix after the sync.
+const KIT_SKILLS = readdirSync(join(KIT_DIR, "files", ".agents", "skills")).filter((n) =>
+  statSync(join(KIT_DIR, "files", ".agents", "skills", n)).isDirectory(),
+);
+const CLAUDE_PROBES = [".claude/settings.json", ...KIT_SKILLS.map((s) => `.claude/skills/${s}/SKILL.md`)];
+
+// The rule that ignores `rel` in `dir` as { source, line, pattern }, or null when it is not ignored.
+function ignoringRule(dir, rel) {
+  let out;
+  try {
+    out = execFileSync("git", ["-C", dir, "check-ignore", "-v", "--no-index", rel], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+  } catch {
+    return null; // exit 1: not ignored; 128: not a git repository yet, so no .gitignore to fix
+  }
+  const m = /^(.*?):(\d+):([^\t]*)\t/.exec(out);
+  if (!m || m[3].startsWith("!")) return null; // a re-include is the opposite of ignored
+  return { source: m[1], line: Number(m[2]), pattern: m[3] };
+}
+
+function planClaudeIgnoreFix(dir) {
+  const lines = new Set();
+  for (const rel of CLAUDE_PROBES) {
+    const rule = ignoringRule(dir, rel);
+    if (!rule) continue;
+    const bare = [".claude/", "/.claude/", ".claude", "/.claude"].includes(rule.pattern.trim());
+    if (resolve(dir, rule.source) !== resolve(dir, ".gitignore") || !bare) {
+      fail(`${rel} is ignored by ${rule.source}:${rule.line} (\`${rule.pattern}\`), which this script cannot rewrite safely; change that line so .claude/settings.json and .claude/skills/ are tracked, then rerun. Nothing was written`);
+    }
+    lines.add(rule.line);
+  }
+  return lines.size ? { dir, lines: [...lines] } : null;
+}
+
+// letsrebase/point's fix: `.claude/` becomes `.claude/*`, with the two paths the kit owns
+// re-included. Returns what it changed, for the report.
+function applyClaudeIgnoreFix(plan) {
+  if (!plan) return "";
+  const path = join(plan.dir, ".gitignore");
+  const text = readFileSync(path, "utf8");
+  const eol = text.includes("\r\n") ? "\r\n" : "\n";
+  const lines = text.split(/\r?\n/);
+  const changed = [];
+  for (const n of plan.lines) {
+    changed.push(`${lines[n - 1].trim()} (line ${n})`);
+    lines[n - 1] = ".claude/*";
+  }
+  while (lines.length && lines[lines.length - 1] === "") lines.pop();
+  for (const keep of ["!.claude/skills/", "!.claude/settings.json"]) {
+    if (!lines.some((l) => l.trim() === keep)) lines.push(keep);
+  }
+  // Snyk Code javascript/PT here is a false positive: a developer's script, writing
+  // where the developer running it asks it to.
+  writeFileSync(path, lines.join(eol) + eol);
+  for (const rel of CLAUDE_PROBES) {
+    const rule = ignoringRule(plan.dir, rel);
+    if (rule) fail(`${rel} is still ignored after rewriting .gitignore, by ${rule.source}:${rule.line} (\`${rule.pattern}\`); fix that line by hand`);
+  }
+  return `Changed .gitignore: replaced ${changed.join(", ")} with \`.claude/*\` and added \`!.claude/skills/\` and \`!.claude/settings.json\`, so the kit's skills and settings are tracked.`;
+}
+
+const ignorePlan = planClaudeIgnoreFix(targetDir);
 
 const written = [];
 const skipped = [];
+const createdTarget = !existsSync(targetDir);
+mkdirSync(targetDir, { recursive: true });
+
+// kit.py sync reads .github/workflow.json, so that one file goes first and is taken back
+// if the sync fails; nothing else is written until the sync has succeeded.
+const workflowPath = join(targetDir, ".github", "workflow.json");
+const hadWorkflow = existsSync(workflowPath);
+const previousWorkflow = hadWorkflow ? readFileSync(workflowPath) : null;
+if (hadWorkflow && !args.force) {
+  skipped.push(".github/workflow.json");
+} else {
+  mkdirSync(dirname(workflowPath), { recursive: true });
+  // Snyk Code javascript/PT here is a false positive: a developer's script, writing
+  // where the developer running it asks it to.
+  writeFileSync(workflowPath, JSON.stringify(WORKFLOW_JSON, null, 2) + "\n");
+  written.push(".github/workflow.json");
+}
+
+// Paths the sync replaces with the kit's own, when they are already there.
+const replaced = [
+  ...KIT_SKILLS.flatMap((s) => [`.agents/skills/${s}`, `.claude/skills/${s}`]),
+  ".github/kit",
+  ".github/PULL_REQUEST_TEMPLATE.md",
+  ".claude/settings.json",
+].filter((rel) => existsSync(join(targetDir, rel)));
+
+let kitOutput;
+try {
+  kitOutput = execFileSync(
+    PYTHON[0],
+    [
+      ...PYTHON.slice(1),
+      join(KIT_DIR, "files", ".github", "kit", "bin", "kit.py"),
+      "--repo", targetDir, "sync", "--source", KIT_DIR,
+      ...(args.force ? ["--force"] : []),
+    ],
+    { encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] },
+  ).trim();
+} catch (err) {
+  if (err.stdout) process.stdout.write(err.stdout);
+  if (!hadWorkflow) rmSync(workflowPath, { force: true });
+  else if (args.force) writeFileSync(workflowPath, previousWorkflow);
+  if (createdTarget) rmSync(targetDir, { recursive: true, force: true });
+  const missing = err.code === "ENOENT" || err.status === 9009 || err.status === 49;
+  fail(
+    missing
+      ? `could not run ${PYTHON.join(" ")} for the workflow kit's sync; nothing else was written`
+      : `the workflow kit's sync failed (its own message is above); nothing else was written${args.force ? "" : ", and you can rerun with --force to let it discard what it names"}`,
+  );
+}
+
 for (const src of listFiles(TEMPLATE_DIR)) {
   const rel = relative(TEMPLATE_DIR, src);
   const dest = join(targetDir, rel);
@@ -501,18 +637,9 @@ function writeOwn(rel, content) {
   writeFileSync(dest, content);
   written.push(rel);
 }
-writeOwn(".github/workflow.json", JSON.stringify(WORKFLOW_JSON, null, 2) + "\n");
 if (EXTRAS_PR_CREATION) writeOwn("docs/agents/pr-creation.md", EXTRAS_PR_CREATION);
-try {
-  const out = execFileSync(
-    "python3",
-    [join(KIT_DIR, "files", ".github", "kit", "bin", "kit.py"), "--repo", targetDir, "sync", "--source", KIT_DIR],
-    { encoding: "utf8" },
-  );
-  written.push(`workflow kit: ${out.trim().split("\n").at(-1)}`);
-} catch (err) {
-  fail(`the workflow kit's sync failed (python3 3.10+ is required): ${err.stderr || err.message}`);
-}
+
+const gitignoreNote = applyClaudeIgnoreFix(ignorePlan);
 
 console.log(`Wrote ${written.length} file(s) into ${targetDir}:`);
 for (const f of written) console.log(`  ${f}`);
@@ -520,6 +647,13 @@ if (skipped.length) {
   console.log(`Left ${skipped.length} existing file(s) alone (pass --force to overwrite):`);
   for (const f of skipped) console.log(`  ${f}`);
 }
+console.log("Synced the workflow kit; what kit.py reported:");
+if (kitOutput) for (const line of kitOutput.split("\n")) console.log(`  ${line}`);
+if (replaced.length) {
+  console.log(`Replaced ${replaced.length} kit-managed path(s) that already existed, with the kit's own (these are always the kit's, --force or not):`);
+  for (const f of replaced) console.log(`  ${f}`);
+}
+if (gitignoreNote) console.log(gitignoreNote);
 
 // ---- optionally create the GitHub repository ---------------------------
 
@@ -623,10 +757,12 @@ Next, by hand or with an agent holding the linear-rebase MCP server:
    on its jobs; ${runnerPoolReady
      ? `${args.org}/${args.repo} is already scoped into the private-clients runner group, so the workflow file is the only remaining step.`
      : `it still needs to be scoped into the private-clients runner group first (docs/ci-runner-pool.md) -- not done automatically this run, see the note above.`}
-6. In that CI workflow, a job inside the required \`ci\` that runs
-   \`python3 .github/kit/bin/kit.py check\` and, on pull requests,
+6. In that CI workflow, inside the required \`ci\` job, run
+   \`python3 .github/kit/bin/kit.py check\` always and, on pull requests,
    \`python3 .github/kit/bin/pr_lint.py --github\` with GITHUB_TOKEN in its environment and
-   \`pull-requests: read\` permission (letsrebase/rebase's ci.yml, job \`kit\`). Fill
-   .github/workflow.json's area labels and commit scopes as the codebase grows, then run
-   kit.py sync again.
+   \`pull-requests: read\` permission (letsrebase/rebase's ci.yml, job \`kit\`): until
+   it does, nothing checks a PR's title and body.
+7. .github/workflow.json starts with an empty \`tracker.labels.area\` list. Fill it (and the
+   commit scopes as the codebase grows) before the first card, create the matching
+   \`area:*\` labels in the "${args.linearTeam}" team, then run kit.py sync again.
 `);

@@ -39,11 +39,14 @@ engagement, and a GitHub issue here is not one either. Four levels:
 - **Milestone**: a coherent outcome inside the contract. Not an issue.
 - **Issue**: one agent run, one branch, one pull request.
 
-Every issue carries a `type` label, an `area:*` label, a priority, an estimate and an
-**assignee**, never empty: an unowned card reads as free to whoever else is on this
-contract. `type` and `area:*` are each an enforced group (`list_issue_labels` with
-`includeGroups: true` is the source of the exact names); a second label from the same
-group is silently dropped, so check first rather than guessing.
+Every issue carries a `type` label, a priority, an estimate and an **assignee**, never
+empty: an unowned card reads as free to whoever else is on this contract. It also
+carries an `area:*` label once `.github/workflow.json`'s `tracker.labels.area` lists
+the areas: that list starts empty, and whoever opens the first card fills it (and
+creates the labels in the team) first. `type` and `area:*` are each an enforced group
+(`list_issue_labels` with `includeGroups: true` is the source of the exact names); a
+second label from the same group is silently dropped, so check first rather than
+guessing.
 
 **Before the first file changes**: find the card, or file it when the work will
 outlive this run and no card exists yet. Read the open cards next to it, same
@@ -149,9 +152,11 @@ outcome, not a description of what you touched.
   none.
 
 Last line: `Linear: {{LINEAR_PREFIX}}-N.` No placeholder ("not filed yet", "TBD"):
-a PR without its card waits, and the person hears why. `ci` checks the title and the
-body against `.github/workflow.json` (`python3 .github/kit/bin/pr_lint.py --title ...
---body-file ...` runs the same check before you open the PR).
+a PR without its card waits, and the person hears why. Once this repository's `ci` job
+runs `python3 .github/kit/bin/pr_lint.py --github` on pull requests, `ci` checks the
+title and the body against `.github/workflow.json` (`python3 .github/kit/bin/pr_lint.py
+--title ... --body-file ...` runs the same check before you open the PR, and works
+before that job exists).
 
 {{REVIEW_GATE_POLICY}}
 

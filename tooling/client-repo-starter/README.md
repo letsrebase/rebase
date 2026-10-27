@@ -122,10 +122,27 @@ For a genuinely new repository:
    ```
    `--create-repo` creates a fresh private GitHub repository and pushes the
    scaffold as its first commit. Omit it to write the files into an existing
-   checkout instead (see § Retrofitting below); the script never overwrites a file
-   that already exists unless `--force` is given, and always prints what it left
-   alone.
-3. **Invite the freelancer**: GitHub collaborator on the repo, Linear member on the
+   checkout instead (see § Retrofitting below). The script then runs the workflow
+   kit's `kit.py sync`, and prints everything it reports. The template files and
+   `.github/workflow.json` are never overwritten when they already exist unless
+   `--force` is given, and the script always prints what it left alone. The paths
+   the kit manages are not in that rule: `.agents/skills/<each kit skill>`,
+   `.claude/skills/<each kit skill>`, `.github/kit/`,
+   `.github/PULL_REQUEST_TEMPLATE.md` and the gate entry in `.claude/settings.json`
+   are always the kit's, replaced when they exist, and the script lists which of them
+   it replaced. The sync runs before any other file is written, so a failure leaves
+   nothing half-written; `--force` is passed on to it (it then discards a
+   `.claude/skills` edit that exists nowhere else, which it refuses to do otherwise).
+   When a `.gitignore` ignores `.claude/` the script rewrites that line to `.claude/*`
+   and re-includes `.claude/skills/` and `.claude/settings.json`, and says so; an
+   ignore it cannot rewrite safely stops it before anything is written. Python 3.10+
+   (`python3`, `python` or `py -3`) is required.
+3. **Wire the kit's checks into CI**, inside the repository's required `ci` job:
+   `python3 .github/kit/bin/kit.py check` always, and `python3
+   .github/kit/bin/pr_lint.py --github` on pull requests (§ CI below). Fill
+   `tracker.labels.area` in `.github/workflow.json` before the first card: the script
+   leaves it empty, and the `area:*` labels are created from it.
+4. **Invite the freelancer**: GitHub collaborator on the repo, Linear member on the
    workspace (§ The known gap — say so to them, in the same message). Point them at
    the repository's own `AGENTS.md`.
 
@@ -162,8 +179,14 @@ the moment the repository exists on GitHub; it prints whether that step actually
 ran or has to be done by hand later (no `admin:org` scope on the token, or the
 repository does not exist on GitHub yet).
 
-What the script does not do: write the repository's own CI workflow. That is
-contract-specific (a Node stack, a Python one, both, a different service mix
+What the script does not do: write the repository's own CI workflow, so the kit's
+checks are not wired in until someone does it: inside the required `ci` job, run
+`python3 .github/kit/bin/kit.py check` always and `python3 .github/kit/bin/pr_lint.py
+--github` on pull requests (with `GITHUB_TOKEN` in its environment and `pull-requests:
+read` permission; `letsrebase/rebase`'s `ci.yml`, job `kit`, is the example). Until then
+nothing enforces the PR title and body the repository's `AGENTS.md` describes. The
+workflow is otherwise contract-specific
+(a Node stack, a Python one, both, a different service mix
 entirely), so there is no CI template in `template/`. Once one exists, its jobs use
 `runs-on: [self-hosted, linux, x64]` rather than `ubuntu-latest`; `docs/ci-runner-pool.md`
 carries what changes on a self-hosted host that a hosted runner's isolated VM hides,
@@ -183,7 +206,9 @@ Three knobs the script takes, because not every contract carries the same weight
 - `--worktree` / `--no-worktree` (default: on). Recommended on always: more than one
   person — us, a freelancer, an agent each runs — can be committing to the same
   repository, and a worktree is what keeps one person's uncommitted state off
-  another's.
+  another's. With `--no-worktree` the kit's `pr-creation` skill (the workflow kit's,
+  synced into `.agents/skills/`) still describes worktrees: the paragraph in the
+  repository's own `AGENTS.md` wins wherever the two disagree.
 - `--greptile` / `--no-greptile` (default: off). On only for a contract that already
   has Greptile configured on the repository (app.greptile.com). Off by default
   because most client repositories will not have it wired up on day one.

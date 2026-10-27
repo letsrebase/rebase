@@ -76,8 +76,22 @@ node tooling/client-repo-starter/new-client-repo.mjs \
 ```
 
 Read its own output rather than assuming what it did: it prints what it wrote, what it
-left alone, and any further checklist item that still needs a person or a token scope
-this session does not have.
+left alone, everything the kit's sync reported, which kit-managed paths it replaced
+(`.agents/skills/<kit skills>`, `.claude/skills/<kit skills>`, `.github/kit/`,
+`.github/PULL_REQUEST_TEMPLATE.md`, the gate entry in `.claude/settings.json`: always
+the kit's, `--force` or not), any `.gitignore` line it rewrote so `.claude/skills/` and
+`.claude/settings.json` are tracked, and any further checklist item that still needs a
+person or a token scope this session does not have. It needs Python 3.10+ and runs the
+kit's sync before writing anything else; if it stops, nothing else was written, and the
+kit's own message says why (rerun with `--force` only when that message names work you
+mean to discard).
+
+The script writes no CI workflow, so the kit's checks are not wired in until someone
+does it: inside the repository's required `ci` job, `python3 .github/kit/bin/kit.py
+check` always and `python3 .github/kit/bin/pr_lint.py --github` on pull requests
+(`GITHUB_TOKEN` in its environment, `pull-requests: read`). Say so to the person, and
+that `tracker.labels.area` in `.github/workflow.json` starts empty and has to be filled
+before the first card.
 
 A retrofit (`--target-dir`, no `--create-repo`) only writes files into that checkout;
 the script does not branch or open anything on its own. Before running it this way,
@@ -105,7 +119,7 @@ session's call to make (root `AGENTS.md` § What a human decides):
 - **The initiative**, only when the macroprogetto was new (Step 1). An engagement under
   an initiative that already existed needs nothing further here.
 - **The freelancer's invite**: GitHub collaborator, Linear workspace member, told the
-  Free-plan visibility gap plainly (README § Doing the setup, step 3, and § The known
+  Free-plan visibility gap plainly (README § Doing the setup, step 4, and § The known
   gap; `tooling/client-repo-starter/docs/onboarding-freelance.md` for the full
   message).
 
