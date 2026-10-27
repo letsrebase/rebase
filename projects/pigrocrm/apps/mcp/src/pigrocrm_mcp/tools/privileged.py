@@ -46,6 +46,7 @@ from mcp.server import MCPServer
 
 from pigrocrm.core.analytics.schemas import BindTimeRequest
 from pigrocrm.core.analytics.service import AnalyticsService
+from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings, gmail_configured
 from pigrocrm.core.errors import ValidationFailed
 from pigrocrm.core.gmail.attachment_text import GmailAttachmentService
@@ -72,6 +73,7 @@ from pigrocrm.core.timetracking.schemas import (
 )
 from pigrocrm.core.timetracking.service import TimeEntryService
 from pigrocrm_mcp.context import McpContext
+from pigrocrm_mcp.tools.changes import refuse_nothing_given
 from pigrocrm_mcp.tools.invoices import parse_legal_entity_id
 
 logger = logging.getLogger(__name__)
@@ -357,22 +359,42 @@ def register(
         user_id: str,
         tariffa_oraria_default: float | str | None = None,
         costo_orario_default: float | str | None = None,
-    ) -> dict[str, str]:
-        """Cambia le tariffe predefinite di una persona.
+    ) -> dict[str, Any]:
+        """Cambia le tariffe predefinite di una persona: si cambia solo cio' che si passa,
+        una tariffa omessa resta com'e'. Risponde con `changed`, i nomi delle tariffe
+        scritte.
 
         **Non tocca le ore già registrate**: ogni voce porta congelata la tariffa che
         valeva quando è stata scritta, ed è ciò che rende un consuntivo stabile. Vale
         solo da adesso in avanti.
         """
-        TimeEntryService(context.session).update_user_rates(
-            UUID(user_id),
-            UserRatesUpdate(
-                tariffa_oraria_default=tariffa_oraria_default,  # type: ignore[arg-type]
-                costo_orario_default=costo_orario_default,  # type: ignore[arg-type]
-            ),
-            context.actor,
+        supplied = {
+            name: value
+            for name, value in {
+                "tariffa_oraria_default": tariffa_oraria_default,
+                "costo_orario_default": costo_orario_default,
+            }.items()
+            if value is not None
+        }
+        refuse_nothing_given(**supplied)
+        # `model_validate` on the filtered dict, as `update_proforma` does: a rate that is
+        # absent must stay *unset*, because the service writes exactly what is set and an
+        # unset one is left alone, while a keyword argument defaulted to `None` is set to
+        # `None` and clears it. Before, `tariffa_oraria_default=50` alone also emptied
+        # `costo_orario_default`.
+        identifier = UUID(user_id)
+        data = UserRatesUpdate.model_validate(supplied)
+        # Read ahead of the write, so `changed` names the rates whose value is not what it
+        # was: resending `50` against a stored `50.00` changes nothing.
+        user = context.session.get(User, identifier)
+        before = {name: getattr(user, name) for name in supplied} if user is not None else {}
+        TimeEntryService(context.session).update_user_rates(identifier, data, context.actor)
+        changed = sorted(
+            name
+            for name, value in data.model_dump(exclude_unset=True).items()
+            if before.get(name) != value
         )
-        return {"esito": "tariffe aggiornate"}
+        return {"esito": "tariffe aggiornate", "changed": changed}
 
     @mcp.tool()
     @guard

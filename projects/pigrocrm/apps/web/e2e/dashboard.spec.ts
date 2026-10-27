@@ -98,7 +98,10 @@ test.describe('il ciclo completo — metà umana', () => {
     page,
   }) => {
     await loginAsAdmin(page)
-    const me = (await (await page.request.get('/api/auth/me')).json()) as { id: string }
+    const me = (await (await page.request.get('/api/auth/me')).json()) as {
+      id: string
+      nome: string
+    }
     const cycle = await seedCycleFixture(page)
 
     // 1. The signal, before. At least one, and the fixture is what guarantees it: an
@@ -174,7 +177,9 @@ test.describe('il ciclo completo — metà umana', () => {
     await expect(movimento).not.toContainText('Utente')
     await expect(movimento).toContainText('Regola: A1')
     await expect(movimento).toContainText('A: Vinto')
-    await expect(movimento).toContainText(`Attivata da: ${me.id}`)
+    // The member's name, resolved from the id the payload holds (REB-781), and the channel
+    // they used: this test drives the browser.
+    await expect(movimento).toContainText(`Attivata da ${me.nome} (dal web)`)
 
     // 7. The signal, after: **down by one**.
     //

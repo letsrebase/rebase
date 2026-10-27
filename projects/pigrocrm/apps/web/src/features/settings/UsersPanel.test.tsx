@@ -97,11 +97,12 @@ function twoAziende(): LegalEntityValue {
 function renderPanel(azienda?: LegalEntityValue) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const panel = <UsersPanel />
-  return render(
+  const rendered = render(
     <QueryClientProvider client={client}>
       {azienda ? <LegalEntityContext value={azienda}>{panel}</LegalEntityContext> : panel}
     </QueryClientProvider>,
   )
+  return { ...rendered, client }
 }
 
 const lists = {
@@ -447,6 +448,78 @@ describe('UsersPanel', () => {
       renderPanel()
 
       expect(await screen.findByRole('combobox', { name: /ruolo di ada admin/i })).toBeDisabled()
+    })
+  })
+
+  // --- the founder's name (REB-796) ---------------------------------------------------
+
+  describe('correcting a member’s name', () => {
+    it('renames a member through the real endpoint', async () => {
+      const founder = { ...OTHER_ACTIVE_USER, id: 'u9', nome: 'rebase' }
+      respond({ ...lists, '/api/users': () => ok([ADMIN, founder]) })
+      vi.mocked(api.PATCH).mockReturnValueOnce(Promise.resolve(ok({ ...founder, nome: 'Ivan' })))
+      renderPanel()
+
+      await openRowMenu('rebase')
+      await userEvent.click(screen.getByRole('menuitem', { name: 'Rinomina…' }))
+      const field = await screen.findByLabelText('Nome')
+      expect(field).toHaveValue('rebase')
+      await userEvent.clear(field)
+      await userEvent.type(field, '  Ivan ')
+      await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+
+      await waitFor(() =>
+        expect(api.PATCH).toHaveBeenCalledWith(
+          '/api/users/{user_id}',
+          expect.objectContaining({ body: { nome: 'Ivan' } }),
+        ),
+      )
+      await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Nome aggiornato'))
+    })
+
+    it('refreshes the signed-in user, so a renamed founder is renamed in the shell too', async () => {
+      const founder = { ...OTHER_ACTIVE_USER, id: 'u9', nome: 'rebase' }
+      respond({ ...lists, '/api/users': () => ok([founder]) })
+      vi.mocked(api.PATCH).mockReturnValueOnce(Promise.resolve(ok({ ...founder, nome: 'Ivan' })))
+      const { client } = renderPanel()
+      const invalidate = vi.spyOn(client, 'invalidateQueries')
+
+      await openRowMenu('rebase')
+      await userEvent.click(screen.getByRole('menuitem', { name: 'Rinomina…' }))
+      await userEvent.type(await screen.findByLabelText('Nome'), ' Sala')
+      await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+
+      await waitFor(() =>
+        expect(invalidate).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ['me'] })),
+      )
+    })
+
+    it('does not offer to save an empty name', async () => {
+      respond({ ...lists, '/api/users': () => ok([OTHER_ACTIVE_USER]) })
+      renderPanel()
+
+      await openRowMenu('Altro Utente')
+      await userEvent.click(screen.getByRole('menuitem', { name: 'Rinomina…' }))
+      await userEvent.clear(await screen.findByLabelText('Nome'))
+
+      expect(screen.getByRole('button', { name: 'Salva' })).toBeDisabled()
+      expect(api.PATCH).not.toHaveBeenCalled()
+    })
+
+    it('keeps the dialog open with the refusal when the server says no', async () => {
+      respond({ ...lists, '/api/users': () => ok([OTHER_ACTIVE_USER]) })
+      vi.mocked(api.PATCH).mockReturnValueOnce(
+        Promise.resolve(failed({ code: 'validation_error', detail: 'Nome non valido.' }, 422)),
+      )
+      renderPanel()
+
+      await openRowMenu('Altro Utente')
+      await userEvent.click(screen.getByRole('menuitem', { name: 'Rinomina…' }))
+      await userEvent.type(await screen.findByLabelText('Nome'), ' x')
+      await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+      expect(await screen.findByText('Nome non valido.')).toBeInTheDocument()
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+      expect(screen.getByLabelText('Nome')).toHaveAccessibleDescription('Nome non valido.')
     })
   })
 

@@ -151,6 +151,16 @@ class MeUpdate(BaseModel):
     digest_settimanale: bool
 
 
+class MemberRead(BaseModel):
+    """What any member may know of a colleague (REB-780): enough to name an owner or an
+    assignee and to pick one, and nothing else (no email, role or rates)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    nome: str
+
+
 class UserRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

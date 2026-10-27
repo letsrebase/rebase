@@ -118,17 +118,33 @@ class DealService:
         self.fields = FieldDefinitionService(session)
         self.activities = ActivityService(session)
 
-    def _check_owner(self, owner_id: UUID | None) -> None:
-        """`owner_id` is nullable -- see `Deal`'s own docstring: a deal may have no
-        assigned owner. A supplied id that does not resolve to a real user is
-        rejected: a dangling FK is worse than no FK. Mirrors
-        `PersonService._check_customer` exactly, on the one real foreign key this
-        class never validated -- `deals.owner_id` -- confirmed reachable before this
-        fix by constructing a `Deal` with a random UUID and watching a raw, uncaught
-        `sqlalchemy.exc.IntegrityError` (`ForeignKeyViolation`) come back from
-        `flush()`/`commit()` instead of this project's own `NotFound`."""
-        if owner_id is not None and self.users.get(owner_id) is None:
+    def _owner_for(self, owner_id: UUID | None, actor: Actor, *, creating: bool) -> UUID | None:
+        """The owner a write leaves on the deal (REB-780).
+
+        Creating: whoever the request names, and otherwise whoever creates it. The actor
+        of a job or of rebase has no user id, so such a deal has no owner, which the
+        reminders give to the space's owner. Anybody who may write a deal may hand it to
+        somebody else (unlike a customer's owner, which is an admin's: a deal is one
+        person's work, and the member who opened it is the one who knows who runs it).
+        The person must be an active user: a dangling id is worse than none, and a
+        deactivated one would be told nothing.
+
+        `None` on an update clears the owner, and is the only way to: on a create it
+        means «not said», which is the default above.
+        """
+        if owner_id is None:
+            return actor.id if creating else None
+        owner = self.users.get(owner_id)
+        if owner is None:
             raise NotFound("user", owner_id)
+        if not owner.attivo:
+            raise ValidationFailed(
+                ENTITY,
+                "owner_id",
+                "la persona e' disattivata: un deal si assegna a un utente attivo",
+                expected="l'id di un utente attivo",
+            )
+        return owner.id
 
     def _validated_custom(self, values: dict[str, Any]) -> dict[str, Any]:
         """Used by `create` only: `values` is the *complete* desired set of custom
@@ -222,7 +238,7 @@ class DealService:
         customer = self.customers.get(payload["customer_id"])
         if customer is None:
             raise NotFound("customer", payload["customer_id"])
-        self._check_owner(payload.get("owner_id"))
+        payload["owner_id"] = self._owner_for(payload.get("owner_id"), actor, creating=True)
         # The customer's azienda at this moment, kept from now on (REB-623, spec §1.7);
         # refused when that azienda is deactivated, since nothing new is born on one.
         payload["azienda_id"] = LegalEntityService(self.session).inherited(
@@ -262,13 +278,13 @@ class DealService:
         changes = supplied_changes(data, exclude={"custom_fields"})
         reject_cleared_columns(ENTITY, Deal, changes)
         _check_numbers(changes)
-        # `is not None` on the value, not `in changes` on the key: with `exclude_unset`
-        # an explicit `owner_id: null` now *reaches* this branch, and sending `None` to
-        # the repository would raise `NotFound("user", None)` for what is actually a
-        # valid instruction ("clear the owner"). `_check_owner` already skips a `None`,
-        # so the guard is here only to make that reading explicit at the call site.
-        if changes.get("owner_id") is not None:
-            self._check_owner(changes["owner_id"])
+        # Only a change is checked: re-sending the owner a deal already has must not be
+        # refused the day that person is deactivated. An explicit `null` clears it.
+        if "owner_id" in changes:
+            if changes["owner_id"] == deal.owner_id:
+                del changes["owner_id"]
+            else:
+                changes["owner_id"] = self._owner_for(changes["owner_id"], actor, creating=False)
         if "probabilita" in changes:
             # `update` never changes `deal.pipeline_stage_id` -- that is
             # `move_stage`'s job alone -- so the deal's *current* stage is what

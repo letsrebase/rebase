@@ -37,8 +37,9 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.activities.repository import ActivityRepository
-from pigrocrm.core.activities.schemas import ActivityRead
+from pigrocrm.core.activities.service import serve_activities
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.analytics.repository import AnalyticsRepository
 from pigrocrm.core.analytics.schemas import PeriodPnlQuery
@@ -71,6 +72,31 @@ _EXPECTED_CLOSURE_WINDOW_DAYS = 30
 # §6.1: fifty rows, not paginated. A complete history is the entity's own timeline, which
 # already exists; a paginated global feed would be a second way to browse the same rows.
 _RECENT_ACTIVITIES = 50
+# The same feed for everyone else is fifteen rows: an agent needs what happened lately, not
+# fifty rows of identifiers (REB-811).
+_RECENT_ACTIVITIES_FILTERED = 15
+# REB-811: what the feed shows anyone but a person administering the space. Business
+# entities only. Account events (`user`: tokens created and first used; `invitation`, with
+# the invitee's address; `digest`; the Slack, Drive and settings rows) are the admin's, and
+# an agent's token never gets them, whatever the owner's role: it is the credential that
+# reads untrusted text, and the feed would hand it addresses and token ids to relay.
+_BUSINESS_ENTITIES: frozenset[str] = frozenset(
+    {
+        "customer",
+        "person",
+        "deal",
+        "document",
+        "invoice",
+        "contract",
+        "contract_expense",
+        "attivita",
+        "work_unit",
+        "approval",
+        "proposal",
+        "time_entry",
+        "cost",
+    }
+)
 # Slice 8 §2.1's six buckets, labelled once here: the code is the contract, the label is
 # copy, and the page prints the label it is sent rather than keeping a second table.
 _FASCE_ETICHETTE: dict[str, str] = {
@@ -232,6 +258,11 @@ class DashboardService:
             fatture_emesse=self.invoices.count_emesse_in_periodo(periodo.da, periodo.a, azienda),
         )
 
+    def _recent_feed(self, actor: Actor) -> list[Activity]:
+        if actor.type == "user" and actor.can_administer:
+            return self.activities.recent(_RECENT_ACTIVITIES)
+        return self.activities.recent(_RECENT_ACTIVITIES_FILTERED, _BUSINESS_ENTITIES)
+
     def get_operational_dashboard(
         self, actor: Actor, azienda_id: UUID | None = None
     ) -> OperationalDashboard:
@@ -319,10 +350,7 @@ class DashboardService:
                     collegamento=_CONCENTRAZIONE_LINK,
                 ),
             ],
-            attivita_recenti=[
-                ActivityRead.model_validate(row)
-                for row in self.activities.recent(_RECENT_ACTIVITIES)
-            ],
+            attivita_recenti=serve_activities(self.session, self._recent_feed(actor)),
         )
 
     def get_receivables_dashboard(

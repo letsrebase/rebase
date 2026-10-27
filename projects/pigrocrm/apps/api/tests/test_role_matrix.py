@@ -265,8 +265,8 @@ ROWS: list[Row] = [
             "confidenza": "0.90",
         },
     ),
-    Row("POST", "/api/proposals/{proposal_id}/accept", body={"deciso_da": "Matrice"}),
-    Row("POST", "/api/proposals/{proposal_id}/reject", body={"deciso_da": "Matrice"}),
+    Row("POST", "/api/proposals/{proposal_id}/accept", body={}),
+    Row("POST", "/api/proposals/{proposal_id}/reject", body={}),
     # --- the day ledger (REB-745): `require_write` (work_units/service.py) ----------
     Row(
         "POST",
@@ -612,6 +612,7 @@ ROWS: list[Row] = [
         body={"email": "matrice-nuovo@pigro.it", "nome": "Matrice", "password": ADMIN_PASSWORD},
     ),
     Row("GET", "/api/users", admin_only=True),
+    Row("GET", "/api/users/directory", expect="open"),
     # `google=True` here is "the installation is configured", not Google: the invite
     # router resolves a sender before its body runs, and an installation without
     # `PIGROCRM_RESEND_API_KEY` answers 503 whatever the role, the same class as the

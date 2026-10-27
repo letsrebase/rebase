@@ -18,6 +18,7 @@ from fakes.slack_fixtures import (
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
+from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.errors import Conflict, PermissionDenied, ScopedAdmin
 from pigrocrm.core.gmail.crypto import unseal
@@ -245,6 +246,40 @@ def test_reconnecting_the_same_workspace_keeps_its_row_and_a_manual_match(
     assert second.status == "active"
     link = db_session.execute(select(SlackUserLink)).scalar_one()
     assert (link.source, link.slack_user_id) == ("manual", "UMARIO")
+
+
+def test_the_settings_writes_are_recorded_with_the_member(db_session: Session) -> None:
+    """REB-781: who matched a Slack member by hand, took the match away, asked Slack again
+    and chose or cleared the channel is on the workspace's entries."""
+    admin = make_user(db_session, email="mario@example.it")
+    fake = FakeSlack()
+    fake.add_member("m.rossi@acme.example", "UMARIO")
+    fake.add_channel("C1", "promemoria")
+    workspace = connect(db_session, fake, admin)
+    service = SlackService(db_session, settings=slack_settings(), client=slack_client(fake))
+    actor = actor_of(admin)
+    service.link(actor, admin.id, "m.rossi@acme.example")
+    service.unlink(actor, admin.id)
+    service.rematch(actor)
+    service.set_channel(actor, "C1")
+    service.set_channel(actor, None)
+
+    kinds = {
+        e.kind: e
+        for e in ActivityService(db_session).timeline("slack_workspace", workspace.id)
+        if e.kind.startswith("slack.") and "collegato" not in e.kind
+    }
+
+    assert set(kinds) == {
+        "slack.abbinamento_manuale",
+        "slack.abbinamento_rimosso",
+        "slack.abbinamenti_rifatti",
+        "slack.canale_impostato",
+        "slack.canale_rimosso",
+    }
+    assert {(e.actor_id, e.actor_type) for e in kinds.values()} == {(admin.id, actor.type)}
+    assert kinds["slack.abbinamento_manuale"].payload == {"user_id": str(admin.id)}
+    assert kinds["slack.canale_impostato"].payload == {"canale": "promemoria"}
 
 
 def test_disconnect_wipes_the_token_the_channel_and_the_matches(db_session: Session) -> None:

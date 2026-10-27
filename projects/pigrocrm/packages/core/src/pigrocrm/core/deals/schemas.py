@@ -73,8 +73,9 @@ class DealCreate(BaseModel):
     probabilita: int | None = None
     data_chiusura_prevista: date | None = None
     # Validated against `users` by `DealService` (`create`/`update` both call
-    # `_check_owner`), the same way `customer_id` is validated against `customers`:
-    # a real foreign key with no schema-level way to bound it further than "a UUID".
+    # `_owner_for`; omitted on create it is the creator), the same way `customer_id` is
+    # validated against `customers`: a real foreign key with no schema-level way to bound
+    # it further than "a UUID".
     owner_id: UUID | None = None
     note: SafeStr | None = None
     ore_preventivate: Decimal | None = Field(

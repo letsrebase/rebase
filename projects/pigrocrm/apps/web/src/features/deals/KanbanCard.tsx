@@ -20,9 +20,11 @@ interface Props {
    * makes it safe to omit this prop or get it wrong.
    */
   canDrag: boolean
+  /** The owner's name, already resolved (REB-780); `null`/absent draws nothing. */
+  ownerName?: string | null
 }
 
-export function KanbanCard({ deal, onOpen, canDrag }: Props) {
+export function KanbanCard({ deal, onOpen, canDrag, ownerName }: Props) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: deal.id,
     disabled: !canDrag,
@@ -51,6 +53,7 @@ export function KanbanCard({ deal, onOpen, canDrag }: Props) {
           <span>{formatMoney(deal.valore_previsto)}</span>
           <span>{deal.probabilita}%</span>
         </div>
+        {ownerName ? <p className="text-xs text-muted-foreground">{ownerName}</p> : null}
       </CardContent>
     </Card>
   )

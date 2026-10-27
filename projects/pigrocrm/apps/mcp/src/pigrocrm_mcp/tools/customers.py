@@ -4,6 +4,7 @@ from uuid import UUID
 from pigrocrm.core.customers.schemas import CustomerCreate, CustomerListQuery, CustomerUpdate
 from pigrocrm.core.customers.service import CustomerService
 from pigrocrm_mcp.context import McpContext
+from pigrocrm_mcp.tools.changes import refuse_empty, report
 
 
 def create(context: McpContext, data: dict[str, Any]) -> dict[str, Any]:
@@ -13,8 +14,11 @@ def create(context: McpContext, data: dict[str, Any]) -> dict[str, Any]:
 
 def update(context: McpContext, customer_id: str, data: dict[str, Any]) -> dict[str, Any]:
     service = CustomerService(context.session)
-    result = service.update(UUID(customer_id), CustomerUpdate(**data), context.actor)
-    return result.model_dump(mode="json")
+    identifier = UUID(customer_id)
+    changes = CustomerUpdate(**data)
+    refuse_empty(data)
+    before = service.get(identifier, context.actor)
+    return report(before, service.update(identifier, changes, context.actor))
 
 
 def get(context: McpContext, customer_id: str) -> dict[str, Any]:

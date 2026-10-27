@@ -34,6 +34,8 @@ const FIELD_LABELS: Record<string, string> = {
   remoto: 'Modalità',
   links: 'Link',
   compilata_da: 'Compilata da',
+  seniority_admin: 'Seniority (admin)',
+  anni_admin: 'Anni (admin)',
   nome_azienda: 'Azienda',
   figura_richiesta: 'Figura richiesta',
   progetto: 'Progetto',

@@ -37,7 +37,9 @@ function entry(overrides: Partial<Entry>): Entry {
     entity_id: crypto.randomUUID(),
     kind: 'created',
     actor_id: crypto.randomUUID(),
+    actor_name: null,
     actor_type: 'user',
+    triggered_by_name: null,
     payload: {},
     occurred_at: '2026-08-07T20:26:33.337592Z',
     ...overrides,
@@ -126,13 +128,13 @@ describe('Timeline', () => {
   })
 
   describe('actor_type -- visible and obvious, not a subtle icon difference', () => {
-    it('labels a browser-session actor "Utente"', async () => {
+    it('falls back to "Utente" for a browser-session actor whose name is unknown', async () => {
       mockGet.mockReturnValue(ok([entry({ actor_type: 'user' })]))
       renderWithClient(<Timeline entityType="customer" entityId="c1" />)
       expect(await screen.findByText('Utente')).toBeInTheDocument()
     })
 
-    it('labels a personal-access-token (MCP) actor "Agente AI", distinctly from a user', async () => {
+    it('falls back to "Agente AI" for a personal-access-token (MCP) actor whose name is unknown, distinctly from a user', async () => {
       mockGet.mockReturnValue(ok([entry({ actor_type: 'mcp' })]))
       renderWithClient(<Timeline entityType="customer" entityId="c1" />)
       expect(await screen.findByText('Agente AI')).toBeInTheDocument()
@@ -244,15 +246,52 @@ describe('Timeline', () => {
     })
   })
 
-  it('formats occurred_at as a localized Italian date and time, from a full ISO instant', async () => {
+  it('formats occurred_at as a localized Italian date and time with the seconds, from a full ISO instant', async () => {
     const occurredAt = '2026-08-07T20:26:33.337592Z'
     mockGet.mockReturnValue(ok([entry({ occurred_at: occurredAt })]))
     renderWithClient(<Timeline entityType="customer" entityId="c1" />)
-    const expected = new Intl.DateTimeFormat('it-IT', { dateStyle: 'medium', timeStyle: 'short' }).format(
+    const expected = new Intl.DateTimeFormat('it-IT', { dateStyle: 'medium', timeStyle: 'medium' }).format(
       new Date(occurredAt),
     )
     const time = await screen.findByText(expected)
     expect(time.tagName).toBe('TIME')
     expect(time).toHaveAttribute('datetime', occurredAt)
+  })
+
+  describe('who and from where (REB-781)', () => {
+    it('names the member and marks a browser change "dal web"', async () => {
+      mockGet.mockReturnValue(ok([entry({ actor_type: 'user', actor_name: 'Giulia Bianchi' })]))
+      renderWithClient(<Timeline entityType="customer" entityId="c1" />)
+      const item = (await screen.findByText('Giulia Bianchi')).closest('li')
+      expect(item).toHaveTextContent('dal web')
+      expect(item).not.toHaveTextContent('via MCP')
+    })
+
+    it('names the token owner and marks an agent change "via MCP"', async () => {
+      mockGet.mockReturnValue(ok([entry({ actor_type: 'mcp', actor_name: 'Marco Verdi' })]))
+      renderWithClient(<Timeline entityType="customer" entityId="c1" />)
+      const item = (await screen.findByText('Marco Verdi')).closest('li')
+      expect(item).toHaveTextContent('via MCP')
+      expect(item).not.toHaveTextContent('dal web')
+    })
+
+    it('says who set an automation off, and over which channel', async () => {
+      mockGet.mockReturnValue(
+        ok([
+          entry({
+            actor_type: 'system',
+            actor_id: null,
+            kind: 'automation.stage_moved',
+            payload: { regola: 'A1', attivata_da: crypto.randomUUID(), attivata_via: 'mcp' },
+            triggered_by_name: 'Marco Verdi',
+          }),
+        ]),
+      )
+      renderWithClient(<Timeline entityType="deal" entityId="d1" />)
+      const item = (await screen.findByText('Sistema')).closest('li')
+      expect(item).toHaveTextContent('Attivata da Marco Verdi (via MCP)')
+      expect(item).toHaveTextContent('Regola: A1')
+      expect(item).not.toHaveTextContent('Attivata da: ')
+    })
   })
 })

@@ -673,6 +673,11 @@ _BYTE: dict[Method, str] = {
 #    survive being asked why, and the only way to keep that true is to delete the ones
 #    that do not the moment the tool is written.
 _COPERTE_O_UMANE: dict[Method, str] = {
+    ("ProposalService", "accept"): "REB-806: deciding a proposal is a person's act. The "
+    "token that read the mail (text written by somebody else) would also have proposed it, "
+    "and proposing then accepting in one turn closes the chain. `Actor.require_person` "
+    "refuses every agent credential, over REST too, with or without `mcp_full_access`",
+    ("ProposalService", "reject"): "same as accept: rejecting is a person's decision too",
     ("ContractEmailService", "create"): "il testo che esce a nome del titolare lo salva la "
     "persona dalla pagina del contratto; l'agente scrive bozze con draft_email",
     ("ContractEmailService", "update"): "come create: il testo di un modello e' della persona",
@@ -756,8 +761,6 @@ _COPERTE_O_UMANE: dict[Method, str] = {
     "riscriverli su un documento gia' reso",
     ("DocumentService", "add_version"): "richiede byte gia' resi, che l'MCP non produce",
     ("FiscalProfileService", "get"): "describe_fiscal_profile espone gia' il regime",
-    ("ContractService", "get"): "get_contract legge `detail`: la stessa riga con le note sulle "
-    "clausole e il contratto che lo rinnova (REB-762, REB-763)",
     ("ContractService", "simulate_cap"): "lo raggiunge `simulate_ceiling` quando riceve un "
     "`contract_id`: il tetto del contratto e' una parte della stessa risposta (REB-761)",
     ("TemplateService", "get"): "describe_template espone gia' il template",
@@ -947,6 +950,57 @@ def _produced_by(func: ast.expr, known: set[str], factories: dict[str, str]) -> 
     return func.id if func.id in known else factories.get(func.id)
 
 
+def _own_nodes(scope: ast.AST) -> list[ast.AST]:
+    """The nodes of one function (or module) body, without entering the functions defined
+    inside it: those are scopes of their own. A nested `def` is itself returned, so the
+    caller can recurse into it."""
+    nodes: list[ast.AST] = []
+    todo = list(ast.iter_child_nodes(scope))
+    while todo:
+        node = todo.pop()
+        nodes.append(node)
+        if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            todo.extend(ast.iter_child_nodes(node))
+    return nodes
+
+
+def _calls_in_scope(
+    scope: ast.AST, inherited: dict[str, str], known: set[str], factories: dict[str, str]
+) -> set[Method]:
+    """The `(service class, method)` pairs called in `scope`, with `svc = ServiceClass(...)`
+    bindings resolved per function and not per module (REB-807).
+
+    A name is bound in the function that assigns it, visible to the functions defined
+    inside, and shadowed by an assignment of the same name there. Module-wide, `service`
+    in `tools/contracts.py` was whichever of `ContractService`, `RateCardService` and
+    `ClauseNoteService` was assigned last, so a call on the other two read as a call on
+    the wrong class and a service method that is reachable looked like a hole.
+    """
+    nodes = _own_nodes(scope)
+    bindings = dict(inherited)
+    for node in nodes:
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call):
+            produced = _produced_by(node.value.func, known, factories)
+            if produced is not None:
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        bindings[target.id] = produced
+    found: set[Method] = set()
+    for node in nodes:
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            found |= _calls_in_scope(node, bindings, known, factories)
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            receiver = node.func.value
+            owner = None
+            if isinstance(receiver, ast.Call):
+                owner = _produced_by(receiver.func, known, factories)
+            elif isinstance(receiver, ast.Name):
+                owner = bindings.get(receiver.id)
+            if owner is not None:
+                found.add((owner, node.func.attr))
+    return found
+
+
 def _reachable(known: set[str]) -> set[Method]:
     """Every `(service class, method)` an agent can reach through `tools/` or
     `resources/`.
@@ -974,26 +1028,7 @@ def _reachable(known: set[str]) -> set[Method]:
                     if isinstance(returns, ast.Name) and returns.id in known:
                         factories[node.name] = returns.id
 
-            bindings: dict[str, str] = {}
-            for node in ast.walk(tree):
-                if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call):
-                    produced = _produced_by(node.value.func, known, factories)
-                    if produced is not None:
-                        for target in node.targets:
-                            if isinstance(target, ast.Name):
-                                bindings[target.id] = produced
-
-            for node in ast.walk(tree):
-                if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
-                    continue
-                receiver = node.func.value
-                owner = None
-                if isinstance(receiver, ast.Call):
-                    owner = _produced_by(receiver.func, known, factories)
-                elif isinstance(receiver, ast.Name):
-                    owner = bindings.get(receiver.id)
-                if owner is not None:
-                    found.add((owner, node.func.attr))
+            found |= _calls_in_scope(tree, {}, known, factories)
     return found
 
 

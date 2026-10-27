@@ -9,6 +9,8 @@ from pydantic import WithJsonSchema
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.analytics.schemas import BudgetQuery, CeilingSimulationQuery, PeriodPnlQuery
+from pigrocrm.core.attivita.schemas import AttivitaUpdate
+from pigrocrm.core.auth.service import UserService
 from pigrocrm.core.contract_expenses.schemas import ContractExpenseUpdate
 from pigrocrm.core.contracts.schemas import (
     ClauseNoteUpdate,
@@ -186,6 +188,10 @@ OfferStateArg = Annotated[
 # rendered guidance, while `list_tools()` still advertises the real field names.
 TimeEntryChanges = Annotated[dict[str, Any], WithJsonSchema(TimeEntryUpdate.model_json_schema())]
 CostChanges = Annotated[dict[str, Any], WithJsonSchema(CostUpdate.model_json_schema())]
+# `update_attivita` advertised an untyped object until REB-807: an agent had to guess the
+# field names, and the two `*_da_rimuovere` flags that clear a field were nowhere in
+# `list_tools`. Same split as every alias above.
+AttivitaChanges = Annotated[dict[str, Any], WithJsonSchema(AttivitaUpdate.model_json_schema())]
 
 # `HoursArg`/`MoneyArg`/`OptionalFactor` mirror `BoundedLimit`/`OptionalMoney` exactly,
 # for the same SDK-bypass reason: a bare `float` parameter lets a wrong-TYPE argument be
@@ -513,10 +519,14 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         ore_preventivate: OptionalMoney = None,
         valore_preventivato: OptionalMoney = None,
         custom_fields: dict[str, Any] | None = None,
+        owner_id: str | None = None,
     ) -> dict[str, Any]:
         """Crea un deal. Il cliente è obbligatorio; lo stato iniziale è il primo della
         pipeline. `data_chiusura_prevista` va in formato YYYY-MM-DD. Chiama prima
         `describe_schema` per i campi personalizzati.
+
+        `owner_id` e' la persona che segue il deal, a cui arrivano i suoi promemoria:
+        omesso, e' chi lo crea. Deve essere un utente attivo.
         """
         return deals.create(
             context,
@@ -530,13 +540,16 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
                 "ore_preventivate": ore_preventivate,
                 "valore_preventivato": valore_preventivato,
                 "custom_fields": custom_fields or {},
+                "owner_id": UUID(owner_id) if owner_id else None,
             },
         )
 
     @mcp.tool()
     @guard
     def update_deal(deal_id: str, changes: DealChanges) -> dict[str, Any]:
-        """Aggiorna un deal. Per cambiare stato usa `move_deal`."""
+        """Aggiorna un deal. Per cambiare stato usa `move_deal`.
+
+        `owner_id` cambia chi segue il deal (un utente attivo); `null` lo toglie."""
         return deals.update(context, deal_id, changes)
 
     @mcp.tool()
@@ -587,10 +600,14 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
 
     @mcp.tool()
     @guard
-    def move_deal(deal_id: str, stage_id: str) -> dict[str, Any]:
+    def move_deal(
+        deal_id: str, stage_id: str | None = None, pipeline_stage_id: str | None = None
+    ) -> dict[str, Any]:
         """Sposta un deal in un altro stato. Uno stato vinto/perso fissa la probabilità
-        a 100/0."""
-        return deals.move(context, deal_id, stage_id)
+        a 100/0. Lo stato di destinazione è `stage_id`, o `pipeline_stage_id` come lo
+        chiama il deal (`get_deal`): ne basta uno. Gli stati sono in `list_pipeline_stages`.
+        """
+        return deals.move(context, deal_id, stage_id, pipeline_stage_id)
 
     @mcp.tool()
     @guard
@@ -998,9 +1015,10 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
     # are the *only* write path from an agent onto a document already archived by
     # any door (`import_drive_file`, a direct upload, or a mail attachment archived
     # the same way) -- they write a `proposals` row, never a `Contract`/`WorkUnit`
-    # directly. `accept_proposal`/`reject_proposal` are the confirm half: accepting
-    # creates the real row(s) in one transaction with the proposal's own decision,
-    # and a `'giornata'` accept never leaves a day at `'proposto'`.
+    # directly. Accepting and rejecting are the confirm half and are NOT tools
+    # (REB-806): the same agent that read the untrusted mail would otherwise propose
+    # and decide in one turn. They live on the REST/web surface, as a person's act;
+    # `Actor.require_person` refuses any agent credential there too.
 
     @mcp.tool()
     @guard
@@ -1036,7 +1054,7 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         motivo_confidenza: str | None = None,
     ) -> dict[str, Any]:
         """Propone un nuovo contratto letto da un documento già archiviato: scrive
-        solo una `proposals` row in attesa di `accept_proposal`, mai un
+        solo una `proposals` row in attesa che una persona la decida dall'app, mai un
         `Contract`. `document_id` è il documento (da `import_drive_file`, da un
         caricamento diretto, o da un allegato di posta già archiviato) da cui
         `estratto` è stato letto verbatim (`tipo_estratto='citato'`) o trascritto
@@ -1107,10 +1125,10 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         motivo_confidenza: str | None = None,
     ) -> dict[str, Any]:
         """Propone una giornata letta da un'email (o da un altro documento) di
-        approvazione già archiviata: scrive solo una `proposals` row in attesa di
-        `accept_proposal`, mai un `WorkUnit`. `contract_id` è il contratto che la
+        approvazione già archiviata: scrive solo una `proposals` row in attesa che
+        una persona la decida dall'app, mai un `WorkUnit`. `contract_id` è il contratto che la
         giornata riguarda; `canale`/`mittente`/`ricevuto_il`/`message_id` sono
-        l'evidenza dell'approvazione che `accept_proposal` scriverà come
+        l'evidenza dell'approvazione che l'accettazione scriverà come
         `approval` insieme al `work_unit` approvato, entrambi nella stessa
         transazione -- mai una giornata lasciata `'proposto'`."""
         return proposals.propose(
@@ -1167,30 +1185,6 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
                 limit=cast(int, limit),
             ),
         )
-
-    @mcp.tool()
-    @guard
-    def accept_proposal(
-        proposal_id: str, deciso_da: str, campi_accettati: dict[str, Any] | None = None
-    ) -> dict[str, Any]:
-        """Accetta una proposta: crea il contratto (con la sua prima scheda
-        tariffaria) o l'approvazione e il work_unit approvato che descrive, in
-        un'unica transazione -- mai una giornata lasciata `'proposto'`.
-        `campi_accettati` corregge uno o più campi prima di scrivere; omesso,
-        scrive esattamente ciò che la proposta conteneva (`campi_proposti` non
-        viene mai sovrascritto). `deciso_da` è chi ha deciso."""
-        return proposals.accept(
-            context, proposal_id, {"deciso_da": deciso_da, "campi_accettati": campi_accettati}
-        )
-
-    @mcp.tool()
-    @guard
-    def reject_proposal(
-        proposal_id: str, deciso_da: str, motivo: str | None = None
-    ) -> dict[str, Any]:
-        """Rifiuta una proposta: non crea nulla, scrive solo il proprio stato.
-        `motivo` finisce nella timeline, non su un campo della proposta."""
-        return proposals.reject(context, proposal_id, {"deciso_da": deciso_da, "motivo": motivo})
 
     # ---- the day ledger, read only ------------------------------------------
     #
@@ -1253,8 +1247,12 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
     def get_timeline(
         entity_type: EntityType, entity_id: str, limit: BoundedLimit = 50
     ) -> dict[str, Any]:
-        """Cronologia di un'entità. `actor_type` distingue le azioni umane da quelle di
-        un agente."""
+        """Cronologia di un'entità: per ogni voce chi, quando e da dove. `actor_name` è il
+        nome del membro (anche se disattivato) e `actor_type` il canale: `user` dal web,
+        `mcp` da un agente col token di quel membro, `rebase` dalla porta di rebase,
+        `system` da un'automazione o da un'operazione di servizio; un'automazione nomina
+        chi l'ha attivata in `triggered_by_name`.
+        `occurred_at` è l'istante esatto."""
         entries = ActivityService(context.session).timeline(
             entity_type, UUID(entity_id), limit=cast(int, limit)
         )
@@ -1789,6 +1787,13 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         """Registra un incasso o lo annulla. Non cambia lo stato fiscale della
         fattura, che resta emessa."""
         return invoices.set_payment_state(context, invoice_id, stato_pagamento, data_incasso)
+
+    @mcp.tool()
+    @guard
+    def list_members() -> list[dict[str, Any]]:
+        """Le persone attive dello spazio, per nome: id e nome. Serve a trovare
+        l'`owner_id` da dare a un deal (`create_deal`, `update_deal`)."""
+        return [member.model_dump(mode="json") for member in UserService(context.session).members()]
 
     @mcp.tool()
     @guard
@@ -2408,7 +2413,7 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
 
     @mcp.tool()
     @guard
-    def update_attivita(attivita_id: str, changes: dict[str, Any]) -> dict[str, Any]:
+    def update_attivita(attivita_id: str, changes: AttivitaChanges) -> dict[str, Any]:
         """Cambia un'attività: `titolo`, `note`, `scadenza`, `assegnata_a`, il
         riferimento, i campi personalizzati.
 

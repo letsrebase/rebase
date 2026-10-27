@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { Bot, CircleHelp, Cog, DoorOpen, User, type LucideIcon } from 'lucide-react'
-import { formatOccurredAt, humanize, labelForKind } from '@/components/activityLabels'
+import { formatOccurredAtExact, humanize, labelForKind } from '@/components/activityLabels'
 import { Badge } from '@rebase/ui/badge'
 import { Skeleton } from '@rebase/ui/skeleton'
 import { api, toProblem, unwrap } from '@/lib/api'
@@ -48,13 +48,13 @@ interface ActorMeta {
  * `Actor.rebase()`'s own docstring is explicit that it is never an agent, so it does
  * not share `mcp`'s treatment either (milestone A, REB-490).
  *
- * The four get deliberately different *visible* treatments, not just four
- * icons at the same weight: "did I do that, or did an agent?" is the first
- * question this whole timeline exists to answer, so the answer is a coloured,
- * labelled badge -- a word, not only a glyph someone has to recognise at 12px --
- * and the one the product most wants noticed (an agent acting on someone's
- * behalf) gets the same bold fill as a primary action, not a muted secondary tag
- * indistinguishable in weight from an ordinary user edit.
+ * "did I do that, or did an agent?" is the first question this whole timeline exists to
+ * answer, and since REB-781 so is "who, and from where": each entry carries the member's
+ * name (`ActivityRead.actor_name`, resolved from `actor_id`, a deactivated member's
+ * included) and a channel marker, a word and not only a glyph. The one the product most
+ * wants noticed, a change an agent made on someone's behalf, gets «via MCP» in the bold
+ * fill of a primary action; a browser change gets the quiet «dal web» beside it, so the
+ * two are never told apart by the absence of a marker.
  */
 const ACTOR_META: Record<string, ActorMeta> = {
   user: { label: 'Utente', icon: User, variant: 'outline' },
@@ -69,13 +69,56 @@ function actorMeta(actorType: string): ActorMeta {
   )
 }
 
-function ActorBadge({ actorType }: { actorType: string }) {
-  const { label, icon: Icon, variant } = actorMeta(actorType)
+/**
+ * What a person reads as the channel of a change. `user` and `mcp` are the two a member can
+ * make a change through, and each says so; `system` and `rebase` are named by the author
+ * label itself and add nothing. Keyed by the same `Actor.type` values as `ACTOR_META`.
+ */
+const CHANNEL_LABEL: Record<string, string> = { user: 'dal web', mcp: 'via MCP' }
+
+function ChannelBadge({ actorType }: { actorType: string }) {
+  const label = CHANNEL_LABEL[actorType]
+  if (label === undefined) return null
   return (
-    <Badge variant={variant} className="shrink-0 gap-1">
-      <Icon className="size-3" />
+    <Badge variant={actorMeta(actorType).variant} className="shrink-0">
       {label}
     </Badge>
+  )
+}
+
+/**
+ * Who did it: the member's name, and the channel. A row with no name to give (`system`,
+ * `rebase`, or an id no user row holds any more) falls back to the label of its actor type,
+ * which is what the timeline said before names existed.
+ */
+function ActorLine({ entry }: { entry: ActivityEntry }) {
+  const { label, icon: Icon } = actorMeta(entry.actor_type)
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+      <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+      <span className="font-medium">{entry.actor_name ?? label}</span>
+      <ChannelBadge actorType={entry.actor_type} />
+    </div>
+  )
+}
+
+/**
+ * An automation's entry is the system's, and names the member whose action set it off in
+ * `payload.attivata_da`, with the channel that member used in `attivata_via` (§9.5). Both
+ * are read here and kept out of the generic dump, which would print an id.
+ */
+function TriggeredBy({ entry }: { entry: ActivityEntry }) {
+  const { attivata_da: member, attivata_via: via } = entry.payload
+  if (member === undefined || member === null) return null
+  const channel = typeof via === 'string' ? CHANNEL_LABEL[via] : undefined
+  return (
+    <p className="mt-1 text-sm text-muted-foreground">
+      Attivata da{' '}
+      <strong className="font-medium text-foreground">
+        {entry.triggered_by_name ?? 'un membro rimosso'}
+      </strong>
+      {channel !== undefined ? ` (${channel})` : null}
+    </p>
   )
 }
 
@@ -124,7 +167,16 @@ function ActivityDetail({ payload }: { payload: ActivityEntry['payload'] }) {
   // The rest of that payload (anno, numero, totale) are facts about the document and
   // stay. Filtered by key here, in the generic branch, so the same is true of any
   // future `kind` that records the same field.
-  const rest = Object.entries(payload).filter(([key]) => key !== 'importata_da')
+  // The ids a payload carries to say which draft or which member it concerns are for the
+  // machine: dumping a UUID tells a reader nothing the label does not.
+  const hidden: Record<string, true> = {
+    importata_da: true,
+    attivata_da: true,
+    attivata_via: true,
+    draft_id: true,
+    user_id: true,
+  }
+  const rest = Object.entries(payload).filter(([key]) => hidden[key] !== true)
   if (rest.length === 0) return null
   return (
     <p className="mt-1 text-sm text-muted-foreground">
@@ -201,10 +253,10 @@ interface TimelineProps {
 }
 
 /**
- * One entry per row: which actor did it (a badge, always visible, never a subtle
- * icon-only difference), what happened (`kind`, humanized if this build does not
- * recognise it yet), when (localized Italian date and time), and whatever extra
- * the payload has to say.
+ * One entry per row: what happened (`kind`, humanized if this build does not recognise it
+ * yet), when (the exact Italian date and time, seconds included), who did it (the member's
+ * name) and from where (a «dal web» or «via MCP» marker, never an absence of one), and
+ * whatever extra the payload has to say.
  */
 export function Timeline({ entityType, entityId, limit = 50 }: TimelineProps) {
   const { data, isLoading, isError, error } = useQuery({
@@ -239,17 +291,16 @@ export function Timeline({ entityType, entityId, limit = 50 }: TimelineProps) {
   return (
     <ol className="space-y-3">
       {data.map((entry) => (
-        <li key={entry.id} className="flex items-start gap-3 border p-3">
-          <ActorBadge actorType={entry.actor_type} />
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-              <span className="font-medium">{labelForKind(entry.kind)}</span>
-              <time dateTime={entry.occurred_at} className="shrink-0 text-xs text-muted-foreground">
-                {formatOccurredAt(entry.occurred_at)}
-              </time>
-            </div>
-            <ActivityDetail payload={entry.payload} />
+        <li key={entry.id} className="border p-3">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+            <span className="font-medium">{labelForKind(entry.kind)}</span>
+            <time dateTime={entry.occurred_at} className="shrink-0 text-xs text-muted-foreground">
+              {formatOccurredAtExact(entry.occurred_at)}
+            </time>
           </div>
+          <ActorLine entry={entry} />
+          <TriggeredBy entry={entry} />
+          <ActivityDetail payload={entry.payload} />
         </li>
       ))}
     </ol>

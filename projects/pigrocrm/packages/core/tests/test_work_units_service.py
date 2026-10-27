@@ -13,6 +13,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.orm import Session
 
+from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.contracts.models import Contract
 from pigrocrm.core.customers.models import Customer
@@ -236,6 +237,51 @@ def test_link_approval_recovers_the_flagged_state(db_session: Session) -> None:
     recovered = service.link_approval(work_unit.id, approval.id, WRITER, "approvazione ricevuta")
     assert recovered.stato == "lavorato"
     assert recovered.approval_id == approval.id
+
+
+def test_days_and_approvals_name_the_member_and_the_channel_on_the_contract(
+    db_session: Session,
+) -> None:
+    """REB-781: the day's own ledger holds the actor as an id and `human` or `agent`; the
+    contract's timeline holds the member and the channel, and the approval row, which has no
+    actor column, is recorded nowhere else."""
+    contract = _contract(db_session, requires_prior_approval=True)
+    service = WorkUnitService(db_session)
+    day = service.create(
+        WorkUnitCreate(
+            contract_id=contract.id,
+            data=date(2026, 3, 1),
+            quantita=Decimal("1.00"),
+            descrizione="Giornata",
+            stato="lavorato",
+        ),
+        WRITER,
+    )
+    approval = _approval(db_session, contract)
+    service.link_approval(day.id, approval.id, TRUSTED_AGENT, "approvazione ricevuta")
+    service.transition(day.id, "contestato", TRUSTED_AGENT, "contestata dal cliente")
+
+    entries = {e.kind: e for e in ActivityService(db_session).timeline("contract", contract.id)}
+
+    assert (entries["day_created"].actor_id, entries["day_created"].actor_type) == (
+        WRITER.id,
+        "user",
+    )
+    assert entries["day_created"].payload == {
+        "giornata": "2026-03-01",
+        "stato": "lavorato_senza_approvazione",
+    }
+    assert entries["approval_added"].actor_type == "user"
+    assert (entries["approval_linked"].actor_id, entries["approval_linked"].actor_type) == (
+        TRUSTED_AGENT.id,
+        "mcp",
+    )
+    assert entries["day_state_changed"].actor_type == "mcp"
+    assert entries["day_state_changed"].payload == {
+        "giornata": "2026-03-01",
+        "da": "lavorato",
+        "a": "contestato",
+    }
 
 
 def test_transitions_for_an_unknown_work_unit_is_empty_not_an_error(

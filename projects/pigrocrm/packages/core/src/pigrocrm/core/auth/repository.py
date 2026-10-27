@@ -46,6 +46,13 @@ class UserRepository:
     def list_all(self) -> list[User]:
         return list(self.session.execute(select(User).order_by(User.nome)).scalars())
 
+    def list_active(self) -> list[User]:
+        return list(
+            self.session.execute(
+                select(User).where(User.attivo.is_(True)).order_by(User.nome)
+            ).scalars()
+        )
+
     def count(self) -> int:
         return self.session.execute(select(func.count()).select_from(User)).scalar_one()
 

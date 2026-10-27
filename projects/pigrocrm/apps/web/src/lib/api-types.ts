@@ -836,6 +836,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/users/directory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Directory
+         * @description The active members' names, for the owner and assignee pickers (REB-780).
+         */
+        get: operations["directory_api_users_directory_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/users/invites": {
         parameters: {
             query?: never;
@@ -4688,8 +4708,12 @@ export interface components {
             kind: string;
             /** Actor Id */
             actor_id: string | null;
+            /** Actor Name */
+            actor_name?: string | null;
             /** Actor Type */
             actor_type: string;
+            /** Triggered By Name */
+            triggered_by_name?: string | null;
             /** Payload */
             payload: {
                 [key: string]: unknown;
@@ -9421,6 +9445,20 @@ export interface components {
              */
             email: string;
         };
+        /**
+         * MemberRead
+         * @description What any member may know of a colleague (REB-780): enough to name an owner or an
+         *     assignee and to pick one, and nothing else (no email, role or rates).
+         */
+        MemberRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Nome */
+            nome: string;
+        };
         /** MoveStageRequest */
         MoveStageRequest: {
             /**
@@ -10125,10 +10163,11 @@ export interface components {
          *     `ProposalService.accept` stores on `campi_accettati` and what actually builds the
          *     `Contract`/`WorkUnit` -- never `campi_proposti` itself, per spec §10's "kept
          *     separately... never overwritten".
+         *
+         *     There is no `deciso_da`: who decided is the authenticated actor, read by the service,
+         *     never a field a caller (or an agent steered by an email) gets to write (REB-806).
          */
         ProposalAccept: {
-            /** Deciso Da */
-            deciso_da: string;
             /** Campi Accettati */
             campi_accettati?: {
                 [key: string]: unknown;
@@ -10236,8 +10275,6 @@ export interface components {
          *     who and when.
          */
         ProposalReject: {
-            /** Deciso Da */
-            deciso_da: string;
             /** Motivo */
             motivo?: string | null;
         };
@@ -19289,6 +19326,123 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UserRead"];
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    directory_api_users_directory_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberRead"][];
                 };
             };
             /** @description Permesso negato: l'actor non ha il ruolo richiesto. */

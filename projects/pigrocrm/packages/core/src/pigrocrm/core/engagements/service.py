@@ -649,7 +649,7 @@ class EngagementService:
                     else None
                 ),
                 data_chiusura_prevista=lettera.data_fine,
-                owner_id=owner.id if owner is not None else None,
+                owner_id=owner.id if owner is not None and owner.attivo else None,
                 note=_deal_note(lettera.numero, lettera.azienda, match_id),
             ),
             Actor.rebase(),

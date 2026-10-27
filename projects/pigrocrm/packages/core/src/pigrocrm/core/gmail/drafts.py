@@ -29,6 +29,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings
 from pigrocrm.core.customers.models import Customer
@@ -115,6 +116,7 @@ class EmailDraftService:
         self.session = session
         self.settings = settings
         self.repo = GmailRepository(session)
+        self.activities = ActivityService(session)
 
     # ---- the pieces the write paths share ------------------------------------------
 
@@ -220,6 +222,15 @@ class EmailDraftService:
             send_state="bozza",
         )
         self.session.add(draft)
+        self.session.flush()  # the id is minted at insert; the entry below names it
+        # On the record the draft is about, as the send is (`EmailSendService`), where a
+        # person looking at that customer's or deal's timeline will look. It says that a
+        # draft exists and who made it, not what it says: the body is the member's words
+        # to the customer, and the timeline is read by more people, for longer, than a
+        # draft lives (REB-781).
+        self.activities.record(
+            data.entity_type, data.entity_id, "gmail.bozza_creata", actor, {"draft_id": draft.id}
+        )
 
         # Committed here, not left to the caller: "the draft is durable" is a claim about
         # what survives the request dying, and a row that is only flushed does not.
@@ -276,6 +287,13 @@ class EmailDraftService:
             if state is None:
                 raise NotFound(ENTITY, draft_id)
             raise Conflict(ENTITY, _ALREADY_GONE, send_state=state)
+        self.activities.record(
+            draft.entity_type,
+            draft.entity_id,
+            "gmail.bozza_modificata",
+            actor,
+            {"draft_id": draft_id, "changed": sorted(values)},
+        )
         self.session.commit()
         # The write was a Core UPDATE, so the copy loaded above is stale. Expired rather
         # than trusted, and read back as committed.
@@ -306,6 +324,13 @@ class EmailDraftService:
             if state is None:
                 raise NotFound(ENTITY, draft_id)
             raise Conflict(ENTITY, _ALREADY_GONE, send_state=state)
+        self.activities.record(
+            draft.entity_type,
+            draft.entity_id,
+            "gmail.bozza_eliminata",
+            actor,
+            {"draft_id": draft_id},
+        )
         self.session.commit()
         # The write was a Core DELETE, so the copy loaded above does not know the row is
         # gone: an ORM `Session.delete` would leave the session's identity map having
