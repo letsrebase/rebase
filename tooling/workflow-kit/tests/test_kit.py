@@ -3,6 +3,7 @@ import io
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -205,6 +206,25 @@ class ClaudeHook(unittest.TestCase):
         self.sync()
         write(self.repo / ".claude/settings.json", "{}")
         self.assertTrue(any("Linear gate hook is missing" in f for f in kit.check(self.repo)))
+
+    def test_an_old_copy_syncs_through_the_sources_kit_py(self):
+        # A repository's kit.py is the one an agent runs; when it predates a change to the
+        # gate's entry, the sync must still write the new entry, not its own old one.
+        self.sync()
+        old = self.repo / ".github/kit/bin/kit.py"
+        old.write_text(
+            old.read_text(encoding="utf-8").replace("linear_gate.py", "old_gate.py"),
+            encoding="utf-8",
+        )
+        stale = dict(kit.CLAUDE_HOOK, hooks=[{"type": "command", "command": "python3 old.py"}])
+        write(self.repo / ".claude/settings.json", json.dumps({"hooks": {"PreToolUse": [stale]}}))
+        run = subprocess.run(
+            [sys.executable, str(old), "--repo", str(self.repo), "sync", "--source", str(KIT)],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(kit.check(self.repo), [])
 
 
 class ThisRepositorysCopy(unittest.TestCase):

@@ -7,7 +7,7 @@
     ".agents/skills/pr-creation/SKILL.md": "c1d1b88668da274e0662f76667b9cffff54a3cbdb104bcf1e16e57241c0d56f0",
     ".github/PULL_REQUEST_TEMPLATE.md": "0beb1310fa6344563ba2b2b7a2576e565ca1ab574266b3fcaf304e4d94b634ab",
     ".github/kit/README.md": "8667eba92e5f1990dfde448ec6ad08e81b514ef70a0564e5d33884d2ef90e74a",
-    ".github/kit/bin/kit.py": "f9c53fd1c4f6b2716178639e950dcb2f94d571af6d00f72a79ecd37b2e25e577",
+    ".github/kit/bin/kit.py": "ed85624ebe8d372dd459c5486abfeb9c03068cc59cd25675aa224e299ee64576",
     ".github/kit/bin/linear_audit.py": "318fd28f20cd03c73bcc04be96433f02f40818bf146b6b8c2c82a2a9cb3c9cb8",
     ".github/kit/bin/linear_gate.py": "f7e174a88d463466b587b48b82c4dca5a25098886823f9f286f849b291323404",
     ".github/kit/bin/pr_lint.py": "1c8df301fc8ea24fe2dbf6a0ae98736748e70fe6928b274498d5759b704ace0e",

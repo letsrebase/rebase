@@ -31,6 +31,7 @@ import argparse
 import hashlib
 import json
 import shutil
+import subprocess
 import sys
 import textwrap
 from pathlib import Path
@@ -481,7 +482,15 @@ def main(argv: list[str] | None = None) -> int:
     repo = args.repo.resolve()
     try:
         if args.command == "sync":
-            return sync(repo, args.source.resolve(), force=args.force)
+            source = args.source.resolve()
+            newer = source / "files" / ".github" / "kit" / "bin" / "kit.py"
+            if newer.is_file() and newer.read_bytes() != Path(__file__).read_bytes():
+                # The source's kit.py knows what this copy does not (a new managed file,
+                # a changed settings entry), so it does the sync: an old copy would copy
+                # the new files in and still write the old entry.
+                rest = argv if argv is not None else sys.argv[1:]
+                return subprocess.run([sys.executable, str(newer), *rest], check=False).returncode
+            return sync(repo, source, force=args.force)
         if args.command == "template":
             sys.stdout.write(render_template(load_config(repo)))
             return 0
