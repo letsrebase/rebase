@@ -185,3 +185,25 @@ def test_a_clients_name_is_read_like_an_employer() -> None:
     known = KnownIdentifiers(cognome="Zz", employers=["Azienda Finta S.r.l."])
 
     assert identifying(_card(sintesi="Un progetto per Azienda Finta."), known) == ["sintesi"]
+
+
+def test_an_employer_that_is_also_a_technology_does_not_fail_the_skills() -> None:
+    """Google, Microsoft, Oracle, SAP, Amazon: an employer's name is a skill too. A card
+    that lists «Google Cloud» is no leak, in the skills or in a sentence that names it."""
+    known = KnownIdentifiers(cognome="Zz", employers=["Google LLC"])
+    skills = {"competenze": ["Python", "Google Cloud"]}
+
+    assert identifying(_card(**skills), known) == []
+    assert identifying(_card(sintesi="Esperto di Google Cloud e Python.", **skills), known) == []
+
+
+def test_an_employer_in_the_role_the_summary_or_the_sectors_still_fails() -> None:
+    known = KnownIdentifiers(cognome="Zz", employers=["Google LLC"])
+    skills = {"competenze": ["Python", "Google Cloud"]}
+
+    assert identifying(_card(sintesi="Lavora in Google da anni.", **skills), known) == ["sintesi"]
+    assert identifying(_card(ruolo="Developer in Google", **skills), known) == ["ruolo"]
+    assert identifying(_card(settori=["fintech", "Google"], **skills), known) == ["settori"]
+    # Blanking the skill leaves the employer standing where the sentence says it twice.
+    both = _card(sintesi="Google Cloud in Google.", **skills)
+    assert identifying(both, known) == ["sintesi"]

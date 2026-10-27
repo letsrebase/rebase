@@ -137,10 +137,16 @@ function Sections({ config }: { config: AiConfig }) {
 
 function SourceRow({ source }: { source: AiSourceSwitch }) {
   const invalidate = useInvalidate()
+  const client = useQueryClient()
   const label = SOURCE_LABELS[source.kind] ?? source.kind
   const toggle = useMutation({
     mutationFn: () => admin.aiSetSourceEnabled(source.kind, !source.enabled),
-    onSuccess: () => void invalidate(),
+    // Turning a source off deletes its stored text, and the cards that read it turn stale:
+    // the list below, its count and its cost are read again too.
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: STALE_KEY })
+      void invalidate()
+    },
   })
   return (
     <div className="flex flex-wrap items-center gap-4 px-6 py-5">
@@ -200,8 +206,9 @@ function StaleCards() {
   const data: AiStaleCards = stale.data
   const queued = start.isSuccess && (
     <p role="status" className="px-6 pt-4 text-sm">
-      {start.data.queued} {start.data.queued === 1 ? 'scheda messa' : 'schede messe'} in coda: si scrivono in
-      background.
+      {start.data.queued === 0
+        ? 'Una rigenerazione è già in corso: attendi che finisca prima di avviarne un’altra.'
+        : `${start.data.queued} ${start.data.queued === 1 ? 'scheda messa' : 'schede messe'} in coda: si scrivono in background.`}
     </p>
   )
   if (data.count === 0) {

@@ -170,6 +170,20 @@ describe('the Modelli AI page (REB-833)', () => {
     const call = spy.mock.calls.find(([url]) => String(url).endsWith('/sources/github/enabled'))!
     expect(call[1]?.method).toBe('PUT')
     expect(JSON.parse(call[1]?.body as string)).toEqual({ enabled: true })
+    // The cards that read a source turn stale when it is switched: the list is read again.
+    const staleReads = () => spy.mock.calls.filter(([url]) => String(url).endsWith('/cards/stale')).length
+    await waitFor(() => expect(staleReads()).toBeGreaterThan(1))
+  })
+
+  it('says a regeneration is already running when nothing was queued', async () => {
+    mount(CONFIG, {
+      '/api/hub/admin/ai/cards/stale': () => answer(200, STALE),
+      '/api/hub/admin/ai/cards/regenerate-stale': () => answer(200, { queued: 0 }),
+    })
+    const section = within(await screen.findByRole('region', { name: 'Schede da aggiornare' }))
+    await userEvent.setup().click(await section.findByRole('button', { name: 'Avvia rigenerazione' }))
+    expect(await section.findByText(/Una rigenerazione è già in corso/)).toBeInTheDocument()
+    expect(section.queryByText(/0 schede messe/)).toBeNull()
   })
 
   it('shows the stale cards by reason with the estimate and sends the limit on «Avvia rigenerazione»', async () => {

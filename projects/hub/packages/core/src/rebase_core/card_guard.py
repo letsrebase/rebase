@@ -187,6 +187,9 @@ _LEGAL = frozenset(
     ]
 )
 
+# Where an employer's name is read (`identifying`).
+EMPLOYER_FIELDS = frozenset(["ruolo", "sintesi", "settori"])
+
 _TOKEN = re.compile(r"[^\W_]+", re.UNICODE)
 _DOTTED = re.compile(r"\b(?:\w\.){2,}")
 
@@ -325,11 +328,16 @@ def identifying(card: Card, known: KnownIdentifiers) -> list[str]:
     searched = [
         *repos,
         *own,
-        *(
-            phrase
-            for phrase in (_phrase(employer, legal=True) for employer in known.employers)
-            if phrase is not None
-        ),
+    ]
+    # An employer is also very often a technology (Google, Microsoft, Oracle, SAP, Amazon):
+    # «Google Cloud» among the skills is no leak. So an employer is read only where the
+    # card speaks of the person's work, the role, the summary and the sectors, and there
+    # with the card's own skills blanked out first: «Lavora in Google» is caught, «esperto
+    # di Google Cloud» for a person who lists that skill is not.
+    employers = [
+        phrase
+        for phrase in (_phrase(employer, legal=True) for employer in known.employers)
+        if phrase is not None
     ]
 
     hit: list[str] = []
@@ -343,6 +351,13 @@ def identifying(card: Card, known: KnownIdentifiers) -> list[str]:
                     and any(_names(_without_skills(value, card.competenze), g) for g in given)
                 )
                 or any(_contains(_tokens(value), phrase) for phrase in searched)
+                or (
+                    name in EMPLOYER_FIELDS
+                    and any(
+                        _contains(_tokens(_without_skills(value, card.competenze)), phrase)
+                        for phrase in employers
+                    )
+                )
             ):
                 hit.append(name)
                 break
