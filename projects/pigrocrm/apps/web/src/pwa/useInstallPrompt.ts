@@ -35,11 +35,11 @@ function writeFlag(key: string): void {
 
 /** iOS Safari alone has `navigator.standalone`; unlike a user-agent test a desktop-site
  *  toggle does not spoof it. It is also how a home-screen launch is told apart there. */
-function isIosDevice(): boolean {
+export function isIosDevice(): boolean {
   return 'standalone' in navigator
 }
 
-function isRunningStandalone(): boolean {
+export function isRunningStandalone(): boolean {
   return (
     window.matchMedia?.('(display-mode: standalone)').matches === true ||
     (navigator as Navigator & { standalone?: boolean }).standalone === true

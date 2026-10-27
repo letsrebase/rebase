@@ -84,6 +84,7 @@ run».
 | `root: promemoria 4, nuovi 1, chiusi 0` | The root installation has 4 reminders raised for its people, 1 of them put in a list by this pass, and no occurrence ended | Nothing |
 | `studio-rossi: promemoria 4, nuovi 0, chiusi 2` | Nothing new, and two reminders whose cause has gone had their acknowledge, snooze and delivery rows ended | Nothing |
 | `studio-rossi: promemoria 4, nuovi 1, chiusi 0 (prova)` | `--dry-run`: it would have put one in a list | Nothing: no row, no clock |
+| `studio-rossi: promemoria 4, nuovi 1, chiusi 0, push 2, email 1` | As the first line, and the pass also sent two push notifications and one mail (counters of what the providers accepted, shown only when not zero) | Nothing. How the channels work: `2026-10-27-reminder-channels-runbook.md` |
 | `studio-rossi: saltato (in_corso)` | Another pass was running on that space (a slow one, or a hand-run line). The lock did its work, and the line goes to `stdout`, exit `0` | Nothing. If it repeats on every run, a pass is stuck: see §5 |
 | `studio-rossi: saltato (ProgrammingError)` on `stderr` | That space's schema is behind the image, see §1 | Restart the API, which migrates it, and run the line by hand |
 | `studio-rossi: saltato (OperationalError)` on `stderr` | That space's database does not answer. The other spaces were visited | Check that database |
@@ -107,9 +108,9 @@ All of it in the space's own database, nothing across spaces (spec §9.3):
 
 - `reminder_delivery`: one row per reminder, person and channel, written after the channel
   accepted it. A reminder at `serious` that climbs to `critical` upserts the same row, which
-  is why a pass that finds nothing new prints `nuovi 0`. The pass delivers to the in-app
-  list only; the other channels (email, push, Slack) plug into the same ledger with their
-  own cards.
+  is why a pass that finds nothing new prints `nuovi 0`. The in-app list is written by every
+  pass; email and push write their own rows here after the provider took the message
+  (`2026-10-27-reminder-channels-runbook.md`), Slack with its own card.
 - `reminder_ack`, `reminder_snooze`: what each person did, ended with the occurrence.
 - `reminder_job_run`: one row, `reminders`, rewritten at the end of every real pass (not by
   a rehearsal, and not by a pass that failed, since it is written in the same transaction
@@ -137,8 +138,8 @@ cd /opt/pigrocrm/projects/pigrocrm && docker compose --env-file ../../.env resta
 
 ## 6. What it does not do
 
-It sends no mail, no push and no Slack message: those are REB-737, REB-738 and REB-740,
-which plug into the same pass after the reads and before the ledger writes. It never sends
+It sends no Slack message yet: that is REB-740, which plugs into the same pass after the reads
+and before the ledger writes, as email (REB-737) and push (REB-738) now do. It never sends
 anything to a customer: the sollecito stays an act (slice 7 §9). It runs a detector for every
 type of the catalogue except the four whose data does not exist yet: `invoice_rejected_sdi`,
 `register_publication_failed`, `tax_payment_due` and `approval_coverage_expiring`

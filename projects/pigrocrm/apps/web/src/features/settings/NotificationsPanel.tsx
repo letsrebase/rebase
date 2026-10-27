@@ -1,11 +1,12 @@
 import { ReminderPreferences } from '@/features/reminders/ReminderPreferences'
 import { DigestPreference } from './DigestPreference'
+import { PushNotifications } from './PushNotifications'
 
 /**
- * Notifiche (REB-735), a person's own: the weekly digest, and the reminder settings that
- * override the space's defaults for them alone, each with its way back to the space's
- * value. Every role has it, like Profilo: the digest mail's opt-out link lands here, and
- * the writes touch the caller's own rows and nobody else's.
+ * Notifiche (REB-735), a person's own: the weekly digest, push on this browser (REB-738),
+ * and the reminder settings that override the space's defaults for them alone, each with
+ * its way back to the space's value. Every role has it, like Profilo: the digest mail's
+ * opt-out link lands here, and the writes touch the caller's own rows and nobody else's.
  */
 export function NotificationsPanel() {
   return (
@@ -18,6 +19,8 @@ export function NotificationsPanel() {
       </div>
 
       <DigestPreference />
+
+      <PushNotifications />
 
       <div className="space-y-6">
         <div>
