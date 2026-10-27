@@ -162,7 +162,7 @@ Paths below are relative to `projects/hub/`. Tests: `uv run pytest -q packages/c
 
 **Interfaces:**
 - Consumes: `AiConfigService` (Task 3). Reads the old values from `os.environ["REBASE_ANTHROPIC_API_KEY"]`/`REBASE_TEAM_BUILDER_MODEL` directly (the Settings fields are removed in Task 6).
-- Produces: `rebase ai-seed` (once: stores the key encrypted, enables `anthropic`, sets both tasks' model to the old model; refuses a second run when `ai_providers.anthropic` already has a key; prints «chiave salvata, finisce con …abcd», never the key); `rebase ai-rotate-secrets --old-key X --new-key Y` (re-encrypts every stored key in one transaction, prints the count; wrong old key changes nothing).
+- Produces: `rebase ai-seed --eur-per-usd <rate>` (once: stores the key encrypted, enables `anthropic`, sets both tasks' model to the old model, **and writes the price rows** for `claude-opus-5` and `claude-opus-5-5` converted from the USD figures on claude.com/pricing at the given rate, so the missing-price check does not block cards after Task 6; refuses a second run when `ai_providers.anthropic` already has a key; prints «chiave salvata, finisce con …abcd», never the key); `rebase ai-rotate-secrets --old-key X --new-key Y` (re-encrypts every stored key in one transaction, prints the count; wrong old key changes nothing). Production order: set `REBASE_SECRETS_KEY`, deploy, run `ai-seed` before the first card or team call, verify with «Prova».
 
 - [ ] **Step 1: Write failing tests**
   - `test_ai_seed_stores_encrypted_and_prints_hint_only` (`capsys`: key absent from stdout/stderr).
@@ -286,10 +286,10 @@ Paths below are relative to `projects/hub/`. Tests: `uv run pytest -q packages/c
 - Test: `packages/core/tests/test_card_eval.py`, `test_cli.py`
 
 **Interfaces:**
-- Consumes: `AiCall(override=TaskOverride(provider, model, effort))` (Task 4), `CardWriter.compose`, accepted profiles. Records usage with `task="eval"`; never touches `ai_tasks`, never writes a live card.
+- Consumes: `AiCall(override=TaskOverride(provider, model, effort))` (Task 4), `CardWriter.compose`, accepted profiles. Records usage under the selected task (`card`) with `purpose="eval"`, so evaluation spend counts against that task's cap; never touches `ai_tasks`, never writes a live card.
 - Produces: `rebase cards-eval --task card --provider P --model M [--effort E]` stores a `CardEvalRun` and prints a table: per profile `anni_ok`, `seniority_ok`, `guard_clean`, latency ms, cost €; totals; baseline delta when a previous run for the same task exists («peggio/uguale/meglio» on the first three); role/skills/summary columns show «da valutare» until ratings are saved. `agreement(expected, got) -> AgreementRow` with `anni_ok = (both None) or abs(a-b) <= 1`.
 
-- [ ] **Step 1: Tests:** `test_anni_within_one_year_or_both_null` (parametrised: `(5,6)` ok, `(5,7)` no, `(None,None)` ok, `(None,3)` no), `test_seniority_must_equal`, `test_guard_failure_counted`, `test_run_does_not_change_ai_tasks_or_live_cards`, `test_run_skips_draft_profiles` (only `accettata`), `test_report_marks_regression_against_baseline`, `test_cli_exits_1_when_no_accepted_profiles`, `test_cost_recorded_under_eval_task`.
+- [ ] **Step 1: Tests:** `test_anni_within_one_year_or_both_null` (parametrised: `(5,6)` ok, `(5,7)` no, `(None,None)` ok, `(None,3)` no), `test_seniority_must_equal`, `test_guard_failure_counted`, `test_run_does_not_change_ai_tasks_or_live_cards`, `test_run_skips_draft_profiles` (only `accettata`), `test_report_marks_regression_against_baseline`, `test_cli_exits_1_when_no_accepted_profiles`, `test_eval_cost_recorded_as_card_task_with_eval_purpose_and_counts_in_spent_today`.
 - [ ] **Step 2–5:** FAIL, implement, PASS, commit.
 - [ ] **Step 6 (operational, not code):** with the accepted profiles on the preview, run `cards-eval` with the current Anthropic task settings and keep the report as the **baseline**; note its run id in the PR.
 
