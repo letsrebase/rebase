@@ -89,6 +89,10 @@ SEED_USD_PRICES: dict[str, tuple[Decimal, Decimal, Decimal]] = {
 }
 
 _MTOK = Decimal(1_000_000)
+# A cap or a price is a few euros; this is far above any and far below what the columns
+# (`Numeric(10, 2)`, `Numeric(12, 4)`) hold, so a typo is a sentence, never a 500.
+MAX_AMOUNT_EUR = Decimal(1_000_000)
+_MAX_EUR_PER_USD = Decimal(1000)
 _COST_PLACES = Decimal("0.000001")
 _PRICE_PLACES = Decimal("0.0001")
 _CAP_PLACES = Decimal("0.01")
@@ -123,8 +127,10 @@ def _non_negative(
 ) -> Decimal | None:
     if value is None:
         return None
-    if value < 0:
+    if not value.is_finite() or value < 0:
         raise ValidationFailed(entity, field, "non può essere negativo")
+    if value > MAX_AMOUNT_EUR:
+        raise ValidationFailed(entity, field, f"al massimo {MAX_AMOUNT_EUR}")
     return value.quantize(places)
 
 
@@ -408,8 +414,12 @@ class AiConfigService:
         key = anthropic_api_key.strip()
         if not key:
             raise ValidationFailed("ai_provider", "key", "la chiave è vuota")
-        if eur_per_usd <= 0:
-            raise ValidationFailed("ai_price", "eur_per_usd", "il cambio deve essere positivo")
+        if not eur_per_usd.is_finite() or not 0 < eur_per_usd <= _MAX_EUR_PER_USD:
+            raise ValidationFailed(
+                "ai_price",
+                "eur_per_usd",
+                f"il cambio deve essere un numero positivo, al massimo {_MAX_EUR_PER_USD}",
+            )
         model = _require_model(team_model)
         row = self._provider("anthropic")
         if row.key_ciphertext is not None:

@@ -322,6 +322,17 @@ def test_ai_seed_without_secrets_key_exits_1_with_sentence(
     assert "REBASE_SECRETS_KEY" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("rate", ["NaN", "Infinity", "-1", "0", "100000"])
+def test_ai_seed_refuses_a_rate_that_is_not_a_sensible_number_with_a_sentence(
+    ai_db: Any, capsys: pytest.CaptureFixture[str], rate: str
+) -> None:
+    """Review of #666, nit 3: `NaN` used to reach a comparison and print a traceback."""
+    assert main(["ai-seed", f"--eur-per-usd={rate}"]) == 1
+    err = capsys.readouterr().err
+    assert "il cambio deve essere un numero positivo" in err
+    assert "Traceback" not in err
+
+
 def test_ai_seed_requires_the_exchange_rate(ai_db: Any) -> None:
     with pytest.raises(SystemExit):
         main(["ai-seed"])
