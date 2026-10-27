@@ -569,6 +569,78 @@ runs, never the last candidate tried. With none the report says «Nessun riferim
 the live configuration first and that run is the baseline. Record its id in the PR that
 changes the prompt (`PROMPT_VERSION` in `cards.py`).
 
+**The card is written from more than the CV, and every switch is off in production** (REB-837 to
+REB-839, design 2026-10-27, «Sources» and «Provenance, versions and regeneration»). The prompt is
+`PROMPT_VERSION` 2 in `cards.py`: version 1's words, then the version line and the description of
+a private answer (`card_draft.CardDraft`): the `card` as before, `fonti` (which sources the model
+says supported each field) and `employers` (every employer the CV names). `Card` did not change,
+and only `card` is ever the card: the cloud, the talent list and every public read serve `Card`'s
+fields and the level, never `fonti`, `source_hashes`, `conflicts`, `prompt_version` or `provider`;
+only `GET /api/hub/freelancers/{id}/card` (`FreelancerCardAdminRead.provenance`) carries them,
+for «Scheda anonima», which shows `fonti` as «secondo il modello».
+
+- **Sources** are GitHub (`github_source.py`, the account their links name, public data, the
+  optional `REBASE_GITHUB_TOKEN` only lifts the rate limit), their other links (`web_fetch.py`:
+  HTTPS, no private address on any hop, `robots.txt`, size and time limits, no browser, a
+  JavaScript-only page is `unreadable`) and the hub's own facts (`hub_facts.py`: the admin's
+  override and the engagements by role, months and outcome, **never a client's name**, budget or
+  note). **LinkedIn is never read**: dropped before any fetch. They are stored per person in
+  `freelancer_sources` with the time read and a hash that leaves out what moves by itself (stars,
+  last push, page dates); a removed link's text goes at the next refetch, a person's soft delete,
+  merge or erasure removes all of it at once (`sources.py`).
+- **Every source is off by default, on `GET /api/hub/admin/ai` and in «Modelli AI», «Fonti»:**
+  `github` and `links` (`ai_sources`, `PUT /api/hub/admin/ai/sources/{kind}/enabled`, an
+  `ai_switch` entry; turning one off deletes its stored text at once). **They stay off in
+  production until Lorenzo and Ivan confirm that the privacy notice covers reading what people
+  linked**: the text of a GitHub profile and of a page is personal data the person did not hand us
+  directly. Step 6 of the plan, once it does: switch `github` on in the preview, run
+  `rebase sources-refetch`, then `rebase cards-eval` with the same provider and model as the
+  Phase 2 baseline, `--baseline` the id of that last version 1 run (the default baseline is a run
+  of the current prompt version, and there is none until one is made), and read the report as
+  above; only then production.
+- **What the model is told, and what the code checks.** Each source is a `<source key="...">`
+  block with its header, wrapped as data (it cannot close its own block), and the system text says
+  no identifier of a source may reach the card, repositories are described by what they do, and
+  years come only from dated professional periods: the CV's dated roles and the hub's completed
+  engagements. GitHub, a page and the wizard **never set `anni`**: when a source beside the CV was
+  read and the model's `fonti["anni"]` names neither `cv` nor `hub`, the code nulls the years and
+  stores a conflict `anni_scartata` (the seniority is then the uncertain reading of REB-799). The
+  card follows the CV's dates when it and the hub disagree, and the code (not the model) records
+  `anni_diversi` when the hub's completed months exceed the card's years by more than one.
+  `verify_fonti` drops every key that is not a source of this person.
+- **The guard** (`card_guard.identifying`, called by `compose`) reads the card against the name and
+  surname as before (a hit fails the card at once), and against the GitHub login, the owned
+  non-fork repository names, every link's hostname and the employers the model reported. A hit on
+  those asks for **one rewrite, then fails the card** with the sentence «La scheda cita un account,
+  un repository, un sito o un datore di lavoro...» (`source_identifying`), keeping the card of the
+  same CV if there is one. The rewrite message names the card's fields, never the words. The
+  employers exist in memory for that one write: never in a row, a log, an `ai_usage` record or a
+  conflict (`test_employers_not_stored_anywhere`).
+- **A card is stale when its inputs are not the ones it was written from**, and that never spends
+  by itself. `freelancer_cards` keeps `prompt_version` (`NULL` is version 1), `provider`, `fonti`,
+  `source_hashes` (`wizard`: the position; `hub`: the hub's facts without the months of a running
+  engagement; `github`, `link:<n>`), `conflicts` and `thinking_tokens` (migration 0038).
+  `CardWriter.stale_of` says `cv` (the hourly loop writes a card for a new CV, and for nothing
+  else), `prompt` (another version) or `source` (the hub's facts, the position or a source
+  changed; the rate and the work mode are not read by the prompt). The last two are listed in
+  «Modelli AI», «Schede da aggiornare» (`GET /api/hub/admin/ai/cards/stale`), with the estimated
+  cost, the average of the recorded `card` calls times the count, «stima non disponibile» while
+  none is recorded. **«Avvia rigenerazione»** (`POST .../cards/regenerate-stale`, `{limit}` 1 to
+  50, an `AdminAction` `cards_regenerate`) writes the oldest `limit` after the response, one at a
+  time, each re-checked before its turn so a double click pays once, and stops at the first outage
+  or spent cap. A bump of `PROMPT_VERSION` therefore lists every card of the old version and spends
+  nothing: **deploying version 2 puts all of them in the list**.
+- **The weekly refetch never calls a model.** `rebase cards-refresh` begins with
+  `SourceService.refetch_due` (people whose sources are a week old, missing or no longer match
+  their links) when a switch is on, so the hourly loop keeps the marks true; `rebase
+  sources-refetch [--limit N]` is the same pass alone, for a machine with no model or by hand.
+  Fetching a page or GitHub never writes a card. A card written (the wizard, a CV upload, «Rigenera
+  scheda», an admin's start) refetches that person's sources first, with every switch off it reads
+  nothing, and an evaluation (`compose`) reads only what is stored.
+- **Evaluating version 2** is `rebase cards-eval` as above: `CardWriter.compose` builds the prompt
+  from the sources stored for each person and the hub's facts, so a person is measured with what
+  the production writer would use. `source_identifying` counts as a guard failure in the report.
+
 **Every «Proponi il team» is a row, answered or not** (migration 0028, Ivan 2026-09-29:
 «salvare tutte le richieste dopo il click proponi team anche se non ancora
 finalizzate/inviate così raccogliamo metriche di uso»). `team_proposals` keeps the

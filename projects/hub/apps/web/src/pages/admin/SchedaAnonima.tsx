@@ -5,7 +5,7 @@ import { Button } from '@rebase/ui/button'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rebase/ui/select'
-import { admin, ApiError, type FreelancerCard, type Scheda } from '@/lib/api'
+import { admin, ApiError, type CardConflict, type CardProvenance, type FreelancerCard, type Scheda } from '@/lib/api'
 import { bandLabel } from '@/lib/bands'
 import { REMOTO_LABELS, SENIORITY_LABELS, formatDateTime, formatExperience } from '@/lib/format'
 
@@ -119,6 +119,90 @@ function LevelEditor({ freelancerId, read }: { freelancerId: string; read: Freel
   )
 }
 
+const STALE_SENTENCES: Record<string, string> = {
+  cv: 'Il CV è cambiato: la scheda si rigenera da sola',
+  source: 'Da aggiornare: le fonti o i dati della hub sono cambiati dopo che la scheda è stata scritta',
+  prompt: 'Da aggiornare: esiste una versione più recente del prompt',
+}
+const FIELD_LABELS: Record<string, string> = {
+  ruolo: 'Ruolo',
+  seniority: 'Seniority',
+  anni: 'Esperienza',
+  competenze: 'Competenze',
+  settori: 'Settori',
+  lingue: 'Lingue',
+  luogo: 'Luogo',
+  sintesi: 'Sintesi',
+}
+
+/** `cv` -> «CV», `link:2` -> «Link 2»: the keys the model cites, in the page's words. */
+function sourceLabel(key: string): string {
+  if (key === 'cv') return 'CV'
+  if (key === 'github') return 'GitHub'
+  if (key === 'hub') return 'Dati della hub'
+  const link = /^link:(\d+)$/.exec(key)
+  return link ? `Link ${link[1]}` : key
+}
+
+function conflictSentence(conflict: CardConflict): string {
+  if (conflict.kind === 'anni_diversi') {
+    return `Gli incarichi completati in hub fanno ${conflict.anni_hub} anni, la scheda ne dichiara ${conflict.anni_scheda} (date del CV)`
+  }
+  return `Anni scartati: ${conflict.anni_scheda}, venivano solo da fonti senza date professionali`
+}
+
+function Provenance({ provenance }: { provenance: CardProvenance }) {
+  const fields = Object.entries(provenance.fonti).filter(([, keys]) => keys.length > 0)
+  return (
+    <div className="space-y-2 rounded-md border p-3 text-sm">
+      <p className="font-medium">Da dove viene la scheda</p>
+      {provenance.stale && <p className="text-muted-foreground">{STALE_SENTENCES[provenance.stale]}</p>}
+      <dl className="grid gap-x-6 gap-y-2 sm:grid-cols-[10rem_1fr]">
+        <Field label="Scritta da">
+          {provenance.provider ?? 'modello non registrato'} · Prompt v{provenance.prompt_version}
+        </Field>
+        <Field label="Fonti, secondo il modello">
+          {fields.length ? (
+            <ul>
+              {fields.map(([field, keys]) => (
+                <li key={field}>
+                  {FIELD_LABELS[field] ?? field}: {keys.map(sourceLabel).join(', ')}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            'Scheda scritta prima della registrazione delle fonti'
+          )}
+        </Field>
+        <Field label="Fonti salvate">
+          {provenance.sources.length ? (
+            <ul>
+              {provenance.sources.map((source) => (
+                <li key={source.key}>
+                  {sourceLabel(source.key)}: {source.kind === 'github' ? 'GitHub' : 'link'} {source.ref}, letta il{' '}
+                  {formatDateTime(source.fetched_at)}
+                  {source.status !== 'ok' && ` (${source.status})`}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            'Nessuna'
+          )}
+        </Field>
+        {provenance.conflicts.length > 0 && (
+          <Field label="Discordanze">
+            <ul>
+              {provenance.conflicts.map((conflict, index) => (
+                <li key={`${index}-${conflict.kind}`}>{conflictSentence(conflict)}</li>
+              ))}
+            </ul>
+          </Field>
+        )}
+      </dl>
+    </div>
+  )
+}
+
 function Written({ read }: { read: FreelancerCard }) {
   const { card } = read
   if (!card) return null
@@ -197,6 +281,7 @@ export function SchedaAnonima({ freelancerId, hasCv }: { freelancerId: string; h
     body = (
       <div className="space-y-4">
         <Written read={read.data} />
+        {read.data.provenance && <Provenance provenance={read.data.provenance} />}
         <LevelEditor key={`${read.data.seniority_admin}-${read.data.anni_admin}`} freelancerId={freelancerId} read={read.data} />
       </div>
     )

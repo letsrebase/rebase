@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 import { useState, type FormEvent } from 'react'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
@@ -6,13 +7,24 @@ import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rebase/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@rebase/ui/table'
-import { ApiError, admin, type AiConfig, type AiProva, type AiProvider, type AiTask } from '@/lib/api'
+import {
+  ApiError,
+  admin,
+  type AiConfig,
+  type AiProva,
+  type AiProvider,
+  type AiSourceSwitch,
+  type AiStaleCards,
+  type AiTask,
+} from '@/lib/api'
 import { formatDateTime, formatEuro } from '@/lib/format'
 import { Empty, Header } from './lists'
 
 const KEY = ['ai-config'] as const
 const PROVIDER_LABELS: Record<string, string> = { anthropic: 'Anthropic', openai: 'OpenAI', google: 'Google' }
 const TASK_LABELS: Record<string, string> = { card: 'Scheda anonima', team_proposal: 'Proposta di team' }
+const SOURCE_LABELS: Record<string, string> = { github: 'GitHub', links: 'Altri link' }
+const STALE_KEY = ['ai-stale-cards'] as const
 const EFFORTS = ['low', 'medium', 'high'] as const
 const EFFORT_LABELS: Record<string, string> = { low: 'Basso', medium: 'Medio', high: 'Alto' }
 // A `Select` needs a non-empty string; «no thinking» is the one nullable effort.
@@ -77,6 +89,25 @@ function Sections({ config }: { config: AiConfig }) {
           ))}
         </div>
       </section>
+      <section aria-labelledby="ai-fonti" className="border-b">
+        <h2 id="ai-fonti" className="px-6 pt-6 text-lg font-semibold">
+          Fonti
+        </h2>
+        <p className="px-6 pt-1 text-sm text-muted-foreground">
+          Oltre al CV, la scheda può leggere ciò che la persona ha indicato. Ogni fonte parte spenta.
+        </p>
+        <div className="divide-y">
+          {config.sources.map((source) => (
+            <SourceRow key={source.kind} source={source} />
+          ))}
+        </div>
+      </section>
+      <section aria-labelledby="ai-aggiornare" className="border-b">
+        <h2 id="ai-aggiornare" className="px-6 pt-6 text-lg font-semibold">
+          Schede da aggiornare
+        </h2>
+        <StaleCards />
+      </section>
       <section aria-labelledby="ai-compiti" className="border-b">
         <h2 id="ai-compiti" className="px-6 pt-6 text-lg font-semibold">
           Compiti
@@ -101,6 +132,151 @@ function Sections({ config }: { config: AiConfig }) {
         <Spend config={config} />
       </section>
     </>
+  )
+}
+
+function SourceRow({ source }: { source: AiSourceSwitch }) {
+  const invalidate = useInvalidate()
+  const label = SOURCE_LABELS[source.kind] ?? source.kind
+  const toggle = useMutation({
+    mutationFn: () => admin.aiSetSourceEnabled(source.kind, !source.enabled),
+    onSuccess: () => void invalidate(),
+  })
+  return (
+    <div className="flex flex-wrap items-center gap-4 px-6 py-5">
+      <div className="min-w-40 space-y-1">
+        <p className="font-medium">{label}</p>
+        <Badge variant={source.enabled ? 'default' : 'outline'}>{source.enabled ? 'Accesa' : 'Spenta'}</Badge>
+      </div>
+      <Button
+        type="button"
+        variant="outline"
+        role="switch"
+        aria-checked={source.enabled}
+        aria-label={label}
+        disabled={toggle.isPending}
+        onClick={() => toggle.mutate()}
+      >
+        {source.enabled ? 'Spegni' : 'Accendi'}
+      </Button>
+      <div className="space-y-1 text-sm text-muted-foreground">
+        {!source.enabled && <p>Spenta finché la privacy non è aggiornata</p>}
+        {source.updated_at && source.updated_by_name && (
+          <p className="text-xs">
+            Cambiata da {source.updated_by_name}, {formatDateTime(source.updated_at)}
+          </p>
+        )}
+      </div>
+      {toggle.isError && (
+        <p role="alert" className="w-full text-sm text-destructive">
+          {problem(toggle.error, 'Non riesco a salvare.')}
+        </p>
+      )}
+    </div>
+  )
+}
+
+const REASON_LABELS: Record<string, string> = {
+  prompt: 'per versione del prompt',
+  source: 'per fonti cambiate',
+}
+
+function StaleCards() {
+  const client = useQueryClient()
+  const [limit, setLimit] = useState('5')
+  const stale = useQuery({ queryKey: STALE_KEY, queryFn: () => admin.aiStaleCards() })
+  const start = useMutation({
+    mutationFn: (n: number) => admin.aiRegenerateStale(n),
+    onSuccess: () => client.invalidateQueries({ queryKey: STALE_KEY }),
+  })
+  if (stale.isError) {
+    return (
+      <p role="alert" className="px-6 py-4 text-sm text-destructive">
+        Non riesco a leggere le schede da aggiornare.
+      </p>
+    )
+  }
+  if (!stale.data) return <p className="px-6 py-4 text-sm text-muted-foreground">Caricamento…</p>
+  const data: AiStaleCards = stale.data
+  const queued = start.isSuccess && (
+    <p role="status" className="px-6 pt-4 text-sm">
+      {start.data.queued} {start.data.queued === 1 ? 'scheda messa' : 'schede messe'} in coda: si scrivono in
+      background.
+    </p>
+  )
+  if (data.count === 0) {
+    return (
+      <>
+        {queued}
+        <Empty>Nessuna scheda da aggiornare</Empty>
+      </>
+    )
+  }
+  const n = Number(limit)
+  const invalid = limit.trim() === '' || !Number.isInteger(n) || n < 1 || n > 50
+  const reasons = (['prompt', 'source'] as const).filter((reason) => (data.by_reason[reason] ?? 0) > 0)
+  function submit(event: FormEvent) {
+    event.preventDefault()
+    if (!invalid) start.mutate(n)
+  }
+  return (
+    <div>
+      {queued}
+      <div className="space-y-4 px-6 py-5">
+        <div className="space-y-1 text-sm">
+          <p>
+            <span className="font-medium">{data.count}</span> {data.count === 1 ? 'scheda' : 'schede'}
+            {reasons.length > 0 && (
+              <span className="text-muted-foreground">
+                {' '}
+                ({reasons.map((reason) => `${data.by_reason[reason]} ${REASON_LABELS[reason]}`).join(', ')})
+              </span>
+            )}
+          </p>
+          <p className="text-muted-foreground">
+            Costo stimato:{' '}
+            {data.estimated_cost_eur === null ? 'stima non disponibile' : formatSmallEuro(data.estimated_cost_eur)}
+          </p>
+        </div>
+        <ul className="space-y-1 text-sm">
+          {data.items.map((item) => (
+            <li key={item.freelancer_id} className="flex flex-wrap gap-x-3">
+              <Link to="/admin/freelance/$id" params={{ id: item.freelancer_id }} className="font-medium hover:underline">
+                {item.nome || 'Senza nome'}
+              </Link>
+              <span className="text-muted-foreground">{REASON_LABELS[item.reason] ?? item.reason}</span>
+              {item.generated_at && (
+                <span className="text-muted-foreground">scritta il {formatDateTime(item.generated_at)}</span>
+              )}
+            </li>
+          ))}
+        </ul>
+        <form onSubmit={submit} className="flex flex-wrap items-end gap-3">
+          <div className="space-y-2">
+            <Label htmlFor="stale-limit">Quante</Label>
+            <Input
+              id="stale-limit"
+              type="number"
+              min={1}
+              max={50}
+              className="w-24"
+              value={limit}
+              aria-invalid={invalid}
+              onChange={(event) => setLimit(event.target.value)}
+            />
+          </div>
+          <Button type="submit" disabled={start.isPending || invalid}>
+            {start.isPending ? 'Avvio…' : 'Avvia rigenerazione'}
+          </Button>
+        </form>
+        {invalid && <p className="text-sm text-destructive">Un numero intero da 1 a 50.</p>}
+        {start.isError && (
+          <p role="alert" className="text-sm text-destructive">
+            {problem(start.error, 'Non riesco ad avviare la rigenerazione.')}
+          </p>
+        )}
+      </div>
+    </div>
   )
 }
 

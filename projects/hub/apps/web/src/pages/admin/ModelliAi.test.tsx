@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { Outlet, RouterProvider, createMemoryHistory, createRootRoute, createRoute, createRouter } from '@tanstack/react-router'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SidebarNav } from '@/components/SidebarNav'
@@ -42,9 +43,24 @@ const CONFIG = {
     provider('google'),
   ],
   tasks: [task('card'), task('team_proposal')],
+  sources: [
+    { kind: 'github', enabled: false, updated_at: null, updated_by_name: null },
+    { kind: 'links', enabled: false, updated_at: null, updated_by_name: null },
+  ],
   prices: [],
   spend: { month: '2026-10', rows: [] },
   known_models: { anthropic: ['claude-opus-5'], openai: [], google: [] },
+}
+
+const NO_STALE = { count: 0, by_reason: {}, estimated_cost_eur: null, items: [] }
+const STALE = {
+  count: 7,
+  by_reason: { prompt: 5, source: 2 },
+  estimated_cost_eur: '0.42',
+  items: [
+    { freelancer_id: 'f1', nome: 'Ada Lovelace', reason: 'prompt', generated_at: '2026-09-25T10:00:00Z' },
+    { freelancer_id: 'f2', nome: 'Grace Hopper', reason: 'source', generated_at: null },
+  ],
 }
 
 function mount(config: unknown = CONFIG, overrides: Record<string, () => Response> = {}) {
@@ -52,12 +68,17 @@ function mount(config: unknown = CONFIG, overrides: Record<string, () => Respons
     const path = new URL(String(input), 'http://localhost').pathname
     if (overrides[path]) return overrides[path]()
     if (path === '/api/hub/admin/ai') return answer(200, config)
+    if (path === '/api/hub/admin/ai/cards/stale') return answer(200, NO_STALE)
     return answer(404, { detail: 'not found' })
   })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const root = createRootRoute({ component: () => <Outlet /> })
+  const page = createRoute({ getParentRoute: () => root, path: '/', component: AdminModelliAi })
+  const card = createRoute({ getParentRoute: () => root, path: '/admin/freelance/$id', component: () => <p>scheda</p> })
+  const router = createRouter({ routeTree: root.addChildren([page, card]), history: createMemoryHistory() })
   render(
     <QueryClientProvider client={client}>
-      <AdminModelliAi />
+      <RouterProvider router={router} />
     </QueryClientProvider>,
   )
   return spy
@@ -121,5 +142,78 @@ describe('the Modelli AI page (REB-833)', () => {
     render(<RouterProvider router={router} />)
     const link = await screen.findByRole('link', { name: 'Modelli AI' })
     expect(link).toHaveAttribute('href', '/admin/modelli-ai')
+  })
+
+  it('has the source switches off by default and toggles one through the API', async () => {
+    let github = false
+    const spy = mount(CONFIG, {
+      '/api/hub/admin/ai': () =>
+        answer(200, {
+          ...CONFIG,
+          sources: [
+            { kind: 'github', enabled: github, updated_at: null, updated_by_name: null },
+            CONFIG.sources[1],
+          ],
+        }),
+      '/api/hub/admin/ai/sources/github/enabled': () => {
+        github = true
+        return answer(200, { kind: 'github', enabled: true, updated_at: '2026-10-27T09:00:00Z', updated_by_name: 'Ivan' })
+      },
+    })
+    const gh = await screen.findByRole('switch', { name: 'GitHub' })
+    expect(gh).toHaveAttribute('aria-checked', 'false')
+    expect(screen.getByRole('switch', { name: 'Altri link' })).toHaveAttribute('aria-checked', 'false')
+    expect(screen.getAllByText('Spenta finché la privacy non è aggiornata')).toHaveLength(2)
+    await userEvent.setup().click(gh)
+    await waitFor(() => expect(screen.getByRole('switch', { name: 'GitHub' })).toHaveAttribute('aria-checked', 'true'))
+    expect(screen.getAllByText('Spenta finché la privacy non è aggiornata')).toHaveLength(1)
+    const call = spy.mock.calls.find(([url]) => String(url).endsWith('/sources/github/enabled'))!
+    expect(call[1]?.method).toBe('PUT')
+    expect(JSON.parse(call[1]?.body as string)).toEqual({ enabled: true })
+  })
+
+  it('shows the stale cards by reason with the estimate and sends the limit on «Avvia rigenerazione»', async () => {
+    let stale: unknown = STALE
+    const spy = mount(CONFIG, {
+      '/api/hub/admin/ai/cards/stale': () => answer(200, stale),
+      '/api/hub/admin/ai/cards/regenerate-stale': () => {
+        stale = NO_STALE
+        return answer(200, { queued: 3 })
+      },
+    })
+    const section = within(await screen.findByRole('region', { name: 'Schede da aggiornare' }))
+    expect(await section.findByText(/5 per versione del prompt, 2 per fonti cambiate/)).toBeInTheDocument()
+    expect(section.getByText(/0,42/)).toBeInTheDocument()
+    expect(section.getByRole('link', { name: 'Ada Lovelace' })).toHaveAttribute('href', '/admin/freelance/f1')
+    const limit = section.getByLabelText('Quante')
+    expect(limit).toHaveValue(5)
+    const user = userEvent.setup()
+    await user.clear(limit)
+    await user.type(limit, '3')
+    await user.click(section.getByRole('button', { name: 'Avvia rigenerazione' }))
+    expect(await section.findByText(/3 schede messe in coda/)).toBeInTheDocument()
+    const call = spy.mock.calls.find(([url]) => String(url).endsWith('/cards/regenerate-stale'))!
+    expect(JSON.parse(call[1]?.body as string)).toEqual({ limit: 3 })
+    await waitFor(() => expect(section.queryByRole('button', { name: 'Avvia rigenerazione' })).toBeNull())
+    expect(section.getByText('Nessuna scheda da aggiornare')).toBeInTheDocument()
+  })
+
+  it('says the estimate is not available when no cost is recorded, and refuses a limit above 50', async () => {
+    mount(CONFIG, {
+      '/api/hub/admin/ai/cards/stale': () => answer(200, { ...STALE, estimated_cost_eur: null }),
+    })
+    const section = within(await screen.findByRole('region', { name: 'Schede da aggiornare' }))
+    expect(await section.findByText(/stima non disponibile/)).toBeInTheDocument()
+    const user = userEvent.setup()
+    await user.clear(section.getByLabelText('Quante'))
+    await user.type(section.getByLabelText('Quante'), '51')
+    expect(section.getByRole('button', { name: 'Avvia rigenerazione' })).toBeDisabled()
+  })
+
+  it('says there is nothing to update and offers no button', async () => {
+    mount()
+    const section = within(await screen.findByRole('region', { name: 'Schede da aggiornare' }))
+    expect(await section.findByText('Nessuna scheda da aggiornare')).toBeInTheDocument()
+    expect(section.queryByRole('button')).toBeNull()
   })
 })
