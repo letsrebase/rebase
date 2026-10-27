@@ -522,3 +522,48 @@ def test_rotate_with_wrong_old_key_changes_nothing(hub_session: Session, admin: 
     after = hub_session.get(AiProvider, "anthropic")
     assert after is not None and after.key_ciphertext == ciphertext
     assert service.resolve_key("anthropic") == SECRET
+
+
+def test_seed_prices_writes_openai_and_google_in_euros_and_leaves_anthropic(
+    hub_session: Session, admin: User
+) -> None:
+    service = _service(hub_session)
+    result = service.seed_prices(Decimal("0.9"))
+
+    assert (result.written, result.kept) == (5, 0)
+    prices = {(p.provider, p.model): p for p in service.read().prices}
+    assert not any(provider == "anthropic" for provider, _ in prices)
+    sol = prices[("openai", "gpt-6.1-sol")]
+    assert (sol.input_eur_per_mtok, sol.output_eur_per_mtok) == (
+        Decimal("1.8000"),
+        Decimal("9.0000"),
+    )
+    assert sol.cache_read_eur_per_mtok == Decimal("0.0900")
+    assert sol.thinking_eur_per_mtok is None
+    argon = prices[("google", "gemini-4-argon")]
+    assert argon.output_eur_per_mtok == Decimal("9.0000")
+    # Nothing is switched on by a price table.
+    assert all(not p.enabled for p in service.read().providers if p.provider != "anthropic")
+
+
+def test_prices_seed_does_not_overwrite_admin_edited_row(hub_session: Session, admin: User) -> None:
+    service = _service(hub_session)
+    service.upsert_price(admin.id, "openai", "gpt-6.1-sol", Decimal("7"), Decimal("8"))
+
+    result = service.seed_prices(Decimal("0.9"))
+
+    assert (result.written, result.kept) == (4, 1)
+    edited = next(p for p in service.read().prices if p.model == "gpt-6.1-sol")
+    assert (edited.input_eur_per_mtok, edited.output_eur_per_mtok) == (
+        Decimal("7.0000"),
+        Decimal("8.0000"),
+    )
+    assert service.seed_prices(Decimal("0.5")).written == 0
+
+
+@pytest.mark.parametrize("rate", [Decimal("NaN"), Decimal("0"), Decimal("-1"), Decimal("5000")])
+def test_seed_prices_refuses_a_rate_that_is_not_sensible(
+    hub_session: Session, admin: User, rate: Decimal
+) -> None:
+    with pytest.raises(ValidationFailed):
+        _service(hub_session).seed_prices(rate)

@@ -77,15 +77,32 @@ KEY_REPLACED = "chiave sostituita"
 # still saves (and still needs a price before it can be called).
 KNOWN_MODELS: dict[str, list[str]] = {
     "anthropic": ["claude-opus-5", "claude-opus-5-5", "claude-sonnet-5-5"],
-    "openai": ["gpt-5"],
-    "google": ["gemini-3-pro-preview"],
+    "openai": ["gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-luna"],
+    "google": ["gemini-4-argon", "gemini-3.8-flash"],
 }
 
-# USD per million tokens, claude.com/pricing as read on 2026-10-27, for `ai-seed`:
+# USD per million tokens as each provider's own pricing page lists them (Standard tier,
+# short context), for `ai-seed` (Anthropic) and `ai-prices-seed` (the others):
 # (input, output, cache read). Thinking is billed as output: its price stays null.
-SEED_USD_PRICES: dict[str, tuple[Decimal, Decimal, Decimal]] = {
-    "claude-opus-5": (Decimal("5.00"), Decimal("25.00"), Decimal("0.50")),
-    "claude-opus-5-5": (Decimal("4.00"), Decimal("20.00"), Decimal("0.20")),
+# claude.com/pricing, read 2026-10-27; developers.openai.com/api/docs/pricing (the
+# successor of openai.com/api/pricing, which refuses automated reads), read 2026-10-27;
+# ai.google.dev/gemini-api/docs/pricing, read 2026-10-27. Google's page lists a dated step
+# for `gemini-4-argon` (doubles on 2026-12-01) and `gemini-3.8-flash` (doubles on
+# 2027-01-01): the rows below are today's, and an admin edits them when the date comes.
+SEED_USD_PRICES: dict[str, dict[str, tuple[Decimal, Decimal, Decimal]]] = {
+    "anthropic": {
+        "claude-opus-5": (Decimal("5.00"), Decimal("25.00"), Decimal("0.50")),
+        "claude-opus-5-5": (Decimal("4.00"), Decimal("20.00"), Decimal("0.20")),
+    },
+    "openai": {
+        "gpt-6.1-sol": (Decimal("2.00"), Decimal("10.00"), Decimal("0.10")),
+        "gpt-6.1-terra": (Decimal("1.00"), Decimal("5.00"), Decimal("0.05")),
+        "gpt-6-luna": (Decimal("0.10"), Decimal("0.50"), Decimal("0.01")),
+    },
+    "google": {
+        "gemini-4-argon": (Decimal("2.00"), Decimal("10.00"), Decimal("0.10")),
+        "gemini-3.8-flash": (Decimal("0.75"), Decimal("3.75"), Decimal("0.075")),
+    },
 }
 
 _MTOK = Decimal(1_000_000)
@@ -109,6 +126,26 @@ def rome_midnight(now: datetime) -> datetime:
 def _require_provider(provider: str) -> None:
     if provider not in AI_PROVIDERS:
         raise ValidationFailed("ai_provider", "provider", f"fornitore sconosciuto: {provider}")
+
+
+def _require_rate(eur_per_usd: Decimal) -> None:
+    if not eur_per_usd.is_finite() or not 0 < eur_per_usd <= _MAX_EUR_PER_USD:
+        raise ValidationFailed(
+            "ai_price",
+            "eur_per_usd",
+            f"il cambio deve essere un numero positivo, al massimo {_MAX_EUR_PER_USD}",
+        )
+
+
+def _to_eur(
+    usd: tuple[Decimal, Decimal, Decimal], eur_per_usd: Decimal
+) -> tuple[Decimal, Decimal, Decimal]:
+    eur_in, eur_out, eur_cache = (value * eur_per_usd for value in usd)
+    return (
+        eur_in.quantize(_PRICE_PLACES),
+        eur_out.quantize(_PRICE_PLACES),
+        eur_cache.quantize(_PRICE_PLACES),
+    )
 
 
 def _require_model(model: str) -> str:
@@ -139,6 +176,12 @@ class SeedResult:
     key_hint: str
     model: str
     prices: int
+
+
+@dataclass(frozen=True)
+class PriceSeedResult:
+    written: int
+    kept: int
 
 
 class AiConfigService:
@@ -414,12 +457,7 @@ class AiConfigService:
         key = anthropic_api_key.strip()
         if not key:
             raise ValidationFailed("ai_provider", "key", "la chiave è vuota")
-        if not eur_per_usd.is_finite() or not 0 < eur_per_usd <= _MAX_EUR_PER_USD:
-            raise ValidationFailed(
-                "ai_price",
-                "eur_per_usd",
-                f"il cambio deve essere un numero positivo, al massimo {_MAX_EUR_PER_USD}",
-            )
+        _require_rate(eur_per_usd)
         model = _require_model(team_model)
         row = self._provider("anthropic")
         if row.key_ciphertext is not None:
@@ -432,15 +470,14 @@ class AiConfigService:
         for task in self._tasks():
             task.provider = "anthropic"
             task.model = model
-        models = dict.fromkeys([*SEED_USD_PRICES, model])
+        anthropic_usd = SEED_USD_PRICES["anthropic"]
+        models = dict.fromkeys([*anthropic_usd, model])
         priced = 0
         for name in models:
-            usd = SEED_USD_PRICES.get(name)
+            usd = anthropic_usd.get(name)
             if usd is None:
                 continue  # an unknown model gets no price: the page says so, no guessing
-            eur_in, eur_out, eur_cache = (
-                (value * eur_per_usd).quantize(_PRICE_PLACES) for value in usd
-            )
+            eur_in, eur_out, eur_cache = _to_eur(usd, eur_per_usd)
             price = self.session.get(AiPrice, ("anthropic", name))
             if price is None:
                 price = AiPrice(provider="anthropic", model=name)
@@ -460,6 +497,35 @@ class AiConfigService:
                 {"provider": "anthropic", "azione": "seed", "model": model},
             )
         return SeedResult(key_hint=key_hint(row.key_last4), model=model, prices=priced)
+
+    def seed_prices(self, eur_per_usd: Decimal) -> PriceSeedResult:
+        """`rebase ai-prices-seed`: the reviewed price table (`SEED_USD_PRICES`) for OpenAI and
+        Google in euros at `eur_per_usd`. A row that exists is never touched, whoever wrote
+        it: an admin's edit survives a second run. No provider is switched on and no key is
+        read: this is only the cost table, which the cap needs before a model may be called."""
+        _require_rate(eur_per_usd)
+        written = kept = 0
+        for provider, models in SEED_USD_PRICES.items():
+            if provider == "anthropic":
+                continue  # `ai-seed` owns those rows
+            for name, usd in models.items():
+                if self.session.get(AiPrice, (provider, name)) is not None:
+                    kept += 1
+                    continue
+                eur_in, eur_out, eur_cache = _to_eur(usd, eur_per_usd)
+                self.session.add(
+                    AiPrice(
+                        provider=provider,
+                        model=name,
+                        input_eur_per_mtok=eur_in,
+                        output_eur_per_mtok=eur_out,
+                        thinking_eur_per_mtok=None,
+                        cache_read_eur_per_mtok=eur_cache,
+                    )
+                )
+                written += 1
+        self.session.commit()
+        return PriceSeedResult(written=written, kept=kept)
 
     def rotate(self, old_key: bytes, new_key: bytes) -> int:
         """Re-seals every stored provider key from `old_key` to `new_key` in one

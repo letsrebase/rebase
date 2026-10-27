@@ -13,14 +13,18 @@ from typing import Any
 
 import pytest
 from sqlalchemy import Engine, text
+from sqlalchemy.orm import Session
 
 from rebase_core import cli, signing
+from rebase_core.ai_config import AiConfigService
+from rebase_core.ai_verify import VerifyReport
 from rebase_core.campaigns.tick import TickResult
 from rebase_core.cli import main
 from rebase_core.config import Settings
 from rebase_core.engagements import EngagementService
 from rebase_core.http import urllib_engagements_call
 from rebase_core.llm import RecordingCall
+from rebase_core.models import User
 from rebase_core.signing import SweepResult
 from rebase_core.team_schemas import CardsRefreshed
 
@@ -336,6 +340,74 @@ def test_ai_seed_refuses_a_rate_that_is_not_a_sensible_number_with_a_sentence(
 def test_ai_seed_requires_the_exchange_rate(ai_db: Any) -> None:
     with pytest.raises(SystemExit):
         main(["ai-seed"])
+
+
+def test_ai_prices_seed_writes_the_table_and_keeps_edited_rows(
+    ai_db: Any, hub_engine: Engine, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with hub_engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO ai_prices (provider, model, input_eur_per_mtok, output_eur_per_mtok) "
+                "VALUES ('openai', 'gpt-6.1-sol', 7, 8)"
+            )
+        )
+
+    assert main(["ai-prices-seed", "--eur-per-usd", "0.92"]) == 0
+
+    assert "4 prezzi scritti, 1 già presenti" in capsys.readouterr().out
+    with hub_engine.connect() as conn:
+        edited = conn.execute(
+            text("SELECT input_eur_per_mtok FROM ai_prices WHERE model = 'gpt-6.1-sol'")
+        ).scalar_one()
+        enabled = conn.execute(text("SELECT count(*) FROM ai_providers WHERE enabled")).scalar_one()
+    assert edited == 7
+    assert enabled == 0
+
+
+def test_ai_prices_seed_refuses_a_bad_rate(ai_db: Any, capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["ai-prices-seed", "--eur-per-usd", "0"]) == 1
+    assert "il cambio deve essere un numero positivo" in capsys.readouterr().err
+    assert main(["ai-prices-seed", "--eur-per-usd", "abc"]) == 2
+
+
+def test_cli_requires_saved_key_and_exits_1_without(
+    ai_db: Any, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["ai-verify", "--provider", "google", "--model", "gemini-4-argon"]) == 1
+    assert "Manca la chiave di google" in capsys.readouterr().err
+
+
+def test_ai_verify_prints_the_report_and_never_the_key(
+    ai_db: Any,
+    hub_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    key = "AIza-test-key-not-real-9876"
+    with Session(hub_engine) as session:
+        admin = User(email="ivan@rebase.it", nome="Ivan", cognome="Sala", role="admin")
+        session.add(admin)
+        session.commit()
+        AiConfigService(session, cli.get_settings()).save_key(admin.id, "google", key)
+    seen: list[str] = []
+
+    def fake_verify(provider: str, model: str, api_key: str) -> VerifyReport:
+        seen.append(api_key)
+        return VerifyReport(True, True, False, True, "ModelHTTPError (status 400)")
+
+    monkeypatch.setattr(cli, "verify", fake_verify)
+
+    assert main(["ai-verify", "--provider", "google", "--model", "gemini-4-argon"]) == 1
+
+    out = capsys.readouterr()
+    assert seen == [key]
+    assert "key_injected=True native_output_ok=True thinking_ok=False" in out.out
+    assert key not in out.out + out.err
+    with hub_engine.begin() as conn:
+        conn.execute(text("UPDATE ai_providers SET saved_by = NULL"))
+        conn.execute(text("DELETE FROM admin_actions"))
+        conn.execute(text("DELETE FROM users"))
 
 
 def test_ai_rotate_secrets_command_reencrypts_and_prints_the_count(
