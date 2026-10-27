@@ -47,6 +47,7 @@ from pigrocrm.core.gmail.account import GoogleAccountService
 from pigrocrm.core.gmail.oauth import GmailOAuthService
 from pigrocrm.core.gmail.repository import GmailRepository
 from pigrocrm.core.gmail.schemas import (
+    DiscoveryReport,
     GmailBackfillRequest,
     GmailHealth,
     GmailMessageRead,
@@ -115,6 +116,7 @@ _token_clients_lock = threading.Lock()
 _MESSAGES_PATH = "/messages"
 _ACCOUNT_PATH = "/account"
 _SUGGESTIONS_PATH = "/customer-suggestions"
+_CORRESPONDENTS_PATH = "/customers/{customer_id}/correspondents"
 _CALLBACK_ROUTE = "/oauth/callback"
 _CALLBACK_PATH = f"{router.prefix}{_CALLBACK_ROUTE}"
 
@@ -296,6 +298,17 @@ def suggest_customers(
     mesi: Annotated[int, Query(ge=1, le=SUGGEST_MAX_MONTHS)] = 12,
 ) -> list[SuggestedCustomer]:
     return _sync(session, settings).suggest_customers(actor=actor, mesi=mesi)
+
+
+# Who at one customer's domain the connected mailbox has written to or heard from
+# (REB-766, `GmailSyncService.discover`). The domain is read from the customer record and
+# nothing typed here reaches Gmail's `q`; it answers 409 without a Google client, a
+# mailbox, or a customer with no domain to start from, like the proposals above.
+@router.get(_CORRESPONDENTS_PATH, response_model=DiscoveryReport)
+def discover_correspondents(
+    customer_id: UUID, session: SessionDep, actor: ActorDep, settings: SettingsDep
+) -> DiscoveryReport:
+    return _sync(session, settings).discover(customer_id, actor=actor)
 
 
 @router.get(_MESSAGES_PATH, response_model=list[GmailMessageRead])

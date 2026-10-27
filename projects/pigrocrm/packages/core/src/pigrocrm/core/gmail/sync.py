@@ -33,6 +33,7 @@ failure carries the counters and Google's own status, which is all a caller can 
 
 import re
 import time
+from collections.abc import Iterator
 from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -46,6 +47,7 @@ from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings, decode_google_token_key, require_gmail_configured
 from pigrocrm.core.customers.models import Customer
+from pigrocrm.core.customers.schemas import RAGIONE_SOCIALE_MAX_LENGTH
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.gmail.account import GoogleAccountService
 from pigrocrm.core.gmail.crypto import unseal
@@ -99,6 +101,11 @@ SUGGEST_MAX_MONTHS = 24
 # proposals are read while somebody waits on the Home, so the most recent ones stand
 # for the period; a customer who wrote once, long ago, is not the one to import first.
 SUGGEST_MAX_THREADS = 200
+# The most recent conversations one discovery of a customer's domain reads, each one Gmail
+# call. The Email tab asks while somebody waits, under the 60 seconds nginx gives an `/api`
+# request: a long-standing customer's older conversations are left out rather than the
+# whole read answering 504.
+DISCOVER_MAX_THREADS = 200
 # Header reads in flight at once. This bounds concurrency, not rate: Gmail allows a user
 # 250 quota units a second and a `threads.get` costs 10, and two reads of about a tenth
 # of a second each stay near 200. `GmailTransport` retries a 429 with backoff anyway.
@@ -124,6 +131,7 @@ class _Correspondent:
     """A running tally for one address while discovery reads threads."""
 
     count: int = 0
+    threads: set[str] = field(default_factory=set)
     last: datetime | None = None
     name: str = ""
 
@@ -411,17 +419,31 @@ class GmailSyncService:
         mailbox = account.email_address.strip().lower()
         suffix = f"@{domain}"
         tally: dict[str, _Correspondent] = {}
-        for thread_id in self._relevant_threads((discovery_query(domain),), token):
-            report.threads_scanned += 1
-            payload = self.transport.json(
-                "GET", thread_get_url(thread_id), token=token, what=_WHAT_THREAD
+        try:
+            # Gmail lists the newest first, so stopping at the cap keeps the conversations
+            # that say who at the domain is writing now, and stops paging the listing once
+            # it holds enough. The headers are read the way the proposals read them, two
+            # at a time and within `SUGGEST_READ_BUDGET_SECONDS`: a long-standing customer
+            # answers with the conversations read in time, not with a 504.
+            thread_ids = self._relevant_threads(
+                (discovery_query(domain),), token, limit=DISCOVER_MAX_THREADS
             )
+            payloads = self._read_headers(thread_ids, token)
+        except GoogleCallFailed as failed:
+            # Gmail failing after every retry is the person's to retry, not a server error
+            # (REB-766: a press on the customer's Email tab reaches this): the same
+            # `GmailUnavailable` the proposals answer.
+            raise GmailUnavailable(
+                "la ricerca dei corrispondenti", failed.failure.status
+            ) from failed
+        for thread_id, payload in payloads:
+            report.threads_scanned += 1
             for raw in payload.get("messages") or []:
                 if not isinstance(raw, dict):
                     continue
-                # Bodies are never decoded here: a name and an address are all this
-                # needs, and reading the text of mail nobody chose to store is not
-                # what discovery is for.
+                # Bodies are never read here: a name and an address are all this needs,
+                # and reading the text of mail nobody chose to store is not what
+                # discovery is for.
                 parsed = parse_message(raw, body_max_bytes=0, store_bodies=False)
                 report.messages_seen += 1
                 for address in participants(parsed):
@@ -429,16 +451,22 @@ class GmailSyncService:
                         continue
                     entry = tally.setdefault(address, _Correspondent())
                     entry.count += 1
+                    entry.threads.add(thread_id)
                     if entry.last is None or parsed.internal_date > entry.last:
                         entry.last = parsed.internal_date
                     if not entry.name:
-                        entry.name = parsed.display_names.get(address, "")
+                        # Clipped to what the add-as-person request takes (a header can
+                        # carry a longer name, and the page sends this one back verbatim).
+                        entry.name = parsed.display_names.get(address, "")[
+                            :RAGIONE_SOCIALE_MAX_LENGTH
+                        ]
         known = set(self.roster.known_addresses())
         report.corrispondenti = [
             DiscoveredCorrespondent(
                 indirizzo=address,
                 nome=entry.name,
                 messaggi=entry.count,
+                conversazioni=len(entry.threads),
                 ultimo_messaggio=entry.last,
                 gia_in_anagrafica=address in known,
             )
@@ -727,25 +755,36 @@ class GmailSyncService:
             return account.sync_watermark
         return datetime.now(UTC) - timedelta(days=_FIRST_CYCLE_DAYS)
 
-    def _relevant_threads(self, queries: tuple[str, ...], token: str) -> list[str]:
+    def _relevant_threads(
+        self, queries: tuple[str, ...], token: str, *, limit: int | None = None
+    ) -> list[str]:
         """The thread ids the address filter found, deduplicated in order.
 
         Deduplicated because two addresses of the same customer routinely appear in one
         conversation, and fetching that thread twice would double the cost of the
         cycle for nothing.
+
+        With `limit`, the listing stops paging once it holds that many conversations
+        (the newest, Gmail's own order) and the list is cut to it.
         """
         thread_ids: list[str] = []
         seen: set[str] = set()
         for query in queries:
-            for entry in self._list_all(query, token):
-                thread_id = str(entry.get("threadId") or "")
-                if thread_id and thread_id not in seen:
-                    seen.add(thread_id)
-                    thread_ids.append(thread_id)
+            for page in self._list_pages(query, token):
+                for entry in page:
+                    thread_id = str(entry.get("threadId") or "")
+                    if thread_id and thread_id not in seen:
+                        seen.add(thread_id)
+                        thread_ids.append(thread_id)
+                if limit is not None and len(thread_ids) >= limit:
+                    return thread_ids[:limit]
         return thread_ids
 
     def _list_all(self, query: str, token: str) -> list[dict[str, object]]:
-        entries: list[dict[str, object]] = []
+        return [entry for page in self._list_pages(query, token) for entry in page]
+
+    def _list_pages(self, query: str, token: str) -> Iterator[list[dict[str, object]]]:
+        """One list per page of `messages.list`, fetched as the caller asks for the next."""
         page_token: str | None = None
         while True:
             payload = self.transport.json(
@@ -754,15 +793,13 @@ class GmailSyncService:
                 token=token,
                 what=_WHAT_LIST,
             )
-            entries.extend(
-                entry for entry in (payload.get("messages") or []) if isinstance(entry, dict)
-            )
+            yield [entry for entry in (payload.get("messages") or []) if isinstance(entry, dict)]
             next_token = payload.get("nextPageToken")
             # A page token that repeats itself would loop forever against a broken or
             # hostile server, so the loop advances only on a *new* one.
             page_token = str(next_token) if next_token and str(next_token) != page_token else None
             if page_token is None:
-                return entries
+                return
 
     def _store_thread(
         self,

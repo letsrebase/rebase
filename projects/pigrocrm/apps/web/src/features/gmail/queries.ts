@@ -119,8 +119,13 @@ export function useDisconnectGmail() {
     },
     // Both, even when the messages were kept: the account row's `status` changed, and
     // an Email tab rendered from a cache taken before the disconnect would show a
-    // history the panel now says is gone.
-    onSuccess: () => invalidateAfterSync(queryClient),
+    // history the panel now says is gone. The addresses a customer's page found in the old
+    // mailbox are removed, not refetched: they are not the new mailbox's to show, and
+    // reading them again is the owner's Gmail quota (REB-766).
+    onSuccess: () => {
+      invalidateAfterSync(queryClient)
+      queryClient.removeQueries({ queryKey: ['gmail', 'correspondents'] })
+    },
   })
 }
 
