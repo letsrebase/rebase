@@ -709,6 +709,34 @@ def test_a_regenerate_still_gendered_keeps_the_cards_of_the_same_cv_with_the_err
     assert read.card == Card.model_validate(CARD) and read.error == GENDERED
 
 
+def test_a_regenerate_still_gendered_retires_a_stored_card_that_is_gendered(
+    clean: Session,
+) -> None:
+    """A card written before the guard was a gate and still giving the gender away must
+    not stay in the catalogue beside the error when its regenerate fails the same way;
+    a clean one of the same CV does (the test above)."""
+    freelancer_id = _apply(clean)
+    # Stored as the old behaviour wrote it: the gendered card, no error.
+    clean.add(
+        FreelancerCard(
+            freelancer_id=freelancer_id,
+            cv_sha256=_sha(CV),
+            card=SVILUPPATRICE,
+            model=MODEL,
+            input_tokens=1,
+            output_tokens=1,
+            generated_at=NOW,
+        )
+    )
+    clean.commit()
+    llm = RecordingCall([card_response(SVILUPPATRICE), card_response(SVILUPPATRICE)])
+
+    read = CardWriter(clean, llm).write(freelancer_id, force=True)
+
+    assert (read.card, read.cv_sha256, read.error) == (None, None, GENDERED)
+    assert _card_is_sql_null(clean, freelancer_id)
+
+
 def test_refresh_stale_counts_a_gendered_card_as_failed(clean: Session) -> None:
     """A card still gendered after its rewrite is among the failed, and the batch goes
     on: it is the CV's, not the provider's."""

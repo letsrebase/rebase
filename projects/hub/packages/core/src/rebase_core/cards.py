@@ -41,6 +41,7 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
+from pydantic import ValidationError
 from sqlalchemy import delete, func, null, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
@@ -198,6 +199,15 @@ _HER_PARTICIPLE = re.compile(
     r"(specializzata|esperta|laureata|certificata|appassionata|diplomata)\b",
     re.IGNORECASE,
 )
+
+
+def _stored_gendered(stored: Any) -> bool:
+    """Whether a card as stored gives the gender away: `False` for none, and for one that
+    is no longer a card, which is not this guard's to judge."""
+    try:
+        return bool(_gendered(Card.model_validate(stored)))
+    except ValidationError:
+        return False
 
 
 def _gendered(card: Card) -> list[str]:
@@ -510,10 +520,19 @@ class CardWriter:
         the provider's: an outage keeps nothing that would stop the next attempt. Every
         failure, an outage too, retires a card written from another CV than the one
         that just failed (`_save`): the person replaced that CV, and its card must not
-        stay in the catalogue until Claude answers again. A card of the same CV stays."""
+        stay in the catalogue until Claude answers again. A card of the same CV stays,
+        except, after a `gendered` failure, one that itself gives the gender away (a card
+        written before REB-802 turned the guard into a gate): the catalogue would go on
+        showing it to companies beside an error nobody reads there."""
         outage = kind == "unavailable"
         values = {"error": _FAILURES[kind], "error_cv_sha256": None if outage else digest}
-        if not self._save(freelancer_id, digest, values, retire_other=True):
+        if not self._save(
+            freelancer_id,
+            digest,
+            values,
+            retire_other=True,
+            retire_gendered=kind == "gendered",
+        ):
             return "superseded"
         logger.warning("card for freelancer %s not written: %s", freelancer_id, kind)
         return "unavailable" if outage else "failed"
@@ -525,6 +544,7 @@ class CardWriter:
         values: dict[str, Any],
         *,
         retire_other: bool = False,
+        retire_gendered: bool = False,
     ) -> bool:
         """One upsert of the given columns, and only if the freelancer's CV is still the
         one `digest` was taken from: re-read under the row's lock, which `clear_cv`'s and
@@ -532,7 +552,8 @@ class CardWriter:
         writing is never given a card, or a failure, that is not its own. `False` when
         it was, with nothing written. `retire_other` also empties the card columns when
         the stored card came from another CV: read under the same lock, since every
-        writer of this row holds it. Two writes racing on one CV (a double «Rigenera
+        writer of this row holds it; `retire_gendered` does the same for a stored card of
+        this very CV that `_gendered` flags. Two writes racing on one CV (a double «Rigenera
         scheda») both land, the later one last, rather than the second failing on the
         primary key."""
         current = self.session.scalar(
@@ -544,14 +565,17 @@ class CardWriter:
             self.session.commit()
             logger.info("card for freelancer %s not written: the CV changed", freelancer_id)
             return False
-        if retire_other:
-            written_from = self.session.scalar(
-                select(FreelancerCard.cv_sha256).where(
+        if retire_other or retire_gendered:
+            stored = self.session.execute(
+                select(FreelancerCard.cv_sha256, FreelancerCard.card).where(
                     FreelancerCard.freelancer_id == freelancer_id
                 )
-            )
-            if written_from is not None and written_from != digest:
-                values = {**_RETIRED, **values}
+            ).one_or_none()
+            if stored is not None:
+                written_from, written = stored
+                other = retire_other and written_from is not None and written_from != digest
+                if other or (retire_gendered and _stored_gendered(written)):
+                    values = {**_RETIRED, **values}
         insert = pg_insert(FreelancerCard).values(freelancer_id=freelancer_id, **values)
         self.session.execute(
             insert.on_conflict_do_update(
