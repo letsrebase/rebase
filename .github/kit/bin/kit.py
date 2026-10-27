@@ -211,6 +211,7 @@ def sync(repo: Path, source: Path, force: bool = False) -> int:
     if not files.is_dir() or not version_file.is_file():
         raise ConfigError(f"{source} is not a workflow kit (no files/ or VERSION)")
     cfg = load_config(repo)
+    pre_tool_use(claude_settings(repo))  # a malformed settings.json is refused before any write
     managed: dict[str, str] = {}
 
     previous = read_manifest(repo)
@@ -347,7 +348,9 @@ def claude_settings(repo: Path) -> dict:
         data = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise ConfigError(f"{CLAUDE_SETTINGS} is not valid JSON: {exc}") from exc
-    return data if isinstance(data, dict) else {}
+    if not isinstance(data, dict):
+        raise ConfigError(f"{CLAUDE_SETTINGS} is a JSON object")
+    return data
 
 
 def pre_tool_use(settings: dict) -> list:
@@ -372,12 +375,21 @@ def ensure_claude_hook(repo: Path) -> None:
     pre_tool_use(settings)
     hooks = settings.setdefault("hooks", {})
     entries = hooks.setdefault("PreToolUse", [])
-    # an older copy of the kit's entry (same matcher) is replaced, not duplicated
-    entries[:] = [
-        e
-        for e in entries
-        if not (isinstance(e, dict) and e.get("matcher") == CLAUDE_HOOK["matcher"])
-    ]
+    # The kit owns only its own command: an older copy of it is replaced, and any other
+    # hook a person put under the same matcher stays where it was.
+    kept = []
+    for e in entries:
+        if isinstance(e, dict) and e.get("matcher") == CLAUDE_HOOK["matcher"]:
+            own = [
+                h
+                for h in e.get("hooks") or []
+                if not (isinstance(h, dict) and "linear_gate.py" in str(h.get("command", "")))
+            ]
+            if not own:
+                continue
+            e = {**e, "hooks": own}
+        kept.append(e)
+    entries[:] = kept
     entries.append(CLAUDE_HOOK)
     path = repo / CLAUDE_SETTINGS
     path.parent.mkdir(parents=True, exist_ok=True)

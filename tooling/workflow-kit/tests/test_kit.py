@@ -207,6 +207,24 @@ class ClaudeHook(unittest.TestCase):
         write(self.repo / ".claude/settings.json", "{}")
         self.assertTrue(any("Linear gate hook is missing" in f for f in kit.check(self.repo)))
 
+    def test_a_persons_hook_under_the_kits_matcher_survives_a_resync(self):
+        mine = {"type": "command", "command": "echo audited"}
+        old_gate = {"type": "command", "command": "python3 .github/kit/bin/linear_gate.py"}
+        entry = {"matcher": kit.CLAUDE_HOOK["matcher"], "hooks": [old_gate, mine]}
+        write(self.repo / ".claude/settings.json", json.dumps({"hooks": {"PreToolUse": [entry]}}))
+        self.sync()
+        settings = json.loads((self.repo / ".claude/settings.json").read_text(encoding="utf-8"))
+        self.assertEqual(
+            settings["hooks"]["PreToolUse"],
+            [{"matcher": kit.CLAUDE_HOOK["matcher"], "hooks": [mine]}, kit.CLAUDE_HOOK],
+        )
+
+    def test_a_malformed_settings_file_is_refused_before_anything_is_written(self):
+        write(self.repo / ".claude/settings.json", json.dumps({"hooks": []}))
+        with self.assertRaises(kit.ConfigError):
+            self.sync()
+        self.assertFalse((self.repo / ".github/kit").exists())
+
     def test_an_old_copy_syncs_through_the_sources_kit_py(self):
         # A repository's kit.py is the one an agent runs; when it predates a change to the
         # gate's entry, the sync must still write the new entry, not its own old one.
