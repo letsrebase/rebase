@@ -114,7 +114,7 @@ primo upload.
 ### 5. Verifica: generare un documento e vederlo su Drive
 
 Verificare la scrittura prima di importare le 14 fatture. Lo strumento MCP
-`create_document_from_template` (`apps/mcp/src/pigrocrm_mcp/tools/__init__.py`) crea un
+`create_document_from_template` (`apps/mcp/src/pigrocrm_mcp/tools/families/documents.py`) crea un
 documento da un template generico dandogli `variabili` a mano — è la via più diretta per
 verificare *lo storage*, ma per «Rapporto ore» specificamente non è il modo in cui il
 CRM lo genera davvero: il template dichiara solo tre variabili per il form di
