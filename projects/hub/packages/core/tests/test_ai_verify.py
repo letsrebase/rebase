@@ -64,14 +64,14 @@ def test_report_flags_each_capability_separately() -> None:
     assert not no_effort.ok
 
 
-def test_a_rejected_key_is_not_injected_and_a_rejected_schema_is() -> None:
-    rejected = verify(
-        "openai", "m", KEY, model_factory=_factory(ModelHTTPError(401, "m", "bad key"))
-    )
-    assert (rejected.key_injected, rejected.native_output_ok) == (False, False)
-
-    schema = verify("google", "m", KEY, model_factory=_factory(ModelHTTPError(400, "m", "schema")))
-    assert (schema.key_injected, schema.native_output_ok) == (True, False)
+def test_only_an_answer_proves_the_key_was_injected() -> None:
+    """A bad Google key is a 400 like a bad schema: a status alone never says «injected»."""
+    for status in (400, 401, 403, 429, 503):
+        report = verify(
+            "google", "m", KEY, model_factory=_factory(ModelHTTPError(status, "m", "no"))
+        )
+        assert (report.key_injected, report.native_output_ok) == (False, False)
+        assert f"status {status}" in "\n".join(report.lines())
 
 
 def test_report_error_has_no_key() -> None:

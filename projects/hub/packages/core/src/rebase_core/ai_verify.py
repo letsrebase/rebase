@@ -27,7 +27,6 @@ from rebase_core.llm import (
 )
 
 PROMPT = "Name the capital city of France and the country it is the capital of."
-_AUTH_STATUSES = frozenset({401, 403})
 _MAX_TOKENS = 512
 # Anything the three providers accept as an effort: «thinking_ok» is that the setting is
 # taken, not that the model reasons at length.
@@ -43,7 +42,10 @@ class VerifyAnswer(BaseModel):
 
 @dataclass(frozen=True)
 class VerifyReport:
-    key_injected: bool  # the provider took the key: no 401 or 403 and an answer came back
+    key_injected: (
+        bool  # the provider answered the call: only an answer proves the key was taken (Google
+    )
+    # answers a bad key with a 400, so a status alone says nothing)
     native_output_ok: bool  # the answer is a `VerifyAnswer` the provider's schema mode produced
     thinking_ok: bool  # the same call with the effort setting is accepted
     usage_present: bool  # the answer says how many tokens it took: the cost depends on it
@@ -117,12 +119,9 @@ def verify(
         )
 
     plain = ask(None)
-    # A refusal that is not 401 or 403 (a 400 on the schema, a 404 on the model name) was
-    # still made by an account the provider let in: the key is injected, something else is wrong.
-    injected = plain.reached or (plain.status is not None and plain.status not in _AUTH_STATUSES)
     if not plain.reached:
         return VerifyReport(
-            key_injected=injected,
+            key_injected=False,
             native_output_ok=False,
             thinking_ok=False,
             usage_present=False,
