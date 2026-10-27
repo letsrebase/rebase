@@ -9,6 +9,7 @@ from pydantic import WithJsonSchema
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.analytics.schemas import BudgetQuery, CeilingSimulationQuery, PeriodPnlQuery
+from pigrocrm.core.attivita.schemas import AttivitaUpdate
 from pigrocrm.core.contract_expenses.schemas import ContractExpenseUpdate
 from pigrocrm.core.contracts.schemas import (
     ClauseNoteUpdate,
@@ -186,6 +187,10 @@ OfferStateArg = Annotated[
 # rendered guidance, while `list_tools()` still advertises the real field names.
 TimeEntryChanges = Annotated[dict[str, Any], WithJsonSchema(TimeEntryUpdate.model_json_schema())]
 CostChanges = Annotated[dict[str, Any], WithJsonSchema(CostUpdate.model_json_schema())]
+# `update_attivita` advertised an untyped object until REB-807: an agent had to guess the
+# field names, and the two `*_da_rimuovere` flags that clear a field were nowhere in
+# `list_tools`. Same split as every alias above.
+AttivitaChanges = Annotated[dict[str, Any], WithJsonSchema(AttivitaUpdate.model_json_schema())]
 
 # `HoursArg`/`MoneyArg`/`OptionalFactor` mirror `BoundedLimit`/`OptionalMoney` exactly,
 # for the same SDK-bypass reason: a bare `float` parameter lets a wrong-TYPE argument be
@@ -587,10 +592,14 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
 
     @mcp.tool()
     @guard
-    def move_deal(deal_id: str, stage_id: str) -> dict[str, Any]:
+    def move_deal(
+        deal_id: str, stage_id: str | None = None, pipeline_stage_id: str | None = None
+    ) -> dict[str, Any]:
         """Sposta un deal in un altro stato. Uno stato vinto/perso fissa la probabilità
-        a 100/0."""
-        return deals.move(context, deal_id, stage_id)
+        a 100/0. Lo stato di destinazione è `stage_id`, o `pipeline_stage_id` come lo
+        chiama il deal (`get_deal`): ne basta uno. Gli stati sono in `list_pipeline_stages`.
+        """
+        return deals.move(context, deal_id, stage_id, pipeline_stage_id)
 
     @mcp.tool()
     @guard
@@ -2385,7 +2394,7 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
 
     @mcp.tool()
     @guard
-    def update_attivita(attivita_id: str, changes: dict[str, Any]) -> dict[str, Any]:
+    def update_attivita(attivita_id: str, changes: AttivitaChanges) -> dict[str, Any]:
         """Cambia un'attività: `titolo`, `note`, `scadenza`, `assegnata_a`, il
         riferimento, i campi personalizzati.
 

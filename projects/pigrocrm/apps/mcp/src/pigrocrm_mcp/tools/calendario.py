@@ -25,6 +25,7 @@ from pigrocrm.core.attivita.schemas import (
 from pigrocrm.core.attivita.service import AttivitaService
 from pigrocrm.core.calendario.service import CalendarService
 from pigrocrm_mcp.context import McpContext
+from pigrocrm_mcp.tools.changes import refuse_empty, report
 
 
 def _attivita(context: McpContext) -> AttivitaService:
@@ -37,8 +38,12 @@ def create(context: McpContext, data: dict[str, Any]) -> dict[str, Any]:
 
 
 def update(context: McpContext, attivita_id: str, changes: dict[str, Any]) -> dict[str, Any]:
-    result = _attivita(context).update(UUID(attivita_id), AttivitaUpdate(**changes), context.actor)
-    return result.model_dump(mode="json")
+    service = _attivita(context)
+    identifier = UUID(attivita_id)
+    parsed = AttivitaUpdate(**changes)
+    refuse_empty(changes)
+    before = service.get(identifier, context.actor)
+    return report(before, service.update(identifier, parsed, context.actor))
 
 
 def get(context: McpContext, attivita_id: str) -> dict[str, Any]:

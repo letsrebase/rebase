@@ -156,11 +156,12 @@ async def test_the_lists_narrow_to_the_azienda_named(
                 "create_customer", {"ragione_sociale": "Zeta Quattro S.r.l.", "azienda_id": second}
             )
         )
-        stage_id = _payload(await client.call_tool("list_pipeline_stages", {}))["stages"][0]["id"]
-        await client.call_tool(
-            "create_deal",
-            {"nome": "Zeta Quattro deal", "customer_id": beta["id"], "pipeline_stage_id": stage_id},
+        # `create_deal` has no stage parameter: the deal starts in the pipeline's first. The
+        # test used to pass `pipeline_stage_id`, which the SDK dropped without a word.
+        created = await client.call_tool(
+            "create_deal", {"nome": "Zeta Quattro deal", "customer_id": beta["id"]}
         )
+        assert not created.is_error, created.content[0].text
 
         customers = _payload(await client.call_tool("search_customers", {"azienda_id": second}))
         assert [c["ragione_sociale"] for c in customers["items"]] == ["Zeta Quattro S.r.l."]

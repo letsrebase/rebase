@@ -118,6 +118,11 @@ BoundedLimit = Annotated[
     int | str,
     WithJsonSchema({"type": "integer", "minimum": 1, "maximum": 200, "default": 50}),
 ]
+# An identifier is a `str` at runtime, converted by hand inside the guarded call like every
+# other `*_id` on this surface (REB-808: a `UUID`-typed parameter is rejected by the SDK
+# ahead of the guard, in English). The schema still says it is a UUID, which is what
+# `test_no_tool_schema_accepts_a_gmail_search_string` reads to know it is no free text.
+UuidStr = Annotated[str, WithJsonSchema({"type": "string", "format": "uuid"})]
 
 # The three free-text parameters on this surface, and the only ones. They are safe under
 # the "no Gmail search string" rule for a mechanical reason rather than a judgement:
@@ -164,7 +169,7 @@ def register(
     @mcp.tool()
     @guard
     def list_gmail_messages(
-        entity_type: GmailEntityType, entity_id: UUID, limit: BoundedLimit = 50
+        entity_type: GmailEntityType, entity_id: UuidStr, limit: BoundedLimit = 50
     ) -> list[dict[str, Any]]:
         """Le email già sincronizzate per un cliente, una persona o un deal.
 
@@ -172,7 +177,7 @@ def register(
         quota della casella. Se sembra vecchia, chiama `describe_gmail_account`.
         """
         rows = GmailRepository(context.session).messages_for_entity(
-            _entity_type(entity_type), entity_id, limit=_limit(limit)
+            _entity_type(entity_type), UUID(entity_id), limit=_limit(limit)
         )
         # No body here, deliberately: an agent that only needs to know which
         # conversations exist should not pull a customer's entire correspondence into
@@ -193,14 +198,14 @@ def register(
 
     @mcp.tool()
     @guard
-    def get_gmail_message(message_id: UUID) -> dict[str, Any]:
+    def get_gmail_message(message_id: UuidStr) -> dict[str, Any]:
         """Il testo completo di un'email già archiviata nel CRM.
 
         `corpo` è vuoto se il titolare ha disattivato la conservazione dei testi: è una
         degradazione dichiarata (spec 5.4), non un dato mancante. Leggi `provenienza`
         prima del corpo.
         """
-        row = GmailRepository(context.session).message(message_id)
+        row = GmailRepository(context.session).message(UUID(message_id))
         if row is None:
             raise NotFound("gmail_message", message_id)
         return {
@@ -237,7 +242,7 @@ def register(
     @guard
     def draft_email(
         entity_type: GmailEntityType,
-        entity_id: UUID,
+        entity_id: UuidStr,
         to_addresses: Recipients,
         subject: Subject,
         body_markdown: BodyMarkdown,
@@ -254,7 +259,7 @@ def register(
         draft = EmailDraftService(context.session, settings=settings).create(
             EmailDraftCreate(
                 entity_type=_entity_type(entity_type),
-                entity_id=entity_id,
+                entity_id=UUID(entity_id),
                 to_addresses=to_addresses,
                 subject=subject,
                 body_markdown=body_markdown,

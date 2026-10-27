@@ -25,6 +25,7 @@ from pigrocrm.core.contracts.service import (
 )
 from pigrocrm.core.work_units.register import ContractRegisterService
 from pigrocrm_mcp.context import McpContext
+from pigrocrm_mcp.tools.changes import pick, refuse_empty, report
 
 
 def create(context: McpContext, data: dict[str, Any]) -> dict[str, Any]:
@@ -44,11 +45,12 @@ def get(context: McpContext, contract_id: str) -> dict[str, Any]:
 
 
 def update(context: McpContext, contract_id: str, data: dict[str, Any]) -> dict[str, Any]:
-    return (
-        ContractService(context.session)
-        .update(UUID(contract_id), ContractUpdate(**data), context.actor)
-        .model_dump(mode="json")
-    )
+    service = ContractService(context.session)
+    identifier = UUID(contract_id)
+    changes = ContractUpdate(**data)
+    refuse_empty(data)
+    before = service.get(identifier, context.actor)
+    return report(before, service.update(identifier, changes, context.actor))
 
 
 def set_state(context: McpContext, contract_id: str, stato: str) -> dict[str, Any]:
@@ -121,11 +123,12 @@ def create_rate_card(
 def update_rate_card(
     context: McpContext, contract_id: str, rate_card_id: str, data: dict[str, Any]
 ) -> dict[str, Any]:
-    return (
-        RateCardService(context.session)
-        .update(UUID(contract_id), UUID(rate_card_id), RateCardUpdate(**data), context.actor)
-        .model_dump(mode="json")
-    )
+    service = RateCardService(context.session)
+    contract, card = UUID(contract_id), UUID(rate_card_id)
+    changes = RateCardUpdate(**data)
+    refuse_empty(data)
+    before = pick(service.list_for_contract(contract, context.actor), card, "rate_card")
+    return report(before, service.update(contract, card, changes, context.actor))
 
 
 def list_rate_cards(context: McpContext, contract_id: str) -> list[dict[str, Any]]:
@@ -174,11 +177,12 @@ def create_clause_note(
 def update_clause_note(
     context: McpContext, contract_id: str, note_id: str, data: dict[str, Any]
 ) -> dict[str, Any]:
-    return (
-        ClauseNoteService(context.session)
-        .update(UUID(contract_id), UUID(note_id), ClauseNoteUpdate(**data), context.actor)
-        .model_dump(mode="json")
-    )
+    service = ClauseNoteService(context.session)
+    contract, note = UUID(contract_id), UUID(note_id)
+    changes = ClauseNoteUpdate(**data)
+    refuse_empty(data)
+    before = pick(service.list_for_contract(contract, context.actor), note, "clause_note")
+    return report(before, service.update(contract, note, changes, context.actor))
 
 
 def list_clause_notes(context: McpContext, contract_id: str) -> list[dict[str, Any]]:
