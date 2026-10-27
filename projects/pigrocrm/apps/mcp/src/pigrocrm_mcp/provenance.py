@@ -35,6 +35,7 @@ FREE_TEXT_KEYS: frozenset[str] = frozenset(
         "corpo",
         "payload",
         "etichetta",
+        "markdown",
     }
 )
 
