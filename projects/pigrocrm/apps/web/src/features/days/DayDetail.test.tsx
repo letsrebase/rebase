@@ -199,10 +199,17 @@ describe('a day’s page', () => {
     serving(detail({ stato: 'contestato', azioni: [] }))
     vi.mocked(fetchWithRefresh).mockResolvedValue({
       ok: true,
+      headers: new Headers({ 'Content-Disposition': 'attachment; filename="fascicolo-x.zip"' }),
       blob: () => Promise.resolve(new Blob(['zip'])),
     } as Response)
     URL.createObjectURL = vi.fn(() => 'blob:x')
     URL.revokeObjectURL = vi.fn()
+    const names: string[] = []
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(function (this: HTMLAnchorElement) {
+        names.push(this.download)
+      })
     renderWithQuery(<DayDetail workUnitId={DAY_ID} />)
 
     await userEvent.click(await screen.findByRole('button', { name: 'Scarica il fascicolo' }))
@@ -211,6 +218,8 @@ describe('a day’s page', () => {
       expect(fetchWithRefresh).toHaveBeenCalledWith(`/api/work-units/${DAY_ID}/dispute-bundle`),
     )
     await waitFor(() => expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:x'))
+    expect(click).toHaveBeenCalled()
+    expect(names).toEqual(['fascicolo-x.zip'])
   })
 
   it('says why when the bundle cannot be downloaded', async () => {

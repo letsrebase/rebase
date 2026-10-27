@@ -63,8 +63,13 @@ def safe_entry_name(name: str, fallback: str) -> str:
     """
     segments = []
     for raw in re.split(r"[/\\]+", name):
-        segment = re.sub(r"[\x00-\x1f\x7f]", "", raw).strip()
-        if segment == "" or re.fullmatch(r"\.+", segment) or re.fullmatch(r"[A-Za-z]:", segment):
+        bare = re.sub(r"[\x00-\x1f\x7f]", "", raw).strip()
+        if re.fullmatch(r"[A-Za-z]:", bare):
+            continue  # a drive letter
+        # The characters Windows refuses in a name go; a trailing dot or space too, which
+        # Windows silently drops.
+        segment = re.sub(r'[<>:"|?*]', "", bare).rstrip(". ")
+        if segment == "" or re.fullmatch(r"\.+", segment):
             continue
         segments.append(segment)
     flat = "-".join(segments)[:MAX_ENTRY_NAME_LENGTH]

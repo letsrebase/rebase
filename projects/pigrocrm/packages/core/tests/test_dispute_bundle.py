@@ -321,6 +321,8 @@ def test_an_unknown_day_is_not_found(db_session: Session, local_storage: LocalFi
         ("/abs/path/x.pdf", "abs-path-x.pdf"),
         ("C:\\Windows\\evil.exe", "Windows-evil.exe"),
         ("a\x00b\x1f.txt", "ab.txt"),
+        ("a:b?.pdf", "ab.pdf"),
+        ("report. ", "report"),
         ("..", "fallback"),
         ("//", "fallback"),
         ("", "fallback"),
