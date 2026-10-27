@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 
 import pigrocrm.core.cli as cli
 from pigrocrm.core.attivita.models import Attivita
+from pigrocrm.core.automations.daily import AutomationPass
 from pigrocrm.core.config import Settings
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory, today_local
@@ -138,6 +139,7 @@ def _an_overdue_invoice_in_every_space(settings: Settings, spazi: None) -> Itera
             connection.execute(text("delete from activities where entity_type = 'attivita'"))
             connection.execute(text("delete from attivita"))
             connection.execute(text("delete from automation_config"))
+            connection.execute(text("delete from reminder_job_run"))
             connection.execute(text("delete from invoices"))
             connection.execute(text("delete from customers"))
 
@@ -152,6 +154,20 @@ def _count(settings: Settings, slug: str | None) -> int:
         return len(session.query(Attivita).filter(Attivita.regola == "fattura_scaduta").all())
 
 
+def _clock(settings: Settings, slug: str | None) -> tuple[bool, str | None] | None:
+    """The space's `automations` row as `(it has run, its failure)`, `None` for no row."""
+    with _engine(_url(settings, slug)) as engine, engine.connect() as connection:
+        row = connection.execute(
+            text(
+                "select ran_at, failed_at, failure from reminder_job_run where job = 'automations'"
+            )
+        ).one_or_none()
+    if row is None:
+        return None
+    assert (row.failed_at is None) == (row.failure is None)
+    return row.ran_at is not None, row.failure
+
+
 def test_the_command_opens_one_attivita_in_the_root_and_in_every_space(
     settings: Settings, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -162,6 +178,66 @@ def test_the_command_opens_one_attivita_in_the_root_and_in_every_space(
         assert f"{label}: fattura_scaduta aperte 1, già aperte 0" in out
         assert f"{label}: deal_fermo aperte 0, già aperte 0" in out
         assert _count(settings, None if label == "root" else label) == 1
+
+
+def test_a_run_moves_the_clock_of_every_space_it_walked(
+    settings: Settings, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """REB-764: the row Impostazioni → Esecuzioni and `job_late` read."""
+    assert cli.main(["automations"]) == 0
+
+    for slug in (None, *SPAZI):
+        assert _clock(settings, slug) == (True, None), slug
+
+
+def test_a_rehearsal_leaves_the_clock_alone(
+    settings: Settings, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert cli.main(["automations", "--dry-run"]) == 0
+
+    for slug in (None, *SPAZI):
+        assert _clock(settings, slug) is None, slug
+
+
+def test_a_failing_space_records_its_failure_the_others_their_success_and_a_rerun_clears_it(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    original = AutomationPass.run
+
+    def run(self, **kwargs):  # type: ignore[no-untyped-def]
+        if self.session.get_bind().url.database == tenant_database_name(UNO):
+            raise RuntimeError("postgresql://user:secret@host/db")
+        return original(self, **kwargs)
+
+    monkeypatch.setattr(AutomationPass, "run", run)
+    assert cli.main(["automations"]) == 1
+
+    assert _clock(settings, UNO) == (False, "RuntimeError"), "the type, never the message"
+    assert _clock(settings, DUE) == (True, None)
+    assert "secret" not in capsys.readouterr().err
+
+    monkeypatch.setattr(AutomationPass, "run", original)
+    assert cli.main(["automations"]) == 0
+    assert _clock(settings, UNO) == (True, None)
+
+
+def test_a_clock_that_cannot_be_written_is_a_line_and_an_exit_status(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from pigrocrm.core.reminders.jobs import JobClock
+
+    def refuse(self, job, at=None):  # type: ignore[no-untyped-def]
+        raise RuntimeError("postgresql://user:secret@host/db")
+
+    monkeypatch.setattr(JobClock, "succeeded", refuse)
+
+    assert cli.main(["automations", "--slug", UNO]) == 1, "the ping should not say it is fine"
+
+    captured = capsys.readouterr()
+    assert captured.err.splitlines() == [f"{UNO}: orologio non scritto (RuntimeError)"]
+    assert "secret" not in captured.err
+    assert f"{UNO}: fattura_scaduta aperte 1" in captured.out, "the pass itself worked"
+    assert _clock(settings, UNO) is None
 
 
 def test_the_second_run_opens_nothing_new(

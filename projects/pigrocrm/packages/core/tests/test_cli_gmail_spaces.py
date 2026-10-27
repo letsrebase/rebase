@@ -122,6 +122,7 @@ def _no_mailbox_left(settings: Settings, spaces: None) -> Iterator[None]:
                 )
                 connection.execute(text("delete from gmail_known_addresses"))
                 connection.execute(text("delete from google_accounts"))
+                connection.execute(text("delete from reminder_job_run"))
                 connection.execute(text("delete from customers where ragione_sociale like 'CLI %'"))
         finally:
             engine.dispose()
@@ -201,6 +202,26 @@ def _watermark(settings: Settings, slug: str | None) -> object:
             ).scalar_one()
     finally:
         engine.dispose()
+
+
+def _clock(settings: Settings, slug: str | None) -> tuple[bool, str | None] | None:
+    """The space's `gmail-sync` row as `(it has run, its failure)`, `None` for no row: what
+    Impostazioni → Esecuzioni reads (REB-764)."""
+    engine = _engine(settings, slug)
+    try:
+        with engine.connect() as connection:
+            row = connection.execute(
+                text(
+                    "select ran_at, failed_at, failure from reminder_job_run "
+                    "where job = 'gmail-sync'"
+                )
+            ).one_or_none()
+    finally:
+        engine.dispose()
+    if row is None:
+        return None
+    assert (row.failed_at is None) == (row.failure is None)
+    return row.ran_at is not None, row.failure
 
 
 def _refresh_tokens(fake: FakeGmail) -> set[str]:
@@ -487,3 +508,152 @@ def test_an_unmatched_email_says_the_match_may_be_incomplete(
     assert "non è stato letto" in last
     assert "non è una casella collegata" not in last
     assert _watermark(settings, TWO) is None
+
+
+# --- the space's clock (REB-764) -----------------------------------------------------
+
+
+def test_every_space_with_a_mailbox_has_its_clock_moved_and_one_without_has_none(
+    settings: Settings, cron: FakeGmail
+) -> None:
+    """A space with no mailbox prints nothing and records nothing: Esecuzioni says «non
+    configurata» there rather than a time that never happened."""
+    _connect(settings, None)
+    _connect(settings, ONE)
+
+    assert _run() == 0
+
+    assert _clock(settings, None) == (True, None)
+    assert _clock(settings, ONE) == (True, None)
+    assert _clock(settings, TWO) is None
+
+
+def test_a_revoked_mailbox_is_the_spaces_failure_and_the_next_good_run_clears_it(
+    settings: Settings, cron: FakeGmail
+) -> None:
+    _connect(settings, ONE, status="revoked")
+    _connect(settings, TWO)
+
+    assert _run() == 1
+
+    # The class and not the sentence, which names the mailbox: the clock is read by every
+    # admin and by agents.
+    assert _clock(settings, ONE) == (False, "CredentialRevoked")
+    assert _clock(settings, TWO) == (True, None)
+
+    engine = _engine(settings, ONE)
+    try:
+        with engine.begin() as connection:
+            connection.execute(text("update google_accounts set status = 'active'"))
+    finally:
+        engine.dispose()
+    assert _run() == 0
+    assert _clock(settings, ONE) == (True, None)
+
+
+def test_a_space_whose_mailboxes_cannot_be_read_records_the_exception_type(
+    settings: Settings, cron: FakeGmail
+) -> None:
+    _connect(settings, ONE)
+    engine = _engine(settings, ONE)
+    try:
+        with engine.begin() as connection:
+            connection.execute(text("alter table gmail_known_addresses rename to gka_future"))
+        try:
+            assert _run() == 1
+        finally:
+            with engine.begin() as connection:
+                connection.execute(text("alter table gka_future rename to gmail_known_addresses"))
+    finally:
+        engine.dispose()
+
+    assert _clock(settings, ONE) == (False, "ProgrammingError")
+
+
+def test_a_run_narrowed_to_one_address_does_not_touch_the_clock(
+    settings: Settings, cron: FakeGmail
+) -> None:
+    """It did not visit the space's other mailboxes, so it cannot say the space's sync ran
+    (or clear a failure of a mailbox it skipped)."""
+    _connect(settings, ONE)
+
+    assert _run("--email", MAILBOXES[ONE][0]) == 0
+
+    assert _clock(settings, ONE) is None
+
+
+def test_a_space_with_a_good_and_a_refused_mailbox_records_the_refusal_and_keeps_its_last_run(
+    settings: Settings, cron: FakeGmail
+) -> None:
+    """One mailbox of two refusing is the space's failure: the row says so, and the time of
+    the last good run stays where it was until a cycle ends with every mailbox through."""
+    from datetime import UTC, datetime
+
+    _connect(settings, ONE)
+    engine = _engine(settings, ONE)
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "insert into reminder_job_run (id, job, ran_at) "
+                    "values (gen_random_uuid(), 'gmail-sync', :at)"
+                ),
+                {"at": datetime(2026, 10, 1, tzinfo=UTC)},
+            )
+        with session_factory(engine)() as session:
+            second = User(email="seconda@one.example", nome="Seconda", ruolo="admin", attivo=True)
+            session.add(second)
+            session.flush()
+            ciphertext, nonce = seal(MAILBOXES[ONE][1], _key(settings, ONE))
+            session.add(
+                GoogleAccount(
+                    user_id=second.id,
+                    google_sub="sub-second",
+                    email_address="seconda@one.example",
+                    refresh_token_ciphertext=ciphertext,
+                    refresh_token_nonce=nonce,
+                    scopes_granted=list(REQUESTED_SCOPES),
+                    status="revoked",
+                )
+            )
+            session.commit()
+    finally:
+        engine.dispose()
+
+    assert _run() == 1
+
+    engine = _engine(settings, ONE)
+    try:
+        with engine.connect() as connection:
+            row = connection.execute(
+                text("select ran_at, failure from reminder_job_run where job = 'gmail-sync'")
+            ).one()
+    finally:
+        engine.dispose()
+    assert row.ran_at == datetime(2026, 10, 1, tzinfo=UTC), "the last good run did not move"
+    assert row.failure == "CredentialRevoked"
+
+
+def test_a_clock_that_cannot_be_written_is_a_line_and_an_exit_status(
+    settings: Settings,
+    cron: FakeGmail,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The cycle worked, and the space's own database refuses the row: the ping should not
+    say the space is fine, and the log says why in one line, by type."""
+    from pigrocrm.core.reminders.jobs import JobClock
+
+    def refuse(self, job, at=None):  # type: ignore[no-untyped-def]
+        raise RuntimeError("postgresql://user:secret@host/db")
+
+    _connect(settings, ONE)
+    monkeypatch.setattr(JobClock, "succeeded", refuse)
+
+    assert _run() == 1
+
+    captured = capsys.readouterr()
+    assert f"{ONE}: orologio non scritto (RuntimeError)" in captured.err
+    assert "secret" not in captured.err + captured.out
+    assert _line(ONE, ONE) in captured.out, "the mailbox did synchronise"
+    assert _clock(settings, ONE) is None

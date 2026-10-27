@@ -24,7 +24,6 @@ from pigrocrm.core.reminders.ledger import ReminderLedger
 from pigrocrm.core.reminders.models import (
     ReminderAck,
     ReminderDelivery,
-    ReminderJobRun,
     ReminderSnooze,
 )
 from pigrocrm.core.reminders.state import (
@@ -277,7 +276,7 @@ def test_a_pass_that_raised_nothing_of_a_type_that_ran_forgets_all_of_it(
     assert db_session.scalar(select(func.count()).select_from(ReminderAck)) == 0
 
 
-def test_the_summary_marker_and_the_job_clock(db_session: Session) -> None:
+def test_the_summary_marker(db_session: Session) -> None:
     user = _user(db_session)
     ledger = ReminderLedger(db_session)
 
@@ -287,14 +286,6 @@ def test_the_summary_marker_and_the_job_clock(db_session: Session) -> None:
     db_session.flush()
     assert ledger.summary_sent(user.id, TODAY)
     assert not ledger.summary_sent(user.id, date(2026, 10, 27))
-
-    first = datetime(2026, 10, 26, 8, 0, tzinfo=UTC)
-    ledger.touch_job("reminders", first)
-    ledger.touch_job("reminders", datetime(2026, 10, 26, 8, 15, tzinfo=UTC))
-    db_session.flush()
-    assert ledger.last_run("reminders") == datetime(2026, 10, 26, 8, 15, tzinfo=UTC)
-    assert ledger.last_run("digest") is None
-    assert db_session.scalar(select(func.count()).select_from(ReminderJobRun)) == 1
 
 
 # -- the catalogue's arithmetic --------------------------------------------------------------

@@ -17,12 +17,12 @@ answers `in_corso`, which is the system working as designed and not a failure.
 **Reads first, then the network, then writes.** The detectors and the channels' plans read;
 the read transaction is then ended, and only after that do the other channels send (push,
 email), so no transaction is held across a network call. The ledger writes, what the
-channels accepted and the job clock (`reminder_job_run`, which `job_late` reads) follow in
-one transaction (`ReminderEngine.record_pass`), so a pass that fails halfway writes nothing
-and the next one sends again, which is the contract of §8.3: a duplicate message after a
-crash between the send and the write, never a missing one. A real run on a space that has
-nothing to raise still touches the clock: a pass that ran and found nothing is a pass
-that ran.
+channels accepted and the job clock (`reminder_job_run`, which `job_late` and Impostazioni →
+Esecuzioni read) follow in one transaction (`ReminderEngine.record_pass`), so a pass that
+fails halfway writes nothing and the next one sends again, which is the contract of §8.3:
+a duplicate message after a crash between the send and the write, never a missing one. A
+real run on a space that has nothing to raise still touches the clock: a pass that ran and
+found nothing is a pass that ran.
 
 **Nothing is recorded that did not happen.** A rehearsal writes nothing at all, not even
 the clock, and reports what *would* be delivered and sent.
@@ -44,9 +44,8 @@ from pigrocrm.core.db.scope import bind_scope
 from pigrocrm.core.mail import EmailSender
 from pigrocrm.core.reminders.channels import dispatcher_for
 from pigrocrm.core.reminders.engine import ReminderEngine
+from pigrocrm.core.reminders.jobs import REMINDER_PASS_JOB
 from pigrocrm.core.reminders.push import PushSender
-
-JOB = "reminders"
 
 # `pg_try_advisory_lock(int, int)`: a namespace of this project's own, as
 # `gmail/repository.py` and `customers/repository.py` do, and one key for this pass.
@@ -166,7 +165,7 @@ class ReminderRun:
             session.rollback()
             sent = self.dispatcher.send(prepared)
             result = reminders.record_pass(
-                evaluation, today=today, job=JOB, due=due, sent=sent, now=now
+                evaluation, today=today, job=REMINDER_PASS_JOB, due=due, sent=sent, now=now
             )
             return ReminderOutcome(
                 slug,

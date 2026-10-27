@@ -18,6 +18,7 @@ from typing import Any
 from mcp.server import MCPServer
 
 from pigrocrm.core.config import Settings
+from pigrocrm.core.reminders.jobs import ScheduledJobService
 from pigrocrm.core.reminders.preferences import ReminderPreferenceService
 from pigrocrm.core.reminders.schemas import (
     AcknowledgeRequest,
@@ -127,6 +128,17 @@ def register(
     def list_my_promemoria_state() -> list[dict[str, Any]]:
         """I promemoria che la persona che chiede ha già chiuso o rimandato."""
         return [item.model_dump(mode="json") for item in _state(context).mine(context.actor)]
+
+    @mcp.tool()
+    @guard
+    def describe_scheduled_jobs() -> dict[str, Any]:
+        """Come sono andate le operazioni che il cron lancia sul server per questo spazio:
+        la sincronizzazione Gmail, il passaggio dei promemoria, le automazioni di ogni
+        giorno e il riepilogo settimanale. Per ciascuna: `state` (`ok`, `failed`, `late`,
+        `never_run`, `not_configured`), `last_run_at` (l'ultimo giro finito senza errori),
+        `last_failure_at` e `failure` se l'ultimo tentativo è fallito, e dopo quanti minuti
+        senza un giro finito risulta in ritardo. Solo per gli amministratori."""
+        return ScheduledJobService(context.session).describe(context.actor).model_dump(mode="json")
 
 
 def _scope(value: str) -> Any:

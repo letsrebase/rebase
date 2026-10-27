@@ -356,8 +356,10 @@ REMINDER_TYPES: Mapping[str, ReminderType] = {
             key="job_late",
             label="Operazione pianificata in ritardo",
             description=(
-                "Il passaggio dei promemoria non parte da troppo tempo: i minuti sono "
-                "dall'ultima esecuzione."
+                "Un'operazione pianificata non gira da troppo tempo. Le soglie sono i minuti "
+                "dall'ultima esecuzione del passaggio dei promemoria, che gira ogni quarto "
+                "d'ora; per le automazioni di ogni giorno e per il riepilogo della settimana "
+                "valgono in proporzione al loro periodo, e mai prima che siano in ritardo."
             ),
             subject="job",
             direction="since",

@@ -12,15 +12,14 @@ has no azienda, goes to the unscoped admins, which is exactly who may close a pe
 that belongs to nobody's azienda. `admins_seeing` is that decision, written once.
 
 **Nothing here is stored and nothing is invented.** A job can be late only if something
-records when it last ran: only the reminder pass does, in `reminder_job_run`. The mailbox
-sync leaves `GoogleAccount.last_sync_at`, which `connection_failing` reads. The weekly
-digest is not read: it writes a row only
-when mail actually left (`digest/run.py`, «nothing is recorded that did not happen»), so the
-absence of one is a quiet week or a provider that is not configured as often as it is a late
-cron, and an alert that is wrong in a space that has nothing to report would teach admins to
-ignore it. The automations' daily pass (`pigrocrm automations`) records no heartbeat either,
-so `job_late` does not watch it; the host's dead-man's switch does (its runbook). The other
-two automations run inside the request that triggers them (`automations/runner.py`).
+records when it last ran: the reminder pass, the automations' daily pass and the weekly
+digest each leave a row in `reminder_job_run` (`reminders/jobs.py`, REB-764), and `job_late`
+watches those three. A job with no row in the space has never run there and is never late:
+no row is invented. The mailbox sync leaves a row too, and is deliberately not watched: it
+also leaves `GoogleAccount.last_sync_at`, which `connection_failing` reads with the
+mailbox's own name and its own ladder, and two reminders about one cause would be noise.
+The other two automations run inside the request that triggers them
+(`automations/runner.py`).
 """
 
 from __future__ import annotations
@@ -41,6 +40,7 @@ from pigrocrm.core.gmail.schemas import SCOPE_READONLY
 from pigrocrm.core.proposals.models import Proposal
 from pigrocrm.core.reminders.catalogue import LADDER_MAX, REMINDER_TYPES
 from pigrocrm.core.reminders.detect import Detection, Detector, DetectorContext
+from pigrocrm.core.reminders.jobs import JOBS_BY_KEY, REMINDER_PASS_JOB, SCHEDULED_JOBS
 from pigrocrm.core.reminders.models import ReminderJobRun
 from pigrocrm.core.timetracking.locks import period_label
 from pigrocrm.core.timetracking.models import PeriodLock
@@ -299,19 +299,20 @@ def detect_failing(ctx: DetectorContext) -> list[Detection]:
 
 # -- job_late -----------------------------------------------------------------------------
 
-# Every job of the crontab runs every quarter of an hour (`docs/superpowers/notes`), so
-# the ladder's `serious` rung, 30 minutes, is «later than twice its interval».
-JOB_INTERVAL_MINUTES: Final = 15
-REMINDER_PASS_JOB: Final = "reminders"
-
-# The jobs this type reads, by the name they have in `reminder_job_run`. Only the reminder
-# pass is here, and that is the whole answer to «which jobs may reach `critical`»: the
-# ladder's critical rung is the pass's own (spec §3.5: «when the reminder pass itself has
-# not run for 3 hours»), so a job added here shares it and one that must stay under it
-# needs a type of its own. The mailbox sync is deliberately not here: a sync that stopped
-# is `connection_failing`'s, which reads the same `last_sync_at` with the account's name
-# and its own ladder, and two reminders about one cause would be noise.
-_JOB_LABELS = {REMINDER_PASS_JOB: "Il passaggio dei promemoria"}
+# The jobs this type reads, by the name they have in `reminder_job_run`: every job of
+# `SCHEDULED_JOBS` that names a subject for the sentence. The ladder is written for the
+# reminder pass (spec §3.5: serious at twice its quarter of an hour, critical «when the
+# reminder pass itself has not run for 3 hours»), so another job's rungs are the same
+# multiples of its own late point: a job that is late after 26 hours is serious at 26
+# hours and critical at 156, the digest, late after 8 days, at 8 days and 48. The detector
+# normalises the measure to the pass's minutes and the engine reads it against the ladder
+# as it reads every other type. A space that moves the ladder moves every job with it, but
+# only the pass is read as the ladder is written: a rung somebody sets at 10 minutes is the
+# pass's own ten minutes, and would make the daily job «late» nine hours after it ran and the
+# weekly one two days after, while the panel says it is on time. Any other job is raised from
+# its own late point at the earliest, whatever the rungs say.
+_WATCHED = {job.key: job for job in SCHEDULED_JOBS if job.late_label is not None}
+_LADDER_BASE_MINUTES = JOBS_BY_KEY[REMINDER_PASS_JOB].stale_after_minutes
 
 
 def job_subject(job: str) -> UUID:
@@ -321,40 +322,47 @@ def job_subject(job: str) -> UUID:
 
 
 def _last_runs(ctx: DetectorContext) -> dict[str, datetime]:
-    """When each job we can read last ran. The reminder pass writes its own clock at the
-    end of a pass (`ReminderLedger.touch_job`), after the detectors have read, so a pass
-    sees the previous one. A job nothing records is not in the answer, and is therefore
-    never late: no row is invented."""
+    """When each job we can read last ran to the end. The reminder pass writes its own
+    clock at the end of a pass (`JobClock.succeeded`), after the detectors have read, so a
+    pass sees the previous one. A job nothing records, or whose every attempt failed, is
+    not in the answer, and is therefore never late: no row is invented."""
     return {
         row.job: row.ran_at
         for row in ctx.session.scalars(
-            select(ReminderJobRun).where(ReminderJobRun.job.in_(_JOB_LABELS))
+            select(ReminderJobRun).where(
+                ReminderJobRun.job.in_(_WATCHED), ReminderJobRun.ran_at.is_not(None)
+            )
         )
+        if row.ran_at is not None
     }
 
 
 def detect_late(ctx: DetectorContext) -> list[Detection]:
-    """Jobs whose last run is `bound` minutes old or more."""
+    """Jobs whose last run is `bound` of their own minutes old or more."""
     recipients = admins_seeing(ctx, None)
     if not recipients:
         return []
     floor = max(ctx.bound(LATE), 1)
     found: list[Detection] = []
     for job, ran_at in sorted(_last_runs(ctx).items()):
+        scheduled = _WATCHED[job]
         minutes = max(int((ctx.now - ran_at).total_seconds() // 60), 0)
-        if minutes < floor:
+        if job != REMINDER_PASS_JOB and minutes < scheduled.stale_after_minutes:
+            continue
+        measure = minutes * _LADDER_BASE_MINUTES / scheduled.stale_after_minutes
+        if measure < floor:
             continue
         subject = job_subject(job)
         found.append(
             Detection(
                 type="job_late",
                 subject_id=subject,
-                measure=float(minutes),
+                measure=measure,
                 recipients=recipients,
-                title=f"{_JOB_LABELS[job]} è in ritardo",
+                title=f"{scheduled.late_label} è in ritardo",
                 detail=(
-                    f"{_JOB_LABELS[job]} non parte da {_duration(minutes)}: dovrebbe girare "
-                    f"ogni {JOB_INTERVAL_MINUTES} minuti"
+                    f"{scheduled.late_label} non parte da {_duration(minutes)}: dovrebbe "
+                    f"girare {scheduled.schedule}"
                 ),
                 entity="job",
                 entity_id=subject,
@@ -366,7 +374,9 @@ def detect_late(ctx: DetectorContext) -> list[Detection]:
 def _duration(minutes: int) -> str:
     if minutes < 120:
         return _count(minutes, "minuto", "minuti")
-    return _count(minutes // 60, "ora", "ore")
+    if minutes < 48 * 60:
+        return _count(minutes // 60, "ora", "ore")
+    return _count(minutes // (24 * 60), "giorno", "giorni")
 
 
 DETECTORS = (

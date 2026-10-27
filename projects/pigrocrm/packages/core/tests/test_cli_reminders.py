@@ -162,6 +162,18 @@ def _clock(settings: Settings, slug: str | None) -> int:
         return connection.execute(text("select count(*) from reminder_job_run")).scalar_one()
 
 
+def _clock_row(settings: Settings, slug: str | None) -> tuple[bool, str | None] | None:
+    """The space's `reminders` row as `(it has run, its failure)`, `None` for no row."""
+    with _engine(_url(settings, slug)) as engine, engine.connect() as connection:
+        row = connection.execute(
+            text("select ran_at, failed_at, failure from reminder_job_run where job = 'reminders'")
+        ).one_or_none()
+    if row is None:
+        return None
+    assert (row.failed_at is None) == (row.failure is None)
+    return row.ran_at is not None, row.failure
+
+
 # -- the command -----------------------------------------------------------------------------
 
 
@@ -286,6 +298,14 @@ def test_a_failing_space_is_one_line_with_the_exception_name_and_the_next_goes_o
     assert "secret" not in captured.err + captured.out, "the type, never the message"
     assert f"{DUE}: promemoria 1, nuovi 1, chiusi 0" in captured.out
     assert _deliveries(settings, DUE) == 1
+    # REB-764: the failure is on the space's clock, as the type; the other space ran.
+    assert _clock_row(settings, UNO) == (False, "RuntimeError")
+    assert _clock_row(settings, DUE) == (True, None)
+
+    # The next pass that works ends the failure.
+    monkeypatch.setattr(ReminderRun, "run_for_space", original)
+    assert cli.main(["reminders", "--slug", UNO]) == 0
+    assert _clock_row(settings, UNO) == (True, None)
 
 
 def test_a_space_behind_the_image_is_skipped_by_name_and_not_migrated(
@@ -299,7 +319,8 @@ def test_a_space_behind_the_image_is_skipped_by_name_and_not_migrated(
         with _engine(_url(settings, UNO)) as engine, engine.begin() as connection:
             connection.execute(text("alter table reminder_job_run_away rename to reminder_job_run"))
 
-    assert f"{UNO}: saltato (ProgrammingError)" in capsys.readouterr().err
+    # One line: the clock could not hold the failure either, and that is the same fault.
+    assert capsys.readouterr().err.splitlines() == [f"{UNO}: saltato (ProgrammingError)"]
     assert _deliveries(settings, UNO) == 0, "the failed pass wrote nothing"
 
 

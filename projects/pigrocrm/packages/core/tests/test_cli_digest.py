@@ -39,6 +39,7 @@ from pigrocrm.core.config import Settings
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory, today_local
 from pigrocrm.core.db.sidecar import create_database_if_missing, drop_database
+from pigrocrm.core.digest.run import INVIO_RIFIUTATO, DigestOutcome, DigestRun
 from pigrocrm.core.digest.service import iso_week
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.mail import Mail, RecordingSender
@@ -142,6 +143,7 @@ def _nessuna_settimana_inviata(settings: Settings, spazi: None) -> Iterator[None
             with engine.begin() as connection:
                 connection.execute(text("delete from activities where entity_type = 'digest'"))
                 connection.execute(text("delete from digests"))
+                connection.execute(text("delete from reminder_job_run"))
         finally:
             engine.dispose()
 
@@ -260,6 +262,23 @@ def _settimane(settings: Settings, slug: str | None) -> list[str]:
             )
     finally:
         engine.dispose()
+
+
+def _clock(settings: Settings, slug: str | None) -> tuple[bool, str | None] | None:
+    """The space's `digest` row as `(it has run, its failure)`, `None` for no row: what
+    Impostazioni → Esecuzioni and `job_late` read."""
+    engine = _motore(settings, slug) if slug is not None else _root_engine(settings)
+    try:
+        with engine.connect() as connection:
+            row = connection.execute(
+                text("select ran_at, failed_at, failure from reminder_job_run where job = 'digest'")
+            ).one_or_none()
+    finally:
+        engine.dispose()
+    if row is None:
+        return None
+    assert (row.failed_at is None) == (row.failure is None)
+    return row.ran_at is not None, row.failure
 
 
 def _mie(sender: RecordingSender) -> list[Mail]:
@@ -558,3 +577,128 @@ def test_an_unreachable_registry_is_one_line_on_stderr_and_still_exits_zero(
 
 def _drop(settings: Settings, slug: str) -> None:
     drop_database(settings, tenant_database_url(settings, tenant_database_name(slug)))
+
+
+# --- the space's clock (REB-764) -----------------------------------------------------
+
+
+def test_every_space_the_command_walked_has_its_clock_moved_whatever_the_outcome(
+    settings: Settings, cron: RecordingSender, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A week that went out, a space with nothing to report and a root all ran: each has the
+    row `job_late` and Impostazioni read, with no failure."""
+    assert cli.main(["digest"]) == 0
+
+    for slug in (*SPAZI, None):
+        assert _clock(settings, slug) == (True, None), slug
+    assert "orologio non scritto" not in capsys.readouterr().err
+
+
+def test_a_space_where_nobody_wants_the_report_still_counts_as_a_run(
+    settings: Settings, cron: RecordingSender
+) -> None:
+    engine = _motore(settings, UNO)
+    try:
+        with engine.begin() as connection:
+            connection.execute(text("update users set digest_settimanale = false"))
+        assert cli.main(["digest", "--slug", UNO]) == 0
+        assert _clock(settings, UNO) == (True, None), "nessun destinatario ran to the end"
+    finally:
+        with engine.begin() as connection:
+            connection.execute(text("update users set digest_settimanale = true"))
+        engine.dispose()
+
+
+def test_a_rehearsal_leaves_the_clock_alone(settings: Settings, cron: RecordingSender) -> None:
+    assert cli.main(["digest", "--slug", UNO, "--dry-run"]) == 0
+
+    assert _clock(settings, UNO) is None
+
+
+def test_a_space_that_skips_its_week_records_why_and_the_next_run_clears_it(
+    settings: Settings,
+    cron: RecordingSender,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    original = DigestRun.send_for_space
+
+    def refused(self, slug, *args, **kwargs):  # type: ignore[no-untyped-def]
+        if slug == UNO:
+            return DigestOutcome(slug, "saltato", "2026-W43", motivo=INVIO_RIFIUTATO)
+        return original(self, slug, *args, **kwargs)
+
+    monkeypatch.setattr(DigestRun, "send_for_space", refused)
+    assert cli.main(["digest", "--slug", UNO]) == 0
+    capsys.readouterr()
+
+    assert _clock(settings, UNO) == (False, INVIO_RIFIUTATO), "a failure and no success yet"
+
+    monkeypatch.setattr(DigestRun, "send_for_space", original)
+    assert cli.main(["digest", "--slug", UNO]) == 0
+    assert _clock(settings, UNO) == (True, None), "the success ends the failure"
+
+
+def test_a_space_the_command_cannot_open_is_recorded_nowhere_and_says_so_once(
+    settings: Settings,
+    cron: RecordingSender,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A database that does not answer cannot hold its own failure: the line on stderr is
+    the whole record, and the clock simply stops moving, which reads as late."""
+    import pigrocrm.core.tenants.database as tenants_database
+
+    vero = tenants_database.tenant_database_url
+    monkeypatch.setattr(
+        tenants_database,
+        "tenant_database_url",
+        lambda impostazioni, db_name: vero(
+            impostazioni,
+            "pigrocrm_spazio_mai_creato" if db_name == tenant_database_name(DUE) else db_name,
+        ),
+    )
+
+    assert cli.main(["digest"]) == 0
+
+    assert capsys.readouterr().err.strip() == f"{DUE}: saltato (OperationalError)"
+    assert _clock(settings, UNO) == (True, None)
+
+
+def test_an_error_before_the_send_records_the_exception_type(
+    settings: Settings,
+    cron: RecordingSender,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def broken(self, slug, *args, **kwargs):  # type: ignore[no-untyped-def]
+        raise RuntimeError("postgresql://user:secret@host/db")
+
+    monkeypatch.setattr(DigestRun, "send_for_space", broken)
+
+    assert cli.main(["digest", "--slug", UNO]) == 0
+
+    assert capsys.readouterr().err.splitlines() == [f"{UNO}: saltato (RuntimeError)"]
+    assert _clock(settings, UNO) == (False, "RuntimeError")
+
+
+def test_a_clock_that_cannot_be_written_is_a_line_and_the_digest_still_exits_zero(
+    settings: Settings,
+    cron: RecordingSender,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The digest's exit status is 0 whatever happens, by its own contract."""
+    from pigrocrm.core.reminders.jobs import JobClock
+
+    def refuse(self, job, at=None):  # type: ignore[no-untyped-def]
+        raise RuntimeError("postgresql://user:secret@host/db")
+
+    monkeypatch.setattr(JobClock, "succeeded", refuse)
+
+    assert cli.main(["digest", "--slug", UNO]) == 0
+
+    captured = capsys.readouterr()
+    assert captured.err.splitlines() == [f"{UNO}: orologio non scritto (RuntimeError)"]
+    assert f"{UNO}: inviato a 1" in captured.out
+    assert _clock(settings, UNO) is None
