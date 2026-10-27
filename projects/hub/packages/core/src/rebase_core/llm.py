@@ -230,7 +230,9 @@ def _parameters(request: LlmRequest) -> ModelRequestParameters:
         for key, value in request.output_model.model_json_schema().items()
         if key != "description"
     }
-    instructions = [InstructionPart(content=request.system)]
+    # An empty text block is not a block a provider takes (Anthropic answers a 400): no
+    # rules, no system part.
+    instructions = [InstructionPart(content=request.system)] if request.system.strip() else []
     if request.system_cached is not None:
         instructions.append(InstructionPart(content=request.system_cached))
     return ModelRequestParameters(

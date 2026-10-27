@@ -691,6 +691,16 @@ def test_wire_marks_the_catalogue_block_for_caching(opener: SessionOpener, wire:
     ]
 
 
+def test_wire_sends_no_empty_system_block(opener: SessionOpener, wire: Wire) -> None:
+    """A caller with no rules (a probe) must not send `system: [{"text": ""}]`, which
+    Anthropic refuses; with a cached block only that block goes, and with neither, none."""
+    _wire_call(opener).complete(_request(system=""))
+    assert "system" not in wire.body
+
+    _wire_call(opener).complete(_request(system="  ", system_cached=CATALOGUE))
+    assert [block["text"] for block in wire.body["system"]] == [CATALOGUE]
+
+
 def test_wire_sends_no_cache_control_without_a_cached_block(
     opener: SessionOpener, wire: Wire
 ) -> None:

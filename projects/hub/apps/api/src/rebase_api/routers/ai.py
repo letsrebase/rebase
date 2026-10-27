@@ -24,6 +24,7 @@ from rebase_core.models import AI_TASKS, AiUsage
 
 router = APIRouter(prefix="/api/hub/admin/ai", tags=["hub-admin"])
 
+PROVA_SYSTEM = "Rispondi in modo brevissimo."
 PROVA_PROMPT = "Rispondi solo con la parola: ok."
 PROVA_MAX_TOKENS = 64
 
@@ -125,7 +126,7 @@ def prova(
     try:
         response = make_call(task).complete(
             LlmRequest(
-                system="",
+                system=PROVA_SYSTEM,
                 messages=[LlmMessage(role="user", text=PROVA_PROMPT)],
                 output_model=_Probe,
                 max_tokens=PROVA_MAX_TOKENS,
