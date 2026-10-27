@@ -618,3 +618,33 @@ def test_a_rotated_key_shows_on_the_page_before_any_action_fails(db_session: Ses
 
     assert health.problem is not None and "PIGROCRM_SLACK_TOKEN_KEY" in health.problem
     assert _page(db_session, FakeSlack(), actor_of(admin)).problem is None
+
+
+def test_a_post_is_never_retried_on_a_server_error_but_a_rate_limit_is(
+    db_session: Session,
+) -> None:
+    admin = make_user(db_session)
+    fake = FakeSlack()
+    fake.add_channel("C1", "promemoria")
+    connect(db_session, fake, admin)
+    client = slack_client(fake)
+    fake.fail_status = [503]
+    with pytest.raises(Conflict, match="non ha risposto correttamente"):
+        client.post_message(BOT_TOKEN, "C1", "ciao")
+    assert fake.posts == [] and len(fake.calls("chat.postMessage")) == 1
+
+    fake.fail_status = [429]
+    client.post_message(BOT_TOKEN, "C1", "ciao")
+    assert len(fake.posts) == 1
+
+
+def test_access_denied_on_one_call_is_a_refusal_not_a_dead_token(db_session: Session) -> None:
+    admin = make_user(db_session)
+    fake = FakeSlack()
+    workspace = connect(db_session, fake, admin)
+    fake.fail["conversations.info"] = ["access_denied"]
+    service = SlackService(db_session, settings=slack_settings(), client=slack_client(fake))
+    with pytest.raises(SlackRefused):
+        service.set_channel(actor_of(admin), "C1")
+    db_session.refresh(workspace)
+    assert workspace.status == "active"

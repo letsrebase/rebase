@@ -165,6 +165,11 @@ class SlackClient:
             "chat.postMessage",
             {"channel": channel, "text": text, "unfurl_links": "false", "unfurl_media": "false"},
             token=token,
+            # Slack has no idempotency key: a 5xx or a timeout may follow a post that was
+            # taken, and a retry would deliver it twice. Only a 429, which Slack answers
+            # before posting, is retried; anything else is an outage and the next pass
+            # sends the message again (a late message, never a duplicate).
+            retry_unknown=False,
         )
 
     # -- channels ---------------------------------------------------------------
@@ -214,6 +219,7 @@ class SlackClient:
         token: str | None = None,
         authorization: str | None = None,
         token_errors: bool = True,
+        retry_unknown: bool = True,
     ) -> dict[str, Any]:
         headers = {"Content-Type": "application/x-www-form-urlencoded; charset=utf-8"}
         if token is not None:
@@ -223,8 +229,9 @@ class SlackClient:
         url = f"{self._base}/api/{method}"
         body = urlencode(params).encode()
         status, payload, response_headers = self._http("POST", url, headers, body)
+        retryable = _RETRYABLE_STATUSES if retry_unknown else frozenset({429})
         for attempt in range(MAX_HTTP_ATTEMPTS - 1):
-            if status not in _RETRYABLE_STATUSES:
+            if status not in retryable:
                 break
             # A server-supplied Retry-After outranks the guessed schedule, clamped
             # (`gmail/transport.py`).

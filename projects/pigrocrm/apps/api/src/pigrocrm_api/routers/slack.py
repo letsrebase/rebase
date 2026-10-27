@@ -23,7 +23,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse
 
 from pigrocrm.core.config import Settings
-from pigrocrm.core.errors import Conflict
+from pigrocrm.core.errors import DomainError
 from pigrocrm.core.slack.client import SlackClient, slack_client_for
 from pigrocrm.core.slack.oauth import SlackOAuthService
 from pigrocrm.core.slack.schemas import (
@@ -125,11 +125,12 @@ def finish_oauth(
         return _back_to_settings(request, _ESITO_NEGATO)
     try:
         _oauth(session, settings, client).complete(code=code, state=state, actor=actor)
-    except Conflict:
-        # Every refusal `complete` can produce is a `Conflict`: a replayed or expired
-        # state, a workspace already connected, a code Slack refused, an app installed
-        # with fewer scopes. All end on the settings page, which re-reads `GET /account`
-        # and shows the true state.
+    except DomainError:
+        # Every refusal `complete` can produce: a `Conflict` (a replayed or expired state, a
+        # workspace already connected, a code Slack refused, an app installed with fewer
+        # scopes) or a refused role (a scoped or demoted admin must not meet a problem
+        # document mid-consent). All end on the settings page, which re-reads
+        # `GET /account` and shows the true state.
         return _back_to_settings(request, _ESITO_ERRORE)
     return _back_to_settings(request, _ESITO_COLLEGATO)
 

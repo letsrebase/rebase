@@ -12,9 +12,11 @@ from pigrocrm.core.errors import Conflict
 SLACK_ENTITY = "slack_workspace"
 _RECONNECT = "ricollega Slack da Impostazioni → Slack"
 
-# What Slack answers when the token itself is the problem: the app was uninstalled, the token
-# revoked, the workspace deactivated. Terminal, as `invalid_grant` is for Google: retrying
-# repeats the refusal, and only a new installation cures it.
+# What Slack answers when the token itself is the problem: the app was uninstalled, the
+# token revoked, the workspace deactivated. Terminal, as `invalid_grant` is for Google:
+# retrying repeats the refusal, and only a new installation cures it. `access_denied` is not
+# here: Slack uses it for one resource (a member, a channel), and one refusal must not
+# disable the whole space.
 DEAD_TOKEN_CODES = frozenset(
     {
         "invalid_auth",
@@ -23,7 +25,6 @@ DEAD_TOKEN_CODES = frozenset(
         "not_authed",
         "token_expired",
         "team_access_not_granted",
-        "access_denied",
     }
 )
 
