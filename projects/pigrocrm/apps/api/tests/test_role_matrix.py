@@ -377,6 +377,15 @@ ROWS: list[Row] = [
         google=True,
         params={"code": "codice-finto", "state": "stato-finto"},
     ),
+    # --- slack: the workspace is the space's, so every write is an unscoped admin's
+    # (`require_unscoped_admin`, slack/oauth.py and slack/service.py), checked before
+    # Slack is reached. The install's `oauth/start` GET is configured-first like Drive's and
+    # is walked in `test_slack_api.py`.
+    Row("DELETE", "/api/slack/account", admin_only=True),
+    Row("POST", "/api/slack/account/rematch", admin_only=True),
+    Row("PUT", "/api/slack/users/{user_id}/link", admin_only=True, body={"email": "a@b.example"}),
+    Row("DELETE", "/api/slack/users/{user_id}/link", admin_only=True),
+    Row("PUT", "/api/slack/channel", admin_only=True, body={"channel_id": None}),
     # --- email drafts: every mutation is `require_write` (gmail/drafts.py, send.py) --
     # `send` and `reconcile` behind the installation-configured gate too: unconfigured
     # they answer 409 before the role asks anything, so they walk under Google settings.
