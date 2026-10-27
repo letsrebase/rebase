@@ -190,6 +190,7 @@ async def test_the_admin_tools_read_and_move_a_candidate_without_the_cv(
             "add_company_comment",
             "list_team_requests",
             "list_team_proposals",
+            "list_ai_config",
             "get_team_request",
             "set_team_request_summary",
             "contact_team_talents",

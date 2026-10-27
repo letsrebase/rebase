@@ -37,6 +37,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from rebase_core.admin_tokens import AdminRead
+from rebase_core.ai_config import AiConfigService
 from rebase_core.amounts import NotAnAmount, italian_amount
 from rebase_core.campaigns.service import CampaignService
 from rebase_core.cards import CardWriter
@@ -893,6 +894,18 @@ def build_server(
         return _run(
             lambda s: CompanyService(s).revert(UUID(company_id), UUID(action_id), admin().id)
         )
+
+    # ---- «Modelli AI» (REB-833): read only, never a key ------------------------------
+
+    @mcp.tool()
+    def list_ai_config() -> dict[str, Any]:
+        """«Modelli AI», solo lettura: per ogni fornitore se la chiave c'è («configurata,
+        finisce con …abcd», mai la chiave) e se è acceso; per ogni compito (`card`,
+        `team_proposal`) fornitore, modello, livello di ragionamento, massimo di token,
+        tetto giornaliero in euro, quanto ha speso oggi e perché non può partire, se non
+        può; i prezzi per milione di token e la spesa del mese per compito e fornitore.
+        Le chiavi si cambiano solo dalla pagina: nessun tool le scrive."""
+        return _run(lambda s: AiConfigService(s, team_settings()).read())
 
     # ---- the team requests, the engine, and the talent cloud (REB-520, spec § 8) -------
 

@@ -82,6 +82,7 @@ running the core service the admin area runs, with the calling admin as the acto
 
 - `list_team_requests`, `get_team_request`: «Richieste team» and a request's page.
 - `list_team_proposals`: «Proposte», every «Proponi il team» asked, filed or not.
+- `list_ai_config`: «Modelli AI», read only: providers (the hint, never a key), tasks, prices, the month's spend. No tool writes a key.
 - `set_team_request_summary`: «Salva il riassunto», refused while it names the company.
 - `contact_team_talents`: «Contatta i talenti», or with `only_silent` «Rimanda a chi non ha risposto».
 - `set_team_request_status`: «Segna come contattata», «Chiudi», with an optional note.
@@ -89,6 +90,12 @@ running the core service the admin area runs, with the calling admin as the acto
 - `get_freelancer_card`, `regenerate_freelancer_card`: the anonymous card, and «Rigenera scheda». The card's `seniority` and `anni` are the admin's when `override_freelancer` set them (`seniority`, `anni`), Claude's otherwise; `anni` is `null` and `seniority_incerta` true when the CV dates no role (REB-799).
 - `set_freelancer_vetted`: «Segna come verificato» and «Togli la verifica».
 - `grant_talent_cloud`, `revoke_talent_cloud`, `list_talent_cloud_grants`: the cloud's grants.
+
+«Modelli AI» (`/hub/admin/modelli-ai`, REB-833, `routers/ai.py` under `/api/hub/admin/ai`) is
+where an admin replaces a provider's key (write-only: the answer is «configurata, finisce con
+…abcd»), picks each task's provider, model, effort, token and daily euro cap, edits the price
+table and reads the month's spend. «Prova» sends one fixed non-personal prompt through the
+task's own seam, recorded as `purpose="prova"`, so it spends the task's cap.
 
 `get_talento` and `list_talenti` carry `vetted_at` and whether an anonymous card exists.
 Since REB-778 each `list_talenti` row also carries the card's `posizione` and the
