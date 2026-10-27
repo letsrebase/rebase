@@ -124,16 +124,18 @@ const STALE_SENTENCES: Record<string, string> = {
   source: 'Da aggiornare: le fonti o i dati della hub sono cambiati dopo che la scheda è stata scritta',
   prompt: 'Da aggiornare: esiste una versione più recente del prompt',
 }
+// The card's own order, which a stored `fonti` (a JSONB object, keys sorted by length) does not keep.
 const FIELD_LABELS: Record<string, string> = {
   ruolo: 'Ruolo',
-  seniority: 'Seniority',
   anni: 'Esperienza',
+  seniority: 'Seniority',
   competenze: 'Competenze',
   settori: 'Settori',
   lingue: 'Lingue',
   luogo: 'Luogo',
   sintesi: 'Sintesi',
 }
+const PROVIDER_LABELS: Record<string, string> = { anthropic: 'Anthropic', openai: 'OpenAI', google: 'Google' }
 
 /** `cv` -> «CV», `link:2` -> «Link 2»: the keys the model cites, in the page's words. */
 function sourceLabel(key: string): string {
@@ -152,23 +154,28 @@ function conflictSentence(conflict: CardConflict): string {
 }
 
 function Provenance({ provenance }: { provenance: CardProvenance }) {
-  const fields = Object.entries(provenance.fonti).filter(([, keys]) => keys.length > 0)
+  const written = Object.keys(provenance.fonti).length > 0
+  const fields = Object.keys(FIELD_LABELS).filter((field) => field in provenance.fonti)
   return (
     <div className="space-y-2 rounded-md border p-3 text-sm">
       <p className="font-medium">Da dove viene la scheda</p>
       {provenance.stale && <p className="text-muted-foreground">{STALE_SENTENCES[provenance.stale]}</p>}
       <dl className="grid gap-x-6 gap-y-2 sm:grid-cols-[10rem_1fr]">
         <Field label="Scritta da">
-          {provenance.provider ?? 'modello non registrato'} · Prompt v{provenance.prompt_version}
+          {provenance.provider ? (PROVIDER_LABELS[provenance.provider] ?? provenance.provider) : 'modello non registrato'}{' '}
+          · Prompt v{provenance.prompt_version}
         </Field>
         <Field label="Fonti, secondo il modello">
-          {fields.length ? (
+          {written ? (
             <ul>
-              {fields.map(([field, keys]) => (
-                <li key={field}>
-                  {FIELD_LABELS[field] ?? field}: {keys.map(sourceLabel).join(', ')}
-                </li>
-              ))}
+              {fields.map((field) => {
+                const keys = provenance.fonti[field] ?? []
+                return (
+                  <li key={field}>
+                    {FIELD_LABELS[field]}: {keys.length ? keys.map(sourceLabel).join(', ') : 'nessuna'}
+                  </li>
+                )
+              })}
             </ul>
           ) : (
             'Scheda scritta prima della registrazione delle fonti'
@@ -179,7 +186,7 @@ function Provenance({ provenance }: { provenance: CardProvenance }) {
             <ul>
               {provenance.sources.map((source) => (
                 <li key={source.key}>
-                  {sourceLabel(source.key)}: {source.kind === 'github' ? 'GitHub' : 'link'} {source.ref}, letta il{' '}
+                  {sourceLabel(source.key)}: {source.ref}, letta il{' '}
                   {formatDateTime(source.fetched_at)}
                   {source.status !== 'ok' && ` (${source.status})`}
                 </li>

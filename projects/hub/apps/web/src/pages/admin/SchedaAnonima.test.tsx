@@ -258,9 +258,9 @@ describe('«Scheda anonima» on the talent page (REB-514, spec § 2.1, § 5.1)',
     expect(within(card).getByText('Ruolo: CV, GitHub')).toBeInTheDocument()
     expect(within(card).getByText('Competenze: CV, Link 2')).toBeInTheDocument()
     expect(within(card).getByText('Sintesi: Dati della hub')).toBeInTheDocument()
-    expect(within(card).getByText(/anthropic · Prompt v2/)).toBeInTheDocument()
-    expect(within(card).getByText(/GitHub ada, letta il/)).toBeInTheDocument()
-    expect(within(card).getByText(/link https:\/\/ada.dev, letta il .*\(non raggiungibile\)/)).toBeInTheDocument()
+    expect(within(card).getByText(/Anthropic · Prompt v2/)).toBeInTheDocument()
+    expect(within(card).getByText(/GitHub: ada, letta il/)).toBeInTheDocument()
+    expect(within(card).getByText(/Link 2: https:\/\/ada.dev, letta il .*\(non raggiungibile\)/)).toBeInTheDocument()
     expect(
       within(card).getByText('Gli incarichi completati in hub fanno 12 anni, la scheda ne dichiara 9 (date del CV)'),
     ).toBeInTheDocument()
