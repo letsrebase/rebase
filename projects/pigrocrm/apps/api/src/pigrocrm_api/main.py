@@ -43,6 +43,7 @@ from pigrocrm_api.routers import (
     proposals,
     push,
     reminders,
+    scheduled_jobs,
     schema,
     search,
     space_settings,
@@ -142,6 +143,8 @@ def create_app() -> FastAPI:
         reminders,
         # REB-738: the browsers a person receives reminders on.
         push,
+        # REB-764: what the cron commands last did in this space.
+        scheduled_jobs,
     ):
         app.include_router(module.router)
 

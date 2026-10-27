@@ -127,7 +127,7 @@ describe('SettingsLayout (the /app/settings route guard)', () => {
     )
   })
 
-  it('keeps Promemoria behind the gate for a member, and shows an admin it beside Automazioni', () => {
+  it('keeps Promemoria behind the gate for a member, and shows an admin it beside Automazioni and Esecuzioni', () => {
     mockAuth.isAdmin = false
     mockLocation.pathname = '/app/settings/reminders'
     const { unmount } = render(<SettingsLayout />)
@@ -140,6 +140,7 @@ describe('SettingsLayout (the /app/settings route guard)', () => {
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
       'Promemoria',
       'Automazioni',
+      'Esecuzioni',
     ])
     expect(screen.getByRole('tab', { name: 'Promemoria' })).toHaveAttribute(
       'href',
@@ -232,6 +233,23 @@ describe('SettingsLayout (the /app/settings route guard)', () => {
       'href',
       '/app/settings/automations',
     )
+  })
+
+  /** REB-764: the page that says whether the cron commands ran, behind the same gate. */
+  it('offers the Esecuzioni tab to an admin and keeps it from a member', () => {
+    mockAuth.isAdmin = true
+    mockLocation.pathname = '/app/settings/jobs'
+    const { unmount } = render(<SettingsLayout />)
+    expect(screen.getByRole('tab', { name: 'Esecuzioni' })).toHaveAttribute(
+      'href',
+      '/app/settings/jobs',
+    )
+    unmount()
+
+    mockAuth.isAdmin = false
+    render(<SettingsLayout />)
+    expect(screen.getByRole('heading', { name: 'Accesso riservato' })).toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'Esecuzioni' })).toBeNull()
   })
 
   it('no longer offers a Token tab here — it moved to its own, non-admin-gated route', () => {

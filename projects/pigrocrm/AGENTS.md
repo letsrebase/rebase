@@ -89,6 +89,12 @@ starts on its own; the runbooks are `docs/superpowers/notes/2026-09-09-gmail-cro
 which also has the preview's line (`/opt/pigrocrm-preview`) and the healthchecks.io ping, and
 `docs/superpowers/notes/2026-10-26-automations-cron-runbook.md`.
 
+After each space a real run writes that space's row in `reminder_job_run`
+(`core/reminders/jobs.py`, `JobClock`): the last run that ended and, when the latest attempt
+failed, why. Impostazioni → Esecuzioni, `GET /api/scheduled-jobs`, the MCP tool
+`describe_scheduled_jobs` and the reminder `job_late` read it. A fifth command is a new
+entry in `SCHEDULED_JOBS` and a write through `JobClock`, not a second table.
+
 ## Things that will cost you an afternoon if you do not know them
 
 **The document renderer shells out to Pandoc and Typst.** Roughly thirty tests fail

@@ -177,6 +177,7 @@ const SETTINGS_PATHS = {
   drive: '/app/settings/drive',
   reminders: '/app/settings/reminders',
   automations: '/app/settings/automations',
+  jobs: '/app/settings/jobs',
 } as const satisfies Record<SettingsTabValue, string>
 /**
  * «Impostazioni», whose sub-items are the six settings groups of the REB-770 brief (option

@@ -4448,6 +4448,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/scheduled-jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Describe
+         * @description Le operazioni che il cron lancia sul server (sincronizzazione Gmail, passaggio dei
+         *     promemoria, automazioni, riepilogo settimanale): per ciascuna l'ultimo giro finito,
+         *     l'ultimo tentativo fallito e se è in ritardo. Solo per gli amministratori.
+         */
+        get: operations["describe_api_scheduled_jobs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -10784,6 +10806,60 @@ export interface components {
         RootSpace: {
             /** Slug */
             slug: string | null;
+        };
+        /** ScheduledJobRead */
+        ScheduledJobRead: {
+            /**
+             * Key
+             * @description Il nome del comando: `gmail-sync`, `reminders`, ...
+             */
+            key: string;
+            /**
+             * Label
+             * @description Come si chiama nell'app
+             */
+            label: string;
+            /**
+             * Command
+             * @description La riga che il cron lancia
+             */
+            command: string;
+            /**
+             * Schedule
+             * @description Ogni quanto deve girare
+             */
+            schedule: string;
+            /**
+             * State
+             * @description `ok`: l'ultimo giro è finito e non è vecchio. `failed`: l'ultimo tentativo è fallito (`failure` dice perché). `late`: nessun giro finito da troppo tempo. `never_run`: non ha mai girato in questo spazio. `not_configured`: non c'è niente da fare qui, per esempio nessuna casella Gmail collegata.
+             * @enum {string}
+             */
+            state: "ok" | "failed" | "late" | "never_run" | "not_configured";
+            /**
+             * Last Run At
+             * @description Quando l'ultimo giro è finito senza errori, `null` se non è mai successo
+             */
+            last_run_at: string | null;
+            /**
+             * Last Failure At
+             * @description Quando è fallito l'ultimo tentativo, solo se è anche l'ultimo
+             */
+            last_failure_at: string | null;
+            /**
+             * Failure
+             * @description Perché è fallito: una parola breve, per esempio il nome dell'errore, mai un testo che cita dati
+             */
+            failure: string | null;
+            /**
+             * Stale After Minutes
+             * @description Dopo quanti minuti senza un giro finito un'operazione risulta in ritardo
+             */
+            stale_after_minutes: number;
+        };
+        /** ScheduledJobsRead */
+        ScheduledJobsRead: {
+            /** Jobs */
+            jobs: components["schemas"]["ScheduledJobRead"][];
         };
         /** SearchGroup */
         SearchGroup: {
@@ -45713,6 +45789,123 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    describe_api_scheduled_jobs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduledJobsRead"];
+                };
             };
             /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
             403: {

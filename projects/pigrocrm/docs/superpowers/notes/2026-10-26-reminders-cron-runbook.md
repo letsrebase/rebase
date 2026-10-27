@@ -37,8 +37,8 @@ quarter of an hour after a deploy may print that line for every space. It is not
 ### The dead-man's switch
 
 A pass that never runs cannot tell anybody, and the reminders' own `job_late` alert
-(spec §3.5) watches the pass from inside the space, which is no use when cron is the thing
-that stopped. So the host watches it from outside, with a healthchecks.io check
+(spec §3.5; since REB-764 it watches the automations and the digest too) watches the pass
+from inside the space, which is no use when cron is the thing that stopped. So the host watches it from outside, with a healthchecks.io check
 (`docs/design/DECISIONS.md`, 2026-10-19), the way the password manager's backup is watched:
 the line pings the check after every run **that exits 0**, and the check mails when a
 couple of quarters of an hour pass with no ping.
@@ -112,12 +112,16 @@ All of it in the space's own database, nothing across spaces (spec §9.3):
   pass; email and push write their own rows here after the provider took the message
   (`2026-10-27-reminder-channels-runbook.md`), Slack with its own card.
 - `reminder_ack`, `reminder_snooze`: what each person did, ended with the occurrence.
-- `reminder_job_run`: one row, `reminders`, rewritten at the end of every real pass (not by
-  a rehearsal, and not by a pass that failed, since it is written in the same transaction
-  as the ledger). It is what `job_late` will read, and what answers «did it run»:
+- `reminder_job_run`: one row per scheduled job, and since REB-764 all four commands write
+  it (`gmail-sync`, `reminders`, `automations`, `digest`; their runbooks say when). The
+  `reminders` row is rewritten at the end of every real pass (not by a rehearsal, and not by
+  a pass that failed, since it is written in the same transaction as the ledger), and a pass
+  that failed writes the exception's type in `failed_at` and `failure` from outside that
+  transaction, leaving `ran_at`, the last good run, where it was. It is what `job_late`
+  reads, what Impostazioni → Esecuzioni shows, and what answers «did it run»:
 
 ```
-docker compose --env-file ../../.env exec -T db psql -U pigrocrm -d <the space's database> -c "select job, ran_at from reminder_job_run"
+docker compose --env-file ../../.env exec -T db psql -U pigrocrm -d <the space's database> -c "select job, ran_at, failed_at, failure from reminder_job_run"
 ```
 
 ## 5. When a pass looks stuck

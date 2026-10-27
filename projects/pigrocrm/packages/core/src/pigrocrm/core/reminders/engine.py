@@ -37,6 +37,7 @@ from pigrocrm.core.reminders.detect import DetectorContext, Reminder
 from pigrocrm.core.reminders.detectors import DETECTORS
 from pigrocrm.core.reminders.directory import Directory
 from pigrocrm.core.reminders.dispatch import IN_APP, ChannelResult
+from pigrocrm.core.reminders.jobs import JobClock
 from pigrocrm.core.reminders.ledger import DeliveryIdentity, ReminderLedger
 from pigrocrm.core.reminders.preferences import ReminderSettings
 from pigrocrm.core.reminders.push_subscriptions import PushSubscription
@@ -243,7 +244,7 @@ class ReminderEngine:
             evaluation.ran, evaluation.raised, before=evaluation.evaluated_at
         )
         if job is not None:
-            ledger.touch_job(job)
+            JobClock(self.session).succeeded(job)
         self.session.commit()
         return PassResult(
             raised=len(evaluation.reminders),

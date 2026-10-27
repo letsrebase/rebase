@@ -34,6 +34,13 @@ from pigrocrm.core.gmail.sync import GmailSyncService
 from pigrocrm.core.gmail.tokens import GoogleTokenClient
 from pigrocrm.core.gmail.transport import GmailTransport
 from pigrocrm.core.mail import sender_from_settings
+from pigrocrm.core.reminders.jobs import (
+    AUTOMATIONS_JOB,
+    DIGEST_JOB,
+    GMAIL_SYNC_JOB,
+    REMINDER_PASS_JOB,
+    JobClock,
+)
 from pigrocrm.core.reminders.push import generate_vapid_keys, push_sender_from_settings
 from pigrocrm.core.reminders.run import ReminderOutcome, ReminderRun
 
@@ -412,6 +419,13 @@ def digest(*, slug: str | None, data: date | None, forza: bool, dry_run: bool) -
     shutting it down loses whatever was still in the queue -- which, for a command that
     runs for a few seconds once a week, is potentially every event it just produced. It
     is a no-op on an installation with no key, which is most of them.
+    **The space's clock** (REB-764). After each space a real run writes its row in
+    `reminder_job_run` (`_record_job`): a success moves `ran_at`, a failure records a short
+    word for why and leaves `ran_at` alone. Impostazioni → Esecuzioni and `job_late` read
+    it. A rehearsal writes nothing, and a space whose database cannot be reached cannot be
+    written to and reads as late, which is true. A clock that cannot be written after a run
+    that worked is one line on `stderr` (`orologio non scritto`), which the digest, whose
+    exit status is always 0, does not turn into an exit status.
     """
     from sqlalchemy import create_engine, select
 
@@ -489,12 +503,21 @@ def digest(*, slug: str | None, data: date | None, forza: bool, dry_run: bool) -
                     ).send_for_space(
                         space_slug, owner_email, settimana, forza=forza, dry_run=dry_run
                     )
+                if not dry_run:
+                    _record_job(
+                        engine,
+                        DIGEST_JOB,
+                        space_slug,
+                        esito.motivo if esito.esito == "saltato" else None,
+                    )
             except Exception as exc:  # noqa: BLE001 - one space must not stop the others
                 # `send_for_space` answers `saltato` for everything that fails once it has
                 # started; what is left for here is what fails before that -- a database
                 # that cannot be reached, a schema behind the image's. The same line
                 # either way, because it is the same thing for the operator reading it.
                 print(f"{space_slug}: saltato ({type(exc).__name__})", file=sys.stderr)
+                if not dry_run:
+                    _record_job(engine, DIGEST_JOB, space_slug, type(exc).__name__, quiet=True)
                 continue
             finally:
                 engine.dispose()
@@ -551,6 +574,12 @@ def reminders(*, slug: str | None, data: date | None, dry_run: bool) -> int:
     attività due that morning, the overdue ones that day) and only with `--dry-run`: a
     real pass of another day would end and record things against today's reminders. A
     rehearsal is a call to the same code as the cron.
+
+    **The space's clock** (REB-764). The pass writes its own success in the transaction
+    that ends it, so only a failure is written from here (`_record_job`, a word for why:
+    `ran_at` stays the last success). Impostazioni → Esecuzioni and `job_late` read the
+    row. A rehearsal writes nothing, and a space whose database cannot be reached cannot be
+    written to and reads as late, which is true.
     """
     from sqlalchemy import create_engine, select
 
@@ -630,6 +659,8 @@ def reminders(*, slug: str | None, data: date | None, dry_run: bool) -> int:
         except Exception as exc:  # noqa: BLE001 - one space must not stop the others
             print(f"{space_slug}: saltato ({type(exc).__name__})", file=sys.stderr)
             failed = True
+            if not dry_run:
+                _record_job(engine, REMINDER_PASS_JOB, space_slug, type(exc).__name__, quiet=True)
             continue
         finally:
             engine.dispose()
@@ -691,6 +722,14 @@ def automations(*, slug: str | None, data: date | None, dry_run: bool) -> int:
     the counters of a rehearsal are the real ones, and `--data` evaluates another day and
     only with `--dry-run`: a real pass for another day would open attivita due on days that
     are not today.
+
+    **The space's clock** (REB-764). After each space a real run writes its row in
+    `reminder_job_run` (`_record_job`): a success moves `ran_at`, a failure records a short
+    word for why and leaves `ran_at` alone. Impostazioni → Esecuzioni and `job_late` read
+    it. A rehearsal writes nothing, and a space whose database cannot be reached cannot be
+    written to and reads as late, which is true. A clock that cannot be written after a run
+    that worked is one line on `stderr` (`orologio non scritto`) and so exit 1, by the rule
+    above: the ping should not say a space is fine when its own database refuses a write.
     """
     from sqlalchemy import create_engine, select
 
@@ -738,9 +777,13 @@ def automations(*, slug: str | None, data: date | None, dry_run: bool) -> int:
         try:
             with session_factory(engine)() as space:
                 report = AutomationPass(space, settings).run(today=data, dry_run=dry_run)
+            if not dry_run and not _record_job(engine, AUTOMATIONS_JOB, space_slug, None):
+                failed = True
         except Exception as exc:  # noqa: BLE001 - one space must not stop the others
             print(f"{space_slug}: saltato ({type(exc).__name__})", file=sys.stderr)
             failed = True
+            if not dry_run:
+                _record_job(engine, AUTOMATIONS_JOB, space_slug, type(exc).__name__, quiet=True)
             continue
         finally:
             engine.dispose()
@@ -830,6 +873,14 @@ def gmail_sync(email: str | None) -> int:
     cycle runs in this process, not in the API's), so that where it broke can be found;
     its message does not, for the reason the type stands in for it everywhere here. A
     space whose settings or mailboxes cannot be read gets its frames the same way.
+
+    **The space's clock** (REB-764). After each space that has a connected mailbox the run
+    writes its row in `reminder_job_run` (`_record_job`): a success moves `ran_at`, a failure
+    records the first refusal's exception class and leaves `ran_at` alone. Impostazioni →
+    Esecuzioni reads it. A run narrowed with `--email` writes nothing, and a space whose
+    database cannot be reached cannot be written to and reads as late, which is true. A
+    clock that cannot be written after a cycle that worked is one line on `stderr`
+    (`orologio non scritto`) and so exit 1, by the rule above.
     """
     from sqlalchemy import create_engine, select
 
@@ -889,6 +940,8 @@ def gmail_sync(email: str | None) -> int:
                 # `_sync_mailbox`.
                 traceback.print_tb(exc.__traceback__, file=sys.stderr)
                 failed = unread = True
+                if email is None:
+                    _record_job(engine, GMAIL_SYNC_JOB, label, type(exc).__name__, quiet=True)
                 continue
             connected.extend(address for _, address in mailboxes)
             if email is not None:
@@ -905,12 +958,34 @@ def gmail_sync(email: str | None) -> int:
                 client_secret=space_settings.google_client_secret,
                 transport=transport,
             )
+            # What each mailbox's cycle said, `None` when it ran. The space's clock is one
+            # row, so it records the first failure of the space, which is what the panel
+            # shows next to «Gmail non riesce».
+            refusals: list[str] = []
+            skipped = False
             for account_id, address in mailboxes:
                 attempted += 1
-                if not _sync_mailbox(
+                outcome = _sync_mailbox(
                     factory, space_settings, transport, tokens, f"{label} {address}", account_id
-                ):
+                )
+                if outcome == _CYCLE_RUNNING:
+                    skipped = True
+                elif outcome is not None:
                     failed = True
+                    refusals.append(outcome)
+            # A run narrowed to one address by `--email` is not the space's sync: it would
+            # clear a failure of a mailbox it did not visit. A mailbox whose cycle another
+            # run still holds did not complete one either, so a space with one of those and
+            # no refusal records nothing: «ran to the end» is not said of a skipped cycle,
+            # and a sync stuck for good then goes late instead of reading «in regola».
+            if (
+                email is None
+                and (refusals or not skipped)
+                and not _record_job(
+                    engine, GMAIL_SYNC_JOB, label, refusals[0] if refusals else None
+                )
+            ):
+                failed = True
         finally:
             engine.dispose()
 
@@ -945,6 +1020,11 @@ def _nothing_to_sync(email: str | None, connected: Sequence[str], *, unread: boo
     return "nessuna casella Google collegata"
 
 
+# What `_sync_mailbox` answers for a cycle another run holds: neither a completed cycle nor a
+# refusal, which is not an exception class and so cannot be mistaken for one.
+_CYCLE_RUNNING = "cycle running"
+
+
 def _sync_mailbox(
     factory: sessionmaker[Session],
     settings: Settings,
@@ -952,11 +1032,13 @@ def _sync_mailbox(
     tokens: GoogleTokenClient,
     label: str,
     account_id: UUID,
-) -> bool:
-    """One mailbox's cycle and its line, `True` when the cycle ran. Its own session,
+) -> str | None:
+    """One mailbox's cycle and its line: `None` when the cycle ran, `_CYCLE_RUNNING` when
+    another run held it and nothing was done, and otherwise the name of the exception class
+    that stopped it (what the space's clock records). Its own session,
     opened and closed inside the guard: a cycle that fails halfway leaves nothing open for
-    the next mailbox, and a session that cannot be opened, or closed, costs this mailbox
-    its line and not the rest of the run."""
+    the next mailbox, and a session that cannot be opened, or closed, costs this mailbox its
+    line and not the rest of the run."""
     try:
         with factory() as session:
             account = GmailRepository(session).account(account_id)
@@ -973,7 +1055,9 @@ def _sync_mailbox(
             ).sync(actor)
     except (DomainError, GoogleCallFailed) as exc:
         print(f"{_now()} gmail-sync {label}: {_reason(exc)}", file=sys.stderr)
-        return False
+        # The class and not the sentence: the sentence names the mailbox and its owner, and
+        # the clock is read by every admin and by agents. The panel words each class.
+        return type(exc).__name__
     except Exception as exc:  # noqa: BLE001 - one mailbox must not stop the others
         print(f"{_now()} gmail-sync {label}: saltato ({type(exc).__name__})", file=sys.stderr)
         # The frames and never the message: where it broke is what an unforeseen failure
@@ -981,11 +1065,41 @@ def _sync_mailbox(
         # or a statement's parameters (a correspondent's address, in an insert), which
         # this log promises never to hold.
         traceback.print_tb(exc.__traceback__, file=sys.stderr)
-        return False
+        return type(exc).__name__
     # `flush`: under `docker compose exec -T` stdout is a pipe, so Python buffers it by
     # the block while stderr goes out at once, and `2>&1` in the cron line would put every
     # failure of the run ahead of the root's line in the log.
     print(f"{_now()} gmail-sync {label}: {_outcome(report)}", flush=True)
+    return _CYCLE_RUNNING if report.already_running else None
+
+
+def _record_job(
+    engine: Engine, job: str, label: str, failure: str | None, *, quiet: bool = False
+) -> bool:
+    """Writes the space's clock for `job` (REB-764): a success when `failure` is `None`,
+    otherwise a failed attempt with that text. In a session and a transaction of its own,
+    after the command's own work has committed or rolled back, so it can neither be undone
+    by a failure nor undo anything.
+
+    `True` when it is written. A success that cannot be written is said on `stderr` with
+    the exception's type, as every failure of this module is, because a job whose clock
+    stops moving reads as late and the log should say why; `quiet` is for a failure that
+    could not be written either, which is the same space answering the same way and
+    already has its own line (a schema behind the image's, a database that does not
+    answer). Never raises: the clock is an account of the run and the run must not depend
+    on it."""
+    try:
+        with session_factory(engine)() as session:
+            clock = JobClock(session)
+            if failure is None:
+                clock.succeeded(job)
+            else:
+                clock.failed(job, failure)
+            session.commit()
+    except Exception as exc:  # noqa: BLE001 - the clock must not stop the walk
+        if not quiet:
+            print(f"{label}: orologio non scritto ({type(exc).__name__})", file=sys.stderr)
+        return False
     return True
 
 

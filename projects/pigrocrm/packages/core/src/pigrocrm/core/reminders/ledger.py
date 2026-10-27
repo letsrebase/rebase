@@ -1,4 +1,4 @@
-"""The delivery ledger, the summary marker and the job clock (spec 2026-10-26 §8.3).
+"""The delivery ledger and the summary marker (spec 2026-10-26 §8.3); the job clock is `jobs.py`.
 
 **A delivery row is written after the channel accepted the message.** A failed send
 writes nothing, so the next pass finds the reminder undelivered and tries again, as
@@ -38,7 +38,6 @@ from pigrocrm.core.reminders.catalogue import SEVERITY_RANK, Severity, type_of_k
 from pigrocrm.core.reminders.models import (
     ReminderAck,
     ReminderDelivery,
-    ReminderJobRun,
     ReminderSnooze,
     ReminderSummaryRun,
 )
@@ -174,19 +173,3 @@ class ReminderLedger:
             .values(user_id=user_id, day=day)
             .on_conflict_do_nothing(constraint="uq_reminder_summary_run_user_day")
         )
-
-    # -- the job clock -----------------------------------------------------------
-
-    def touch_job(self, job: str, at: datetime | None = None) -> None:
-        """Writes when a scheduled job last ran. Does not commit."""
-        moment = at or datetime.now(UTC)
-        statement = insert(ReminderJobRun).values(job=job, ran_at=moment)
-        self.session.execute(
-            statement.on_conflict_do_update(
-                index_elements=[ReminderJobRun.job],
-                set_={"ran_at": statement.excluded.ran_at, "updated_at": func.now()},
-            )
-        )
-
-    def last_run(self, job: str) -> datetime | None:
-        return self.session.scalar(select(ReminderJobRun.ran_at).where(ReminderJobRun.job == job))

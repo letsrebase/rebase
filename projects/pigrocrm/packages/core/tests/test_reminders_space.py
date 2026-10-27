@@ -38,13 +38,18 @@ from pigrocrm.core.reminders.detectors import DETECTORS
 from pigrocrm.core.reminders.detectors.space import (
     BROKEN,
     MAX_PROPOSALS,
-    REMINDER_PASS_JOB,
     job_subject,
     period_subject,
     subject_period,
 )
 from pigrocrm.core.reminders.engine import Evaluation, ReminderEngine
-from pigrocrm.core.reminders.ledger import ReminderLedger
+from pigrocrm.core.reminders.jobs import (
+    AUTOMATIONS_JOB,
+    DIGEST_JOB,
+    GMAIL_SYNC_JOB,
+    REMINDER_PASS_JOB,
+    JobClock,
+)
 from pigrocrm.core.reminders.models import ReminderJobRun
 from pigrocrm.core.reminders.preferences import ReminderPreferenceService
 from pigrocrm.core.reminders.schemas import ReminderPreferenceWrite
@@ -733,7 +738,7 @@ def test_connection_reminders_go_to_unscoped_admins_and_a_recovered_one_is_gone(
 
 
 def _touch(space: Space, job: str, minutes_ago: int) -> None:
-    ReminderLedger(space.session).touch_job(job, NOON - timedelta(minutes=minutes_ago))
+    JobClock(space.session).succeeded(job, NOON - timedelta(minutes=minutes_ago))
     space.session.flush()
 
 
@@ -776,16 +781,110 @@ def test_a_stale_mailbox_is_connection_failing_and_not_a_second_late_job(space: 
     assert [r for r in reminders if r.type == "job_late"] == []
 
 
-def test_only_the_reminder_pass_is_a_job_and_a_job_nothing_names_is_ignored(
+def test_the_pass_the_automations_and_the_digest_are_watched_not_the_sync_or_a_stranger(
     space: Space,
 ) -> None:
     _touch(space, REMINDER_PASS_JOB, 200)
-    _touch(space, "digest", 99999)
+    _touch(space, AUTOMATIONS_JOB, 60 * 60)
+    _touch(space, DIGEST_JOB, 60 * 24 * 30)
+    _touch(space, GMAIL_SYNC_JOB, 99999)
+    _touch(space, "backup", 99999)
     _gmail(space, synced_hours_ago=3)
 
     subjects = {r.entity_id for r in space.evaluate().reminders if r.type == "job_late"}
 
-    assert subjects == {job_subject(REMINDER_PASS_JOB)}
+    assert subjects == {
+        job_subject(REMINDER_PASS_JOB),
+        job_subject(AUTOMATIONS_JOB),
+        job_subject(DIGEST_JOB),
+    }
+
+
+@pytest.mark.parametrize(
+    ("job", "minutes", "expected"),
+    [
+        # A daily job is late at 26 hours, as the panel says, serious there and critical at
+        # six times that.
+        (AUTOMATIONS_JOB, 26 * 60 - 1, None),
+        (AUTOMATIONS_JOB, 26 * 60, "serious"),
+        (AUTOMATIONS_JOB, 6 * 26 * 60 - 1, "serious"),
+        (AUTOMATIONS_JOB, 6 * 26 * 60, "critical"),
+        # A weekly one at 8 days.
+        (DIGEST_JOB, 8 * 24 * 60 - 1, None),
+        (DIGEST_JOB, 8 * 24 * 60, "serious"),
+        (DIGEST_JOB, 6 * 8 * 24 * 60, "critical"),
+    ],
+)
+def test_a_job_that_runs_less_often_has_the_passes_rungs_scaled_to_its_own_late_point(
+    space: Space, job: str, minutes: int, expected: Severity | None
+) -> None:
+    _touch(space, job, minutes)
+
+    told = space.told("job_late")
+
+    assert told == (
+        {} if expected is None else {space.owner.id: expected, space.other_admin.id: expected}
+    )
+
+
+@pytest.mark.parametrize(
+    ("job", "late_after"), [(AUTOMATIONS_JOB, 26 * 60), (DIGEST_JOB, 8 * 24 * 60)]
+)
+def test_a_low_rung_never_raises_a_daily_or_weekly_job_before_it_is_late(
+    space: Space, job: str, late_after: int
+) -> None:
+    """A space may set the pass's rungs as low as it likes, ten minutes say. That is the
+    pass's own ten minutes: read as minutes of the daily job it would raise it hours after a
+    run that was on time, while the panel says «in regola»."""
+    ReminderPreferenceService(space.session).write(
+        Actor(id=space.owner.id, type="user", role="admin"),
+        "space",
+        "job_late",
+        ReminderPreferenceWrite(ladder={"serious": 10, "critical": 40}),
+    )
+    _touch(space, job, late_after - 1)
+    assert space.told("job_late") == {}
+
+    _touch(space, job, late_after)
+
+    assert set(space.told("job_late")) == {space.owner.id, space.other_admin.id}
+
+
+def test_the_detail_names_the_job_how_long_and_how_often_it_should_run(space: Space) -> None:
+    _touch(space, AUTOMATIONS_JOB, 3 * 24 * 60)
+    _touch(space, DIGEST_JOB, 10 * 24 * 60)
+
+    details = {r.entity_id: r for r in space.evaluate().reminders if r.type == "job_late"}
+
+    automations = details[job_subject(AUTOMATIONS_JOB)]
+    assert automations.title == "Il passaggio delle automazioni è in ritardo"
+    assert automations.detail == (
+        "Il passaggio delle automazioni non parte da 3 giorni: dovrebbe girare ogni giorno alle 6"
+    )
+    digest = details[job_subject(DIGEST_JOB)]
+    assert digest.detail == (
+        "L'invio del riepilogo settimanale non parte da 10 giorni: "
+        "dovrebbe girare ogni lunedì alle 8"
+    )
+
+
+def test_a_job_that_only_ever_failed_is_not_late_and_one_that_fails_stays_late(
+    space: Space,
+) -> None:
+    """Lateness is measured from the last success: a failure is the panel's, and trying
+    does not make a job look alive."""
+    clock = JobClock(space.session)
+    clock.failed(AUTOMATIONS_JOB, "RuntimeError", NOON)
+    space.session.flush()
+    assert space.told("job_late") == {}, "no success yet: nothing to measure from"
+
+    _touch(space, DIGEST_JOB, 9 * 24 * 60)
+    clock.failed(DIGEST_JOB, "RuntimeError", NOON)
+    space.session.flush()
+
+    assert {r.entity_id for r in space.evaluate().reminders if r.type == "job_late"} == {
+        job_subject(DIGEST_JOB)
+    }
 
 
 def test_an_edited_ladder_changes_the_pass_severity_and_nothing_else_can_reach_it(

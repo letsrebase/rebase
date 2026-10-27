@@ -120,3 +120,29 @@ async def test_an_agent_lists_the_reminders_of_its_person(mcp_session: Session) 
     items = listed if isinstance(listed, list) else listed["result"]
     assert [(item["type"], item["severity"]) for item in items] == [("attivita_overdue", "serious")]
     assert items[0]["key"].startswith("attivita_overdue:")
+
+
+async def test_an_admins_agent_reads_how_the_scheduled_jobs_went(mcp_session: Session) -> None:
+    """REB-764: the same read as Impostazioni → Esecuzioni, and an admin's like it."""
+    from pigrocrm.core.reminders.jobs import REMINDER_PASS_JOB, JobClock
+
+    JobClock(mcp_session).succeeded(REMINDER_PASS_JOB)
+    mcp_session.flush()
+    server = _server_for(mcp_session, role="admin")
+
+    async with Client(server) as client:
+        described = _payload(await client.call_tool("describe_scheduled_jobs", {}))
+
+    jobs = {job["key"]: job for job in described["jobs"]}
+    assert list(jobs) == ["gmail-sync", "reminders", "automations", "digest"]
+    assert jobs["reminders"]["state"] == "ok"
+    assert jobs["automations"]["state"] == "never_run"
+
+
+async def test_a_members_agent_cannot_read_the_scheduled_jobs(mcp_session: Session) -> None:
+    server = _server_for(mcp_session)
+
+    async with Client(server) as client:
+        result = await client.call_tool("describe_scheduled_jobs", {})
+
+    assert result.is_error

@@ -96,6 +96,7 @@ def cli_gmail(
         connection.execute(text("delete from activities where entity_type = 'google_account'"))
         connection.execute(text("delete from gmail_known_addresses"))
         connection.execute(text("delete from google_accounts"))
+        connection.execute(text("delete from reminder_job_run"))
         connection.execute(text("delete from users where email like 'user-%@example.it'"))
         connection.execute(text("delete from customers where ragione_sociale like 'CLI %'"))
 
@@ -260,6 +261,24 @@ def test_a_cycle_already_running_is_reported_and_is_not_a_failure(
             repo.release_sync_lock(account.id)
 
     assert "già in corso" in capsys.readouterr().out
+    # REB-764: a cycle somebody else holds is neither a run nor a failure, so the space's
+    # clock does not move: a sync stuck for good must go late, not read «in regola».
+    with db_engine.connect() as connection:
+        assert (
+            connection.execute(
+                text("select count(*) from reminder_job_run where job = 'gmail-sync'")
+            ).scalar_one()
+            == 0
+        )
+
+    assert _run() == 0
+    with db_engine.connect() as connection:
+        assert (
+            connection.execute(
+                text("select ran_at is not null from reminder_job_run where job = 'gmail-sync'")
+            ).scalar_one()
+            is True
+        )
 
 
 def test_the_cron_does_not_act_for_a_deactivated_owner(

@@ -159,10 +159,10 @@ describe('the Avvisi page', () => {
   it('shows a reminder about an unknown kind of record, with no link', async () => {
     fakeReminders([
       reminder({
-        key: 'job_late:reminders',
-        label: 'Lavoro in ritardo',
+        key: 'something_new:1',
+        label: 'Cosa nuova',
         title: 'Manutenzione Acme 2026',
-        entity: 'job',
+        entity: 'something_new',
         severity: 'warning',
       }),
     ])
@@ -172,6 +172,22 @@ describe('the Avvisi page', () => {
     expect(screen.queryByRole('link')).not.toBeInTheDocument()
     // It still carries the actions: a reminder is not useless for having no page.
     expect(screen.getByRole('button', { name: 'Visto' })).toBeInTheDocument()
+  })
+
+  it('opens Esecuzioni from a late job, which has no record of its own (REB-764)', async () => {
+    fakeReminders([
+      reminder({
+        key: 'job_late:reminders',
+        label: 'Operazione pianificata in ritardo',
+        title: 'Il passaggio dei promemoria è in ritardo',
+        entity: 'job',
+        severity: 'serious',
+      }),
+    ])
+    page()
+
+    const link = await screen.findByRole('link', { name: /passaggio dei promemoria/i })
+    expect(link).toHaveAttribute('href', '/app/settings/jobs')
   })
 
   it('marks a reminder seen: it leaves the list and the count, and waits under «Già gestiti»', async () => {
