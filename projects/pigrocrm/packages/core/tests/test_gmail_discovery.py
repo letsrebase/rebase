@@ -178,6 +178,19 @@ def test_discovery_answers_who_at_the_domain_wrote_or_was_written_to(db_session:
     assert found["sarah@example.com"].messaggi == 1
 
 
+def test_a_display_name_longer_than_a_person_takes_is_clipped(db_session: Session) -> None:
+    """The page sends the name back to add the address as a person, and that request
+    refuses what the schema does not hold."""
+    account = connected_account(db_session)
+    customer = _example(db_session)
+    fake = FakeGmail()
+    fake.messages["m1"] = _mail(1, frm=f"{'A' * 400} <marco@example.com>", to=MAILBOX, thread="t1")
+
+    report = sync_service(db_session, fake).discover(customer.id, actor=actor_for(account))
+
+    assert [len(row.nome) for row in report.corrispondenti] == [255]
+
+
 def test_the_most_frequent_correspondent_comes_first(db_session: Session) -> None:
     account = connected_account(db_session)
     customer = _example(db_session)

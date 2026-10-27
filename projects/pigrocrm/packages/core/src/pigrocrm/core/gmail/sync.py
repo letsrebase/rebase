@@ -47,6 +47,7 @@ from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings, decode_google_token_key, require_gmail_configured
 from pigrocrm.core.customers.models import Customer
+from pigrocrm.core.customers.schemas import RAGIONE_SOCIALE_MAX_LENGTH
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.gmail.account import GoogleAccountService
 from pigrocrm.core.gmail.crypto import unseal
@@ -454,7 +455,11 @@ class GmailSyncService:
                     if entry.last is None or parsed.internal_date > entry.last:
                         entry.last = parsed.internal_date
                     if not entry.name:
-                        entry.name = parsed.display_names.get(address, "")
+                        # Clipped to what the add-as-person request takes (a header can
+                        # carry a longer name, and the page sends this one back verbatim).
+                        entry.name = parsed.display_names.get(address, "")[
+                            :RAGIONE_SOCIALE_MAX_LENGTH
+                        ]
         known = set(self.roster.known_addresses())
         report.corrispondenti = [
             DiscoveredCorrespondent(
