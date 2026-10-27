@@ -27,6 +27,7 @@ from pigrocrm.core.reminders.schemas import (
 )
 from pigrocrm.core.reminders.service import ReminderService
 from pigrocrm.core.reminders.state import ReminderStateService
+from pigrocrm_mcp.annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
 from pigrocrm_mcp.context import McpContext
 
 
@@ -41,68 +42,65 @@ def _state(context: McpContext) -> ReminderStateService:
 def register(
     mcp: MCPServer, context: McpContext, guard: Callable[..., Any], settings: Settings
 ) -> None:
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY)
     @guard
     def list_promemoria() -> list[dict[str, Any]]:
-        """I promemoria di chi chiede, ricalcolati adesso dai dati, i più gravi per primi.
-
-        Ogni voce dice `status` (`open`, `acknowledged`, `snoozed`), che cosa è
-        (`entity`, `entity_id`) e `key`, quello che serve a `acknowledge_promemoria` e
-        `snooze_promemoria`. Quando la causa si risolve, il promemoria sparisce da solo."""
+        """I promemoria di chi chiede, ricalcolati adesso, i più gravi per primi. Ogni voce ha
+        `status` (`open`, `acknowledged`, `snoozed`), `entity`, `entity_id` e `key`, che serve a
+        `acknowledge_promemoria` e `snooze_promemoria`. Sparisce da solo quando la causa si
+        risolve.
+        """
         reminders = ReminderService(context.session, settings).list(context.actor)
         return [item.model_dump(mode="json") for item in reminders]
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY)
     @guard
     def list_promemoria_types() -> list[dict[str, Any]]:
-        """I tipi di promemoria che il CRM alza da solo, con le soglie predefinite.
-
-        Un promemoria non è salvato: si ricalcola a ogni passaggio dai dati, e sparisce
-        quando la causa è risolta. Ogni tipo ha una scala di gravità (`warning`,
-        `serious`, `critical`) che sale con i giorni o le ore."""
+        """I tipi di promemoria che il CRM alza da solo, con le soglie predefinite. Ogni tipo ha
+        una scala di gravità (`warning`, `serious`, `critical`) che sale con giorni o ore.
+        """
         return [item.model_dump(mode="json") for item in _preferences(context).catalogue()]
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY)
     @guard
     def get_promemoria_preferences() -> dict[str, Any]:
-        """Le preferenze sui promemoria: i valori dello spazio, quelli della persona che
-        chiede e quello che ne risulta per lei (`effective`: la sua scelta, poi il
-        valore dello spazio, poi il predefinito)."""
+        """Le preferenze sui promemoria: valori dello spazio, della persona che chiede e
+        `effective` (sua scelta, poi spazio, poi predefinito).
+        """
         return _preferences(context).read(context.actor).model_dump(mode="json")
 
-    @mcp.tool()
+    @mcp.tool(annotations=DESTRUCTIVE)
     @guard
     def set_promemoria_preference(scope: str, type: str, changes: dict[str, Any]) -> dict[str, Any]:
-        """Imposta le preferenze di un tipo di promemoria, o con `type` = `general` le
-        ore di silenzio e l'ora del riepilogo.
+        """Imposta le preferenze di un tipo di promemoria, o con `type` = `general` ore di silenzio
+        e ora del riepilogo.
 
-        `scope` è `me` per le preferenze della persona, `space` per i valori predefiniti
-        dello spazio (solo un amministratore). In `changes` va solo quello che cambia:
-        `enabled`, `channels` (oltre all'app, che è sempre attiva: `push`, `slack`,
-        `email`), `ladder` (le soglie, per esempio `{"serious": 1, "critical": 14}`, in
-        giorni, ore, minuti o percentuale secondo il tipo, in ordine di gravità),
-        `urgent_from`, `email_mode`;
-        per `general`, `quiet_hours` e `summary_hour`. Un campo `null` torna al valore che
-        eredita. Risponde `null` quando non resta niente da sovrascrivere."""
+        `scope`: `me` per la persona, `space` per i predefiniti dello spazio (solo amministratore).
+        In `changes` solo ciò che cambia: `enabled`, `channels` (oltre all'app: `push`, `slack`,
+        `email`), `ladder` (soglie in ordine di gravità, es. `{"serious": 1, "critical": 14}`,
+        unità secondo il tipo), `urgent_from`, `email_mode`; per `general`, `quiet_hours` e
+        `summary_hour`. Un campo `null` torna al valore ereditato.
+        """
         row = _preferences(context).write(
             context.actor, _scope(scope), type, ReminderPreferenceWrite(**changes)
         )
         return {"preference": row.model_dump(mode="json") if row is not None else None}
 
-    @mcp.tool()
+    @mcp.tool(annotations=DESTRUCTIVE)
     @guard
     def reset_promemoria_preference(scope: str, type: str) -> dict[str, str]:
-        """Torna al valore predefinito di un tipo (o di `general`): cancella la scelta,
-        così una modifica successiva del predefinito arriva ancora."""
+        """Torna al valore predefinito di un tipo (o di `general`): cancella la scelta, così le
+        modifiche future del predefinito arrivano ancora.
+        """
         _preferences(context).reset(context.actor, _scope(scope), type)
         return {"status": "ripristinato", "scope": scope, "type": type}
 
-    @mcp.tool()
+    @mcp.tool(annotations=ADDITIVE)
     @guard
     def acknowledge_promemoria(key: str, severity: str) -> dict[str, Any]:
-        """Segna un promemoria come visto per la persona che chiede, alla gravità che ha
-        visto (`warning`, `serious`, `critical`). Non lo nasconde agli altri e torna a
-        comparire se sale di gravità. `key` è `tipo:identificativo`."""
+        """Segna un promemoria come visto per chi chiede, alla gravità vista (`warning`, `serious`,
+        `critical`). Torna a comparire se sale di gravità. `key` è `tipo:identificativo`.
+        """
         data = AcknowledgeRequest(key=key, severity=severity)  # type: ignore[arg-type]
         return (
             _state(context)
@@ -110,12 +108,13 @@ def register(
             .model_dump(mode="json")
         )
 
-    @mcp.tool()
+    @mcp.tool(annotations=ADDITIVE)
     @guard
     def snooze_promemoria(key: str, severity: str, until: str) -> dict[str, Any]:
-        """Rimanda un promemoria per la persona che chiede. `until` è `tomorrow`,
-        `next_monday`, `in_a_week` o `in_a_month`, mai una data libera. Torna a comparire
-        quel giorno, o prima se sale di gravità."""
+        """Rimanda un promemoria per chi chiede. `until` è `tomorrow`, `next_monday`, `in_a_week` o
+        `in_a_month`, mai una data libera. Torna a comparire quel giorno, o prima se sale di
+        gravità.
+        """
         data = SnoozeRequest(key=key, severity=severity, until=until)  # type: ignore[arg-type]
         return (
             _state(context)
@@ -123,21 +122,21 @@ def register(
             .model_dump(mode="json")
         )
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY)
     @guard
     def list_my_promemoria_state() -> list[dict[str, Any]]:
-        """I promemoria che la persona che chiede ha già chiuso o rimandato."""
+        """I promemoria che chi chiede ha già chiuso o rimandato."""
         return [item.model_dump(mode="json") for item in _state(context).mine(context.actor)]
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY)
     @guard
     def describe_scheduled_jobs() -> dict[str, Any]:
-        """Come sono andate le operazioni che il cron lancia sul server per questo spazio:
-        la sincronizzazione Gmail, il passaggio dei promemoria, le automazioni di ogni
-        giorno e il riepilogo settimanale. Per ciascuna: `state` (`ok`, `failed`, `late`,
-        `never_run`, `not_configured`), `last_run_at` (l'ultimo giro finito senza errori),
-        `last_failure_at` e `failure` se l'ultimo tentativo è fallito, e dopo quanti minuti
-        senza un giro finito risulta in ritardo. Solo per gli amministratori."""
+        """Come sono andate le operazioni automatiche del server per questo spazio:
+        sincronizzazione Gmail, promemoria, automazioni giornaliere, riepilogo settimanale. Per
+        ciascuna: `state` (`ok`, `failed`, `late`, `never_run`, `not_configured`),
+        `last_run_at`, `last_failure_at` e `failure` se l'ultimo tentativo è fallito. Solo per
+        gli amministratori.
+        """
         return ScheduledJobService(context.session).describe(context.actor).model_dump(mode="json")
 
 
