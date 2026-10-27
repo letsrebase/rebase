@@ -1,7 +1,7 @@
 # Talent cards from more sources, written by any of three providers
 
-Status: draft for Lorenzo's approval. Card: REB-829. Project: «Write talent cards from
-every source with any AI provider» (P-REB-68).
+Status: approved by Lorenzo on 2026-10-27. Card: REB-829. Project: «Write talent cards
+from every source with any AI provider» (P-REB-68).
 
 ## Why
 
@@ -68,7 +68,15 @@ the API. The choice is **Pydantic AI** (`pydantic-ai-slim` with the `anthropic`,
 - `output_type=NativeOutput(Card)` asks the provider's native structured output against
   a Pydantic model, which `Card` already is;
 - usage (input, output, thinking tokens) comes back on the result for cost tracking;
-- `pydantic_evals` covers the evaluation set below.
+- `pydantic_evals` covers the evaluation set below;
+- one `Thinking(effort=...)` setting maps to each provider's own knob (Anthropic
+  adaptive thinking with effort, OpenAI `reasoning_effort`, Gemini 3 `thinking_level`),
+  so the task's effort level is one admin field for all three.
+
+Checked in the documentation on 2026-10-27: key injection for Anthropic and OpenAI,
+native structured output, the thinking mapping for all three. Gemini's key injection
+(`GoogleProvider(api_key=...)`) and native output on the exact Gemini model chosen are
+verified in step 1 with a live call before Gemini can be switched on.
 
 The seam stays `rebase_core/llm.py`: its `LlmCall` protocol and `RecordingCall` test
 double keep their role, with an implementation over Pydantic AI replacing
@@ -200,12 +208,15 @@ Two separate checks, each gating one rollout step:
   existing admin page's pattern, no new UI primitive).
 - Fetch limits (bytes, timeouts, how many links per person).
 
-## Open questions for Lorenzo
+## Lorenzo's answers (2026-10-27)
 
-- Does the privacy notice the freelancers accepted cover reading the links they gave
-  (gates step 3)? Who handles the notice and the providers' agreements (gates step 4)?
-- Who writes the 15 expected cards of the evaluation set (gates step 2)? Proposal: the
-  builder drafts each from the CV and its links, an admin corrects.
+- Privacy: Lorenzo and Ivan update the privacy notice to cover reading the links people
+  give and the new processors. Steps 3 and 4 are built but stay switched off in
+  production until they confirm the notice is updated; each source and each provider has
+  its own on/off switch on the «Modelli AI» page, off by default.
+- Evaluation set: the builder drafts the 15 expected cards from each CV and its links;
+  an admin corrects them before they become the reference.
+- Status: approved.
 
 ## Calls made after the builder check (mine, for Lorenzo to check)
 
