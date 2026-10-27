@@ -13,8 +13,10 @@ import { cn } from "./cn"
  *
  * `label` is the region's accessible name, the one thing a screen reader says when the
  * focus lands on it («Trattamento fiscale, regione»); a caller names what the box holds.
- * Without one the box is still focusable and scrolls, and it is not announced as a
- * region, since a region with no name is noise.
+ * The prop is required, so a caller states a name or states that it has none (`Table`
+ * does, when it is given neither `scrollLabel` nor `aria-label`); without one the box is
+ * still focusable and scrolls, and it is not announced as a region, since a region with
+ * no name is noise.
  *
  * `Table` is this around a `<table>`. It is exported on its own for the few tables that
  * are hand-written markup (a chart's table of values, a grid of inputs) and so cannot be
@@ -24,7 +26,7 @@ function ScrollRegion({
   label,
   className,
   ...props
-}: Omit<React.ComponentProps<"div">, "aria-label"> & { label?: string }) {
+}: Omit<React.ComponentProps<"div">, "aria-label"> & { label: string | undefined }) {
   const container = React.useRef<HTMLDivElement>(null)
   const [scrolls, setScrolls] = React.useState(false)
 
