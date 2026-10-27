@@ -588,14 +588,11 @@ class CardWriter:
 
         Only a new CV makes a card here. A change of the hub's facts, of the position or of
         a source, and a newer prompt version, only mark the card (`stale_cards`) for an
-        admin's start. What the loop does beside it is read the sources that are due
-        (`SourceService.refetch_due`, the weekly pass: pages and GitHub, never a model),
-        so the marks are true; with every switch off it reads nothing."""
+        admin's start. Reading the sources again is not this pass's: the `cards` loop runs
+        `rebase sources-refetch` beside it (`docker-compose.yml`), which needs no model and
+        runs with `REBASE_CARDS_LOOP` off."""
         if self.llm is None:
             return CardsRefreshed(written=0, failed=0)
-        sources = self._sources()
-        if sources.enabled_kinds():
-            sources.refetch_due(limit)
         digest = func.encode(func.sha256(Freelancer.cv_bytes), "hex")
         stale = self.session.scalars(
             select(Freelancer.id)

@@ -13,6 +13,7 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
+from fakes_cards import text_pdf
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
@@ -83,7 +84,9 @@ def clean(hub_session: Session) -> Iterator[Session]:
     hub_session.commit()
 
 
-def _person(session: Session, links: list[str], email: str = "ada@studio.it") -> UUID:
+def _person(
+    session: Session, links: list[str], email: str = "ada@studio.it", *, cv: bool = True
+) -> UUID:
     data = FreelancerCreate(
         nome="Ada",
         cognome="Lovelace",
@@ -93,7 +96,12 @@ def _person(session: Session, links: list[str], email: str = "ada@studio.it") ->
         remoto="remoto",
         links=links,
     )
-    read, _ = FreelancerService(session).apply(data)
+    service = FreelancerService(session)
+    read, _ = (
+        service.apply(data, text_pdf("Ada, backend developer."), "cv.pdf", "")
+        if cv
+        else service.apply(data)
+    )
     return read.id
 
 
@@ -519,3 +527,109 @@ def test_link_hash_material_drops_clocks_and_full_dates_only() -> None:
     assert "last updated" not in material
     assert link_hash_material(page + "\nNew project: a CLI") != material
     assert link_hash_material("A   B\n\nC") == link_hash_material("a b\nc")
+
+
+# ---- the weekly pass, review of #671 -------------------------------------------------------
+
+
+class _Flaky(FakeGithub):
+    """GitHub that dies for one account, the way `urllib_call` does: with an exception."""
+
+    def fetch(self, login: str) -> GithubSnapshot:
+        self.calls.append(login)
+        if login == "boom":
+            raise TimeoutError("timed out")
+        return snapshot_of(login)
+
+
+def test_one_persons_failure_does_not_stop_the_pass(clean: Session) -> None:
+    bad = _person(clean, ["https://github.com/boom"], email="bad@studio.it")
+    good = _person(clean, ["https://github.com/ada"], email="good@studio.it")
+    service = _service(clean, FakeFetcher(), _Flaky(), on=("github",))
+
+    assert service.refetch_due(limit=10) == 2
+
+    assert _rows(clean, bad) == [] and [r.ref for r in _rows(clean, good)] == ["ada"]
+
+
+def test_a_rate_limited_account_keeps_the_text_it_had(clean: Session) -> None:
+    """GitHub's 403 is `error` (`GithubSource`), and an `error` keeps what was read: the
+    text and the hash stay, so the card does not turn stale for a limit."""
+    person = _person(clean, ["https://github.com/ada"])
+    _service(clean, on=("github",)).refetch(person)
+    before = [(r.text, r.content_sha256) for r in _rows(clean, person)]
+    limited = FakeGithub(GithubSnapshot("ada", status="error"))
+
+    _service(clean, FakeFetcher(), limited, on=("github",), now=NOW + timedelta(days=8)).refetch(
+        person
+    )
+
+    assert [(r.text, r.content_sha256) for r in _rows(clean, person)] == before
+    assert {r.status for r in _rows(clean, person)} == {"ok"}
+
+
+def test_the_pass_reads_only_people_a_card_is_written_for(clean: Session) -> None:
+    kept = _person(clean, LINKS, email="a@studio.it")
+    turned_down = _person(clean, LINKS, email="b@studio.it")
+    no_cv = _person(clean, LINKS, email="c@studio.it", cv=False)
+    service = _service(clean, now=NOW - timedelta(days=10))
+    for person in (kept, turned_down):
+        service.refetch(person)
+    clean.execute(
+        text("UPDATE freelancers SET stato = 'scartato' WHERE id = :i"), {"i": turned_down}
+    )
+    clean.commit()
+
+    assert _service(clean, now=NOW).refetch_due(limit=10) == 1
+
+    assert {r.fetched_at for r in _rows(clean, kept)} == {NOW}
+    # What a person turned down had stored goes, and nobody without a CV is ever read.
+    assert _rows(clean, turned_down) == [] and _rows(clean, no_cv) == []
+
+
+def test_removing_the_last_link_deletes_its_text_at_the_next_pass(clean: Session) -> None:
+    person = _person(clean, ["https://ada.example/"])
+    service = _service(clean, on=("links",))
+    service.refetch(person)
+    row = clean.get(Freelancer, person)
+    assert row is not None
+    row.links = []
+    clean.commit()
+
+    assert service.refetch_due(limit=5) == 1
+
+    assert _rows(clean, person) == []
+
+
+def test_a_person_deleted_while_the_pages_were_read_gets_nothing_stored(clean: Session) -> None:
+    person = _person(clean, LINKS)
+
+    class Deleting(FakeFetcher):
+        def fetch(self, url: str) -> FetchResult:
+            clean.execute(
+                text("UPDATE freelancers SET deleted_at = now() WHERE id = :i"), {"i": person}
+            )
+            clean.commit()
+            return super().fetch(url)
+
+    service = _service(clean, Deleting())
+    service.session.expire_all()
+
+    assert service.refetch(person).items == []
+    assert _rows(clean, person) == []
+
+
+def test_a_switch_turned_off_while_the_pages_were_read_stores_nothing(clean: Session) -> None:
+    person = _person(clean, LINKS)
+
+    class Switching(FakeFetcher):
+        def fetch(self, url: str) -> FetchResult:
+            clean.execute(text("UPDATE ai_sources SET enabled = false WHERE kind = 'links'"))
+            clean.commit()
+            return super().fetch(url)
+
+    service = _service(clean, Switching(), on=("links",))
+
+    service.refetch(person)
+
+    assert _rows(clean, person) == []

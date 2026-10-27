@@ -188,12 +188,17 @@ services:
     # (preview): each run prints «N schede scritte, M non riuscite». Sleeps first, like
     # `sweep`, so the api's `alembic upgrade head` (Dockerfile.api) has already run
     # before the first pass.
+    # `rebase sources-refetch --limit 50` (REB-839) runs first, whatever the loop says: it
+    # reads the GitHub accounts and links of people (never a model, never a CV sent
+    # anywhere) when a source switch in «Modelli AI» is on, and deletes the text of a link
+    # that was removed; with every switch off it reads nothing and says so. Its failure
+    # does not stop the pass after it.
     build:
       context: ../..
       dockerfile: projects/hub/Dockerfile.api
     restart: unless-stopped
     init: true
-    command: ['sh', '-c', 'while :; do sleep 3600; if [ "${REBASE_CARDS_LOOP:-off}" = "on" ]; then uv run --no-sync rebase cards-refresh --limit 50; else echo "cards: loop off (REBASE_CARDS_LOOP)"; fi; done']
+    command: ['sh', '-c', 'while :; do sleep 3600; uv run --no-sync rebase sources-refetch --limit 50 || true; if [ "${REBASE_CARDS_LOOP:-off}" = "on" ]; then uv run --no-sync rebase cards-refresh --limit 50; else echo "cards: loop off (REBASE_CARDS_LOOP)"; fi; done']
     depends_on:
       db:
         condition: service_healthy

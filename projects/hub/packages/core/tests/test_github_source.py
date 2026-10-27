@@ -4,7 +4,9 @@ API says about it, as text and as a hash that ignores what moves on its own. A f
 
 import json
 from datetime import UTC, datetime
+from http.client import HTTPException
 from typing import Any
+from urllib.error import URLError
 
 import pytest
 
@@ -45,7 +47,7 @@ class FakeGithub:
         languages: dict[str, dict[str, int]] | None = None,
         status: int = 200,
     ) -> None:
-        self.profile = {"login": "ada", "bio": "I build things.", **(profile or {})}
+        self.profile = {"login": "ada", "type": "User", "bio": "I build things.", **(profile or {})}
         self.repos = repos if repos is not None else []
         self.languages = languages or {}
         self.status = status
@@ -229,15 +231,38 @@ def test_token_sent_only_when_configured() -> None:
 
 
 @pytest.mark.parametrize("status", [403, 429])
-def test_rate_limit_gives_unreadable_not_exception(status: int) -> None:
+def test_rate_limit_gives_error_so_the_text_read_before_stays(status: int) -> None:
+    """The limit is the hour's, not the account's: `error` keeps what was read
+    (`SourceService.refetch`), where `unreadable` would wipe it and wait a week."""
     snapshot = source(FakeGithub(status=status)).fetch("ada")
-    assert snapshot.status == "unreadable"
+    assert snapshot.status == "error"
     assert snapshot.repos == []
 
 
-def test_404_user_gives_unreadable() -> None:
-    snapshot = source(FakeGithub(status=404)).fetch("ada")
+@pytest.mark.parametrize("status", [404, 410, 451])
+def test_a_missing_or_removed_user_gives_unreadable(status: int) -> None:
+    snapshot = source(FakeGithub(status=status)).fetch("ada")
     assert snapshot.status == "unreadable"
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [URLError("refused"), TimeoutError("timed out"), ConnectionResetError(), HTTPException()],
+    ids=["urlerror", "timeout", "reset", "http"],
+)
+def test_a_network_exception_gives_error_not_a_raise(failure: Exception) -> None:
+    """`urllib_call` unwraps only an HTTP error: everything else it raises. The source turns
+    it into the network's status, so one flaky night stops nothing."""
+
+    def raising(method: str, url: str, headers: dict[str, str], body: bytes) -> tuple[int, bytes]:
+        raise failure
+
+    assert GithubSource(raising, "").fetch("ada").status == "error"
+
+
+def test_an_organisation_is_not_a_persons_account() -> None:
+    fake = FakeGithub(profile={"type": "Organization"}, repos=[repo("a")])
+    assert source(fake).fetch("ada").status == "unreadable"
 
 
 def test_network_failure_and_server_error_give_error() -> None:

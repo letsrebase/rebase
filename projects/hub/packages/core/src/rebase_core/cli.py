@@ -273,9 +273,8 @@ def sources_refetch(limit: int) -> int:
     and the links whose text is a week old, missing, or no longer matches what the person
     gave, and deletes the text of a link the person removed. It never calls a model and
     never writes a card: a source that changed only marks the card, for an admin's start
-    («Schede da aggiornare»). `cards-refresh` does the same pass before its own, so this
-    is for a machine with no model configured, or to run it by hand. With every switch
-    off it says so and reads nothing."""
+    («Schede da aggiornare»). The `cards` service runs it every hour before `cards-refresh`,
+    with or without a model. With every switch off it says so and reads nothing."""
     if limit < 1:
         print("--limit deve essere almeno 1.", file=sys.stderr)
         return 2

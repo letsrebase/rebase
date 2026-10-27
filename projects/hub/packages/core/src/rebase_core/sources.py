@@ -30,13 +30,14 @@ night does not turn a card stale and then stale again.
 """
 
 import hashlib
+import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.dialects.postgresql import Insert
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
@@ -54,11 +55,14 @@ from rebase_core.web_fetch import (
     is_blocked_host,
 )
 
+logger = logging.getLogger(__name__)
+
 REFETCH_EVERY = timedelta(days=7)
 
 # The switch's name for each kind of stored row: `ai_sources.kind` says `links` (plural,
 # the admin's word), `freelancer_sources.kind` says `link` (one row, one link).
 _ROW_KIND = {"github": "github", "links": "link"}
+_SWITCH = {row: switch for switch, row in _ROW_KIND.items()}
 _OPAQUE_SCHEME = re.compile(r"^[a-z][a-z0-9+.-]*:(?!\d)", re.IGNORECASE)
 _GITHUB_HOSTS = frozenset({"github.com", "www.github.com"})
 
@@ -269,7 +273,9 @@ class SourceService:
         """Reads the person's enabled sources again and makes the stored rows exactly
         them: new ones added, changed ones updated, and every row whose link was removed
         (or whose kind is now off, or that is LinkedIn) deleted. The network is read
-        first and the database written once, so a slow page holds no lock."""
+        first and the database written once, so a slow page holds no lock; and what is
+        written is decided under the person's row lock, after the read: a person deleted
+        and a switch turned off while the pages were being read get nothing stored."""
         row = self.session.get(Freelancer, freelancer_id)
         if row is None:
             raise NotFound("freelancer", freelancer_id)
@@ -279,6 +285,18 @@ class SourceService:
             return SourceSet([])
         reads = [self._read(wanted) for wanted in self._wanted(row.links)]
         fetched_at = self.now()
+        locked = self.session.scalar(
+            select(Freelancer.deleted_at)
+            .where(Freelancer.id == freelancer_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        if locked is not None:  # deleted while the pages were read: nothing may stay
+            self.delete_all(freelancer_id)
+            self.session.commit()
+            return SourceSet([])
+        on = self.enabled_kinds()
+        reads = [read for read in reads if _SWITCH[read.kind] in on]
         existing = {(r.kind, r.ref): r for r in self._rows(freelancer_id)}
         keep = {(read.kind, read.ref) for read in reads}
         for key, stale in existing.items():
@@ -301,31 +319,69 @@ class SourceService:
     def refetch_due(self, limit: int, older_than: timedelta = REFETCH_EVERY) -> int:
         """The weekly pass: refetches up to `limit` people whose sources are older than
         `older_than`, are missing, or no longer match their links. Never calls a model.
-        Answers how many people were refetched."""
+        Answers how many people it tried.
+
+        Only people a card is written for: live, not turned down, with a CV (the same
+        rule as `CardWriter.refresh_stale`); the text stored for anyone else is deleted
+        here, so a person turned down or whose CV was removed keeps none. A person whose
+        links were all removed is still visited, to delete what they leave. One person's
+        failure is that person's: it is logged by class and the pass goes on, so a flaky
+        page or GitHub never stops the others. Only the columns the comparison needs are
+        read, never the stored text."""
+        self.session.execute(
+            delete(FreelancerSource).where(
+                FreelancerSource.freelancer_id.in_(
+                    select(Freelancer.id).where(
+                        or_(Freelancer.stato == "scartato", Freelancer.cv_bytes.is_(None))
+                    )
+                )
+            )
+        )
+        self.session.commit()
         enabled = self.enabled_kinds()
         cutoff = self.now() - older_than
-        stored: dict[UUID, list[FreelancerSource]] = {}
-        for source in self.session.scalars(select(FreelancerSource)):
-            stored.setdefault(source.freelancer_id, []).append(source)
-        people = self.session.scalars(
-            select(Freelancer)
-            .where(Freelancer.deleted_at.is_(None))
-            .where(func.jsonb_array_length(Freelancer.links) > 0)
+        stored: dict[UUID, list[tuple[str, str, datetime]]] = {}
+        for owner, kind, ref, fetched_at in self.session.execute(
+            select(
+                FreelancerSource.freelancer_id,
+                FreelancerSource.kind,
+                FreelancerSource.ref,
+                FreelancerSource.fetched_at,
+            )
+        ):
+            stored.setdefault(owner, []).append((kind, ref, fetched_at))
+        people = self.session.execute(
+            select(Freelancer.id, Freelancer.links)
+            .where(
+                Freelancer.deleted_at.is_(None),
+                Freelancer.stato != "scartato",
+                Freelancer.cv_bytes.is_not(None),
+                or_(
+                    func.jsonb_array_length(Freelancer.links) > 0,
+                    Freelancer.id.in_(select(FreelancerSource.freelancer_id)),
+                ),
+            )
             .order_by(Freelancer.created_at)
         ).all()
-        refetched = 0
-        for person in people:
-            if refetched >= limit:
+        tried = 0
+        for person_id, links in people:
+            if tried >= limit:
                 break
-            rows = stored.get(person.id, [])
-            wanted = {(w.kind, w.ref) for w in self._wanted(person.links, enabled)}
-            if wanted == {(r.kind, r.ref) for r in rows} and all(
-                r.fetched_at >= cutoff for r in rows
+            rows = stored.get(person_id, [])
+            wanted = {(w.kind, w.ref) for w in self._wanted(links, enabled)}
+            if wanted == {(kind, ref) for kind, ref, _ in rows} and all(
+                fetched_at >= cutoff for _, _, fetched_at in rows
             ):
                 continue
-            self.refetch(person.id)
-            refetched += 1
-        return refetched
+            tried += 1
+            try:
+                self.refetch(person_id)
+            except Exception as error:
+                self.session.rollback()
+                logger.warning(
+                    "sources of freelancer %s not read: %s", person_id, type(error).__name__
+                )
+        return tried
 
     # ---- helpers ---------------------------------------------------------------------
 

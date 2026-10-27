@@ -630,13 +630,17 @@ for «Scheda anonima», which shows `fonti` as «secondo il modello».
   time, each re-checked before its turn so a double click pays once, and stops at the first outage
   or spent cap. A bump of `PROMPT_VERSION` therefore lists every card of the old version and spends
   nothing: **deploying version 2 puts all of them in the list**.
-- **The weekly refetch never calls a model.** `rebase cards-refresh` begins with
+- **The weekly refetch never calls a model.** `rebase sources-refetch [--limit N]` runs
   `SourceService.refetch_due` (people whose sources are a week old, missing or no longer match
-  their links) when a switch is on, so the hourly loop keeps the marks true; `rebase
-  sources-refetch [--limit N]` is the same pass alone, for a machine with no model or by hand.
-  Fetching a page or GitHub never writes a card. A card written (the wizard, a CV upload, «Rigenera
-  scheda», an admin's start) refetches that person's sources first, with every switch off it reads
-  nothing, and an evaluation (`compose`) reads only what is stored.
+  their links; only people a card is written for: live, not turned down, with a CV; the text of
+  anyone else is deleted; one person's failure is logged and the pass goes on) and **the `cards`
+  service runs it every hour before `cards-refresh`, whatever `REBASE_CARDS_LOOP` says**, since it
+  sends nothing to a provider; with every switch off it reads nothing. A removed link's text goes
+  at the next pass. Fetching a page or GitHub never writes a card. A GitHub rate limit (403, 429)
+  or any network failure keeps the text read before; only a page that is gone (404, 410, 451)
+  replaces it. A card written (the wizard, a CV upload, «Rigenera scheda», an admin's start)
+  refetches that person's sources first, with every switch off it reads nothing, and an
+  evaluation (`compose`) reads only what is stored.
 - **Evaluating version 2** is `rebase cards-eval` as above: `CardWriter.compose` builds the prompt
   from the sources stored for each person and the hub's facts, so a person is measured with what
   the production writer would use. `source_identifying` counts as a guard failure in the report.

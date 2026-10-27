@@ -210,7 +210,13 @@ class GithubSource:
         }
         if self._token:
             headers["Authorization"] = f"Bearer {self._token}"
-        status, body = self._http("GET", f"{API}{path}", headers, b"")
+        try:
+            status, body = self._http("GET", f"{API}{path}", headers, b"")
+        except Exception:
+            # `urllib_call` only unwraps an HTTP error: a timeout, a reset or a refused
+            # connection raises. It travels as the network's status, never as an exception,
+            # so one flaky night does not stop the pass or a card's write.
+            return NETWORK_ERROR_STATUS, None
         if status != 200 or len(body) > MAX_BODY_BYTES:
             return status, None
         try:
@@ -220,14 +226,17 @@ class GithubSource:
 
     def fetch(self, login: str) -> GithubSnapshot:
         """The public profile and repositories of `login`. Never raises for GitHub's
-        answer: a missing user and a rate limit are `unreadable`, a network or server
-        failure `error`."""
+        answer: a missing user, an organisation (a person's account is a `User`) and a page
+        GitHub says is gone are `unreadable`; a rate limit, a refusal, a network or server
+        failure are `error`, which keeps the text read before."""
         if not _LOGIN.match(login):
             return GithubSnapshot(login, status="unreadable")
         who = quote(login, safe="")
         status, profile = self._get(f"/users/{who}")
         if not isinstance(profile, dict):
             return GithubSnapshot(login, status=_failure(status))
+        if profile.get("type") != "User":
+            return GithubSnapshot(login, status="unreadable")
         status, listing = self._get(f"/users/{who}/repos?type=owner&per_page=100&sort=pushed")
         if not isinstance(listing, list):
             return GithubSnapshot(login, status=_failure(status))
@@ -253,11 +262,15 @@ class GithubSource:
 
 
 def _failure(status: int) -> GithubStatus:
-    """A missing user, a rate limit and a refusal cannot be fixed by asking again soon:
-    `unreadable`. A dead network or GitHub's own 5xx is `error`."""
-    if status == NETWORK_ERROR_STATUS or status >= 500:
-        return "error"
-    return "unreadable"
+    """What GitHub's answer says about the account. A missing user, a removed one and one
+    withheld for legal reasons (404, 410, 451) will not come back by asking again:
+    `unreadable`. A rate limit (403, 429), any other refusal, a dead network and GitHub's
+    own 5xx are the day's, not the account's: `error`, so the text read before stays and
+    the next pass asks again. (A 200 whose body is not an object is not the account's
+    either way: `unreadable`.)"""
+    if status in (200, 404, 410, 451):
+        return "unreadable"
+    return "error"
 
 
 def _repo(item: object, login: str) -> Repo | None:
