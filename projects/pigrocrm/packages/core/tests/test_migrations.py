@@ -1917,3 +1917,74 @@ def test_0060_creates_clause_notes_under_the_aziende_policy_and_its_downgrade_dr
         assert _clause_notes_shape(url) == (set(), False, set())
         upgrade(config, "0060")
         assert _clause_notes_shape(url)[0] == columns
+
+
+def _job_run_shape(url: str) -> tuple[set[str], bool]:
+    """`reminder_job_run`'s columns beside `job`, and whether `ran_at` is nullable."""
+    engine: Engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            rows = connection.execute(
+                text(
+                    "SELECT column_name, is_nullable FROM information_schema.columns "
+                    "WHERE table_name = 'reminder_job_run' AND column_name IN "
+                    "('ran_at', 'failed_at', 'failure')"
+                )
+            ).all()
+    finally:
+        engine.dispose()
+    return {row[0] for row in rows}, {row[0]: row[1] for row in rows}["ran_at"] == "YES"
+
+
+def _plant_job_run(url: str, columns: str, values: str) -> None:
+    engine: Engine = create_engine(url)
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(  # noqa: S608 - fixed test fragments
+                    f"INSERT INTO reminder_job_run (id, job, {columns}) "
+                    f"VALUES (gen_random_uuid(), {values})"
+                )
+            )
+    finally:
+        engine.dispose()
+
+
+def _job_runs(url: str) -> list[str]:
+    engine: Engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            return list(
+                connection.execute(text("SELECT job FROM reminder_job_run ORDER BY job")).scalars()
+            )
+    finally:
+        engine.dispose()
+
+
+def test_0061_adds_the_failure_columns_keeps_the_rows_and_its_downgrade_drops_the_failed_ones(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-764: two nullable columns, `ran_at` nullable and two CHECKs, no backfill; the
+    downgrade drops the rows with no success, which the old shape cannot hold, and keeps
+    the others."""
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0060")
+        assert _job_run_shape(url) == ({"ran_at"}, False)
+        _plant_job_run(url, "ran_at", "'reminders', now()")
+
+        upgrade(config, "0061")
+        assert _job_run_shape(url) == ({"ran_at", "failed_at", "failure"}, True)
+        assert _job_runs(url) == ["reminders"], "the reminder pass's row is untouched"
+        _plant_job_run(url, "failed_at, failure", "'automations', now(), 'RuntimeError'")
+        assert _job_runs(url) == ["automations", "reminders"]
+
+        with pytest.raises(IntegrityError, match="ck_reminder_job_run_failure_pair"):
+            _plant_job_run(url, "failed_at", "'digest', now()")
+        with pytest.raises(IntegrityError, match="ck_reminder_job_run_has_a_time"):
+            _plant_job_run(url, "ran_at", "'digest', NULL")
+
+        downgrade(config, "0060")
+        assert _job_run_shape(url) == ({"ran_at"}, False)
+        assert _job_runs(url) == ["reminders"], "a job that never succeeded has nothing to keep"

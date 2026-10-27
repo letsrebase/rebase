@@ -179,9 +179,30 @@ class ReminderSummaryRun(Base, PrimaryKeyMixin, TimestampMixin):
 
 
 class ReminderJobRun(Base, PrimaryKeyMixin, TimestampMixin):
-    """When each scheduled job last ran, for `job_late`, the reminder pass included."""
+    """One row per scheduled job (`pigrocrm gmail-sync`, `digest`, `reminders`,
+    `automations`): when it last ran to the end, and how its latest attempt went if that
+    attempt failed (REB-764). The table kept the reminder pass's name when the other three
+    commands started writing it; renaming it would have been a migration for a word.
+
+    `ran_at` is the last success and is what `job_late` measures, so a job that ran once
+    and fails on every run since goes late. `failed_at` and `failure` are set by a failed
+    attempt and cleared by the next success: `failed_at is not None` is «the latest attempt
+    failed». `ran_at` is null only for a job whose every attempt so far has failed, which
+    `job_late` does not measure (there is nothing to measure from) and the panel shows as
+    failed. `failure` is a short word, an exception's type name or a machine word of the
+    product's own, never a message: a message can quote an address."""
 
     __tablename__ = "reminder_job_run"
+    __table_args__ = (
+        CheckConstraint(
+            "(failed_at IS NULL) = (failure IS NULL)", name="ck_reminder_job_run_failure_pair"
+        ),
+        CheckConstraint(
+            "ran_at IS NOT NULL OR failed_at IS NOT NULL", name="ck_reminder_job_run_has_a_time"
+        ),
+    )
 
     job: Mapped[str] = mapped_column(String(40), nullable=False, unique=True)
-    ran_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ran_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    failure: Mapped[str | None] = mapped_column(String(200), nullable=True)
