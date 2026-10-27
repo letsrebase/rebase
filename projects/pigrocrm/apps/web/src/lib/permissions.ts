@@ -250,6 +250,7 @@ export const SETTINGS_TAB_MIN_ROLE: Record<
   drive: 'collaboratore',
   reminders: 'admin',
   automations: 'admin',
+  jobs: 'admin',
 }
 
 /** Whether `role` may see the settings tab `tab`: the same reading as `can`, against

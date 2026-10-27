@@ -135,6 +135,8 @@ export const queryKeys = {
   ) =>
     ['dashboard', kind, params] as const,
   automations: () => ['automations'] as const,
+  // What the cron commands last did in this space (REB-764).
+  scheduledJobs: ['scheduled-jobs'] as const,
   // A contract and everything the page hangs on it (REB-741..744). All under the
   // 'contract' prefix except the customer's list, so one invalidation of
   // `contract(id)` refreshes the row, its rate cards, expenses, assumption and figures.

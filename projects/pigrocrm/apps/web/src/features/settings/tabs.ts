@@ -79,6 +79,8 @@ export const SETTINGS_GROUPS = [
       // personal ones.
       { value: 'reminders', label: 'Promemoria' },
       { value: 'automations', label: 'Automazioni' },
+      // What the cron commands last did in this space (REB-764): admin only.
+      { value: 'jobs', label: 'Esecuzioni' },
     ],
   },
 ] as const

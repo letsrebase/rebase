@@ -17,11 +17,13 @@ describe('recordLink', () => {
     ['fiscal', { to: '/app', search: { ...defaultDashboardSearch(), tab: 'anno' } }],
     ['proposal', { to: '/app/proposals/$proposalId', params: { proposalId: ID } }],
     ['timer', { to: '/app/hours' }],
+    // A late job opens Esecuzioni: there is no record, and the section lists them all.
+    ['job', { to: '/app/settings/jobs' }],
   ])('opens a %s where the app has its page', (entity, expected) => {
     expect(recordLink({ entity, entity_id: ID })).toEqual(expected)
   })
 
-  it.each(['work_unit', 'google_connection', 'period', 'job', 'something_new', '', 'constructor', 'toString'])(
+  it.each(['work_unit', 'google_connection', 'period', 'something_new', '', 'constructor', 'toString'])(
     'gives no link for the kind «%s», which has no page to open',
     (entity) => {
       expect(recordLink({ entity, entity_id: ID })).toBeNull()
