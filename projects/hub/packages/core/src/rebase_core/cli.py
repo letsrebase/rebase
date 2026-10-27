@@ -15,9 +15,11 @@ from sqlalchemy import bindparam, select, text
 from sqlalchemy.orm import Session
 
 from rebase_core.admin_tokens import DEFAULT_NAME, AdminTokenService
-from rebase_core.ai_config import AiConfigService
+from rebase_core.ai_config import PROVIDER_OFF, AiConfigService
+from rebase_core.ai_verify import verify
 from rebase_core.campaigns.sender import campaign_sender_from_settings
 from rebase_core.campaigns.tick import run_tick
+from rebase_core.card_eval import CardEvalService, draft_expected, format_report, run_eval
 from rebase_core.cards import CardWriter
 from rebase_core.config import Settings, get_settings
 from rebase_core.contracts.fields import ContractFailed, Value, merge_data
@@ -31,13 +33,22 @@ from rebase_core.conversions import pixel_from_settings
 from rebase_core.db import create_engine_from_settings, session_factory
 from rebase_core.documenso import client_from_settings
 from rebase_core.duplicates import UNIQUE_INDEXES, ensure_unique_indexes, find_duplicates
-from rebase_core.errors import DocumensoFailed, DomainError
+from rebase_core.errors import DocumensoFailed, DomainError, LlmUnavailable
 from rebase_core.freelancers import freelancer_read
 from rebase_core.http import HttpCall
-from rebase_core.llm import call_for_task
+from rebase_core.llm import AiCall, TaskOverride, call_for_task
 from rebase_core.mail import CardSummary, EmailSender, sender_from_settings, welcome_mail
 from rebase_core.merge import MergeRead, PersonMergeService
-from rebase_core.models import USER_ROLES, Freelancer, Signup, User
+from rebase_core.models import (
+    AI_EFFORTS,
+    AI_PROVIDERS,
+    USER_ROLES,
+    AiProvider,
+    CardEvalProfile,
+    Freelancer,
+    Signup,
+    User,
+)
 from rebase_core.secrets import KEY_BYTES
 from rebase_core.signing import signing_from_settings
 from rebase_core.users import UserService
@@ -255,16 +266,131 @@ def cards_refresh(limit: int) -> int:
     return 0
 
 
+def cards_eval_draft(freelancers: Sequence[UUID], labels: Sequence[str]) -> int:
+    """`rebase cards-eval-draft --freelancer ID [--label L] ...` (REB-835): the builder's
+    draft of each person's expected card, made with the `card` task's own model from the
+    CV, stored as a `bozza` for an admin to correct and accept in «Valutazione». `--label`
+    (the failure the person covers: «senza date», «duplicato», «GitHub») is given once
+    per `--freelancer`, in order, for a person new to the set; leave them all out to
+    draft again people already in it. One line per person: label, name and the admin
+    link. The card's text is never printed: it is personal data, and it is on the page.
+    A person whose card the guards refuse is said and skipped; an outage, a spent cap or
+    a task that is off ends the run, since the next call would be refused the same."""
+    if labels and len(labels) != len(freelancers):
+        print("Serve un --label per ogni --freelancer, o nessuno.", file=sys.stderr)
+        return 2
+    settings = get_settings()
+    open_session = session_factory(create_engine_from_settings(settings))
+    if call_for_task(lambda: closing(open_session()), settings, "card") is None:
+        print("Nessun modello configurato per le schede: apri «Modelli AI».", file=sys.stderr)
+        return 1
+    session = open_session()
+    failed = False
+    try:
+        service = CardEvalService(session)
+        for index, freelancer_id in enumerate(freelancers):
+            try:
+                if labels:
+                    service.ensure(freelancer_id, labels[index])
+                elif session.get(CardEvalProfile, freelancer_id) is None:
+                    print(f"{freelancer_id}: serve --label, non è ancora nel set", file=sys.stderr)
+                    failed = True
+                    continue
+                llm = AiCall(
+                    lambda: closing(open_session()),
+                    settings,
+                    "card",
+                    purpose="eval",
+                    freelancer_id=freelancer_id,
+                )
+                profile = draft_expected(session, freelancer_id, llm)
+            except LlmUnavailable as exc:
+                print(exc.message, file=sys.stderr)
+                return 1
+            except DomainError as exc:
+                print(f"{freelancer_id}: {exc.message}", file=sys.stderr)
+                failed = True
+                continue
+            print(
+                f"{profile.label}\t{profile.nome} {profile.cognome}\t"
+                f"/hub/admin/valutazione/{freelancer_id}"
+            )
+    finally:
+        session.close()
+    return 1 if failed else 0
+
+
+def cards_eval(
+    provider: str,
+    model: str,
+    effort: str | None,
+    baseline: UUID | None = None,
+    allow_disabled: bool = False,
+) -> int:
+    """`rebase cards-eval --provider P --model M [--effort E]` (REB-835): runs the accepted
+    profiles of the evaluation set through the `card` task, answered by that provider and
+    model instead of the task's own, and prints per person whether the years are within a
+    year of the expected card, the seniority is equal and the guard is clean, with the
+    latency and the cost, the three ratings an admin gives in «Valutazione», the totals
+    and how it stands against a baseline: `--baseline RUN_ID`, or the newest finished run of
+    the live configuration (the provider and model the task is set to and the current
+    prompt version), or «nessun riferimento». A provider that is switched off is refused,
+    «Il fornitore è spento», unless `--allow-disabled` says this evaluation may send CVs
+    to it (the report says so). The run is stored for the admin
+    to rate; no live card and no task setting is touched. Its calls are recorded under the
+    `card` task with `purpose="eval"`, so they count against the task's daily cap, which
+    can end the run early: it then says so, exits 1 and is never taken as a baseline.
+    Nothing printed carries a card's text or a name. Exits 1 with no accepted profile."""
+    settings = get_settings()
+    open_session = session_factory(create_engine_from_settings(settings))
+
+    def llm_for(freelancer_id: UUID) -> AiCall:
+        return AiCall(
+            lambda: closing(open_session()),
+            settings,
+            "card",
+            override=TaskOverride(provider, model, effort, allow_disabled),
+            purpose="eval",
+            freelancer_id=freelancer_id,
+        )
+
+    session = open_session()
+    try:
+        account = session.get(AiProvider, provider)
+        if not allow_disabled and (account is None or not account.enabled):
+            print(
+                f"{PROVIDER_OFF}: una valutazione manda i CV al fornitore, quindi serve "
+                "--allow-disabled.",
+                file=sys.stderr,
+            )
+            return 1
+        run = run_eval(
+            session,
+            llm_for,
+            task="card",
+            provider=provider,
+            model=model,
+            effort=effort,
+            baseline_run_id=baseline,
+            allow_disabled=allow_disabled,
+        )
+    except DomainError as exc:
+        print(exc.message, file=sys.stderr)
+        return 1
+    finally:
+        session.close()
+    print(format_report(run))
+    return 0 if run.summary["complete"] else 1
+
+
 def ai_seed(eur_per_usd: str) -> int:
     """`rebase ai-seed --eur-per-usd 0.92`: once, moves `REBASE_ANTHROPIC_API_KEY` and
     `REBASE_TEAM_BUILDER_MODEL` (read from the environment: the Settings fields are gone,
     REB-831) into «Modelli AI»: the key sealed, `anthropic` on, both tasks on that model,
     and the prices of the Claude models in euros at `--eur-per-usd` (EUR per 1 USD, the
     inverse of the ECB's quote). Prints the hint of the key, never the key (REB-832)."""
-    try:
-        rate = Decimal(eur_per_usd)
-    except InvalidOperation:
-        print("--eur-per-usd deve essere un numero, per esempio 0.92.", file=sys.stderr)
+    rate = _parse_rate(eur_per_usd)
+    if rate is None:
         return 2
     api_key = os.environ.get("REBASE_ANTHROPIC_API_KEY", "").strip()
     if not api_key:
@@ -283,6 +409,58 @@ def ai_seed(eur_per_usd: str) -> int:
     print(f"chiave salvata, finisce con …{result.key_hint[-4:]}")
     print(f"modello {result.model} per le schede e per il team, {result.prices} prezzi scritti")
     return 0
+
+
+def _parse_rate(eur_per_usd: str) -> Decimal | None:
+    try:
+        return Decimal(eur_per_usd)
+    except InvalidOperation:
+        print("--eur-per-usd deve essere un numero, per esempio 0.92.", file=sys.stderr)
+        return None
+
+
+def ai_prices_seed(eur_per_usd: str) -> int:
+    """`rebase ai-prices-seed --eur-per-usd 0.92`: the reviewed OpenAI and Google price table
+    (USD per million tokens from their pricing pages, `SEED_USD_PRICES`) in euros at that
+    rate. A price row that exists, an admin's edit included, is left as it is. Turns no
+    provider on: that is «Modelli AI» (REB-840)."""
+    rate = _parse_rate(eur_per_usd)
+    if rate is None:
+        return 2
+    settings = get_settings()
+    session = session_factory(create_engine_from_settings(settings))()
+    try:
+        result = AiConfigService(session, settings).seed_prices(rate)
+    except DomainError as exc:
+        print(exc.message, file=sys.stderr)
+        return 1
+    finally:
+        session.close()
+    print(f"{result.written} prezzi scritti, {result.kept} già presenti e lasciati com'erano")
+    return 0
+
+
+def ai_verify(provider: str, model: str) -> int:
+    """`rebase ai-verify --provider openai|google --model M`: one call with a fixed prompt
+    that carries no personal data, to the key saved in «Modelli AI», and what the provider
+    did with the seam's native structured output. Exit 0 only when the key was injected, the
+    output came back in the schema and the effort setting was taken; it works with the
+    provider still switched off (REB-840). Never prints the key."""
+    settings = get_settings()
+    session = session_factory(create_engine_from_settings(settings))()
+    try:
+        key = AiConfigService(session, settings).resolve_key(provider)
+    except DomainError as exc:
+        print(exc.message, file=sys.stderr)
+        return 1
+    finally:
+        session.close()
+    if key is None:
+        print(f"Manca la chiave di {provider}: salvala in «Modelli AI» e riprova.", file=sys.stderr)
+        return 1
+    report = verify(provider, model, key)
+    print("\n".join(report.lines()))
+    return 0 if report.ok else 1
 
 
 def _key_from_argument(value: str) -> bytes | None:
@@ -638,11 +816,38 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Scrive la scheda anonima di chi ha un CV nuovo o cambiato, i più vecchi prima",
     )
     cards_parser.add_argument("--limit", type=int, default=50)
+    draft_parser = sub.add_parser(
+        "cards-eval-draft",
+        help="Scrive la bozza della scheda attesa di chi è nel set di valutazione",
+    )
+    draft_parser.add_argument("--freelancer", type=UUID, action="append", required=True)
+    draft_parser.add_argument("--label", action="append", default=[])
+    eval_parser = sub.add_parser(
+        "cards-eval",
+        help="Misura un fornitore e un modello sul set di valutazione, senza toccare le schede",
+    )
+    eval_parser.add_argument("--task", choices=("card",), default="card")
+    eval_parser.add_argument("--provider", choices=AI_PROVIDERS, required=True)
+    eval_parser.add_argument("--model", required=True)
+    eval_parser.add_argument("--effort", choices=AI_EFFORTS)
+    eval_parser.add_argument("--baseline", type=UUID)
+    eval_parser.add_argument("--allow-disabled", action="store_true")
     seed_parser = sub.add_parser(
         "ai-seed",
         help="Sposta la chiave Anthropic e il modello vecchi in «Modelli AI», con i prezzi",
     )
     seed_parser.add_argument("--eur-per-usd", required=True)
+    prices_parser = sub.add_parser(
+        "ai-prices-seed",
+        help="Scrive i prezzi OpenAI e Google dalle loro pagine, senza toccare le righe esistenti",
+    )
+    prices_parser.add_argument("--eur-per-usd", required=True)
+    verify_parser = sub.add_parser(
+        "ai-verify",
+        help="Prova una chiamata con output strutturato nativo al fornitore, con la sua chiave",
+    )
+    verify_parser.add_argument("--provider", required=True, choices=["openai", "google"])
+    verify_parser.add_argument("--model", required=True)
     sub.add_parser(
         "ai-rotate-secrets",
         help="Ricifra le chiavi dei modelli: REBASE_SECRETS_KEY_OLD e REBASE_SECRETS_KEY_NEW",
@@ -687,8 +892,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         return campaigns_tick()
     if args.command == "cards-refresh":
         return cards_refresh(args.limit)
+    if args.command == "cards-eval-draft":
+        return cards_eval_draft(args.freelancer, args.label)
+    if args.command == "cards-eval":
+        return cards_eval(
+            args.provider, args.model, args.effort, args.baseline, args.allow_disabled
+        )
     if args.command == "ai-seed":
         return ai_seed(args.eur_per_usd)
+    if args.command == "ai-prices-seed":
+        return ai_prices_seed(args.eur_per_usd)
+    if args.command == "ai-verify":
+        return ai_verify(args.provider, args.model)
     if args.command == "ai-rotate-secrets":
         return ai_rotate_secrets()
     if args.command == "talent-duplicates":

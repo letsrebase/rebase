@@ -522,6 +522,53 @@ the team builder's catalogue and proposals) or `card_level.level` for a reader t
 the card's JSON only. Never read `Card.seniority` or `Card.anni` off a stored card
 without them.
 
+**A provider, a model or a prompt change is measured before it goes live** (REB-835, design
+2026-10-27 «Evaluation before a change goes live»). The evaluation set is about fifteen real
+profiles, chosen to cover the failures seen (an undated CV, a duplicate person, a
+GitHub-heavy profile, a designer with a portfolio, a very senior lead), each with the card an
+admin wrote by hand as the expected answer. It lives in the hub's database only
+(`card_eval_profiles`, `card_eval_runs`, `card_eval_results`, migration 0037), never in the
+repository, a log, Linear or a PR, because an expected card and the card a run wrote are
+derived from a CV; every row that holds one cascades with the person, and the trail
+(`admin_actions`, entity `card_eval`) names the fields that changed, never their values. The
+three tables are not in `WAREHOUSE_TABLES`.
+
+1. `rebase cards-eval-draft --freelancer <id> --label "senza date" [--freelancer … --label …]`
+   puts a person in the set and drafts their expected card with the `card` task's own model
+   (`CardWriter.compose`, the production writer with nothing stored), as a `bozza`. It prints
+   label, name and `/hub/admin/valutazione/<id>`, never the card. A profile an admin has
+   corrected or accepted is never overwritten by a model.
+2. An admin corrects the card and accepts it in «Valutazione»; any later edit makes it a
+   `bozza` again. Only accepted profiles take part in a run.
+3. `rebase cards-eval --task card --provider P --model M [--effort E] [--baseline RUN_ID]
+   [--allow-disabled]` runs the accepted profiles with `AiCall(override=TaskOverride(P, M, E))`: the seam as the `card` task, answered
+   by that provider and model, so every call is recorded in `ai_usage` under task `card` with
+   `purpose="eval"` and **counts against the task's daily euro cap**, which can end the run
+   early or anything else ends it (it then says `INCOMPLETA`, exits 1 and is never taken as a
+   baseline; every person's result is stored as it comes, so what was paid for is kept). It never
+   writes a live card and never touches `ai_tasks`. Run it from the `api` container like
+   `cards-refresh` (`docker compose -p rebase --env-file /opt/hub/.env exec api uv run
+   --no-sync rebase cards-eval …`, `-p rebase-preview --env-file /opt/hub-preview/.env` on the
+   preview). The provider must be on and have a key and a price for the model: a provider that
+   is off is refused («Il fornitore è spento») unless `--allow-disabled` says this evaluation
+   may send CVs to it, and the report then carries that warning. The processors gate of
+   «OpenAI and Google» below is about production use; the flag is the explicit, printed
+   exception for evaluating.
+
+Reading the report: one line per person (label and the first characters of the id, never a
+name) with `anni` (within one year of the expected value, or both null), `seniority` (equal)
+and `guardia` (no guard of `cards.py` refused the card: a refusal, a cut-off answer or an
+outage is counted under «senza scheda», not as a guard failure) as `ok`/`no`, the ratings of
+`ruolo`, `competenze` and `sintesi` («da valutare» until an admin rates them 1 to 3 in
+«Valutazione»), latency and cost in euro; then the totals, and the change against the
+baseline as «meglio/uguale/peggio» per measure. **A change goes live when it is no worse than
+the baseline on the first three and an admin accepts the ratings.** The baseline is
+`--baseline RUN_ID`, or by default the newest finished run whose provider and model are the
+`card` task's now and whose prompt version is the current `PROMPT_VERSION`: production as it
+runs, never the last candidate tried. With none the report says «Nessun riferimento»: run
+the live configuration first and that run is the baseline. Record its id in the PR that
+changes the prompt (`PROMPT_VERSION` in `cards.py`).
+
 **Every «Proponi il team» is a row, answered or not** (migration 0028, Ivan 2026-09-29:
 «salvare tutte le richieste dopo il click proponi team anche se non ancora
 finalizzate/inviate così raccogliamo metriche di uso»). `team_proposals` keeps the
@@ -713,37 +760,41 @@ base64, `openssl rand -base64 32`), lives only in the host `.env`, root-only (`c
 600`), never in the database or a backup. Without it the app refuses to save or read a
 provider key and «Modelli AI» says so.
 
-**Order on production, once (REB-832, REB-831): two tags, so the builder is never without
-a model.** The workflow rsyncs the sources, builds and runs `up -d` in one step
-(`_deploy-compose.yml`), so there is no point between the new image and the new
-containers to run `ai-seed` in, and a single deploy leaves the public builder answering
-503 «Il team builder è spento.» (the old variables are no longer passed to the containers)
-from `up -d` until the command is run. The milestone's commits allow better, because the
-commit that adds `ai-seed` comes before the one that stops reading the environment:
+**Order on production, once (REB-834): one deploy, then `ai-seed` at once.** The two-tag
+path (tag the `ai-seed` commit, then the head) does not work: that commit still numbers
+its migration 0035, which collides with `0035_one_person_one_linkedin` (REB-800) already
+applied on production, and deploying it would mis-stamp alembic. The workflow rsyncs the
+sources, builds and runs `up -d` in one step (`_deploy-compose.yml`), so there is no point
+between the new image and the new containers to run `ai-seed` in: the public builder
+answers 503 «Il team builder è spento.» (the old variables are no longer passed to the
+containers) from `up -d` until the command is run. Measured on 2026-10-27, about 30
+seconds between the first refused connection and the builder answering again. So:
 
-1. Add `REBASE_SECRETS_KEY=<openssl rand -base64 32>` to the host `.env` (root-only), next
-   to the existing `REBASE_ANTHROPIC_API_KEY` and `REBASE_TEAM_BUILDER_MODEL`. Keep a
-   copy in the password manager: losing it loses every stored provider key. The privacy
-   page is live (see above).
-2. Tag the `ai-seed` commit of the milestone, not its head (`git log --oneline --grep
-   'add ai-seed and ai-rotate-secrets'`; its CI run must be green, as for any tag). It
-   adds the tables and the command and still reads the key from the environment, so
-   production behaves as before. This needs the milestone merged with its commits, not
-   squashed; if it was squashed, deploy the head and take the outage, running step 3 the
-   moment `up -d` ends.
-3. Inside the running api container, which still has the two old variables:
-   `docker compose -p rebase --env-file /opt/hub/.env exec api rebase ai-seed
+1. Add `REBASE_SECRETS_KEY=<openssl rand -base64 32>` to the host `.env` (root-only,
+   `chmod 600`), next to the existing `REBASE_ANTHROPIC_API_KEY` (and
+   `REBASE_TEAM_BUILDER_MODEL` when set; the command defaults to `claude-opus-5`). Keep a
+   copy only Lorenzo can read (a root-only file in `/root/`, the password manager): losing
+   it loses every stored provider key. The preview first, the same way, because the
+   trunk deploys it before any tag.
+2. Tag `main` (`hub-v<next>`) and wait for the tag CI and the deploy run to end.
+3. The moment `up -d` ends, run the command with the old key handed in through the
+   environment, never on the command line (the containers no longer carry it):
+   `REBASE_ANTHROPIC_API_KEY="$(grep '^REBASE_ANTHROPIC_API_KEY=' /opt/hub/.env | cut
+   -d= -f2-)"; export REBASE_ANTHROPIC_API_KEY; docker compose -p rebase --env-file
+   /opt/hub/.env exec -e REBASE_ANTHROPIC_API_KEY api uv run --no-sync rebase ai-seed
    --eur-per-usd <rate>` (`-p rebase-preview --env-file /opt/hub-preview/.env` on the
-   preview). It moves the old key and model into the tables (key sealed, `anthropic` on,
-   both tasks on the model) and writes the Claude prices in euros from claude.com/pricing
-   (USD per million tokens, read 2026-10-27: opus-5 5/25/0.50, opus-5-5 4/20/0.20,
-   thinking billed as output). `<rate>` is **euros per one dollar**, the inverse of the
-   ECB's quote (ECB 1.0870 USD per EUR means `--eur-per-usd 0.9199`), of the day. No rate
-   lives in the code. It prints «chiave salvata, finisce con …abcd», never the key, and
-   refuses to run twice.
-4. Tag the milestone's head. The new containers read the model and the key from the
-   database; nothing was ever without one.
-5. Verify with «Prova» on each task in «Modelli AI».
+   preview; there is no `rebase` on the container's `PATH`, hence `uv run --no-sync`). It
+   moves the old key and model into the tables (key sealed, `anthropic` on, both tasks on
+   the model) and writes the Claude prices in euros from claude.com/pricing (USD per
+   million tokens, read 2026-10-27: opus-5 5/25/0.50, opus-5-5 4/20/0.20, thinking billed
+   as output). `<rate>` is **euros per one dollar**, the inverse of the ECB's quote (ECB
+   1.0870 USD per EUR means `--eur-per-usd 0.9199`), of the day. No rate lives in the
+   code. It prints «chiave salvata, finisce con …abcd», never the key, and refuses to run
+   twice.
+4. Verify with «Prova» on each task in «Modelli AI», and the public builder
+   (`POST /api/hub/team/proposals`).
+5. Remove `REBASE_ANTHROPIC_API_KEY` and `REBASE_TEAM_BUILDER_MODEL` from the `.env` (the
+   key now lives encrypted in the database) and recreate `api`, `mcp` and `cards`.
 
 **Rotation:** generate a new value, then hand both to a one-off container through the
 environment, never the command line (`ps` and the shell history would show what opens every
@@ -757,6 +808,37 @@ changes nothing. Then put the new value in `.env` and recreate **api, mcp and ca
 `REBASE_SECRETS_KEY`, and a `cards` loop on the old value would fail every hourly run
 with a sentence naming `REBASE_SECRETS_KEY` and the card would carry it. Between the command and the recreate the
 old value no longer opens the keys, so keep `REBASE_CARDS_LOOP=off` for the gap.
+
+### OpenAI and Google (REB-840): prices, verification, the processors gate
+
+The seam supports all three providers; only Anthropic has run against the real API. OpenAI
+and Google **stay `enabled=false` in production** until the processors check of the design
+holds for each: the privacy notice lists the provider, a data processing agreement exists
+with it, and its no-training and retention terms were read. Lorenzo and Ivan decide that;
+nothing in the code or a deploy turns a provider on, and a task pointed at a provider that
+is off is refused with «Il fornitore è spento» (an evaluation run needs the explicit
+`--allow-disabled`, because it sends CVs; see «A provider, a model or a prompt change is
+measured»).
+
+- `rebase ai-prices-seed --eur-per-usd <rate>`: writes the reviewed price table
+  (`SEED_USD_PRICES` in `ai_config.py`: USD per million tokens, Standard tier, short
+  context, from developers.openai.com/api/docs/pricing and
+  ai.google.dev/gemini-api/docs/pricing, read 2026-10-27) in euros, `<rate>` being euros per
+  one dollar as for `ai-seed`. A row that exists, an admin's edit included, is never
+  overwritten; no provider is turned on. Google's page announces dated steps (`gemini-4-argon`
+  doubles on 2026-12-01, `gemini-3.8-flash` on 2027-01-01): edit those rows in «Modelli AI»
+  when the date comes, and re-read both pages before trusting the table after that.
+- `rebase ai-verify --provider openai|google --model <model>`: with the key saved in «Modelli
+  AI» (the provider may still be off), one call with a fixed prompt that carries no personal
+  data and the seam's native structured output, then the same with the effort setting. It
+  prints `key_injected= native_output_ok= thinking_ok= usage_present=` and exits 0 only when
+  the first three hold; it prints an exception class and a status, never the key nor the
+  provider's text. Tests use stub models. **The live run has not happened:** no OpenAI or
+  Gemini key exists yet. When one is saved on the preview, run it for each provider with the
+  model chosen; if `key_injected` or `native_output_ok` is `False`, stop and fix `build_model`
+  before enabling that provider, and record the verified model and date here.
+- Evaluation per provider (`cards-eval --allow-disabled`, the report saved) is the
+  evaluation set of the Phase 2 milestone (REB-835): run it once the profiles are accepted.
 
 ### Database backups
 

@@ -204,6 +204,52 @@ def test_card_from_a_cv(clean: Session) -> None:
 CV_TEXT = CvText(filename="cv.pdf", pagine=1, testo="Ada Lovelace", troncato=False)
 
 
+def test_compose_does_not_write_the_card_row(clean: Session) -> None:
+    """The seam the evaluation set measures through: the card and the tokens of every
+    call, and no `freelancer_cards` row, whether there was one or not."""
+    freelancer_id = _apply(clean)
+    llm = RecordingCall([card_response(input_tokens=1000, output_tokens=150)])
+
+    composed = CardWriter(clean, llm, now=lambda: NOW).compose(freelancer_id)
+
+    assert composed.failure is None
+    assert composed.card == Card.model_validate(CARD)
+    assert (composed.model, composed.input_tokens, composed.output_tokens) == (MODEL, 1000, 150)
+    assert _stored(clean, freelancer_id) is None
+    assert len(llm.requests) == 1
+
+
+def test_compose_adds_up_the_rewrite_and_reports_a_failure_without_storing_it(
+    clean: Session,
+) -> None:
+    freelancer_id = _apply(clean)
+    gendered = {**CARD, "sintesi": "Lei è una sviluppatrice con nove anni di esperienza."}
+    llm = RecordingCall(
+        [
+            card_response(gendered, input_tokens=1000, output_tokens=100),
+            card_response(gendered, input_tokens=1100, output_tokens=120),
+        ]
+    )
+
+    composed = CardWriter(clean, llm, now=lambda: NOW).compose(freelancer_id)
+
+    assert composed.card is None
+    assert composed.failure == "gendered"
+    assert (composed.input_tokens, composed.output_tokens) == (2100, 220)
+    assert _stored(clean, freelancer_id) is None
+
+
+def test_compose_says_no_text_for_a_scan_and_a_task_with_no_model_is_refused(
+    clean: Session,
+) -> None:
+    scan = _apply(clean, "scan@studio.it", SCAN, "Rossi", "Mario")
+    composed = CardWriter(clean, RecordingCall([]), now=lambda: NOW).compose(scan)
+    assert (composed.card, composed.failure, composed.model) == (None, "no_text", "")
+
+    with pytest.raises(LlmNotConfigured):
+        CardWriter(clean, None).compose(scan)
+
+
 def test_card_prompt_is_byte_identical_in_substance_to_before() -> None:
     """REB-831 moved the card onto the provider-neutral request: the model still reads
     the same words. The hashes and the user turn were taken from the version before it
