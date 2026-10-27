@@ -782,3 +782,12 @@ def test_a_merge_does_not_run_on_cards_another_transaction_just_merged(clean: Se
     b.deleted_at = NOW
     with pytest.raises(InvalidState, match="appena stata unita"):
         PersonMergeService._still_live(a, b, a_user, b_user)
+
+
+def test_a_cv_upload_on_a_card_a_merge_hid_is_refused(clean: Session) -> None:
+    from rebase_core.members import MemberService
+
+    a, b, _, _, admin = _pair(clean)
+    PersonMergeService(clean).merge(a.id, b.id, admin.id)
+    with pytest.raises(NotFound):
+        MemberService(clean).replace_cv(b.id, PDF, "cv.pdf", "application/pdf")

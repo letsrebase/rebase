@@ -317,6 +317,11 @@ class MemberService:
         ones and the thread says so."""
         filename, mime = check_cv(content, filename, mime)
         row = self._require(freelancer_id)
+        # Locked and re-read: a merge that took this card's lock first has hidden it by
+        # now (REB-800), and a CV written on a hidden card would be lost to the person.
+        self.session.refresh(row, with_for_update=True)
+        if row.deleted_at is not None:
+            raise NotFound(ENTITY, freelancer_id)
         user = self._owner(row)
         first = row.cv_bytes is None
         row.cv_bytes, row.cv_filename, row.cv_mime, row.cv_size = (
