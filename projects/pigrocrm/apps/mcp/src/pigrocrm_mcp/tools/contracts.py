@@ -9,6 +9,7 @@ from pigrocrm.core.contracts.schemas import (
     ContractCreate,
     ContractListQuery,
     ContractProjectionQuery,
+    ContractRenew,
     ContractStateChange,
     ContractUpdate,
     RateCardCreate,
@@ -183,3 +184,11 @@ def update_clause_note(
 def list_clause_notes(context: McpContext, contract_id: str) -> list[dict[str, Any]]:
     notes = ClauseNoteService(context.session).list_for_contract(UUID(contract_id), context.actor)
     return [note.model_dump(mode="json") for note in notes]
+
+
+def renew(context: McpContext, contract_id: str, data: dict[str, Any]) -> dict[str, Any]:
+    return (
+        ContractService(context.session)
+        .renew(UUID(contract_id), ContractRenew(**data), context.actor)
+        .model_dump(mode="json")
+    )

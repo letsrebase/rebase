@@ -177,3 +177,24 @@ async def test_a_note_on_the_renewal_clause_is_read_back_with_get_contract(
 
         names = {tool.name for tool in (await client.list_tools()).tools}
         assert not {"delete_clause_note", "archive_clause_note"} & names
+
+
+async def test_a_contract_is_renewed_with_renew_contract(server, mcp_session: Session) -> None:
+    contract_id = _contract_id(mcp_session)
+
+    async with Client(server) as client:
+        await client.call_tool(
+            "update_contract", {"contract_id": contract_id, "changes": {"fine": "2026-12-31"}}
+        )
+        renewed = await client.call_tool(
+            "renew_contract",
+            {"contract_id": contract_id, "durata_conteggio": 6, "durata_unita": "mesi"},
+        )
+        body = renewed.structured_content
+        assert (body["inizio"], body["fine"]) == ("2027-01-01", "2027-06-30")
+        assert body["contratto_precedente_id"] == contract_id
+        read = await client.call_tool("get_contract", {"contract_id": contract_id})
+        assert read.structured_content["contratto_successivo_id"] == body["id"]
+        again = await client.call_tool("renew_contract", {"contract_id": contract_id})
+        assert again.is_error
+        assert "già stato rinnovato" in again.content[0].text

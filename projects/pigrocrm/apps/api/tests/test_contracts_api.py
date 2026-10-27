@@ -236,3 +236,45 @@ def test_a_clause_note_missing_its_interpretation_is_a_422_and_an_unknown_one_a_
         json={"note": "x"},
     )
     assert missing.status_code == 404, missing.text
+
+
+# ---- renewal (REB-763) ----------------------------------------------------------------
+
+
+def test_a_contract_ending_in_december_is_renewed_into_one_starting_on_1_january(
+    logged_in: TestClient,
+) -> None:
+    contract_id = _contract(logged_in, fine="2026-12-31")
+
+    renewed = logged_in.post(f"/api/contracts/{contract_id}/renew", json={})
+
+    assert renewed.status_code == 201, renewed.text
+    body = renewed.json()
+    assert (body["inizio"], body["fine"]) == ("2027-01-01", "2027-12-31")
+    assert body["contratto_precedente_id"] == contract_id
+    assert body["stato"] == "attivo"
+    read = logged_in.get(f"/api/contracts/{contract_id}").json()
+    assert read["contratto_successivo_id"] == body["id"]
+    assert (
+        logged_in.get(f"/api/contracts/{body['id']}").json()["contratto_precedente_id"]
+        == contract_id
+    )
+
+
+def test_a_renewal_is_refused_twice_without_an_end_and_with_both_ways_to_say_it(
+    logged_in: TestClient,
+) -> None:
+    contract_id = _contract(logged_in, fine="2026-12-31")
+    both = logged_in.post(
+        f"/api/contracts/{contract_id}/renew",
+        json={"fine": "2027-06-30", "durata": {"conteggio": 6, "unita": "mesi"}},
+    )
+    assert both.status_code == 422, both.text
+    shorter = logged_in.post(
+        f"/api/contracts/{contract_id}/renew", json={"durata": {"conteggio": 6, "unita": "mesi"}}
+    )
+    assert shorter.json()["fine"] == "2027-06-30"
+    again = logged_in.post(f"/api/contracts/{contract_id}/renew", json={})
+    assert again.status_code == 409, again.text
+    no_end = _contract(logged_in, fine=None)
+    assert logged_in.post(f"/api/contracts/{no_end}/renew", json={}).status_code == 422

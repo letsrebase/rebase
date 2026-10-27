@@ -178,6 +178,7 @@ ROWS: list[Row] = [
     ),
     Row("PATCH", "/api/contracts/{contract_id}", body={"titolo": "Matrice 2"}),
     Row("POST", "/api/contracts/{contract_id}/state", body={"stato": "attivo"}),
+    Row("POST", "/api/contracts/{contract_id}/renew", body={}),
     Row("PATCH", "/api/contracts/{contract_id}/rate-cards/{rate_card_id}", body={}),
     # --- contracts / clause notes (REB-762): `require_write` (contracts/service.py) ---
     Row(

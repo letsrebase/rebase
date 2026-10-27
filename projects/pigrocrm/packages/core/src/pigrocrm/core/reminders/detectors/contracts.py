@@ -29,6 +29,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 from sqlalchemy import Select, exists, select
+from sqlalchemy.orm import aliased
 
 from pigrocrm.core.contracts.dates import renewal_deadline
 from pigrocrm.core.contracts.models import Contract
@@ -46,7 +47,16 @@ _OVER = ("terminato", "scaduto")
 
 
 def _live() -> Select[Contract]:
-    return select(Contract).where(Contract.deleted_at.is_(None), Contract.stato.not_in(_OVER))
+    """Contracts still to act on: not over, and not renewed (REB-763): a contract that has
+    a successor has had its renewal decided, so neither its end nor its renewal deadline is
+    a thing to remind anybody of."""
+    successor = aliased(Contract)
+    renewed = exists().where(
+        successor.contratto_precedente_id == Contract.id, successor.deleted_at.is_(None)
+    )
+    return select(Contract).where(
+        Contract.deleted_at.is_(None), Contract.stato.not_in(_OVER), ~renewed
+    )
 
 
 def _has_end_date(ctx: DetectorContext) -> bool:

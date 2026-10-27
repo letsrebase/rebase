@@ -61,9 +61,8 @@ class Contract(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     purpose -- its exact value set is the implementing issue's own concern to pin
     against real engagements, not invented here (spec §3's own note).
 
-    `contratto_precedente_id` is the renewal chain (`contract.ts:244-261`) and is
-    deliberately left unset by this spike: nothing here writes it. The column exists
-    so a later, dedicated renewal-automation issue has somewhere to write.
+    `contratto_precedente_id` is the renewal chain (`contract.ts:244-261`): written only
+    by `ContractService.renew` (REB-763), unique, so a contract is renewed once.
     """
 
     __tablename__ = "contracts"

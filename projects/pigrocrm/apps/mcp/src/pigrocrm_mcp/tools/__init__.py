@@ -693,6 +693,32 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
 
     @mcp.tool()
     @guard
+    def renew_contract(
+        contract_id: str,
+        inizio: str | None = None,
+        fine: str | None = None,
+        durata_conteggio: int | None = None,
+        durata_unita: str | None = None,
+        titolo: str | None = None,
+    ) -> dict[str, Any]:
+        """Rinnova un contratto in quello successivo (REB-763): stessi termini, nuove date,
+        collegato al precedente. Senza altro il successore comincia il giorno dopo la fine
+        del contratto e dura quanto durava (stessi mesi interi, altrimenti stessi giorni);
+        `inizio` (YYYY-MM-DD, dopo la fine), `fine` o `durata_conteggio` con `durata_unita`
+        (`giorni`, `settimane`, `mesi`, `anni`) cambiano le date, `fine` e durata
+        insieme no. Il successore nasce `attivo`. Le schede tariffarie che arrivano al nuovo
+        termine passano con date adattate; non passano l'assunzione di rinnovo, le spese,
+        le giornate e le note sulle clausole. Un contratto si rinnova una volta e solo se ha
+        una fine. Rinnovare è una decisione della persona: chiedi conferma prima."""
+        data: dict[str, Any] = {"inizio": inizio, "fine": fine, "titolo": titolo}
+        if (durata_conteggio is None) != (durata_unita is None):
+            raise ValueError("durata_conteggio e durata_unita vanno indicati insieme")
+        if durata_conteggio is not None:
+            data["durata"] = {"conteggio": durata_conteggio, "unita": durata_unita}
+        return contracts.renew(context, contract_id, data)
+
+    @mcp.tool()
+    @guard
     def search_contracts(
         customer_id: str | None = None,
         stato: str | None = None,

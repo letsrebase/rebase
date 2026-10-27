@@ -18,6 +18,7 @@ from pigrocrm.core.contracts.schemas import (
     ContractProjectionQuery,
     ContractProjectionRead,
     ContractRead,
+    ContractRenew,
     ContractStateChange,
     ContractUpdate,
     RateCardCreate,
@@ -91,6 +92,19 @@ def set_state(
     contract_id: UUID, data: ContractStateChange, session: SessionDep, actor: ActorDep
 ) -> ContractRead:
     return ContractService(session).set_state(contract_id, data, actor)
+
+
+@router.post(
+    "/{contract_id}/renew", response_model=ContractRead, status_code=status.HTTP_201_CREATED
+)
+def renew(
+    contract_id: UUID, data: ContractRenew, session: SessionDep, actor: ActorDep
+) -> ContractRead:
+    """Rinnova il contratto (REB-763): il successore ha gli stessi termini, comincia il
+    giorno dopo la fine di questo e dura quanto durava, salvo `inizio`, `fine` o `durata`.
+    Le schede tariffarie che arrivano al nuovo termine passano con lui; le sue restano
+    dove sono. Un contratto si rinnova una volta (409) e solo se ha una fine (422)."""
+    return ContractService(session).renew(contract_id, data, actor)
 
 
 @router.get("/{contract_id}/timeline", response_model=list[ActivityRead])

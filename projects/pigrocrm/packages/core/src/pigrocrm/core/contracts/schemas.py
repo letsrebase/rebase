@@ -80,9 +80,8 @@ Frazione = Annotated[Decimal, Field(max_digits=FRAZIONE_MAX_DIGITS, decimal_plac
 
 class ContractCreate(BaseModel):
     """`contratto_precedente_id` and `stato` are deliberately absent: the renewal
-    chain is left unset by this spike (spec §3's own note), and a new contract
-    always starts life as `bozza` -- `ContractService.set_state` is what moves it
-    on."""
+    chain is written only by `ContractService.renew`, and a new contract always starts
+    life as `bozza` -- `ContractService.set_state` is what moves it on."""
 
     customer_id: UUID
     titolo: SafeStr = Field(max_length=TITOLO_MAX_LENGTH)
