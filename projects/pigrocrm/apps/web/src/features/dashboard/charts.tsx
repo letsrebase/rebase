@@ -1,4 +1,5 @@
 import { cn } from '@rebase/ui/cn'
+import { ScrollRegion } from '@rebase/ui/table'
 
 /**
  * Four shapes, no charting library: big numbers, horizontal bars as CSS widths, one
@@ -161,7 +162,7 @@ export type BarRow = {
 export function BarRows({ caption, rows }: { caption: string; rows: BarRow[] }) {
   if (rows.length === 0) return <EmptyChart caption={caption} />
   return (
-    <div className="overflow-x-auto border bg-card p-4">
+    <ScrollRegion label={caption} className="border bg-card p-4">
       <table className="w-full text-sm">
         <caption className="mb-2 text-left text-sm font-medium">{caption}</caption>
         {/* The header names the two columns for a screen reader and would be pure noise on
@@ -192,7 +193,7 @@ export function BarRows({ caption, rows }: { caption: string; rows: BarRow[] }) 
           ))}
         </tbody>
       </table>
-    </div>
+    </ScrollRegion>
   )
 }
 
@@ -222,7 +223,7 @@ export function Sparkline({ caption, points }: { caption: string; points: SparkP
     .join(' ')
 
   return (
-    <div className="overflow-x-auto border bg-card p-4">
+    <ScrollRegion label={caption} className="border bg-card p-4">
       <svg
         data-testid="sparkline-svg"
         aria-hidden="true"
@@ -266,6 +267,6 @@ export function Sparkline({ caption, points }: { caption: string; points: SparkP
           </tr>
         </tbody>
       </table>
-    </div>
+    </ScrollRegion>
   )
 }

@@ -1,3 +1,4 @@
+import { ScrollRegion } from '@rebase/ui/table'
 import { money } from './format'
 import { SERIES, type SeriesKey } from './monthlySeries'
 import type { CashMonth } from './queries'
@@ -166,34 +167,36 @@ export function MonthlyBars({
           the number rather than the bar. Visually collapsed, never absent. */}
       <details className="mt-3 text-sm">
         <summary className="cursor-pointer text-xs text-muted-foreground">Tabella dei valori</summary>
-        <table className="mt-2 w-full text-xs">
-          <thead>
-            <tr className="text-left text-muted-foreground">
-              <th scope="col" className="py-1 pr-2 font-normal">
-                Mese
-              </th>
-              {series.map((key) => (
-                <th key={key} scope="col" className="py-1 pr-2 font-normal">
-                  {SERIES[key].label}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {months.map((month) => (
-              <tr key={month.mese}>
-                <th scope="row" className="py-1 pr-2 text-left font-normal">
-                  {MONTHS[month.mese - 1]} {String(month.anno).slice(2)}
+        <ScrollRegion label={`${title}, valori`} className="mt-2">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-left text-muted-foreground">
+                <th scope="col" className="py-1 pr-2 font-normal">
+                  Mese
                 </th>
                 {series.map((key) => (
-                  <td key={key} className="py-1 pr-2 tabular-nums">
-                    {money(month[key])}
-                  </td>
+                  <th key={key} scope="col" className="py-1 pr-2 font-normal">
+                    {SERIES[key].label}
+                  </th>
                 ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {months.map((month) => (
+                <tr key={month.mese}>
+                  <th scope="row" className="py-1 pr-2 text-left font-normal">
+                    {MONTHS[month.mese - 1]} {String(month.anno).slice(2)}
+                  </th>
+                  {series.map((key) => (
+                    <td key={key} className="py-1 pr-2 tabular-nums">
+                      {money(month[key])}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </ScrollRegion>
       </details>
     </figure>
   )

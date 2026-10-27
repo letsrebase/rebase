@@ -5,6 +5,7 @@ import { Button } from '@rebase/ui/button'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
+import { ScrollRegion } from '@rebase/ui/table'
 import { toProblem, type ProblemDetail } from '@/lib/api'
 import { emptyLine, type DraftLine } from './lineDraft'
 import { formatMoney, sumLineTotals } from './format'
@@ -79,7 +80,7 @@ export function InvoiceLinesEditor({
   // inputs would only invite an edit that cannot be saved.
   if (readOnly) {
     return (
-      <div className="space-y-3">
+      <ScrollRegion label="Righe della fattura" className="space-y-3">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-muted-foreground text-left">
@@ -102,7 +103,7 @@ export function InvoiceLinesEditor({
             ))}
           </tbody>
         </table>
-      </div>
+      </ScrollRegion>
     )
   }
 

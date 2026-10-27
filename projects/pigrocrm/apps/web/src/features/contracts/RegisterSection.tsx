@@ -116,7 +116,7 @@ export function RegisterSection({ contractId }: { contractId: string }) {
           <p className="text-muted-foreground">Nessuna giornata fatturata in questo mese.</p>
         ) : (
           <div className="space-y-3">
-            <Table>
+            <Table scrollLabel="Giornate fatturate del mese">
               <TableHeader>
                 <TableRow>
                   <TableHead>Data</TableHead>

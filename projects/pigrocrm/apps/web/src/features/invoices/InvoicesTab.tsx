@@ -26,6 +26,7 @@ export function InvoicesTab({ owner, actions }: { owner: InvoiceOwner; actions?:
   const table = (
     <>
       <DataTable
+        label="Fatture"
         columns={buildInvoiceColumns()}
         data={invoices.items}
         isLoading={invoices.isLoading}

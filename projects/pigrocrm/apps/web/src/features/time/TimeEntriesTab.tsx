@@ -91,6 +91,7 @@ export function TimeEntriesTab({ dealId }: { dealId: string }) {
       </div>
 
       <DataTable
+        label="Ore registrate"
         columns={buildTimeEntryColumns(customFields)}
         data={entries.data?.items ?? []}
         isLoading={entries.isLoading}

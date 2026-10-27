@@ -60,10 +60,10 @@ function Section({ id, title, children }: { id: string; title: string; children:
   )
 }
 
-function Frame({ children }: { children: React.ReactNode }) {
+function Frame({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="overflow-x-auto overflow-y-hidden border border-border bg-card">
-      <Table>{children}</Table>
+      <Table scrollLabel={label}>{children}</Table>
     </div>
   )
 }
@@ -123,7 +123,7 @@ function Report({
       ) : (
         <>
           <Section id="consuntivo-giorni" title="Per giorno">
-            <Frame>
+            <Frame label="Ore per giorno">
               <TableHeader>
                 <TableRow>
                   <TableHead>Data</TableHead>
@@ -148,7 +148,7 @@ function Report({
           </Section>
           <div className="grid gap-6 lg:grid-cols-2">
             <Section id="consuntivo-settimane" title="Per settimana">
-              <Frame>
+              <Frame label="Ore per settimana">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Settimana</TableHead>
@@ -166,7 +166,7 @@ function Report({
               </Frame>
             </Section>
             <Section id="consuntivo-mesi" title="Per mese">
-              <Frame>
+              <Frame label="Ore per mese">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Mese</TableHead>
@@ -190,7 +190,7 @@ function Report({
         {invoices.length === 0 ? (
           <p className="text-sm text-muted-foreground">Nessuna fattura in questo periodo.</p>
         ) : (
-          <Frame>
+          <Frame label="Fatture del periodo">
             <TableHeader>
               <TableRow>
                 <TableHead>Numero</TableHead>

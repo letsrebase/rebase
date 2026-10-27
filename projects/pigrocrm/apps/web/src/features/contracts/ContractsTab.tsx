@@ -31,6 +31,7 @@ export function ContractsTab({ customerId }: { customerId: string }) {
         </div>
       )}
       <DataTable
+        label="Contratti"
         columns={buildContractColumns()}
         data={contracts.data?.items ?? []}
         isLoading={contracts.isLoading}

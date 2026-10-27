@@ -105,7 +105,7 @@ export function ReceivablesTab() {
         {data.per_cliente.length === 0 ? (
           <p className="text-sm text-muted-foreground">Nessuna fattura da incassare.</p>
         ) : (
-          <Table>
+          <Table scrollLabel="Esposizione per cliente">
             <TableHeader>
               <TableRow>
                 <TableHead>Cliente</TableHead>
@@ -141,7 +141,7 @@ export function ReceivablesTab() {
         {data.scadute.length === 0 ? (
           <p className="text-sm text-muted-foreground">Nessuna fattura scaduta.</p>
         ) : (
-          <Table>
+          <Table scrollLabel="Fatture scadute">
             <TableHeader>
               <TableRow>
                 <TableHead>Numero</TableHead>

@@ -230,7 +230,7 @@ export function RatesPanel() {
           all&apos;azienda, e serve solo al margine. Lasciare un campo vuoto significa
           «nessuna tariffa», che non è la stessa cosa di zero.
         </p>
-        <Table>
+        <Table scrollLabel="Tariffe delle persone">
           <TableHeader>
             <TableRow>
               <TableHead>Persona</TableHead>
@@ -256,7 +256,7 @@ export function RatesPanel() {
           La tariffa del deal vince su quella della persona: è la regola che permette di
           concordare un prezzo con un cliente senza toccare le tariffe di nessuno.
         </p>
-        <Table>
+        <Table scrollLabel="Tariffe dei deal">
           <TableHeader>
             <TableRow>
               <TableHead>Deal</TableHead>

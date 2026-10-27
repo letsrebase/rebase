@@ -183,4 +183,29 @@ export default defineConfig([
       'react-refresh/only-export-components': ['error', { allowExportNames: ['variablesToFields'] }],
     },
   },
+  {
+    // A table that overflows is a keyboard-reachable scroll region, and its name is what a
+    // screen reader says when the focus lands on it (REB-775, REB-782). A `<Table>` without
+    // `scrollLabel` is announced as nothing, and a hand-written `<table>` outside a
+    // `<ScrollRegion label>` is not a region at all, so a new one of either is a finding;
+    // `DataTable` has its own required `label`, which the type checker enforces.
+    files: ['src/**/*.tsx'],
+    ignores: ['**/*.test.tsx'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            "JSXOpeningElement:matches([name.name='Table'], [name.property.name='Table']):not(:has(JSXAttribute[name.name='scrollLabel']))",
+          message: 'A <Table> names what it holds: pass `scrollLabel` (REB-782).',
+        },
+        {
+          selector:
+            "JSXElement[openingElement.name.name='table']:not(JSXElement[openingElement.name.name='ScrollRegion'] > JSXElement)",
+          message:
+            'A hand-written <table> sits directly in a <ScrollRegion label="..."> from @rebase/ui/table (REB-782).',
+        },
+      ],
+    },
+  },
 ])

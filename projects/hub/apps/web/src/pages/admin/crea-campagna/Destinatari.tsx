@@ -272,7 +272,7 @@ function AudienceTable({
 }) {
   return (
     <div className="border border-border bg-card">
-      <Table>
+      <Table scrollLabel="Destinatari della campagna">
         <TableHeader>
           <TableRow>
             <TableHead>Nome</TableHead>

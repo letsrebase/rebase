@@ -339,7 +339,7 @@ export function AdminCampagna() {
             ))}
           </div>
           <div className="overflow-x-auto overflow-y-hidden border border-border bg-card">
-            <Table>
+            <Table scrollLabel="Persone della campagna">
               <TableHeader>
                 <TableRow>
                   <TableHead>Persona</TableHead>
