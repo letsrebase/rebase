@@ -17,6 +17,7 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 import rebase_core.sources as sources_module
+from rebase_core.ai_config import AI_CONFIG_ENTITY_ID
 from rebase_core.audit import AdminActionService
 from rebase_core.errors import NotFound, ValidationFailed
 from rebase_core.freelancers import FreelancerService
@@ -355,9 +356,7 @@ def test_set_enabled_writes_admin_action(clean: Session) -> None:
     assert row is not None and row.enabled is False and row.updated_by == admin
     actions = [
         (a.entity_type, a.kind, a.admin_id, a.payload)
-        for a in AdminActionService(clean).timeline(
-            "ai_config", sources_module.AI_CONFIG_ENTITY_ID, 10
-        )
+        for a in AdminActionService(clean).timeline("ai_config", AI_CONFIG_ENTITY_ID, 10)
     ]
     assert len(actions) == 2
     assert {(a[0], a[1], a[2]) for a in actions} == {("ai_config", "ai_switch", admin)}
@@ -440,12 +439,13 @@ def test_refetch_due_skips_fresh_and_never_imports_llm(clean: Session) -> None:
     # The weekly pass never reaches a model: not imported by the module, nor by what it
     # imports, as far as a fresh interpreter can tell.
     tree = ast.parse(Path(sources_module.__file__).read_text())
-    imported = {
-        alias.name if isinstance(node, ast.Import) else node.module
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Import | ast.ImportFrom)
-        for alias in (node.names if isinstance(node, ast.Import) else [None])
-    }
+    imported: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imported.add(node.module)
+            imported.update(f"{node.module}.{alias.name}" for alias in node.names)
     assert "rebase_core.llm" not in imported
     probe = "import sys, rebase_core.sources; sys.exit('rebase_core.llm' in sys.modules)"
     assert subprocess.run([sys.executable, "-c", probe], check=False).returncode == 0
