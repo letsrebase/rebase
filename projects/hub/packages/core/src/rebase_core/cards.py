@@ -58,8 +58,10 @@ from rebase_core.audit import AdminActionService, utcnow
 from rebase_core.bands import band_for
 from rebase_core.card_draft import (
     CV,
+    FONTI_FIELDS,
     HUB,
     CardDraft,
+    CardFonti,
     Conflict,
     conflicts,
     dated_by,
@@ -107,6 +109,9 @@ REGENERATE_LOCK = "regenerate_stale"
 # private `CardDraft`. A bump spends nothing by itself: the cards of another version
 # are listed for an admin to regenerate (`CardWriter.stale_cards`).
 PROMPT_VERSION = 2
+# The versions `CardWriter.compose` can still write, for an evaluation to measure the
+# present prompt against the previous one (`rebase cards-eval --prompt-version`).
+PROMPT_VERSIONS = (1, PROMPT_VERSION)
 
 Failure = Literal[
     "no_text",
@@ -378,6 +383,16 @@ def _source_block(item: SourceItem) -> str:
     return _block(item.key, header, body)
 
 
+def source_blocks(sources: SourceSet, facts: HubFacts) -> list[str]:
+    """One data block per source the prompt carries, the hub's facts last: what the writer
+    reads beside the CV, and what the evaluation's judge reads beside it."""
+    blocks = [_source_block(item) for item in prompt_sources(sources)]
+    if not facts.empty:
+        header, _, body = facts.text().partition("\n")
+        blocks.append(_block(HUB, header, body))
+    return blocks
+
+
 def card_prompt(
     cv: CvText,
     posizione: str | None,
@@ -398,10 +413,7 @@ def card_prompt(
         f"Position on the profile: {posizione or 'not given'}\n\n"
         f"The CV's text{cut}:\n<cv>\n{cv.testo}\n</cv>"
     )
-    blocks = [_source_block(item) for item in prompt_sources(sources)]
-    if not facts.empty:
-        header, _, body = facts.text().partition("\n")
-        blocks.append(_block(HUB, header, body))
+    blocks = source_blocks(sources, facts)
     if blocks:
         keys = ", ".join(source_keys(sources, facts))
         user += f"\n\nSources available: {keys}\n\n" + "\n\n".join(blocks)
@@ -409,6 +421,23 @@ def card_prompt(
         system=_system(bool(blocks)),
         messages=[LlmMessage(role="user", text=user)],
         output_model=CardDraft,
+    )
+
+
+def card_prompt_v1(cv: CvText, posizione: str | None) -> LlmRequest:
+    """Prompt version 1 as REB-799 and REB-802 left it, for an evaluation to write the
+    baseline the present prompt is compared with (REB-842): `_SYSTEM` alone, a user turn
+    of the position and the CV and nothing else, the answer `Card`. Never used to write a
+    live card."""
+    cut = " (cut short: the file is longer than what follows)" if cv.troncato else ""
+    user = (
+        f"Position on the profile: {posizione or 'not given'}\n\n"
+        f"The CV's text{cut}:\n<cv>\n{cv.testo}\n</cv>"
+    )
+    return LlmRequest(
+        system=_SYSTEM,
+        messages=[LlmMessage(role="user", text=user)],
+        output_model=Card,
     )
 
 
@@ -461,6 +490,12 @@ def _draft_from(response: LlmResponse, known: KnownIdentifiers) -> CardDraft | F
     if response.stop_reason == "max_tokens":
         return "max_tokens"
     draft = response.parsed
+    if isinstance(draft, Card):  # version 1 answers the card alone
+        draft = CardDraft(
+            card=draft,
+            fonti=CardFonti.model_validate({name: [] for name in FONTI_FIELDS}),
+            employers=[],
+        )
     if not isinstance(draft, CardDraft):
         return "shape"
     if identifying(draft.card, KnownIdentifiers.empty(known.cognome, known.nome)):
@@ -468,7 +503,7 @@ def _draft_from(response: LlmResponse, known: KnownIdentifiers) -> CardDraft | F
     return draft
 
 
-def _known_identifiers(
+def known_identifiers(
     cognome: str, nome: str, links: list[str], sources: SourceSet, facts: HubFacts
 ) -> KnownIdentifiers:
     """What could name this person beyond their name: the account their links name and
@@ -875,7 +910,7 @@ class CardWriter:
 
     # ---- helpers ---------------------------------------------------------------------
 
-    def compose(self, freelancer_id: UUID) -> Composed:
+    def compose(self, freelancer_id: UUID, prompt_version: int = PROMPT_VERSION) -> Composed:
         """What the model makes of the person's inputs, with nothing stored: the prompt
         (the CV, and the sources and hub facts the person has, as already stored: nothing
         is fetched here), the call, the card and the guards (it names the person, carries
@@ -894,7 +929,13 @@ class CardWriter:
         exist (`verify_fonti`); years claimed on no source that dates a profession are
         dropped and recorded; a hub that shows more real work than the card counts is
         recorded. The employers the model reports are read by the guard and gone with this
-        call."""
+        call.
+
+        `prompt_version` 1 is for an evaluation's baseline (REB-842): the CV alone, version
+        1's words and guards (the person's name, an address, the gender), the answer a
+        bare card. Nothing live is ever written under it."""
+        if prompt_version not in PROMPT_VERSIONS:
+            raise ValueError(f"prompt version {prompt_version} cannot be written")
         llm = self.llm
         if llm is None:
             raise LlmNotConfigured(TASK_OFF)
@@ -905,10 +946,15 @@ class CardWriter:
         owner = self.session.get(User, row.user_id)
         cognome = owner.cognome if owner is not None else ""
         nome = owner.nome if owner is not None else ""
-        sources = self._sources().current(freelancer_id)
-        facts = hub_facts(self.session, freelancer_id)
-        known = _known_identifiers(cognome, nome, row.links, sources, facts)
-        request = card_prompt(cv, row.posizione, sources, facts)
+        if prompt_version == 1:
+            sources, facts = SourceSet([]), HubFacts(seniority_admin=None, anni_admin=None)
+            known = KnownIdentifiers.empty(cognome, nome)
+            request = card_prompt_v1(cv, row.posizione)
+        else:
+            sources = self._sources().current(freelancer_id)
+            facts = hub_facts(self.session, freelancer_id)
+            known = known_identifiers(cognome, nome, row.links, sources, facts)
+            request = card_prompt(cv, row.posizione, sources, facts)
         hashes = hash_inputs(row.posizione, sources, facts)
         # Claude takes seconds: the transaction ends here, so no pooled connection and
         # no lock waits on it. `_save` opens the next one.

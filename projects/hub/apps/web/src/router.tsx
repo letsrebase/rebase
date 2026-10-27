@@ -26,7 +26,6 @@ import { AdminAccessi } from '@/pages/admin/Accessi'
 import { AdminAdmins } from '@/pages/admin/Admins'
 import { AdminAgenti } from '@/pages/admin/Agenti'
 import { AdminModelliAi } from '@/pages/admin/ModelliAi'
-import { AdminValutazione, AdminValutazioneProfilo } from '@/pages/admin/Valutazione'
 import { AdminGuard } from '@/pages/admin/AdminGuard'
 import { AdminGuida } from '@/pages/admin/Guida'
 import { AdminPigro } from '@/pages/admin/Pigro'
@@ -525,16 +524,6 @@ const adminModelliAi = createRoute({
   path: '/modelli-ai',
   component: AdminModelliAi,
 })
-const adminValutazione = createRoute({
-  getParentRoute: () => adminArea,
-  path: '/valutazione',
-  component: AdminValutazione,
-})
-const adminValutazioneProfilo = createRoute({
-  getParentRoute: () => adminArea,
-  path: '/valutazione/$id',
-  component: AdminValutazioneProfilo,
-})
 const adminAgentsRedirect = createRoute({
   getParentRoute: () => adminArea,
   path: '/agenti',
@@ -591,8 +580,6 @@ export const routeTree = root.addChildren([
       adminCompaniesDetailRedirect,
       adminReferrals,
       adminModelliAi,
-      adminValutazione,
-      adminValutazioneProfilo,
       adminPigro,
       adminGuide,
       adminGuideRedirect,

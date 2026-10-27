@@ -161,13 +161,23 @@ source is added:
 
 ## Evaluation before a change goes live
 
-A fixed set of about 15 real profiles, chosen to cover the failures seen (undated CV,
-duplicate person, GitHub-heavy profile, designer with a portfolio, very senior lead), each
-with the card an admin wrote by hand as the expected answer. Stored in the hub's
-database, not in the repository (it holds personal data). A command
-(`rebase cards-eval --task card --provider … --model …`) runs the set against a provider
-and model and reports, per field, agreement with the expected card, guard failures,
-latency and cost. A provider or prompt change goes live after its numbers are read.
+A fixed sample of about 15 real profiles, chosen to cover the failures seen (undated CV,
+duplicate person, GitHub-heavy profile, designer with a portfolio, very senior lead),
+stored by id in the hub's database, not in the repository (what a run writes holds
+personal data). A command (`rebase cards-eval`) writes the cards of the sample with a
+provider, model, effort and prompt version, then cross-checks each against the sources it
+was written from, with no admin step: rules where one exists (the schema and the guards,
+anonymity, the years recomputed from the CV's dated periods when the text allows a
+reliable parse) and a separate judging call that marks each field supported, unsupported
+or contradicted against the CV, GitHub, the links and the hub's facts, and flags what was
+invented. It reports supported fields, contradictions, guard failures, identifiers left in
+the card, latency and cost (writing and judging apart) and the comparison with a baseline
+run. A provider or prompt change goes live after its numbers are read.
+
+*Changed 2026-10-27 (REB-842, Lorenzo).* The first version of this section had an admin
+write each expected card by hand and rate the role, skills and summary of every run; it
+was built (REB-835, REB-836) and removed the same day, with its page, its routes and the
+expected cards it stored.
 
 ## Cost
 
@@ -215,7 +225,8 @@ Two separate checks, each gating one rollout step:
   production until they confirm the notice is updated; each source and each provider has
   its own on/off switch on the «Modelli AI» page, off by default.
 - Evaluation set: the builder drafts the 15 expected cards from each CV and its links;
-  an admin corrects them before they become the reference.
+  an admin corrects them before they become the reference. Superseded the same day by
+  REB-842 (Lorenzo): no expected card, the evaluation is automatic.
 - Status: approved.
 
 ## Calls made after the builder check (mine, for Lorenzo to check)
@@ -246,7 +257,5 @@ Two separate checks, each gating one rollout step:
 - **Fetched text is deleted with its link.** Removing a link deletes its stored text at
   the next refetch; deleting a person (or an erasure request) deletes all their source
   text at once, like the CV.
-- **Evaluation metric.** Per profile: `anni` within one year of the expected value (or
-  both null), seniority equal, guard clean; role, skills and summary rated by an admin
-  on a three-point scale in the report. A change goes live when it is no worse than the
-  baseline on the first three and an admin accepts the ratings.
+- **Evaluation metric.** Superseded by REB-842, see «Evaluation before a change goes live»:
+  the checks are automatic and nobody rates a card.

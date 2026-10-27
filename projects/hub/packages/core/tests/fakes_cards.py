@@ -12,6 +12,7 @@ import json
 from typing import Any
 
 from rebase_core.card_draft import FONTI_FIELDS, CardDraft
+from rebase_core.card_judge import CardJudgement
 from rebase_core.llm import LlmResponse
 
 MODEL = "claude-opus-5"
@@ -99,5 +100,55 @@ def card_response(
         model=MODEL,
         input_tokens=input_tokens,
         output_tokens=output_tokens,
+        cache_read_tokens=0,
+    )
+
+
+def draft_body(card: dict[str, Any] | None = None) -> str:
+    """The body of a writing call's answer under prompt version 2, as a provider returns it."""
+    return json.dumps({"card": card or CARD, "fonti": FONTI, "employers": []})
+
+
+def judgement_body(
+    verdicts: dict[str, tuple[str, str]] | None = None,
+    *,
+    invented: list[str] | None = None,
+    identifying: list[str] | None = None,
+) -> str:
+    """The body of a judging call's answer: every field `supported` unless `verdicts` says
+    otherwise (`{"anni": ("contradicted", "the CV dates three years")}`)."""
+    fields = {name: {"verdict": "supported", "reason": "the CV says so"} for name in FONTI_FIELDS}
+    for name, (verdict, reason) in (verdicts or {}).items():
+        fields[name] = {"verdict": verdict, "reason": reason}
+    return json.dumps({**fields, "invented": invented or [], "identifying": identifying or []})
+
+
+def judge_response(
+    verdicts: dict[str, tuple[str, str]] | None = None,
+    *,
+    invented: list[str] | None = None,
+    identifying: list[str] | None = None,
+    text: str | None = None,
+    stop_reason: str = "end_turn",
+) -> LlmResponse:
+    """The judging call's answer as `AiCall` hands it over: `parsed` is the body validated as
+    `CardJudgement`, `None` when it is not one."""
+    body = (
+        text
+        if text is not None
+        else judgement_body(verdicts, invented=invented, identifying=identifying)
+    )
+    try:
+        parsed = CardJudgement.model_validate_json(body) if stop_reason == "end_turn" else None
+    except ValueError:
+        parsed = None
+    return LlmResponse(
+        text=None if stop_reason == "refusal" else body,
+        parsed=parsed,
+        stop_reason=stop_reason,
+        refusal_category=None,
+        model=MODEL,
+        input_tokens=2500,
+        output_tokens=300,
         cache_read_tokens=0,
     )
