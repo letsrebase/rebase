@@ -5,6 +5,7 @@ import { api, unwrap } from './api'
 import type { components } from './api-types'
 import { can, canWrite, isAdmin, type Action } from './permissions'
 import { queryKeys } from './query'
+import { leavePush } from '../pwa/leavePush'
 import { tenantPrefix } from './tenant'
 
 export type SessionUser = components['schemas']['UserRead']
@@ -151,6 +152,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
      */
     logout: async () => {
       try {
+        // Push on this browser goes with the session it was for (REB-738), while the
+        // session still authorises the call. Bounded, and it never throws.
+        await leavePush()
         await logoutMutation.mutateAsync()
       } finally {
         // Before the page leaves, and in the `finally` for the same reason the

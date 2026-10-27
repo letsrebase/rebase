@@ -124,6 +124,9 @@ export function pwa(): Plugin {
         define: {
           __BUILD_ID__: JSON.stringify(buildId(html, urls, contents)),
           __SHELL_PATHS__: JSON.stringify(urls),
+          // The picture inside a push notification: the 192 px icon, at the one URL the
+          // host serves it from for every space (the manifest's own).
+          __NOTIFICATION_ICON__: JSON.stringify(`${base}${ICON_DIR}/icon-192.png`),
         },
         build: {
           outDir,

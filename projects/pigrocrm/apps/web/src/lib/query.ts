@@ -164,4 +164,8 @@ export const queryKeys = {
     ['contract', id, 'billable-days', params ?? {}] as const,
   contractRegister: (id: string, params?: unknown) =>
     ['contract', id, 'register', params ?? {}] as const,
+  // Web push (REB-738): whether this installation can send it and the key a browser
+  // subscribes with, and the caller's own browsers.
+  pushConfig: ['push-config'] as const,
+  pushSubscriptions: ['push-subscriptions'] as const,
 }
