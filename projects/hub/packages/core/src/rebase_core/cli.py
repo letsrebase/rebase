@@ -5,7 +5,7 @@ import base64
 import binascii
 import os
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from contextlib import closing
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
@@ -19,8 +19,8 @@ from rebase_core.ai_config import PROVIDER_OFF, AiConfigService
 from rebase_core.ai_verify import verify
 from rebase_core.campaigns.sender import campaign_sender_from_settings
 from rebase_core.campaigns.tick import run_tick
-from rebase_core.card_eval import CardEvalService, draft_expected, format_report, run_eval
-from rebase_core.cards import CardWriter
+from rebase_core.card_eval import format_report, named, results_of, run_eval, sample
+from rebase_core.cards import PROMPT_VERSION, PROMPT_VERSIONS, CardWriter
 from rebase_core.config import Settings, get_settings
 from rebase_core.contracts.fields import ContractFailed, Value, merge_data
 from rebase_core.contracts.render import (
@@ -33,7 +33,7 @@ from rebase_core.conversions import pixel_from_settings
 from rebase_core.db import create_engine_from_settings, session_factory
 from rebase_core.documenso import client_from_settings
 from rebase_core.duplicates import UNIQUE_INDEXES, ensure_unique_indexes, find_duplicates
-from rebase_core.errors import DocumensoFailed, DomainError, LlmUnavailable
+from rebase_core.errors import DocumensoFailed, DomainError
 from rebase_core.freelancers import freelancer_read
 from rebase_core.http import HttpCall
 from rebase_core.llm import AiCall, TaskOverride, call_for_task
@@ -44,7 +44,7 @@ from rebase_core.models import (
     AI_PROVIDERS,
     USER_ROLES,
     AiProvider,
-    CardEvalProfile,
+    AiTask,
     Freelancer,
     Signup,
     User,
@@ -293,121 +293,109 @@ def sources_refetch(limit: int) -> int:
     return 0
 
 
-def cards_eval_draft(freelancers: Sequence[UUID], labels: Sequence[str]) -> int:
-    """`rebase cards-eval-draft --freelancer ID [--label L] ...` (REB-835): the builder's
-    draft of each person's expected card, made with the `card` task's own model from the
-    CV, stored as a `bozza` for an admin to correct and accept in «Valutazione». `--label`
-    (the failure the person covers: «senza date», «duplicato», «GitHub») is given once
-    per `--freelancer`, in order, for a person new to the set; leave them all out to
-    draft again people already in it. One line per person: label, name and the admin
-    link. The card's text is never printed: it is personal data, and it is on the page.
-    A person whose card the guards refuse is said and skipped; an outage, a spent cap or
-    a task that is off ends the run, since the next call would be refused the same."""
-    if labels and len(labels) != len(freelancers):
-        print("Serve un --label per ogni --freelancer, o nessuno.", file=sys.stderr)
-        return 2
-    settings = get_settings()
-    open_session = session_factory(create_engine_from_settings(settings))
-    if call_for_task(lambda: closing(open_session()), settings, "card") is None:
-        print("Nessun modello configurato per le schede: apri «Modelli AI».", file=sys.stderr)
-        return 1
-    session = open_session()
-    failed = False
-    try:
-        service = CardEvalService(session)
-        for index, freelancer_id in enumerate(freelancers):
-            try:
-                if labels:
-                    service.ensure(freelancer_id, labels[index])
-                elif session.get(CardEvalProfile, freelancer_id) is None:
-                    print(f"{freelancer_id}: serve --label, non è ancora nel set", file=sys.stderr)
-                    failed = True
-                    continue
-                llm = AiCall(
-                    lambda: closing(open_session()),
-                    settings,
-                    "card",
-                    purpose="eval",
-                    freelancer_id=freelancer_id,
-                )
-                profile = draft_expected(session, freelancer_id, llm)
-            except LlmUnavailable as exc:
-                print(exc.message, file=sys.stderr)
-                return 1
-            except DomainError as exc:
-                print(f"{freelancer_id}: {exc.message}", file=sys.stderr)
-                failed = True
-                continue
-            print(
-                f"{profile.label}\t{profile.nome} {profile.cognome}\t"
-                f"/hub/admin/valutazione/{freelancer_id}"
-            )
-    finally:
-        session.close()
-    return 1 if failed else 0
-
-
 def cards_eval(
-    provider: str,
-    model: str,
+    sample_size: int | None,
+    freelancers: Sequence[UUID],
+    provider: str | None,
+    model: str | None,
     effort: str | None,
+    prompt_version: int,
+    judge_provider: str | None,
+    judge_model: str | None,
     baseline: UUID | None = None,
     allow_disabled: bool = False,
 ) -> int:
-    """`rebase cards-eval --provider P --model M [--effort E]` (REB-835): runs the accepted
-    profiles of the evaluation set through the `card` task, answered by that provider and
-    model instead of the task's own, and prints per person whether the years are within a
-    year of the expected card, the seniority is equal and the guard is clean, with the
-    latency and the cost, the three ratings an admin gives in «Valutazione», the totals
-    and how it stands against a baseline: `--baseline RUN_ID`, or the newest finished run of
-    the live configuration (the provider and model the task is set to and the current
-    prompt version), or «nessun riferimento». A provider that is switched off is refused,
-    «Il fornitore è spento», unless `--allow-disabled` says this evaluation may send CVs
-    to it (the report says so). The run is stored for the admin
-    to rate; no live card and no task setting is touched. Its calls are recorded under the
-    `card` task with `purpose="eval"`, so they count against the task's daily cap, which
-    can end the run early: it then says so, exits 1 and is never taken as a baseline.
-    Nothing printed carries a card's text or a name. Exits 1 with no accepted profile."""
+    """`rebase cards-eval [--sample N | --freelancer ID ...] [--provider P --model M
+    [--effort E]] [--prompt-version V] [--judge-provider P --judge-model M] [--baseline
+    RUN_ID] [--allow-disabled]` (REB-842): writes the card of each person of the fixed
+    sample (or of the `--sample N` first of it, a failure at a time, or of the people
+    named) with the provider and model (the `card` task's own when left out), effort and
+    prompt version asked, then cross-checks every card against the sources it came from:
+    the rules (years recomputed from the CV's dates where the text allows, the seniority's
+    band, the guards, the identifiers the person's data holds) and a separate judging call,
+    answered by the `card` task's provider and model or by `--judge-provider` and
+    `--judge-model`, that marks each field supported, unsupported or contradicted and flags
+    what was invented. Prints per person and in total the supported fields, the
+    contradictions, the guard failures, the identifiers found, the latency and the cost of
+    the writing and of the judging apart, and how the run stands against a baseline:
+    `--baseline RUN_ID`, or the newest finished run of the live configuration, or
+    «nessun riferimento». `--prompt-version 1` writes with the CV-alone prompt of before
+    the sources, for a baseline of it. A provider that is switched off is refused, «Il
+    fornitore è spento», unless `--allow-disabled` says this evaluation may send CVs to
+    it (the report says so). No live card and no task setting is touched; the calls are
+    recorded under the `card` task with `purpose="eval"`, so they count against its daily
+    cap, which can end the run early: it then says so, exits 1 and is never taken as a
+    baseline. Nothing printed carries a card's text, a reason or a name."""
+    if sample_size is not None and freelancers:
+        print("--sample e --freelancer si escludono.", file=sys.stderr)
+        return 2
+    if (provider is None) != (model is None):
+        print("--provider e --model vanno insieme.", file=sys.stderr)
+        return 2
+    if (judge_provider is None) != (judge_model is None):
+        print("--judge-provider e --judge-model vanno insieme.", file=sys.stderr)
+        return 2
     settings = get_settings()
     open_session = session_factory(create_engine_from_settings(settings))
-
-    def llm_for(freelancer_id: UUID) -> AiCall:
-        return AiCall(
-            lambda: closing(open_session()),
-            settings,
-            "card",
-            override=TaskOverride(provider, model, effort, allow_disabled),
-            purpose="eval",
-            freelancer_id=freelancer_id,
-        )
-
     session = open_session()
     try:
-        account = session.get(AiProvider, provider)
-        if not allow_disabled and (account is None or not account.enabled):
-            print(
-                f"{PROVIDER_OFF}: una valutazione manda i CV al fornitore, quindi serve "
-                "--allow-disabled.",
-                file=sys.stderr,
-            )
+        live = session.get(AiTask, "card")
+        if live is None:
+            print("Nessun modello configurato per le schede: apri «Modelli AI».", file=sys.stderr)
             return 1
+        if provider is None or model is None:
+            provider, model = live.provider, live.model
+            effort = effort if effort is not None else live.effort
+        writer = TaskOverride(provider, model, effort, allow_disabled)
+        if judge_provider is None or judge_model is None:
+            judge_provider, judge_model = live.provider, live.model
+            judging = TaskOverride(judge_provider, judge_model, live.effort, allow_disabled)
+        else:
+            judging = TaskOverride(judge_provider, judge_model, None, allow_disabled)
+        for name in dict.fromkeys((provider, judge_provider)):
+            account = session.get(AiProvider, name)
+            if not allow_disabled and (account is None or not account.enabled):
+                print(
+                    f"{PROVIDER_OFF} ({name}): una valutazione manda i CV al fornitore, quindi "
+                    "serve --allow-disabled.",
+                    file=sys.stderr,
+                )
+                return 1
+
+        def call_as(override: TaskOverride) -> Callable[[UUID], AiCall]:
+            return lambda freelancer_id: AiCall(
+                lambda: closing(open_session()),
+                settings,
+                "card",
+                override=override,
+                purpose="eval",
+                freelancer_id=freelancer_id,
+            )
+
+        targets = named(session, freelancers) if freelancers else sample(session, sample_size)
         run = run_eval(
             session,
-            llm_for,
+            call_as(writer),
+            call_as(judging),
             task="card",
             provider=provider,
             model=model,
             effort=effort,
+            targets=targets,
+            prompt_version=prompt_version,
+            judge_by=(judge_provider, judge_model),
             baseline_run_id=baseline,
             allow_disabled=allow_disabled,
         )
+        report = format_report(run, results_of(session, run.id))
+        complete = run.summary["complete"]
     except DomainError as exc:
         print(exc.message, file=sys.stderr)
         return 1
     finally:
         session.close()
-    print(format_report(run))
-    return 0 if run.summary["complete"] else 1
+    print(report)
+    return 0 if complete else 1
 
 
 def ai_seed(eur_per_usd: str) -> int:
@@ -848,20 +836,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Rilegge GitHub e i link da cui si scrive la scheda, senza chiamare un modello",
     )
     sources_parser.add_argument("--limit", type=int, default=50)
-    draft_parser = sub.add_parser(
-        "cards-eval-draft",
-        help="Scrive la bozza della scheda attesa di chi è nel set di valutazione",
-    )
-    draft_parser.add_argument("--freelancer", type=UUID, action="append", required=True)
-    draft_parser.add_argument("--label", action="append", default=[])
     eval_parser = sub.add_parser(
         "cards-eval",
-        help="Misura un fornitore e un modello sul set di valutazione, senza toccare le schede",
+        help=(
+            "Scrive le schede di un campione e le confronta con le loro fonti, "
+            "senza toccare le schede vere"
+        ),
     )
-    eval_parser.add_argument("--task", choices=("card",), default="card")
-    eval_parser.add_argument("--provider", choices=AI_PROVIDERS, required=True)
-    eval_parser.add_argument("--model", required=True)
+    eval_parser.add_argument("--sample", type=int, help="le prime N persone del campione fisso")
+    eval_parser.add_argument("--freelancer", type=UUID, action="append", default=[])
+    eval_parser.add_argument("--provider", choices=AI_PROVIDERS)
+    eval_parser.add_argument("--model")
     eval_parser.add_argument("--effort", choices=AI_EFFORTS)
+    eval_parser.add_argument(
+        "--prompt-version", type=int, choices=PROMPT_VERSIONS, default=PROMPT_VERSION
+    )
+    eval_parser.add_argument("--judge-provider", choices=AI_PROVIDERS)
+    eval_parser.add_argument("--judge-model")
     eval_parser.add_argument("--baseline", type=UUID)
     eval_parser.add_argument("--allow-disabled", action="store_true")
     seed_parser = sub.add_parser(
@@ -926,11 +917,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         return cards_refresh(args.limit)
     if args.command == "sources-refetch":
         return sources_refetch(args.limit)
-    if args.command == "cards-eval-draft":
-        return cards_eval_draft(args.freelancer, args.label)
     if args.command == "cards-eval":
         return cards_eval(
-            args.provider, args.model, args.effort, args.baseline, args.allow_disabled
+            args.sample,
+            args.freelancer,
+            args.provider,
+            args.model,
+            args.effort,
+            args.prompt_version,
+            args.judge_provider,
+            args.judge_model,
+            args.baseline,
+            args.allow_disabled,
         )
     if args.command == "ai-seed":
         return ai_seed(args.eur_per_usd)

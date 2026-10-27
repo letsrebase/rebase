@@ -1647,19 +1647,16 @@ class FreelancerSource(Base, PrimaryKeyMixin):
 
 # ---- the evaluation set (REB-835) ---------------------------------------------------------
 
-CARD_EVAL_STATUSES = ("bozza", "accettata")
 CARD_EVAL_LABEL_MAX_LENGTH = 40
 
 
-class CardEvalProfile(Base, TimestampMixin):
-    """One person of the evaluation set and the card an admin wrote by hand as the
-    answer a model is measured against (design 2026-10-27, «Evaluation before a change
-    goes live»). The expected card is personal data derived from a CV, so it lives only
-    here, in the database, and goes with the person (`ON DELETE CASCADE`).
-    `label` is the failure the profile covers («senza date», «duplicato», «GitHub»).
-    `bozza` is the builder's draft, `accettata` an admin's correction; only an accepted
-    profile takes part in a run, and a card has to exist before it can be accepted. Its
-    `seniority` and `anni` are the expected level."""
+class CardEvalProfile(Base):
+    """One person of the evaluation sample, the set `rebase cards-eval` runs when it is
+    given no one in particular (design 2026-10-27, «Evaluation before a change goes
+    live»; REB-842). It holds who and why, never a card: the sample is chosen once, by id,
+    so two runs measure the same people. `label` is the failure the person covers («senza
+    date», «duplicato», «GitHub»), which is what the sample is stratified by. The row goes
+    with the person (`ON DELETE CASCADE`)."""
 
     __tablename__ = "card_eval_profiles"
 
@@ -1667,16 +1664,8 @@ class CardEvalProfile(Base, TimestampMixin):
         ForeignKey("freelancers.id", ondelete="CASCADE"), primary_key=True
     )
     label: Mapped[str] = mapped_column(String(CARD_EVAL_LABEL_MAX_LENGTH), nullable=False)
-    expected_card: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=None)
-    status: Mapped[str] = mapped_column(String(10), nullable=False, default="bozza")
-    corrected_by: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
-
-    __table_args__ = (
-        CheckConstraint("status IN ('bozza', 'accettata')", name="ck_card_eval_profiles_status"),
-        CheckConstraint(
-            "status = 'bozza' OR expected_card IS NOT NULL",
-            name="ck_card_eval_profiles_accepted_has_card",
-        ),
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
 
@@ -1705,11 +1694,13 @@ class CardEvalRun(Base, PrimaryKeyMixin):
 
 
 class CardEvalResult(Base):
-    """What a run made of one person: the three automatic measures, the card it wrote
-    (personal data, so the row goes with the run and with the person), the call's
-    latency and cost, and the admin's three-point ratings of role, skills and summary
-    once given. `failure` is the kind of failure when no card came out (`cards.Failure`),
-    and then the measures are `NULL`."""
+    """What a run made of one person: the card it wrote (personal data, so the row goes
+    with the run and with the person), what the rules found in it (`checks`: the years,
+    anonymity; `anni_ok` and `guard_clean` are their headline), what the judging call said
+    of each field against the sources
+    (`judgement`), and the latency and cost of the generation and of the judging, each
+    apart. `failure` is the kind of failure when no card came out (`cards.Failure`), and
+    then the checks and the judgement are `NULL`."""
 
     __tablename__ = "card_eval_results"
 
@@ -1721,10 +1712,12 @@ class CardEvalResult(Base):
     )
     label: Mapped[str] = mapped_column(String(CARD_EVAL_LABEL_MAX_LENGTH), nullable=False)
     anni_ok: Mapped[bool | None] = mapped_column(Boolean, default=None)
-    seniority_ok: Mapped[bool | None] = mapped_column(Boolean, default=None)
     guard_clean: Mapped[bool | None] = mapped_column(Boolean, default=None)
     failure: Mapped[str | None] = mapped_column(String(20), default=None)
     latency_ms: Mapped[int | None] = mapped_column(Integer, default=None)
     cost_eur: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), default=None)
     card: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=None)
-    ratings: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=None)
+    checks: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=None)
+    judgement: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=None)
+    judge_latency_ms: Mapped[int | None] = mapped_column(Integer, default=None)
+    judge_cost_eur: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), default=None)

@@ -195,7 +195,7 @@ describe('the sidebar, gated on role', () => {
       '|',
       ...['Istanze Pigro', 'La guida'],
       '|',
-      ...['Accessi', 'Amministratori', 'Agenti', 'Modelli AI', 'Valutazione'],
+      ...['Accessi', 'Amministratori', 'Agenti', 'Modelli AI'],
     ])
   })
 

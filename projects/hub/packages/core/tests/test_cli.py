@@ -8,6 +8,7 @@ are all swapped out, so the tests prove `main` dispatches to each command and re
 what it returns, nothing more."""
 
 import base64
+import json
 import os
 from collections.abc import Iterator
 from decimal import Decimal
@@ -15,7 +16,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
-from fakes_cards import CARD, card_response, text_pdf
+from fakes_cards import CARD, card_response, judge_response, text_pdf
 from sqlalchemy import Engine, select, text
 from sqlalchemy.orm import Session
 
@@ -23,7 +24,6 @@ from rebase_core import cli, signing
 from rebase_core.ai_config import AiConfigService
 from rebase_core.ai_verify import VerifyReport
 from rebase_core.campaigns.tick import TickResult
-from rebase_core.card_eval import CardEvalService
 from rebase_core.cli import main
 from rebase_core.config import Settings
 from rebase_core.db import session_factory
@@ -31,7 +31,7 @@ from rebase_core.engagements import EngagementService
 from rebase_core.errors import LlmCapReached
 from rebase_core.freelancers import FreelancerService
 from rebase_core.http import urllib_engagements_call
-from rebase_core.llm import RecordingCall, TaskOverride
+from rebase_core.llm import LlmResponse, RecordingCall, TaskOverride
 from rebase_core.models import CardEvalProfile, CardEvalRun, FreelancerCard, User
 from rebase_core.schemas import FreelancerCreate
 from rebase_core.signing import SweepResult
@@ -513,22 +513,22 @@ def test_ai_rotate_secrets_takes_no_key_on_the_command_line(
         main(["ai-rotate-secrets", "--old-key", _SECRETS_KEY, "--new-key", _SECRETS_KEY])
 
 
-# ---- cards-eval-draft / cards-eval (REB-835) ---------------------------------------------
+# ---- cards-eval (REB-842) ----------------------------------------------------------------
 
-_CV = text_pdf("Ada Lovelace, backend developer a Torino da nove anni: Python, FastAPI, AWS.")
+# The CV dates its one role: the card's nine years are 2017 - 2025.
+_CV = text_pdf("Backend developer, Acme, 2017 - 2025. Python, FastAPI, AWS, a Torino.")
 
 
 @pytest.fixture
 def eval_db(hub_engine: Engine, monkeypatch: pytest.MonkeyPatch) -> Iterator[Session]:
-    """The commands' settings point at the test database, the card task is configured
-    (the seam itself is `test_llm.py`'s), and the evaluation tables are emptied after."""
+    """The commands' settings point at the test database (the seam itself is
+    `test_llm.py`'s), and the evaluation tables are emptied after."""
     url = hub_engine.url.render_as_string(hide_password=False)
     monkeypatch.setattr(
         cli,
         "get_settings",
         lambda: Settings(database_url=url, _env_file=None),  # type: ignore[call-arg]
     )
-    monkeypatch.setattr(cli, "call_for_task", _configured_card_task)
     session = session_factory(hub_engine)()
     yield session
     session.rollback()
@@ -545,7 +545,9 @@ def eval_db(hub_engine: Engine, monkeypatch: pytest.MonkeyPatch) -> Iterator[Ses
     session.close()
 
 
-def _person(session: Session, email: str, cognome: str = "Lovelace") -> UUID:
+def _person(
+    session: Session, email: str, cognome: str = "Lovelace", label: str | None = None
+) -> UUID:
     read, _ = FreelancerService(session).apply(
         FreelancerCreate(
             nome="Ada",
@@ -559,164 +561,153 @@ def _person(session: Session, email: str, cognome: str = "Lovelace") -> UUID:
         "cv.pdf",
         "",
     )
+    if label is not None:
+        session.add(CardEvalProfile(freelancer_id=read.id, label=label))
+        session.commit()
     return read.id
 
 
-def test_cards_eval_draft_prints_label_name_and_link_never_the_card(
-    eval_db: Session, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    person = _person(eval_db, "ada@studio.it")
-    llm = RecordingCall([card_response()])
+def _bare_card() -> LlmResponse:
+    """An answer under prompt version 1: the card alone."""
+    return LlmResponse(
+        text=json.dumps(CARD),
+        parsed=Card.model_validate(CARD),
+        stop_reason="end_turn",
+        refusal_category=None,
+        model="claude-opus-5",
+        input_tokens=900,
+        output_tokens=150,
+        cache_read_tokens=0,
+    )
+
+
+def _fake_ai_calls(
+    monkeypatch: pytest.MonkeyPatch, *responses: Any
+) -> tuple[list[dict[str, Any]], RecordingCall]:
+    """`AiCall` replaced by one scripted call that every build hands back, in the order the
+    run makes them (a card, then its judgement, person after person); what each build was
+    asked for is recorded."""
     built: list[dict[str, Any]] = []
+    llm = RecordingCall(list(responses))
 
     def fake_ai_call(opener: object, settings: Settings, task: str, **kwargs: Any) -> RecordingCall:
         built.append({"task": task, **kwargs})
         return llm
 
     monkeypatch.setattr(cli, "AiCall", fake_ai_call)
-
-    assert main(["cards-eval-draft", "--freelancer", str(person), "--label", "senza date"]) == 0
-
-    out = capsys.readouterr()
-    assert out.out.strip() == f"senza date\tAda Lovelace\t/hub/admin/valutazione/{person}"
-    for word in ("Backend developer", "Python", "Torino", "fintech"):
-        assert word not in out.out + out.err
-    # The call is an evaluation's, about this person, on the card task.
-    assert built == [{"task": "card", "purpose": "eval", "freelancer_id": person}]
-    profile = eval_db.get(CardEvalProfile, person, populate_existing=True)
-    assert profile is not None and profile.status == "bozza" and profile.expected_card is not None
+    return built, llm
 
 
-def test_cards_eval_draft_says_a_person_it_cannot_draft_and_goes_on(
+def test_cards_eval_exits_1_when_the_sample_is_empty(
     eval_db: Session, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    ada = _person(eval_db, "ada@studio.it")
-    grace = _person(eval_db, "grace@studio.it", "Hopper")
-    gendered = {**CARD, "sintesi": "Lei è una sviluppatrice con nove anni di esperienza."}
-    llm = RecordingCall([card_response(gendered), card_response(gendered), card_response()])
-    monkeypatch.setattr(cli, "AiCall", lambda *args, **kwargs: llm)
+    built, _ = _fake_ai_calls(monkeypatch)
+
+    assert main(["cards-eval", "--allow-disabled"]) == 1
+
+    assert "Il campione di valutazione è vuoto" in capsys.readouterr().err
+    assert built == []
+
+
+def test_cards_eval_prints_the_report_of_the_sample_as_the_task_is_set(
+    eval_db: Session, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    person = _person(eval_db, "ada@studio.it", label="senza date")
+    built, _ = _fake_ai_calls(monkeypatch, card_response(), judge_response())
+
+    code = main(["cards-eval", "--allow-disabled"])
+
+    assert code == 0
+    out = capsys.readouterr().out
+    # With no provider or model given, the `card` task's own (migration 0036's seed).
+    assert "anthropic/claude-opus-5, effort medium, prompt v2" in out
+    assert "giudice anthropic/claude-opus-5" in out
+    assert "senza date" in out and str(person)[:8] in out and "campi supportati 8/8" in out
+    for private in ("Lovelace", "Backend developer", "Python", "Torino"):
+        assert private not in out
+    writer, judging = built
+    live = TaskOverride("anthropic", "claude-opus-5", "medium", allow_disabled=True)
+    assert writer == {
+        "task": "card",
+        "override": live,
+        "purpose": "eval",
+        "freelancer_id": person,
+    }
+    assert judging == writer
+    assert eval_db.scalars(select(FreelancerCard)).all() == []
+    assert eval_db.scalars(select(CardEvalRun)).one().summary["complete"] is True
+
+
+def test_cards_eval_writes_with_the_provider_model_effort_and_prompt_it_was_asked(
+    eval_db: Session, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    person = _person(eval_db, "ada@studio.it", label="lead")
+    built, llm = _fake_ai_calls(monkeypatch, _bare_card(), judge_response())
 
     code = main(
-        ["cards-eval-draft", "--freelancer", str(ada), "--label", "lead"]
-        + ["--freelancer", str(grace), "--label", "GitHub"]
-    )
-
-    assert code == 1
-    out = capsys.readouterr()
-    assert f"{ada}: " in out.err
-    assert out.out.strip() == f"GitHub\tAda Hopper\t/hub/admin/valutazione/{grace}"
-
-
-def test_cards_eval_draft_needs_a_label_for_a_new_person_and_the_labels_must_match(
-    eval_db: Session, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    person = _person(eval_db, "ada@studio.it")
-    monkeypatch.setattr(cli, "AiCall", lambda *args, **kwargs: RecordingCall([]))
-
-    assert main(["cards-eval-draft", "--freelancer", str(person)]) == 1
-    assert "serve --label" in capsys.readouterr().err
-    assert (
-        main(
-            ["cards-eval-draft", "--freelancer", str(person), "--freelancer", str(uuid4())]
-            + ["--label", "uno"]
-        )
-        == 2
-    )
-
-
-def test_cards_eval_draft_stops_at_an_outage(
-    eval_db: Session, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    ada = _person(eval_db, "ada@studio.it")
-    grace = _person(eval_db, "grace@studio.it", "Hopper")
-
-    class Down:
-        calls = 0
-
-        def complete(self, request: object) -> object:
-            Down.calls += 1
-            raise LlmCapReached("Tetto giornaliero raggiunto")
-
-    monkeypatch.setattr(cli, "AiCall", lambda *args, **kwargs: Down())
-
-    code = main(
-        ["cards-eval-draft", "--freelancer", str(ada), "--label", "a"]
-        + ["--freelancer", str(grace), "--label", "b"]
-    )
-
-    assert code == 1
-    assert Down.calls == 1
-    assert capsys.readouterr().err.strip() == "Tetto giornaliero raggiunto"
-
-
-def test_cards_eval_draft_names_modelli_ai_when_no_task_configured(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    monkeypatch.setattr(cli, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
-    monkeypatch.setattr(cli, "call_for_task", lambda opener, settings, task: None)
-
-    assert main(["cards-eval-draft", "--freelancer", str(uuid4()), "--label", "x"]) == 1
-    assert "Modelli AI" in capsys.readouterr().err
-
-
-def _accept(session: Session, person: UUID) -> None:
-    admin = User(email="ivan@rebase.it", nome="Ivan", cognome="Sala", role="admin")
-    session.add(admin)
-    session.commit()
-    service = CardEvalService(session)
-    service.add(admin.id, person, "senza date")
-    service.set_expected(admin.id, person, Card.model_validate(CARD))
-    service.accept(admin.id, person)
-
-
-def test_cards_eval_exits_1_when_no_accepted_profiles(
-    eval_db: Session, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    monkeypatch.setattr(cli, "AiCall", lambda *args, **kwargs: RecordingCall([]))
-
-    code = main(
-        ["cards-eval", "--provider", "anthropic", "--model", "claude-opus-5", "--allow-disabled"]
-    )
-
-    assert code == 1
-    assert "Nessun profilo accettato" in capsys.readouterr().err
-
-
-def test_cards_eval_prints_the_report_for_the_provider_and_model_it_was_asked(
-    eval_db: Session, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    person = _person(eval_db, "ada@studio.it")
-    _accept(eval_db, person)
-    built: list[dict[str, Any]] = []
-
-    def fake_ai_call(opener: object, settings: Settings, task: str, **kwargs: Any) -> RecordingCall:
-        built.append({"task": task, **kwargs})
-        return RecordingCall([card_response()])
-
-    monkeypatch.setattr(cli, "AiCall", fake_ai_call)
-
-    code = main(
-        ["cards-eval", "--task", "card", "--provider", "openai", "--model", "gpt-5"]
-        + ["--effort", "high", "--allow-disabled"]
+        ["cards-eval", "--freelancer", str(person), "--provider", "openai", "--model", "gpt-5"]
+        + ["--effort", "high", "--prompt-version", "1", "--allow-disabled"]
+        + ["--judge-provider", "google", "--judge-model", "gemini-3"]
     )
 
     assert code == 0
     out = capsys.readouterr().out
-    assert "openai/gpt-5, effort high" in out
-    assert "senza date" in out and "da valutare" in out
-    assert "Lovelace" not in out and "Backend developer" not in out
-    [call] = built
-    assert call["task"] == "card" and call["purpose"] == "eval"
-    assert call["override"] == TaskOverride("openai", "gpt-5", "high", allow_disabled=True)
+    assert "openai/gpt-5, effort high, prompt v1" in out
+    assert "giudice google/gemini-3" in out and "stesso modello" not in out
     assert "ATTENZIONE: --allow-disabled" in out
-    assert call["freelancer_id"] == person
-    assert eval_db.scalars(select(FreelancerCard)).all() == []
+    writer, judging = built
+    assert writer["override"] == TaskOverride("openai", "gpt-5", "high", allow_disabled=True)
+    assert judging["override"] == TaskOverride("google", "gemini-3", None, allow_disabled=True)
+    # Version 1 reads the CV alone.
+    assert "Sources available" not in llm.requests[0].messages[0].text
+    assert eval_db.scalars(select(CardEvalRun)).one().prompt_version == 1
+
+
+def test_cards_eval_takes_the_people_named_or_the_first_of_the_sample(
+    eval_db: Session, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _person(eval_db, "ada@studio.it", label="lead")
+    grace = _person(eval_db, "grace@studio.it", "Hopper", label="duplicato")
+    outside = _person(eval_db, "alan@studio.it", "Turing")
+    built, _ = _fake_ai_calls(monkeypatch, card_response(), judge_response())
+
+    assert main(["cards-eval", "--sample", "1", "--allow-disabled"]) == 0
+    assert {call["freelancer_id"] for call in built} == {grace}  # «duplicato» comes first
+    capsys.readouterr()
+
+    built.clear()
+    _fake_ai_calls(monkeypatch, card_response(), judge_response())
+    assert main(["cards-eval", "--freelancer", str(outside), "--allow-disabled"]) == 0
+    assert "fuori campione" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["--sample", "2", "--freelancer", str(uuid4())],
+        ["--provider", "openai"],
+        ["--model", "gpt-5"],
+        ["--judge-provider", "openai"],
+        ["--judge-model", "gpt-5"],
+    ],
+)
+def test_cards_eval_refuses_options_that_do_not_go_together(
+    eval_db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    args: list[str],
+) -> None:
+    built, _ = _fake_ai_calls(monkeypatch)
+
+    assert main(["cards-eval", "--allow-disabled", *args]) == 2
+
+    assert built == [] and capsys.readouterr().err
 
 
 def test_cards_eval_exits_1_and_says_so_when_the_cap_stops_it(
     eval_db: Session, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    _accept(eval_db, _person(eval_db, "ada@studio.it"))
+    _person(eval_db, "ada@studio.it", label="lead")
 
     class Spent:
         def complete(self, request: object) -> object:
@@ -724,24 +715,33 @@ def test_cards_eval_exits_1_and_says_so_when_the_cap_stops_it(
 
     monkeypatch.setattr(cli, "AiCall", lambda *args, **kwargs: Spent())
 
-    code = main(
-        ["cards-eval", "--provider", "anthropic", "--model", "claude-opus-5", "--allow-disabled"]
-    )
-    assert code == 1
+    assert main(["cards-eval", "--allow-disabled"]) == 1
     assert "INCOMPLETA, fermata qui: Tetto giornaliero raggiunto" in capsys.readouterr().out
 
 
 def test_cards_eval_refuses_a_provider_that_is_off_unless_allowed(
     eval_db: Session, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    _accept(eval_db, _person(eval_db, "ada@studio.it"))
-    built: list[object] = []
-    monkeypatch.setattr(cli, "AiCall", lambda *args, **kwargs: built.append(kwargs))
+    _person(eval_db, "ada@studio.it", label="lead")
+    built, _ = _fake_ai_calls(monkeypatch)
 
     assert main(["cards-eval", "--provider", "openai", "--model", "gpt-5"]) == 1
+    # The writer's provider on, the judge's off: the judge's is refused too.
+    eval_db.execute(text("UPDATE ai_providers SET enabled = true WHERE provider = 'openai'"))
+    eval_db.commit()
+    try:
+        code = main(
+            ["cards-eval", "--provider", "openai", "--model", "gpt-5"]
+            + ["--judge-provider", "google", "--judge-model", "gemini-3"]
+        )
+    finally:
+        eval_db.execute(text("UPDATE ai_providers SET enabled = false WHERE provider = 'openai'"))
+        eval_db.commit()
 
+    assert code == 1
     err = capsys.readouterr().err
-    assert "Il fornitore è spento" in err and "--allow-disabled" in err
+    assert err.count("Il fornitore è spento") == 2 and "--allow-disabled" in err
+    assert "(openai)" in err and "(google)" in err
     assert built == []
     assert eval_db.scalars(select(CardEvalRun)).all() == []
 
@@ -749,20 +749,25 @@ def test_cards_eval_refuses_a_provider_that_is_off_unless_allowed(
 def test_cards_eval_passes_an_explicit_baseline_and_refuses_one_that_is_not_there(
     eval_db: Session, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    _accept(eval_db, _person(eval_db, "ada@studio.it"))
-    monkeypatch.setattr(cli, "AiCall", lambda *args, **kwargs: RecordingCall([card_response()]))
+    _person(eval_db, "ada@studio.it", label="lead")
+    built, _ = _fake_ai_calls(monkeypatch, card_response(), judge_response())
 
-    code = main(
-        ["cards-eval", "--provider", "openai", "--model", "gpt-5", "--allow-disabled"]
-        + ["--baseline", str(uuid4())]
-    )
+    code = main(["cards-eval", "--allow-disabled", "--baseline", str(uuid4())])
 
     assert code == 1
     assert "non trovato" in capsys.readouterr().err
+    assert built == []
 
 
-def test_cards_eval_takes_only_a_known_provider_and_effort() -> None:
+def test_cards_eval_takes_only_a_known_provider_effort_and_prompt_version() -> None:
     with pytest.raises(SystemExit):
         main(["cards-eval", "--provider", "mistral", "--model", "x"])
     with pytest.raises(SystemExit):
         main(["cards-eval", "--provider", "openai", "--model", "x", "--effort", "extreme"])
+    with pytest.raises(SystemExit):
+        main(["cards-eval", "--prompt-version", "7"])
+
+
+def test_the_manual_evaluation_command_is_gone() -> None:
+    with pytest.raises(SystemExit):
+        main(["cards-eval-draft", "--freelancer", str(uuid4()), "--label", "x"])

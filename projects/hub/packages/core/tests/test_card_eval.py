@@ -1,6 +1,7 @@
-"""REB-835: the cards' evaluation set: its profiles and their lifecycle (`bozza` to
-`accettata`), the trail that names fields and never values, the ratings, and that every
-row holding a card goes with the person."""
+"""REB-842: the cards' automatic evaluation: the fixed sample, a run that writes a card and
+cross-checks it against its sources (the rules, then a judging call), what is stored and
+never stored, what is spent and where it is recorded, and how a run stands against its
+baseline."""
 
 import base64
 import json
@@ -12,7 +13,15 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
-from fakes_cards import CARD, card_response, text_pdf
+from fakes_cards import (
+    CARD,
+    FONTI,
+    card_response,
+    draft_body,
+    judge_response,
+    judgement_body,
+    text_pdf,
+)
 from sqlalchemy import Engine, select, text
 from sqlalchemy.orm import Session
 from test_llm import Stub
@@ -21,48 +30,67 @@ from test_warehouse_contract import WAREHOUSE_TABLES
 from rebase_core.ai_config import CAP_REACHED, AiConfigService
 from rebase_core.card_eval import (
     INTERRUPTED,
-    AgreementRow,
-    CardEvalService,
-    agreement,
-    draft_expected,
+    OUTSIDE_SAMPLE,
+    Target,
+    aggregate,
+    compare,
     format_report,
+    named,
+    results_of,
     run_eval,
+    sample,
 )
-from rebase_core.card_eval_schemas import EvalRunRead
-from rebase_core.cards import NO_TEXT, PROMPT_VERSION
+from rebase_core.cards import PROMPT_VERSION
 from rebase_core.config import Settings
 from rebase_core.db import Base
-from rebase_core.errors import InvalidState, LlmCapReached, NotFound, ValidationFailed
+from rebase_core.errors import InvalidState, LlmUnavailable, NotFound, ValidationFailed
 from rebase_core.freelancers import FreelancerService
-from rebase_core.llm import AiCall, RecordingCall, TaskOverride
+from rebase_core.llm import AiCall, LlmResponse, RecordingCall, TaskOverride
 from rebase_core.models import (
-    AdminAction,
     AiTask,
     AiUsage,
     CardEvalProfile,
     CardEvalResult,
     CardEvalRun,
+    Freelancer,
     FreelancerCard,
     User,
 )
 from rebase_core.schemas import FreelancerCreate
 from rebase_core.team_schemas import Card
 
-CV = text_pdf("Ada Lovelace, backend developer a Torino da nove anni: Python, FastAPI, AWS.")
+# A CV that dates its one role: nine years to this autumn at 2017 - 2025 (the card's 9).
+CV = text_pdf("Backend developer, Acme, 2017 - 2025. Python, FastAPI, AWS, a Torino.")
+# One that dates nothing, as the card of nine years would then be a guess.
+UNDATED_CV = text_pdf("Ada Lovelace, backend developer a Torino da nove anni: Python, FastAPI.")
+MODEL = "claude-opus-5"
+OTHER_MODEL = "claude-opus-5-5"
+API_KEY = "sk-ant-test-not-a-real-key"
+SECRETS_KEY = base64.b64encode(os.urandom(32)).decode()
 
 
 @pytest.fixture
 def clean(hub_session: Session) -> Iterator[Session]:
     yield hub_session
     hub_session.rollback()
-    hub_session.execute(text("DELETE FROM card_eval_runs"))
-    hub_session.execute(text("DELETE FROM admin_actions"))
-    hub_session.execute(text("DELETE FROM freelancers"))
-    hub_session.execute(text("DELETE FROM users"))
+    for statement in (
+        "DELETE FROM card_eval_runs",
+        "DELETE FROM ai_usage",
+        "DELETE FROM admin_actions",
+        "DELETE FROM freelancers",
+        "DELETE FROM users",
+    ):
+        hub_session.execute(text(statement))
     hub_session.commit()
 
 
-def _person(session: Session, email: str = "ada@studio.it", cognome: str = "Lovelace") -> UUID:
+def _person(
+    session: Session,
+    email: str = "ada@studio.it",
+    cognome: str = "Lovelace",
+    cv: bytes = CV,
+    label: str | None = None,
+) -> UUID:
     read, _ = FreelancerService(session).apply(
         FreelancerCreate(
             nome="Ada",
@@ -72,438 +100,389 @@ def _person(session: Session, email: str = "ada@studio.it", cognome: str = "Love
             posizione="Backend developer",
             remoto="remoto",
         ),
-        CV,
+        cv,
         "cv.pdf",
         "",
     )
+    if label is not None:
+        session.add(CardEvalProfile(freelancer_id=read.id, label=label))
+        session.commit()
     return read.id
 
 
-def _admin(session: Session) -> UUID:
+def _card(**changes: Any) -> dict[str, Any]:
+    return {**CARD, **changes}
+
+
+def _bare_card_response(card: dict[str, Any] | None = None) -> LlmResponse:
+    """An answer under prompt version 1: the card alone, no `fonti`, no employers."""
+    body = json.dumps(card or CARD)
+    return LlmResponse(
+        text=body,
+        parsed=Card.model_validate_json(body),
+        stop_reason="end_turn",
+        refusal_category=None,
+        model=MODEL,
+        input_tokens=900,
+        output_tokens=150,
+        cache_read_tokens=0,
+    )
+
+
+def _run(
+    session: Session,
+    writer: Any,
+    judging: Any,
+    targets: list[Target] | None = None,
+    *,
+    provider: str = "anthropic",
+    model: str = MODEL,
+    prompt_version: int = PROMPT_VERSION,
+    baseline_run_id: UUID | None = None,
+    judge_by: tuple[str, str] = ("anthropic", MODEL),
+    effort: str | None = "medium",  # the card task's, as migration 0036 seeds it
+) -> CardEvalRun:
+    return run_eval(
+        session,
+        lambda _person: writer,
+        lambda _person: judging,
+        task="card",
+        provider=provider,
+        model=model,
+        effort=effort,
+        targets=targets if targets is not None else sample(session),
+        prompt_version=prompt_version,
+        judge_by=judge_by,
+        baseline_run_id=baseline_run_id,
+    )
+
+
+# ---- the sample -----------------------------------------------------------------------------
+
+
+def test_the_sample_is_the_people_in_it_by_label_and_a_smaller_one_spans_the_labels(
+    clean: Session,
+) -> None:
+    people = {
+        "senza date": [
+            _person(clean, f"a{n}@studio.it", f"Uno{n}", label="senza date") for n in (1, 2, 3)
+        ],
+        "GitHub": [_person(clean, f"b{n}@studio.it", f"Due{n}", label="GitHub") for n in (1, 2)],
+        "lead": [_person(clean, "c1@studio.it", "Tre1", label="lead")],
+    }
+
+    everyone = sample(clean)
+    three = sample(clean, 3)
+    four = sample(clean, 4)
+
+    assert len(everyone) == 6
+    assert [t.label for t in everyone] == sorted(t.label for t in everyone)
+    # Three people are one of each failure, not three of the first.
+    assert sorted(t.label for t in three) == ["GitHub", "lead", "senza date"]
+    assert sorted(t.label for t in four) == ["GitHub", "GitHub", "lead", "senza date"]
+    # The same N is always the same people, in the same order.
+    assert sample(clean, 4) == four
+    assert {t.freelancer_id for t in four} <= {p for group in people.values() for p in group}
+    assert sample(clean, 99) == everyone
+
+
+def test_the_sample_leaves_out_a_deleted_person_and_is_refused_when_empty_or_zero(
+    clean: Session,
+) -> None:
+    with pytest.raises(InvalidState):
+        sample(clean)
+    ada = _person(clean, label="lead")
+    grace = _person(clean, "grace@studio.it", "Hopper", label="duplicato")
     admin = User(email="ivan@rebase.it", nome="Ivan", cognome="Sala", role="admin")
-    session.add(admin)
-    session.commit()
-    return admin.id
-
-
-def _card(**changes: Any) -> Card:
-    return Card.model_validate({**CARD, **changes})
-
-
-def _actions(session: Session) -> list[AdminAction]:
-    return list(session.scalars(select(AdminAction).order_by(AdminAction.created_at)))
-
-
-def _run_with_result(session: Session, freelancer_id: UUID) -> CardEvalRun:
-    run = CardEvalRun(
-        task="card", provider="anthropic", model="claude-opus-5", prompt_version=1, summary={}
-    )
-    session.add(run)
-    session.flush()
-    session.add(
-        CardEvalResult(
-            run_id=run.id,
-            freelancer_id=freelancer_id,
-            label="lead",
-            anni_ok=True,
-            seniority_ok=True,
-            guard_clean=True,
-            latency_ms=1200,
-            cost_eur=Decimal("0.05"),
-            card=CARD,
-        )
-    )
-    session.commit()
-    return run
-
-
-def test_add_makes_a_bozza_and_signs_it(clean: Session) -> None:
-    person, admin = _person(clean), _admin(clean)
-
-    read = CardEvalService(clean).add(admin, person, "senza date")
-
-    assert (read.label, read.status, read.expected, read.nome) == (
-        "senza date",
-        "bozza",
-        None,
-        "Ada",
-    )
-    assert [(a.kind, a.entity_type, a.entity_id) for a in _actions(clean)] == [
-        ("eval_add", "card_eval", person)
-    ]
-
-
-def test_a_person_is_in_the_set_once_and_a_label_is_bounded(clean: Session) -> None:
-    person, admin = _person(clean), _admin(clean)
-    service = CardEvalService(clean)
-    service.add(admin, person, "lead")
-
-    with pytest.raises(InvalidState):
-        service.add(admin, person, "lead")
-    with pytest.raises(ValidationFailed):
-        service.ensure(person, "x" * 41)
-    with pytest.raises(ValidationFailed):
-        service.ensure(person, "  ")
-    with pytest.raises(NotFound):
-        service.add(admin, uuid4(), "lead")
-
-
-def test_accept_requires_expected_card(clean: Session) -> None:
-    person, admin = _person(clean), _admin(clean)
-    service = CardEvalService(clean)
-    service.add(admin, person, "lead")
-
-    with pytest.raises(InvalidState):
-        service.accept(admin, person)
-
-    service.set_expected(admin, person, _card())
-    accepted = service.accept(admin, person)
-    assert accepted.status == "accettata"
-    assert accepted.corrected_by_nome == "Ivan Sala"
-
-
-def test_any_edit_of_an_accepted_card_makes_it_a_bozza_again(clean: Session) -> None:
-    person, admin = _person(clean), _admin(clean)
-    service = CardEvalService(clean)
-    service.add(admin, person, "lead")
-    service.set_expected(admin, person, _card())
-    service.accept(admin, person)
-
-    edited = service.set_expected(admin, person, _card(anni=10, seniority="lead"))
-
-    assert edited.status == "bozza"
-    assert edited.expected is not None and edited.expected.anni == 10
-
-
-def test_saving_nothing_new_neither_demotes_nor_hides_a_demotion(clean: Session) -> None:
-    person, admin = _person(clean), _admin(clean)
-    service = CardEvalService(clean)
-    service.add(admin, person, "lead")
-    service.set_expected(admin, person, _card())
-    service.accept(admin, person)
-    kinds = [a.kind for a in _actions(clean)]
-
-    again = service.set_expected(admin, person, _card())
-
-    assert again.status == "accettata"
-    assert [a.kind for a in _actions(clean)] == kinds
-
-
-def test_a_draft_never_overwrites_an_accepted_profile(clean: Session) -> None:
-    person, admin = _person(clean), _admin(clean)
-    service = CardEvalService(clean)
-    service.add(admin, person, "lead")
-    service.save_draft(person, _card())
-    service.accept(admin, person)
-
-    with pytest.raises(InvalidState):
-        service.save_draft(person, _card(anni=1))
-
-
-def test_the_trail_names_fields_and_never_values(clean: Session) -> None:
-    person, admin = _person(clean), _admin(clean)
-    service = CardEvalService(clean)
-    service.add(admin, person, "lead")
-    service.set_expected(admin, person, _card())
-    service.set_expected(admin, person, _card(ruolo="Data engineer", anni=3))
-    service.accept(admin, person)
-
-    trail = _actions(clean)
-    assert [a.kind for a in trail] == ["eval_add", "eval_expected", "eval_expected", "eval_accept"]
-    assert trail[2].payload == {"changed": ["anni", "ruolo"]}
-    dump = json.dumps([a.payload for a in trail])
-    for secret in ("Data engineer", "Backend developer", "Python", "Torino", "Lovelace"):
-        assert secret not in dump
-
-
-def test_rate_stores_one_to_three_and_nothing_else(clean: Session) -> None:
-    person, admin = _person(clean), _admin(clean)
-    run = _run_with_result(clean, person)
-    service = CardEvalService(clean)
-
-    read = service.rate(admin, run.id, {person: {"ruolo": 3, "competenze": 2}})
-    assert read.results[0].ratings == {"ruolo": 3, "competenze": 2}
-    # A later rating adds to what is there.
-    read = service.rate(admin, run.id, {person: {"sintesi": 1}})
-    assert read.results[0].ratings == {"ruolo": 3, "competenze": 2, "sintesi": 1}
-
-
-@pytest.mark.parametrize("value", [0, 4, -1, True, 2.5])
-def test_rate_rejects_values_outside_1_to_3(clean: Session, value: Any) -> None:
-    person, admin = _person(clean), _admin(clean)
-    run = _run_with_result(clean, person)
-
-    with pytest.raises(ValidationFailed):
-        CardEvalService(clean).rate(admin, run.id, {person: {"ruolo": 3, "sintesi": value}})
-    clean.expire_all()
-    assert clean.get(CardEvalResult, (run.id, person)).ratings is None  # type: ignore[union-attr]
-
-
-def test_rate_rejects_a_field_nobody_rates_and_an_unknown_run_or_person(clean: Session) -> None:
-    person, admin = _person(clean), _admin(clean)
-    run = _run_with_result(clean, person)
-    service = CardEvalService(clean)
-
-    with pytest.raises(ValidationFailed):
-        service.rate(admin, run.id, {person: {"anni": 2}})
-    with pytest.raises(NotFound):
-        service.rate(admin, uuid4(), {person: {"ruolo": 2}})
-    with pytest.raises(NotFound):
-        service.rate(admin, run.id, {uuid4(): {"ruolo": 2}})
-
-
-def test_profile_deleted_with_freelancer(clean: Session) -> None:
-    """The person's removal, from the database as an erasure does it, takes the expected
-    card and every result written for them; the run, which holds totals only, stays."""
-    person, admin = _person(clean), _admin(clean)
-    other = _person(clean, "grace@studio.it", "Hopper")
-    service = CardEvalService(clean)
-    service.add(admin, person, "lead")
-    service.set_expected(admin, person, _card())
-    service.add(admin, other, "designer")
-    run = _run_with_result(clean, person)
-
-    clean.execute(text("DELETE FROM freelancers WHERE id = :id"), {"id": person})
+    clean.add(admin)
     clean.commit()
-    clean.expire_all()
+    FreelancerService(clean).soft_delete(grace, admin.id)
 
-    assert clean.get(CardEvalProfile, person) is None
-    assert clean.get(CardEvalProfile, other) is not None
-    assert clean.get(CardEvalResult, (run.id, person)) is None
-    assert clean.get(CardEvalRun, run.id) is not None
-
-
-def test_list_leaves_out_a_soft_deleted_person(clean: Session) -> None:
-    person, admin = _person(clean), _admin(clean)
-    service = CardEvalService(clean)
-    service.add(admin, person, "lead")
-    _run_with_result(clean, person)
-    FreelancerService(clean).soft_delete(person, admin)
-
-    read = service.list()
-
-    assert read.profiles == []
-    assert [run.results for run in read.runs] == [[]]
+    assert [t.freelancer_id for t in sample(clean)] == [ada]
+    with pytest.raises(ValidationFailed):
+        sample(clean, 0)
 
 
-def test_remove_deletes_the_profile_and_signs_it(clean: Session) -> None:
-    person, admin = _person(clean), _admin(clean)
-    service = CardEvalService(clean)
-    service.add(admin, person, "lead")
+def test_named_people_keep_their_label_or_are_outside_the_sample(clean: Session) -> None:
+    ada = _person(clean, label="lead")
+    grace = _person(clean, "grace@studio.it", "Hopper")
 
-    service.remove(admin, person)
-
-    assert service.list().profiles == []
-    assert _actions(clean)[-1].kind == "eval_remove"
+    assert named(clean, [ada, grace, ada]) == [Target(ada, "lead"), Target(grace, OUTSIDE_SAMPLE)]
     with pytest.raises(NotFound):
-        service.remove(admin, person)
+        named(clean, [uuid4()])
+    with pytest.raises(InvalidState):
+        named(clean, [])
 
 
-def test_eval_table_not_in_warehouse_tables() -> None:
+def test_the_sample_and_its_results_go_with_the_person_and_hold_no_expected_card(
+    clean: Session,
+) -> None:
+    person = _person(clean, label="lead")
+    run = _run(clean, RecordingCall([card_response()]), RecordingCall([judge_response()]))
+    assert clean.get(CardEvalProfile, person) is not None
+    assert len(results_of(clean, run.id)) == 1
 
+    clean.execute(text("DELETE FROM freelancers WHERE id = :f"), {"f": person})
+    clean.commit()
+
+    assert clean.scalars(select(CardEvalProfile)).all() == []
+    assert clean.scalars(select(CardEvalResult)).all() == []
+    # The run itself, which holds only totals, stays.
+    assert clean.scalars(select(CardEvalRun)).one().id == run.id
+    assert {c.name for c in CardEvalProfile.__table__.columns} == {
+        "freelancer_id",
+        "label",
+        "created_at",
+    }
+
+
+def test_eval_tables_are_not_in_warehouse_tables() -> None:
     ours = {name for name in Base.metadata.tables if name.startswith("card_eval_")}
     assert ours == {"card_eval_profiles", "card_eval_runs", "card_eval_results"}
     assert not ours & WAREHOUSE_TABLES
 
 
-# ---- drafting the expected cards (REB-835, Task 11) ---------------------------------------
-
-SCAN = b"%PDF-1.7\n1 0 obj<<>>endobj\n%%EOF\n"
+# ---- one run --------------------------------------------------------------------------------
 
 
-def test_draft_stores_bozza_and_leaves_live_card_alone(clean: Session) -> None:
-
-    person = _person(clean)
-    CardEvalService(clean).ensure(person, "senza date")
-    llm = RecordingCall([card_response()])
-
-    read = draft_expected(clean, person, llm)
-
-    assert (read.status, read.label, read.expected) == ("bozza", "senza date", _card())
-    assert read.corrected_by_nome is None
-    assert clean.get(FreelancerCard, person) is None
-    assert _actions(clean) == []  # a model's draft is signed by nobody
-
-
-def test_a_draft_needs_the_profile_before_it_spends_anything(clean: Session) -> None:
-
-    person = _person(clean)
-    llm = RecordingCall([card_response()])
-
-    with pytest.raises(NotFound):
-        draft_expected(clean, person, llm)
-    assert llm.requests == []
-
-
-def test_draft_with_cv_that_has_no_text_reports_it(clean: Session) -> None:
-
-    read, _ = FreelancerService(clean).apply(
-        FreelancerCreate(
-            nome="Mario",
-            cognome="Rossi",
-            email="scan@studio.it",
-            tariffa_giornaliera=Decimal("300.00"),
-            posizione="Designer",
-            remoto="remoto",
-        ),
-        SCAN,
-        "cv.pdf",
-        "",
-    )
-    CardEvalService(clean).ensure(read.id, "designer")
-
-    with pytest.raises(InvalidState, match=NO_TEXT):
-        draft_expected(clean, read.id, RecordingCall([]))
-    assert clean.get(CardEvalProfile, read.id).expected_card is None  # type: ignore[union-attr]
-
-
-def test_a_draft_does_not_overwrite_what_an_admin_corrected(clean: Session) -> None:
-
-    person, admin = _person(clean), _admin(clean)
-    service = CardEvalService(clean)
-    service.add(admin, person, "lead")
-    service.set_expected(admin, person, _card(anni=12, seniority="lead"))
-    llm = RecordingCall([card_response()])
-
-    with pytest.raises(InvalidState):
-        draft_expected(clean, person, llm)
-    assert llm.requests == []  # refused before any model was paid
-    expected = service.profile_read(person).expected
-    assert expected is not None and expected.anni == 12
-
-
-# ---- `rebase cards-eval` (REB-835, Task 13) -----------------------------------------------
-
-API_KEY = "sk-ant-test-not-a-real-key"
-SECRETS_KEY = base64.b64encode(os.urandom(32)).decode()
-MODEL = "claude-opus-5"
-OTHER_MODEL = "claude-opus-5-5"
-
-
-def _accepted(session: Session, admin: UUID, person: UUID, label: str, **changes: Any) -> None:
-    service = CardEvalService(session)
-    service.add(admin, person, label)
-    service.set_expected(admin, person, _card(**changes))
-    service.accept(admin, person)
-
-
-def _run(
-    session: Session,
-    llm: Any,
-    *,
-    provider: str = "anthropic",
-    model: str = MODEL,
-    baseline_run_id: UUID | None = None,
-) -> EvalRunRead:
-    return run_eval(
-        session,
-        lambda _person: llm,
-        task="card",
-        provider=provider,
-        model=model,
-        effort=None,
-        baseline_run_id=baseline_run_id,
+def test_a_run_writes_checks_and_judges_each_card_and_stores_no_live_card(clean: Session) -> None:
+    person = _person(clean, label="senza date")
+    writer = RecordingCall([card_response()])
+    judging = RecordingCall(
+        [
+            judge_response(
+                {"competenze": ("unsupported", "no source says AWS")},
+                invented=["AWS"],
+                identifying=["Acme"],
+            )
+        ]
     )
 
+    run = _run(clean, writer, judging)
 
-@pytest.mark.parametrize(
-    ("expected", "got", "ok"),
-    [(5, 6, True), (5, 4, True), (5, 5, True), (5, 7, False), (None, None, True), (None, 3, False)]
-    + [(3, None, False)],
-)
-def test_anni_within_one_year_or_both_null(expected: int | None, got: int | None, ok: bool) -> None:
-    row = agreement(_card(anni=expected), _card(anni=got))
-
-    assert row.anni_ok is ok
-
-
-def test_seniority_must_equal() -> None:
-    assert agreement(_card(seniority="senior"), _card(seniority="senior")).seniority_ok is True
-    assert agreement(_card(seniority="senior"), _card(seniority="mid")).seniority_ok is False
-
-
-def test_no_card_measures_nothing_but_a_guard_refusal_is_a_failure() -> None:
-    assert agreement(_card(), None, "refusal") == AgreementRow(None, None, None)
-    assert agreement(_card(), None, "gendered") == AgreementRow(None, None, False)
-    assert agreement(_card(), None, "identifying").guard_clean is False
-    # What a source or an employer would give away (prompt version 2) is a guard failure too.
-    assert agreement(_card(), None, "source_identifying").guard_clean is False
-
-
-def test_a_run_measures_each_accepted_profile_and_stores_the_card_it_wrote(
-    clean: Session,
-) -> None:
-    ada, grace, admin = _person(clean), _person(clean, "grace@studio.it", "Hopper"), _admin(clean)
-    _accepted(clean, admin, ada, "senza date")
-    _accepted(clean, admin, grace, "lead", anni=2, seniority="junior")
-    llm = RecordingCall([card_response(), card_response()])
-
-    run = _run(clean, llm)
-
-    by_label = {result.label: result for result in run.results}
-    assert (by_label["senza date"].anni_ok, by_label["senza date"].seniority_ok) == (True, True)
-    assert (by_label["lead"].anni_ok, by_label["lead"].seniority_ok) == (False, False)
-    assert all(result.guard_clean for result in run.results)
-    assert by_label["lead"].card == Card.model_validate(CARD)
-    assert run.summary["anni_ok"] == 1 and run.summary["ran"] == 2 and run.summary["complete"]
+    [result] = results_of(clean, run.id)
+    assert result.freelancer_id == person and result.label == "senza date"
+    assert result.card == _card() and result.failure is None
+    # The rules: the years are the CV's 2017 - 2025 (8 to 9 years), no identifier is left.
+    assert result.checks == {
+        "years": {"mode": "recomputed", "ok": True, "low": 8, "high": 9},
+        "anonymity": [],
+    }
+    assert (result.anni_ok, result.guard_clean) == (True, True)
+    # The judge's verdicts, and a rule's over the judge's on the years.
+    assert result.judgement is not None
+    fields = result.judgement["fields"]
+    assert fields["competenze"] == {
+        "verdict": "unsupported",
+        "reason": "no source says AWS",
+        "by": "judge",
+    }
+    assert fields["anni"]["by"] == "rule" and fields["anni"]["verdict"] == "supported"
+    assert fields["ruolo"]["by"] == "judge"
+    assert result.judgement["invented"] == ["AWS"]
+    assert result.judgement["identifying"] == ["Acme"]
+    # One call to write, one to judge, and nothing written to the live card.
+    assert len(writer.requests) == 1 and len(judging.requests) == 1
+    assert clean.scalars(select(FreelancerCard)).all() == []
+    totals = run.summary
+    assert (totals["format"], totals["ran"], totals["judged"], totals["complete"]) == (
+        2,
+        1,
+        1,
+        True,
+    )
+    assert (totals["fields"], totals["supported"], totals["unsupported"]) == (8, 7, 1)
+    assert (totals["contradicted"], totals["invented"], totals["leaks_judge"]) == (0, 1, 1)
+    assert totals["judge"] == {"provider": "anthropic", "model": MODEL}
     assert (run.prompt_version, run.provider, run.model) == (PROMPT_VERSION, "anthropic", MODEL)
 
 
-def test_run_skips_draft_profiles(clean: Session) -> None:
-    ada, grace, admin = _person(clean), _person(clean, "grace@studio.it", "Hopper"), _admin(clean)
-    _accepted(clean, admin, ada, "lead")
-    CardEvalService(clean).add(admin, grace, "designer")
-    CardEvalService(clean).set_expected(admin, grace, _card())  # corrected, not accepted
-    llm = RecordingCall([card_response()])
+def test_the_judge_is_given_the_card_and_what_the_card_was_written_from(clean: Session) -> None:
+    _person(clean, label="lead")
+    judging = RecordingCall([judge_response()])
 
-    run = _run(clean, llm)
+    _run(clean, RecordingCall([card_response()]), judging)
 
-    assert [result.freelancer_id for result in run.results] == [ada]
-    assert len(llm.requests) == 1
-
-
-def test_run_skips_a_soft_deleted_person(clean: Session) -> None:
-    ada, grace, admin = _person(clean), _person(clean, "grace@studio.it", "Hopper"), _admin(clean)
-    _accepted(clean, admin, ada, "lead")
-    _accepted(clean, admin, grace, "duplicato")
-    FreelancerService(clean).soft_delete(grace, admin)
-
-    run = _run(clean, RecordingCall([card_response()]))
-
-    assert [result.freelancer_id for result in run.results] == [ada]
+    [request] = judging.requests
+    message = request.messages[0].text
+    assert "<card>" in message and '"ruolo": "Backend developer"' in message
+    assert "Backend developer, Acme, 2017 - 2025" in message  # the CV, as data
 
 
-def test_guard_failure_counted(clean: Session) -> None:
-    person, admin = _person(clean), _admin(clean)
-    _accepted(clean, admin, person, "lead")
-    gendered = {**CARD, "sintesi": "Lei è una sviluppatrice con nove anni di esperienza."}
+def test_a_rule_settles_the_years_over_a_judge_who_says_supported(clean: Session) -> None:
+    """The CV dates nothing, so nine years are a guess whatever the judge says (REB-799)."""
+    _person(clean, cv=UNDATED_CV, label="senza date")
 
-    run = _run(clean, RecordingCall([card_response(gendered), card_response(gendered)]))
+    run = _run(clean, RecordingCall([card_response()]), RecordingCall([judge_response()]))
 
-    [result] = run.results
+    [result] = results_of(clean, run.id)
+    assert result.anni_ok is False
+    assert result.checks is not None and result.checks["years"]["mode"] == "undated"
+    assert result.judgement is not None
+    assert result.judgement["fields"]["anni"]["verdict"] == "contradicted"
+    assert result.judgement["fields"]["anni"]["by"] == "rule"
+    assert run.summary["contradicted"] == 1 and run.summary["contradicted_profiles"] == 1
+    assert (run.summary["anni_checked"], run.summary["anni_ok"]) == (1, 0)
+
+
+def test_an_identifier_of_the_person_left_in_a_card_is_found_by_the_rules(clean: Session) -> None:
+    """Prompt version 1 never read the person's links, so its card may name them: the rules
+    read every prompt against everything the person's data holds."""
+    person = _person(clean, label="GitHub")
+    row = clean.get(Freelancer, person)
+    assert row is not None
+    row.links = ["https://ada-engine.dev/me"]
+    clean.commit()
+    leaky = _card(sintesi="Ha fondato ada-engine, una libreria per i calcoli, nove anni di Python.")
+
+    run = _run(
+        clean,
+        RecordingCall([_bare_card_response(leaky)]),
+        RecordingCall([judge_response()]),
+        prompt_version=1,
+    )
+
+    [result] = results_of(clean, run.id)
+    assert result.checks is not None and result.checks["anonymity"] == ["sintesi"]
+    assert (run.summary["leaks_rule"], run.summary["leaks"]) == (1, 1)
+    assert "anonima" in format_report(run, [result]) and "no" in format_report(run, [result])
+
+
+def test_prompt_version_1_writes_from_the_cv_alone_and_takes_a_bare_card(clean: Session) -> None:
+    _person(clean, label="lead")
+    writer = RecordingCall([_bare_card_response()])
+
+    run = _run(clean, writer, RecordingCall([judge_response()]), prompt_version=1)
+
+    [request] = writer.requests
+    assert "Prompt version" not in request.system and "fonti" not in request.system
+    assert "Sources available" not in request.messages[0].text
+    assert request.output_model is Card
+    [result] = results_of(clean, run.id)
+    assert result.card == _card() and run.prompt_version == 1
+
+
+def test_a_prompt_version_nobody_can_write_is_refused_before_any_call(clean: Session) -> None:
+    _person(clean, label="lead")
+    writer = RecordingCall([])
+
+    with pytest.raises(ValidationFailed):
+        _run(clean, writer, RecordingCall([]), prompt_version=3)
+
+    assert writer.requests == [] and clean.scalars(select(CardEvalRun)).all() == []
+
+
+def test_a_card_a_guard_refused_is_a_guard_failure_and_is_not_judged(clean: Session) -> None:
+    _person(clean, label="lead")
+    gendered = _card(sintesi="Lei è una sviluppatrice con nove anni di esperienza.")
+    judging = RecordingCall([])
+
+    run = _run(
+        clean,
+        RecordingCall([card_response(gendered), card_response(gendered)]),
+        judging,
+    )
+
+    [result] = results_of(clean, run.id)
     assert (result.failure, result.guard_clean, result.card) == ("gendered", False, None)
-    assert (run.summary["guard_failures"], run.summary["failed"]) == (1, 1)
-    assert run.summary["guard_clean"] == 0
+    assert result.judgement is None and judging.requests == []
+    assert (run.summary["guard_failures"], run.summary["failed"], run.summary["judged"]) == (
+        1,
+        1,
+        0,
+    )
 
 
 def test_a_refusal_is_not_a_guard_failure(clean: Session) -> None:
-    person, admin = _person(clean), _admin(clean)
-    _accepted(clean, admin, person, "lead")
+    _person(clean, label="lead")
 
-    run = _run(clean, RecordingCall([card_response(stop_reason="refusal")]))
+    run = _run(clean, RecordingCall([card_response(stop_reason="refusal")]), RecordingCall([]))
 
-    [result] = run.results
+    [result] = results_of(clean, run.id)
     assert (result.failure, result.guard_clean) == ("refusal", None)
-    assert (run.summary["guard_clean"], run.summary["guard_failures"]) == (1, 0)
-    assert "guardia 1/1 (0 respinte dalla guardia), 1 senza scheda" in format_report(run)
+    assert run.summary["guard_failures"] == 0 and run.summary["failed"] == 1
+
+
+@pytest.mark.parametrize(
+    ("response", "failure"),
+    [
+        (judge_response(stop_reason="refusal"), "refusal"),
+        (judge_response(stop_reason="max_tokens"), "max_tokens"),
+        (judge_response(text="{}"), "shape"),
+    ],
+)
+def test_a_judge_that_gives_no_verdict_is_recorded_and_the_run_goes_on(
+    clean: Session, response: LlmResponse, failure: str
+) -> None:
+    _person(clean, label="a")
+    _person(clean, "grace@studio.it", "Hopper", label="b")
+
+    run = _run(
+        clean,
+        RecordingCall([card_response(), card_response()]),
+        RecordingCall([response, judge_response()]),
+    )
+
+    first, second = results_of(clean, run.id)
+    assert first.judgement is not None and first.judgement["failure"] == failure
+    # The rules' verdict stands where the judge gave none.
+    assert set(first.judgement["fields"]) == {"anni"}
+    assert second.judgement is not None and second.judgement["failure"] is None
+    assert run.summary["complete"] and run.summary["judge_failed"] == 1
+    assert (run.summary["judged"], run.summary["fields"]) == (1, 8 + 1)
+    assert "[giudice: " + failure + "]" in format_report(run, [first, second])
+
+
+def test_an_outage_of_the_judge_keeps_the_card_and_stops_the_run(clean: Session) -> None:
+    _person(clean, label="a")
+    _person(clean, "grace@studio.it", "Hopper", label="b")
+
+    class Down:
+        calls = 0
+
+        def complete(self, request: object) -> object:
+            Down.calls += 1
+            raise LlmUnavailable("Il giudice non risponde")
+
+    writer = RecordingCall([card_response(), card_response()])
+    run = _run(clean, writer, Down())
+
+    assert Down.calls == 1 and len(writer.requests) == 1
+    [only] = results_of(clean, run.id)
+    assert only.card is not None and only.judgement is not None
+    assert only.judgement["failure"] == "unavailable"
+    assert run.summary["complete"] is False
+    assert run.summary["stopped"] == "Il giudice non risponde"
+
+
+def test_an_outage_of_the_writer_stops_the_run_and_it_is_never_a_baseline(clean: Session) -> None:
+    _person(clean, label="a")
+    _person(clean, "grace@studio.it", "Hopper", label="b")
+
+    class Spent:
+        calls = 0
+
+        def complete(self, request: object) -> object:
+            Spent.calls += 1
+            raise LlmUnavailable(CAP_REACHED)
+
+    judging = RecordingCall([])
+    run = _run(clean, Spent(), judging)
+
+    assert Spent.calls == 1 and judging.requests == []
+    assert run.summary["complete"] is False and run.summary["stopped"] == CAP_REACHED
+    assert [result.failure for result in results_of(clean, run.id)] == ["unavailable"]
+    # The next finished run has no baseline to be compared with: this one is not one.
+    again = _run(clean, RecordingCall([card_response()] * 2), RecordingCall([judge_response()] * 2))
+    assert again.summary["baseline"] is None and again.summary["complete"]
+    assert "Nessun riferimento" in format_report(again, results_of(clean, again.id))
 
 
 def test_what_ran_is_kept_when_the_run_ends_early_for_any_reason(clean: Session) -> None:
-    ada, grace, admin = _person(clean), _person(clean, "grace@studio.it", "Hopper"), _admin(clean)
-    _accepted(clean, admin, ada, "a")
-    _accepted(clean, admin, grace, "b")
-    first = RecordingCall([card_response()])
+    _person(clean, label="a")
+    _person(clean, "grace@studio.it", "Hopper", label="b")
     calls: list[UUID] = []
+    first = RecordingCall([card_response()])
 
     def llm_for(person: UUID) -> Any:
         calls.append(person)
@@ -512,110 +491,193 @@ def test_what_ran_is_kept_when_the_run_ends_early_for_any_reason(clean: Session)
         return first
 
     with pytest.raises(KeyboardInterrupt):
-        run_eval(clean, llm_for, task="card", provider="anthropic", model=MODEL, effort=None)
+        run_eval(
+            clean,
+            llm_for,
+            lambda _person: RecordingCall([judge_response()]),
+            task="card",
+            provider="anthropic",
+            model=MODEL,
+            effort=None,
+            targets=sample(clean),
+            judge_by=("anthropic", MODEL),
+        )
 
     [run] = clean.scalars(select(CardEvalRun)).all()
     assert run.summary["complete"] is False and run.summary["stopped"] == INTERRUPTED
     assert (run.summary["ran"], run.summary["profiles"]) == (1, 2)
     assert len(clean.scalars(select(CardEvalResult)).all()) == 1
-    # An interrupted run is no reference for the next.
-    again = _run(clean, RecordingCall([card_response(), card_response()]))
-    assert again.summary["baseline"] is None
 
 
-def test_run_without_an_accepted_profile_is_refused_before_any_call(clean: Session) -> None:
-    person, admin = _person(clean), _admin(clean)
-    CardEvalService(clean).add(admin, person, "lead")
-    llm = RecordingCall([])
+def test_a_person_with_no_cv_is_a_failure_of_their_own(clean: Session) -> None:
+    person = _person(clean, label="lead")
+    clean.execute(text("UPDATE freelancers SET cv_bytes = NULL WHERE id = :f"), {"f": person})
+    clean.commit()
 
-    with pytest.raises(InvalidState):
-        _run(clean, llm)
-    assert clean.scalars(select(CardEvalRun)).all() == []
+    run = _run(clean, RecordingCall([]), RecordingCall([]))
+
+    [result] = results_of(clean, run.id)
+    assert result.failure == "no_text" and result.card is None
 
 
-def test_run_does_not_change_ai_tasks_or_live_cards(clean: Session) -> None:
-    person, admin = _person(clean), _admin(clean)
-    _accepted(clean, admin, person, "lead")
+def test_a_run_changes_no_task_and_writes_no_live_card(clean: Session) -> None:
+    _person(clean, label="lead")
     tasks = clean.execute(text("SELECT * FROM ai_tasks ORDER BY task")).all()
 
-    _run(clean, RecordingCall([card_response()]), provider="openai", model="gpt-5")
+    _run(
+        clean,
+        RecordingCall([card_response()]),
+        RecordingCall([judge_response()]),
+        provider="openai",
+        model="gpt-5",
+    )
 
     assert clean.execute(text("SELECT * FROM ai_tasks ORDER BY task")).all() == tasks
     assert clean.scalars(select(FreelancerCard)).all() == []
 
 
-def test_a_cap_or_an_outage_stops_the_run_and_it_is_never_a_baseline(clean: Session) -> None:
-    ada, grace, admin = _person(clean), _person(clean, "grace@studio.it", "Hopper"), _admin(clean)
-    _accepted(clean, admin, ada, "a")
-    _accepted(clean, admin, grace, "b")
-
-    class Spent:
-        calls = 0
-
-        def complete(self, request: object) -> object:
-            Spent.calls += 1
-            raise LlmCapReached(CAP_REACHED)
-
-    run = _run(clean, Spent())
-
-    assert Spent.calls == 1
-    assert run.summary["complete"] is False and run.summary["stopped"] == CAP_REACHED
-    assert [result.failure for result in run.results] == ["unavailable"]
-    # The next finished run has no baseline to be compared with: this one is not one.
-    again = _run(clean, RecordingCall([card_response(), card_response()]))
-    assert again.summary["baseline"] is None and again.summary["complete"]
-    assert "Nessun riferimento" in format_report(again)
+# ---- the totals and the baseline -------------------------------------------------------------
 
 
-def test_report_marks_regression_against_the_live_configuration(clean: Session) -> None:
-    """The baseline is the newest finished run of what production runs (the card task's
-    provider and model, the current prompt), not the last candidate tried."""
-    person, admin = _person(clean), _admin(clean)
-    _accepted(clean, admin, person, "lead")
-    first = _run(clean, RecordingCall([card_response()]))
-    assert first.summary["baseline"] is None
-    assert "Nessun riferimento" in format_report(first)
-    mid = {**CARD, "anni": 3, "seniority": "mid"}
-
-    worse = _run(clean, RecordingCall([card_response(mid)]), provider="openai", model="gpt-5")
-    again = _run(clean, RecordingCall([card_response(mid)]), provider="openai", model="gpt-5")
-
-    for candidate in (worse, again):
-        assert candidate.summary["baseline"]["run_id"] == str(first.id)
-        assert candidate.summary["baseline"]["delta"] == {
-            "anni_ok": "peggio",
-            "seniority_ok": "peggio",
-            "guard_clean": "uguale",
-        }
-    report = format_report(worse)
-    assert "anni peggio, seniority peggio, guardia uguale" in report
-    assert "openai/gpt-5" in report
-    # A run of another model of the same provider is a candidate too, not a reference.
-    other = _run(clean, RecordingCall([card_response()]), model="claude-other")
-    assert other.summary["baseline"]["run_id"] == str(first.id)
+def _result(**changes: Any) -> CardEvalResult:
+    fields = {name: {"verdict": "supported", "reason": "r", "by": "judge"} for name in FONTI}
+    base: dict[str, Any] = {
+        "run_id": uuid4(),
+        "freelancer_id": uuid4(),
+        "label": "x",
+        "guard_clean": True,
+        "card": CARD,
+        "judgement": {"failure": None, "fields": fields, "invented": [], "identifying": []},
+        "checks": {"anonymity": [], "years": {"ok": True}},
+        "latency_ms": 1000,
+        "cost_eur": Decimal("0.01"),
+        "judge_latency_ms": 2000,
+        "judge_cost_eur": Decimal("0.02"),
+        "anni_ok": True,
+    }
+    return CardEvalResult(**{**base, **changes})
 
 
-def test_an_explicit_baseline_replaces_the_default_and_must_be_a_finished_run(
-    clean: Session,
-) -> None:
-    person, admin = _person(clean), _admin(clean)
-    _accepted(clean, admin, person, "lead")
-    mid = {**CARD, "anni": 3, "seniority": "mid"}
-    _run(clean, RecordingCall([card_response()]))
-    candidate = _run(clean, RecordingCall([card_response(mid)]), provider="openai", model="gpt-5")
-
-    same = _run(
-        clean,
-        RecordingCall([card_response(mid)]),
-        provider="openai",
-        model="gpt-5-mini",
-        baseline_run_id=candidate.id,
+def _worse(freelancer_id: UUID) -> CardEvalResult:
+    fields = {name: {"verdict": "supported", "reason": "r", "by": "judge"} for name in FONTI}
+    fields["anni"] = {"verdict": "contradicted", "reason": "r", "by": "rule"}
+    fields["competenze"] = {"verdict": "unsupported", "reason": "r", "by": "judge"}
+    return _result(
+        freelancer_id=freelancer_id,
+        anni_ok=False,
+        judgement={"failure": None, "fields": fields, "invented": ["x", "y"], "identifying": []},
+        checks={"anonymity": ["sintesi"], "years": {"ok": False}},
     )
 
-    assert same.summary["baseline"]["run_id"] == str(candidate.id)
-    assert same.summary["baseline"]["delta"]["anni_ok"] == "uguale"
-    with pytest.raises(NotFound):
-        _run(clean, RecordingCall([]), baseline_run_id=uuid4())
+
+def test_the_totals_count_verdicts_costs_and_what_went_wrong() -> None:
+    results = [
+        _result(),
+        _worse(uuid4()),
+        _result(card=None, judgement=None, checks=None, guard_clean=False),
+    ]
+
+    totals = aggregate(results)
+
+    assert (totals["fields"], totals["supported"], totals["unsupported"]) == (16, 14, 1)
+    assert (totals["contradicted"], totals["contradicted_profiles"]) == (1, 1)
+    assert (totals["invented"], totals["leaks_rule"], totals["leaks"]) == (2, 1, 1)
+    assert (totals["failed"], totals["judged"], totals["guard_failures"]) == (1, 2, 1)
+    assert (totals["anni_checked"], totals["anni_ok"]) == (2, 1)
+    assert (totals["cost_eur"], totals["judge_cost_eur"]) == ("0.03", "0.06")
+    assert (totals["latency_ms_avg"], totals["judge_latency_ms_avg"]) == (1000, 2000)
+
+
+def test_a_run_is_compared_with_its_baseline_on_the_people_both_wrote() -> None:
+    shared = uuid4()
+    baseline = [_worse(shared), _result(freelancer_id=uuid4())]
+    candidate = [_result(freelancer_id=shared), _result(freelancer_id=uuid4())]
+
+    table = compare(candidate, baseline)
+
+    assert table["profiles"] == 1
+    measures = table["measures"]
+    assert measures["supported_rate"] == {"this": 1.0, "baseline": 0.75, "verdict": "meglio"}
+    assert measures["contradicted_rate"]["verdict"] == "meglio"
+    assert measures["anni_ok_rate"] == {"this": 1.0, "baseline": 0.0, "verdict": "meglio"}
+    assert measures["leaks"] == {"this": 0.0, "baseline": 1.0, "verdict": "meglio"}
+    assert measures["guard_failures"]["verdict"] == "uguale"
+    assert compare(baseline, candidate)["measures"]["supported_rate"]["verdict"] == "peggio"
+    # Nobody in common: nothing to compare.
+    assert compare(candidate, [_result()])["profiles"] == 0
+
+
+def test_a_baseline_with_no_verdicts_is_compared_on_what_it_has() -> None:
+    person = uuid4()
+    manual = CardEvalResult(
+        run_id=uuid4(), freelancer_id=person, label="x", anni_ok=True, guard_clean=True
+    )
+
+    measures = compare([_result(freelancer_id=person)], [manual])["measures"]
+
+    assert measures["supported_rate"]["verdict"] == "n/d"
+    assert measures["guard_failures"]["verdict"] == "uguale"
+
+
+def test_the_default_baseline_is_the_live_configuration_and_an_explicit_one_replaces_it(
+    clean: Session,
+) -> None:
+    _person(clean, label="lead")
+    bad = judge_response({"ruolo": ("contradicted", "the CV says otherwise")})
+
+    first = _run(clean, RecordingCall([card_response()]), RecordingCall([bad]))
+    assert first.summary["baseline"] is None
+    assert "Nessun riferimento" in format_report(first, results_of(clean, first.id))
+
+    better = _run(clean, RecordingCall([card_response()]), RecordingCall([judge_response()]))
+    other = _run(
+        clean,
+        RecordingCall([card_response()]),
+        RecordingCall([judge_response()]),
+        provider="openai",
+        model="gpt-5",
+        baseline_run_id=first.id,
+    )
+
+    baseline = better.summary["baseline"]
+    assert baseline["run_id"] == str(first.id) and baseline["profiles"] == 1
+    assert baseline["measures"]["contradicted_rate"]["verdict"] == "meglio"
+    # A run of another model is a candidate, not the reference of the next.
+    after = _run(clean, RecordingCall([card_response()]), RecordingCall([judge_response()]))
+    assert after.summary["baseline"]["run_id"] == str(better.id)
+    assert other.summary["baseline"]["run_id"] == str(first.id)
+    report = format_report(better, results_of(clean, better.id))
+    assert f"run di riferimento {first.id}" in report
+    assert "campi contraddetti 0% contro 12% (meglio)" in report
+
+
+def test_a_run_of_another_effort_or_of_a_few_people_is_no_default_reference(
+    clean: Session,
+) -> None:
+    _person(clean, label="a")
+    _person(clean, "grace@studio.it", "Hopper", label="b")
+
+    def run(targets: list[Target] | None = None, **options: Any) -> CardEvalRun:
+        count = len(targets) if targets is not None else 2
+        return _run(
+            clean,
+            RecordingCall([card_response()] * count),
+            RecordingCall([judge_response()] * count),
+            targets,
+            **options,
+        )
+
+    run(effort="high")  # a probe at another effort
+    run(sample(clean, 1))  # a run of one person of two
+    assert run().summary["baseline"] is None
+
+    full = run()
+    assert full.summary["baseline"] is not None
+    assert full.summary["baseline"]["profiles"] == 2
+
+
+def test_a_baseline_must_exist_be_finished_and_of_the_task(clean: Session) -> None:
+    _person(clean, label="lead")
     cut = CardEvalRun(
         task="card",
         provider="anthropic",
@@ -625,36 +687,88 @@ def test_an_explicit_baseline_replaces_the_default_and_must_be_a_finished_run(
     )
     clean.add(cut)
     clean.commit()
-    llm = RecordingCall([])
+    writer = RecordingCall([])
+
+    with pytest.raises(NotFound):
+        _run(clean, writer, RecordingCall([]), baseline_run_id=uuid4())
     with pytest.raises(InvalidState):
-        _run(clean, llm, baseline_run_id=cut.id)
-    assert llm.requests == []
+        _run(clean, writer, RecordingCall([]), baseline_run_id=cut.id)
+
+    assert writer.requests == []
 
 
-def test_a_run_with_no_reference_says_so(clean: Session) -> None:
-    person, admin = _person(clean), _admin(clean)
-    _accepted(clean, admin, person, "lead")
+def test_a_run_of_the_manual_evaluation_is_never_the_default_reference(clean: Session) -> None:
+    _person(clean, label="lead")
+    manual = CardEvalRun(
+        task="card",
+        provider="anthropic",
+        model=MODEL,
+        prompt_version=PROMPT_VERSION,
+        summary={"complete": True, "ran": 15, "anni_ok": 15},
+    )
+    clean.add(manual)
+    clean.commit()
 
-    run = _run(clean, RecordingCall([card_response()]), provider="openai", model="gpt-5")
+    run = _run(clean, RecordingCall([card_response()]), RecordingCall([judge_response()]))
 
     assert run.summary["baseline"] is None
-    assert "Nessun riferimento" in format_report(run)
 
 
-def test_the_report_waits_for_ratings_and_carries_no_name_or_card_text(clean: Session) -> None:
-    person, admin = _person(clean), _admin(clean)
-    _accepted(clean, admin, person, "senza date")
-    run = _run(clean, RecordingCall([card_response()]))
+# ---- the report -----------------------------------------------------------------------------
 
-    before = format_report(run)
-    assert before.count("da valutare") == 3
-    CardEvalService(clean).rate(admin, run.id, {person: {"ruolo": 3, "competenze": 2}})
-    after = format_report(CardEvalService(clean).run_read(clean.get(CardEvalRun, run.id)))  # type: ignore[arg-type]
 
-    assert after.count("da valutare") == 1
-    for private in ("Lovelace", "Ada", "Backend developer", "Python", "Torino", "fintech"):
-        assert private not in before + after
-    assert "senza date" in after and str(person)[:8] in after
+def test_the_report_carries_no_name_card_text_or_reason_of_the_judge(clean: Session) -> None:
+    person = _person(clean, label="senza date")
+    run = _run(
+        clean,
+        RecordingCall([card_response()]),
+        RecordingCall(
+            [
+                judge_response(
+                    {"luogo": ("contradicted", "The CV places her in Napoli, not Torino")},
+                    invented=["Kubernetes"],
+                )
+            ]
+        ),
+    )
+
+    report = format_report(run, results_of(clean, run.id))
+
+    for private in (
+        "Lovelace",
+        "Ada",
+        "Backend developer",
+        "Python",
+        "Torino",
+        "Napoli",
+        "Kubernetes",
+    ):
+        assert private not in report
+    assert "senza date" in report and str(person)[:8] in report
+    assert "giudice anthropic/claude-opus-5" in report
+    # The judge is the model that wrote the cards: the report says what that is worth.
+    assert "il giudice è lo stesso modello" in report
+    assert "campi supportati 7/8 (88%)" in report and "contraddetti 1 in 1 schede" in report
+    assert "costo scheda" in report and "giudizio" in report
+
+
+def test_another_judge_has_no_note_and_a_disabled_provider_is_flagged(clean: Session) -> None:
+    _person(clean, label="lead")
+    run = _run(
+        clean,
+        RecordingCall([card_response()]),
+        RecordingCall([judge_response()]),
+        judge_by=("openai", "gpt-5"),
+    )
+    run.summary = {**run.summary, "allow_disabled": True}
+
+    report = format_report(run, results_of(clean, run.id))
+
+    assert "giudice openai/gpt-5" in report and "stesso modello" not in report
+    assert "ATTENZIONE: --allow-disabled" in report
+
+
+# ---- what it costs ----------------------------------------------------------------------------
 
 
 @pytest.fixture
@@ -689,99 +803,93 @@ def ai_ready(hub_engine: Engine) -> Iterator[Callable[[], Any]]:
         session.commit()
 
 
-def test_eval_cost_recorded_as_card_task_with_eval_purpose_and_counts_in_spent_today(
-    clean: Session, ai_ready: Callable[[], Any]
-) -> None:
-    person, admin = _person(clean), _admin(clean)
-    _accepted(clean, admin, person, "lead")
+def _calls(
+    ai_ready: Callable[[], Any], stub: Stub, writer: tuple[str, str], judging: tuple[str, str]
+) -> tuple[Callable[[UUID], AiCall], Callable[[UUID], AiCall]]:
     settings = Settings(secrets_key=SECRETS_KEY, _env_file=None)  # type: ignore[call-arg]
-    stub = Stub(Stub.reply(json.dumps(CARD), input_tokens=1000, output_tokens=200))
 
-    def llm_for(freelancer_id: UUID) -> AiCall:
-        return AiCall(
+    def call_as(provider: str, model: str) -> Callable[[UUID], AiCall]:
+        return lambda freelancer_id: AiCall(
             ai_ready,
             settings,
             "card",
-            override=TaskOverride("anthropic", OTHER_MODEL, "high"),
+            override=TaskOverride(provider, model, None),
             purpose="eval",
             freelancer_id=freelancer_id,
             model_factory=stub.factory,
         )
 
+    return call_as(*writer), call_as(*judging)
+
+
+def test_writing_and_judging_are_each_spent_under_the_card_task_for_eval(
+    clean: Session, ai_ready: Callable[[], Any]
+) -> None:
+    person = _person(clean, label="lead")
+    stub = Stub(
+        Stub.reply(draft_body(), input_tokens=1000, output_tokens=200),
+        Stub.reply(judgement_body(), input_tokens=3000, output_tokens=400),
+    )
+    write_as, judge_as = _calls(ai_ready, stub, ("anthropic", MODEL), ("anthropic", OTHER_MODEL))
+
     run = run_eval(
-        clean, llm_for, task="card", provider="anthropic", model=OTHER_MODEL, effort="high"
+        clean,
+        write_as,
+        judge_as,
+        task="card",
+        provider="anthropic",
+        model=MODEL,
+        effort=None,
+        targets=sample(clean),
+        judge_by=("anthropic", OTHER_MODEL),
     )
 
-    [usage] = clean.scalars(select(AiUsage)).all()
-    assert (usage.task, usage.purpose, usage.model, usage.freelancer_id) == (
-        "card",
-        "eval",
-        OTHER_MODEL,
-        person,
+    usage = clean.scalars(select(AiUsage).order_by(AiUsage.at)).all()
+    assert [(u.task, u.purpose, u.model, u.freelancer_id) for u in usage] == [
+        ("card", "eval", MODEL, person),
+        ("card", "eval", OTHER_MODEL, person),
+    ]
+    # 1000 in and 200 out at 5 and 25 euro per million; 3000 and 400 at 2 and 10.
+    assert [u.cost_eur for u in usage] == [Decimal("0.010000"), Decimal("0.010000")]
+    [result] = results_of(clean, run.id)
+    assert result.cost_eur == Decimal("0.010000") and result.judge_cost_eur == Decimal("0.010000")
+    assert result.latency_ms is not None and result.judge_latency_ms is not None
+    assert (Decimal(run.summary["cost_eur"]), Decimal(run.summary["judge_cost_eur"])) == (
+        Decimal("0.01"),
+        Decimal("0.01"),
     )
-    # 1000 input at 2 and 200 output at 10 euro per million tokens.
-    assert usage.cost_eur == Decimal("0.004000")
-    [result] = run.results
-    assert result.cost_eur == Decimal("0.004000") and result.latency_ms is not None
-    assert Decimal(run.summary["cost_eur"]) == Decimal("0.004")
-    assert (run.provider, run.model, run.effort) == ("anthropic", OTHER_MODEL, "high")
+    assert run.summary["judge"] == {"provider": "anthropic", "model": OTHER_MODEL}
+    settings = Settings(secrets_key=SECRETS_KEY, _env_file=None)  # type: ignore[call-arg]
     with ai_ready() as session:
-        assert AiConfigService(session, settings).spent_today("card") == Decimal("0.004")
-        # The task's own settings stay what an admin chose.
+        # Both count against the task's daily cap, and the task's own settings stay.
+        assert AiConfigService(session, settings).spent_today("card") == Decimal("0.02")
         task = session.get(AiTask, "card")
         assert task is not None and (task.model, task.effort) == (MODEL, "medium")
 
 
-def test_eval_spend_stops_at_the_tasks_daily_cap_and_says_why(
+def test_the_daily_cap_stops_a_run_before_any_call_and_says_why(
     clean: Session, ai_ready: Callable[[], Any]
 ) -> None:
-    person, admin = _person(clean), _admin(clean)
-    _accepted(clean, admin, person, "lead")
-    settings = Settings(secrets_key=SECRETS_KEY, _env_file=None)  # type: ignore[call-arg]
+    _person(clean, label="lead")
     with ai_ready() as session:
         task = session.get(AiTask, "card")
         assert task is not None
         task.daily_cap_eur = Decimal("0")
         session.commit()
     stub = Stub()
+    write_as, judge_as = _calls(ai_ready, stub, ("anthropic", MODEL), ("anthropic", MODEL))
 
     run = run_eval(
         clean,
-        lambda fid: AiCall(
-            ai_ready,
-            settings,
-            "card",
-            override=TaskOverride("anthropic", OTHER_MODEL, None),
-            purpose="eval",
-            freelancer_id=fid,
-            model_factory=stub.factory,
-        ),
+        write_as,
+        judge_as,
         task="card",
         provider="anthropic",
-        model=OTHER_MODEL,
+        model=MODEL,
         effort=None,
+        targets=sample(clean),
+        judge_by=("anthropic", MODEL),
     )
 
     assert stub.built == []
     assert run.summary["complete"] is False and run.summary["stopped"] == CAP_REACHED
-
-
-def test_fifteen_profiles_are_drafted_corrected_accepted_and_measured(clean: Session) -> None:
-    """The whole path on a test database (the card's «Done when»): fifteen people drafted
-    as `bozza`, an admin accepts them, and one run reports the agreement and the cost."""
-    admin = _admin(clean)
-    people = [_person(clean, f"persona{index}@studio.it", f"Cognome{index}") for index in range(15)]
-    service = CardEvalService(clean)
-    drafts = RecordingCall([card_response() for _ in people])
-    for person in people:
-        service.ensure(person, "senza date")
-        draft_expected(clean, person, drafts)
-
-    assert [profile.status for profile in service.list().profiles] == ["bozza"] * 15
-    for person in people:
-        service.accept(admin, person)
-    run = _run(clean, RecordingCall([card_response() for _ in people]))
-
-    assert (run.summary["ran"], run.summary["anni_ok"], run.summary["guard_clean"]) == (15, 15, 15)
-    report = format_report(run)
-    assert report.count("senza date") == 15

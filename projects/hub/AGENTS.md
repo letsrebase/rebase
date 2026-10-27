@@ -97,11 +97,8 @@ where an admin replaces a provider's key (write-only: the answer is «configurat
 table and reads the month's spend. «Prova» sends one fixed non-personal prompt through the
 task's own seam, recorded as `purpose="prova"`, so it spends the task's cap.
 
-«Valutazione» (`/hub/admin/valutazione`, REB-836, `routers/card_eval.py` under
-`/api/hub/admin/card-eval`) is where an admin corrects each evaluation profile's expected card
-(a correction sends it back to «bozza»), accepts it, and rates a run's role, skills and summary
-on a three-point scale. The page writes only expected cards and ratings: it never starts a run
-and never touches a live card.
+There is no «Valutazione» page: the evaluation is the command `rebase cards-eval` (REB-842, below),
+which an operator runs and reads, and the admin API has no `card-eval` route.
 
 `get_talento` and `list_talenti` carry `vetted_at` and whether an anonymous card exists.
 Since REB-778 each `list_talenti` row also carries the card's `posizione` and the
@@ -524,52 +521,83 @@ the team builder's catalogue and proposals) or `card_level.level` for a reader t
 the card's JSON only. Never read `Card.seniority` or `Card.anni` off a stored card
 without them.
 
-**A provider, a model or a prompt change is measured before it goes live** (REB-835, design
-2026-10-27 «Evaluation before a change goes live»). The evaluation set is about fifteen real
-profiles, chosen to cover the failures seen (an undated CV, a duplicate person, a
-GitHub-heavy profile, a designer with a portfolio, a very senior lead), each with the card an
-admin wrote by hand as the expected answer. It lives in the hub's database only
-(`card_eval_profiles`, `card_eval_runs`, `card_eval_results`, migration 0037), never in the
-repository, a log, Linear or a PR, because an expected card and the card a run wrote are
-derived from a CV; every row that holds one cascades with the person, and the trail
-(`admin_actions`, entity `card_eval`) names the fields that changed, never their values. The
-three tables are not in `WAREHOUSE_TABLES`.
+**A provider, a model or a prompt change is measured before it goes live, and the measure is
+automatic** (REB-835, REB-842, design 2026-10-27 «Evaluation before a change goes live», as Lorenzo
+changed it the same day: nobody writes an expected card or rates anything). `rebase cards-eval`
+writes the card of each person of a fixed sample with the provider, model, effort and prompt it is
+asked for (`CardWriter.compose`, the production writer with nothing stored), then cross-checks every
+card against the sources it was written from: the CV, GitHub, the links and the hub's own facts. The
+sample is about fifteen real profiles chosen to cover the failures seen (an undated CV, a duplicate
+person, a GitHub-heavy profile, a designer with a portfolio, a very senior lead), stored **by id**
+(`card_eval_profiles`: the person and the failure they cover, never a card; migration 0039 dropped
+the expected cards the manual flow had written and kept the ids), so two runs measure the same
+people. The runs and their per-person results are `card_eval_runs` and `card_eval_results`
+(migration 0037, 0039). Everything a run stores (the card, the checks, the judge's verdicts and
+reasons) is derived from a CV and the sources, so it lives in the hub's database only, never in the
+repository, a log, Linear or a PR, and every row cascades with the person. None of the three tables
+is in `WAREHOUSE_TABLES`. The admin area has no page for it and the API no route: «Valutazione»
+(REB-836) is gone.
 
-1. `rebase cards-eval-draft --freelancer <id> --label "senza date" [--freelancer … --label …]`
-   puts a person in the set and drafts their expected card with the `card` task's own model
-   (`CardWriter.compose`, the production writer with nothing stored), as a `bozza`. It prints
-   label, name and `/hub/admin/valutazione/<id>`, never the card. A profile an admin has
-   corrected or accepted is never overwritten by a model.
-2. An admin corrects the card and accepts it in «Valutazione»; any later edit makes it a
-   `bozza` again. Only accepted profiles take part in a run.
-3. `rebase cards-eval --task card --provider P --model M [--effort E] [--baseline RUN_ID]
-   [--allow-disabled]` runs the accepted profiles with `AiCall(override=TaskOverride(P, M, E))`: the seam as the `card` task, answered
-   by that provider and model, so every call is recorded in `ai_usage` under task `card` with
-   `purpose="eval"` and **counts against the task's daily euro cap**, which can end the run
-   early or anything else ends it (it then says `INCOMPLETA`, exits 1 and is never taken as a
-   baseline; every person's result is stored as it comes, so what was paid for is kept). It never
-   writes a live card and never touches `ai_tasks`. Run it from the `api` container like
-   `cards-refresh` (`docker compose -p rebase --env-file /opt/hub/.env exec api uv run
-   --no-sync rebase cards-eval …`, `-p rebase-preview --env-file /opt/hub-preview/.env` on the
-   preview). The provider must be on and have a key and a price for the model: a provider that
-   is off is refused («Il fornitore è spento») unless `--allow-disabled` says this evaluation
-   may send CVs to it, and the report then carries that warning. The processors gate of
-   «OpenAI and Google» below is about production use; the flag is the explicit, printed
-   exception for evaluating.
+`rebase cards-eval [--sample N | --freelancer ID ...] [--provider P --model M [--effort E]]
+[--prompt-version V] [--judge-provider P --judge-model M] [--baseline RUN_ID] [--allow-disabled]`:
 
-Reading the report: one line per person (label and the first characters of the id, never a
-name) with `anni` (within one year of the expected value, or both null), `seniority` (equal)
-and `guardia` (no guard of `cards.py` refused the card: a refusal, a cut-off answer or an
-outage is counted under «senza scheda», not as a guard failure) as `ok`/`no`, the ratings of
-`ruolo`, `competenze` and `sintesi` («da valutare» until an admin rates them 1 to 3 in
-«Valutazione»), latency and cost in euro; then the totals, and the change against the
-baseline as «meglio/uguale/peggio» per measure. **A change goes live when it is no worse than
-the baseline on the first three and an admin accepts the ratings.** The baseline is
-`--baseline RUN_ID`, or by default the newest finished run whose provider and model are the
-`card` task's now and whose prompt version is the current `PROMPT_VERSION`: production as it
-runs, never the last candidate tried. With none the report says «Nessun riferimento»: run
-the live configuration first and that run is the baseline. Record its id in the PR that
-changes the prompt (`PROMPT_VERSION` in `cards.py`).
+- **Who.** With neither `--sample` nor `--freelancer`, the whole sample. `--sample N` takes N of it, one
+  person of each failure in turn (labels and ids sorted, so the same N is always the same people).
+  `--freelancer` names people, in the sample or not («fuori campione»). An empty sample is an error.
+- **What writes.** Provider, model and effort default to the `card` task's own (`ai_tasks`); the calls
+  are `AiCall(override=TaskOverride(...))`, the seam as the `card` task answered by that provider and
+  model, so each is recorded in `ai_usage` under task `card` with `purpose="eval"` and **counts
+  against the task's daily euro cap**, which can end the run early (below). It never writes a live
+  card and never touches `ai_tasks`. `--prompt-version 1` writes with the CV-alone prompt of before
+  the sources (`cards.card_prompt_v1`, the answer a bare `Card`, version 1's guards), which is how
+  the baseline of the sources is written; the default is the current `PROMPT_VERSION`.
+- **The rules** (`card_eval_checks.py`), where a rule exists: the card validates and no guard of
+  `cards.py` refused it (`guardia`); `identifying` read again against everything the person's data
+  holds (their name, the GitHub login, the owned repositories, the links' hostnames, the hub's
+  clients), **for every prompt version**, so a v1 card is held to the rule the v2 card is; and the
+  years. (The seniority is no check of its own: `compose` brings it inside the years' bands for
+  every prompt.) The years are recomputed from the CV's dated periods only when the parse is
+  **reliable**: every year the CV writes belongs to a period that was read («Python (2019)», an
+  open «2019 -» and «dal 2016» are not, and go to the judge), and the periods counted at their
+  shortest (a period written with bare years may have lasted from the difference of the years to
+  that plus one) and without those beside a study («laurea», «università»…) are within a year of
+  the periods counted at their longest and with them. Then the card's `anni` must be between the
+  first, less a year, and the second plus the hub's completed years and a year; a CV with no year at
+  all dates nothing, so the card has none. An admin's years (`anni_admin`) are a fact. Anything else
+  is left to the judge. A field a rule settled keeps the rule's verdict whatever the judge said.
+- **The judge** (`card_judge.py`): a call apart from the writing one, given the card and the sources
+  as data (the same blocks the writer reads, whichever prompt wrote the card, so a card of the CV
+  alone is judged against everything we hold), which marks each of the eight fields `supported`,
+  `unsupported` or `contradicted` with a line of reason, lists what the card **invented** and every
+  **identifier** of the person it finds in it. It is answered by the `card` task's provider and model
+  by default, or by `--judge-provider` and `--judge-model` (both or neither): **the same model
+  judging its own cards tends to find them right, and the report says so**; judge with another
+  provider when one is configured and on. The reasons are stored with the result and never printed.
+- **Safety.** A provider that is off, the writer's or the judge's, is refused («Il fornitore è
+  spento») unless `--allow-disabled` says this evaluation may send CVs to it; the report then
+  carries that warning. The processors gate of «OpenAI and Google» below is about production use;
+  the flag is the explicit, printed exception for evaluating. Any outage, a spent cap or anything
+  else that ends a run early leaves it `INCOMPLETA` (exit 1, never a baseline); every person's
+  result is stored as it comes, so what was paid for is kept. Run it from the `api` container like
+  `cards-refresh` (`docker compose -p rebase --env-file /opt/hub/.env exec api uv run --no-sync
+  rebase cards-eval …`, `-p rebase-preview --env-file /opt/hub-preview/.env` on the preview).
+
+Reading the report: one line per person (label and the first characters of the id, never a name)
+with the fields the sources support out of the eight, the contradicted ones, what was invented,
+whether the years recomputed from the CV agree (`-` when the judge decided), `guardia` and
+`anonima` as `ok`/`no`, latency, and the euro of the writing and of the judging **apart**; then the
+totals (supported, unsupported and contradicted fields, invented claims, years, guard refusals,
+identifiers found by the rules and by the judge, latency, cost), who judged, and the comparison with
+the baseline on the people both runs wrote, a measure at a time «meglio/uguale/peggio». **A change
+goes live when it is no worse than the baseline on supported fields, contradictions, years,
+guard refusals and identifiers.** The baseline is `--baseline RUN_ID`, or by default the newest
+finished run of the automatic evaluation, of the whole sample, whose provider, model and effort are
+the `card` task's now and whose prompt version is the current `PROMPT_VERSION`: production as it
+runs, never the last candidate
+tried. With none the report says «Nessun riferimento»: run the live configuration first and that run
+is the baseline. To measure the sources, write the baseline first with `--prompt-version 1`, then run
+the current prompt with `--baseline <that run>`. Record the ids in the PR that changes the prompt
+(`PROMPT_VERSION` in `cards.py`).
 
 **The card is written from more than the CV, and every switch is off in production** (REB-837 to
 REB-839, design 2026-10-27, «Sources» and «Provenance, versions and regeneration»). The prompt is

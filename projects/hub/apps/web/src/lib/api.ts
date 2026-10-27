@@ -1699,14 +1699,6 @@ export const admin = {
   aiRegenerateStale: (limit: number) =>
     request<AiRegenerationStarted>('/api/hub/admin/ai/cards/regenerate-stale', json({ limit })),
   aiProva: (task: string) => request<AiProva>(`/api/hub/admin/ai/tasks/${task}/prova`, json({})),
-  /** «Valutazione» (REB-836): the evaluation set, its runs, a correction, the accept and the ratings. */
-  cardEval: () => request<CardEval>('/api/hub/admin/card-eval'),
-  cardEvalSetExpected: (freelancerId: string, card: Scheda) =>
-    request<EvalProfile>(`/api/hub/admin/card-eval/${freelancerId}`, { ...json(card), method: 'PUT' }),
-  cardEvalAccept: (freelancerId: string) =>
-    request<EvalProfile>(`/api/hub/admin/card-eval/${freelancerId}/accept`, { method: 'POST' }),
-  cardEvalRate: (runId: string, ratings: EvalRatings) =>
-    request<EvalRun>(`/api/hub/admin/card-eval/runs/${runId}/ratings`, json({ ratings })),
 }
 
 // ---- «Modelli AI» (REB-833) -------------------------------------------------------------
@@ -2143,53 +2135,4 @@ export const cloud = {
 export const campaigns = {
   unsubscribe: (t: string) =>
     request<{ ok: boolean }>(`/api/hub/campagne/disiscrizione?t=${encodeURIComponent(t)}`, { method: 'POST' }),
-}
-
-// ---- «Valutazione» (REB-836) ------------------------------------------------------------
-
-export type EvalField = 'ruolo' | 'competenze' | 'sintesi'
-/** `freelancer_id -> field -> 1..3`. */
-export type EvalRatings = Record<string, Partial<Record<EvalField, number>>>
-
-export interface EvalProfile {
-  freelancer_id: string
-  nome: string
-  cognome: string
-  label: string
-  status: 'bozza' | 'accettata'
-  expected: Scheda | null
-  corrected_by_nome: string | null
-  created_at: string
-  updated_at: string
-}
-
-export interface EvalResult {
-  freelancer_id: string
-  label: string
-  anni_ok: boolean | null
-  seniority_ok: boolean | null
-  guard_clean: boolean | null
-  failure: string | null
-  latency_ms: number | null
-  cost_eur: string | null
-  card: Scheda | null
-  ratings: Partial<Record<EvalField, number>> | null
-}
-
-export interface EvalRun {
-  id: string
-  task: string
-  provider: string
-  model: string
-  effort: string | null
-  prompt_version: number
-  created_at: string
-  created_by_nome: string | null
-  summary: Record<string, unknown>
-  results: EvalResult[]
-}
-
-export interface CardEval {
-  profiles: EvalProfile[]
-  runs: EvalRun[]
 }

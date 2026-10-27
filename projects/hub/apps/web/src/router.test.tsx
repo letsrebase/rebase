@@ -102,3 +102,16 @@ describe('«Consuntivo»’s address (REB-503)', () => {
     expect(page.search).toEqual({ mese: kept })
   })
 })
+
+describe('«Valutazione» is gone (REB-842)', () => {
+  it('has no route, and its addresses match no page', async () => {
+    // The evaluation is a command now (`rebase cards-eval`): nobody corrects or rates in the app.
+    const router = createRouter({ routeTree, history: createMemoryHistory({ initialEntries: ['/admin'] }) })
+    expect(Object.keys(router.routesById).filter((id) => id.includes('valutazione'))).toEqual([])
+    for (const path of ['/admin/valutazione', '/admin/valutazione/p1']) {
+      const gone = createRouter({ routeTree, history: createMemoryHistory({ initialEntries: [path] }) })
+      await gone.load()
+      expect(gone.state.matches.map((match) => match.routeId).join()).not.toContain('valutazione')
+    }
+  })
+})

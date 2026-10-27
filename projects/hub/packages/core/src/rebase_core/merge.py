@@ -290,8 +290,7 @@ LEFT_IN_PLACE: dict[str, str] = {
         "what pages said about the absorbed card, deleted by the merge; the survivor reads "
         "its own links"
     ),
-    "card_eval_profiles.freelancer_id": "a CV's evaluation profile stays with it, out of every run",
-    "card_eval_profiles.corrected_by": "the admin who corrected the expected card",
+    "card_eval_profiles.freelancer_id": "a CV's place in the evaluation sample stays with it",
     "card_eval_runs.created_by": "the admin who ran the evaluation",
     "card_eval_results.freelancer_id": "what a run wrote for one CV, about that card as it was",
 }
