@@ -670,6 +670,78 @@ def reminders(*, slug: str | None, data: date | None, dry_run: bool) -> int:
     return 1 if failed else 0
 
 
+def owner_backfill(*, slug: str, generic_accounts: Sequence[str], apply: bool) -> int:
+    """`pigrocrm owner-backfill --slug <space>`: gives every live customer and deal of one
+    space the owner its creation entry names (REB-797), and says what it left alone.
+
+    A one-off, run by hand over SSH on the host, so the shape differs from the cron
+    commands in the one way that matters: **it writes nothing unless `--apply` is given**,
+    and prints the plan (a line per record with the owner it would get, then the records it
+    lists instead, with the reason) the same way both times. `--generic-account <email>`
+    (repeatable) names an account that several people or agents act through: its records
+    are listed, not set. The rule and its refusals are `pigrocrm.core.owner_backfill`'s.
+
+    `--slug root` is the root installation, as in the other commands. Exit 1 when the space
+    is not in the registry or cannot be read, 0 otherwise; a failure prints the exception's
+    type and never its text, which may carry the database URL.
+    """
+    from sqlalchemy import create_engine, select
+
+    from pigrocrm.core.owner_backfill import apply_owner_backfill, plan_owner_backfill
+    from pigrocrm.core.tenants import Tenant, ensure_tenants_database
+    from pigrocrm.core.tenants.database import tenant_database_url
+
+    settings = get_settings()
+    database_url: str | URL | None = None
+    if slug == ROOT_LABEL:
+        database_url = settings.database_url
+    else:
+        try:
+            registry = ensure_tenants_database(settings)
+            try:
+                with session_factory(registry)() as session:
+                    row = session.scalars(select(Tenant).where(Tenant.slug == slug)).first()
+                    if row is not None:
+                        database_url = tenant_database_url(settings, row.db_name)
+            finally:
+                registry.dispose()
+        except Exception as exc:  # noqa: BLE001 - one line, never a traceback
+            print(f"registro degli spazi non raggiungibile ({type(exc).__name__})", file=sys.stderr)
+            return 1
+        if database_url is None:
+            print(f"{slug}: non nel registro", file=sys.stderr)
+            return 1
+
+    engine = create_engine(database_url, future=True)
+    try:
+        with session_factory(engine)() as space:
+            bind_scope(space, Actor.system())
+            plan = plan_owner_backfill(space, generic_emails=generic_accounts)
+            written = apply_owner_backfill(space, plan) if apply else 0
+    except Exception as exc:  # noqa: BLE001 - one line, never a traceback
+        print(f"{slug}: saltato ({type(exc).__name__})", file=sys.stderr)
+        return 1
+    finally:
+        engine.dispose()
+
+    label = {"customer": "cliente", "deal": "deal"}
+    for assignment in plan.assignments:
+        print(f"{slug}: {label[assignment.entity]} «{assignment.label}» -> {assignment.owner_name}")
+    for listed in plan.listed:
+        who = f" (creato da {listed.creator_name})" if listed.creator_name else ""
+        print(
+            f"{slug}: {label[listed.entity]} «{listed.label}» lasciato senza responsabile: "
+            f"{listed.reason}{who}"
+        )
+    for entity in ("customer", "deal"):
+        print(
+            f"{slug}: {label[entity]}: {plan.assigned(entity)} da assegnare, "
+            f"{plan.left(entity)} lasciati, {plan.already_owned[entity]} già con responsabile"
+        )
+    print(f"{slug}: {'scritti ' + str(written) if apply else 'prova, non scritto niente'}")
+    return 0
+
+
 def vapid_keys() -> int:
     """`pigrocrm vapid-keys`: a new VAPID key pair for the push channel (REB-738), as the
     lines an operator pastes into the environment's `.env`. Writes nothing anywhere: the
@@ -1270,6 +1342,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Prova: dice cosa aprirebbe e non scrive niente",
     )
 
+    backfill = sub.add_parser(
+        "owner-backfill",
+        help="Dà a clienti e deal di uno spazio il responsabile che li ha creati (--apply scrive)",
+    )
+    backfill.add_argument("--slug", required=True, help="Lo spazio da sistemare (o root)")
+    backfill.add_argument(
+        "--generic-account",
+        action="append",
+        default=[],
+        metavar="EMAIL",
+        help="Un account generico: i suoi record si elencano e non si assegnano (ripetibile)",
+    )
+    backfill.add_argument(
+        "--apply", action="store_true", help="Scrive; senza, stampa solo cosa farebbe"
+    )
+
     args = parser.parse_args(argv)
     if args.command == "createadmin":
         return createadmin(args.email, args.nome)
@@ -1291,6 +1379,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return vapid_keys()
     if args.command == "automations":
         return automations(slug=args.slug, data=args.data, dry_run=args.dry_run)
+    if args.command == "owner-backfill":
+        return owner_backfill(
+            slug=args.slug, generic_accounts=args.generic_account, apply=args.apply
+        )
     return 1
 
 
