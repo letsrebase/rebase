@@ -1,5 +1,5 @@
 import { FileUp } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { StatusPill } from '@/components/StatusPill'
 import { Button } from '@rebase/ui/button'
@@ -12,7 +12,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@rebase/ui/dialog'
+import { Label } from '@rebase/ui/label'
 import { Loader } from '@rebase/ui/loader'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rebase/ui/select'
 import { toast } from '@rebase/ui/sonner'
 import {
   Table,
@@ -22,6 +24,7 @@ import {
   TableHeader,
   TableRow,
 } from '@rebase/ui/table'
+import { useCustomers } from '@/features/customers/queries'
 import { UploadDropzone } from '@/features/documents/UploadDropzone'
 import { toProblem, type ProblemDetail } from '@/lib/api'
 import { useCan } from '@/lib/auth'
@@ -43,6 +46,7 @@ import {
   reviewedAsConfirmed,
   sortReviewRows,
   willBeWritten,
+  type ChosenCustomer,
   type ConfirmRow,
   type ReviewRow,
 } from './importPlan'
@@ -97,6 +101,8 @@ function ImportInvoicesDialog({ onClose }: { onClose: () => void }) {
   const [batches, setBatches] = useState<ReviewedBatch[]>([])
   // The new customers the person unticked, by `partyKey`: unticked is the exception.
   const [declined, setDeclined] = useState<ReadonlySet<string>>(new Set())
+  // The existing customer picked by hand for a new party, by `partyKey`: absent is «create it».
+  const [chosen, setChosen] = useState<ReadonlyMap<string, ChosenCustomer>>(new Map())
   const [confirmed, setConfirmed] = useState<ConfirmRow[]>([])
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
 
@@ -132,6 +138,7 @@ function ImportInvoicesDialog({ onClose }: { onClose: () => void }) {
     }
     setBatches(reviewed)
     setDeclined(new Set())
+    setChosen(new Map())
     setStage({ kind: 'review' })
   }
 
@@ -154,7 +161,7 @@ function ImportInvoicesDialog({ onClose }: { onClose: () => void }) {
     try {
       for (const batch of toWrite) {
         if (!mounted.current) break
-        const result = await confirmImportFiles(batch.files, decisionsFor(batch.rows, declined, created))
+        const result = await confirmImportFiles(batch.files, decisionsFor(batch.rows, declined, created, chosen))
         collected.push(...result)
         for (const [party, customerId] of customersOf(result)) created.set(party, customerId)
         done += batch.files.length
@@ -225,6 +232,15 @@ function ImportInvoicesDialog({ onClose }: { onClose: () => void }) {
           <ReviewPanel
             rows={rows}
             declined={declined}
+            chosen={chosen}
+            onChoose={(key, customer) =>
+              setChosen((previous) => {
+                const next = new Map(previous)
+                if (customer === undefined) next.delete(key)
+                else next.set(key, customer)
+                return next
+              })
+            }
             onToggleParty={(key) =>
               setDeclined((previous) => {
                 const next = new Set(previous)
@@ -300,10 +316,14 @@ function Progress({ label, done, total }: { label: string; done: number; total: 
 function ReviewPanel({
   rows,
   declined,
+  chosen,
+  onChoose,
   onToggleParty,
 }: {
   rows: ReviewRow[]
   declined: ReadonlySet<string>
+  chosen: ReadonlyMap<string, ChosenCustomer>
+  onChoose: (key: string, customer: ChosenCustomer | undefined) => void
   onToggleParty: (key: string) => void
 }) {
   const counts = countByOutcome(rows)
@@ -329,20 +349,31 @@ function ReviewPanel({
           </h3>
           <p className="text-sm text-muted-foreground">
             Questi clienti non sono in anagrafica. Lasciali spuntati per crearli insieme alle
-            loro fatture; se ne togli uno, le sue fatture non vengono importate.
+            loro fatture, oppure scegli un cliente che hai già: le fatture vanno a lui e non ne
+            nasce un altro. Se ne togli uno, le sue fatture non vengono importate.
           </p>
           {parties.map((party) => (
-            <label key={party.key} className="flex items-center gap-2 text-sm">
-              <Checkbox
-                checked={!declined.has(party.key)}
-                onCheckedChange={() => onToggleParty(party.key)}
+            <div key={party.key} className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              <label className="flex items-center gap-2 text-sm">
+                <Checkbox
+                  checked={!declined.has(party.key)}
+                  onCheckedChange={() => onToggleParty(party.key)}
+                />
+                <span className="font-medium">{party.name}</span>
+                <span className="text-muted-foreground">
+                  {party.taxId !== '' ? `${party.taxId} · ` : ''}
+                  {plural(party.invoices, 'fattura', 'fatture')}
+                </span>
+              </label>
+              <ExistingCustomerPicker
+                party={party.taxId !== '' ? `${party.name} (${party.taxId})` : party.name}
+                aziendaId={party.aziendaId}
+                mixedAziende={party.mixedAziende}
+                value={chosen.get(party.key)}
+                disabled={declined.has(party.key) || party.mixedAziende}
+                onChange={(customer) => onChoose(party.key, customer)}
               />
-              <span className="font-medium">{party.name}</span>
-              <span className="text-muted-foreground">
-                {party.taxId !== '' ? `${party.taxId} · ` : ''}
-                {plural(party.invoices, 'fattura', 'fatture')}
-              </span>
-            </label>
+            </div>
           ))}
         </section>
       ) : null}
@@ -360,7 +391,12 @@ function ReviewPanel({
           </TableHeader>
           <TableBody>
             {sorted.map((row, index) => (
-              <ReviewTableRow key={`${row.sha256}-${index}`} row={row} declined={declined} />
+              <ReviewTableRow
+                key={`${row.sha256}-${index}`}
+                row={row}
+                declined={declined}
+                chosen={chosen}
+              />
             ))}
           </TableBody>
         </Table>
@@ -369,15 +405,111 @@ function ReviewPanel({
   )
 }
 
-function ReviewTableRow({ row, declined }: { row: ReviewRow; declined: ReadonlySet<string> }) {
+/** The value of the picker's «create it» entry: a Radix item cannot carry an empty value. */
+const CREATE_NEW = '__crea__'
+
+/**
+ * Attach a new party to a customer already on file (REB-777). `match_customer` finds one by
+ * an Italian VAT number or tax code, so a customer without one (a foreign customer, a
+ * private person with no tax code stated) is offered for creation on every import; this is
+ * the way to say it is somebody already known. `useCustomers({ limit: 200 })` is the
+ * picker every dialog here uses (`NewProformaDialog`): a one-shot cap for a dropdown, one
+ * request shared by every party through the query cache. A list that cannot be read leaves
+ * only «crea un nuovo cliente», which is the default and the old behaviour.
+ */
+function ExistingCustomerPicker({
+  party,
+  aziendaId,
+  mixedAziende,
+  value,
+  disabled,
+  onChange,
+}: {
+  party: string
+  aziendaId: string | null
+  mixedAziende: boolean
+  value: ChosenCustomer | undefined
+  disabled: boolean
+  onChange: (customer: ChosenCustomer | undefined) => void
+}) {
+  const customers = useCustomers({ limit: 200 })
+  // Only the customers of the azienda the invoice is written on: the server takes any
+  // `customer_id` it is sent, and an invoice on one azienda's register for another's
+  // customer is a state nothing else in the product can produce. With the sidebar on
+  // another azienda the list is that one's, and a party of this one finds nobody here.
+  const items = (customers.data?.items ?? []).filter(
+    (customer) => aziendaId === null || customer.azienda_id === aziendaId,
+  )
+  // `limit` is a page, not the whole list, and the purpose of this picker is to not create
+  // a second customer: when the page is not all of them, it says so.
+  const partial = customers.data?.next_cursor != null
+  const id = useId()
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Label htmlFor={id} className="text-sm text-muted-foreground">
+        Cliente
+      </Label>
+      <Select
+        value={value?.id ?? CREATE_NEW}
+        disabled={disabled}
+        onValueChange={(next) => {
+          const picked = items.find((customer) => customer.id === next)
+          onChange(picked === undefined ? undefined : { id: picked.id, name: picked.ragione_sociale })
+        }}
+      >
+        <SelectTrigger id={id} aria-label={`Cliente di ${party}`} className="w-64">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={CREATE_NEW}>Crea un nuovo cliente</SelectItem>
+          {/* A customer picked before the list reloaded stays selectable by its own entry. */}
+          {value !== undefined && !items.some((customer) => customer.id === value.id) ? (
+            <SelectItem value={value.id}>{value.name}</SelectItem>
+          ) : null}
+          {items.map((customer) => (
+            <SelectItem key={customer.id} value={customer.id}>
+              {customer.ragione_sociale}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {mixedAziende ? (
+        <span className="text-xs text-muted-foreground">
+          Le sue fatture sono di più aziende: non si può collegare a un cliente che hai già.
+        </span>
+      ) : null}
+      {partial ? (
+        <span className="text-xs text-muted-foreground">
+          Elenco parziale: solo i primi 200 clienti.
+        </span>
+      ) : null}
+    </div>
+  )
+}
+
+function ReviewTableRow({
+  row,
+  declined,
+  chosen,
+}: {
+  row: ReviewRow
+  declined: ReadonlySet<string>
+  chosen: ReadonlyMap<string, ChosenCustomer>
+}) {
   const { invoice } = row
   const skipped =
     row.outcome === 'needs_customer_confirmation' &&
     row.party_key != null &&
     declined.has(row.party_key ?? '')
+  const attached =
+    !skipped && row.outcome === 'needs_customer_confirmation' && row.party_key != null
+      ? chosen.get(row.party_key)
+      : undefined
   const note = skipped
     ? 'Il cliente non viene creato: questa fattura non viene importata.'
-    : row.outcome === 'unclaimed' && row.motivo
+    : attached !== undefined
+      ? `Va al cliente «${attached.name}», già in anagrafica: non ne viene creato un altro.`
+      : row.outcome === 'unclaimed' && row.motivo
       ? `Sembra una fattura FatturaPA ma non si legge: ${row.motivo}`
       : REVIEW_OUTCOME_NOTES[row.outcome]
   return (
@@ -405,8 +537,10 @@ function ReviewTableRow({ row, declined }: { row: ReviewRow; declined: ReadonlyS
         {row.file}
       </TableCell>
       <TableCell>
-        <StatusPill tone={skipped ? 'muted' : REVIEW_OUTCOME_TONES[row.outcome]}>
-          {REVIEW_OUTCOME_LABELS[row.outcome]}
+        <StatusPill
+          tone={skipped ? 'muted' : attached !== undefined ? 'ink' : REVIEW_OUTCOME_TONES[row.outcome]}
+        >
+          {attached !== undefined ? 'Cliente scelto' : REVIEW_OUTCOME_LABELS[row.outcome]}
         </StatusPill>
         {note !== '' ? <p className="mt-1 text-xs text-muted-foreground">{note}</p> : null}
       </TableCell>

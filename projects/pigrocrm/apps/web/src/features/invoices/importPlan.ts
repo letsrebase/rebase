@@ -97,6 +97,15 @@ export interface NewParty {
   name: string
   taxId: string
   invoices: number
+  /** The azienda the file's issuer is: the one every invoice of this party is written on,
+   *  and so the only one whose customers it may be attached to. `null` when the server
+   *  did not say. */
+  aziendaId: string | null
+  /** The party's invoices are written on more than one azienda (one upload of two issuers'
+   *  files to the same counterparty): the key names the party and not the issuer, so one
+   *  decision covers both, and a customer that belongs to one azienda cannot be attached
+   *  to the other's invoice. */
+  mixedAziende: boolean
 }
 
 export function newParties(rows: readonly ReviewRow[]): NewParty[] {
@@ -104,14 +113,18 @@ export function newParties(rows: readonly ReviewRow[]): NewParty[] {
   for (const row of rows) {
     if (row.outcome !== 'needs_customer_confirmation' || !row.invoice || !row.party_key) continue
     const party = found.get(row.party_key)
-    if (party) party.invoices += 1
-    else {
+    if (party) {
+      party.invoices += 1
+      if ((row.azienda_id ?? null) !== party.aziendaId) party.mixedAziende = true
+    } else {
       const { cliente } = row.invoice
       found.set(row.party_key, {
         key: row.party_key,
         name: cliente.ragione_sociale,
         taxId: cliente.partita_iva ?? cliente.codice_fiscale ?? '',
         invoices: 1,
+        aziendaId: row.azienda_id ?? null,
+        mixedAziende: false,
       })
     }
   }
@@ -133,22 +146,36 @@ export function countWrites(rows: readonly ReviewRow[], declined: ReadonlySet<st
   return rows.filter((row) => willBeWritten(row, declined)).length
 }
 
+/** The existing customer a person picked for a new party by hand, by `partyKey`: its id, which
+ *  the confirmation takes as `customer_id`, and its name, which the review reads back. */
+export interface ChosenCustomer {
+  id: string
+  name: string
+}
+
 /** The decisions to send, one per new customer in the batch: `create_customer` for one left
- *  ticked, or `customer_id` for one an earlier batch already created, which is what keeps
- *  a counterparty the register cannot match by tax id (a foreign one) at one customer
- *  however many batches its invoices fall in. An unticked customer is sent as an explicit
- *  `skip`: left out, a customer created by somebody else after the review would match and
- *  its invoices be written anyway, whatever the person unticked. */
+ *  ticked, or `customer_id` for one that is already a customer, which is either one an
+ *  earlier batch created or one the person picked from the customer list. Either keeps a
+ *  counterparty the register cannot match by tax id (a foreign one, a private person with
+ *  none stated) at one customer however many batches its invoices fall in, and the picked
+ *  one keeps it from being created again on every later import. An unticked customer is
+ *  sent as an explicit `skip`: left out, a customer created by somebody else after the
+ *  review would match and its invoices be written anyway, whatever the person unticked.
+ *
+ *  What an earlier batch created wins over what was picked: it is the customer the
+ *  party's first invoices already went to, and the two are the same one when the person
+ *  picked before confirming. */
 export function decisionsFor(
   rows: readonly ReviewRow[],
   declined: ReadonlySet<string>,
   created: ReadonlyMap<string, string> = new Map(),
+  chosen: ReadonlyMap<string, ChosenCustomer> = new Map(),
 ): ImportDecisions {
   const clienti: ImportDecisions['clienti'] = {}
   for (const row of rows) {
     if (row.outcome !== 'needs_customer_confirmation' || !row.party_key) continue
     const key = row.party_key
-    const customerId = created.get(key)
+    const customerId = created.get(key) ?? chosen.get(key)?.id
     clienti[key] = declined.has(key)
       ? { skip: true }
       : customerId === undefined
