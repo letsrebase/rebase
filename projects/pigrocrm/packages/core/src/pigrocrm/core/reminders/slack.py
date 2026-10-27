@@ -388,7 +388,12 @@ class _Post:
 def _remember(
     session: Session, user_id: UUID, slack_user_id: str | None, email: str | None, at: datetime
 ) -> None:
-    SlackRepository(session).upsert_link(
+    repo = SlackRepository(session)
+    existing = repo.link_for(user_id)
+    if existing is not None and existing.source == "manual":
+        # An admin said who this person is while the pass was sending: that stands.
+        return
+    repo.upsert_link(
         user_id,
         source="email" if slack_user_id else "none",
         slack_user_id=slack_user_id,

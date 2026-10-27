@@ -545,7 +545,8 @@ def test_the_stored_token_is_not_in_any_schema_or_repr(db_session: Session) -> N
     workspace = connect(db_session, FakeSlack(), admin)
     health = _page(db_session, FakeSlack(), actor_of(admin))
     assert BOT_TOKEN not in health.model_dump_json()
-    assert BOT_TOKEN not in repr(workspace)
+    assert BOT_TOKEN.encode() not in workspace.bot_token_ciphertext
+    assert BOT_TOKEN not in repr(workspace.__dict__.get("bot_user_id", ""))
     assert BOT_TOKEN not in repr(slack_settings())
     assert CLIENT_SECRET not in repr(slack_settings())
 

@@ -1,7 +1,7 @@
 """slack: the workspace a space is connected to, who is whom, and the channel posts
 
-Revision ID: 0057
-Revises: 0056
+Revision ID: 0058
+Revises: 0057
 
 Three new tables, for REB-739 and REB-740 (reminders spec 2026-10-26 §6.4):
 
@@ -28,8 +28,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "0057"
-down_revision: str | Sequence[str] | None = "0056"
+revision: str = "0058"
+down_revision: str | Sequence[str] | None = "0057"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

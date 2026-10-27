@@ -34,6 +34,7 @@ from datetime import UTC, datetime, timedelta
 from urllib.parse import urlencode
 from uuid import UUID
 
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
@@ -228,7 +229,15 @@ class SlackOAuthService:
             bot_token_nonce=nonce,
         )
         if existing is None:
-            self.repo.add_workspace(workspace)
+            try:
+                self.repo.add_workspace(workspace)
+            except IntegrityError as raced:
+                # Two admins finishing the consent at once: the other one's workspace won the
+                # one row a space may have, and this consent ends on the page like any other.
+                self.session.rollback()
+                raise Conflict(
+                    SLACK_ENTITY, "questo spazio ha già un workspace Slack: ricarica la pagina"
+                ) from raced
         else:
             if existing.team_id != install.team_id:
                 # Another workspace after a disconnect or a revocation: the channel and
@@ -256,6 +265,6 @@ class SlackOAuthService:
         try:
             SlackMatcher(self.repo, self.client, token).match_all(self.repo.people(), force=True)
             self.session.commit()
-        except Conflict:
+        except (Conflict, SQLAlchemyError):
             # The installation stands; what is unmatched is asked again from the page.
             self.session.rollback()

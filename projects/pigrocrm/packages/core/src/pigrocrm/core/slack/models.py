@@ -37,7 +37,8 @@ class SlackWorkspace(Base, PrimaryKeyMixin, TimestampMixin):
     `active`; `revoked` (Slack told us the token is dead: `token_revoked`, `invalid_auth`,
     `account_inactive`, an uninstall); `disconnected` (what an admin did). A `revoked` row
     keeps its team and its matches so that reconnecting the same workspace loses nothing;
-    `disconnected` overwrites the sealed token and keeps the row for the same reason.
+    `disconnected` overwrites the sealed token and the channel, drops the matches (they belong to
+    the workspace that left) and keeps the row.
 
     The bot token is sealed with AES-256-GCM under `PIGROCRM_SLACK_TOKEN_KEY` derived for the
     space (`tenants/google.py`), the same `seal`/`unseal` as the Google refresh tokens, and

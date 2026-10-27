@@ -161,7 +161,7 @@ function Connected({
 
       {workspace.status === 'revoked' ? (
         <div
-          role="status"
+          role="alert"
           className="space-y-2 border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
         >
           <p>{workspace.last_error ?? 'Slack ha revocato l’accesso di PigroCRM.'}</p>
@@ -172,7 +172,7 @@ function Connected({
       ) : null}
       {problem ? (
         <p
-          role="status"
+          role="alert"
           className="border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
         >
           {problem}
@@ -208,7 +208,7 @@ function Connected({
         ) : (
           <ul className="divide-y border" aria-label="Utenti e Slack">
             {members.map((member) => (
-              <MemberRow key={member.user_id} member={member} />
+              <MemberRow key={member.user_id} member={member} active={workspace.status === 'active'} />
             ))}
           </ul>
         )}
@@ -254,7 +254,7 @@ function Connected({
   )
 }
 
-function MemberRow({ member }: { member: SlackMember }) {
+function MemberRow({ member, active }: { member: SlackMember; active: boolean }) {
   const [editing, setEditing] = useState(false)
   const [address, setAddress] = useState('')
   const link = useLinkSlackUser()
@@ -291,7 +291,7 @@ function MemberRow({ member }: { member: SlackMember }) {
             <Button
               variant="ghost"
               size="sm"
-              disabled={unlink.isPending}
+              disabled={unlink.isPending || !active}
               aria-label={`Ripristina l’abbinamento di ${member.nome}`}
               onClick={() => unlink.mutate(member.user_id)}
             >
@@ -302,6 +302,7 @@ function MemberRow({ member }: { member: SlackMember }) {
             <Button
               variant="outline"
               size="sm"
+              disabled={!active}
               aria-label={`Correggi l’abbinamento di ${member.nome}`}
               onClick={() => setEditing(true)}
             >
@@ -413,7 +414,12 @@ function ChannelSection({ workspace }: { workspace: SlackWorkspace }) {
           </Button>
         </div>
       ) : (
-        <Button variant="outline" size="sm" onClick={() => setPicking(true)}>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={workspace.status !== 'active'}
+          onClick={() => setPicking(true)}
+        >
           {workspace.channel_name ? 'Cambia canale' : 'Scegli un canale'}
         </Button>
       )}

@@ -585,6 +585,18 @@ def test_a_post_the_channel_refused_is_tried_again(world: World) -> None:
     with world.session() as session:
         assert session.scalars(select(SlackChannelPost)).all() == []
 
+    # The admin's message is covered by the lateness the first pass wrote away, so the
+    # channel post is what the second pass has to send.
+    with world.session() as session:
+        session.execute(text("DELETE FROM reminder_job_run"))
+        session.add(ReminderJobRun(job="reminders", ran_at=datetime.now(UTC) - timedelta(hours=1)))
+        session.commit()
+    second = world.pass_()
+    assert second.slacks == 2
+    assert "C1" in [target for target, _ in world.fake.posts]
+    with world.session() as session:
+        assert len(session.scalars(select(SlackChannelPost)).all()) == 1
+
 
 # --- the command's line ------------------------------------------------------------------
 
@@ -613,3 +625,33 @@ def test_the_line_counts_slack_beside_push_and_email_only_when_it_sent(
     lines = capsys.readouterr().out.splitlines()
     assert lines[0] == "root: promemoria 3, nuovi 2, chiusi 0, slack 2, email 1"
     assert lines[1] == "root: promemoria 3, nuovi 2, chiusi 0 (prova)"
+
+
+# --- a channel's write cannot take the pass down ---------------------------------------
+
+
+def test_a_write_a_channel_asked_for_that_fails_loses_only_itself(db_session: Session) -> None:
+    from pigrocrm.core.reminders.dispatch import ChannelResult
+    from pigrocrm.core.reminders.engine import Evaluation, ReminderEngine
+    from pigrocrm.core.reminders.ledger import ReminderLedger
+
+    def refused(session: Session) -> None:
+        for _ in range(2):  # the second insert breaks the unique key
+            session.add(ReminderJobRun(job="duplicated", ran_at=datetime.now(UTC)))
+            session.flush()
+
+    def fine(session: Session) -> None:
+        session.add(ReminderJobRun(job="kept", ran_at=datetime.now(UTC)))
+
+    engine = ReminderEngine(db_session, slack_settings())
+    result = engine.record_pass(
+        Evaluation((), frozenset(), frozenset()),
+        job="reminders",
+        sent=ChannelResult(writes=[refused, fine]),
+    )
+
+    assert result.raised == 0
+    ledger = ReminderLedger(db_session)
+    assert ledger.last_run("reminders") is not None  # the pass's own write stands
+    assert ledger.last_run("kept") is not None  # a later hook still runs
+    assert ledger.last_run("duplicated") is None  # and the one that failed left nothing
