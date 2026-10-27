@@ -62,7 +62,7 @@ function Registro({ overview }: { overview: YearOverview }) {
   const declarations = bolloDeclarations(registro)
   return (
     <div className="space-y-3">
-      <Table>
+      <Table scrollLabel="Registro delle fatture emesse">
         <TableHeader>
           <TableRow>
             <TableHead>Numero</TableHead>
@@ -248,7 +248,7 @@ export function YearPanel({
           <p className="text-sm text-muted-foreground">
             Il regime di ogni fattura è quello congelato al momento dell’emissione.
           </p>
-          <Table>
+          <Table scrollLabel="Ricavi per regime">
             <TableHeader>
               <TableRow>
                 <TableHead>Regime</TableHead>
@@ -275,7 +275,7 @@ export function YearPanel({
           <p className="text-sm text-muted-foreground">
             Aliquota, natura e riferimento normativo come sono stampati sulle righe.
           </p>
-          <Table>
+          <Table scrollLabel="Ricavi per trattamento fiscale">
             <TableHeader>
               <TableRow>
                 <TableHead>Aliquota</TableHead>
