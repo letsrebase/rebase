@@ -68,6 +68,7 @@ from rebase_core.models import (
     User,
     UserSession,
 )
+from rebase_core.sources import delete_sources
 from rebase_core.users import UserService
 
 ENTITY = "freelancer"
@@ -96,6 +97,12 @@ _CARD_COLUMNS = (
     "generated_at",
     "error",
     "error_cv_sha256",
+    "prompt_version",
+    "provider",
+    "fonti",
+    "source_hashes",
+    "conflicts",
+    "thinking_tokens",
     "created_at",
     "updated_at",
 )
@@ -278,6 +285,11 @@ LEFT_IN_PLACE: dict[str, str] = {
     "referral_settings.updated_by": "the admin who set it",
     "ai_providers.saved_by": "the admin who saved the key",
     "ai_usage.freelancer_id": "the cost of a call as made, about the card it was written for",
+    "ai_sources.updated_by": "the admin who switched a source on or off",
+    "freelancer_sources.freelancer_id": (
+        "what pages said about the absorbed card, deleted by the merge; the survivor reads "
+        "its own links"
+    ),
 }
 
 
@@ -356,6 +368,9 @@ class PersonMergeService:
         undo["optout_copied"] = self._carry_optout(a_user, s_user)
         undo["team_refs"] = self._retarget_proposals(absorbed.id, survivor.id)
         absorbed.deleted_at = utcnow()
+        # What other pages said about a card that no longer exists is not kept (REB-837);
+        # the survivor reads its own links, and an undo reads the absorbed card's again.
+        delete_sources(self.session, absorbed.id)
         self.session.flush()
         flagged = self._needs_card(survivor)
 

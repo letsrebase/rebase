@@ -36,7 +36,10 @@ def _tables(connection: Connection) -> set[str]:
     return {
         name
         for (name,) in connection.execute(
-            text("SELECT table_name FROM information_schema.tables WHERE table_name LIKE 'ai\\_%'")
+            text(
+                "SELECT table_name FROM information_schema.tables "
+                "WHERE table_name IN ('ai_providers', 'ai_tasks', 'ai_prices', 'ai_usage')"
+            )
         )
     }
 
