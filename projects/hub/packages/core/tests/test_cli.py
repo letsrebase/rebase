@@ -203,7 +203,7 @@ def test_cards_refresh_prints_the_counts(
         # An outage: counted among the failed, and the stop said.
         (
             CardsRefreshed(written=1, failed=1, stopped=True),
-            "1 schede scritte, 1 non riuscite, fermato: Claude non disponibile",
+            "1 schede scritte, 1 non riuscite, fermato: modello non disponibile",
         ),
     ],
     ids=["failures", "outage"],

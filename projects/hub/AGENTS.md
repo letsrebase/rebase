@@ -457,8 +457,9 @@ Each run takes 50 CVs, the oldest first (`--limit`), and never a turned-down per
 CV that failed on its own account (a refusal, a scan with no text, a card that names the
 person) is not tried again until it changes, so the runs end; an outage stops the batch,
 counts under «non riuscite» and is the next run's, so a run that keeps printing «0
-schede scritte, 1 non riuscite, fermato: Claude non disponibile» is Claude not
-answering, not a CV. «Rigenera scheda» on
+schede scritte, 1 non riuscite, fermato: modello non disponibile» is the model not
+answering (or its daily cap spent, or no model configured: the card then carries that reason,
+«Tetto giornaliero raggiunto», and nothing is retired), not a CV. «Rigenera scheda» on
 the talent's page asks again for one. A card whose Italian gives the person's gender away
 (`_gendered` in `cards.py`, the gate under the prompt's rule) is asked for once more, and
 one still gendered after it is not written: the card read shows the error «La scheda

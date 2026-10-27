@@ -223,7 +223,7 @@ def cards_refresh(limit: int) -> int:
     Run once after the deploy that brings the key, and again until it prints «0 schede
     scritte, 0 non riuscite». A CV that failed on its own account is not tried again
     until it changes, so the runs end; a batch that met an outage stops there, counts it
-    among «non riuscite», says «fermato: Claude non disponibile» and leaves it and the
+    among «non riuscite», says «fermato: modello non disponibile» and leaves it and the
     rest to the next run. A card still giving the gender away after its rewrite is among
     «non riuscite» (REB-802), and not tried again until its CV changes. Without a model
     configured for the `card` task it says so, rather than printing «0 schede scritte» for
@@ -247,7 +247,7 @@ def cards_refresh(limit: int) -> int:
         session.close()
     summary = f"{result.written} schede scritte, {result.failed} non riuscite"
     if result.stopped:
-        summary += ", fermato: Claude non disponibile"
+        summary += ", fermato: modello non disponibile"
     print(summary)
     return 0
 
