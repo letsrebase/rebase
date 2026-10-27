@@ -66,8 +66,10 @@ from sqlalchemy.orm import Session, aliased, defer
 
 from rebase_core.bands import band_for
 from rebase_core.card_level import level
+from rebase_core.duplicates import duplicates_of
 from rebase_core.errors import NotFound, ValidationFailed
 from rebase_core.freelancers import LEAD_STATE
+from rebase_core.leads import card_by_linkedin
 from rebase_core.models import (
     FREELANCER_STATES,
     Freelancer,
@@ -489,7 +491,7 @@ def _lead_stmt(f: _Filters) -> Select[Signup]:
     stmt = (
         select(Signup)
         .outerjoin(card_emails, card_emails.c.email == func.lower(Signup.email))
-        .where(card_emails.c.email.is_(None))
+        .where(card_emails.c.email.is_(None), ~card_by_linkedin())
     )
     if f.q:
         stmt = stmt.where(matches_any((Signup.nome, Signup.cognome, Signup.email), f.q))
@@ -530,7 +532,11 @@ class TalentiService:
         ).first()
         if found is None:
             raise NotFound("talento", freelancer_id)
-        return _card_read(found[0], found[1], found.scheda)
+        row = _card_read(found[0], found[1], found.scheda)
+        row.possibile_duplicato_di = duplicates_of(self.session, [freelancer_id]).get(
+            freelancer_id, []
+        )
+        return row
 
     def list_recent(
         self,
@@ -705,6 +711,7 @@ class TalentiService:
         candidates.sort(key=lambda c: (c[0], c[1]), reverse=order.descending)
         page = candidates[:limit]
         items = [item for _, _, item in page]
+        self._flag_duplicates(items)
         next_cursor = (
             encode_cursor(sort_spec, page[-1][0], page[-1][1])
             if len(candidates) > limit and page
@@ -714,6 +721,16 @@ class TalentiService:
         per_stato = self._counts(f)
         totale = sum(per_stato.values()) if stato is None else per_stato.get(stato, 0)
         return TalentoList(totale=totale, items=items, per_stato=per_stato, next_cursor=next_cursor)
+
+    def _flag_duplicates(self, items: list[TalentoRead]) -> None:
+        """`possibile_duplicato_di` on the cards of a page (REB-800): the other live cards
+        that share their LinkedIn, name or telephone number, by id."""
+        card_ids = [item.id for item in items if item.stato != LEAD_STATE]
+        if not card_ids:
+            return
+        flagged = duplicates_of(self.session, card_ids)
+        for item in items:
+            item.possibile_duplicato_di = flagged.get(item.id, [])
 
     def _counts(self, f: _Filters) -> dict[str, int]:
         """How many rows sit in each state, `lead` included, with every filter but

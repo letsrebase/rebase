@@ -119,6 +119,40 @@ describe('the api client', () => {
     expect(demoted.email).toBe('lorenzo@rebase.it')
   })
 
+  it('reads the duplicate pairs, and merges one card into another by id (REB-800)', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch')
+    spy.mockResolvedValueOnce(answer(200, { unibili: [], da_rivedere: [], iscrizioni: 2 }))
+    const list = await admin.duplicates()
+    expect(spy.mock.calls[0]![0]).toBe('/api/hub/talent/duplicati')
+    expect(list.iscrizioni).toBe(2)
+
+    spy.mockResolvedValueOnce(
+      answer(200, {
+        survivor_freelancer_id: 'f2',
+        absorbed_freelancer_id: 'f1',
+        action_id: 'a1',
+        moved: { logins: 3 },
+        lasciati: {},
+        cv: 'invariato',
+        scheda_da_rigenerare: false,
+      }),
+    )
+    const merged = await admin.mergeFreelancer('f2', 'f1')
+    const [url, init] = spy.mock.calls[1]!
+    expect(url).toBe('/api/hub/freelancers/f2/merge')
+    expect(init?.method).toBe('POST')
+    expect(JSON.parse(init?.body as string)).toEqual({ da: 'f1' })
+    expect(merged.moved).toEqual({ logins: 3 })
+  })
+
+  it('carries the sentence of a refused merge, as it is', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(409, { detail: 'Hanno due codici fiscali diversi.' }))
+    await expect(admin.mergeFreelancer('f2', 'f1')).rejects.toMatchObject({
+      status: 409,
+      message: 'Hanno due codici fiscali diversi.',
+    })
+  })
+
   it('reads the spaces of PigroCRM from the hub, never from the CRM directly', async () => {
     // ORB-142: the token stays on the server; the browser only ever talks to the hub.
     const spy = vi.spyOn(globalThis, 'fetch')

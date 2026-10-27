@@ -15,9 +15,11 @@ older ones are none the wiser about.
 
 from uuid import UUID
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from rebase_core.audit import utcnow
 from rebase_core.cloud import TalentCloudService
 from rebase_core.comments import CommentService
 from rebase_core.errors import NotFound
@@ -33,6 +35,7 @@ from rebase_core.schemas import (
     MemberUpdate,
     MeRead,
 )
+from rebase_core.users import UserService, refuse_linkedin_conflict
 
 ENTITY = "freelancer"
 # What the comment calls each field, in the admin's language, in the wizard's order.
@@ -227,6 +230,8 @@ class MemberService:
             value = getattr(data, field)
             if field == "links":
                 value = list(value)
+            if field == "linkedin_url" and getattr(target, field) != value:
+                UserService(self.session).require_free_linkedin(user.id, value)
             if getattr(target, field) != value:
                 setattr(target, field, value)
                 changed.append(label)
@@ -234,7 +239,10 @@ class MemberService:
         if not changed and not taken_over:
             return _to_profile(row, user)
         row.compilata_da = "persona"
-        self.session.commit()
+        try:
+            self.session.commit()
+        except IntegrityError as exc:
+            refuse_linkedin_conflict(self.session, exc)
         if changed:
             self._comment(user, row, f"Profilo aggiornato dalla persona: {', '.join(changed)}")
         else:
@@ -309,6 +317,11 @@ class MemberService:
         ones and the thread says so."""
         filename, mime = check_cv(content, filename, mime)
         row = self._require(freelancer_id)
+        # Locked and re-read: a merge that took this card's lock first has hidden it by
+        # now (REB-800), and a CV written on a hidden card would be lost to the person.
+        self.session.refresh(row, with_for_update=True)
+        if row.deleted_at is not None:
+            raise NotFound(ENTITY, freelancer_id)
         user = self._owner(row)
         first = row.cv_bytes is None
         row.cv_bytes, row.cv_filename, row.cv_mime, row.cv_size = (
@@ -317,6 +330,7 @@ class MemberService:
             mime,
             len(content),
         )
+        row.cv_uploaded_at = utcnow()
         row.compilata_da = "persona"
         self.session.commit()
         self._comment(
@@ -345,8 +359,13 @@ class MemberService:
         return row
 
     def _by_email(self, email: str) -> tuple[Freelancer, User] | None:
+        """The live card of the person who answers to this address, an address merged
+        away (REB-800) answering for the person it was merged into."""
+        person = UserService(self.session).person(email)
+        if person is None:
+            return None
         return self.session.execute(
             select(Freelancer, User)
             .join(User, User.id == Freelancer.user_id)
-            .where(func.lower(User.email) == email, Freelancer.deleted_at.is_(None))
+            .where(User.id == person.id, Freelancer.deleted_at.is_(None))
         ).first()

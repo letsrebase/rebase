@@ -572,6 +572,11 @@ export interface AdminAction {
     | 'vetted'
     /** «Riprova su Pigro» (REB-498), recorded on entity `match`. */
     | 'pigro_link'
+    /** Two cards of one person merged (REB-800): `merged` is on the absorbed card,
+     *  `absorbed` on the one that stayed, `unmerged` on both once the shell put it back. */
+    | 'merged'
+    | 'absorbed'
+    | 'unmerged'
   admin_id: string
   admin_nome: string
   payload: {
@@ -582,6 +587,13 @@ export interface AdminAction {
     /** A `pigro_link` entry's: the state the link reached, and the CRM's sentence. */
     esito?: PigroStato
     errore?: string | null
+    /** A `merged` / `absorbed` entry's (REB-800). `moved` is a list of row ids per
+     *  relation on `merged` (what an undo reads) and a count per relation on `absorbed`. */
+    into_freelancer_id?: string
+    from_freelancer_id?: string
+    moved?: Record<string, number | string[]>
+    cv?: MergeResult['cv']
+    scheda_da_rigenerare?: boolean
   }
   created_at: string
 }
@@ -698,6 +710,56 @@ export interface Talento {
    *  a bare sign-up has neither. */
   vetted_at: string | null
   ha_scheda_anonima: boolean
+  /** The other live cards that may be the same person (REB-800), by freelancer id: the
+   *  same LinkedIn profile, name or telephone. Empty for almost everyone and for a lead. */
+  possibile_duplicato_di: string[]
+}
+
+/** Why two cards look like one person (REB-800): the same LinkedIn profile, the same name
+ *  or the same telephone number. Only the first is a reason to merge. */
+export type DuplicateSignal = 'linkedin' | 'nome' | 'telefono'
+
+/** One card of a pair, as `GET /api/hub/talent/duplicati` reads it: who, and what decides
+ *  which one stays (the newest CV). Never the CV's bytes. */
+export interface DuplicatePerson {
+  freelancer_id: string
+  user_id: string
+  nome: string
+  cognome: string
+  email: string
+  created_at: string
+  cv_uploaded_at: string | null
+  ha_cv: boolean
+}
+
+/** Two live cards that look alike. `survivor` is the merge's default keeper; `unibile` is
+ *  true when the LinkedIn profile is the same, the one signal a merge is reasonable for. */
+export interface DuplicatePair {
+  survivor: DuplicatePerson
+  assorbito: DuplicatePerson
+  segnali: DuplicateSignal[]
+  unibile: boolean
+}
+
+/** `unibili` share a profile; `da_rivedere` only a name or a number (an admin looks, and
+ *  merges only after reading both); `iscrizioni` counts the sign-ups that repeat a profile
+ *  already on the list, which have no card to merge. */
+export interface DuplicateList {
+  unibili: DuplicatePair[]
+  da_rivedere: DuplicatePair[]
+  iscrizioni: number
+}
+
+/** What `POST /api/hub/freelancers/{id}/merge` did, as counts: `moved` per relation,
+ *  `lasciati` the rows that stayed where they were because the survivor already had one. */
+export interface MergeResult {
+  survivor_freelancer_id: string
+  absorbed_freelancer_id: string
+  action_id: string
+  moved: Record<string, number>
+  lasciati: Record<string, number>
+  cv: 'invariato' | 'assorbita' | 'nessuno'
+  scheda_da_rigenerare: boolean
 }
 
 /** What an admin found about a signup on the public web (ORB-155): a name, maybe a
@@ -1453,6 +1515,13 @@ export const admin = {
     const qs = filterQuery(filters)
     return request<TalentoList>(`/api/hub/talent${qs ? `?${qs}` : ''}`)
   },
+  /** Who is on the list twice (REB-800): the pairs that share a LinkedIn profile
+   *  (`unibili`) and the ones that only share a name or a number (`da_rivedere`). */
+  duplicates: () => request<DuplicateList>('/api/hub/talent/duplicati'),
+  /** «Unisci» (REB-800): the card `absorbedId` into the card `survivorId`. A refusal is a
+   *  409 carrying the API's sentence; the merge is undone from the shell only. */
+  mergeFreelancer: (survivorId: string, absorbedId: string) =>
+    request<MergeResult>(`/api/hub/freelancers/${survivorId}/merge`, json({ da: absorbedId })),
   /** Drafts a card from a bare sign-up in place (ORB-155): the same `draft_from_signup`
    *  the MCP tool `create_freelancer_from_signup` calls, here behind the admin's
    *  cookie. 201 with the new (incomplete) card, or a 422 naming `email` when the
