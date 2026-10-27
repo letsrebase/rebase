@@ -7,7 +7,10 @@ description: >-
 # Writing on Linear
 
 Part of the workflow kit (`.github/kit/README.md`); the board is the one
-`.github/workflow.json` names under `tracker`.
+`.github/workflow.json` names under `tracker`. In Claude Code and omp a hook
+(`.github/kit/bin/linear_gate.py`) refuses a write that breaks the rules below that a
+machine can check, and says which: rewrite the text and send it again, never route around
+it.
 
 The board's job is that the people on it can see at a glance who is on what and how
 far. Write for a reader skimming the list, not for one studying a card: what was decided

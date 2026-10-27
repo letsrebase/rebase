@@ -40,6 +40,18 @@ CONFIG = Path(".github/workflow.json")
 TEMPLATE = Path(".github/PULL_REQUEST_TEMPLATE.md")
 AGENTS_SKILLS = Path(".agents/skills")
 CLAUDE_SKILLS = Path(".claude/skills")
+CLAUDE_SETTINGS = Path(".claude/settings.json")
+# Claude Code's wiring of .github/kit/bin/linear_gate.py. The rest of settings.json is the
+# repository's own: sync adds this entry when it is missing and leaves every other key alone.
+CLAUDE_HOOK = {
+    "matcher": "mcp__.*[Ll]inear.*",
+    "hooks": [
+        {
+            "type": "command",
+            "command": 'python3 "$CLAUDE_PROJECT_DIR/.github/kit/bin/linear_gate.py"',
+        }
+    ],
+}
 
 DEFAULT_HINTS = {
     "What this changes": (
@@ -226,6 +238,7 @@ def sync(repo: Path, source: Path, force: bool = False) -> int:
 
     migrate_claude_only_skills(repo, previous.get("mirror", {}))
     mirror(repo / AGENTS_SKILLS, repo / CLAUDE_SKILLS)
+    ensure_claude_hook(repo)
 
     manifest = {
         "kit": "letsrebase/rebase:tooling/workflow-kit",
@@ -322,6 +335,41 @@ def mirror(src: Path, dst: Path) -> None:
             out.write_bytes((src / rel).read_bytes())
 
 
+def claude_settings(repo: Path) -> dict:
+    path = repo / CLAUDE_SETTINGS
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ConfigError(f"{CLAUDE_SETTINGS} is not valid JSON: {exc}") from exc
+    return data if isinstance(data, dict) else {}
+
+
+def has_claude_hook(repo: Path) -> bool:
+    entries = claude_settings(repo).get("hooks", {}).get("PreToolUse", [])
+    return isinstance(entries, list) and CLAUDE_HOOK in entries
+
+
+def ensure_claude_hook(repo: Path) -> None:
+    if has_claude_hook(repo):
+        return
+    settings = claude_settings(repo)
+    hooks = settings.setdefault("hooks", {})
+    entries = hooks.setdefault("PreToolUse", [])
+    # an older copy of the kit's entry (same matcher) is replaced, not duplicated
+    entries[:] = [
+        e
+        for e in entries
+        if not (isinstance(e, dict) and e.get("matcher") == CLAUDE_HOOK["matcher"])
+    ]
+    entries.append(CLAUDE_HOOK)
+    path = repo / CLAUDE_SETTINGS
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8", newline="\n")
+    print(f"added the Linear gate hook to {CLAUDE_SETTINGS.as_posix()}")
+
+
 def read_manifest(repo: Path) -> dict:
     path = repo / MANIFEST
     if not path.is_file():
@@ -354,6 +402,10 @@ def check(repo: Path) -> list[str]:
     if template.is_file() and normalized(template).decode("utf-8") != render_template(cfg):
         findings.append(
             f"{TEMPLATE.as_posix()}: does not match {CONFIG.as_posix()}; run kit.py sync"
+        )
+    if not has_claude_hook(repo):
+        findings.append(
+            f"{CLAUDE_SETTINGS.as_posix()}: the kit's Linear gate hook is missing; run kit.py sync"
         )
 
     claude_dir = repo / CLAUDE_SKILLS

@@ -172,6 +172,41 @@ class KitSyncAndCheck(unittest.TestCase):
         self.assertEqual(kit.check(self.repo), [])
 
 
+class ClaudeHook(unittest.TestCase):
+    def setUp(self):
+        self.repo = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.repo)
+        cfg = json.loads((KIT / "workflow.example.json").read_text(encoding="utf-8"))
+        write(self.repo / ".github/workflow.json", json.dumps(cfg))
+
+    def sync(self):
+        with contextlib.redirect_stdout(io.StringIO()):
+            kit.sync(self.repo, KIT)
+
+    def test_sync_adds_the_gate_and_keeps_the_repositorys_own_settings(self):
+        own = {
+            "permissions": {"allow": ["Bash(ls)"]},
+            "hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": []}]},
+        }
+        write(self.repo / ".claude/settings.json", json.dumps(own))
+        self.sync()
+        path = self.repo / ".claude/settings.json"
+        settings = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(settings["permissions"], own["permissions"])
+        self.assertEqual(
+            settings["hooks"]["PreToolUse"], [own["hooks"]["PreToolUse"][0], kit.CLAUDE_HOOK]
+        )
+        self.sync()
+        settings = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(len(settings["hooks"]["PreToolUse"]), 2)
+        self.assertEqual(kit.check(self.repo), [])
+
+    def test_check_reports_a_removed_gate(self):
+        self.sync()
+        write(self.repo / ".claude/settings.json", "{}")
+        self.assertTrue(any("Linear gate hook is missing" in f for f in kit.check(self.repo)))
+
+
 class ThisRepositorysCopy(unittest.TestCase):
     """rebase carries a copy of the kit; a change to the source without a sync fails here."""
 
