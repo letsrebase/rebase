@@ -916,7 +916,7 @@ def test_an_admin_reads_and_regenerates_the_anonymous_card(
     assert read.status_code == 200, read.text
     body = read.json()
     assert body["freelancer_id"] == freelancer_id
-    assert body["card"] == CARD
+    assert body["card"] == {**CARD, "seniority_incerta": False}
     assert body["modalita"] == "remoto"
     # The client's band from the rate (450 plus 40%), which the page shows as it is.
     assert body["fascia"] == {"min": 500, "max": 650}
@@ -928,16 +928,16 @@ def test_an_admin_reads_and_regenerates_the_anonymous_card(
     again = client.post(f"/api/hub/freelancers/{freelancer_id}/card")
     assert again.status_code == 200, again.text
     assert len(llm.requests) == 2
-    assert again.json()["card"] == CARD
+    assert again.json()["card"] == {**CARD, "seniority_incerta": False}
 
     # A refusal keeps the card and says so; the next «Rigenera» ignores the failed hash.
     refusing = RecordingCall([card_response(stop_reason="refusal"), card_response()])
     client.app.dependency_overrides[get_llm] = lambda: refusing  # type: ignore[attr-defined]
     refused = client.post(f"/api/hub/freelancers/{freelancer_id}/card").json()
-    assert refused["card"] == CARD and refused["error"]
+    assert refused["card"] == {**CARD, "seniority_incerta": False} and refused["error"]
     retried = client.post(f"/api/hub/freelancers/{freelancer_id}/card").json()
     assert len(refusing.requests) == 2
-    assert retried["card"] == CARD and retried["error"] is None
+    assert retried["card"] == {**CARD, "seniority_incerta": False} and retried["error"] is None
 
     assert client.get(f"/api/hub/freelancers/{MISSING}/card").status_code == 404
     assert client.post(f"/api/hub/freelancers/{MISSING}/card").status_code == 404
@@ -957,7 +957,10 @@ def test_regenerating_without_a_key_is_the_team_builders_503(
     assert refused.status_code == 503
     assert refused.json() == {"detail": "Il team builder è spento."}
     # Reading still works: the card written earlier is there.
-    assert client.get(f"/api/hub/freelancers/{freelancer_id}/card").json()["card"] == CARD
+    assert client.get(f"/api/hub/freelancers/{freelancer_id}/card").json()["card"] == {
+        **CARD,
+        "seniority_incerta": False,
+    }
 
 
 def test_clearing_the_cv_drops_the_anonymous_card(
@@ -969,7 +972,10 @@ def test_clearing_the_cv_drops_the_anonymous_card(
 ) -> None:
     _login(client, sender)
     freelancer_id = _apply_with_text(client)
-    assert client.get(f"/api/hub/freelancers/{freelancer_id}/card").json()["card"] == CARD
+    assert client.get(f"/api/hub/freelancers/{freelancer_id}/card").json()["card"] == {
+        **CARD,
+        "seniority_incerta": False,
+    }
 
     assert client.delete(f"/api/hub/freelancers/{freelancer_id}/cv").status_code == 200
 

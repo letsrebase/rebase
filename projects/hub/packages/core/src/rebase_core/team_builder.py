@@ -64,6 +64,7 @@ from sqlalchemy.orm import Session
 from rebase_core.analytics import TEAM_PROPOSAL_GENERATED, Tracker
 from rebase_core.audit import utcnow
 from rebase_core.bands import DAYS_PER_MONTH, Band, band_for, team_bands
+from rebase_core.card_level import card_read
 from rebase_core.config import Settings
 from rebase_core.errors import (
     DomainError,
@@ -86,6 +87,7 @@ from rebase_core.models import (
 from rebase_core.pagination import SortSpec, decode_cursor, encode_cursor, keyset_predicate
 from rebase_core.team_schemas import (
     Card,
+    CardRead,
     TeamMemberRead,
     TeamProposalCreate,
     TeamProposalList,
@@ -224,14 +226,16 @@ def catalogue_lines(session: Session) -> tuple[str, list[UUID]]:
                 Freelancer.remoto,
                 Freelancer.tariffa_giornaliera,
                 FreelancerCard.card,
+                Freelancer.seniority_admin,
+                Freelancer.anni_admin,
             )
         ).order_by(Freelancer.id)
     ).all()
     lines: list[str] = []
     positions: list[UUID] = []
-    for freelancer_id, remoto, tariffa, stored in rows:
+    for freelancer_id, remoto, tariffa, stored, seniority_admin, anni_admin in rows:
         try:
-            card = Card.model_validate(stored)
+            card = card_read(stored, seniority_admin, anni_admin)
         except ValidationError:
             logger.warning("catalogue: the card of freelancer %s is not a card", freelancer_id)
             continue
@@ -242,6 +246,7 @@ def catalogue_lines(session: Session) -> tuple[str, list[UUID]]:
             "ruolo": card.ruolo,
             "seniority": card.seniority,
             "anni": card.anni,
+            "seniority_incerta": card.seniority_incerta,
             "competenze": card.competenze,
             "settori": card.settori,
             "lingue": card.lingue,
@@ -265,8 +270,9 @@ propose.
 The catalogue has one line per freelancer, in JSON:
 - id: the freelancer's position in this catalogue ("t1", "t2", ...), the only way to \
 name a person in your answer;
-- ruolo, seniority (junior, mid, senior or lead), anni (years of experience), \
-competenze (skills), settori (industries), lingue (languages);
+- ruolo, seniority (junior, mid, senior or lead), anni (years of experience, or null \
+when the CV dates none, in which case seniority_incerta is true and the seniority is \
+only a guess), competenze (skills), settori (industries), lingue (languages);
 - luogo: the city or region the person's CV names, or null when it names none;
 - modalita: how the person works: "remoto" (remote only), "ibrido" (partly on site), \
 "in_sede" (on site), or null when they have not said;
@@ -845,7 +851,9 @@ class TeamBuilder:
         `_public_riassunto`), and a `luogo.dove` the visitor did not write
         (`_public_place`)."""
         ids = [UUID(member["freelancer_id"]) for member in row.team]
-        found: dict[UUID, tuple[str | None, Decimal | None, Any, str, str]] = {}
+        found: dict[
+            UUID, tuple[str | None, Decimal | None, Any, str, str, str | None, int | None]
+        ] = {}
         if ids:
             rows = self.session.execute(
                 cloud_visible(
@@ -856,12 +864,22 @@ class TeamBuilder:
                         FreelancerCard.card,
                         User.nome,
                         User.cognome,
+                        Freelancer.seniority_admin,
+                        Freelancer.anni_admin,
                     ).join(User, User.id == Freelancer.user_id)
                 ).where(Freelancer.id.in_(ids))
             ).all()
             found = {
-                freelancer_id: (remoto, tariffa, card, nome, cognome)
-                for freelancer_id, remoto, tariffa, card, nome, cognome in rows
+                row.id: (
+                    row.remoto,
+                    row.tariffa_giornaliera,
+                    row.card,
+                    row.nome,
+                    row.cognome,
+                    row.seniority_admin,
+                    row.anni_admin,
+                )
+                for row in rows
             }
         members: list[TeamMemberRead] = []
         cards: list[Card] = []
@@ -874,9 +892,9 @@ class TeamBuilder:
                     stored["posizione"],
                 )
                 continue
-            remoto, tariffa, card, nome, cognome = found[freelancer_id]
+            remoto, tariffa, card, nome, cognome, seniority_admin, anni_admin = found[freelancer_id]
             try:
-                scheda = Card.model_validate(card)
+                scheda = card_read(card, seniority_admin, anni_admin)
             except ValidationError:
                 logger.warning(
                     "team proposal %s: member %s left out of the read: the card is not a card",
@@ -1014,7 +1032,7 @@ def _public_riassunto(
     return riassunto
 
 
-def _public_reason(motivazione: str, scheda: Card) -> str:
+def _public_reason(motivazione: str, scheda: CardRead) -> str:
     """The motivazione a public page reads. The prompt forbids a place in it, and the
     public read withholds the card's `luogo`; a reason that names that place anyway
     would give it back, so it reads as the hub's own sentence instead, and the row, the
@@ -1022,7 +1040,7 @@ def _public_reason(motivazione: str, scheda: Card) -> str:
     return PLACE_WITHHELD_REASON if _names_place(motivazione, scheda.luogo) else motivazione
 
 
-def _public_card(scheda: Card, ruolo: str) -> Card:
+def _public_card(scheda: CardRead, ruolo: str) -> CardRead:
     """The card a public page reads: no `luogo`, and nothing else that names it. The
     card's prompt keeps the place in `luogo` alone, and a card written before that rule,
     or against it, still must not give the place back: a role that names it reads as

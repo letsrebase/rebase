@@ -157,11 +157,15 @@ export interface Band {
 }
 
 /** A talent's anonymous card (spec § 2.1): no name, no link, no employer. `luogo` is
- *  `null` on the public read; only the engine and the admin read it. */
+ *  `null` on the public read; only the engine and the admin read it. `seniority` and
+ *  `anni` are the effective ones, an admin's over Claude's (REB-799); `anni` is `null`
+ *  when the CV dates no role, and `seniority_incerta` then says the seniority is only
+ *  a reading of the responsibilities. */
 export interface Scheda {
   ruolo: string
   seniority: 'junior' | 'mid' | 'senior' | 'lead'
-  anni: number
+  anni: number | null
+  seniority_incerta?: boolean
   competenze: string[]
   settori: string[]
   lingue: string[]
@@ -405,6 +409,10 @@ export interface FreelancerCard {
   model: string | null
   generated_at: string | null
   error: string | null
+  /** The admin's own level, `null` while nobody corrected it (REB-799): it is what
+   *  `card.seniority` and `card.anni` show when set. */
+  seniority_admin?: Scheda['seniority'] | null
+  anni_admin?: number | null
 }
 
 // ---- the admin area -------------------------------------------------------------------
@@ -591,6 +599,9 @@ export interface FreelancerOverride {
   remoto?: Remoto | null
   links?: string[]
   compilata_da?: 'persona' | 'admin'
+  /** The level an admin sets over the card's own (REB-799); `null` takes it off. */
+  seniority_admin?: Scheda['seniority'] | null
+  anni_admin?: number | null
 }
 
 /** Same contract as `FreelancerOverride`, for a `Company` request's own fields beyond

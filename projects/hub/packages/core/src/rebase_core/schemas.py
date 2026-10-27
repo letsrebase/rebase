@@ -783,6 +783,10 @@ class FreelancerRead(BaseModel):
     # When an admin marked the talent «Verificato» (REB-518), `None` while nobody has or
     # after the mark was taken off; who did it is in the audit trail.
     vetted_at: datetime | None = None
+    # What an admin said of the person's level (REB-799), `None` while nobody has: it
+    # beats the anonymous card's own seniority and years wherever the card is read.
+    seniority_admin: str | None = None
+    anni_admin: int | None = None
     commenti: list[CommentRead] = Field(default_factory=list)
 
     @computed_field  # type: ignore[prop-decorator]
@@ -851,6 +855,9 @@ class TalentoRead(BaseModel):
     ruolo: str | None = None
     seniority: str | None = None
     anni: int | None = None
+    # The seniority is a guess: the card has no dated years and no admin corrected it
+    # (REB-799). `seniority` and `anni` are the admin's when one corrected them.
+    seniority_incerta: bool = False
     competenze: list[str] = Field(default_factory=list)
     luogo: str | None = None
     settori: list[str] = Field(default_factory=list)
@@ -963,7 +970,8 @@ class FreelancerOverride(BaseModel):
     (REB-347): every field a person could have written through the wizard or the
     member area, plus the three identity fields (`nome`/`cognome`/`linkedin_url`)
     that live on the linked `users` row since REB-281, and `compilata_da`, which
-    nothing else lets an admin touch by hand.
+    nothing else lets an admin touch by hand, and `seniority_admin`/`anni_admin`, the
+    level that beats the anonymous card's (REB-799).
 
     Every field is optional, since one call changes only the ones it names --
     `rebase_core.audit.supplied_changes` reads which ones that is from
@@ -987,6 +995,10 @@ class FreelancerOverride(BaseModel):
     stato: FreelancerStato | None = None
     note: SafeStr | None = Field(default=None, max_length=PROGETTO_MAX_LENGTH)
     compilata_da: Literal["persona", "admin"] | None = None
+    # The level an admin sets over the card's own (REB-799): `null` takes the correction
+    # off, and the card's reading shows again.
+    seniority_admin: Literal["junior", "mid", "senior", "lead"] | None = None
+    anni_admin: int | None = Field(default=None, ge=0, le=60)
 
     @field_validator("nome", "cognome", "posizione", mode="after")
     @classmethod

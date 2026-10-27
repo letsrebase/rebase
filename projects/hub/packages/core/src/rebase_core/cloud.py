@@ -37,6 +37,7 @@ from sqlalchemy.orm import Session
 
 from rebase_core.audit import utcnow
 from rebase_core.bands import BANDS, CLIENT_MARKUP, band_for
+from rebase_core.card_level import card_read
 from rebase_core.config import Settings
 from rebase_core.errors import InvalidState, NotFound, ValidationFailed
 from rebase_core.freelancers import cv_of
@@ -316,7 +317,11 @@ def _filter_clauses(query: CloudTalentQuery) -> list[ColumnElement[bool]]:
             raise ValidationFailed(
                 TALENT_ENTITY, "seniority", f"uno fra {', '.join(CARD_SENIORITIES)}"
             )
-        clauses.append(FreelancerCard.card["seniority"].astext == query.seniority)
+        # The admin's word beats the card's (REB-799), as every read of the card does.
+        clauses.append(
+            func.coalesce(Freelancer.seniority_admin, FreelancerCard.card["seniority"].astext)
+            == query.seniority
+        )
     if query.modalita:
         if query.modalita not in REMOTE_OPTIONS:
             raise ValidationFailed(
@@ -387,6 +392,8 @@ class CloudTalentService:
                 User.cognome,
                 User.linkedin_url,
                 FreelancerCard.card,
+                Freelancer.seniority_admin,
+                Freelancer.anni_admin,
             ).join(User, User.id == Freelancer.user_id)
         ).where(*_filter_clauses(query))
         rows = self.session.execute(
@@ -402,7 +409,7 @@ class CloudTalentService:
             if len(items) > CLOUD_LIST_CAP:
                 break
             try:
-                card = Card.model_validate(row.card)
+                card = card_read(row.card, row.seniority_admin, row.anni_admin)
             except ValidationError:
                 logger.warning("cloud: the card of freelancer %s is not a card", row.id)
                 continue

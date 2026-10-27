@@ -383,7 +383,10 @@ def build_server(
         anonima di Claude, `ruolo`, `seniority`, `anni`, `tariffa_giornaliera`, `luogo`,
         le prime cinque `competenze` e la `sintesi` accorciata; una chiave senza valore
         manca): per valutare chi fa al caso di una richiesta basta questa lista, e una
-        pagina di cinquanta righe pesa circa 25 KB. `campi` sceglie i campi per nome e
+        pagina di cinquanta righe pesa circa 25 KB. `seniority` e `anni` sono quelli che
+        un admin ha corretto (`override_freelancer`) se ci sono; senza `anni` e con
+        `seniority_incerta` vera il CV non data nessun ruolo e il livello è solo una
+        lettura delle responsabilità. `campi` sceglie i campi per nome e
         dà solo quelli (con `id`), interi: `["email", "settori", "lingue", "fascia"]`,
         con `competenze` e `sintesi` intere se le nomini; `["tutti"]` dà la riga
         completa, con `email`, `linkedin_url`, `origine`, `utm_source`, `created_at`,
@@ -580,6 +583,8 @@ def build_server(
         stato: str | None = None,
         note: str | None = None,
         compilata_da: str | None = None,
+        seniority: str | None = None,
+        anni: str | None = None,
     ) -> dict[str, Any]:
         """Scrive o svuota qualsiasi campo del profilo oltre a stato e note: nome,
         cognome e profilo LinkedIn (sull'identità condivisa in `users`), tariffa,
@@ -587,9 +592,13 @@ def build_server(
         (persona/admin). Ogni parametro omesso resta com'era; una stringa vuota svuota
         il campo dove è ammesso (tariffa, posizione, LinkedIn, note, modalità di
         lavoro), altrove è rifiutata perché il campo non può restare senza un valore.
-        `links` sostituisce l'intera lista, `[]` la svuota. Ogni modifica reale finisce
-        nel registro di `get_freelancer_audit`, con il valore prima e dopo; per
-        annullarla c'è `revert_freelancer_action`."""
+        `links` sostituisce l'intera lista, `[]` la svuota. `seniority` (junior, mid,
+        senior o lead) e `anni` (0-60) correggono il livello che la scheda anonima
+        dichiara: la parola dell'admin vince su quella di Claude in ogni lettura
+        (`list_talenti`, `get_talento`, `get_freelancer_card`, il cloud, il team
+        builder) e sopravvive a «Rigenera scheda»; la stringa vuota la toglie. Ogni
+        modifica reale finisce nel registro di `get_freelancer_audit`, con il valore
+        prima e dopo; per annullarla c'è `revert_freelancer_action`."""
         kwargs: dict[str, Any] = {}
         if nome is not None:
             kwargs["nome"] = _supplied_text(nome)
@@ -615,6 +624,10 @@ def build_server(
             kwargs["note"] = _supplied_text(note)
         if compilata_da is not None:
             kwargs["compilata_da"] = _supplied_text(compilata_da)
+        if seniority is not None:
+            kwargs["seniority_admin"] = _supplied_text(seniority)
+        if anni is not None:
+            kwargs["anni_admin"] = _integer(anni, "anni")
         override = FreelancerOverride(**kwargs)
         return _run(
             lambda s: FreelancerService(s).override(UUID(freelancer_id), override, admin().id)
@@ -658,8 +671,13 @@ def build_server(
         entrambe lette al volo, mai memorizzate sulla scheda; `cv_sha256`, `model` e
         `generated_at` di quando è stata scritta. `card` è `None` finché nessun CV ha
         ancora prodotto una scheda; `error` l'ultimo motivo per cui non c'è, o per cui
-        quella che c'è è più vecchia del CV attuale. Solo lettura; per riscriverla c'è
-        `regenerate_freelancer_card`."""
+        quella che c'è è più vecchia del CV attuale. `seniority` e `anni` sono quelli
+        effettivi: la correzione dell'admin (`seniority_admin`, `anni_admin`, da
+        `override_freelancer`) se c'è, altrimenti quelli di Claude; `anni` è `None` quando
+        il CV non data nessun ruolo, e `seniority_incerta` dice allora che la seniority
+        è solo una lettura delle responsabilità. Una scheda che dopo la riscrittura
+        rivela ancora il genere non viene scritta: `error` lo dice. Solo lettura; per
+        riscriverla c'è `regenerate_freelancer_card`."""
         return _run(lambda s: CardWriter(s, None).read(UUID(freelancer_id)))
 
     @mcp.tool()
@@ -669,7 +687,8 @@ def build_server(
         Un fallimento di Claude risponde comunque la scheda precedente con `error`,
         come lo mostra la pagina. Senza una chiave di Claude configurata risponde che
         il team builder è spento, invece di lasciare la scheda com'era fingendo di
-        averla riscritta."""
+        averla riscritta. Il livello che l'admin ha corretto (`override_freelancer`,
+        `seniority` e `anni`) resta com'è."""
         if llm is None:
             # `CardWriter.write` itself has no opinion on a missing key -- it just
             # answers the card unchanged, `list_pigro_spaces`'s own precondition,

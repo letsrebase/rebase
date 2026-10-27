@@ -14,7 +14,7 @@ import { TeamBuilder } from '@/components/TeamBuilder'
 import { SEARCH_DEBOUNCE_MS, useDebounce } from '@/lib/adminList'
 import { ApiError, cloud, type Band, type CloudFilters, type CloudTalent } from '@/lib/api'
 import { DAY_BANDS, bandLabel } from '@/lib/bands'
-import { CLOUD_VETTED_LABEL, REMOTO_LABELS, SENIORITY_LABELS, formatExperience } from '@/lib/format'
+import { CLOUD_VETTED_LABEL, REMOTO_LABELS, SENIORITY_LABELS, formatLevel } from '@/lib/format'
 
 /** The builder's own thanks (`TeamBuilder.tsx`): a request from a card is the same
  *  request, and the same people write back. */
@@ -316,7 +316,7 @@ function TalentCard({ talent }: { talent: CloudTalent }) {
         <CardTitle>
           <h3>{name}</h3>
         </CardTitle>
-        <CardDescription>{`${card.ruolo}, ${SENIORITY_LABELS[card.seniority] ?? card.seniority}, ${formatExperience(card.anni)}`}</CardDescription>
+        <CardDescription>{`${card.ruolo}, ${formatLevel(card)}`}</CardDescription>
         {talent.vetted && (
           <Badge variant="pill" className="mt-1">
             <BadgeCheck aria-hidden="true" />
