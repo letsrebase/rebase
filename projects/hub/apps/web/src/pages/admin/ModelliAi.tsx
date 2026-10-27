@@ -20,6 +20,17 @@ const NO_EFFORT = 'none'
 const NO_SECRETS_KEY =
   'Manca REBASE_SECRETS_KEY: senza, le chiavi non si possono salvare né leggere. Configurala sul server e riavvia.'
 
+// A probe costs a fraction of a cent: `formatEuro`'s two places would show it as 0,00 €.
+const smallEuro = new Intl.NumberFormat('it-IT', {
+  style: 'currency',
+  currency: 'EUR',
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 6,
+})
+function formatSmallEuro(value: string): string {
+  return smallEuro.format(Number(value))
+}
+
 function problem(error: unknown, fallback: string): string {
   return error instanceof ApiError ? error.message : fallback
 }
@@ -300,7 +311,7 @@ function TaskForm({ task, config }: { task: AiTask; config: AiConfig }) {
         {prova && !prova.error && (
           <p role="status" className="text-sm">
             Risposta: <span className="font-medium">{prova.answer}</span> · {prova.latency_ms} ms ·{' '}
-            {prova.cost_eur !== null ? formatEuro(prova.cost_eur) : 'senza prezzo'}
+            {prova.cost_eur !== null ? formatSmallEuro(prova.cost_eur) : 'senza prezzo'}
           </p>
         )}
         {prova?.error && (
