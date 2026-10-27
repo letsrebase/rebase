@@ -460,3 +460,65 @@ def test_read_lists_the_seeded_providers_tasks_and_known_models(
     assert set(config.known_models) == {"anthropic", "openai", "google"}
     assert config.prices == []
     assert config.spend.rows == []
+
+
+def test_seed_from_env_seals_enables_points_tasks_and_prices_in_euros(
+    hub_session: Session, admin: User
+) -> None:
+    service = _service(hub_session)
+    result = service.seed_from_env(None, SECRET, "claude-opus-5-5", Decimal("0.9"))
+
+    assert result.key_hint == "configurata, finisce con …abcd"
+    assert service.resolve_key("anthropic") == SECRET
+    config = service.read()
+    assert next(p for p in config.providers if p.provider == "anthropic").enabled is True
+    assert {t.model for t in config.tasks} == {"claude-opus-5-5"}
+    prices = {p.model: p for p in config.prices}
+    assert prices["claude-opus-5"].input_eur_per_mtok == Decimal("4.5000")
+    assert prices["claude-opus-5"].output_eur_per_mtok == Decimal("22.5000")
+    assert prices["claude-opus-5"].cache_read_eur_per_mtok == Decimal("0.4500")
+    assert prices["claude-opus-5-5"].input_eur_per_mtok == Decimal("3.6000")
+    assert prices["claude-opus-5-5"].cache_read_eur_per_mtok == Decimal("0.1800")
+    assert prices["claude-opus-5-5"].thinking_eur_per_mtok is None
+    assert service.can_call("card") == (True, None)
+
+
+def test_seed_from_env_refuses_a_second_run(hub_session: Session, admin: User) -> None:
+    service = _service(hub_session)
+    service.seed_from_env(None, SECRET, "claude-opus-5", Decimal("0.9"))
+    with pytest.raises(InvalidState):
+        service.seed_from_env(None, "sk-other-wxyz", "claude-opus-5-5", Decimal("0.9"))
+    assert service.resolve_key("anthropic") == SECRET
+
+
+def test_rotate_reencrypts_every_key_and_old_key_no_longer_decrypts(
+    hub_session: Session, admin: User
+) -> None:
+    service = _service(hub_session)
+    service.save_key(admin.id, "anthropic", SECRET)
+    service.save_key(admin.id, "openai", "sk-openai-wxyz")
+    new_key = os.urandom(32)
+
+    assert service.rotate(base64.b64decode(SECRETS_KEY), new_key) == 2
+
+    renewed = _service(hub_session, secrets_key=base64.b64encode(new_key).decode())
+    assert renewed.resolve_key("anthropic") == SECRET
+    assert renewed.resolve_key("openai") == "sk-openai-wxyz"
+    with pytest.raises(SecretsKeyInvalid):
+        service.resolve_key("anthropic")
+
+
+def test_rotate_with_wrong_old_key_changes_nothing(hub_session: Session, admin: User) -> None:
+    service = _service(hub_session)
+    service.save_key(admin.id, "anthropic", SECRET)
+    before = hub_session.get(AiProvider, "anthropic")
+    assert before is not None
+    ciphertext = before.key_ciphertext
+
+    with pytest.raises(SecretsKeyInvalid):
+        service.rotate(os.urandom(32), os.urandom(32))
+
+    hub_session.expire_all()
+    after = hub_session.get(AiProvider, "anthropic")
+    assert after is not None and after.key_ciphertext == ciphertext
+    assert service.resolve_key("anthropic") == SECRET

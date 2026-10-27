@@ -645,6 +645,36 @@ both files, generated once; without it the page answers 503 with a sentence and 
 side does not even have the route. The call goes through `rebase_core.http`, the seam
 the mail uses, so the tests hand a fake and never reach a CRM.
 
+### Model provider keys (`REBASE_SECRETS_KEY`, `ai-seed`, rotation)
+
+Provider API keys live encrypted in the database (`ai_providers`, AES-256-GCM,
+`rebase_core/secrets.py`); the key that opens them, `REBASE_SECRETS_KEY` (32 bytes in
+base64, `openssl rand -base64 32`), lives only in the host `.env`, root-only (`chmod
+600`), never in the database or a backup. Without it the app refuses to save or read a
+provider key and «Modelli AI» says so.
+
+**Order on production, once (REB-832):**
+
+1. Add `REBASE_SECRETS_KEY=<openssl rand -base64 32>` to the host `.env` (root-only),
+   next to the existing `REBASE_ANTHROPIC_API_KEY` and `REBASE_TEAM_BUILDER_MODEL`.
+   Keep a copy in the password manager: losing it loses every stored provider key.
+2. Deploy.
+3. Inside the api container: `docker compose -p rebase exec api rebase ai-seed
+   --eur-per-usd <rate>`. It moves the old key and model into the tables (key sealed,
+   `anthropic` on, both tasks on the model) and writes the Claude prices in euros from
+   claude.com/pricing (USD per million tokens, read 2026-10-27: opus-5 5/25/0.50,
+   opus-5-5 4/20/0.20, thinking billed as output). `<rate>` is **euros per one dollar**,
+   the inverse of the ECB's quote (ECB 1.0870 USD per EUR means `--eur-per-usd 0.9199`),
+   of the day. No rate lives in the code. It prints «chiave salvata, finisce con …abcd»,
+   never the key, and refuses to run twice.
+4. Verify with «Prova» on each task in «Modelli AI».
+
+**Rotation:** generate a new value, then `docker compose -p rebase exec api rebase
+ai-rotate-secrets --old-key <current> --new-key <new>` (re-seals every stored key in one
+transaction and prints the count; a wrong old key changes nothing), then put the new
+value in `.env` and recreate the api and mcp containers. Between the command and the
+restart the old value no longer opens the keys.
+
 ### Database backups
 
 Both of production's databases are backed up off the origin every night (REB-715,

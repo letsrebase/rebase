@@ -7,9 +7,12 @@ fake Documenso, is `test_documenso.py`'s, and `CardWriter.refresh_stale`'s is
 are all swapped out, so the tests prove `main` dispatches to each command and reports
 what it returns, nothing more."""
 
+import base64
+import os
 from typing import Any
 
 import pytest
+from sqlalchemy import Engine, text
 
 from rebase_core import cli, signing
 from rebase_core.campaigns.tick import TickResult
@@ -232,3 +235,99 @@ def test_cards_refresh_without_a_key_says_so_and_writes_nothing(
 
     assert _FakeCardWriter.instances == []
     assert "REBASE_ANTHROPIC_API_KEY" in capsys.readouterr().err
+
+
+# ---- ai-seed / ai-rotate-secrets (REB-832) ----------------------------------------------
+
+_SECRETS_KEY = base64.b64encode(os.urandom(32)).decode()
+_OLD_KEY = "sk-ant-old-key-abcd"
+
+
+@pytest.fixture
+def ai_db(hub_engine: Engine, monkeypatch: pytest.MonkeyPatch) -> Any:
+    """The command's settings point at the test database; the AI tables go back to what
+    migration 0035 seeded afterwards."""
+
+    def use(secrets_key: str = _SECRETS_KEY) -> None:
+        url = hub_engine.url.render_as_string(hide_password=False)
+        monkeypatch.setattr(
+            cli,
+            "get_settings",
+            lambda: Settings(database_url=url, secrets_key=secrets_key, _env_file=None),  # type: ignore[call-arg]
+        )
+
+    use()
+    monkeypatch.setenv("REBASE_ANTHROPIC_API_KEY", _OLD_KEY)
+    monkeypatch.setenv("REBASE_TEAM_BUILDER_MODEL", "claude-opus-5")
+    yield use
+    with hub_engine.begin() as conn:
+        for statement in (
+            "DELETE FROM ai_prices",
+            "UPDATE ai_providers SET key_ciphertext = NULL, key_nonce = NULL, "
+            "key_last4 = NULL, saved_by = NULL, saved_at = NULL, enabled = false",
+            "UPDATE ai_tasks SET provider = 'anthropic', model = 'claude-opus-5'",
+        ):
+            conn.execute(text(statement))
+
+
+def test_ai_seed_stores_encrypted_and_prints_hint_only(
+    ai_db: Any, hub_engine: Engine, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["ai-seed", "--eur-per-usd", "0.92"]) == 0
+
+    captured = capsys.readouterr()
+    assert "chiave salvata, finisce con …abcd" in captured.out
+    assert _OLD_KEY not in captured.out + captured.err
+    with hub_engine.connect() as conn:
+        row = conn.execute(
+            text("SELECT key_ciphertext, enabled FROM ai_providers WHERE provider = 'anthropic'")
+        ).one()
+        prices = conn.execute(text("SELECT count(*) FROM ai_prices")).scalar_one()
+    assert row.enabled is True
+    assert _OLD_KEY.encode() not in bytes(row.key_ciphertext)
+    assert prices == 2
+
+
+def test_ai_seed_twice_refuses_and_changes_nothing(
+    ai_db: Any, hub_engine: Engine, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["ai-seed", "--eur-per-usd", "0.92"]) == 0
+    capsys.readouterr()
+    with hub_engine.connect() as conn:
+        before = conn.execute(text("SELECT key_ciphertext FROM ai_providers")).all()
+
+    assert main(["ai-seed", "--eur-per-usd", "0.92"]) == 1
+
+    assert "non la sovrascrive" in capsys.readouterr().err
+    with hub_engine.connect() as conn:
+        assert conn.execute(text("SELECT key_ciphertext FROM ai_providers")).all() == before
+
+
+def test_ai_seed_without_secrets_key_exits_1_with_sentence(
+    ai_db: Any, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ai_db("")
+
+    assert main(["ai-seed", "--eur-per-usd", "0.92"]) == 1
+
+    assert "REBASE_SECRETS_KEY" in capsys.readouterr().err
+
+
+def test_ai_seed_requires_the_exchange_rate(ai_db: Any) -> None:
+    with pytest.raises(SystemExit):
+        main(["ai-seed"])
+
+
+def test_ai_rotate_secrets_command_reencrypts_and_prints_the_count(
+    ai_db: Any, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["ai-seed", "--eur-per-usd", "0.92"]) == 0
+    capsys.readouterr()
+    new = base64.b64encode(os.urandom(32)).decode()
+
+    assert main(["ai-rotate-secrets", "--old-key", _SECRETS_KEY, "--new-key", new]) == 0
+    assert capsys.readouterr().out.strip() == "1 chiavi ricifrate"
+
+    # The old key no longer opens it.
+    assert main(["ai-rotate-secrets", "--old-key", _SECRETS_KEY, "--new-key", new]) == 1
+    assert "REBASE_SECRETS_KEY" in capsys.readouterr().err

@@ -1,14 +1,19 @@
 """`rebase`: the operator's commands."""
 
 import argparse
+import base64
+import binascii
+import os
 import sys
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from rebase_core.admin_tokens import DEFAULT_NAME, AdminTokenService
+from rebase_core.ai_config import AiConfigService
 from rebase_core.campaigns.sender import campaign_sender_from_settings
 from rebase_core.campaigns.tick import run_tick
 from rebase_core.cards import CardWriter
@@ -29,6 +34,7 @@ from rebase_core.http import HttpCall
 from rebase_core.llm import call_from_settings
 from rebase_core.mail import CardSummary, EmailSender, sender_from_settings, welcome_mail
 from rebase_core.models import USER_ROLES, Freelancer, Signup, User
+from rebase_core.secrets import KEY_BYTES
 from rebase_core.signing import signing_from_settings
 from rebase_core.users import UserService
 
@@ -243,6 +249,65 @@ def cards_refresh(limit: int) -> int:
     return 0
 
 
+def ai_seed(eur_per_usd: str) -> int:
+    """`rebase ai-seed --eur-per-usd 0.92`: once, moves `REBASE_ANTHROPIC_API_KEY` and
+    `REBASE_TEAM_BUILDER_MODEL` (read from the environment: the Settings fields go in
+    REB-833) into «Modelli AI»: the key sealed, `anthropic` on, both tasks on that model,
+    and the prices of the Claude models in euros at `--eur-per-usd` (EUR per 1 USD, the
+    inverse of the ECB's quote). Prints the hint of the key, never the key (REB-832)."""
+    try:
+        rate = Decimal(eur_per_usd)
+    except InvalidOperation:
+        print("--eur-per-usd deve essere un numero, per esempio 0.92.", file=sys.stderr)
+        return 2
+    api_key = os.environ.get("REBASE_ANTHROPIC_API_KEY", "").strip()
+    if not api_key:
+        print("REBASE_ANTHROPIC_API_KEY manca: non c'è niente da spostare.", file=sys.stderr)
+        return 1
+    model = os.environ.get("REBASE_TEAM_BUILDER_MODEL", "").strip() or "claude-opus-5"
+    settings = get_settings()
+    session = session_factory(create_engine_from_settings(settings))()
+    try:
+        result = AiConfigService(session, settings).seed_from_env(None, api_key, model, rate)
+    except DomainError as exc:
+        print(exc.message, file=sys.stderr)
+        return 1
+    finally:
+        session.close()
+    print(f"chiave salvata, finisce con …{result.key_hint[-4:]}")
+    print(f"modello {result.model} per le schede e per il team, {result.prices} prezzi scritti")
+    return 0
+
+
+def _key_from_argument(value: str) -> bytes | None:
+    try:
+        key = base64.b64decode(value.strip(), validate=True)
+    except (binascii.Error, ValueError):
+        return None
+    return key if len(key) == KEY_BYTES else None
+
+
+def ai_rotate_secrets(old_key: str, new_key: str) -> int:
+    """`rebase ai-rotate-secrets --old-key X --new-key Y`: re-seals every stored provider
+    key from the old `REBASE_SECRETS_KEY` to the new one, in one transaction, and prints
+    how many. Put the new value in `.env` afterwards (REB-832)."""
+    old, new = _key_from_argument(old_key), _key_from_argument(new_key)
+    if old is None or new is None:
+        print("Le due chiavi devono essere 32 byte in base64.", file=sys.stderr)
+        return 2
+    settings = get_settings()
+    session = session_factory(create_engine_from_settings(settings))()
+    try:
+        count = AiConfigService(session, settings).rotate(old, new)
+    except DomainError as exc:
+        print(exc.message, file=sys.stderr)
+        return 1
+    finally:
+        session.close()
+    print(f"{count} chiavi ricifrate")
+    return 0
+
+
 def documenso_check(settings: Settings, http: HttpCall | None = None) -> int:
     """`rebase documenso-check`: does this environment reach its Documenso, and does its
     token open it? Reads one page of the team's envelopes and prints none of them. Run
@@ -390,6 +455,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Scrive la scheda anonima di chi ha un CV nuovo o cambiato, i più vecchi prima",
     )
     cards_parser.add_argument("--limit", type=int, default=50)
+    seed_parser = sub.add_parser(
+        "ai-seed",
+        help="Sposta la chiave Anthropic e il modello vecchi in «Modelli AI», con i prezzi",
+    )
+    seed_parser.add_argument("--eur-per-usd", required=True)
+    rotate_parser = sub.add_parser(
+        "ai-rotate-secrets", help="Ricifra le chiavi dei modelli con un nuovo REBASE_SECRETS_KEY"
+    )
+    rotate_parser.add_argument("--old-key", required=True)
+    rotate_parser.add_argument("--new-key", required=True)
     token = sub.add_parser(
         "createtoken", help="Crea un token personale di un amministratore, per un agente"
     )
@@ -421,6 +496,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return campaigns_tick()
     if args.command == "cards-refresh":
         return cards_refresh(args.limit)
+    if args.command == "ai-seed":
+        return ai_seed(args.eur_per_usd)
+    if args.command == "ai-rotate-secrets":
+        return ai_rotate_secrets(args.old_key, args.new_key)
     if args.command == "createtoken":
         return createtoken(args.email, args.nome)
     if args.command == "setrole":

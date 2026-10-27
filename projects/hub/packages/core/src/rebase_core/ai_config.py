@@ -20,6 +20,7 @@
 """
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime, time
 from decimal import Decimal
 from typing import Any
@@ -80,6 +81,13 @@ KNOWN_MODELS: dict[str, list[str]] = {
     "google": ["gemini-3-pro-preview"],
 }
 
+# USD per million tokens, claude.com/pricing as read on 2026-10-27, for `ai-seed`:
+# (input, output, cache read). Thinking is billed as output: its price stays null.
+SEED_USD_PRICES: dict[str, tuple[Decimal, Decimal, Decimal]] = {
+    "claude-opus-5": (Decimal("5.00"), Decimal("25.00"), Decimal("0.50")),
+    "claude-opus-5-5": (Decimal("4.00"), Decimal("20.00"), Decimal("0.20")),
+}
+
 _MTOK = Decimal(1_000_000)
 _COST_PLACES = Decimal("0.000001")
 _PRICE_PLACES = Decimal("0.0001")
@@ -118,6 +126,13 @@ def _non_negative(
     if value < 0:
         raise ValidationFailed(entity, field, "non può essere negativo")
     return value.quantize(places)
+
+
+@dataclass(frozen=True)
+class SeedResult:
+    key_hint: str
+    model: str
+    prices: int
 
 
 class AiConfigService:
@@ -366,6 +381,87 @@ class AiConfigService:
         self.session.add(usage)
         self.session.commit()
         return usage
+
+    def seed_from_env(
+        self,
+        admin_id: UUID | None,
+        anthropic_api_key: str,
+        team_model: str,
+        eur_per_usd: Decimal,
+    ) -> SeedResult:
+        """The one-off move of the old `REBASE_ANTHROPIC_API_KEY` and
+        `REBASE_TEAM_BUILDER_MODEL` into the tables (`rebase ai-seed`): the key sealed,
+        `anthropic` on, both tasks on `team_model`, and a price row (euros, from
+        `SEED_USD_PRICES` at `eur_per_usd`) for each seeded model. All of it in one
+        transaction. Refuses when `anthropic` already holds a key, so a second run cannot
+        overwrite what an admin saved since. `admin_id` is `None` from the command line,
+        where there is no admin: then no audit entry is written."""
+        secret = secrets_key_bytes(self.settings)  # SecretsKeyMissing before anything else
+        key = anthropic_api_key.strip()
+        if not key:
+            raise ValidationFailed("ai_provider", "key", "la chiave è vuota")
+        if eur_per_usd <= 0:
+            raise ValidationFailed("ai_price", "eur_per_usd", "il cambio deve essere positivo")
+        model = _require_model(team_model)
+        row = self._provider("anthropic")
+        if row.key_ciphertext is not None:
+            raise InvalidState("La chiave di anthropic c'è già: il seed non la sovrascrive")
+        row.key_ciphertext, row.key_nonce = seal(key, secret)
+        row.key_last4 = last_four(key)
+        row.saved_by = admin_id
+        row.saved_at = self.now()
+        row.enabled = True
+        for task in self._tasks():
+            task.provider = "anthropic"
+            task.model = model
+        models = dict.fromkeys([*SEED_USD_PRICES, model])
+        priced = 0
+        for name in models:
+            usd = SEED_USD_PRICES.get(name)
+            if usd is None:
+                continue  # an unknown model gets no price: the page says so, no guessing
+            eur_in, eur_out, eur_cache = (
+                (value * eur_per_usd).quantize(_PRICE_PLACES) for value in usd
+            )
+            price = self.session.get(AiPrice, ("anthropic", name))
+            if price is None:
+                price = AiPrice(provider="anthropic", model=name)
+                self.session.add(price)
+            price.input_eur_per_mtok = eur_in
+            price.output_eur_per_mtok = eur_out
+            price.thinking_eur_per_mtok = None
+            price.cache_read_eur_per_mtok = eur_cache
+            priced += 1
+        self.session.commit()
+        if admin_id is not None:
+            AdminActionService(self.session).record(
+                AI_CONFIG_ENTITY,
+                AI_CONFIG_ENTITY_ID,
+                "ai_key",
+                admin_id,
+                {"provider": "anthropic", "azione": "seed", "model": model},
+            )
+        return SeedResult(key_hint=key_hint(row.key_last4), model=model, prices=priced)
+
+    def rotate(self, old_key: bytes, new_key: bytes) -> int:
+        """Re-seals every stored provider key from `old_key` to `new_key` in one
+        transaction and returns how many. A key that does not open under `old_key` raises
+        `SecretsKeyInvalid` and nothing is written."""
+        count = 0
+        rows = self.session.scalars(
+            select(AiProvider).where(AiProvider.key_ciphertext.is_not(None))
+        ).all()
+        try:
+            for row in rows:
+                assert row.key_ciphertext is not None and row.key_nonce is not None
+                clear = unseal(row.key_ciphertext, row.key_nonce, old_key)
+                row.key_ciphertext, row.key_nonce = seal(clear, new_key)
+                count += 1
+            self.session.commit()
+        except Exception:
+            self.session.rollback()
+            raise
+        return count
 
     # ---- internals ---------------------------------------------------------------------
 
