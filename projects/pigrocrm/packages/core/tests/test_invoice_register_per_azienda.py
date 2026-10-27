@@ -8,7 +8,7 @@ tool creates one before milestone 5 (§9), and a draft is moved onto it by row f
 same reason: the customer chain that assigns it is milestone 3.
 """
 
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
@@ -242,6 +242,21 @@ def test_an_artifact_of_the_second_azienda_lives_under_its_own_prefix(
     assert key == f"fatture/{second.id}/{issued.anno}/{issued.numero}/v1.xml"
 
 
+def _customer_of(session: Session, azienda_id: UUID) -> UUID:
+    customer = Customer(
+        ragione_sociale=f"Cliente {uuid4()}",
+        indirizzo="Corso Italia 5",
+        cap="00100",
+        comune="Roma",
+        provincia="RM",
+        nazione="IT",
+        azienda_id=azienda_id,
+    )
+    session.add(customer)
+    session.flush()
+    return customer.id
+
+
 def test_an_import_may_take_a_number_the_other_azienda_already_issued(
     service: InvoiceService, db_session: Session, customer_id: UUID
 ) -> None:
@@ -251,7 +266,7 @@ def test_an_import_may_take_a_number_the_other_azienda_already_issued(
     native = service.issue(_draft_on(service, db_session, customer_id, None), InvoiceIssue(), ADMIN)
     assert native.numero == 1
     imported = service.import_issued(
-        _import_payload(customer_id, numero=1, giorno=date(ANNO, 1, 10)),
+        _import_payload(_customer_of(db_session, second.id), numero=1, giorno=date(ANNO, 1, 10)),
         ADMIN,
         azienda_id=second.id,
     )
@@ -263,12 +278,47 @@ def test_an_import_may_take_a_number_the_other_azienda_already_issued(
         )
 
 
+def test_an_import_refuses_a_customer_of_another_azienda_or_an_archived_one(
+    service: InvoiceService, db_session: Session, customer_id: UUID
+) -> None:
+    """REB-784: `import_issued` named for an azienda takes only that azienda's customers,
+    the rule the FatturaPA confirmation already holds (REB-783); nothing is written."""
+    second = _second_azienda(db_session)
+    own = _customer_of(db_session, second.id)
+    archived = _customer_of(db_session, second.id)
+    db_session.get(Customer, archived).deleted_at = datetime.now(UTC)  # type: ignore[union-attr]
+    db_session.flush()
+    before = db_session.query(Invoice).count()
+
+    with pytest.raises(ValidationFailed) as foreign:
+        service.import_issued(
+            _import_payload(customer_id, numero=1, giorno=date(ANNO, 1, 10)),
+            ADMIN,
+            azienda_id=second.id,
+        )
+    assert foreign.value.details["field"] == "customer_id"
+    assert "altra azienda" in foreign.value.details["reason"]
+    with pytest.raises(ValidationFailed) as gone:
+        service.import_issued(
+            _import_payload(archived, numero=1, giorno=date(ANNO, 1, 10)),
+            ADMIN,
+            azienda_id=second.id,
+        )
+    assert "archiviato" in gone.value.details["reason"]
+    assert db_session.query(Invoice).count() == before
+
+    imported = service.import_issued(
+        _import_payload(own, numero=1, giorno=date(ANNO, 1, 10)), ADMIN, azienda_id=second.id
+    )
+    assert imported.azienda_id == second.id
+
+
 def test_gaps_are_declared_and_read_per_azienda(
     service: InvoiceService, db_session: Session, customer_id: UUID
 ) -> None:
     second = _second_azienda(db_session)
     service.import_issued(
-        _import_payload(customer_id, numero=3, giorno=date(ANNO, 2, 1)),
+        _import_payload(_customer_of(db_session, second.id), numero=3, giorno=date(ANNO, 2, 1)),
         ADMIN,
         azienda_id=second.id,
     )

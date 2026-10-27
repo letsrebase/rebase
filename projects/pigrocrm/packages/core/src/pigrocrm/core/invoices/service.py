@@ -231,16 +231,15 @@ class InvoiceService:
             )
         return customer
 
-    def _check_import_customer(
-        self, customer_id: UUID, azienda: LegalEntity, party: ParsedInvoiceParty
-    ) -> None:
-        """The customer a person chose for an imported invoice (`decisioni.clienti.
-        <party_key>.customer_id`, REB-783) has to be one this invoice can be written
-        for: on the azienda the file's issuer resolved to, and not archived. The
-        dialog lists only such customers, but the server is the contract: without this
-        an invoice would land on one azienda's register for another's customer, a
-        state `_azienda_of_parent` derives away on every other path. An unknown id
-        stays `import_issued`'s own `NotFound`."""
+    def _check_import_customer(self, customer_id: UUID, azienda: LegalEntity, name: str) -> None:
+        """The customer an imported invoice is attached to (REB-783, REB-784) has to be one
+        it can be written for: on the azienda whose register it lands on, and not
+        archived. `name` is the counterparty the message names. The dialog lists only such
+        customers, but the server is the contract: without this an invoice would land on
+        one azienda's register for another's customer, a state `_azienda_of_parent`
+        derives away on every other path. It runs for the FatturaPA confirmation and for
+        `import_issued` itself, so the hand-declared import (`POST /api/invoices/import`,
+        `import_issued_invoice`) is held to it too. An unknown id stays `NotFound`."""
         customer = self.session.get(Customer, customer_id)
         if customer is None:
             return
@@ -248,14 +247,14 @@ class InvoiceService:
             raise ValidationFailed(
                 ENTITY,
                 "customer_id",
-                f"il cliente scelto per «{party.ragione_sociale}» è archiviato",
+                f"il cliente «{name}» è archiviato",
                 expected="un cliente non archiviato",
             )
         if customer.azienda_id != azienda.id:
             raise ValidationFailed(
                 ENTITY,
                 "customer_id",
-                f"il cliente scelto per «{party.ragione_sociale}» appartiene a un'altra "
+                f"il cliente «{name}» appartiene a un'altra "
                 f"azienda: la fattura è scritta su «{azienda.ragione_sociale}»",
                 expected=f"un cliente dell'azienda {azienda.id}",
             )
@@ -290,7 +289,9 @@ class InvoiceService:
                     continue
                 customer_id, _create, skip = decide(invoice.cliente)
                 if customer_id is not None and not skip:
-                    self._check_import_customer(customer_id, azienda, invoice.cliente)
+                    self._check_import_customer(
+                        customer_id, azienda, invoice.cliente.ragione_sociale
+                    )
 
     def _regime(self, azienda_id: UUID | None = None) -> tuple[RegimeStrategy, FiscalSnapshot]:
         """The strategy and the parameters of one azienda, read together so a caller
@@ -1554,7 +1555,7 @@ class InvoiceService:
                 )
                 continue
             if customer_id is not None:
-                self._check_import_customer(customer_id, azienda, invoice.cliente)
+                self._check_import_customer(customer_id, azienda, invoice.cliente.ragione_sociale)
             resolved_customer_id = customer_id
             if resolved_customer_id is None:
                 resolved_customer_id = match_customer(self.session, invoice.cliente, azienda.id)
@@ -1773,6 +1774,7 @@ class InvoiceService:
             if azienda_id is not None
             else self._azienda_of_parent(customer, data.deal_id)
         )
+        self._check_import_customer(data.customer_id, azienda, customer.ragione_sociale)
         _, profile = self._regime(azienda.id)
         snapshot = self._build_snapshot(data.customer_id, profile, actor, azienda.id)
         counter = self.repo.lock_counter(azienda.id, data.anno)
