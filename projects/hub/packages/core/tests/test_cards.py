@@ -476,7 +476,6 @@ def test_a_surname_inside_a_longer_word_is_not_the_person(clean: Session) -> Non
     assert read.error is None and read.card is not None and read.card.sintesi == sintesi
 
 
-GENDER_WARNING = "written with a gender warning"
 # What the preview's cards wrote (REB-574): a feminine role and a feminine participle.
 SVILUPPATRICE: dict[str, Any] = {
     **CARD,
@@ -629,19 +628,21 @@ def test_a_gendered_card_is_asked_again_once_and_the_neutral_one_is_written(
         "La scheda rivela il genere: riscrivila con «il profilo» come soggetto e ruoli in "
         "forma neutra."
     )
-    # The log says a rewrite happened and to whom, never the words; no warning.
+    # The log says a rewrite happened and to whom, never the words.
     assert str(freelancer_id) in logs.text and "asked again" in logs.text
-    assert GENDER_WARNING not in logs.text
     for secret in ("Sviluppatrice", "sviluppatrice", "Specializzata", "Lovelace"):
         assert secret not in logs.text
 
 
-def test_a_card_still_gendered_after_the_rewrite_is_written_with_a_warning(
+GENDERED = "La scheda rivela il genere della persona anche dopo la riscrittura."
+
+
+def test_a_card_still_gendered_after_the_rewrite_is_failed_and_not_written(
     clean: Session, logs: pytest.LogCaptureFixture
 ) -> None:
-    """Never a gate: the rewrite still gendered is written all the same, with no error
-    on the row, since a failure would take the person out of the catalogue for a hint.
-    One line in the log says so; the same CV is not asked again."""
+    """REB-802: the rewrite still gendered is a failure, not a card. The read shows the
+    error and no card, the failed CV's hash is kept so the same file is not paid for
+    again, and the log names the kind, never the words."""
     freelancer_id = _apply(clean)
     still = {**CARD, "sintesi": "Lei scrive API in Python e cura l'infrastruttura AWS."}
     llm = RecordingCall([card_response(SVILUPPATRICE), card_response(still), card_response()])
@@ -650,92 +651,102 @@ def test_a_card_still_gendered_after_the_rewrite_is_written_with_a_warning(
     read = writer.write(freelancer_id)
 
     assert len(llm.requests) == 2
-    assert read.card == Card.model_validate(still)
-    assert (read.cv_sha256, read.generated_at, read.error) == (_sha(CV), NOW, None)
+    assert (read.card, read.cv_sha256, read.generated_at, read.error) == (
+        None,
+        None,
+        None,
+        GENDERED,
+    )
     stored = _stored(clean, freelancer_id)
-    assert stored is not None and stored.error_cv_sha256 is None
-    assert (stored.input_tokens, stored.output_tokens) == (2400, 360)
-    assert f"card for freelancer {freelancer_id} {GENDER_WARNING}" in logs.text
+    assert stored is not None and stored.error_cv_sha256 == _sha(CV)
+    assert _card_is_sql_null(clean, freelancer_id)
+    assert f"card for freelancer {freelancer_id} not written: gendered" in logs.text
     for secret in ("Lei scrive", "Sviluppatrice", "Specializzata"):
         assert secret not in logs.text
 
-    assert writer.write(freelancer_id).card == Card.model_validate(still)
+    assert writer.write(freelancer_id).error == GENDERED
     assert len(llm.requests) == 2
 
 
 @pytest.mark.parametrize(
-    ("retry", "tokens"),
+    "retry",
     [
-        (card_response({**CARD, "sintesi": "Il profilo di Lovelace."}), (2400, 360)),
-        (card_response(stop_reason="refusal"), (2400, 360)),
-        (card_response(text="non una scheda"), (2400, 360)),
-        (_down(), (1200, 180)),
+        card_response({**CARD, "sintesi": "Il profilo di Lovelace."}),
+        card_response(stop_reason="refusal"),
+        card_response(text="non una scheda"),
     ],
-    ids=["identifying", "refusal", "shape", "outage"],
+    ids=["identifying", "refusal", "shape"],
 )
-def test_a_rewrite_that_fails_writes_the_first_card_with_a_warning(
-    clean: Session,
-    logs: pytest.LogCaptureFixture,
-    retry: LlmResponse | BaseException,
-    tokens: tuple[int, int],
+def test_a_rewrite_that_is_not_a_card_leaves_the_first_one_gendered_and_failed(
+    clean: Session, retry: LlmResponse
 ) -> None:
-    """The first card already names no one: when the rewrite is not a card, a refusal, a
-    bad shape, a card that names the person or an outage, the first one is written,
-    with the warning and every token paid for."""
+    """The first card is still the only card in hand, and it gives the gender away:
+    it is failed, with the hash kept, not written."""
     freelancer_id = _apply(clean)
     llm = _Scripted([card_response(SVILUPPATRICE), retry])
 
     read = CardWriter(clean, llm).write(freelancer_id)
 
     assert len(llm.requests) == 2
-    assert read.card == Card.model_validate(SVILUPPATRICE) and read.error is None
-    assert read.cv_sha256 == _sha(CV)
+    assert (read.card, read.error) == (None, GENDERED)
     stored = _stored(clean, freelancer_id)
-    assert stored is not None and stored.error_cv_sha256 is None
-    assert (stored.input_tokens, stored.output_tokens) == tokens
-    assert GENDER_WARNING in logs.text
+    assert stored is not None and stored.error_cv_sha256 == _sha(CV)
 
 
-def test_refresh_stale_counts_the_gender_warnings(clean: Session) -> None:
-    """A card written with the warning is written, and counted apart as well, for the
-    CLI's «N con avviso di genere»."""
-    _apply(clean, "a@studio.it", text_pdf("Primo CV."))
-    _apply(clean, "b@studio.it", text_pdf("Secondo CV."))
+def test_a_regenerate_still_gendered_keeps_the_cards_of_the_same_cv_with_the_error(
+    clean: Session,
+) -> None:
+    """«Rigenera scheda» on a CV whose card is clean: a gendered answer fails, the clean
+    card stays, with the error beside it, as any failure on the same CV."""
+    freelancer_id = _apply(clean)
     llm = RecordingCall(
         [card_response(), card_response(SVILUPPATRICE), card_response(SVILUPPATRICE)]
     )
+    CardWriter(clean, llm).write(freelancer_id)
 
-    assert CardWriter(clean, llm).refresh_stale() == CardsRefreshed(
-        written=2, failed=0, gender_warnings=1
+    read = CardWriter(clean, llm).write(freelancer_id, force=True)
+
+    assert read.card == Card.model_validate(CARD) and read.error == GENDERED
+
+
+def test_refresh_stale_counts_a_gendered_card_as_failed(clean: Session) -> None:
+    """A card still gendered after its rewrite is among the failed, and the batch goes
+    on: it is the CV's, not the provider's."""
+    first = _apply(clean, "a@studio.it", text_pdf("Primo CV."))
+    _apply(clean, "b@studio.it", text_pdf("Secondo CV."))
+    llm = RecordingCall(
+        [card_response(SVILUPPATRICE), card_response(SVILUPPATRICE), card_response()]
     )
+
+    assert CardWriter(clean, llm).refresh_stale() == CardsRefreshed(written=1, failed=1)
     assert len(llm.requests) == 3
+    assert CardWriter(clean, RecordingCall([])).refresh_stale() == CardsRefreshed(
+        written=0, failed=0
+    )
+    assert CardWriter(clean, None).read(first).error == GENDERED
 
 
-def test_an_outage_on_the_rewrite_writes_the_card_and_stops_the_batch(
-    clean: Session, logs: pytest.LogCaptureFixture
-) -> None:
-    """A 429 on the rewrite: the first card is written with its warning, so the talent
-    stays in the catalogue, and the outage still stops the batch there, as one on a
-    first call does, rather than paying a first call for every CV after it."""
+def test_an_outage_on_the_rewrite_writes_nothing_and_stops_the_batch(clean: Session) -> None:
+    """A 429 on the rewrite: the first card is still gendered, so nothing is written and
+    no hash is kept, and the outage stops the batch there, as one on a first call does,
+    rather than paying a first call for every CV after it."""
     first = _apply(clean, "a@studio.it", text_pdf("Primo CV."))
     second = _apply(clean, "b@studio.it", text_pdf("Secondo CV."))
     llm = _Scripted([card_response(SVILUPPATRICE), _down(), card_response()])
 
     result = CardWriter(clean, llm).refresh_stale(limit=2)
 
-    assert result == CardsRefreshed(written=1, failed=0, gender_warnings=1, stopped=True)
+    assert result == CardsRefreshed(written=0, failed=1, stopped=True)
     assert len(llm.requests) == 2
     assert "Primo CV" in _user_text(llm.requests[1])
     stored = _stored(clean, first)
-    assert stored is not None and stored.card == SVILUPPATRICE and stored.error is None
-    assert stored.cv_sha256 == _sha(text_pdf("Primo CV."))
+    assert stored is not None and stored.card is None and stored.error_cv_sha256 is None
     assert _stored(clean, second) is None
-    assert f"card for freelancer {first} {GENDER_WARNING}" in logs.text
 
-    # The next run starts from the CV the batch did not reach.
-    again = _Scripted([card_response()])
-    assert CardWriter(clean, again).refresh_stale(limit=2) == CardsRefreshed(written=1, failed=0)
-    assert "Secondo CV" in _user_text(again.requests[0])
+    # The next run starts from the first CV again, and the one after it.
+    again = _Scripted([card_response(), card_response()])
+    assert CardWriter(clean, again).refresh_stale(limit=2) == CardsRefreshed(written=2, failed=0)
+    assert "Primo CV" in _user_text(again.requests[0])
 
 
 def test_an_outage_on_a_new_cv_retires_the_old_card(clean: Session) -> None:

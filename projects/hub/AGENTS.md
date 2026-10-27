@@ -386,10 +386,11 @@ counts under «non riuscite» and is the next run's, so a run that keeps printin
 schede scritte, 1 non riuscite, fermato: Claude non disponibile» is Claude not
 answering, not a CV. «Rigenera scheda» on
 the talent's page asks again for one. A card whose Italian gives the person's gender away
-(`_gendered` in `cards.py`, a net under the prompt's rule, not a gate) is asked for once
-more and then written whatever the answer, never parked: one still gendered adds «N con
-avviso di genere» to the run's line and `written with a gender warning` to the log; an
-outage on the rewrite writes the first card and still stops the batch (REB-574).
+(`_gendered` in `cards.py`, the gate under the prompt's rule) is asked for once more, and
+one still gendered after it is not written: the card read shows the error «La scheda
+rivela il genere della persona anche dopo la riscrittura», the run counts it under «non
+riuscite», and the CV is not asked again until it changes or an admin asks with «Rigenera
+scheda»; an outage on the rewrite is an outage like any other (REB-574, REB-802).
 
 **Every «Proponi il team» is a row, answered or not** (migration 0028, Ivan 2026-09-29:
 «salvare tutte le richieste dopo il click proponi team anche se non ancora
