@@ -115,7 +115,7 @@ function TriggeredBy({ entry }: { entry: ActivityEntry }) {
     <p className="mt-1 text-sm text-muted-foreground">
       Attivata da{' '}
       <strong className="font-medium text-foreground">
-        {entry.triggered_by_name ?? String(member)}
+        {entry.triggered_by_name ?? 'un membro rimosso'}
       </strong>
       {channel !== undefined ? ` (${channel})` : null}
     </p>
@@ -167,9 +167,16 @@ function ActivityDetail({ payload }: { payload: ActivityEntry['payload'] }) {
   // The rest of that payload (anno, numero, totale) are facts about the document and
   // stay. Filtered by key here, in the generic branch, so the same is true of any
   // future `kind` that records the same field.
-  const rest = Object.entries(payload).filter(
-    ([key]) => key !== 'importata_da' && key !== 'attivata_da' && key !== 'attivata_via',
-  )
+  // The ids a payload carries to say which draft or which member it concerns are for the
+  // machine: dumping a UUID tells a reader nothing the label does not.
+  const hidden: Record<string, true> = {
+    importata_da: true,
+    attivata_da: true,
+    attivata_via: true,
+    draft_id: true,
+    user_id: true,
+  }
+  const rest = Object.entries(payload).filter(([key]) => hidden[key] !== true)
   if (rest.length === 0) return null
   return (
     <p className="mt-1 text-sm text-muted-foreground">

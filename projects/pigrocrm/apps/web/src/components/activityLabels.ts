@@ -48,6 +48,15 @@ const KIND_LABELS: Record<string, string> = {
   'slack.abbinamento_rimosso': 'Abbinamento Slack rimosso',
   'slack.abbinamenti_rifatti': 'Abbinamenti Slack rifatti',
   'slack.canale_impostato': 'Canale Slack impostato',
+  'slack.canale_rimosso': 'Canale Slack tolto',
+  // A contract's days (REB-781): the day's own ledger keeps the transitions by id, and these
+  // are the same moves with the member's name and the channel.
+  day_created: 'Giornata registrata',
+  day_state_changed: 'Giornata cambiata di stato',
+  // The space's reminder defaults, the only part of the reminder settings that is not one
+  // person's own.
+  defaults_updated: 'Promemoria: valori predefiniti modificati',
+  defaults_reset: 'Promemoria: valori predefiniti ripristinati',
 }
 
 /**

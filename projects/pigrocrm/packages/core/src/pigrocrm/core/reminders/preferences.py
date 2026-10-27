@@ -29,6 +29,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.errors import Conflict, ValidationFailed
 from pigrocrm.core.reminders.catalogue import (
@@ -239,9 +240,17 @@ def _row_read(row: ReminderPreference, scope: Scope) -> ReminderPreferenceRead:
     )
 
 
+# What the space's reminder defaults are recorded against (REB-781): the layer has no row
+# of its own to point at (an override that goes back to the default is deleted), and a
+# person's own preferences are not recorded at all, so one fixed id for the one layer.
+SPACE_DEFAULTS_ENTITY = "reminder_preference"
+SPACE_DEFAULTS_ID = UUID("00000000-0000-0000-0000-00000000e5ce")
+
+
 class ReminderPreferenceService:
     def __init__(self, session: Session) -> None:
         self.session = session
+        self.activities = ActivityService(session)
 
     def catalogue(self) -> list[ReminderTypeRead]:
         return [type_read(kind) for kind in REMINDER_TYPES.values()]
@@ -311,10 +320,12 @@ class ReminderPreferenceService:
         if all(getattr(row, column) is None for column in _ALL_COLUMNS):
             if not created:
                 self.session.delete(row)
+                self._record_defaults(actor, scope, "defaults_updated", type_key, sorted(changes))
             else:
                 self.session.expunge(row)
             self.session.commit()
             return None
+        self._record_defaults(actor, scope, "defaults_updated", type_key, sorted(changes))
         self.session.commit()
         return _row_read(row, scope)
 
@@ -325,9 +336,23 @@ class ReminderPreferenceService:
         row = self._row(owner, self._row_type(type_key))
         if row is not None:
             self.session.delete(row)
+            self._record_defaults(actor, scope, "defaults_reset", type_key)
             self.session.commit()
 
     # -- internals ---------------------------------------------------------------
+
+    def _record_defaults(
+        self, actor: Actor, scope: Scope, kind: str, type_key: str, changed: list[str] | None = None
+    ) -> None:
+        """The space's defaults decide what everybody is reminded of, so a change to them
+        is a change to the space and names who made it. A person's own layer is theirs
+        alone and is not recorded (`test_activity_coverage.py`)."""
+        if scope != "space":
+            return
+        payload: dict[str, Any] = {"tipo": type_key}
+        if changed is not None:
+            payload["changed"] = changed
+        self.activities.record(SPACE_DEFAULTS_ENTITY, SPACE_DEFAULTS_ID, kind, actor, payload)
 
     @staticmethod
     def _owner(actor: Actor, scope: Scope) -> UUID | None:

@@ -20,6 +20,7 @@ from pydantic import ValidationError
 from sqlalchemy import Engine, delete, select
 from sqlalchemy.orm import Session
 
+from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
@@ -140,6 +141,32 @@ def test_editing_a_draft_keeps_its_message_id(db_session: Session) -> None:
     # An update that names one field must not blank the others.
     assert updated.subject == "Offerta"
     assert updated.to_addresses == ["ada@acme.it"]
+
+
+def test_a_draft_is_recorded_on_its_record_with_the_member_and_never_its_text(
+    db_session: Session,
+) -> None:
+    """REB-781: who drafted, edited and discarded a mail to a customer is on that customer's
+    timeline, and the draft's words are not."""
+    account = connected_account(db_session)
+    actor = actor_for(account)
+    customer = _customer(db_session)
+    service = _service(db_session)
+    created = service.create(_payload(customer), actor)
+    service.update(created.id, EmailDraftUpdate(body_markdown="Testo nuovo"), actor)
+    service.delete(created.id, actor)
+
+    entries = {e.kind: e for e in ActivityService(db_session).timeline("customer", customer.id)}
+
+    assert set(entries) == {
+        "gmail.bozza_creata",
+        "gmail.bozza_modificata",
+        "gmail.bozza_eliminata",
+    }
+    assert {(e.actor_id, e.actor_type) for e in entries.values()} == {(actor.id, actor.type)}
+    assert entries["gmail.bozza_creata"].payload == {"draft_id": str(created.id)}
+    assert entries["gmail.bozza_modificata"].payload["changed"] == ["body_markdown"]
+    assert BODY not in str([e.payload for e in entries.values()])
 
 
 def test_a_draft_being_sent_or_already_sent_can_no_longer_be_edited(

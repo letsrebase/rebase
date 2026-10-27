@@ -49,6 +49,12 @@ from pigrocrm.core.deals.schemas import DealCreate, DealUpdate
 from pigrocrm.core.deals.service import DealService
 from pigrocrm.core.people.schemas import PersonCreate, PersonUpdate
 from pigrocrm.core.people.service import PersonService
+from pigrocrm.core.reminders.preferences import (
+    SPACE_DEFAULTS_ENTITY,
+    SPACE_DEFAULTS_ID,
+    ReminderPreferenceService,
+)
+from pigrocrm.core.reminders.schemas import GENERAL, ReminderPreferenceWrite
 from pigrocrm.core.timetracking.costs import CostService
 from pigrocrm.core.timetracking.schemas import (
     CostCreate,
@@ -72,9 +78,9 @@ _GATES = frozenset({"require_write", "require_admin", "require_unscoped_admin"})
 #
 # Every public method of a `*Service` that writes, or looks as if it does, and reaches no
 # `ActivityService.record` of its own. Keyed by `(class, method)`, never by the bare name
-# (`create` and `update` are everywhere), each with the reason. Five reasons, and they are
-# different statements: only the first is "nothing changes", only the third and fourth
-# are a decision about what the timeline is for.
+# (`create` and `update` are everywhere), each with the reason. Four reasons, and they are
+# different statements: only the first is "nothing changes", only the third is a decision
+# about what the timeline is for.
 
 # 1. It looks like a write and is a read: a role check on a path that only looks, or a
 #    commit that settles a lazy refresh (a token, a cached figure).
@@ -100,7 +106,7 @@ _LETTURE: dict[Method, str] = {
 #    are swept for.
 _DELEGA: dict[Method, str] = {
     ("ApprovalRequestService", "prepare"): (
-        "creates the days (the transition ledger names the actor) and the draft "
+        "creates the days (`WorkUnitService.create` records on the contract) and the draft "
         "(`EmailDraftService.create` records on the record it is about)"
     ),
     ("ContractEmailService", "prepare"): "`EmailDraftService.create` records the draft",
@@ -115,21 +121,7 @@ _DELEGA: dict[Method, str] = {
     ("TimerService", "stop"): "`TimeEntryService.create` records the entry the timer becomes",
 }
 
-# 3. Its own ledger is the record, immutable and with the actor, and a second row in
-#    `activities` would be the same fact twice (spec: «nessuna duplicazione»).
-_REGISTRO_PROPRIO: dict[Method, str] = {
-    (
-        "WorkUnitService",
-        "create",
-    ): "`work_unit_log_transition` writes the first row, with the actor",
-    ("WorkUnitService", "move"): "`work_unit_transitions` records stato, actor, reason, moment",
-    (
-        "WorkUnitService",
-        "transition",
-    ): "`work_unit_transitions` records stato, actor, reason, moment",
-}
-
-# 4. What a person does to their own session or their own notifications, not to the
+# 3. What a person does to their own session or their own notifications, not to the
 #    CRM's records: a login, a snoozed reminder, a running clock. Nobody else reads these
 #    as history, and a row per login would bury the timelines they would be written on.
 _PERSONALE: dict[Method, str] = {
@@ -146,8 +138,8 @@ _PERSONALE: dict[Method, str] = {
     ("RefreshTokenService", "issue"): "session rotation",
     ("RefreshTokenService", "revoke_all"): "session rotation",
     ("RefreshTokenService", "rotate"): "session rotation",
-    ("ReminderPreferenceService", "reset"): "one member's own reminder preferences",
-    ("ReminderPreferenceService", "write"): "one member's own reminder preferences",
+    # `ReminderPreferenceService.write` and `reset` are not here: their `me` scope is a person's
+    # own, but the `space` scope is the defaults everybody is reminded by, and records.
     ("ReminderStateService", "acknowledge"): "one member's own reminder, read or snoozed",
     ("ReminderStateService", "snooze"): "one member's own reminder, read or snoozed",
     ("TimerService", "discard"): "the member's own running clock; no hours exist yet",
@@ -156,7 +148,7 @@ _PERSONALE: dict[Method, str] = {
     ("UserService", "authenticate"): "a sign-in; `last_login_at` is not a change to the CRM",
 }
 
-# 5. Machinery with no member behind it, whose outcome is recorded where it matters.
+# 4. Machinery with no member behind it, whose outcome is recorded where it matters.
 _MACCHINERIA: dict[Method, str] = {
     ("GmailOAuthService", "start"): "builds a consent URL; `complete` records the connection",
     ("GoogleDriveOAuthService", "start"): "builds a consent URL; `complete` records",
@@ -166,13 +158,7 @@ _MACCHINERIA: dict[Method, str] = {
     ("TenantService", "provision"): "creates a space in the registry; the space has no history yet",
 }
 
-ESCLUSIONI: dict[Method, str] = {
-    **_LETTURE,
-    **_DELEGA,
-    **_REGISTRO_PROPRIO,
-    **_PERSONALE,
-    **_MACCHINERIA,
-}
+ESCLUSIONI: dict[Method, str] = {**_LETTURE, **_DELEGA, **_PERSONALE, **_MACCHINERIA}
 
 
 # --- the sweep ---------------------------------------------------------------------
@@ -261,8 +247,8 @@ def test_every_exclusion_is_still_a_writer_that_does_not_record(service: str, me
 
 
 def test_no_exclusion_hides_in_two_blocks() -> None:
-    """Five blocks, one reason each: a method in two is a method nobody decided about."""
-    blocks = (_LETTURE, _DELEGA, _REGISTRO_PROPRIO, _PERSONALE, _MACCHINERIA)
+    """Four blocks, one reason each: a method in two is a method nobody decided about."""
+    blocks = (_LETTURE, _DELEGA, _PERSONALE, _MACCHINERIA)
     assert sum(len(b) for b in blocks) == len(ESCLUSIONI)
 
 
@@ -390,15 +376,45 @@ def _cost(session: Session, actor: Actor, ctx: dict[str, UUID]) -> tuple[str, UU
     return "cost", cost.id
 
 
-SCENARIOS: dict[str, Scenario] = {
-    "customer created": _customer,
-    "customer updated": _customer_update,
-    "customer archived and restored": _customer_archive_restore,
-    "person created, updated, archived, restored": _person,
-    "deal created, updated, moved, archived, restored": _deal,
-    "attivita through every state": _attivita,
-    "time entry created, updated, archived, restored": _time_entry,
-    "cost created, updated, archived, restored": _cost,
+def _reminder_defaults(session: Session, actor: Actor, ctx: dict[str, UUID]) -> tuple[str, UUID]:
+    """The one setting of the reminders that is not a person's own: the defaults the whole
+    space is reminded by. The person's own layer (`me`) records nothing, by exclusion."""
+    service = ReminderPreferenceService(session)
+    service.write(actor, "space", GENERAL, ReminderPreferenceWrite(summary_hour=9))
+    service.reset(actor, "space", GENERAL)
+    service.write(actor, "me", GENERAL, ReminderPreferenceWrite(summary_hour=8))
+    return SPACE_DEFAULTS_ENTITY, SPACE_DEFAULTS_ID
+
+
+# Each scenario with the kinds its operations must leave, exactly.
+SCENARIOS: dict[str, tuple[Scenario, set[str]]] = {
+    "customer created": (_customer, {"created"}),
+    "customer updated": (_customer_update, {"created", "updated"}),
+    "customer archived and restored": (
+        _customer_archive_restore,
+        {"created", "deleted", "restored"},
+    ),
+    "person created, updated, archived, restored": (
+        _person,
+        {"created", "updated", "deleted", "restored"},
+    ),
+    "deal created, updated, moved, archived, restored": (
+        _deal,
+        {"created", "updated", "stage_changed", "deleted", "restored"},
+    ),
+    "attivita through every state": (
+        _attivita,
+        {"created", "updated", "completata", "riaperta", "annullata", "archived", "restored"},
+    ),
+    "time entry created, updated, archived, restored": (
+        _time_entry,
+        {"created", "updated", "deleted", "restored"},
+    ),
+    "cost created, updated, archived, restored": (
+        _cost,
+        {"created", "updated", "deleted", "restored"},
+    ),
+    "the space's reminder defaults": (_reminder_defaults, {"defaults_updated", "defaults_reset"}),
 }
 
 
@@ -435,8 +451,9 @@ def test_every_change_leaves_who_when_and_which_channel(
     channel: str,
 ) -> None:
     actor = _actors(members)[channel]
+    scenario, expected = SCENARIOS[name]
     before = datetime.now(UTC)
-    entity_type, entity_id = SCENARIOS[name](db_session, actor, dict(world))
+    entity_type, entity_id = scenario(db_session, actor, dict(world))
     after = datetime.now(UTC)
 
     rows = list(
@@ -451,9 +468,9 @@ def test_every_change_leaves_who_when_and_which_channel(
         assert row.actor_id == actor.id, f"{name}/{row.kind}: wrong or missing member"
         assert row.actor_type == channel, f"{name}/{row.kind}: wrong channel"
         assert before <= row.occurred_at <= after, f"{name}/{row.kind}: not a moment of this call"
-    # Every operation of the scenario, not only the first: the kinds a scenario names
-    # are as many distinct rows as it made changes.
-    assert len(rows) >= 2 or name == "customer created", f"{name}: a change left no entry"
+    # Every operation of the scenario, not a count: a `restore` or a `cancel` that stopped
+    # recording would still leave the rows before it, and a number would not notice.
+    assert {row.kind for row in rows} == expected, f"{name}: the entries are not the changes"
 
 
 def test_the_timeline_names_the_member_and_keeps_naming_a_deactivated_one(

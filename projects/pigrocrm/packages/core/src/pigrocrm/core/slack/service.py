@@ -209,13 +209,16 @@ class SlackService:
                 )
             workspace.channel_id = found.id
             workspace.channel_name = found.name
-        self.activities.record(
-            SLACK_ENTITY,
-            workspace.id,
-            "slack.canale_impostato",
-            actor,
-            {"canale": workspace.channel_name},
-        )
+        if channel_id is None:
+            self.activities.record(SLACK_ENTITY, workspace.id, "slack.canale_rimosso", actor)
+        else:
+            self.activities.record(
+                SLACK_ENTITY,
+                workspace.id,
+                "slack.canale_impostato",
+                actor,
+                {"canale": workspace.channel_name},
+            )
         self.session.commit()
         return self.health(actor)
 
