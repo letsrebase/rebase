@@ -56,29 +56,32 @@ worth its per-seat cost. Until then, the repository's own `AGENTS.md` tells ever
 freelancer the boundary is a courtesy, not an enforced one, and the setup checklist
 below says the same to the person doing the inviting.
 
-## What is in `template/`
+## What a new repository gets
 
-Copied into the new (or existing) repository, with its placeholders resolved:
+From `template/`, with its placeholders resolved:
 
 ```
 AGENTS.md                       the portable core: read by every harness that reads
                                  AGENTS.md natively (Claude Code, Codex, Cursor,
                                  Windsurf, omp, ...), self-sufficient on its own
 CLAUDE.md                       @AGENTS.md, plus Claude-Code-only rules if any appear
-.github/PULL_REQUEST_TEMPLATE.md   identical to the monorepo's own, it is already generic
-.claude/skills/
-  linear-ticket/SKILL.md        the Linear calls, in order, with the API's own quirks
-  linear-content/SKILL.md       how a card, a comment, an update is written
-  pr-creation/SKILL.md          branch, commit, PR body, review loop
 ```
 
-`.claude/skills/` is read by Claude Code and omp; a harness with no skill mechanism
-still gets the whole contract from `AGENTS.md` alone, which is why that file is never
-just a pointer to the skills — the skills are the detailed procedure, `AGENTS.md` is
-the part every harness can read on its own. If a harness needs its own filename to
-pick the rules up (the way Claude Code wants `CLAUDE.md` and Warp wants `WARP.md`),
-add a thin pointer file in that shape (`@AGENTS.md` plus anything genuinely specific
-to that harness), never a second copy of the rules.
+Then, written by the script: `.github/workflow.json` (the team, the prefix, the review
+bots, the PR sections) and, when a review bot is on, `docs/agents/pr-creation.md` with
+its loop. Last, `kit.py sync` from `tooling/workflow-kit/` copies the workflow kit in:
+the skills `linear-ticket`, `linear-content` and `pr-creation` (in `.agents/skills/`,
+copied into `.claude/skills/`), the PR template rendered from `workflow.json`, the
+scripts `ci` and preflight run, the Linear gate's hooks and the manifest `kit.py check`
+compares. Python 3.10 is required for that step. The kit is the one copy of the
+procedure, so a change to it is made there and reaches a client repository through its
+own `sync`, never by editing the copy.
+
+A harness with no skill mechanism still gets the whole contract from `AGENTS.md` alone,
+which is why that file is never just a pointer to the skills. If a harness needs its
+own filename to pick the rules up (the way Claude Code wants `CLAUDE.md` and Warp wants
+`WARP.md`), add a thin pointer file in that shape (`@AGENTS.md` plus anything genuinely
+specific to that harness), never a second copy of the rules.
 
 Everything in `template/` is written in English and in the second person, the shape
 a fresh repository's own conventions file takes; it is not rebase-internal prose and
@@ -87,7 +90,7 @@ it once before their first card, not to learn how the rule was arrived at.
 
 ## Doing the setup
 
-If your harness reads `.claude/skills/`, use `client-repo-onboarding`: it reads the
+If your harness reads skills, use `client-repo-onboarding`: it reads the
 engagement's spec document (asking for it, or for the fields it is missing), does the
 Linear calls below itself, and runs the script. What follows is that same procedure by
 hand — read it either way, since it is also what a harness with no skill mechanism
@@ -119,10 +122,27 @@ For a genuinely new repository:
    ```
    `--create-repo` creates a fresh private GitHub repository and pushes the
    scaffold as its first commit. Omit it to write the files into an existing
-   checkout instead (see § Retrofitting below); the script never overwrites a file
-   that already exists unless `--force` is given, and always prints what it left
-   alone.
-3. **Invite the freelancer**: GitHub collaborator on the repo, Linear member on the
+   checkout instead (see § Retrofitting below). The script then runs the workflow
+   kit's `kit.py sync`, and prints everything it reports. The template files and
+   `.github/workflow.json` are never overwritten when they already exist unless
+   `--force` is given, and the script always prints what it left alone. The paths
+   the kit manages are not in that rule: `.agents/skills/<each kit skill>`,
+   `.claude/skills/<each kit skill>`, `.github/kit/`,
+   `.github/PULL_REQUEST_TEMPLATE.md` and the gate entry in `.claude/settings.json`
+   are always the kit's, replaced when they exist, and the script lists which of them
+   it replaced. The sync runs before any other file is written, so a failure leaves
+   nothing half-written; `--force` is passed on to it (it then discards a
+   `.claude/skills` edit that exists nowhere else, which it refuses to do otherwise).
+   When a `.gitignore` ignores `.claude/` the script rewrites that line to `.claude/*`
+   and re-includes `.claude/skills/` and `.claude/settings.json`, and says so; an
+   ignore it cannot rewrite safely stops it before anything is written. Python 3.10+
+   (`python3`, `python` or `py -3`) is required.
+3. **Wire the kit's checks into CI**, inside the repository's required `ci` job:
+   `python3 .github/kit/bin/kit.py check` always, and `python3
+   .github/kit/bin/pr_lint.py --github` on pull requests (§ CI below). Fill
+   `tracker.labels.area` in `.github/workflow.json` before the first card: the script
+   leaves it empty, and the `area:*` labels are created from it.
+4. **Invite the freelancer**: GitHub collaborator on the repo, Linear member on the
    workspace (§ The known gap — say so to them, in the same message). Point them at
    the repository's own `AGENTS.md`.
 
@@ -140,15 +160,13 @@ it merges, not pushed straight to `main` on a repository someone else is activel
 committing to.
 
 That additive rule cuts the other way once a repository already carries its own
-`AGENTS.md`: a later change to `template/AGENTS.md` (a new rule, like this PR's
-project-update paragraph) does not reach that repository just because the script
-runs again, since an existing file is skipped without `--force`. The moment such a
-change lands here, file a Linear issue in that repository's own team (never in
-`rebase`'s) naming the drift, rather than trusting it will be remembered later
-(`.agents/skills/client-repo-onboarding/` § Keeping the template in step). Carrying
-the change over is the same by-hand fold as the pilot's own `WARP.md` merge above,
-not a second run of the script, and it lands as its own small PR on that repository,
-reviewed the same way, closing the issue that tracked it.
+`AGENTS.md`: a later change to `template/AGENTS.md` does not reach that repository just
+because the script runs again, since an existing file is skipped without `--force`.
+The moment such a change lands here, file a Linear issue in that repository's own team
+(never in `rebase`'s) naming the drift (`.agents/skills/client-repo-onboarding/` §
+Keeping the template in step). A change to the workflow kit reaches it differently: its
+own `kit.py sync --source <rebase>/tooling/workflow-kit`, in its own PR, filed the same
+way.
 
 ## CI: the shared self-hosted runner pool
 
@@ -161,8 +179,14 @@ the moment the repository exists on GitHub; it prints whether that step actually
 ran or has to be done by hand later (no `admin:org` scope on the token, or the
 repository does not exist on GitHub yet).
 
-What the script does not do: write the repository's own CI workflow. That is
-contract-specific (a Node stack, a Python one, both, a different service mix
+What the script does not do: write the repository's own CI workflow, so the kit's
+checks are not wired in until someone does it: inside the required `ci` job, run
+`python3 .github/kit/bin/kit.py check` always and `python3 .github/kit/bin/pr_lint.py
+--github` on pull requests (with `GITHUB_TOKEN` in its environment and `pull-requests:
+read` permission; `letsrebase/rebase`'s `ci.yml`, job `kit`, is the example). Until then
+nothing enforces the PR title and body the repository's `AGENTS.md` describes. The
+workflow is otherwise contract-specific
+(a Node stack, a Python one, both, a different service mix
 entirely), so there is no CI template in `template/`. Once one exists, its jobs use
 `runs-on: [self-hosted, linux, x64]` rather than `ubuntu-latest`; `docs/ci-runner-pool.md`
 carries what changes on a self-hosted host that a hosted runner's isolated VM hides,
@@ -182,7 +206,9 @@ Three knobs the script takes, because not every contract carries the same weight
 - `--worktree` / `--no-worktree` (default: on). Recommended on always: more than one
   person — us, a freelancer, an agent each runs — can be committing to the same
   repository, and a worktree is what keeps one person's uncommitted state off
-  another's.
+  another's. With `--no-worktree` the kit's `pr-creation` skill (the workflow kit's,
+  synced into `.agents/skills/`) still describes worktrees: the paragraph in the
+  repository's own `AGENTS.md` wins wherever the two disagree.
 - `--greptile` / `--no-greptile` (default: off). On only for a contract that already
   has Greptile configured on the repository (app.greptile.com). Off by default
   because most client repositories will not have it wired up on day one.

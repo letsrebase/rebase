@@ -22,8 +22,8 @@
 // client, never shared): on the Free plan there is only one such slot alongside
 // "rebase" itself, so check no other client already holds it first.
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync } from "node:fs";
-import { join, dirname, relative } from "node:path";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync, rmSync } from "node:fs";
+import { join, dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import { matchesRemote } from "./retrofit-remote-matches.mjs";
@@ -89,27 +89,6 @@ const WORKTREE_POLICY = args.worktree
   ? "work in a git worktree of its own (`git worktree add -b <branch> ../<repo>-<name> origin/main`), never directly in the shared checkout: more than one person can be committing to this repository at once, and a worktree is what keeps your commit yours."
   : "a plain branch checkout is fine here (`git checkout -b <branch> origin/main`); this contract has one person committing at a time, so nothing needs a worktree's isolation: revisit if that changes.";
 
-const WORKTREE_BLOCK = args.worktree
-  ? [
-      "4. **Work in a git worktree of its own**, never the shared checkout: other",
-      "   sessions write to the same index, and a worktree is what keeps your commit",
-      "   yours.",
-      "",
-      "   ```bash",
-      "   git fetch origin",
-      "   git worktree add -b <branch> ../<repo>-<name> origin/main",
-      "   cd ../<repo>-<name>",
-      "   ```",
-      "",
-      "   Remove it once the PR merges (`git worktree remove ../<repo>-<name>`); never",
-      "   remove a worktree with uncommitted work still in it.",
-    ].join("\n")
-  : [
-      "4. **A plain branch checkout is fine here**: `git checkout -b <branch> origin/main`.",
-      "   This contract has one person committing at a time, so nothing needs a",
-      "   worktree's isolation: revisit if that changes.",
-    ].join("\n");
-
 const REVIEW_GATE_POLICY = args.greptile && args.coderabbit
   ? "Greptile and CodeRabbit both review every PR here (each already configured on this repository): Greptile first, then CodeRabbit's own review, then CodeRabbit checks Greptile's findings against the code. Every finding from either, and every adversarial verdict, gets fixed or answered before merging."
   : args.greptile
@@ -120,7 +99,7 @@ const REVIEW_GATE_POLICY = args.greptile && args.coderabbit
 
 const GREPTILE_LOOP_LINES = [
   "",
-  "**Then iterate on Greptile until it scores full marks.** It reviews the PR once",
+  "**Iterate on Greptile until it scores full marks.** It reviews the PR once",
   "it is open: inline findings with a severity badge, and a summary headed",
   "`Confidence Score: N/5`, on the PR's own description or as a bot comment,",
   "depending on this repository's Greptile setting (PR Summaries, in",
@@ -170,7 +149,7 @@ const GREPTILE_LOOP_LINES = [
 
 const CODERABBIT_LOOP_LINES = [
   "",
-  "**Then wait for CodeRabbit's review and act on every finding.** It reviews the PR",
+  "**Wait for CodeRabbit's review and act on every finding.** It reviews the PR",
   "once it is open and again on every push (settings in `.coderabbit.yaml`): a",
   "`CodeRabbit` commit status (`Review in progress`, then `Review completed`, or",
   "`Review skipped: ...` with the reason, a draft PR among them), inline findings",
@@ -339,13 +318,62 @@ const REVIEWER_BLOCK = args.greptile && args.coderabbit
   ? CODERABBIT_LOOP_LINES.join("\n")
   : "";
 
-const REVIEWER_MERGE_CLAUSE = args.greptile && args.coderabbit
-  ? " and Greptile reads full marks and CodeRabbit's review has nothing open"
-  : args.greptile
-  ? " and Greptile reads full marks"
-  : args.coderabbit
-  ? " and CodeRabbit's review has nothing open"
+// The reviewers' loop is this repository's own step, so it goes to docs/agents/, which
+// the workflow kit's pr-creation skill reads when present.
+const EXTRAS_PR_CREATION = REVIEWER_BLOCK
+  ? [
+      "# Opening a pull request here: the reviewers' loop",
+      "",
+      "The workflow kit's `pr-creation` skill (`.agents/skills/pr-creation/SKILL.md`) is",
+      "the procedure; this file is the step only this repository takes. Read the skill",
+      "first, then this.",
+      REVIEWER_BLOCK,
+      "",
+    ].join("\n")
   : "";
+
+const KIT_DIR = join(HERE, "..", "workflow-kit");
+
+// Everything the kit's skills and checks read about this repository. Labels, scopes and
+// the conditional PR sections a codebase grows are filled in as it grows.
+const WORKFLOW_JSON = {
+  version: 1,
+  tracker: {
+    kind: "linear",
+    workspace: "letsrebase",
+    team: args.linearTeam,
+    prefix: args.linearPrefix,
+    language: "English",
+    contract: "AGENTS.md",
+    labels: {
+      type: ["fix", "feature", "refactor", "chore", "docs", "test", "ci", "design", "security", "spike"],
+      area: [],
+    },
+  },
+  github: {
+    merge: "merge",
+    required_check: "ci",
+    review_bots: [...(args.greptile ? ["greptile"] : []), ...(args.coderabbit ? ["coderabbit"] : [])],
+  },
+  commits: {
+    types: ["feat", "fix", "refactor", "perf", "test", "docs", "ci", "chore", "style", "revert"],
+    scope_required: true,
+  },
+  pr: {
+    title_max: 72,
+    card_line: true,
+    milestone_card_line: true,
+    exempt_authors: ["dependabot[bot]", "app/dependabot"],
+    sections: [
+      { title: "What this changes", required: true },
+      { title: "How I verified it", required: true },
+      { title: "What did not change, on purpose", when: "a reviewer could assume a neighbouring thing moved" },
+      { title: "Anything a reviewer should look at twice" },
+      { title: "Screenshots and video", required: true },
+    ],
+  },
+  extras: "docs/agents",
+};
 
 const CODERABBIT_YAML = `# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
 #
@@ -365,23 +393,12 @@ reviews:
     docstrings:
       enabled: false
   pre_merge_checks:
+    # The title and the body's template are checked by the workflow kit's pr_lint.py
+    # in ci, a blocking answer; the built-in checks would only warn about the same.
     title:
-      mode: warning
-      requirements: >-
-        Conventional Commits, as .claude/skills/pr-creation § Title says:
-        \`type(scope): subject\`. \`type\` is one of feat, fix, refactor, perf, test,
-        docs, ci, chore, style, revert. The subject starts with a lowercase letter
-        and has no Title Case.
-    custom_checks:
-      - name: PR body follows the template
-        mode: warning
-        instructions: >-
-          Read the PR description, leaving out every block a bot generated. Pass
-          when what remains contains the headings \`## What this changes\`, \`## How
-          I verified it\` and \`## Screenshots and video\`, in that order, and its
-          last non-empty line is exactly \`Linear: ${args.linearPrefix}-<number>.\`. Otherwise fail,
-          naming each missing heading or quoting the last line. Pass without
-          checking when the PR was opened by a bot account.
+      mode: "off"
+    description:
+      mode: "off"
 
 knowledge_base:
   linear:
@@ -396,10 +413,7 @@ chat:
 
 // Line-level substitutions: a line whose trimmed content is exactly the key is
 // replaced wholesale (and dropped entirely when the value is empty).
-const BLOCK_SUBSTITUTIONS = {
-  "{{WORKTREE_BLOCK}}": WORKTREE_BLOCK,
-  "{{GREPTILE_BLOCK}}": REVIEWER_BLOCK,
-};
+const BLOCK_SUBSTITUTIONS = {};
 
 // Inline substitutions: replaced wherever they occur inside a line.
 const INLINE_SUBSTITUTIONS = {
@@ -411,7 +425,6 @@ const INLINE_SUBSTITUTIONS = {
   "{{LINEAR_PROJECT}}": args.linearProject,
   "{{WORKTREE_POLICY}}": WORKTREE_POLICY,
   "{{REVIEW_GATE_POLICY}}": REVIEW_GATE_POLICY,
-  "{{GREPTILE_MERGE_CLAUSE}}": REVIEWER_MERGE_CLAUSE,
 };
 
 // ---- walk the template, resolve placeholders, write into the target ----
@@ -445,10 +458,146 @@ function resolveFile(text) {
   return result.join("\n");
 }
 
-mkdirSync(targetDir, { recursive: true });
+// ---- everything that can fail comes before the first file is written ----
+
+// kit.py needs Python 3.10+. Resolve the interpreter first: python3, then python, then
+// py -3 (the Windows launcher), the first one that is 3.10 or newer.
+function findPython() {
+  for (const [cmd, ...pre] of [["python3"], ["python"], ["py", "-3"]]) {
+    try {
+      const out = execFileSync(cmd, [...pre, "-c", "import sys; print(sys.version_info >= (3, 10))"], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+      if (out.trim() === "True") return [cmd, ...pre];
+    } catch {
+      // not installed, or not runnable: try the next one
+    }
+  }
+  return null;
+}
+const PYTHON = findPython();
+if (!PYTHON) fail("the workflow kit needs Python 3.10 or newer, and none of `python3`, `python`, `py -3` is one; nothing was written");
+
+// A .gitignore that swallows .claude/ would leave the kit's skills and the Linear gate hook
+// out of every commit. Settle it before anything is written; apply the fix after the sync.
+const KIT_SKILLS = readdirSync(join(KIT_DIR, "files", ".agents", "skills")).filter((n) =>
+  statSync(join(KIT_DIR, "files", ".agents", "skills", n)).isDirectory(),
+);
+const CLAUDE_PROBES = [".claude/settings.json", ...KIT_SKILLS.map((s) => `.claude/skills/${s}/SKILL.md`)];
+
+// The rule that ignores `rel` in `dir` as { source, line, pattern }, or null when it is not ignored.
+function ignoringRule(dir, rel) {
+  let out;
+  try {
+    out = execFileSync("git", ["-C", dir, "check-ignore", "-v", "--no-index", rel], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+  } catch {
+    return null; // exit 1: not ignored; 128: not a git repository yet, so no .gitignore to fix
+  }
+  const m = /^(.*?):(\d+):([^\t]*)\t/.exec(out);
+  if (!m || m[3].startsWith("!")) return null; // a re-include is the opposite of ignored
+  return { source: m[1], line: Number(m[2]), pattern: m[3] };
+}
+
+function planClaudeIgnoreFix(dir) {
+  const lines = new Set();
+  for (const rel of CLAUDE_PROBES) {
+    const rule = ignoringRule(dir, rel);
+    if (!rule) continue;
+    const bare = [".claude/", "/.claude/", ".claude", "/.claude"].includes(rule.pattern.trim());
+    if (resolve(dir, rule.source) !== resolve(dir, ".gitignore") || !bare) {
+      fail(`${rel} is ignored by ${rule.source}:${rule.line} (\`${rule.pattern}\`), which this script cannot rewrite safely; change that line so .claude/settings.json and .claude/skills/ are tracked, then rerun. Nothing was written`);
+    }
+    lines.add(rule.line);
+  }
+  return lines.size ? { dir, lines: [...lines] } : null;
+}
+
+// letsrebase/point's fix: `.claude/` becomes `.claude/*`, with the two paths the kit owns
+// re-included. Returns what it changed, for the report.
+function applyClaudeIgnoreFix(plan) {
+  if (!plan) return "";
+  const path = join(plan.dir, ".gitignore");
+  const text = readFileSync(path, "utf8");
+  const eol = text.includes("\r\n") ? "\r\n" : "\n";
+  const lines = text.split(/\r?\n/);
+  const changed = [];
+  for (const n of plan.lines) {
+    changed.push(`${lines[n - 1].trim()} (line ${n})`);
+    lines[n - 1] = ".claude/*";
+  }
+  while (lines.length && lines[lines.length - 1] === "") lines.pop();
+  for (const keep of ["!.claude/skills/", "!.claude/settings.json"]) {
+    if (!lines.some((l) => l.trim() === keep)) lines.push(keep);
+  }
+  // Snyk Code javascript/PT here is a false positive: a developer's script, writing
+  // where the developer running it asks it to.
+  writeFileSync(path, lines.join(eol) + eol);
+  for (const rel of CLAUDE_PROBES) {
+    const rule = ignoringRule(plan.dir, rel);
+    if (rule) fail(`${rel} is still ignored after rewriting .gitignore, by ${rule.source}:${rule.line} (\`${rule.pattern}\`); fix that line by hand`);
+  }
+  return `Changed .gitignore: replaced ${changed.join(", ")} with \`.claude/*\` and added \`!.claude/skills/\` and \`!.claude/settings.json\`, so the kit's skills and settings are tracked.`;
+}
+
+const ignorePlan = planClaudeIgnoreFix(targetDir);
 
 const written = [];
 const skipped = [];
+const createdTarget = !existsSync(targetDir);
+mkdirSync(targetDir, { recursive: true });
+
+// kit.py sync reads .github/workflow.json, so that one file goes first and is taken back
+// if the sync fails; nothing else is written until the sync has succeeded.
+const workflowPath = join(targetDir, ".github", "workflow.json");
+const hadWorkflow = existsSync(workflowPath);
+const previousWorkflow = hadWorkflow ? readFileSync(workflowPath) : null;
+if (hadWorkflow && !args.force) {
+  skipped.push(".github/workflow.json");
+} else {
+  mkdirSync(dirname(workflowPath), { recursive: true });
+  // Snyk Code javascript/PT here is a false positive: a developer's script, writing
+  // where the developer running it asks it to.
+  writeFileSync(workflowPath, JSON.stringify(WORKFLOW_JSON, null, 2) + "\n");
+  written.push(".github/workflow.json");
+}
+
+// Paths the sync replaces with the kit's own, when they are already there.
+const replaced = [
+  ...KIT_SKILLS.flatMap((s) => [`.agents/skills/${s}`, `.claude/skills/${s}`]),
+  ".github/kit",
+  ".github/PULL_REQUEST_TEMPLATE.md",
+  ".claude/settings.json",
+].filter((rel) => existsSync(join(targetDir, rel)));
+
+let kitOutput;
+try {
+  kitOutput = execFileSync(
+    PYTHON[0],
+    [
+      ...PYTHON.slice(1),
+      join(KIT_DIR, "files", ".github", "kit", "bin", "kit.py"),
+      "--repo", targetDir, "sync", "--source", KIT_DIR,
+      ...(args.force ? ["--force"] : []),
+    ],
+    { encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] },
+  ).trim();
+} catch (err) {
+  if (err.stdout) process.stdout.write(err.stdout);
+  if (!hadWorkflow) rmSync(workflowPath, { force: true });
+  else if (args.force) writeFileSync(workflowPath, previousWorkflow);
+  if (createdTarget) rmSync(targetDir, { recursive: true, force: true });
+  const missing = err.code === "ENOENT" || err.status === 9009 || err.status === 49;
+  fail(
+    missing
+      ? `could not run ${PYTHON.join(" ")} for the workflow kit's sync; nothing else was written`
+      : `the workflow kit's sync failed (its own message is above); nothing else was written${args.force ? "" : ", and you can rerun with --force to let it discard what it names"}`,
+  );
+}
+
 for (const src of listFiles(TEMPLATE_DIR)) {
   const rel = relative(TEMPLATE_DIR, src);
   const dest = join(targetDir, rel);
@@ -475,12 +624,36 @@ if (args.coderabbit) {
   }
 }
 
+// The workflow kit's data and this repository's own steps, then the kit itself: the three
+// skills, the scripts, the PR template rendered from workflow.json, the .claude/skills
+// copy and the manifest kit.py check compares in ci.
+function writeOwn(rel, content) {
+  const dest = join(targetDir, rel);
+  if (existsSync(dest) && !args.force) {
+    skipped.push(rel);
+    return;
+  }
+  mkdirSync(dirname(dest), { recursive: true });
+  writeFileSync(dest, content);
+  written.push(rel);
+}
+if (EXTRAS_PR_CREATION) writeOwn("docs/agents/pr-creation.md", EXTRAS_PR_CREATION);
+
+const gitignoreNote = applyClaudeIgnoreFix(ignorePlan);
+
 console.log(`Wrote ${written.length} file(s) into ${targetDir}:`);
 for (const f of written) console.log(`  ${f}`);
 if (skipped.length) {
   console.log(`Left ${skipped.length} existing file(s) alone (pass --force to overwrite):`);
   for (const f of skipped) console.log(`  ${f}`);
 }
+console.log("Synced the workflow kit; what kit.py reported:");
+if (kitOutput) for (const line of kitOutput.split("\n")) console.log(`  ${line}`);
+if (replaced.length) {
+  console.log(`Replaced ${replaced.length} kit-managed path(s) that already existed, with the kit's own (these are always the kit's, --force or not):`);
+  for (const f of replaced) console.log(`  ${f}`);
+}
+if (gitignoreNote) console.log(gitignoreNote);
 
 // ---- optionally create the GitHub repository ---------------------------
 
@@ -584,4 +757,12 @@ Next, by hand or with an agent holding the linear-rebase MCP server:
    on its jobs; ${runnerPoolReady
      ? `${args.org}/${args.repo} is already scoped into the private-clients runner group, so the workflow file is the only remaining step.`
      : `it still needs to be scoped into the private-clients runner group first (docs/ci-runner-pool.md) -- not done automatically this run, see the note above.`}
+6. In that CI workflow, inside the required \`ci\` job, run
+   \`python3 .github/kit/bin/kit.py check\` always and, on pull requests,
+   \`python3 .github/kit/bin/pr_lint.py --github\` with GITHUB_TOKEN in its environment and
+   \`pull-requests: read\` permission (letsrebase/rebase's ci.yml, job \`kit\`): until
+   it does, nothing checks a PR's title and body.
+7. .github/workflow.json starts with an empty \`tracker.labels.area\` list. Fill it (and the
+   commit scopes as the codebase grows) before the first card, create the matching
+   \`area:*\` labels in the "${args.linearTeam}" team, then run kit.py sync again.
 `);

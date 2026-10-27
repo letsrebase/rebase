@@ -76,8 +76,22 @@ node tooling/client-repo-starter/new-client-repo.mjs \
 ```
 
 Read its own output rather than assuming what it did: it prints what it wrote, what it
-left alone, and any further checklist item that still needs a person or a token scope
-this session does not have.
+left alone, everything the kit's sync reported, which kit-managed paths it replaced
+(`.agents/skills/<kit skills>`, `.claude/skills/<kit skills>`, `.github/kit/`,
+`.github/PULL_REQUEST_TEMPLATE.md`, the gate entry in `.claude/settings.json`: always
+the kit's, `--force` or not), any `.gitignore` line it rewrote so `.claude/skills/` and
+`.claude/settings.json` are tracked, and any further checklist item that still needs a
+person or a token scope this session does not have. It needs Python 3.10+ and runs the
+kit's sync before writing anything else; if it stops, nothing else was written, and the
+kit's own message says why (rerun with `--force` only when that message names work you
+mean to discard).
+
+The script writes no CI workflow, so the kit's checks are not wired in until someone
+does it: inside the repository's required `ci` job, `python3 .github/kit/bin/kit.py
+check` always and `python3 .github/kit/bin/pr_lint.py --github` on pull requests
+(`GITHUB_TOKEN` in its environment, `pull-requests: read`). Say so to the person, and
+that `tracker.labels.area` in `.github/workflow.json` starts empty and has to be filled
+before the first card.
 
 A retrofit (`--target-dir`, no `--create-repo`) only writes files into that checkout;
 the script does not branch or open anything on its own. Before running it this way,
@@ -105,7 +119,7 @@ session's call to make (root `AGENTS.md` § What a human decides):
 - **The initiative**, only when the macroprogetto was new (Step 1). An engagement under
   an initiative that already existed needs nothing further here.
 - **The freelancer's invite**: GitHub collaborator, Linear workspace member, told the
-  Free-plan visibility gap plainly (README § Doing the setup, step 3, and § The known
+  Free-plan visibility gap plainly (README § Doing the setup, step 4, and § The known
   gap; `tooling/client-repo-starter/docs/onboarding-freelance.md` for the full
   message).
 
@@ -114,26 +128,24 @@ none of them are silently skipped just because the repository and the project ex
 
 ## Keeping the template in step
 
-The three skills (`linear-ticket`, `linear-content`, `pr-creation`) and the PR checks
-are the workflow kit's now (`tooling/workflow-kit/`, root `AGENTS.md` § Conventions).
-Until `new-client-repo.mjs` renders them from the kit (REB-821),
-`tooling/client-repo-starter/template/` and `letsrebase/point` (today's only repo built
-from it) still carry their own older copies, and an edit to `AGENTS.md` or
-`docs/tracker.md` here that is not `rebase`-team-specific (an API quirk, a habit like
-closing a finished project once its issues are all terminal, a naming rule) reaches
-neither on its own.
+The three skills (`linear-ticket`, `linear-content`, `pr-creation`), the PR template
+and the PR checks are the workflow kit's (`tooling/workflow-kit/`, root `AGENTS.md` §
+Conventions): `new-client-repo.mjs` writes the repository's `.github/workflow.json` and
+runs the kit's sync, so a new repository gets the current kit and nothing to fold. A
+change to the kit reaches a repository that already exists through that repository's
+own `kit.py sync`, in its own PR.
 
-So, until then: fold a change to the kit's skills, or a non-`rebase`-specific change to
-the contract, into `tooling/client-repo-starter/template/` in the same pull request that
-makes it here. A PR that changes one without the other is incomplete, not deferred.
+What still needs folding by hand is `template/AGENTS.md`: an edit to this repository's
+`AGENTS.md` or `docs/tracker.md` that is not `rebase`-team-specific (an API quirk, a
+habit like closing a finished project once its issues are all terminal, a naming rule)
+goes into `tooling/client-repo-starter/template/AGENTS.md` in the same pull request.
 
-For a repository that already exists (`point`, and any client repo after it), the
-fold cannot land in this PR: it is that repository's own change, reviewed there.
-File a Linear issue in that repository's own team (never in `rebase`'s), named and
-labelled the way any other issue there is, describing the drift and pointing at the
-commit or PR that introduced it here.
-`tooling/client-repo-starter/README.md` § Retrofitting an existing repository is the
-procedure for the fold itself, once someone picks the issue up.
+For a repository that already exists (`point`, and any client repo after it), neither
+lands in this PR: it is that repository's own change, reviewed there. File a Linear
+issue in that repository's own team (never in `rebase`'s), named and labelled the way
+any other issue there is, describing the drift or the sync and pointing at the commit or
+PR that introduced it here. `tooling/client-repo-starter/README.md` § Retrofitting an
+existing repository is the procedure, once someone picks the issue up.
 
 ## Keeping it running: project updates
 
