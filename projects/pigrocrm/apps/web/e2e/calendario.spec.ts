@@ -110,6 +110,39 @@ test.describe('il calendario', () => {
     expect(body.items.map((item) => item.ore)).toContain('8.00')
   })
 
+  // REB-792: with many rows the panel is as tall as the window and scrolls inside, so the
+  // last row is reachable and the footer's «Chiudi» stays in view. Run at 390px and 1440px.
+  for (const viewport of [
+    { width: 390, height: 844 },
+    { width: 1440, height: 900 },
+  ]) {
+    test(`un giorno con venti scadenze si scorre dentro il pannello a ${viewport.width}px`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(viewport)
+      await loginAsAdmin(page)
+      const stamp = Date.now()
+      for (let n = 1; n <= 20; n += 1) {
+        const created = await page.request.post('/api/activities', {
+          data: { titolo: `Riga ${stamp} ${String(n).padStart(2, '0')}`, scadenza: `${MESE}-01` },
+        })
+        expect(created.status()).toBe(201)
+      }
+
+      await page.goto(`/app/calendar?mese=${MESE}`)
+      await page.getByRole('button', { name: CELLA_PRIMO }).click()
+      const dialog = page.getByRole('dialog')
+      const box = await dialog.boundingBox()
+      expect(box!.y).toBeGreaterThanOrEqual(0)
+      expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height)
+
+      const last = dialog.getByText(`Riga ${stamp} 20`)
+      await last.scrollIntoViewIfNeeded()
+      await expect(last).toBeInViewport()
+      await expect(closeDayPanel(dialog)).toBeInViewport()
+    })
+  }
+
   test('una scadenza creata da un giorno torna su quel giorno', async ({ page }) => {
     await loginAsAdmin(page)
     const titolo = `Scadenza E2E ${Date.now()}`

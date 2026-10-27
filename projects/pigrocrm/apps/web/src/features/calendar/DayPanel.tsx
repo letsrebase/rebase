@@ -57,12 +57,14 @@ export function DayPanel({
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-lg">
+      {/* REB-792: the dialog is as tall as the window at most and its middle row scrolls, so
+          a date with many rows keeps every one reachable and the header and «Chiudi» in view. */}
+      <DialogContent className="max-h-[calc(100dvh-2rem)] grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{formatIsoDateItalian(giorno)}</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-5">
+        <div className="min-h-0 space-y-5 overflow-y-auto">
           <Worked data={data} />
           <PanelDays giorno={giorno} days={data?.giornate ?? []} />
           <Due data={data} />
