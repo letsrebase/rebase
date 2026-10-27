@@ -43,6 +43,7 @@ from pigrocrm.core.reminders.jobs import (
 )
 from pigrocrm.core.reminders.push import generate_vapid_keys, push_sender_from_settings
 from pigrocrm.core.reminders.run import ReminderOutcome, ReminderRun
+from pigrocrm.core.slack.client import slack_client_for
 
 # Both forms of the same module, deliberately. `telemetry` as a module is what
 # `digest` calls `shutdown()` through, so the call resolves the attribute at run time and
@@ -638,6 +639,7 @@ def reminders(*, slug: str | None, data: date | None, dry_run: bool) -> int:
             settings,
             sender=sender_from_settings(settings),
             pusher=push_sender_from_settings(settings),
+            slack=slack_client_for(settings) if settings.slack_client_id else None,
         )
     except Exception as exc:  # noqa: BLE001 - a cron line, never a traceback
         print(f"canali non configurabili ({type(exc).__name__})", file=sys.stderr)
@@ -694,7 +696,11 @@ def _stampa_promemoria(outcome: ReminderOutcome, *, dry_run: bool) -> None:
     # line of a space with no transport configured reads as it always did.
     sent = "".join(
         f", {name} {count}"
-        for name, count in (("push", outcome.pushes), ("email", outcome.emails))
+        for name, count in (
+            ("push", outcome.pushes),
+            ("slack", outcome.slacks),
+            ("email", outcome.emails),
+        )
         if count
     )
     print(

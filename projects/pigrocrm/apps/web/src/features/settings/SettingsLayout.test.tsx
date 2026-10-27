@@ -158,6 +158,7 @@ describe('SettingsLayout (the /app/settings route guard)', () => {
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
       'Gmail',
       'Google Drive',
+      'Slack',
     ])
   })
 

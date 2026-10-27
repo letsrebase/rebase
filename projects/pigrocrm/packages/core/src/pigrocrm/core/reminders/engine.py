@@ -21,11 +21,13 @@ or the host's (`db/clock.py`), and a snooze compares dates in that zone.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 
 from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.attivita.models import Attivita
@@ -42,6 +44,8 @@ from pigrocrm.core.reminders.ledger import DeliveryIdentity, ReminderLedger
 from pigrocrm.core.reminders.preferences import ReminderSettings
 from pigrocrm.core.reminders.push_subscriptions import PushSubscription
 from pigrocrm.core.reminders.state import states_for
+
+logger = logging.getLogger(__name__)
 
 _ATTIVITA_TYPES = frozenset({"attivita_due", "attivita_overdue"})
 
@@ -214,7 +218,8 @@ class ReminderEngine:
     ) -> PassResult:
         """Writes what a pass writes and commits it: the in-app deliveries, what the other
         channels accepted (the ledger rows, the daily summary markers, the push
-        subscriptions the service reported gone), then the end of every occurrence that
+        subscriptions the service reported gone, and the writes a channel asked for in
+        `ChannelResult.writes`), then the end of every occurrence that
         cleared, then the job clock when `job` names one. One transaction, so a pass that
         fails halfway leaves the ledger as it found it.
 
@@ -240,6 +245,15 @@ class ReminderEngine:
                         PushSubscription.endpoint.in_(sent.gone_endpoints)
                     )
                 )
+            for write in sent.writes:
+                # A write a channel asked for must not take the pass's ledger down with it:
+                # in its own savepoint, so one that fails (a race on a unique key) loses its
+                # own row and the deliveries already accepted stay recorded.
+                try:
+                    with self.session.begin_nested():
+                        write(self.session)
+                except IntegrityError:
+                    logger.warning("a channel's write was refused by the database")
         ended = ledger.forget_unraised(
             evaluation.ran, evaluation.raised, before=evaluation.evaluated_at
         )

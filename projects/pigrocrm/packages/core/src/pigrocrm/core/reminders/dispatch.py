@@ -86,6 +86,13 @@ class PassContext:
     delivered: Mapping[DeliveryIdentity, DeliveryRecord]
     people: Mapping[UUID, Person]
     preferences: ReminderSettings
+    # The registry's name of the space this pass runs for, `None` for the root installation:
+    # a channel whose credentials are per space (Slack's bot token, sealed under a key
+    # derived from it) derives the space's own settings from `settings` and this.
+    slug: str | None = None
+    # Every reminder the evaluation raised, before anybody's acknowledge or snooze: what a
+    # channel that speaks for the space and not for a person (Slack's channel) reads.
+    raised: tuple[Reminder, ...] = ()
 
     @property
     def local_now(self) -> datetime:
@@ -116,11 +123,16 @@ class ChannelResult:
     # Push subscriptions the push service reported gone: deleted with the ledger writes.
     gone_endpoints: list[str] = field(default_factory=list)
     sent: dict[str, int] = field(default_factory=dict)
+    # Writes a channel needs in the transaction of the pass, for what the ledger's rows do
+    # not say: Slack's post to the space channel (a delivery with no user), a match found
+    # while sending, a token Slack revoked. Each takes the session and does not commit.
+    writes: list[Callable[[Session], None]] = field(default_factory=list)
 
     def merge(self, other: ChannelResult) -> None:
         self.accepted.extend(other.accepted)
         self.summaries.extend(other.summaries)
         self.gone_endpoints.extend(other.gone_endpoints)
+        self.writes.extend(other.writes)
         for channel, count in other.sent.items():
             self.sent[channel] = self.sent.get(channel, 0) + count
 
@@ -162,6 +174,8 @@ class ChannelDispatcher:
         today: date,
         now: datetime,
         public_url: str = "",
+        slug: str | None = None,
+        raised: Sequence[Reminder] = (),
     ) -> list[Prepared]:
         """Plans every channel's sends for the reminders the engine left open.
 
@@ -181,6 +195,8 @@ class ChannelDispatcher:
             delivered=delivered,
             people=directory.people,
             preferences=preferences,
+            slug=slug,
+            raised=tuple(raised),
         )
         local = context.local_now
         candidates: list[Candidate] = []

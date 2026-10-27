@@ -18,7 +18,11 @@ from pigrocrm.core.config import Settings
 from pigrocrm.core.db import create_engine_from_settings, session_factory
 from pigrocrm.core.space_settings import SpaceSettingsService, apply_overrides
 from pigrocrm.core.tenants.database import ensure_tenants_database, tenant_database_url
-from pigrocrm.core.tenants.google import oauth_state_prefix, space_token_key
+from pigrocrm.core.tenants.google import (
+    oauth_state_prefix,
+    space_slack_token_key,
+    space_token_key,
+)
 from pigrocrm.core.tenants.service import TenantService
 
 OVERRIDES_TTL_SECONDS = 10.0
@@ -38,7 +42,12 @@ def space_base_settings(settings: Settings, slug: str | None) -> Settings:
     unverified, seals its refresh tokens with a key derived for it alone, and sends
     Google the root's callback with its slug in the `state` (`tenants/google.py`). A
     space that configures a client of its own still gets its own, since the rows of
-    `space_settings` lay over this (`apply_overrides`)."""
+    `space_settings` lay over this (`apply_overrides`).
+
+    Slack (REB-739) follows the same borrowing without the switch: a space gets the root's
+    Slack app and a token key derived for it alone, and sends Slack the root's callback with
+    its slug in the `state`, whenever the root has a Slack client id and a public URL; with
+    either missing the space reads as Slack not configured."""
     if slug is None:
         return settings
     public_url = f"{settings.public_url.rstrip('/')}/{slug}" if settings.public_url else ""
@@ -57,9 +66,28 @@ def space_base_settings(settings: Settings, slug: str | None) -> Settings:
             "google_callback_base_url": "",
             "google_oauth_state_prefix": "",
         }
+    # Slack is always the root's app, installed once per space, and never configured by
+    # the space itself: a space either borrows it or has no Slack. Unlike Google there is
+    # no switch for lending it, since there is no per-space client to prefer (REB-739).
+    slack: dict[str, object]
+    if settings.slack_client_id and settings.public_url:
+        slack = {
+            "slack_token_key": space_slack_token_key(settings.slack_token_key, slug),
+            "slack_callback_base_url": settings.public_url.rstrip("/"),
+            "slack_oauth_state_prefix": oauth_state_prefix(slug),
+        }
+    else:
+        slack = {
+            "slack_client_id": "",
+            "slack_client_secret": "",
+            "slack_token_key": "",
+            "slack_callback_base_url": "",
+            "slack_oauth_state_prefix": "",
+        }
     return settings.model_copy(
         update={
             **google,
+            **slack,
             "public_url": public_url,
             "storage_backend": "local",
         }

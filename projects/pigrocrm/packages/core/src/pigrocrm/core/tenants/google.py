@@ -39,6 +39,10 @@ STATE_SEPARATOR = "."
 # HKDF's `info`: binds the derived key to its purpose and to one space. Versioned so a
 # second derivation, if one is ever needed, cannot collide with this one.
 _KEY_INFO = b"pigrocrm/google-token-key/v1/space:"
+# The same derivation for the Slack bot tokens (REB-739), under its own `info` so that a
+# Google key and a Slack key derived for one space are two different keys even from the
+# same root key.
+_SLACK_KEY_INFO = b"pigrocrm/slack-token-key/v1/space:"
 # What `gmail/oauth.py` mints: base64url, 32 characters today. Checked so that a state
 # with anything else after the slug is not relayed at all.
 _JTI = re.compile(r"[A-Za-z0-9_-]{1,128}")
@@ -75,6 +79,17 @@ def space_token_key(root_key: str, slug: str) -> str:
     there. Empty when the root has no valid key: the space then reads as Gmail not
     configured, rather than failing every request it serves.
     """
+    return _derive(root_key, _KEY_INFO + slug.encode("ascii"))
+
+
+def space_slack_token_key(root_key: str, slug: str) -> str:
+    """`space_token_key`'s twin for the Slack bot token: derived from
+    `PIGROCRM_SLACK_TOKEN_KEY` and the slug, so a bot token copied into another space's
+    database does not open there, and empty when the root's key is not a valid one."""
+    return _derive(root_key, _SLACK_KEY_INFO + slug.encode("ascii"))
+
+
+def _derive(root_key: str, info: bytes) -> str:
     try:
         root = base64.b64decode(root_key, validate=True)
     except (binascii.Error, ValueError):
@@ -85,6 +100,6 @@ def space_token_key(root_key: str, slug: str) -> str:
         algorithm=hashes.SHA256(),
         length=GOOGLE_TOKEN_KEY_BYTES,
         salt=None,
-        info=_KEY_INFO + slug.encode("ascii"),
+        info=info,
     ).derive(root)
     return base64.b64encode(derived).decode("ascii")

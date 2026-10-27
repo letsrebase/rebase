@@ -13,7 +13,7 @@ from mcp.shared.exceptions import MCPError
 from mcp.types import INVALID_PARAMS
 from sqlalchemy.exc import DBAPIError
 
-from pigrocrm.core.config import Settings, get_settings, gmail_configured
+from pigrocrm.core.config import Settings, get_settings, gmail_configured, slack_configured
 from pigrocrm.core.db.scope import bind_scope, is_policy_refusal
 from pigrocrm.core.errors import DomainError, OutOfScope
 from pigrocrm.core.fields.schemas import EntityType
@@ -398,6 +398,13 @@ def build_server(
         from pigrocrm_mcp.tools import drive as drive_tools
 
         drive_tools.register(mcp, context, _guard, resolved_settings)
+
+    if slack_configured(resolved_settings):
+        # Its own condition: the Slack app is the root's own and has nothing to do with
+        # Google's. One read, as `describe_drive_account` is one (`tools/slack.py`).
+        from pigrocrm_mcp.tools import slack as slack_tools
+
+        slack_tools.register(mcp, context, _guard, resolved_settings)
 
     if resolved_settings.mcp_full_access:
         # The other half of the switch. `Actor.full_access` (stamped in

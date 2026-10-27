@@ -175,6 +175,7 @@ const SETTINGS_PATHS = {
   periods: '/app/settings/periods',
   gmail: '/app/settings/gmail',
   drive: '/app/settings/drive',
+  slack: '/app/settings/slack',
   reminders: '/app/settings/reminders',
   automations: '/app/settings/automations',
   jobs: '/app/settings/jobs',
