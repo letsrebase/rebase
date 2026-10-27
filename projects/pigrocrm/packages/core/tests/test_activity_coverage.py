@@ -94,6 +94,7 @@ _LETTURE: dict[Method, str] = {
     ("InvitationService", "list"): "reads the invitations",
     ("InvoiceService", "review_import"): "classifies stored bytes, writes nothing",
     ("InvoiceService", "review_upload"): "classifies uploaded bytes, writes nothing",
+    ("PatService", "list_team"): "reads the live tokens of the other members",
     ("ScheduledJobService", "describe"): "reads the job runs",
     ("SlackService", "channels"): "asks Slack, writes nothing",
     ("SlackService", "health"): "reads the workspace and the matches",

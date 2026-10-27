@@ -697,9 +697,13 @@ async def test_they_are_registered_exactly_when_the_installation_opted_in(
     own `.env` has the switch **on**, so a test that inherited it would assert the
     opposite of what it claims and pass anyway.
     """
-    attore = Actor(id=None, type="mcp", role="admin")
 
     async def tool_names(full_access: bool, *, gmail: bool) -> set[str]:
+        # The token carries the flag too (REB-810): a token that has not been given it is
+        # shown the closed surface even on an open installation, which
+        # `test_token_full_access.py` owns. Here both halves agree, as they do for a space
+        # whose members have all opened their tokens.
+        attore = Actor(id=None, type="mcp", role="admin", full_access=full_access)
         google = (
             {
                 "google_client_id": "cid.apps.googleusercontent.com",

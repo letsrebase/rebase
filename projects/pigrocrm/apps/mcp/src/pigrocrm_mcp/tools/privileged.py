@@ -19,17 +19,23 @@ and nobody can undo it".
 **Why they are openable at all.** This product is single-tenant and self-hosted. The
 person running it may reasonably want their own agent to do everything they can do, and
 answering that with a permanent no is answering a question nobody asked. So the default
-is closed — nobody has to know this file exists in order to be safe — and opening it is a
-decision about one machine, recorded in its `.env`.
+is closed — nobody has to know this file exists in order to be safe — and opening it is
+two decisions (REB-810): the space's, which is `mcp_full_access`, the ceiling, and each
+token's own, a `full_access` flag its owner chooses when making the token, so that the
+token pasted into an assistant used for casual chat is not the one that can issue an
+invoice.
 
-**The registration is the second half of the switch, not the whole of it.** The first is
-`Actor.full_access`, stamped onto the credential in `PatService.resolve` and checked by
-every one of these service methods through `require_admin`/`require_write`. Registering a
-tool without that would produce tools that all refuse; opening the credential without
-registering would produce capabilities with no door. Both halves read the
-same setting, and `test_mcp_invoice_ban.py` fails if they ever disagree — because a
-half-open switch, where the operator believes it is on and one operation still refuses at
-the moment they are issuing an invoice, is the worst of the three states.
+**The registration is the ceiling, not the whole of the switch.** The token's flag has two
+readers. `GuidedMCPServer` (`arguments.py`) lists these tools only to a token that has it
+and answers «Unknown tool» to the others, and `Actor.full_access`, stamped onto the
+credential in `PatService.resolve` from the flag and the ceiling together, is checked by
+every one of these service methods through `require_admin`/`require_write`, which is what
+holds a REST request presenting the same token. Registering a tool without that would
+produce tools that all refuse; opening the credential without registering would produce
+capabilities with no door. `test_mcp_invoice_ban.py` and `test_token_full_access.py` fail
+if they ever disagree — because a half-open switch, where the operator believes it is on
+and one operation still refuses at the moment they are issuing an invoice, is the worst of
+the three states.
 
 Every docstring below says what the operation does that cannot be undone. That is not
 decoration: it is the only warning an agent reads.

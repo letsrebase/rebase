@@ -60,9 +60,10 @@ from pigrocrm.core.documents.schemas import TITOLO_MAX_LENGTH
 from pigrocrm.core.drive import reader as reader_module
 from pigrocrm.core.drive.models import GoogleDriveAccount
 from pigrocrm.core.drive.query import OUTSIDE_ID_PATTERN, checked_outside_id
+from pigrocrm.core.drive.reader import drive_reader_for
 from pigrocrm.core.drive.schemas import DRIVE_SCOPE_FILE, DRIVE_SCOPE_READONLY
 from pigrocrm.core.drive.transport import DriveTransport
-from pigrocrm.core.errors import ValidationFailed
+from pigrocrm.core.errors import AgentForbidden, ValidationFailed
 from pigrocrm.core.gmail.crypto import seal
 from pigrocrm.core.storage import LocalFileStorage
 from pigrocrm.core.text import PROVENIENZA
@@ -648,12 +649,11 @@ def closed_agent_server(mcp_session: Session, owner: Actor, tmp_path: Path) -> A
     are registered -- and the credential presenting itself is an agent token that was
     *not* opened.
 
-    Not a hypothetical. `Settings.mcp_full_access` decides whether there is a door;
-    `Actor.full_access`, stamped in `PatService.resolve`, decides whether this
-    credential may walk through it. They read the same setting, so they normally agree,
-    but the guarantee the product makes does not rest on that: the same
-    `Bearer pgc_...` reaches every REST route, where no tool registration protects
-    anything at all. This fixture is the shape of that gap.
+    Not a hypothetical. `Settings.mcp_full_access` decides whether there is a door and
+    each token's own `full_access` whether it is shown it (REB-810); the service decides
+    from the same flag, stamped in `PatService.resolve`. The same `Bearer pgc_...` reaches
+    every REST route, where no tool registration protects anything at all, which is why
+    the service check below has a test of its own.
     """
     return build_server(
         lambda: mcp_session,
@@ -664,8 +664,28 @@ def closed_agent_server(mcp_session: Session, owner: Actor, tmp_path: Path) -> A
 
 
 @pytest.mark.parametrize("tool", TOOLS)
-async def test_an_agent_credential_that_was_not_opened_is_refused(
+async def test_a_token_that_was_not_opened_is_shown_no_drive_tool_and_cannot_call_one(
     closed_agent_server: Any,
+    connected_drive: GoogleDriveAccount,
+    fake_drive: FakeDrive,
+    tool: str,
+) -> None:
+    """The door: on a space that opened the switch, a token without its own flag sees the
+    ordinary surface, and a call by name is answered as on a space that never opened it."""
+    assert tool not in {listed.name for listed in await closed_agent_server.list_tools()}
+
+    async with Client(closed_agent_server) as client:
+        result = await client.call_tool(tool, CALLS[tool])
+
+    assert result.is_error
+    assert f"Unknown tool: {tool}" in result.content[0].text
+    assert fake_drive.requests == []
+
+
+@pytest.mark.parametrize("tool", TOOLS)
+def test_the_reader_refuses_an_agent_credential_that_was_not_opened(
+    mcp_session: Session,
+    owner: Actor,
     connected_drive: GoogleDriveAccount,
     fake_drive: FakeDrive,
     tool: str,
@@ -674,22 +694,26 @@ async def test_an_agent_credential_that_was_not_opened_is_refused(
 
     Until `drive_reader_for` took an `action`, the three names sat on that frozenset
     while nothing ever passed them to a check -- the list said the operations were
-    closed to agents and no code asked. The tool being unregistered covered the MCP
-    transport and only it, which is exactly the asymmetry that once let a `curl` issue
-    an invoice while the tool did not exist (see `core/actor.py`).
+    closed to agents and no code asked. The tool being absent covers the MCP transport
+    and only it, which is exactly the asymmetry that once let a `curl` issue an invoice
+    while the tool did not exist (see `core/actor.py`). So the check is made where the
+    reader is built, with no tool in front of it.
 
-    So the refusal is `AgentForbidden`, it names the operation, and it arrives with the
+    The refusal is `AgentForbidden`, it names the operation, and it arrives with the
     connected Drive untouched: the check runs before the session is even read, so a
     closed credential does not get to learn whether this user has a Drive at all.
     """
-    async with Client(closed_agent_server) as client:
-        result = await client.call_tool(tool, CALLS[tool])
+    with pytest.raises(AgentForbidden) as refused:
+        drive_reader_for(
+            mcp_session,
+            Actor(id=owner.id, type="mcp", role="admin", full_access=False),
+            _settings(full_access=True, gmail=True),
+            feature="la lettura di Google Drive",
+            action=tool,  # type: ignore[arg-type]
+        )
 
-    assert result.is_error
-    text = result.content[0].text
-    assert tool in text
-    assert "non è eseguibile da un agente" in text
-    assert "Traceback" not in text
+    assert tool in str(refused.value)
+    assert "non è eseguibile da un agente" in str(refused.value)
     assert fake_drive.requests == []
 
 

@@ -6,6 +6,7 @@ import { queryKeys } from '@/lib/query'
 
 export type TokenRecord = components['schemas']['PatRead']
 export type CreatedToken = components['schemas']['CreatedToken']
+export type TeamTokenRecord = components['schemas']['TeamPatRead']
 
 /**
  * Scoped to the caller's own tokens server-side (`PatService.list` filters on
@@ -46,7 +47,56 @@ export function useCreateToken() {
   const { user } = useAuth()
   const userId = user?.id ?? ''
   return useMutation({
-    mutationFn: (nome: string) => unwrap(api.POST('/api/tokens', { body: { nome } })),
+    mutationFn: (input: { nome: string; full_access: boolean }) =>
+      unwrap(api.POST('/api/tokens', { body: input })),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.tokens(userId) }),
+  })
+}
+
+/**
+ * Whether the space lets a token be given the invoice and period-lock tools at all (its
+ * `mcp_full_access`, the ceiling). Its own read rather than the space settings, which are
+ * an admin's: a collaboratore who makes a token has to be told why the box is off.
+ */
+export function useTokenOptions() {
+  const { user } = useAuth()
+  const userId = user?.id ?? ''
+  return useQuery({
+    queryKey: queryKeys.tokenOptions(userId),
+    queryFn: () => unwrap(api.GET('/api/tokens/options')),
+    enabled: Boolean(userId),
+    // Read again on every mount: an administrator who has just opened the switch in
+    // Impostazioni → Spazio must not meet «chiuso per questo spazio» for the next 30 s.
+    staleTime: 0,
+  })
+}
+
+/** The other members' live tokens, for an administrator only: the server refuses anybody
+ *  else, so the panel asks only when `enabled`. */
+export function useTeamTokens(enabled: boolean) {
+  const { user } = useAuth()
+  const userId = user?.id ?? ''
+  return useQuery({
+    queryKey: queryKeys.teamTokens(userId),
+    queryFn: () => unwrap(api.GET('/api/tokens/team')),
+    enabled: enabled && Boolean(userId),
+  })
+}
+
+/** Opens or closes one token's invoice and period-lock tools. The owner or an admin; the
+ *  server refuses an agent credential, so a token cannot open itself. */
+export function useSetTokenFullAccess() {
+  const queryClient = useQueryClient()
+  const { user } = useAuth()
+  const userId = user?.id ?? ''
+  return useMutation({
+    mutationFn: (input: { tokenId: string; full_access: boolean }) =>
+      unwrap(
+        api.PATCH('/api/tokens/{token_id}', {
+          params: { path: { token_id: input.tokenId } },
+          body: { full_access: input.full_access },
+        }),
+      ),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.tokens(userId) }),
   })
 }
