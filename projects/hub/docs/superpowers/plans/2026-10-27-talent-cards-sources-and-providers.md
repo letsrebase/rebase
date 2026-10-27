@@ -83,7 +83,7 @@ Paths below are relative to `projects/hub/`. Tests: `uv run pytest -q packages/c
   - `AiProvider(provider PK varchar(20), key_ciphertext bytea null, key_nonce bytea null, key_last4 varchar(4) null, saved_by FK users null, saved_at tz null, enabled bool default false)`.
   - `AiTask(task PK varchar(20), provider varchar(20) FK, model varchar(CARD_MODEL_MAX_LENGTH), effort varchar(10) null, max_output_tokens int, daily_cap_eur numeric(10,2) null, enabled bool default true, updated_at)`.
   - `AiPrice(provider, model, PK both; input_eur_per_mtok, output_eur_per_mtok, thinking_eur_per_mtok null numeric(12,4), cache_read_eur_per_mtok null)`.
-  - `AiUsage(id, at tz, task varchar(20) (allows `eval`, `prova`), provider, model, input_tokens, output_tokens, thinking_tokens, cache_read_tokens int, cost_eur numeric(12,6) null, priced bool, freelancer_id null)`, index `(task, at)`.
+  - `AiUsage(id, at tz, task varchar(20) (the configured task whose cap the call consumes: `card` or `team_proposal`), purpose varchar(20) (`run`, `prova`, `eval`), provider, model, input_tokens, output_tokens, thinking_tokens, cache_read_tokens int, cost_eur numeric(12,6) null, priced bool, freelancer_id null)`, index `(task, at)`.
   - Spec's currency is euro: prices are entered in euro by admins; no FX in code.
 
 - [ ] **Step 1: Write failing tests** in `test_migration_0035_ai_config.py` (pattern of `test_migration_0034_card_level_override.py`): `test_upgrade_creates_four_tables_and_columns`, `test_upgrade_is_idempotent` (run twice), `test_downgrade_drops_them`, `test_no_key_column_is_plain_text` (no column in `ai_providers` of type text/varchar holding a key; only `key_ciphertext` bytea).
@@ -102,7 +102,7 @@ Paths below are relative to `projects/hub/`. Tests: `uv run pytest -q packages/c
 **Interfaces:**
 - Consumes: `seal`, `unseal`, `secrets_key_bytes`, `last_four` (Task 1); `AdminActionService` / the `AdminAction` pattern in `admin_tokens.py` and `audit.py`.
 - Produces (`ai_schemas.py`): `ProviderRead(provider, configured: bool, key_hint: str | None  # «configurata, finisce con …abcd», enabled: bool, saved_at, saved_by_name)`, `TaskRead(task, provider, model, effort, max_output_tokens, daily_cap_eur, enabled, spent_today_eur, cap_reached: bool, reason: str | None)`, `PriceRead`, `SpendRead(month, rows: list[{task, provider, cost_eur, calls, unpriced_calls}])`, `AiConfigRead(secrets_key_present: bool, providers, tasks, prices, spend, known_models: dict[str, list[str]])`.
-- Produces (`ai_config.py`): `class AiConfigService(session, settings, now=utcnow)` with `read() -> AiConfigRead`; `save_key(admin_id: UUID, provider: str, key: str) -> ProviderRead` (raises `SecretsKeyMissing` first); `set_provider_enabled(admin_id, provider, enabled: bool) -> ProviderRead`; `update_task(admin_id, task: str, *, provider, model, effort, max_output_tokens, daily_cap_eur, enabled) -> TaskRead`; `upsert_price(admin_id, provider, model, input_eur_per_mtok, output_eur_per_mtok, thinking_eur_per_mtok=None, cache_read_eur_per_mtok=None) -> PriceRead`; `resolve_key(provider: str) -> str | None` (decrypts, never logs); `record_usage(...) -> AiUsage`; `spent_today(task) -> Decimal`.
+- Produces (`ai_config.py`): `class AiConfigService(session, settings, now=utcnow)` with `read() -> AiConfigRead`; `save_key(admin_id: UUID, provider: str, key: str) -> ProviderRead` (raises `SecretsKeyMissing` first); `set_provider_enabled(admin_id, provider, enabled: bool) -> ProviderRead`; `update_task(admin_id, task: str, *, provider, model, effort, max_output_tokens, daily_cap_eur, enabled) -> TaskRead`; `upsert_price(admin_id, provider, model, input_eur_per_mtok, output_eur_per_mtok, thinking_eur_per_mtok=None, cache_read_eur_per_mtok=None) -> PriceRead`; `resolve_key(provider: str) -> str | None` (decrypts, never logs); `record_usage(..., task: str, purpose: str) -> AiUsage`; `spent_today(task) -> Decimal` (all purposes); `can_call(task) -> tuple[bool, str | None]` (false with a sentence when the task is disabled, its provider disabled or without key, its model has no price row, or the cap is reached).
 
 - [ ] **Step 1: Write failing tests**
   - `test_save_key_stores_ciphertext_and_hint`: DB column bytes do not contain `"sk-secret-abcd"`; `read()` provider `key_hint == "configurata, finisce con …abcd"`; `"sk-secret" not in read().model_dump_json()`.
@@ -112,7 +112,9 @@ Paths below are relative to `projects/hub/`. Tests: `uv run pytest -q packages/c
   - `test_update_task_rejects_unknown_provider_and_unknown_task`.
   - `test_enable_provider_without_key_refused`.
   - `test_spent_today_and_cap_reached_reason`: usage rows summing past `daily_cap_eur` → `cap_reached` true, `reason == "Tetto giornaliero raggiunto"`.
-  - `test_unpriced_usage_is_counted_unpriced_not_free`: usage with no price row → `priced False`, `cost_eur is None`, shown in `unpriced_calls`.
+  - `test_unpriced_usage_is_counted_unpriced_not_free`: a historical usage row with no price → `priced False`, `cost_eur is None`, shown in `unpriced_calls`.
+  - `test_task_without_a_price_for_its_model_is_not_callable`: `read()` task shows `cap_reached` false, `reason == "Manca il prezzo del modello: aggiungilo in «Modelli AI»"`, and `can_call(task)` is false.
+  - `test_spent_today_counts_every_purpose_of_the_task`: `run` and `prova` rows of task `card` both count against the `card` cap.
   - `test_resolve_key_wrong_secrets_key_raises_without_key_text`.
 - [ ] **Step 2:** Run; expect FAIL.
 - [ ] **Step 3:** Implement; `known_models` is a constant dict of suggested model names per provider (free text still accepted). Cost formula in `record_usage`: tokens × price / 1e6; thinking tokens billed at `thinking_eur_per_mtok` or, when null, the output price.
@@ -139,11 +141,12 @@ Paths below are relative to `projects/hub/`. Tests: `uv run pytest -q packages/c
   - `test_key_read_from_database_each_call`: change the key between two calls; second call's provider gets the new key.
   - `test_no_key_returns_none_from_call_for_task` and `test_disabled_provider_returns_none`.
   - `test_cap_reached_raises_before_provider_is_built` (factory not called; `LlmCapReached`).
+  - `test_missing_price_refuses_before_provider_is_built`: no price row for the task's model → factory not called, `LlmNotConfigured` with the «Manca il prezzo» sentence (an unpriced call could never consume the euro cap).
   - `test_provider_error_maps_to_llm_unavailable_without_key_in_message`: raise a `ModelHTTPError` whose text contains the key → `LlmUnavailable` message is the fixed `UNAVAILABLE_SENTENCE`, and `caplog` text has no key.
   - `test_refusal_gives_text_none_and_category`.
   - `test_build_model_maps_effort_per_provider`: anthropic → adaptive thinking with effort; openai → `reasoning_effort`; google → `thinking_level`; asserted on the returned `ModelSettings`.
   - `test_build_model_injects_api_key_not_environment`: with `ANTHROPIC_API_KEY` unset and a key passed, constructing succeeds; env var set to another value is ignored.
-  - `test_unpriced_model_recorded_unpriced`.
+  - `test_unpriced_history_still_reads`: a pre-existing unpriced usage row is listed, never used to allow a call.
   - `test_timeout_and_retry_ceiling`: total attempts stay inside the 90 s vhost budget (timeout 40 s, one retry, the constants of today's file preserved).
 - [ ] **Step 2:** Run; expect FAIL.
 - [ ] **Step 3:** Implement. `NativeOutput(request.output_model)`; Anthropic cache hint → `cache_control` on the flagged message through Pydantic AI's Anthropic settings. Keep `_TIMEOUT_SECONDS=40.0`, `_MAX_RETRIES=1`. Preserve, behind `build_model`'s Anthropic branch, the existing server-side fallback beta, `inference_geo="global"` and `cache_control` **if Pydantic AI exposes them (extra body / model settings)**; if it does not, STOP and report the exact gap to Main instead of dropping them silently (see Gaps). Delete `AnthropicCall`, `call_from_settings`, `_BETAS`, the `anthropic` imports.
@@ -194,7 +197,7 @@ Paths below are relative to `projects/hub/`. Tests: `uv run pytest -q packages/c
 
 **Interfaces:**
 - Consumes: `AiConfigService`, `AiCall` with an `override`/probe prompt (Task 3, 4).
-- Produces (all admin-only, under `/api/hub/admin/ai`): `GET /` → `AiConfigRead`; `PUT /providers/{provider}/key` body `{key: str}` → `ProviderRead`; `PUT /providers/{provider}/enabled` body `{enabled}`; `PUT /tasks/{task}`; `PUT /prices` body `{provider, model, input_eur_per_mtok, …}`; `POST /tasks/{task}/prova` → `{answer: str, latency_ms: int, cost_eur: str | None, error: str | None}` using the fixed non-personal prompt `PROVA_PROMPT = "Rispondi solo con la parola: ok."`, recorded in `ai_usage` with `task="prova"`.
+- Produces (all admin-only, under `/api/hub/admin/ai`): `GET /` → `AiConfigRead`; `PUT /providers/{provider}/key` body `{key: str}` → `ProviderRead`; `PUT /providers/{provider}/enabled` body `{enabled}`; `PUT /tasks/{task}`; `PUT /prices` body `{provider, model, input_eur_per_mtok, …}`; `POST /tasks/{task}/prova` → `{answer: str, latency_ms: int, cost_eur: str | None, error: str | None}` using the fixed non-personal prompt `PROVA_PROMPT = "Rispondi solo con la parola: ok."`, recorded in `ai_usage` with that task and `purpose="prova"`, so repeated probes consume the selected task's cap.
 
 - [ ] **Step 1: Write failing tests**
   - `test_non_admin_gets_403_on_every_route` (parametrised).
@@ -384,13 +387,13 @@ Paths below are relative to `projects/hub/`. Tests: `uv run pytest -q packages/c
 ### Task 20: Staleness, hourly refresh, admin-started regeneration
 
 **Files:**
-- Modify: `packages/core/src/rebase_core/cards.py` (`stale_reason(row, cv_hash, source_hashes) -> Literal["cv","source","prompt"] | None`; `refresh_stale` uses `cv`/`source` only; `stale_by_version(limit) -> list[StaleByVersion]`; `regenerate_by_version(admin_id, limit) -> CardsRefreshed`; `estimate_cost(count) -> Decimal` from average recorded `card` usage cost), `cli.py` (`cards-refresh` also runs `SourceService.refetch_due` before the pass when sources are enabled; new `rebase sources-refetch [--limit N]` for the weekly pass), `docker-compose.yml` (`cards` loop runs the weekly refetch once a day, cheap and idempotent), `apps/api/src/rebase_api/routers/ai.py` (`GET /cards/stale-by-version` → `{count, estimated_cost_eur, items}`; `POST /cards/regenerate-by-version` body `{limit: int}` writes `AdminAction`)
+- Modify: `packages/core/src/rebase_core/cards.py` (`input_hashes(freelancer_id) -> dict[str, str]`: the `SourceSet.hashes()` map plus `"hub"` from `HubFacts.hash_material()` and `"wizard"` from the wizard answers the prompt reads (position, rate, remote option); the card row's `source_hashes` stores this whole map at write time; `stale_reason(row, cv_hash, input_hashes) -> Literal["cv","source","prompt"] | None`; `refresh_stale` uses `cv`/`source` only; `stale_by_version(limit) -> list[StaleByVersion]`; `regenerate_by_version(admin_id, limit) -> CardsRefreshed`; `estimate_cost(count) -> Decimal` from average recorded `card` usage cost), `cli.py` (`cards-refresh` also runs `SourceService.refetch_due` before the pass when sources are enabled; new `rebase sources-refetch [--limit N]` for the weekly pass), `docker-compose.yml` (`cards` loop runs the weekly refetch once a day, cheap and idempotent), `apps/api/src/rebase_api/routers/ai.py` (`GET /cards/stale-by-version` → `{count, estimated_cost_eur, items}`; `POST /cards/regenerate-by-version` body `{limit: int}` writes `AdminAction`)
 - Test: `packages/core/tests/test_cards.py`, `test_cli.py`, `apps/api/tests/test_ai_api.py`
 
 **Interfaces:**
 - Consumes: Tasks 16, 19. Produces the functions above.
 
-- [ ] **Step 1: Tests:** `test_prompt_version_bump_alone_not_regenerated_by_refresh_stale` (100 cards with `prompt_version=1`, `PROMPT_VERSION=2` patched → zero model calls), `test_source_hash_change_regenerates`, `test_volatile_source_change_does_not`, `test_stale_by_version_lists_with_estimate`, `test_regenerate_requires_admin_action_and_respects_limit_and_cap`, `test_weekly_refetch_makes_no_model_call` (llm is `RecordingCall` with no responses; calling would raise `IndexError`), `test_card_with_null_prompt_version_counts_as_version_1`, `test_cap_reached_stops_batch_with_reason`.
+- [ ] **Step 1: Tests:** `test_prompt_version_bump_alone_not_regenerated_by_refresh_stale` (100 cards with `prompt_version=1`, `PROMPT_VERSION=2` patched → zero model calls), `test_source_hash_change_regenerates`, `test_volatile_source_change_does_not`, `test_completed_match_with_unchanged_cv_regenerates` (a new completed match changes the `hub` hash), `test_wizard_edit_with_unchanged_cv_regenerates` (position or rate change changes the `wizard` hash), `test_stale_by_version_lists_with_estimate`, `test_regenerate_requires_admin_action_and_respects_limit_and_cap`, `test_weekly_refetch_makes_no_model_call` (llm is `RecordingCall` with no responses; calling would raise `IndexError`), `test_card_with_null_prompt_version_counts_as_version_1`, `test_cap_reached_stops_batch_with_reason`.
 - [ ] **Step 2–5:** FAIL, implement, PASS, commit.
 
 ### Task 21: Switches, provenance view, stale list in the admin UI; docs
