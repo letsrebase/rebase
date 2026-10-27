@@ -4,6 +4,8 @@ LinkedIn never stored, everything gone with the person. The fetcher and GitHub a
 that count their calls: nothing here reads the network."""
 
 import ast
+import json
+import logging
 import subprocess
 import sys
 from collections.abc import Iterator
@@ -29,6 +31,7 @@ from rebase_core.sources import (
     SourceService,
     candidate_links,
     link_hash_material,
+    retry_delay,
 )
 from rebase_core.web_fetch import MAX_LINKS_PER_PERSON, FetchResult, SafeFetcher
 
@@ -49,7 +52,7 @@ class FakeFetcher(SafeFetcher):
 
 class FakeGithub(GithubSource):
     def __init__(self, snapshot: GithubSnapshot | None = None) -> None:
-        super().__init__(lambda *args: (500, b""))
+        super().__init__(lambda *args: (500, {}, b""))
         self.snapshot = snapshot
         self.calls: list[str] = []
 
@@ -566,6 +569,7 @@ def test_a_rate_limited_account_keeps_the_text_it_had(clean: Session) -> None:
 
     assert [(r.text, r.content_sha256) for r in _rows(clean, person)] == before
     assert {r.status for r in _rows(clean, person)} == {"ok"}
+    assert {r.attempts for r in _rows(clean, person)} == {1}  # and it is tried again soon
 
 
 def test_the_pass_reads_only_people_a_card_is_written_for(clean: Session) -> None:
@@ -633,3 +637,256 @@ def test_a_switch_turned_off_while_the_pages_were_read_stores_nothing(clean: Ses
     service.refetch(person)
 
     assert _rows(clean, person) == []
+
+
+# ---- a failure is retried on a backoff; GitHub's limit is the pass's (REB-844) ---------------
+
+
+@pytest.mark.parametrize(
+    ("attempts", "hours"),
+    [(0, 1), (1, 1), (2, 2), (3, 4), (4, 8), (5, 16), (6, 24), (7, 24), (10_000, 24)],
+)
+def test_the_backoff_doubles_from_an_hour_up_to_a_day(attempts: int, hours: int) -> None:
+    assert retry_delay(attempts) == timedelta(hours=hours)
+
+
+def test_an_error_row_is_retried_on_a_growing_backoff_and_forgotten_on_success(
+    clean: Session,
+) -> None:
+    person = _person(clean, ["https://github.com/ada"])
+    github = FakeGithub(GithubSnapshot("ada", status="error"))
+    moment = NOW
+
+    for attempts, hours in enumerate([1, 2, 4, 8, 16, 24, 24], start=1):
+        service = _service(clean, FakeFetcher(), github, on=("github",), now=moment)
+        assert service.refetch_due(limit=10) == 1
+        (row,) = _rows(clean, person)
+        assert (row.status, row.attempts, row.fetched_at) == ("error", attempts, moment)
+
+        wait = timedelta(hours=hours)
+        early = _service(clean, FakeFetcher(), github, on=("github",), now=moment + wait * 0.99)
+        assert early.refetch_due(limit=10) == 0, f"after {attempts} failures, before {hours}h"
+        moment += wait  # the pass of exactly that hour, as the hourly loop reaches it
+
+    github.snapshot = None  # GitHub answers again
+    service = _service(clean, FakeFetcher(), github, on=("github",), now=moment)
+    assert service.refetch_due(limit=10) == 1
+    (row,) = _rows(clean, person)
+    assert (row.status, row.attempts, row.fetched_at) == ("ok", 0, moment)
+    # Back on the weekly clock: nothing for six days, then the normal refresh.
+    later = _service(clean, FakeFetcher(), github, on=("github",), now=moment + timedelta(days=6))
+    assert later.refetch_due(limit=10) == 0
+    week = _service(
+        clean, FakeFetcher(), github, on=("github",), now=moment + timedelta(days=7, seconds=1)
+    )
+    assert week.refetch_due(limit=10) == 1
+
+
+def test_a_source_that_was_read_and_then_fails_is_retried_within_the_hour_too(
+    clean: Session,
+) -> None:
+    person = _person(clean, ["https://github.com/ada"])
+    _service(clean, on=("github",)).refetch(person)
+    (before,) = _rows(clean, person)
+    failing = FakeGithub(GithubSnapshot("ada", status="error"))
+    fails_at = NOW + timedelta(days=8)
+
+    _service(clean, FakeFetcher(), failing, on=("github",), now=fails_at).refetch(person)
+
+    (row,) = _rows(clean, person)
+    assert (row.text, row.status, row.attempts, row.fetched_at) == (
+        before.text,
+        "ok",
+        1,
+        fails_at,
+    )
+    half = _service(
+        clean, FakeFetcher(), failing, on=("github",), now=fails_at + timedelta(minutes=30)
+    )
+    assert half.refetch_due(limit=10) == 0
+    retry = _service(
+        clean, FakeFetcher(), FakeGithub(), on=("github",), now=fails_at + timedelta(hours=1)
+    )
+    assert retry.refetch_due(limit=10) == 1
+    assert {r.attempts for r in _rows(clean, person)} == {0}
+
+
+def test_a_limited_read_writes_nothing_not_even_the_count(clean: Session) -> None:
+    person = _person(clean, ["https://github.com/ada"])
+    failing = FakeGithub(GithubSnapshot("ada", status="error"))
+    _service(clean, FakeFetcher(), failing, on=("github",), now=NOW).refetch(person)
+    _service(clean, FakeFetcher(), failing, on=("github",), now=NOW + timedelta(hours=1)).refetch(
+        person
+    )
+    (before,) = _rows(clean, person)
+    assert before.attempts == 2
+
+    limited = FakeGithub(GithubSnapshot("ada", status="limited"))
+    _service(clean, FakeFetcher(), limited, on=("github",), now=NOW + timedelta(hours=5)).refetch(
+        person
+    )
+
+    (row,) = _rows(clean, person)
+    assert (row.status, row.attempts, row.fetched_at) == ("error", 2, before.fetched_at)
+
+
+class GithubApi:
+    """GitHub's API behind the `HttpHeadersCall` seam with the unauthenticated hourly
+    budget. Every call spends one; the answer that takes the last says `remaining: 0`;
+    any call over the budget is a 403 naming the reset. `hour_turns()` is the window
+    resetting. Every account has no repository, so a person costs two calls, and the
+    logins in `broken` answer 502."""
+
+    def __init__(self, budget: int, clock: "Clock") -> None:
+        self.budget = budget
+        self.clock = clock
+        self.remaining = budget
+        self.reset = clock.now + timedelta(minutes=40)
+        self.calls: list[str] = []
+        self.broken: set[str] = set()
+
+    def hour_turns(self) -> None:
+        self.remaining = self.budget
+        self.reset = self.clock.now + timedelta(hours=1)
+
+    def __call__(
+        self, method: str, url: str, headers: dict[str, str], body: bytes
+    ) -> tuple[int, dict[str, str], bytes]:
+        self.calls.append(url)
+        window = {"x-ratelimit-reset": str(int(self.reset.timestamp()))}
+        if self.remaining == 0:
+            return 403, {**window, "x-ratelimit-remaining": "0"}, b'{"message": "rate limit"}'
+        self.remaining -= 1
+        answered = {**window, "x-ratelimit-remaining": str(self.remaining)}
+        login = url.removeprefix("https://api.github.com/users/").split("/")[0]
+        if login in self.broken:
+            return 502, answered, b"{}"
+        if url.endswith("/repos?type=owner&per_page=100&sort=pushed"):
+            return 200, answered, b"[]"
+        return 200, answered, json.dumps({"login": login, "type": "User", "bio": login}).encode()
+
+
+class Clock:
+    def __init__(self, now: datetime) -> None:
+        self.now = now
+
+    def __call__(self) -> datetime:
+        return self.now
+
+
+def _pass(
+    session: Session, api: GithubApi, fetcher: FakeFetcher | None = None
+) -> tuple[int, SourceService]:
+    """One hourly pass: a new process, so a new `GithubSource` with no memory of the last."""
+    service = SourceService(
+        session,
+        fetcher or FakeFetcher(),
+        GithubSource(api, "", now=api.clock),
+        api.clock,
+    )
+    return service.refetch_due(limit=50), service
+
+
+def _github_rows(session: Session, people: list[UUID]) -> list[str]:
+    """Per person, in order: the status of their GitHub row, or `-` for none."""
+    result = []
+    for person in people:
+        rows = [r for r in _rows(session, person) if r.kind == "github"]
+        result.append(rows[0].status if rows else "-")
+    return result
+
+
+def test_a_spent_budget_stops_the_pass_and_leaves_the_rest_untouched(
+    clean: Session, caplog: pytest.LogCaptureFixture
+) -> None:
+    people = [
+        _person(clean, [f"https://github.com/dev{n}"], email=f"p{n}@studio.it") for n in range(5)
+    ]
+    clean.execute(text("UPDATE ai_sources SET enabled = true"))
+    clean.commit()
+    clock = Clock(NOW)
+    api = GithubApi(budget=4, clock=clock)  # two people's worth
+
+    with caplog.at_level(logging.WARNING, logger="rebase_core.sources"):
+        read, _ = _pass(clean, api)
+
+    assert read == 2
+    assert _github_rows(clean, people) == ["ok", "ok", "-", "-", "-"]
+    assert len(api.calls) == 4  # no call over the budget: the third person was never asked
+    assert "3 people wait for the next pass" in caplog.text
+    assert clean.scalar(select(FreelancerSource).where(FreelancerSource.status == "error")) is None
+
+
+def test_the_person_the_limit_cut_off_still_gets_their_links_read(clean: Session) -> None:
+    links = _person(clean, ["https://github.com/dev0", "https://ada.example/"], email="a@studio.it")
+    github_only = _person(clean, ["https://github.com/dev1"], email="b@studio.it")
+    clean.execute(text("UPDATE ai_sources SET enabled = true"))
+    clean.commit()
+    clock = Clock(NOW)
+    api = GithubApi(budget=0, clock=clock)
+    fetcher = FakeFetcher()
+
+    read, _ = _pass(clean, api, fetcher)
+
+    assert read == 0  # the first person's account was left for the next pass
+    assert [(r.kind, r.status) for r in _rows(clean, links)] == [("link", "ok")]
+    assert _rows(clean, github_only) == []
+    assert len(api.calls) == 1 and fetcher.calls == ["https://ada.example/"]
+
+    clock.now += timedelta(hours=1)
+    api.budget = 60
+    api.hour_turns()
+    read, _ = _pass(clean, api, fetcher)
+    assert read == 2
+    assert _github_rows(clean, [links, github_only]) == ["ok", "ok"]
+
+
+def test_a_later_pass_resumes_where_the_limit_stopped_the_last(clean: Session) -> None:
+    people = [
+        _person(clean, [f"https://github.com/dev{n}"], email=f"p{n}@studio.it") for n in range(5)
+    ]
+    clean.execute(text("UPDATE ai_sources SET enabled = true"))
+    clean.commit()
+    clock = Clock(NOW)
+    api = GithubApi(budget=4, clock=clock)
+    seen = []
+
+    for _hour in range(3):
+        _pass(clean, api)
+        seen.append(_github_rows(clean, people))
+        clock.now += timedelta(hours=1)
+        api.hour_turns()
+
+    assert seen == [
+        ["ok", "ok", "-", "-", "-"],
+        ["ok", "ok", "ok", "ok", "-"],
+        ["ok", "ok", "ok", "ok", "ok"],
+    ]
+    assert {r.attempts for p in people for r in _rows(clean, p)} == {0}
+    read, _ = _pass(clean, api)
+    assert read == 0  # everyone is read: nothing is due for a week
+
+
+def test_one_broken_account_is_backed_off_while_the_rest_are_read(clean: Session) -> None:
+    people = [
+        _person(clean, [f"https://github.com/dev{n}"], email=f"p{n}@studio.it") for n in range(3)
+    ]
+    clean.execute(text("UPDATE ai_sources SET enabled = true"))
+    clean.commit()
+    clock = Clock(NOW)
+    api = GithubApi(budget=60, clock=clock)
+    api.broken = {"dev1"}
+
+    _pass(clean, api)
+    assert _github_rows(clean, people) == ["ok", "error", "ok"]
+    calls = len(api.calls)
+
+    clock.now += timedelta(minutes=30)
+    _pass(clean, api)
+    assert len(api.calls) == calls  # inside its hour: nothing asked
+
+    clock.now += timedelta(minutes=30)
+    api.broken = set()
+    _pass(clean, api)
+    assert _github_rows(clean, people) == ["ok", "ok", "ok"]
+    assert len(api.calls) == calls + 2  # one person, two calls

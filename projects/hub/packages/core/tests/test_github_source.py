@@ -3,7 +3,7 @@ API says about it, as text and as a hash that ignores what moves on its own. A f
 `HttpCall` answers from canned JSON: no test here touches the network."""
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from http.client import HTTPException
 from typing import Any
 from urllib.error import URLError
@@ -38,7 +38,8 @@ def repo(name: str, **kwargs: Any) -> dict[str, Any]:
 
 
 class FakeGithub:
-    """An `HttpCall` over the three endpoints the source uses; `calls` keeps what left."""
+    """An `HttpHeadersCall` over the three endpoints the source uses; `calls` keeps what
+    left, `answered` is the header set every answer carries."""
 
     def __init__(
         self,
@@ -46,28 +47,30 @@ class FakeGithub:
         repos: list[dict[str, Any]] | None = None,
         languages: dict[str, dict[str, int]] | None = None,
         status: int = 200,
+        answered: dict[str, str] | None = None,
     ) -> None:
         self.profile = {"login": "ada", "type": "User", "bio": "I build things.", **(profile or {})}
         self.repos = repos if repos is not None else []
         self.languages = languages or {}
         self.status = status
+        self.answered = answered or {}
         self.calls: list[tuple[str, str, dict[str, str]]] = []
 
     def __call__(
         self, method: str, url: str, headers: dict[str, str], body: bytes
-    ) -> tuple[int, bytes]:
+    ) -> tuple[int, dict[str, str], bytes]:
         self.calls.append((method, url, headers))
         if self.status != 200:
-            return self.status, b'{"message": "no"}'
+            return self.status, self.answered, b'{"message": "no"}'
         path = url.removeprefix("https://api.github.com")
         if path.startswith("/users/ada/repos"):
-            return 200, json.dumps(self.repos).encode()
+            return 200, self.answered, json.dumps(self.repos).encode()
         if path == "/users/ada":
-            return 200, json.dumps(self.profile).encode()
+            return 200, self.answered, json.dumps(self.profile).encode()
         if path.startswith("/repos/ada/") and path.endswith("/languages"):
             name = path.split("/")[3]
-            return 200, json.dumps(self.languages.get(name, {})).encode()
-        return 404, b"{}"
+            return 200, self.answered, json.dumps(self.languages.get(name, {})).encode()
+        return 404, self.answered, b"{}"
 
 
 def source(fake: FakeGithub, token: str = "") -> GithubSource:
@@ -230,13 +233,13 @@ def test_token_sent_only_when_configured() -> None:
     assert all(method == "GET" for method, _, _ in authed.calls)
 
 
-@pytest.mark.parametrize("status", [403, 429])
-def test_rate_limit_gives_error_so_the_text_read_before_stays(status: int) -> None:
-    """The limit is the hour's, not the account's: `error` keeps what was read
-    (`SourceService.refetch`), where `unreadable` would wipe it and wait a week."""
-    snapshot = source(FakeGithub(status=status)).fetch("ada")
-    assert snapshot.status == "error"
-    assert snapshot.repos == []
+def test_a_bare_403_is_a_refusal_not_the_rate_limit() -> None:
+    """A 403 that names no limit (no `retry-after`, budget left) is GitHub refusing this
+    account: `error` keeps what was read (`SourceService.refetch`), where `unreadable`
+    would wipe it and wait a week, and the source goes on asking for the next person."""
+    github = source(FakeGithub(status=403, answered={"x-ratelimit-remaining": "41"}))
+    assert github.fetch("ada").status == "error"
+    assert not github.blocked()
 
 
 @pytest.mark.parametrize("status", [404, 410, 451])
@@ -254,7 +257,9 @@ def test_a_network_exception_gives_error_not_a_raise(failure: Exception) -> None
     """`urllib_call` unwraps only an HTTP error: everything else it raises. The source turns
     it into the network's status, so one flaky night stops nothing."""
 
-    def raising(method: str, url: str, headers: dict[str, str], body: bytes) -> tuple[int, bytes]:
+    def raising(
+        method: str, url: str, headers: dict[str, str], body: bytes
+    ) -> tuple[int, dict[str, str], bytes]:
         raise failure
 
     assert GithubSource(raising, "").fetch("ada").status == "error"
@@ -271,8 +276,10 @@ def test_network_failure_and_server_error_give_error() -> None:
 
 
 def test_malformed_answer_is_unreadable_not_a_crash() -> None:
-    def garbled(method: str, url: str, headers: dict[str, str], body: bytes) -> tuple[int, bytes]:
-        return 200, b"<html>not json</html>"
+    def garbled(
+        method: str, url: str, headers: dict[str, str], body: bytes
+    ) -> tuple[int, dict[str, str], bytes]:
+        return 200, {}, b"<html>not json</html>"
 
     assert GithubSource(garbled, "").fetch("ada").status == "unreadable"
 
@@ -304,3 +311,147 @@ def test_activity_is_a_bucket_not_a_date() -> None:
     assert "da oltre un anno" in stale.normalised_text()
     assert forks_only.contribution_recency == ""
     assert "2026-09" not in recent.normalised_text()
+
+
+# ---- the rate limit (REB-844) -------------------------------------------------------------
+
+RESET = NOW + timedelta(minutes=25)
+SPENT = {"x-ratelimit-remaining": "0", "x-ratelimit-reset": str(int(RESET.timestamp()))}
+
+
+class Clock:
+    def __init__(self) -> None:
+        self.now = NOW
+
+    def __call__(self) -> datetime:
+        return self.now
+
+
+@pytest.mark.parametrize(
+    ("status", "answered"),
+    [
+        (403, SPENT),
+        (429, SPENT),
+        (429, {}),
+        (403, {"retry-after": "30"}),
+        (429, {"retry-after": "30"}),
+    ],
+    ids=["403-spent", "429-spent", "429-bare", "403-retry-after", "429-retry-after"],
+)
+def test_a_refusal_for_the_limit_is_limited_and_stops_every_later_call(
+    status: int, answered: dict[str, str]
+) -> None:
+    fake = FakeGithub(status=status, answered=answered)
+    github = source(fake)
+
+    assert github.fetch("ada").status == "limited"
+    assert len(fake.calls) == 1 and github.blocked()
+    assert github.fetch("grace").status == "limited"
+    assert len(fake.calls) == 1  # nothing left the process after the first refusal
+
+
+def test_the_source_stays_silent_until_the_reset_the_answer_names() -> None:
+    clock = Clock()
+    fake = FakeGithub(status=403, answered=SPENT)
+    github = GithubSource(fake, "", now=clock)
+    assert github.fetch("ada").status == "limited"
+
+    clock.now = RESET - timedelta(seconds=1)
+    assert github.blocked() and github.fetch("ada").status == "limited"
+    assert len(fake.calls) == 1
+
+    clock.now = RESET
+    fake.status = 200
+    fake.answered = {}
+    assert not github.blocked()
+    assert github.fetch("ada").status == "ok"
+    assert len(fake.calls) > 1
+
+
+def test_retry_after_wins_over_the_reset() -> None:
+    clock = Clock()
+    github = GithubSource(
+        FakeGithub(status=403, answered={**SPENT, "retry-after": "90"}), "", now=clock
+    )
+    github.fetch("ada")
+    clock.now = NOW + timedelta(seconds=89)
+    assert github.blocked()
+    clock.now = NOW + timedelta(seconds=90)
+    assert not github.blocked()
+
+
+def test_a_limit_with_no_date_keeps_the_source_silent_for_an_hour() -> None:
+    clock = Clock()
+    github = GithubSource(FakeGithub(status=429), "", now=clock)
+    github.fetch("ada")
+    clock.now = NOW + timedelta(minutes=59)
+    assert github.blocked()
+    clock.now = NOW + timedelta(hours=1)
+    assert not github.blocked()
+
+
+def test_a_reset_already_past_still_silences_the_source_for_a_minute() -> None:
+    """A clock that is ahead of GitHub's would turn the limit into one more refused call
+    per person of the pass."""
+    clock = Clock()
+    stale = {"x-ratelimit-remaining": "0", "x-ratelimit-reset": str(int(NOW.timestamp()) - 600)}
+    github = GithubSource(FakeGithub(status=403, answered=stale), "", now=clock)
+    github.fetch("ada")
+    clock.now = NOW + timedelta(seconds=59)
+    assert github.blocked()
+    clock.now = NOW + timedelta(seconds=60)
+    assert not github.blocked()
+
+
+def test_the_last_request_of_the_budget_is_answered_and_the_next_is_not() -> None:
+    """Without a token the answer to the sixtieth request says `remaining: 0`: it is a
+    good answer and is used, and the person after it costs GitHub nothing."""
+    answered = iter([{"x-ratelimit-remaining": "1"}, SPENT])
+    fake = FakeGithub(repos=[])  # no repositories: two calls a person
+    plain = fake.__call__
+
+    def counting(
+        method: str, url: str, headers: dict[str, str], body: bytes
+    ) -> tuple[int, dict[str, str], bytes]:
+        status, _, body_ = plain(method, url, headers, body)
+        return status, next(answered), body_
+
+    github = source(counting)  # type: ignore[arg-type]
+    assert github.fetch("ada").status == "ok"
+    assert github.blocked()
+    assert github.fetch("ada").status == "limited"
+    assert len(fake.calls) == 2
+
+
+def test_a_budget_that_ends_after_the_profile_leaves_the_listing_unasked() -> None:
+    fake = FakeGithub(repos=[repo("a")])
+    plain = fake.__call__
+
+    def spent_at_once(
+        method: str, url: str, headers: dict[str, str], body: bytes
+    ) -> tuple[int, dict[str, str], bytes]:
+        status, _, body_ = plain(method, url, headers, body)
+        return status, SPENT, body_
+
+    github = source(spent_at_once)  # type: ignore[arg-type]
+    assert github.fetch("ada").status == "limited"
+    assert len(fake.calls) == 1
+
+
+def test_the_limit_spent_in_the_middle_of_a_person_leaves_no_partial_text() -> None:
+    """The languages are part of the text: a person whose language calls ran into the
+    limit is `limited` as a whole, never stored without them."""
+    fake = FakeGithub(repos=[repo("a", stars=3)], languages={"a": {"Rust": 10}})
+    original = fake.__call__
+
+    def spent_on_languages(
+        method: str, url: str, headers: dict[str, str], body: bytes
+    ) -> tuple[int, dict[str, str], bytes]:
+        if url.endswith("/languages"):
+            fake.calls.append((method, url, headers))
+            return 403, SPENT, b"{}"
+        return original(method, url, headers, body)
+
+    github = source(spent_on_languages)  # type: ignore[arg-type]
+    snapshot = github.fetch("ada")
+    assert snapshot.status == "limited" and snapshot.language_totals == {}

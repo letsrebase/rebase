@@ -85,6 +85,7 @@ def test_upgrade_creates_tables_columns_and_seed(hub_postgres: Any) -> None:
                 "content_sha256",
                 "status",
                 "fetched_at",
+                "attempts",  # 0040
             }
             assert set(_columns(connection, "ai_sources")) == {
                 "kind",

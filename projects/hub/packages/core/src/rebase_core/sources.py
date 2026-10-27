@@ -27,6 +27,17 @@ written from and a change of a source can mark it stale.
 A source that fails with `error` (the network, a 5xx, a timeout) does not replace text
 that was read before: the row keeps it and only the time of the attempt moves, so one bad
 night does not turn a card stale and then stale again.
+
+**A failure is retried on a backoff, not in a week** (REB-844). Each row counts its failed
+reads in a row (`attempts`): the next try is an hour after the last attempt, then two,
+four, and so on up to a day (`retry_delay`), and the first read that works sets the count
+back to 0. The hourly pass is what makes the first of those «the next pass».
+
+**GitHub's rate limit is the pass's, not the person's.** When `GithubSource` says its budget
+is spent (`limited`), nothing is written for that source: no `error` row, no count, the
+text read before stays. The rest of the pass does not call GitHub again, and a person who
+is due only for GitHub is not visited (their links would be read again for nothing); the
+next pass, after the limit lifts, takes them in the order they were due.
 """
 
 import hashlib
@@ -47,7 +58,7 @@ from rebase_core.audit import AdminActionService, field_changes, utcnow
 from rebase_core.config import get_settings
 from rebase_core.errors import NotFound, ValidationFailed
 from rebase_core.github_source import GithubSource, github_login_from_links
-from rebase_core.http import urllib_call
+from rebase_core.http import urllib_headers_call
 from rebase_core.models import AI_SOURCE_KINDS, AiSource, Freelancer, FreelancerSource
 from rebase_core.web_fetch import (
     MAX_LINKS_PER_PERSON,
@@ -58,6 +69,16 @@ from rebase_core.web_fetch import (
 logger = logging.getLogger(__name__)
 
 REFETCH_EVERY = timedelta(days=7)
+RETRY_FIRST = timedelta(hours=1)
+RETRY_MAX = timedelta(hours=24)
+
+
+def retry_delay(attempts: int) -> timedelta:
+    """The wait after `attempts` failed reads in a row: an hour, then doubling, a day at
+    most. (The exponent is capped before the power, so a count that has grown for months
+    cannot overflow a timedelta.)"""
+    return min(RETRY_MAX, RETRY_FIRST * (1 << min(max(attempts, 1) - 1, 5)))
+
 
 # The switch's name for each kind of stored row: `ai_sources.kind` says `links` (plural,
 # the admin's word), `freelancer_sources.kind` says `link` (one row, one link).
@@ -203,6 +224,14 @@ class _Read:
     status: str
 
 
+def _is_due(fetched_at: datetime, attempts: int, now: datetime, older_than: timedelta) -> bool:
+    """Whether a stored source is to be read again: older than `older_than`, or, when its
+    last reads failed, past the backoff since the last attempt."""
+    if fetched_at < now - older_than:
+        return True
+    return attempts > 0 and fetched_at + retry_delay(attempts) <= now
+
+
 def _sha(material: str) -> str:
     return hashlib.sha256(material.encode()).hexdigest()
 
@@ -230,6 +259,7 @@ class SourceService:
         self.fetcher = fetcher
         self.github = github
         self.now = now
+        self._deferred = False  # a read of this call was left for GitHub's limit to lift
 
     # ---- the switches ----------------------------------------------------------------
 
@@ -276,6 +306,7 @@ class SourceService:
         first and the database written once, so a slow page holds no lock; and what is
         written is decided under the person's row lock, after the read: a person deleted
         and a switch turned off while the pages were being read get nothing stored."""
+        self._deferred = False
         row = self.session.get(Freelancer, freelancer_id)
         if row is None:
             raise NotFound("freelancer", freelancer_id)
@@ -304,11 +335,20 @@ class SourceService:
                 self.session.delete(stale)
         for read in reads:
             previous = existing.get((read.kind, read.ref))
-            if read.status == "error" and previous is not None and previous.status == "ok":
-                previous.fetched_at = fetched_at
-                previous.position = read.position
+            if read.status == "limited":
+                # GitHub's budget ran out before this person: they are left exactly as
+                # they were, the count included, and the next pass asks again.
+                self._deferred = True
                 continue
-            self.session.execute(self._upsert(freelancer_id, read, fetched_at))
+            attempts = 0
+            if read.status == "error":
+                attempts = (previous.attempts if previous is not None else 0) + 1
+                if previous is not None and previous.status == "ok":
+                    previous.fetched_at = fetched_at
+                    previous.position = read.position
+                    previous.attempts = attempts
+                    continue
+            self.session.execute(self._upsert(freelancer_id, read, fetched_at, attempts))
         self.session.commit()
         return self.current(freelancer_id)
 
@@ -317,9 +357,9 @@ class SourceService:
         return delete_sources(self.session, freelancer_id)
 
     def refetch_due(self, limit: int, older_than: timedelta = REFETCH_EVERY) -> int:
-        """The weekly pass: refetches up to `limit` people whose sources are older than
-        `older_than`, are missing, or no longer match their links. Never calls a model.
-        Answers how many people it tried.
+        """The hourly pass: refetches up to `limit` people with a source that is due: older
+        than `older_than`, missing, no longer matching their links, or failed and past its
+        backoff (`retry_delay`). Never calls a model. Answers how many people it read.
 
         Only people a card is written for: live, not turned down, with a CV (the same
         rule as `CardWriter.refresh_stale`); the text stored for anyone else is deleted
@@ -327,7 +367,12 @@ class SourceService:
         links were all removed is still visited, to delete what they leave. One person's
         failure is that person's: it is logged by class and the pass goes on, so a flaky
         page or GitHub never stops the others. Only the columns the comparison needs are
-        read, never the stored text."""
+        read, never the stored text.
+
+        When GitHub's rate limit is spent the pass stops calling GitHub: the person it
+        reached is left as they were (their other sources are still read), a person due
+        only for GitHub is not visited, and neither counts as read. The log says how many
+        wait for the next pass."""
         self.session.execute(
             delete(FreelancerSource).where(
                 FreelancerSource.freelancer_id.in_(
@@ -339,17 +384,18 @@ class SourceService:
         )
         self.session.commit()
         enabled = self.enabled_kinds()
-        cutoff = self.now() - older_than
-        stored: dict[UUID, list[tuple[str, str, datetime]]] = {}
-        for owner, kind, ref, fetched_at in self.session.execute(
+        now = self.now()
+        stored: dict[UUID, list[tuple[str, str, datetime, int]]] = {}
+        for owner, kind, ref, fetched_at, attempts in self.session.execute(
             select(
                 FreelancerSource.freelancer_id,
                 FreelancerSource.kind,
                 FreelancerSource.ref,
                 FreelancerSource.fetched_at,
+                FreelancerSource.attempts,
             )
         ):
-            stored.setdefault(owner, []).append((kind, ref, fetched_at))
+            stored.setdefault(owner, []).append((kind, ref, fetched_at, attempts))
         people = self.session.execute(
             select(Freelancer.id, Freelancer.links)
             .where(
@@ -364,14 +410,26 @@ class SourceService:
             .order_by(Freelancer.created_at)
         ).all()
         tried = 0
+        skipped = 0  # due only for GitHub while its limit is spent: not visited
+        deferred = 0  # visited, and GitHub's limit ran out before their account
         for person_id, links in people:
             if tried >= limit:
                 break
             rows = stored.get(person_id, [])
             wanted = {(w.kind, w.ref) for w in self._wanted(links, enabled)}
-            if wanted == {(kind, ref) for kind, ref, _ in rows} and all(
-                fetched_at >= cutoff for _, _, fetched_at in rows
-            ):
+            held = {(kind, ref) for kind, ref, _, _ in rows}
+            # What needs a read: a source not stored yet, or one whose time has come.
+            due = {kind for kind, _ in wanted - held}
+            due |= {
+                kind
+                for kind, ref, fetched_at, attempts in rows
+                if (kind, ref) in wanted and _is_due(fetched_at, attempts, now, older_than)
+            }
+            removed = bool(held - wanted)  # text to delete: no read, never waits
+            if not due and not removed:
+                continue
+            if due == {"github"} and not removed and self.github.blocked():
+                skipped += 1
                 continue
             tried += 1
             try:
@@ -381,7 +439,14 @@ class SourceService:
                 logger.warning(
                     "sources of freelancer %s not read: %s", person_id, type(error).__name__
                 )
-        return tried
+                continue
+            if self._deferred:
+                deferred += 1
+        if skipped or deferred:
+            logger.warning(
+                "github rate limit spent: %d people wait for the next pass", skipped + deferred
+            )
+        return tried - deferred
 
     # ---- helpers ---------------------------------------------------------------------
 
@@ -430,7 +495,7 @@ class SourceService:
     def _read(self, wanted: _Wanted) -> _Read:
         if wanted.kind == "github":
             snapshot = self.github.fetch(wanted.ref)
-            if snapshot.status != "ok":
+            if snapshot.status != "ok":  # including `limited`, which `refetch` never stores
                 return _Read("github", wanted.ref, wanted.position, "", "", snapshot.status)
             return _Read(
                 "github",
@@ -453,13 +518,14 @@ class SourceService:
         )
 
     @staticmethod
-    def _upsert(freelancer_id: UUID, read: _Read, fetched_at: datetime) -> Insert:
+    def _upsert(freelancer_id: UUID, read: _Read, fetched_at: datetime, attempts: int) -> Insert:
         values = {
             "position": read.position,
             "text": read.text,
             "content_sha256": read.content_sha256,
             "status": read.status,
             "fetched_at": fetched_at,
+            "attempts": attempts,
         }
         return (
             pg_insert(FreelancerSource)
@@ -472,5 +538,5 @@ def default_source_service(session: Session) -> SourceService:
     """The production service: the safe fetcher and GitHub over the real network, with
     the hub's optional token. Nothing is read until a switch is on and a refetch asks."""
     return SourceService(
-        session, SafeFetcher(), GithubSource(urllib_call, get_settings().github_token)
+        session, SafeFetcher(), GithubSource(urllib_headers_call, get_settings().github_token)
     )

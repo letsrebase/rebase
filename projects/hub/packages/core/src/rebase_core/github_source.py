@@ -19,8 +19,16 @@ What the snapshot says and does not say:
   is stale when a source's hash differs, and a star must not make it so. The material is
   ordered by name, not by weight, for the same reason: stars decide the weight.
 
-A missing user, a rate limit or a network error is a snapshot with a `status`, not an
+A missing user, a refusal or a network error is a snapshot with a `status`, not an
 exception: the weekly refetch must not stop at one person.
+
+**The rate limit is the pass's, not the person's** (REB-844). Without a token GitHub allows
+60 requests an hour, and a person costs up to seven. Every answer's `x-ratelimit-remaining`
+and `x-ratelimit-reset` are read (and `retry-after` on a 403 or 429): when the budget
+reaches zero, or GitHub refuses for it, the source remembers until when and answers
+`limited` to every `fetch` before that moment **without calling GitHub**, so the pass
+spends nothing more and `SourceService` writes nothing for the people it did not reach
+(no `error` row, no backoff): the next pass picks them up.
 """
 
 import json
@@ -32,7 +40,7 @@ from typing import Literal
 from urllib.parse import quote, urlsplit
 
 from rebase_core.audit import utcnow
-from rebase_core.http import MAX_BODY_BYTES, NETWORK_ERROR_STATUS, HttpCall
+from rebase_core.http import MAX_BODY_BYTES, NETWORK_ERROR_STATUS, HttpHeadersCall
 
 API = "https://api.github.com"
 # Repositories whose languages are asked for, one call each: the heaviest few say what a
@@ -42,6 +50,12 @@ LANGUAGE_REPOS = 5
 MAX_REPOS_LISTED = 30
 MAX_DESCRIPTION_CHARS = 200
 MAX_BIO_CHARS = 400
+# How long the source stays silent when GitHub refuses for the rate limit and says nothing
+# about when it lifts, and the least it stays silent when what it says is already past
+# (a clock that differs from GitHub's): never zero, or every person of the pass would be
+# one more refused call.
+UNANNOUNCED_LIMIT = timedelta(hours=1)
+LEAST_SILENCE = timedelta(minutes=1)
 
 # First path segments on github.com that are pages of the site, not accounts.
 _RESERVED = frozenset(
@@ -56,7 +70,13 @@ _RESERVED = frozenset(
 _LOGIN = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$")
 _HOSTS = frozenset({"github.com", "www.github.com"})
 
-GithubStatus = Literal["ok", "unreadable", "error"]
+# `limited`: GitHub's budget is spent, nothing was learnt about this person and nothing is
+# to be written about them. Never stored: `freelancer_sources.status` has no such value.
+GithubStatus = Literal["ok", "unreadable", "error", "limited"]
+
+
+class _Limited(Exception):
+    """The rate limit is spent: raised inside `GithubSource` only, caught by `fetch`."""
 
 
 def github_login_from_links(links: list[str]) -> str | None:
@@ -197,13 +217,21 @@ def _clean(value: object, limit: int) -> str:
 
 class GithubSource:
     def __init__(
-        self, http: HttpCall, token: str = "", now: Callable[[], datetime] = utcnow
+        self, http: HttpHeadersCall, token: str = "", now: Callable[[], datetime] = utcnow
     ) -> None:
         self._http = http
         self._token = token
         self._now = now
+        self._silent_until: datetime | None = None
+
+    def blocked(self) -> bool:
+        """Whether the rate limit is spent right now: `fetch` would answer `limited`
+        without calling GitHub."""
+        return self._silent_until is not None and self._now() < self._silent_until
 
     def _get(self, path: str) -> tuple[int, object]:
+        if self.blocked():
+            raise _Limited
         headers = {
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
@@ -211,12 +239,15 @@ class GithubSource:
         if self._token:
             headers["Authorization"] = f"Bearer {self._token}"
         try:
-            status, body = self._http("GET", f"{API}{path}", headers, b"")
+            status, answered, body = self._http("GET", f"{API}{path}", headers, b"")
         except Exception:
             # `urllib_call` only unwraps an HTTP error: a timeout, a reset or a refused
             # connection raises. It travels as the network's status, never as an exception,
             # so one flaky night does not stop the pass or a card's write.
             return NETWORK_ERROR_STATUS, None
+        if self._spent(status, answered) and status in (403, 429):
+            raise _Limited
+        # A 200 that took the last of the budget is answered; `blocked()` stops the next call.
         if status != 200 or len(body) > MAX_BODY_BYTES:
             return status, None
         try:
@@ -224,13 +255,39 @@ class GithubSource:
         except ValueError:
             return status, None
 
+    def _spent(self, status: int, answered: dict[str, str]) -> bool:
+        """Reads the rate limit off an answer and, when it is spent, remembers until when.
+        Spent means: nothing left (`x-ratelimit-remaining: 0`), a 429, or a 403 that names
+        a `retry-after` (GitHub's secondary limit). A bare 403 is a refusal, not a limit."""
+        remaining = _whole(answered.get("x-ratelimit-remaining"))
+        retry_after = _whole(answered.get("retry-after"))
+        reset = _whole(answered.get("x-ratelimit-reset"))
+        if not (remaining == 0 or status == 429 or (status == 403 and retry_after is not None)):
+            return False
+        now = self._now()
+        if retry_after is not None:
+            until = now + timedelta(seconds=retry_after)
+        elif reset is not None:
+            until = datetime.fromtimestamp(reset, UTC)
+        else:
+            until = now + UNANNOUNCED_LIMIT
+        self._silent_until = max(until, now + LEAST_SILENCE)
+        return True
+
     def fetch(self, login: str) -> GithubSnapshot:
         """The public profile and repositories of `login`. Never raises for GitHub's
         answer: a missing user, an organisation (a person's account is a `User`) and a page
-        GitHub says is gone are `unreadable`; a rate limit, a refusal, a network or server
-        failure are `error`, which keeps the text read before."""
+        GitHub says is gone are `unreadable`; a refusal, a network or server failure are
+        `error`, which keeps the text read before; a spent rate limit, before the call or
+        in the middle of it, is `limited` and keeps everything as it was."""
         if not _LOGIN.match(login):
             return GithubSnapshot(login, status="unreadable")
+        try:
+            return self._read(login)
+        except _Limited:
+            return GithubSnapshot(login, status="limited")
+
+    def _read(self, login: str) -> GithubSnapshot:
         who = quote(login, safe="")
         status, profile = self._get(f"/users/{who}")
         if not isinstance(profile, dict):
@@ -261,13 +318,21 @@ class GithubSource:
         return replace(snapshot, language_totals=totals)
 
 
+def _whole(value: str | None) -> int | None:
+    """A header that is a whole number of seconds, or `None`."""
+    try:
+        return int(value) if value is not None else None
+    except ValueError:
+        return None
+
+
 def _failure(status: int) -> GithubStatus:
     """What GitHub's answer says about the account. A missing user, a removed one and one
     withheld for legal reasons (404, 410, 451) will not come back by asking again:
-    `unreadable`. A rate limit (403, 429), any other refusal, a dead network and GitHub's
-    own 5xx are the day's, not the account's: `error`, so the text read before stays and
-    the next pass asks again. (A 200 whose body is not an object is not the account's
-    either way: `unreadable`.)"""
+    `unreadable`. Any other refusal (a bare 403 among them: the rate limit is `limited`,
+    raised before this is asked), a dead network and GitHub's own 5xx are the day's, not
+    the account's: `error`, so the text read before stays and the next pass asks again.
+    (A 200 whose body is not an object is not the account's either way: `unreadable`.)"""
     if status in (200, 404, 410, 451):
         return "unreadable"
     return "error"

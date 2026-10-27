@@ -671,9 +671,21 @@ for «Scheda anonima», which shows `fonti` as «secondo il modello».
   anyone else is deleted; one person's failure is logged and the pass goes on) and **the `cards`
   service runs it every hour before `cards-refresh`, whatever `REBASE_CARDS_LOOP` says**, since it
   sends nothing to a provider; with every switch off it reads nothing. A removed link's text goes
-  at the next pass. Fetching a page or GitHub never writes a card. A GitHub rate limit (403, 429)
-  or any network failure keeps the text read before; only a page that is gone (404, 410, 451)
-  replaces it. A card written (the wizard, a CV upload, «Rigenera scheda», an admin's start)
+  at the next pass. Fetching a page or GitHub never writes a card. A network failure or a
+  refusal keeps the text read before; only a page that is gone (404, 410, 451) replaces it.
+  **A failed read is retried on a backoff, not in a week** (REB-844): each source row counts its
+  failures in a row (`freelancer_sources.attempts`, migration 0040; `fetched_at` is the last
+  attempt), the next try is due an hour after it, then 2, 4, 8, 16 and 24 hours (`retry_delay`),
+  and the first read that works sets the count to 0. **GitHub's rate limit belongs to the pass,
+  not to the person**: without `REBASE_GITHUB_TOKEN` it is 60 requests an hour and a person costs
+  up to seven. `GithubSource` reads `x-ratelimit-remaining` and `x-ratelimit-reset` off every
+  answer (the seam is `HttpHeadersCall`, `urllib_headers_call`) and `retry-after` on a 403 or
+  429; when the budget is spent it answers `limited` for the rest of the pass without calling
+  GitHub, and `SourceService` writes **nothing** for a source that was `limited`: no `error` row,
+  no count, the old text stays. A person due only for GitHub is not visited while it is spent
+  (the log says «github rate limit spent: N people wait for the next pass»), so the next pass,
+  after the window turns, takes them in the order they were due: with no token about eight
+  people an hour. A bare 403 with budget left is a refusal (`error`, backed off). A card written (the wizard, a CV upload, «Rigenera scheda», an admin's start)
   refetches that person's sources first, with every switch off it reads nothing, and an
   evaluation (`compose`) reads only what is stored.
 - **Evaluating version 2** is `rebase cards-eval` as above: `CardWriter.compose` builds the prompt
