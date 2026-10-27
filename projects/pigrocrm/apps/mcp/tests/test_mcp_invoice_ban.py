@@ -521,7 +521,7 @@ def test_the_registration_scan_reads_every_module_and_not_only_the_first() -> No
     bans below would pass while checking a file that contains none of them."""
     names = _registered_tool_names()
     assert "list_gmail_messages" in names  # tools/gmail.py
-    assert "create_customer" in names  # tools/__init__.py
+    assert "create_customer" in names  # tools/families/customers.py
 
 
 @pytest.mark.parametrize("forbidden", FORBIDDEN)
@@ -697,9 +697,13 @@ async def test_they_are_registered_exactly_when_the_installation_opted_in(
     own `.env` has the switch **on**, so a test that inherited it would assert the
     opposite of what it claims and pass anyway.
     """
-    attore = Actor(id=None, type="mcp", role="admin")
 
     async def tool_names(full_access: bool, *, gmail: bool) -> set[str]:
+        # The token carries the flag too (REB-810): a token that has not been given it is
+        # shown the closed surface even on an open installation, which
+        # `test_token_full_access.py` owns. Here both halves agree, as they do for a space
+        # whose members have all opened their tokens.
+        attore = Actor(id=None, type="mcp", role="admin", full_access=full_access)
         google = (
             {
                 "google_client_id": "cid.apps.googleusercontent.com",
@@ -840,7 +844,7 @@ def _agent_reachable_source() -> str:
     code is not only `tools/`. `resources/entities.py` renders the `customer://`,
     `person://` and `deal://` templates, `prompts/` holds §10's four prompts, and
     `server.py` itself carries three inline `@mcp.resource` bodies plus
-    `describe_schema`/`refresh_schema` -- all registered unconditionally, none of them
+    `describe_schema` -- all registered unconditionally, none of them
     scanned by a tools-only sweep. A `drive_reader_for` built inside a resource render or
     a prompt body would be exactly as reachable as one built in a tool, while leaving no
     trace under `tools/` at all.
@@ -873,7 +877,7 @@ def test_the_wide_scan_really_reads_the_resources_the_prompts_and_the_server() -
     assert "def customer_resource(" in source  # server.py's inline @mcp.resource
     assert "def stato_cliente(" in source  # prompts/customer.py
     assert "def revisione_pipeline(" in source  # prompts/dashboards.py
-    assert "def search_everything(" in source  # tools/__init__.py, i.e. the old width
+    assert "def search_everything(" in source  # tools/families/shared.py, i.e. the old width
 
 
 def test_no_unconditional_module_can_even_obtain_a_drive_reader() -> None:

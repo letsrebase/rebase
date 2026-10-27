@@ -15,7 +15,7 @@ here: an agent may see which categories exist and which months are closed, and m
 change neither. A tool that contained business logic would be logic the web app cannot
 reach -- the failure this architecture exists to prevent. Every function here builds a
 core schema from caller-supplied data *inside* the guarded call, so a bad value becomes
-rendered guidance instead of a raw pydantic dump (see `tools/__init__.py`'s own note on
+rendered guidance instead of a raw pydantic dump (see `tools/params.py`'s own note on
 `WithJsonSchema` and `_guard`).
 """
 
@@ -216,7 +216,7 @@ def list_cost_categories(context: McpContext, include_archived: bool) -> dict[st
 # now says "seven" rather than "four": a count
 # that is never updated is worse than no count. `bind_time_to_invoice` and
 # `get_fiscal_estimate` are absent by decision, not by omission -- see
-# `tools/__init__.py`'s own block comment for the two (different) reasons, and
+# `tools/families/analytics.py`'s own note for the two (different) reasons, and
 # `apps/mcp/tests/test_mcp_invoice_ban.py`, which scans every file in this package
 # and fails the build if either method is ever called from one of them, whatever
 # the tool that reaches it is called. Ceiling headroom and its simulator are absent

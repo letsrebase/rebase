@@ -114,7 +114,7 @@ primo upload.
 ### 5. Verifica: generare un documento e vederlo su Drive
 
 Verificare la scrittura prima di importare le 14 fatture. Lo strumento MCP
-`create_document_from_template` (`apps/mcp/src/pigrocrm_mcp/tools/__init__.py`) crea un
+`create_document_from_template` (`apps/mcp/src/pigrocrm_mcp/tools/families/documents.py`) crea un
 documento da un template generico dandogli `variabili` a mano — è la via più diretta per
 verificare *lo storage*, ma per «Rapporto ore» specificamente non è il modo in cui il
 CRM lo genera davvero: il template dichiara solo tre variabili per il form di
@@ -163,8 +163,9 @@ Per ciascuna delle 14 fatture:
    elenca le sottocartelle per cliente, e sceso in una di quelle il PDF della fattura
    (`apps/mcp/src/pigrocrm_mcp/tools/drive_privileged.py`; registrato solo con
    `PIGROCRM_MCP_FULL_ACCESS=true` **e** Google configurato — `gmail_configured`,
-   verificato da `server.py`). Non esiste ricerca per nome: bisogna scendere cartella per
-   cartella.
+   verificato da `server.py`; since REB-810 only a token whose owner gave it «Accesso
+   completo» sees them, ticked when the token is made or opened from the Token page). Non
+   esiste ricerca per nome: bisogna scendere cartella per cartella.
 2. **Controllo incrociato numero↔file — passo dell'operatore, nessun tool lo fa da
    solo**: prima di usare un file come `drive_file_id` di una riga, aprirlo (o leggerlo
    con `read_drive_file`) e confermare che il numero di fattura sul PDF corrisponda alla

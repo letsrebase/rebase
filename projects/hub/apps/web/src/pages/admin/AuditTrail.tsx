@@ -14,6 +14,24 @@ const KIND_LABELS: Record<AdminAction['kind'], string> = {
   notice_recorded: 'Disdetta registrata',
   vetted: 'Verifica',
   pigro_link: 'Collegamento a Pigro',
+  merged: 'Unita a un’altra scheda',
+  absorbed: 'Ha assorbito una scheda',
+  unmerged: 'Unione annullata',
+}
+
+/** What a merge did, in one line (REB-800), for the two entries that carry its counts:
+ *  `merged` on the absorbed card lists row ids per relation, `absorbed` on the one that
+ *  stayed lists counts. `null` for every other kind. */
+function mergeSummary(action: AdminAction): string | null {
+  if (action.kind !== 'merged' && action.kind !== 'absorbed') return null
+  const moved = Object.values(action.payload.moved ?? {}).reduce<number>(
+    (total, rows) => total + (Array.isArray(rows) ? rows.length : rows),
+    0,
+  )
+  const parts = [moved === 1 ? '1 riga spostata' : `${moved} righe spostate`]
+  if (action.payload.cv === 'assorbita') parts.push('CV più recente passato alla scheda tenuta')
+  if (action.payload.scheda_da_rigenerare) parts.push('scheda anonima da riscrivere')
+  return parts.join(' · ')
 }
 
 /** The entry's word: its kind's, except `vetted` (REB-518), one kind both ways, whose
@@ -129,6 +147,7 @@ export function AuditTrail({
                   <span className="font-medium text-foreground">{action.admin_nome}</span>
                   <time dateTime={action.created_at}>{formatDateTime(action.created_at)}</time>
                 </p>
+                {mergeSummary(action) && <p>{mergeSummary(action)}</p>}
                 {fields.length > 0 && (
                   <dl className="space-y-1">
                     {fields.map((field) => (

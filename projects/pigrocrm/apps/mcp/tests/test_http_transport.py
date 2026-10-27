@@ -515,11 +515,13 @@ async def test_two_spaces_do_not_see_each_other(
 
 
 @pytest.mark.asyncio
-async def test_the_space_setting_decides_the_privileged_tools_and_a_change_rebuilds_the_server(
+async def test_the_space_setting_is_the_ceiling_and_a_change_rebuilds_the_server(
     served: tuple[McpHttpApp, httpx2.AsyncClient],
     spaces: dict[str, tuple[str, UUID]],
     http_settings: Settings,
 ) -> None:
+    """Opening the space's switch gives a token nothing by itself (REB-810): the privileged
+    tools are there for the token its owner opened, and only for it."""
     app, _ = served
     raw, user_id = spaces["spazio-uno"]
     url = "http://prova/spazio-uno/mcp"
@@ -540,12 +542,71 @@ async def test_the_space_setting_decides_the_privileged_tools_and_a_change_rebui
         engine.dispose()
 
     # `overrides_ttl=0.0` in the `served` fixture: the next request re-reads the rows,
-    # sees they changed, and rebuilds this space's server with the privileged tools.
-    assert "issue_invoice" in await _tool_names(app, url, raw)
+    # sees they changed, and rebuilds this space's server with the privileged tools
+    # registered. The token made before the switch opened is unchanged: closed.
+    assert "issue_invoice" not in await _tool_names(app, url, raw)
     # The other space is untouched.
     assert "issue_invoice" not in await _tool_names(
         app, "http://prova/spazio-due/mcp", spaces["spazio-due"][0]
     )
+
+
+@pytest.mark.asyncio
+async def test_two_tokens_of_one_admin_on_an_open_space_list_different_tools(
+    served: tuple[McpHttpApp, httpx2.AsyncClient],
+    spaces: dict[str, tuple[str, UUID]],
+    http_settings: Settings,
+) -> None:
+    """REB-810, the card's own check, over the wire: one admin, one space whose switch is
+    open, two tokens. The one given the flag lists the invoice and period-lock tools; the
+    other lists the ordinary surface and is told «Unknown tool» when it asks for one by
+    name. The flag is changed afterwards, and the very next call of the SAME app and the
+    SAME cached space server follows it, in both directions."""
+    app, _ = served
+    closed_token, user_id = spaces["spazio-uno"]
+    url = "http://prova/spazio-uno/mcp"
+    opened = http_settings.model_copy(update={"mcp_full_access": True})
+    engine = create_engine(
+        tenant_database_url(http_settings, tenant_database_name("spazio-uno")), future=True
+    )
+    try:
+        with session_factory(engine)() as session:
+            SpaceSettingsService(session, http_settings).update(
+                SpaceSettingsUpdate(mcp_full_access=True),
+                Actor(id=user_id, type="user", role="admin"),
+                spazio="spazio-uno",
+            )
+            service = PatService(session, settings=opened)
+            admin = Actor(id=user_id, type="user", role="admin")
+            full, open_token = service.create("fatturazione", admin, full_access=True)
+            session.commit()
+    finally:
+        engine.dispose()
+
+    closed = await _tool_names(app, url, closed_token)
+    open_ = await _tool_names(app, url, open_token)
+    assert not {"issue_invoice", "close_period", "update_user_rates"} & set(closed)
+    assert {"issue_invoice", "close_period", "update_user_rates"} <= set(open_)
+    assert set(closed) < set(open_), "the ordinary surface is the same, the open one adds"
+
+    refused = await _call_tool_result(
+        app, url, closed_token, "close_period", {"anno": 2026, "mese": 1}
+    )
+    assert refused.is_error
+    assert "Unknown tool: close_period" in refused.content[0].text
+
+    # Closing the flag takes the tools away at the next call, with nobody reconnecting.
+    engine = create_engine(
+        tenant_database_url(http_settings, tenant_database_name("spazio-uno")), future=True
+    )
+    try:
+        with session_factory(engine)() as session:
+            PatService(session, settings=opened).set_full_access(
+                full.id, False, Actor(id=user_id, type="user", role="admin")
+            )
+    finally:
+        engine.dispose()
+    assert "issue_invoice" not in await _tool_names(app, url, open_token)
 
 
 # --- REB-295: the credential answers with the owner's CURRENT state -----------------

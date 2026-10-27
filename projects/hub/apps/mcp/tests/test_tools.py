@@ -48,7 +48,8 @@ def _seed(factory: sessionmaker[Session], addresses: list[str]) -> None:
                     email=address,
                     nome="Ada",
                     cognome="Lovelace",
-                    linkedin_url="https://www.linkedin.com/in/ada",
+                    # One profile per address: the same profile is the same person (REB-800).
+                    linkedin_url=f"https://www.linkedin.com/in/{address.split('@')[0]}",
                 )
             )
     finally:
@@ -69,7 +70,7 @@ async def test_the_talent_list_is_newest_first_and_the_total_counts_everything(
     assert [item["email"] for item in body["items"]] == ["due@studio.it"]
     item = body["items"][0]
     assert (item["nome"], item["cognome"]) == ("Ada", "Lovelace")
-    assert item["linkedin_url"] == "https://www.linkedin.com/in/ada"
+    assert item["linkedin_url"] == "https://www.linkedin.com/in/due"
     assert item["stato"] == "lead"
 
 
@@ -178,6 +179,8 @@ async def test_the_admin_tools_read_and_move_a_candidate_without_the_cv(
             "regenerate_freelancer_card",
             "get_freelancer_audit",
             "revert_freelancer_action",
+            "list_duplicati",
+            "merge_freelancers",
             "add_freelancer_comment",
             "list_aziende",
             "get_company",

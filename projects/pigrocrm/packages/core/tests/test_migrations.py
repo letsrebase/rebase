@@ -1988,3 +1988,133 @@ def test_0061_adds_the_failure_columns_keeps_the_rows_and_its_downgrade_drops_th
         downgrade(config, "0060")
         assert _job_run_shape(url) == ({"ran_at"}, False)
         assert _job_runs(url) == ["reminders"], "a job that never succeeded has nothing to keep"
+
+
+def _plant_tokens(url: str, switch_row: str | None) -> None:
+    """One member with a live and a revoked token, and the space's `mcp_full_access` row
+    when `switch_row` is not None."""
+    engine: Engine = create_engine(url)
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO users (id, email, password_hash, nome, ruolo, attivo) "
+                    "VALUES ('00000000-0000-7000-8000-0000000000f1', 'titolare@example.it', "
+                    "'x', 'Titolare', 'admin', true)"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO personal_access_tokens "
+                    "(id, user_id, nome, token_hash, prefix, revoked_at) VALUES "
+                    "(gen_random_uuid(), '00000000-0000-7000-8000-0000000000f1', 'viva', "
+                    "'h1', 'pgc_aaaa', NULL), "
+                    "(gen_random_uuid(), '00000000-0000-7000-8000-0000000000f1', 'morta', "
+                    "'h2', 'pgc_bbbb', now())"
+                )
+            )
+            if switch_row is not None:
+                connection.execute(
+                    text(
+                        "INSERT INTO space_settings (key, value) VALUES ('mcp_full_access', :value)"
+                    ),
+                    {"value": switch_row},
+                )
+    finally:
+        engine.dispose()
+
+
+def _token_flags(url: str) -> dict[str, bool]:
+    engine: Engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            rows = connection.execute(text("SELECT nome, full_access FROM personal_access_tokens"))
+            return {nome: flag for nome, flag in rows}
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize(
+    ("switch_row", "environment", "expected"),
+    [
+        # The space's own row wins either way: on, with the environment closed...
+        ("true", "false", True),
+        ("sì", "false", True),
+        # ...and off, with the environment open, which is the space that closed it.
+        ("false", "true", False),
+        # No row: the space inherits the environment, as `space_base_settings` gives it.
+        (None, "true", True),
+        (None, "false", False),
+    ],
+)
+def test_0063_gives_every_existing_token_what_its_space_switch_gave_it_yesterday(
+    pigrocrm_postgres: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    switch_row: str | None,
+    environment: str,
+    expected: bool,
+) -> None:
+    """REB-810: the switch moves to the token and nobody loses a door. Whatever the space's
+    effective `mcp_full_access` was, every token (the revoked one too, so the list reads
+    one way) now carries it as its own flag, and the downgrade drops the column."""
+    monkeypatch.setenv("PIGROCRM_MCP_FULL_ACCESS", environment)
+    get_settings.cache_clear()
+    try:
+        with pigrocrm_postgres.fresh_container() as container:
+            url = container.get_connection_url()
+            config = _alembic_config(url)
+            upgrade(config, "0062")
+            _plant_tokens(url, switch_row)
+
+            upgrade(config, "0063")
+            assert _token_flags(url) == {"viva": expected, "morta": expected}
+
+            downgrade(config, "0062")
+            engine: Engine = create_engine(url)
+            try:
+                with engine.connect() as connection:
+                    columns = set(
+                        connection.execute(
+                            text(
+                                "SELECT column_name FROM information_schema.columns "
+                                "WHERE table_name = 'personal_access_tokens'"
+                            )
+                        ).scalars()
+                    )
+            finally:
+                engine.dispose()
+            assert "full_access" not in columns
+    finally:
+        get_settings.cache_clear()
+
+
+def test_0063_leaves_a_token_made_afterwards_closed(
+    pigrocrm_postgres: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The column's default is closed: a token inserted by anything that does not name the
+    flag, in a space whose switch was open, is not opened by the migration's backfill."""
+    monkeypatch.setenv("PIGROCRM_MCP_FULL_ACCESS", "true")
+    get_settings.cache_clear()
+    try:
+        with pigrocrm_postgres.fresh_container() as container:
+            url = container.get_connection_url()
+            config = _alembic_config(url)
+            upgrade(config, "0062")
+            _plant_tokens(url, "true")
+            upgrade(config, "0063")
+            engine: Engine = create_engine(url)
+            try:
+                with engine.begin() as connection:
+                    connection.execute(
+                        text(
+                            "INSERT INTO personal_access_tokens "
+                            "(id, user_id, nome, token_hash, prefix) VALUES "
+                            "(gen_random_uuid(), '00000000-0000-7000-8000-0000000000f1', "
+                            "'nuova', 'h3', 'pgc_cccc')"
+                        )
+                    )
+            finally:
+                engine.dispose()
+            assert _token_flags(url)["nuova"] is False
+    finally:
+        get_settings.cache_clear()

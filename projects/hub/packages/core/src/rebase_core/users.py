@@ -21,10 +21,12 @@ from sqlalchemy.orm import Session
 from rebase_core.admin_tokens import AdminList, AdminRead
 from rebase_core.config import Settings
 from rebase_core.errors import NotFound, ValidationFailed
+from rebase_core.linkedin import linkedin_key
 from rebase_core.mail import Mail, magic_link_mail
 from rebase_core.models import (
     ATTRIBUTION_COLUMNS,
     USER_ROLES,
+    Freelancer,
     Login,
     MagicLinkToken,
     User,
@@ -36,10 +38,25 @@ from rebase_core.schemas import SignupUtm
 from rebase_core.search import matches_any, similarity_score
 
 ENTITY = "user"
+# The one sentence for a LinkedIn profile that belongs to somebody else's card (REB-800):
+# the member is told how to get back in, the admin how to settle it.
+LINKEDIN_TAKEN = (
+    "Questo profilo LinkedIn risulta già su un'altra scheda: accedi con l'indirizzo che "
+    "avevi usato la prima volta, oppure chiedi a un admin di unire le due schede."
+)
 ADMIN_LIST_LIMIT_DEFAULT = 100
 ADMIN_LIST_LIMIT_MAX = 500
 _ADMIN_SEARCH_COLUMNS = (User.nome, User.cognome, User.email)
 _LINK_REQUEST_THROTTLE_SECONDS = 60
+
+
+def refuse_linkedin_conflict(session: Session, exc: IntegrityError) -> None:
+    """A write that lost a race on `uq_users_linkedin_lower` answers the same sentence the
+    pre-check would have (REB-800), not a 500; any other integrity error is the caller's."""
+    if "linkedin" in str(exc.orig):
+        session.rollback()
+        raise ValidationFailed(ENTITY, "linkedin_url", LINKEDIN_TAKEN) from exc
+    raise exc
 
 
 def _hash(raw: str) -> str:
@@ -59,8 +76,69 @@ class UserService:
     # ---- identity ----------------------------------------------------------------
 
     def by_email(self, email: str) -> User | None:
+        """The row that holds this address, merged or not: what a login or a role is
+        about. Who the address *is* since a merge is `person`."""
         lowered = email.strip().lower()
         return self.session.scalar(select(User).where(func.lower(User.email) == lowered))
+
+    def survivor(self, user: User) -> User:
+        """The person a row stands for: itself, or the one an admin merged it into
+        (REB-800). A merge repoints the rows that pointed at the one it absorbs, so
+        this is one hop, never a walk."""
+        if user.merged_into_id is None:
+            return user
+        target = self.session.get(User, user.merged_into_id)
+        return target if target is not None else user
+
+    def person(self, email: str) -> User | None:
+        """The person who answers to this address: `by_email`, followed through a merge."""
+        row = self.by_email(email)
+        return self.survivor(row) if row is not None else None
+
+    def by_linkedin(self, linkedin_url: str | None) -> User | None:
+        """The live person with this LinkedIn profile, compared as `linkedin_key`
+        compares (REB-800), or `None` for nothing to compare."""
+        key = linkedin_key(linkedin_url)
+        if key is None:
+            return None
+        return self.session.scalar(
+            select(User).where(func.lower(User.linkedin_url) == key, User.merged_into_id.is_(None))
+        )
+
+    def find_person(self, email: str, linkedin_url: str | None = None) -> User | None:
+        """Who this submission is about: the person who answers to the address, else the
+        one who holds the LinkedIn profile **and has a card** (REB-800). Identity is both,
+        so a second address with the same profile is the same person, never a second row.
+        A holder with no card (a company's contact, an admin) is not who a freelancer
+        form is about: typing their profile attaches nothing to them."""
+        found = self.person(email)
+        if found is not None:
+            return found
+        holder = self.by_linkedin(linkedin_url)
+        if holder is not None and self.has_card(holder):
+            return holder
+        return None
+
+    @staticmethod
+    def _refuse_merged(row: User | None) -> None:
+        """A role goes to a person, not to an address an admin merged into somebody."""
+        if row is not None and row.merged_into_id is not None:
+            raise ValidationFailed(
+                ENTITY, "email", "questo indirizzo è stato unito a un'altra scheda: usa quello"
+            )
+
+    def has_card(self, user: User) -> bool:
+        return (
+            self.session.scalar(select(Freelancer.id).where(Freelancer.user_id == user.id))
+            is not None
+        )
+
+    def require_free_linkedin(self, user_id: UUID, linkedin_url: str | None) -> None:
+        """Refuses a LinkedIn profile that is another person's, with the sentence for
+        whoever typed it: the member editing their own card, an admin overriding it."""
+        holder = self.by_linkedin(linkedin_url)
+        if holder is not None and holder.id != user_id:
+            raise ValidationFailed(ENTITY, "linkedin_url", LINKEDIN_TAKEN)
 
     def get_or_create(
         self,
@@ -85,24 +163,29 @@ class UserService:
         same transaction as whatever the caller was doing, atomically -- committing it
         here would persist the phone number even if the caller's own insert then
         failed."""
-        row = self.by_email(email)
+        row = self.find_person(email, linkedin_url)
         if row is not None:
             if telefono is not None and row.telefono is None:
                 row.telefono = telefono
             return row
+        # A profile somebody else holds (a user with no card, see `find_person`) is not
+        # written on a second row: the index would refuse it, and it is theirs.
+        taken = self.by_linkedin(linkedin_url) is not None
         row = User(
             email=email.strip().lower(),
             nome=nome,
             cognome=cognome,
-            linkedin_url=linkedin_url,
+            linkedin_url=None if taken else linkedin_url,
             telefono=telefono,
         )
         self.session.add(row)
         try:
             self.session.commit()
         except IntegrityError:
+            # Two first applications racing: the index on the address, or since REB-800
+            # on the LinkedIn profile, decides, and the loser attaches to the winner.
             self.session.rollback()
-            existing = self.by_email(email)
+            existing = self.find_person(email, linkedin_url)
             assert existing is not None
             return existing
         return row
@@ -164,6 +247,7 @@ class UserService:
         The second element is whether a row was created, so the caller knows to mail a
         fresh promotion the same link everyone else gets."""
         row = self.by_email(email)
+        self._refuse_merged(row)
         created = row is None
         if row is None:
             nome, cognome = (nome or "").strip(), (cognome or "").strip()
@@ -194,6 +278,7 @@ class UserService:
         if role not in USER_ROLES:
             raise ValidationFailed(ENTITY, "role", f"uno fra {', '.join(USER_ROLES)}")
         row = self.by_email(email)
+        self._refuse_merged(row)
         created = row is None
         if row is None:
             nome, cognome = nome.strip(), cognome.strip()
@@ -222,9 +307,12 @@ class UserService:
         `utm` is what the login page's URL said (REB-426), kept on the token for the
         `Login` it will open; an empty one is no attribution at all."""
         assert self.settings is not None
-        row = self.by_email(email)
-        if row is None:
+        typed = self.by_email(email)
+        if typed is None:
             return None
+        # An address an admin merged away still gets its mail, at that address, and the
+        # link opens the person it was merged into (REB-800).
+        row = self.survivor(typed)
         now = datetime.now(UTC)
         self.session.execute(
             delete(MagicLinkToken).where(
@@ -254,7 +342,7 @@ class UserService:
         )
         self.session.commit()
         link = f"{self.settings.hub_url.rstrip('/')}/entra?t={raw}"
-        return magic_link_mail(row.email, link, self.settings.magic_link_minutes, note)
+        return magic_link_mail(typed.email, link, self.settings.magic_link_minutes, note)
 
     def enter(self, raw_token: str) -> tuple[User, str] | None:
         """The person and the raw session token for the cookie, or `None` for a wrong,
@@ -273,6 +361,8 @@ class UserService:
         row = self.session.get(User, token.user_id)
         if row is None:
             return None
+        # A link written for an address that was merged since opens the survivor (REB-800).
+        row = self.survivor(row)
         spent = self.session.execute(
             update(MagicLinkToken)
             .where(MagicLinkToken.id == token.id, MagicLinkToken.used_at.is_(None))
@@ -323,6 +413,7 @@ class UserService:
         row = self.session.get(User, session_row.user_id)
         if row is None:
             return None
+        row = self.survivor(row)
         session_row.expires_at = self._deadline(now)
         self.session.commit()
         return row

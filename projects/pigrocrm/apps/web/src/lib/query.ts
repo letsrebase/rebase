@@ -41,6 +41,11 @@ export const queryKeys = {
   // per-user key is what makes a stale cross-user read impossible by
   // construction, rather than merely unreproduced today.
   tokens: (userId: string) => ['tokens', userId] as const,
+  // The colleagues' tokens an admin sees (REB-810), and what the space lets a token be
+  // given. Both under `tokens` so one `invalidateQueries({ queryKey: ['tokens'] })` after a
+  // change refreshes every table of the panel.
+  teamTokens: (userId: string) => ['tokens', userId, 'team'] as const,
+  tokenOptions: (userId: string) => ['tokens', userId, 'options'] as const,
   // `owner` is the discriminated `{customerId} | {dealId}` object, so a customer's
   // documents and a deal's documents can never share a cache entry, and
   // `invalidateQueries({queryKey: ['documents']})` still matches both.

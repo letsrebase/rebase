@@ -31,9 +31,41 @@ const EXISTING_TOKEN = {
   id: 't1',
   nome: 'Claude',
   prefix: 'pgc_abc12345',
+  full_access: false,
   last_used_at: null,
   revoked_at: null,
   created_at: '2026-08-06T10:00:00Z',
+}
+
+const TEAM_TOKEN = {
+  id: 't9',
+  nome: 'Fatturazione',
+  prefix: 'pgc_team0001',
+  full_access: true,
+  last_used_at: null,
+  revoked_at: null,
+  created_at: '2026-08-06T10:00:00Z',
+  user_id: 'u2',
+  owner_nome: 'Giulia',
+}
+
+/**
+ * The panel reads three endpoints (the caller's tokens, what the space lets a token be
+ * given, and for an admin the team's tokens), so a bare `mockReturnValue` would hand the
+ * same answer to all three. `tokens` is the raw response for `GET /api/tokens` (`ok` or
+ * `failed`); the others default to a closed space and no colleague tokens.
+ */
+function mockGets(
+  tokens: unknown,
+  { options = false, team = [] }: { options?: boolean; team?: unknown[] } = {},
+) {
+  vi.mocked(api.GET).mockImplementation(((path: string) => {
+    if (path === '/api/tokens/options') {
+      return Promise.resolve(ok({ full_access_available: options }))
+    }
+    if (path === '/api/tokens/team') return Promise.resolve(ok(team))
+    return Promise.resolve(tokens)
+  }) as never)
 }
 
 function renderPanel() {
@@ -70,6 +102,7 @@ beforeEach(() => {
   vi.mocked(api.GET).mockReset()
   vi.mocked(api.POST).mockReset()
   vi.mocked(api.DELETE).mockReset()
+  vi.mocked(api.PATCH).mockReset()
   vi.mocked(toast.error).mockReset()
   vi.mocked(toast.success).mockReset()
   vi.mocked(useBlocker).mockClear()
@@ -97,13 +130,13 @@ beforeEach(() => {
 
 describe('TokensPanel', () => {
   it('explains what the tokens are for', async () => {
-    vi.mocked(api.GET).mockReturnValue(Promise.resolve(ok([])))
+    mockGets(ok([]))
     renderPanel()
     expect(await screen.findByText(/MCP/i)).toBeInTheDocument()
   })
 
   it('states plainly that a token carries its owner’s full role, with no scope and no expiry', async () => {
-    vi.mocked(api.GET).mockReturnValue(Promise.resolve(ok([])))
+    mockGets(ok([]))
     renderPanel()
     expect(await screen.findByText(/senza scadenza/i)).toBeInTheDocument()
     expect(screen.getByText(/creare altri amministratori/i)).toBeInTheDocument()
@@ -116,7 +149,7 @@ describe('TokensPanel', () => {
    * string: the sentence belongs in the body, where it can carry markup.
    */
   it('sets the environment variable in monospace, in the body and not in the header', async () => {
-    vi.mocked(api.GET).mockReturnValue(Promise.resolve(ok([])))
+    mockGets(ok([]))
     renderPanel()
     const name = await screen.findByText('PIGROCRM_TOKEN')
     expect(name.tagName).toBe('CODE')
@@ -124,24 +157,23 @@ describe('TokensPanel', () => {
   })
 
   it('shows only the prefix of an existing token, never the full secret', async () => {
-    vi.mocked(api.GET).mockReturnValue(Promise.resolve(ok([EXISTING_TOKEN])))
+    mockGets(ok([EXISTING_TOKEN]))
     renderPanel()
     expect(await screen.findByText('pgc_abc12345')).toBeInTheDocument()
   })
 
   it('offers a way to create a new token', async () => {
-    vi.mocked(api.GET).mockReturnValue(Promise.resolve(ok([])))
+    mockGets(ok([]))
     renderPanel()
     expect(await screen.findByRole('button', { name: /nuovo token/i })).toBeInTheDocument()
   })
 
   it('shows a failed list as a distinct alert, not an empty-looking table', async () => {
-    vi.mocked(api.GET).mockReturnValue(
-      Promise.resolve(failed({ code: 'http_error', detail: 'Il server non risponde.' }, 503)),
-    )
+    mockGets(failed({ code: 'http_error', detail: 'Il server non risponde.' }, 503))
     renderPanel()
     expect(await screen.findByRole('alert')).toHaveTextContent('Il server non risponde.')
-    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+    // The team's table below is the admin's own and stays; the caller's is the one gone.
+    expect(screen.queryByText('Nessun token creato.')).not.toBeInTheDocument()
   })
 
   /**
@@ -161,7 +193,7 @@ describe('TokensPanel', () => {
       enterWithLink: vi.fn(),
       enterWithInvite: vi.fn(),
     })
-    vi.mocked(api.GET).mockReturnValue(Promise.resolve(ok([])))
+    mockGets(ok([]))
     renderPanel()
 
     await screen.findByRole('button', { name: /nuovo token/i })
@@ -170,13 +202,14 @@ describe('TokensPanel', () => {
 
   describe('creating a token — the one-time reveal', () => {
     async function createToken() {
-      vi.mocked(api.GET).mockReturnValue(Promise.resolve(ok([])))
+      mockGets(ok([]))
       vi.mocked(api.POST).mockReturnValueOnce(
         Promise.resolve(
           ok({
             id: 't2',
             nome: 'Claude sul portatile',
             prefix: 'pgc_zzzz9999',
+            full_access: false,
             last_used_at: null,
             revoked_at: null,
             created_at: '2026-08-06T10:00:00Z',
@@ -196,7 +229,7 @@ describe('TokensPanel', () => {
     })
 
     it('never gates "Crea" on the name being filled in -- the backend decides, not the client', async () => {
-      vi.mocked(api.GET).mockReturnValue(Promise.resolve(ok([])))
+      mockGets(ok([]))
       renderPanel()
       await userEvent.click(await screen.findByRole('button', { name: /nuovo token/i }))
       expect(screen.getByRole('button', { name: 'Crea' })).not.toBeDisabled()
@@ -252,7 +285,7 @@ describe('TokensPanel', () => {
     })
 
     it('does not ask to block leaving when no token is currently unconfirmed', async () => {
-      vi.mocked(api.GET).mockReturnValue(Promise.resolve(ok([])))
+      mockGets(ok([]))
       renderPanel()
       await screen.findByRole('button', { name: /nuovo token/i })
 
@@ -282,7 +315,7 @@ describe('TokensPanel', () => {
     }
 
     it('offers the revoke inside the row menu, in the destructive tone', async () => {
-      vi.mocked(api.GET).mockReturnValue(Promise.resolve(ok([EXISTING_TOKEN])))
+      mockGets(ok([EXISTING_TOKEN]))
       renderPanel()
 
       await userEvent.click(await screen.findByRole('button', { name: 'Azioni per Claude' }))
@@ -293,7 +326,7 @@ describe('TokensPanel', () => {
     })
 
     it('asks for confirmation before revoking, since it cannot be undone', async () => {
-      vi.mocked(api.GET).mockReturnValue(Promise.resolve(ok([EXISTING_TOKEN])))
+      mockGets(ok([EXISTING_TOKEN]))
       vi.spyOn(window, 'confirm').mockReturnValue(false)
       renderPanel()
 
@@ -302,7 +335,7 @@ describe('TokensPanel', () => {
     })
 
     it('revokes through the real endpoint once confirmed', async () => {
-      vi.mocked(api.GET).mockReturnValue(Promise.resolve(ok([EXISTING_TOKEN])))
+      mockGets(ok([EXISTING_TOKEN]))
       vi.mocked(api.DELETE).mockReturnValueOnce(Promise.resolve(ok(undefined)))
       vi.spyOn(window, 'confirm').mockReturnValue(true)
       renderPanel()
@@ -319,9 +352,7 @@ describe('TokensPanel', () => {
     })
 
     it('offers no revoke action for an already-revoked token', async () => {
-      vi.mocked(api.GET).mockReturnValue(
-        Promise.resolve(ok([{ ...EXISTING_TOKEN, revoked_at: '2026-08-05T00:00:00Z' }])),
-      )
+      mockGets(ok([{ ...EXISTING_TOKEN, revoked_at: '2026-08-05T00:00:00Z' }]))
       renderPanel()
 
       expect(await screen.findByText('Revocato')).toBeInTheDocument()
@@ -338,7 +369,7 @@ describe('TokensPanel', () => {
    */
   describe('how the table reads', () => {
     it('shows an active token as a settled pill, not a filled badge', async () => {
-      vi.mocked(api.GET).mockReturnValue(Promise.resolve(ok([EXISTING_TOKEN])))
+      mockGets(ok([EXISTING_TOKEN]))
       renderPanel()
       const pill = (await screen.findByText('Attivo')).closest('[data-slot="badge"]')
       expect(pill).toHaveAttribute('data-variant', 'pill')
@@ -348,9 +379,7 @@ describe('TokensPanel', () => {
     /** Revoking is something the owner did on purpose. A list of old tokens in the
      *  destructive tint would say something went wrong when nothing did. */
     it('keeps a revoked token quiet rather than tinting it as a warning', async () => {
-      vi.mocked(api.GET).mockReturnValue(
-        Promise.resolve(ok([{ ...EXISTING_TOKEN, revoked_at: '2026-08-05T00:00:00Z' }])),
-      )
+      mockGets(ok([{ ...EXISTING_TOKEN, revoked_at: '2026-08-05T00:00:00Z' }]))
       renderPanel()
 
       const pill = (await screen.findByText('Revocato')).closest('[data-slot="badge"]')
@@ -360,21 +389,192 @@ describe('TokensPanel', () => {
     /** «mai» and not the em dash: a token that has never been used is a fact about the
      *  token, and it is the fact somebody checks before revoking one. */
     it('says a token has never been used in words, with no calendar icon', async () => {
-      vi.mocked(api.GET).mockReturnValue(Promise.resolve(ok([EXISTING_TOKEN])))
+      mockGets(ok([EXISTING_TOKEN]))
       renderPanel()
       const cell = (await screen.findByText('mai')).closest('td')
       expect(cell?.querySelector('svg')).toBeNull()
     })
 
     it('puts a calendar icon before a real last-used moment, and keeps its time of day', async () => {
-      vi.mocked(api.GET).mockReturnValue(
-        Promise.resolve(ok([{ ...EXISTING_TOKEN, last_used_at: '2026-08-06T10:30:00Z' }])),
-      )
+      mockGets(ok([{ ...EXISTING_TOKEN, last_used_at: '2026-08-06T10:30:00Z' }]))
       renderPanel()
 
       const cell = (await screen.findByText(/ago 2026/)).closest('td')
       expect(cell?.querySelector('svg')).not.toBeNull()
       expect(cell?.textContent).toMatch(/\d{2}:\d{2}/)
+    })
+  })
+  /**
+   * REB-810: the invoice, rate and period-lock tools are chosen per token. Chosen when it
+   * is made, shown in the list, and changed from the row by its owner or, for a colleague's
+   * token, by an administrator.
+   */
+  describe('full access, token by token', () => {
+    it('shows each token as standard or complete', async () => {
+      mockGets(ok([EXISTING_TOKEN, { ...EXISTING_TOKEN, id: 't2', nome: 'Fatture', full_access: true }]))
+      renderPanel()
+
+      expect(await screen.findByText('Standard')).toBeInTheDocument()
+      const pill = screen.getByText('Completo').closest('[data-slot="badge"]')
+      expect(pill).toHaveAttribute('data-tone', 'gold')
+    })
+
+    it('offers the box in the new-token dialog, off, and sends what was chosen', async () => {
+      mockGets(ok([]), { options: true })
+      vi.mocked(api.POST).mockReturnValueOnce(
+        Promise.resolve(ok({ ...EXISTING_TOKEN, id: 't3', full_access: true, token: 'pgc_x' })),
+      )
+      renderPanel()
+      await userEvent.click(await screen.findByRole('button', { name: /nuovo token/i }))
+
+      const box = await screen.findByRole('checkbox', { name: 'Accesso completo' })
+      expect(box).not.toBeDisabled()
+      expect(box).not.toBeChecked()
+      await userEvent.type(screen.getByLabelText('Nome'), 'Fatture')
+      await userEvent.click(box)
+      await userEvent.click(screen.getByRole('button', { name: 'Crea' }))
+
+      await waitFor(() =>
+        expect(api.POST).toHaveBeenCalledWith('/api/tokens', {
+          body: { nome: 'Fatture', full_access: true },
+        }),
+      )
+    })
+
+    it('sends a token closed when the box is left alone', async () => {
+      mockGets(ok([]), { options: true })
+      vi.mocked(api.POST).mockReturnValueOnce(
+        Promise.resolve(ok({ ...EXISTING_TOKEN, id: 't3', token: 'pgc_x' })),
+      )
+      renderPanel()
+      await userEvent.click(await screen.findByRole('button', { name: /nuovo token/i }))
+      await userEvent.type(screen.getByLabelText('Nome'), 'Chiacchiere')
+      await userEvent.click(screen.getByRole('button', { name: 'Crea' }))
+
+      await waitFor(() =>
+        expect(api.POST).toHaveBeenCalledWith('/api/tokens', {
+          body: { nome: 'Chiacchiere', full_access: false },
+        }),
+      )
+    })
+
+    it('says why the box is off when the space has not opened full access', async () => {
+      mockGets(ok([]), { options: false })
+      renderPanel()
+      await userEvent.click(await screen.findByRole('button', { name: /nuovo token/i }))
+
+      expect(await screen.findByRole('checkbox', { name: 'Accesso completo' })).toBeDisabled()
+      expect(screen.getByText(/Chiuso per questo spazio/)).toBeInTheDocument()
+    })
+
+    async function chooseFromRow(name: string, item: string) {
+      await userEvent.click(await screen.findByRole('button', { name }))
+      await userEvent.click(await screen.findByRole('menuitem', { name: item }))
+    }
+
+    it('asks before giving a token full access, then patches it', async () => {
+      mockGets(ok([EXISTING_TOKEN]), { options: true })
+      vi.mocked(api.PATCH).mockReturnValueOnce(
+        Promise.resolve(ok({ ...EXISTING_TOKEN, full_access: true })),
+      )
+      const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+      renderPanel()
+
+      await chooseFromRow('Azioni per Claude', 'Dai l’accesso completo')
+
+      expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/emettere e annullare fatture/))
+      await waitFor(() =>
+        expect(api.PATCH).toHaveBeenCalledWith('/api/tokens/{token_id}', {
+          params: { path: { token_id: 't1' } },
+          body: { full_access: true },
+        }),
+      )
+      await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Accesso completo attivato'))
+    })
+
+    it('does nothing when the confirmation is declined', async () => {
+      mockGets(ok([EXISTING_TOKEN]), { options: true })
+      vi.spyOn(window, 'confirm').mockReturnValue(false)
+      renderPanel()
+
+      await chooseFromRow('Azioni per Claude', 'Dai l’accesso completo')
+
+      expect(api.PATCH).not.toHaveBeenCalled()
+    })
+
+    it('closes full access without asking, since closing takes nothing away from anybody', async () => {
+      mockGets(ok([{ ...EXISTING_TOKEN, full_access: true }]), { options: true })
+      vi.mocked(api.PATCH).mockReturnValueOnce(Promise.resolve(ok(EXISTING_TOKEN)))
+      const confirm = vi.spyOn(window, 'confirm')
+      renderPanel()
+
+      await chooseFromRow('Azioni per Claude', 'Chiudi l’accesso completo')
+
+      expect(confirm).not.toHaveBeenCalled()
+      await waitFor(() =>
+        expect(api.PATCH).toHaveBeenCalledWith('/api/tokens/{token_id}', {
+          params: { path: { token_id: 't1' } },
+          body: { full_access: false },
+        }),
+      )
+    })
+
+    it('shows opening as unavailable, not missing, on a space that has not opened it', async () => {
+      mockGets(ok([EXISTING_TOKEN]), { options: false })
+      renderPanel()
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Azioni per Claude' }))
+      expect(await screen.findByRole('menuitem', { name: 'Dai l’accesso completo' })).toHaveAttribute(
+        'aria-disabled',
+        'true',
+      )
+    })
+
+    it('lets an administrator see and close a colleague’s token', async () => {
+      mockGets(ok([]), { options: true, team: [TEAM_TOKEN] })
+      vi.mocked(api.PATCH).mockReturnValueOnce(
+        Promise.resolve(ok({ ...TEAM_TOKEN, full_access: false })),
+      )
+      renderPanel()
+
+      expect(await screen.findByText('Token del team')).toBeInTheDocument()
+      expect(await screen.findByText('Giulia')).toBeInTheDocument()
+
+      await chooseFromRow('Azioni per Fatturazione di Giulia', 'Chiudi l’accesso completo')
+      await waitFor(() =>
+        expect(api.PATCH).toHaveBeenCalledWith('/api/tokens/{token_id}', {
+          params: { path: { token_id: 't9' } },
+          body: { full_access: false },
+        }),
+      )
+    })
+
+    it('asks for a colleague’s tokens only when the caller is an administrator', async () => {
+      vi.mocked(useAuth).mockReturnValue({
+        user: {
+          id: 'u3',
+          email: 'collab@pigro.it',
+          nome: 'Collab',
+          ruolo: 'collaboratore',
+          attivo: true,
+          tariffa_oraria_default: null,
+          costo_orario_default: null,
+          created_at: '2026-08-06T10:00:00Z',
+          last_login_at: null,
+          digest_settimanale: true,
+        },
+        isLoading: false,
+        login: vi.fn(),
+        logout: vi.fn(),
+        enterWithLink: vi.fn(),
+        enterWithInvite: vi.fn(),
+      })
+      mockGets(ok([]), { options: true })
+      renderPanel()
+
+      await screen.findByRole('button', { name: /nuovo token/i })
+      expect(screen.queryByText('Token del team')).not.toBeInTheDocument()
+      expect(api.GET).not.toHaveBeenCalledWith('/api/tokens/team')
     })
   })
 })

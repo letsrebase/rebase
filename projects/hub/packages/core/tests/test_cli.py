@@ -255,7 +255,7 @@ _OLD_KEY = "sk-ant-old-key-abcd"
 @pytest.fixture
 def ai_db(hub_engine: Engine, monkeypatch: pytest.MonkeyPatch) -> Any:
     """The command's settings point at the test database; the AI tables go back to what
-    migration 0035 seeded afterwards."""
+    migration 0036 seeded afterwards."""
 
     def use(secrets_key: str = _SECRETS_KEY) -> None:
         url = hub_engine.url.render_as_string(hide_password=False)

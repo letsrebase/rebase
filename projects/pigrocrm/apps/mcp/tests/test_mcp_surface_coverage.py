@@ -434,6 +434,10 @@ _CREDENZIALI: dict[Method, str] = {
     ("PatService", "create"): "un agente non conia le proprie credenziali",
     ("PatService", "list"): "l'elenco dei token e' materiale di sicurezza",
     ("PatService", "revoke"): "revocare token e' amministrazione dell'account",
+    ("PatService", "set_full_access"): (
+        "un token non apre da solo i propri strumenti privilegiati: lo decide una persona (REB-810)"
+    ),
+    ("PatService", "list_team"): "l'elenco dei token dei colleghi e' materiale di sicurezza",
     ("PatService", "revoke_all_for"): "e' l'effetto della disattivazione, non un'operazione",
     ("PatService", "resolve"): "e' il passo di autenticazione, non un'operazione",
     ("RefreshTokenService", "issue"): "sessione del browser, non superficie agentica",
@@ -881,8 +885,8 @@ _COPERTE_O_UMANE: dict[Method, str] = {
 # Nessuna settima categoria di esclusioni *definitive*. Il task A8 ne aveva aperta una --
 # `_IN_ATTESA_DI_DECISIONE`, una sola voce, `SearchService.search_everything` --
 # dichiarandola provvisoria e scrivendo che A11 avrebbe dovuto **cancellarla**, non
-# aggiornarla. A11 ha registrato il tool `search_everything` (`tools/__init__.py`, sezione
-# "shared"), quindi il metodo e' ora raggiungibile e la riga e' sparita insieme alla sua
+# aggiornarla. A11 ha registrato il tool `search_everything` (`tools/families/shared.py`),
+# quindi il metodo e' ora raggiungibile e la riga e' sparita insieme alla sua
 # categoria. Se fosse rimasta, `test_no_declared_exclusion_is_actually_reachable` sarebbe
 # diventato rosso: e' quel test a rendere impossibile lasciare qui un'esclusione che non
 # esclude piu' niente.
@@ -904,7 +908,7 @@ _COPERTE_O_UMANE: dict[Method, str] = {
 # declaring that REB-362 would either register a tool for each or say why not, and that
 # it must **delete** the block, not update it, the same discipline as the two above.
 # REB-362 registered `propose_contract`, `propose_day`, `get_proposal`, `list_proposals`,
-# `accept_proposal` and `reject_proposal` (`tools/__init__.py`, section "proposals"). Of
+# `accept_proposal` and `reject_proposal` (`tools/families/proposals.py`). Of
 # the seven: `WorkUnitService.get`/`transitions_for` and `ApprovalService.get` take no
 # `actor` and moved to `_INTERNE` above, next to every other no-actor read; the four
 # writes (`WorkUnitService.create`/`transition`/`link_approval`,

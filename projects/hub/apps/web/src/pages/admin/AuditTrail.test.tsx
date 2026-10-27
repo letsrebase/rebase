@@ -93,6 +93,33 @@ const PIGRO_LINK: AdminAction = {
   created_at: '2026-10-01T09:05:00Z',
 }
 
+// Two cards of one person merged (REB-800): `merged` on the absorbed card lists the ids
+// that moved per relation, `absorbed` on the survivor counts them, `unmerged` is the
+// shell putting it back.
+const MERGED: AdminAction = {
+  id: 'a8',
+  entity_type: 'freelancer',
+  entity_id: 'f1',
+  kind: 'merged',
+  admin_id: 'u1',
+  admin_nome: 'Ivan Bianchi',
+  payload: {
+    into_freelancer_id: 'f2',
+    moved: { logins: ['l1', 'l2'], comments: ['c1'] },
+    cv: 'assorbita',
+    scheda_da_rigenerare: true,
+  },
+  created_at: '2026-10-02T09:00:00Z',
+}
+const ABSORBED: AdminAction = {
+  ...MERGED,
+  id: 'a9',
+  entity_id: 'f2',
+  kind: 'absorbed',
+  payload: { from_freelancer_id: 'f1', moved: { logins: 1 }, cv: 'invariato', scheda_da_rigenerare: false },
+}
+const UNMERGED: AdminAction = { ...MERGED, id: 'a10', kind: 'unmerged', payload: {} }
+
 function mount({ canRevert = true, onReverted = () => {} }: { canRevert?: boolean; onReverted?: () => void } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   return render(
@@ -156,6 +183,33 @@ describe('AuditTrail', () => {
     expect(entry).toHaveTextContent('Ivan Bianchi')
     expect(entry.querySelector('dl')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Ripristina questa modifica' })).toBeNull()
+  })
+
+  it('says the card was merged into another, with what moved, and no revert button (REB-800)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, [MERGED]))
+    mount()
+    const entry = (await screen.findByText('Unita a un’altra scheda')).closest('li')!
+    expect(entry).toHaveTextContent('Ivan Bianchi')
+    // `merged` lists the ids that moved, per relation: 2 logins and 1 comment.
+    expect(entry).toHaveTextContent('3 righe spostate · CV più recente passato alla scheda tenuta · scheda anonima da riscrivere')
+    expect(entry.querySelector('dl')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Ripristina questa modifica' })).toBeNull()
+  })
+
+  it('says the card took another in, counting what moved (REB-800)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, [ABSORBED]))
+    mount()
+    const entry = (await screen.findByText('Ha assorbito una scheda')).closest('li')!
+    expect(entry).toHaveTextContent('1 riga spostata')
+    expect(entry).not.toHaveTextContent('CV più recente')
+    expect(entry).not.toHaveTextContent('scheda anonima')
+  })
+
+  it('says a merge was put back by the shell (REB-800)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, [UNMERGED]))
+    mount()
+    const entry = (await screen.findByText('Unione annullata')).closest('li')!
+    expect(entry).not.toHaveTextContent('righe spostate')
   })
 
   it('says so when there is nothing yet', async () => {

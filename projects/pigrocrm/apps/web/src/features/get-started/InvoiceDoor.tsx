@@ -442,13 +442,14 @@ function Handoff({
           <Link to="/app/settings/space" className="font-medium underline underline-offset-4">
             Impostazioni → Spazio
           </Link>
-          , poi ricollega l’assistente perché veda lo strumento.
+          , dai l’accesso completo al token dell’assistente in Token di accesso, poi ricollega
+          l’assistente perché veda lo strumento.
         </p>
       )}
       {(!assistantConnected || issued !== null) && (
         <div className="space-y-3 border-t pt-3">
           <p className="font-medium">Prima collega l’assistente</p>
-          <ConnectAgentPanel issued={issued} onIssued={setIssued} />
+          <ConnectAgentPanel issued={issued} onIssued={setIssued} fullAccessByDefault />
           {issued && (
             <Button type="button" variant="outline" onClick={() => setIssued(null)}>
               Ho copiato il token

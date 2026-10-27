@@ -21,8 +21,9 @@ from rebase_core.audit import (
 from rebase_core.comments import CommentService
 from rebase_core.config import Settings
 from rebase_core.cv_text import CvText, extract_text
-from rebase_core.errors import NotFound, ValidationFailed
+from rebase_core.errors import InvalidState, NotFound, ValidationFailed
 from rebase_core.http import HttpCall
+from rebase_core.leads import card_by_linkedin
 from rebase_core.logins import LoginService
 from rebase_core.models import (
     CV_MAX_BYTES,
@@ -48,7 +49,7 @@ from rebase_core.schemas import (
     SignupUtm,
     StatusChange,
 )
-from rebase_core.users import UserService
+from rebase_core.users import UserService, refuse_linkedin_conflict
 
 ENTITY = "freelancer"
 # The pseudo-state the list filter uses for signups without a card (ORB-163): never
@@ -66,6 +67,16 @@ _ADMIN_IDENTITY_FIELDS = ("nome", "cognome", "linkedin_url")
 # mail of its own.
 ALREADY_HAS_CARD_NOTE = (
     "Risulta già una scheda su rebase con questo indirizzo: la trovi e la modifichi dalla tua area."
+)
+# The same, for a form that typed an address new to us with a LinkedIn profile we know
+# (REB-800): the mail goes to the address on file, never to the one typed, and says so.
+ALREADY_HAS_CARD_BY_LINKEDIN_NOTE = (
+    "Risulta già una scheda su rebase con questo profilo LinkedIn: la trovi e la modifichi "
+    "dalla tua area, accedendo con questo indirizzo."
+)
+# What an admin drafting a card is told when its LinkedIn is already on a card (REB-800).
+LINKEDIN_HAS_CARD = (
+    "Esiste già una scheda con questo profilo LinkedIn: aprila, oppure unisci le due schede."
 )
 
 
@@ -236,7 +247,7 @@ class FreelancerService:
         if cv is not None:
             stored = (cv, *check_cv(cv, cv_filename, cv_mime))
         email = data.email.strip().lower()
-        row = self._find(email)
+        row = self._find(email, data.linkedin_url)
         if row is not None:
             owner = self.session.get(User, row.user_id)
             assert owner is not None
@@ -255,6 +266,7 @@ class FreelancerService:
                 mime,
                 len(content),
             )
+            row.cv_uploaded_at = utcnow()
         row.tariffa_giornaliera = data.tariffa_giornaliera
         row.posizione = data.posizione
         row.remoto = data.remoto
@@ -297,6 +309,10 @@ class FreelancerService:
         created = row is None
         if row is None:
             utm = {column: getattr(signup, column) for column in UTM_COLUMNS}
+            users = UserService(self.session)
+            holder, owner = users.by_linkedin(data.linkedin_url), users.person(email)
+            if holder is not None and (owner is None or holder.id != owner.id):
+                raise ValidationFailed(ENTITY, "linkedin_url", LINKEDIN_HAS_CARD)
             user = UserService(self.session).get_or_create(
                 email, data.nome, data.cognome, data.linkedin_url
             )
@@ -307,6 +323,7 @@ class FreelancerService:
             # been corrected, so the linked `users` row follows it too, in this commit.
             existing_user = self.session.get(User, row.user_id)
             if existing_user is not None:
+                UserService(self.session).require_free_linkedin(existing_user.id, data.linkedin_url)
                 existing_user.nome, existing_user.cognome, existing_user.linkedin_url = (
                     data.nome,
                     data.cognome,
@@ -384,14 +401,16 @@ class FreelancerService:
             card_emails, card_emails.c.email == func.lower(Signup.email)
         )
         rows = self.session.scalars(
-            base.where(no_card).order_by(Signup.created_at.desc(), Signup.id.desc()).limit(limit)
+            base.where(no_card, ~card_by_linkedin())
+            .order_by(Signup.created_at.desc(), Signup.id.desc())
+            .limit(limit)
         ).all()
         totale = (
             self.session.scalar(
                 select(func.count())
                 .select_from(Signup)
                 .outerjoin(card_emails, card_emails.c.email == func.lower(Signup.email))
-                .where(no_card)
+                .where(no_card, ~card_by_linkedin())
             )
             or 0
         )
@@ -475,6 +494,8 @@ class FreelancerService:
         identity_changes = {k: v for k, v in changes.items() if k in _ADMIN_IDENTITY_FIELDS}
         row_changes = {k: v for k, v in changes.items() if k not in _ADMIN_IDENTITY_FIELDS}
         reject_cleared_columns(ENTITY, User, identity_changes)
+        if changes.get("linkedin_url") is not None:
+            UserService(self.session).require_free_linkedin(user.id, changes["linkedin_url"])
         reject_cleared_columns(ENTITY, Freelancer, row_changes)
         before = {
             **{field: getattr(user, field) for field in identity_changes},
@@ -484,7 +505,10 @@ class FreelancerService:
             setattr(user, field, value)
         for field, value in row_changes.items():
             setattr(row, field, value)
-        self.session.commit()
+        try:
+            self.session.commit()
+        except IntegrityError as exc:
+            refuse_linkedin_conflict(self.session, exc)
         after = {
             **{field: getattr(user, field) for field in identity_changes},
             **{field: getattr(row, field) for field in row_changes},
@@ -522,6 +546,7 @@ class FreelancerService:
             return freelancer_read(row, user)
         before = {"cv_filename": row.cv_filename, "cv_mime": row.cv_mime, "cv_size": row.cv_size}
         row.cv_bytes, row.cv_filename, row.cv_mime, row.cv_size = None, None, None, None
+        row.cv_uploaded_at = None
         self.session.flush()
         cards.delete(row.id)
         self.session.commit()
@@ -571,6 +596,11 @@ class FreelancerService:
         row = self._require(freelancer_id, include_deleted=True)
         user = self.session.get(User, row.user_id)
         assert user is not None
+        if row.deleted_at is not None and user.merged_into_id is not None:
+            raise InvalidState(
+                "Questa scheda è stata unita a un'altra: per riaverla si annulla l'unione "
+                "(rebase talent-duplicates --undo)."
+            )
         if row.deleted_at is not None:
             row.deleted_at = None
             self.session.commit()
@@ -615,9 +645,16 @@ class FreelancerService:
             raise NotFound(ENTITY, freelancer_id)
         return row
 
-    def _find(self, email: str) -> Freelancer | None:
-        return self.session.scalar(
-            select(Freelancer)
-            .join(User, User.id == Freelancer.user_id)
-            .where(func.lower(User.email) == email)
-        )
+    def _find(self, email: str, linkedin_url: str | None = None) -> Freelancer | None:
+        """The card of whoever this submission is about (REB-800): the person who answers to
+        the address, merged away or not, else the person who holds the LinkedIn profile.
+        Of the two, whoever has a card: an address that exists with no card yet does not
+        hide a profile that is on one. `None` when neither has a card."""
+        users = UserService(self.session)
+        for person in (users.person(email), users.by_linkedin(linkedin_url)):
+            if person is None:
+                continue
+            card = self.session.scalar(select(Freelancer).where(Freelancer.user_id == person.id))
+            if card is not None:
+                return card
+        return None

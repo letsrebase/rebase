@@ -99,7 +99,7 @@ def _settings() -> Settings:
 @pytest.fixture
 def opener(hub_engine: Engine) -> Iterator[SessionOpener]:
     """A session opener over the worker's database with the card task callable: key saved,
-    Anthropic on, a price for `claude-opus-5`. Wiped back to what migration 0035 seeded."""
+    Anthropic on, a price for `claude-opus-5`. Wiped back to what migration 0036 seeded."""
 
     def open_session() -> Any:
         return closing(Session(hub_engine))
