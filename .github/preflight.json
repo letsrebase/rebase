@@ -411,6 +411,19 @@
         "projects/website/deploy/check-unindexable.sh"
       ],
       "why": "The three vhosts that decide whether a preview or the CRM's production host tells a crawler to stay out are edited by hand and rewritten in place by certbot, and nothing else ever asks the live host what it actually answers. Named one by one rather than globbed: the directories they live in also hold nginx.conf, spa.conf, rebase-proxy.conf and letsrebase.conf (production website, which stays indexable and this script never asserts on), none of which the live hosts under test depend on, and a docker build or Playwright run over an unrelated comment in one of those was exactly the ORB-141 cost this repository already paid once. Reaches preview.letsrebase.com, preview.pigro.letsrebase.com and pigro.letsrebase.com over HTTPS for the X-Robots-Tag and robots.txt REB-108 checks; a GitHub-hosted runner has nothing of its own to prove here, which is why this runs only from a developer machine."
+    },
+    {
+      "id": "kit",
+      "run": "python3 .github/kit/bin/kit.py check && python3 -m unittest discover -s tooling/workflow-kit/tests",
+      "when": [
+        ".agents/**",
+        ".claude/**",
+        ".github/kit/**",
+        ".github/workflow.json",
+        ".github/PULL_REQUEST_TEMPLATE.md",
+        "tooling/workflow-kit/**"
+      ],
+      "why": "The kit job in ci runs the same check on every PR in seconds; here it catches a skill edited in .claude/skills instead of .agents/skills, or a kit change not synced, before the push rather than after (REB-814)."
     }
   ]
 }

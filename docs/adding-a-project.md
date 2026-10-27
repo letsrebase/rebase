@@ -157,7 +157,7 @@ workspace the project joined in section 2.
 Add the project's expensive checks to `.github/preflight.json`, with `when` globs
 scoped to `projects/<name>/**`. Mark `serial: true` anything that binds a fixed host
 port or a shared database (a machine running several agents at once has port
-collisions that read exactly like a failing test). Then run `preflight --list` and read
+collisions that read exactly like a failing test). Then run `python3 .github/kit/bin/preflight --list` and read
 which checks your diff actually selects, rather than assuming the globs are right.
 
 **Anything you took off the PR path has to appear here.** A heavy check in neither

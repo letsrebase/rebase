@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "tracker": {
+    "kind": "linear",
+    "workspace": "letsrebase",
+    "team": "rebase",
+    "prefix": "REB",
+    "language": "English",
+    "contract": "docs/tracker.md",
+    "labels": {
+      "type": ["fix", "feature", "refactor", "chore", "docs", "test", "ci", "design", "security", "spike"],
+      "area": ["area:web", "area:api", "area:core", "area:mcp", "area:hub", "area:infra", "area:ci", "area:website", "area:brand", "area:repo"]
+    }
+  },
+  "github": {
+    "merge": "merge",
+    "required_check": "ci",
+    "review_bots": ["greptile", "coderabbit"]
+  },
+  "commits": {
+    "types": ["feat", "fix", "refactor", "perf", "test", "docs", "ci", "chore", "style", "revert"],
+    "scope_required": true,
+    "scopes": ["web", "api", "core", "mcp", "hub", "website", "pigrocrm", "vaultwarden", "brand", "ui", "analytics", "infra", "deploy", "ci", "repo", "deps", "tracker", "kit"]
+  },
+  "pr": {
+    "title_max": 72,
+    "card_line": true,
+    "milestone_card_line": true,
+    "exempt_authors": ["dependabot[bot]", "app/dependabot"],
+    "sections": [
+      {"title": "What this changes", "required": true},
+      {"title": "How I verified it", "required": true},
+      {"title": "What did not change, on purpose", "when": "a reviewer could assume a neighbouring thing moved"},
+      {"title": "Migrations", "when": "projects/*/packages/core/migrations/versions/ changed"},
+      {"title": "API changes", "when": "a route, a request or a response shape changed"},
+      {"title": "MCP surface", "when": "an MCP tool was added, removed or renamed"},
+      {"title": "Anything a reviewer should look at twice"},
+      {"title": "Screenshots and video", "required": true, "hint": "For anything a person could see: one before-and-after pair per change, composed into a\nsingle side-by-side image. For anything a person could do: one video of the feature in\nuse, recorded with docs/pr-screenshots/record.mjs. Reference each file by its local path\nand attach them all when you open the PR: `gh pr create --body-file body.md --attach\n./pair-1.png --attach ./demo-1.mp4` (docs/pr-screenshots/README.md). If nothing visible\nchanged, or a pair or the video cannot be captured, say so and why. Keep this section\neither way."}
+    ]
+  },
+  "extras": "docs/agents"
+}
