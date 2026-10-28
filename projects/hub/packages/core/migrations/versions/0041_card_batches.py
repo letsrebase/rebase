@@ -12,8 +12,9 @@ API (half price, asynchronous), and has to survive a restart of the `cards` serv
   `failed` when it was never sent.
 * `card_batch_items`: one row per card of a batch, keyed by batch and person (`ON DELETE
   CASCADE` on both: it goes with the batch and with the person), with the hash of the CV
-  and of every input the request was built from, what became of the card, and whether its
-  answer's batch price is already in `ai_usage`. Hashes only, never a CV or a card.
+  and of every input the request was built from, the prompt version, what became of the
+  card, and whether its answer's batch price is already in `ai_usage`. Hashes only, never a
+  CV or a card.
 * `ai_usage.batch`: the call went through a batch API and its cost is at the batch
   price. Existing rows are synchronous calls: `false`.
 
@@ -61,6 +62,7 @@ def upgrade() -> None:
             freelancer_id UUID NOT NULL REFERENCES freelancers (id) ON DELETE CASCADE,
             cv_sha256 VARCHAR(64) NOT NULL,
             input_hashes JSONB NOT NULL,
+            prompt_version INTEGER NOT NULL,
             status VARCHAR(12) NOT NULL DEFAULT 'pending',
             usage_recorded BOOLEAN NOT NULL DEFAULT false,
             PRIMARY KEY (batch_id, freelancer_id),

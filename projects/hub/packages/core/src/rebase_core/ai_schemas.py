@@ -108,7 +108,8 @@ class StaleCardsRead(BaseModel):
 
 class RegenerationStarted(BaseModel):
     """The answer of an admin's start: how many cards were queued; they are written after
-    the response, one at a time."""
+    the response, with a few workers at once or, from the batch threshold, as one Message
+    Batch."""
 
     queued: int
 

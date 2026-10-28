@@ -34,6 +34,7 @@ from collections.abc import Callable, Coroutine, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any, Literal, Protocol, cast
 from uuid import UUID
 
@@ -52,6 +53,7 @@ from pydantic_ai.models import Model, ModelRequestParameters
 from pydantic_ai.models.batch import Batch, BatchRequest, BatchResult
 from pydantic_ai.output import OutputObjectDefinition
 from pydantic_ai.settings import ModelSettings
+from sqlalchemy.orm import Session
 
 from rebase_core.ai_config import (
     CAP_REACHED,
@@ -473,9 +475,8 @@ def record_response(
     configured: str,
     response: LlmResponse,
     freelancer_id: UUID | None,
-    batch: bool = False,
 ) -> None:
-    """The answer's usage row, at the batch price when `batch`. The model that answered may
+    """The answer's usage row. The model that answered may
     be a fallback or a dated alias with no price row: the call is then priced as the one
     asked for (`configured`), so it spends the cap. A lost row never loses the answer: it is
     paid for, so the failure is logged and the answer still handed over."""
@@ -492,7 +493,6 @@ def record_response(
                 cache_read_tokens=response.cache_read_tokens,
                 freelancer_id=freelancer_id,
                 priced_as=configured,
-                batch=batch,
             )
     except Exception as error:  # the answer is paid for: a lost row must not lose it
         logger.error("%s usage not recorded: %s", response.provider, type(error).__name__)
@@ -581,12 +581,17 @@ class BatchOutcome:
 
 class BatchCall(Protocol):
     """A provider's batch API as the card writer uses it, in no provider's shape: submit
-    the requests under their ids, ask whether the batch ended, collect each answer, and
-    record an answer's usage at the batch price. `provider` names who runs it."""
+    the requests under their ids (refused before any network when `estimate_eur`, what the
+    batch is expected to cost, would take the task past its daily cap), ask whether the batch
+    ended, collect each answer, and record an answer's usage at the batch price on the
+    caller's session, left uncommitted for the caller to commit with what it marks as done.
+    `provider` names who runs it."""
 
     provider: str
 
-    def submit(self, requests: Mapping[str, LlmRequest]) -> BatchHandle: ...
+    def submit(
+        self, requests: Mapping[str, LlmRequest], estimate_eur: Decimal | None = None
+    ) -> BatchHandle: ...
 
     def ended(self, handle: BatchHandle) -> bool: ...
 
@@ -594,7 +599,9 @@ class BatchCall(Protocol):
         self, handle: BatchHandle, output_model: type[BaseModel]
     ) -> dict[str, BatchOutcome]: ...
 
-    def record(self, response: LlmResponse, freelancer_id: UUID) -> None: ...
+    def record(
+        self, session: Session, handle: BatchHandle, response: LlmResponse, freelancer_id: UUID
+    ) -> None: ...
 
 
 def _unavailable(provider: str, error: Exception) -> LlmUnavailable:
@@ -633,8 +640,11 @@ class AiBatch:
         self._call = AiCall(session_factory, settings, task, purpose=purpose)
         self.provider = "anthropic"
 
-    def submit(self, requests: Mapping[str, LlmRequest]) -> BatchHandle:
+    def submit(
+        self, requests: Mapping[str, LlmRequest], estimate_eur: Decimal | None = None
+    ) -> BatchHandle:
         provider, model, effort, ceiling, key = self._call._resolve()
+        self._require_room(estimate_eur)
         built, base = self._model_factory(provider, model, key, effort)
         encoded = [
             BatchRequest(
@@ -684,19 +694,41 @@ class AiBatch:
             outcomes[result.custom_id] = self._outcome(built, base, shape, handle, result)
         return outcomes
 
-    def record(self, response: LlmResponse, freelancer_id: UUID) -> None:
-        with self._session_factory() as session:
-            configured = session.get(AiTask, self._task)
-        record_response(
-            self._session_factory,
-            self._settings,
+    def record(
+        self, session: Session, handle: BatchHandle, response: LlmResponse, freelancer_id: UUID
+    ) -> None:
+        """The answer's usage row at the batch price, on `session` and not committed: the
+        caller commits it with its own mark that it was recorded, so it is in the books
+        once. A model with no price row (a dated alias) is priced as the one the batch was
+        sent to. A failure is raised, not logged: nothing is marked recorded."""
+        AiConfigService(session, self._settings).record_usage(
             task=self._task,
             purpose=self._purpose,
-            configured=configured.model if configured is not None else response.model,
-            response=response,
+            provider=response.provider,
+            model=response.model,
+            input_tokens=response.input_tokens,
+            output_tokens=response.output_tokens,
+            thinking_tokens=response.thinking_tokens,
+            cache_read_tokens=response.cache_read_tokens,
             freelancer_id=freelancer_id,
+            priced_as=handle.model,
             batch=True,
+            commit=False,
         )
+
+    def _require_room(self, estimate_eur: Decimal | None) -> None:
+        """What the batch is expected to cost fits in what is left of the task's daily cap
+        (the call's own check only says the cap is not spent yet): the spend lands when the
+        results are read, and one batch could otherwise overshoot it by its whole cost."""
+        if estimate_eur is None:
+            return
+        with self._session_factory() as session:
+            row = session.get(AiTask, self._task)
+            if row is None or row.daily_cap_eur is None:
+                return
+            spent = AiConfigService(session, self._settings).spent_today(self._task)
+            if spent + estimate_eur > row.daily_cap_eur:
+                raise LlmCapReached(CAP_REACHED)
 
     def _outcome(
         self,
@@ -764,13 +796,17 @@ class RecordingBatch:
         self.outcomes = dict(outcomes or {})
         self.submitted: dict[str, LlmRequest] = {}
         self.recorded: list[tuple[UUID, LlmResponse]] = []
+        self.estimates: list[Decimal | None] = []
         self._waits = ended_after
         self._refuse = refuse
         self.submissions = 0
 
-    def submit(self, requests: Mapping[str, LlmRequest]) -> BatchHandle:
+    def submit(
+        self, requests: Mapping[str, LlmRequest], estimate_eur: Decimal | None = None
+    ) -> BatchHandle:
         if self._refuse is not None:
             raise self._refuse
+        self.estimates.append(estimate_eur)
         self.submissions += 1
         self.submitted.update(requests)
         return BatchHandle(
@@ -793,7 +829,9 @@ class RecordingBatch:
     ) -> dict[str, BatchOutcome]:
         return dict(self.outcomes)
 
-    def record(self, response: LlmResponse, freelancer_id: UUID) -> None:
+    def record(
+        self, session: Session, handle: BatchHandle, response: LlmResponse, freelancer_id: UUID
+    ) -> None:
         self.recorded.append((freelancer_id, response))
 
 

@@ -8,8 +8,10 @@ batch cannot fall back on, is a `RecordingCall`; the database is the real one.
 """
 
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from uuid import UUID
 
+import pytest
 from fakes_cards import CARD, card_response
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
@@ -23,7 +25,14 @@ from rebase_core.card_batch import SUBMITTING_GIVEN_UP_AFTER, BatchPolled, CardB
 from rebase_core.cards import PROMPT_VERSION, CardWriter
 from rebase_core.errors import LlmCapReached, LlmUnavailable
 from rebase_core.llm import BatchOutcome, RecordingBatch, RecordingCall
-from rebase_core.models import AdminAction, CardBatch, CardBatchItem, FreelancerCard, User
+from rebase_core.models import (
+    AdminAction,
+    AiUsage,
+    CardBatch,
+    CardBatchItem,
+    FreelancerCard,
+    User,
+)
 from rebase_core.team_schemas import CardsRefreshed
 
 NOW = datetime(2026, 10, 28, 9, 0, tzinfo=UTC)
@@ -230,15 +239,17 @@ def test_an_outage_on_a_rewrite_leaves_the_rest_for_the_next_pass_and_pays_once(
 
     first = _poll(clean_hub, call, Down())
 
-    assert first.state == "applying" and first.left == 3 - first.written
-    assert first.written == 0 and first.left == 3  # the gendered one is first, and stops it
+    # The two that need no model are applied all the same; the one that does waits.
+    assert first == BatchPolled("applying", written=2, failed=0, left=1)
+    assert _version(clean_hub, people[0]) == 1
     assert _writer(clean_hub, call).regeneration_running() is True
 
     # A new process: a new writer, the same tables, the model back.
     second = _poll(clean_hub, call, RecordingCall([card_response()]))
 
-    assert second == BatchPolled("applied", written=3, failed=0)
+    assert second == BatchPolled("applied", written=1, failed=0)
     assert sorted(p for p, _ in call.recorded) == sorted(people)  # once each, not twice
+    assert {_version(clean_hub, p) for p in people} == {PROMPT_VERSION}
 
 
 def test_a_result_for_a_card_whose_inputs_changed_is_dropped_and_paid_for(
@@ -334,3 +345,81 @@ def test_a_batch_never_sent_is_given_up_after_a_while(clean_hub: Session) -> Non
 
 def test_without_a_batch_nothing_is_polled(clean_hub: Session) -> None:
     assert _poll(clean_hub, RecordingBatch()) == BatchPolled("none")
+
+
+def test_a_card_written_without_a_model_configured_needs_no_model(clean_hub: Session) -> None:
+    """Only a rewrite asks the model: with the card task off, the results that pass the guards
+    are still applied, and the card of a paid-for answer does not carry an error sentence."""
+    people = _stale(clean_hub, 3)
+    call = RecordingBatch(_outcomes(people))
+    _start(clean_hub, call)
+
+    polled = _writer(clean_hub, call, None).batches.poll(_writer(clean_hub, call, None))  # type: ignore[union-attr]
+
+    assert polled == BatchPolled("applied", written=3, failed=0)
+    clean_hub.expire_all()
+    assert {clean_hub.get(FreelancerCard, p).error for p in people} == {None}  # type: ignore[union-attr]
+
+
+def test_an_answer_to_an_older_prompt_is_not_stamped_as_the_new_one(clean_hub: Session) -> None:
+    """A deploy that bumps `PROMPT_VERSION` while the batch runs: the answer was written to
+    the prompt of the version the item was built with, so the card stays as it was, stale."""
+    people = _stale(clean_hub, 3)
+    call = RecordingBatch(_outcomes(people))
+    _start(clean_hub, call)
+    clean_hub.execute(
+        text("UPDATE card_batch_items SET prompt_version = :v"), {"v": PROMPT_VERSION - 1}
+    )
+    clean_hub.commit()
+
+    polled = _poll(clean_hub, call)
+
+    assert polled == BatchPolled("applied", written=0, failed=0)
+    assert {i.status for i in clean_hub.scalars(select(CardBatchItem))} == {"superseded"}
+    assert {_version(clean_hub, p) for p in people} == {1}
+    assert len(call.recorded) == 3  # paid for all the same
+
+
+def test_one_card_that_cannot_be_applied_does_not_hold_the_batch(
+    clean_hub: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    people = _stale(clean_hub, 3)
+    call = RecordingBatch(_outcomes(people))
+    _start(clean_hub, call)
+    real = CardWriter.store
+
+    def broken(self: CardWriter, freelancer_id: UUID, digest: str, composed: object) -> object:
+        if freelancer_id == people[1]:
+            raise RuntimeError("a bug")
+        return real(self, freelancer_id, digest, composed)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(CardWriter, "store", broken)
+
+    polled = _poll(clean_hub, call)
+
+    assert polled == BatchPolled("applied", written=2, failed=1)
+    statuses = {i.freelancer_id: i.status for i in clean_hub.scalars(select(CardBatchItem))}
+    assert statuses[people[1]] == "errored"
+    assert _writer(clean_hub, call).regeneration_running() is False  # the next start is free
+
+
+def test_the_cap_is_asked_about_the_batch_before_it_is_sent(clean_hub: Session) -> None:
+    people = _stale(clean_hub, 3)
+    # Three cards at 0.4 each as calls: 0.6 as a batch.
+    clean_hub.add(
+        AiUsage(
+            task="card",
+            purpose="run",
+            provider="anthropic",
+            model="m",
+            priced=True,
+            cost_eur=Decimal("0.4"),
+        )
+    )
+    clean_hub.commit()
+    call = RecordingBatch()
+
+    _start(clean_hub, call)
+
+    assert call.estimates == [Decimal("0.6000")]
+    assert len(call.submitted) == len(people)

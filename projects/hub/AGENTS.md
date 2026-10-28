@@ -675,8 +675,8 @@ for «Scheda anonima», which shows `fonti` as «secondo il modello».
   first `unavailable` (an outage, a spent daily cap, no model) stops the pool: the people not
   started are left as they were (still stale, no failure recorded), the ones already in a call
   finish. Counts, `ai_usage` rows and the `AdminAction` are unchanged in shape. Each worker takes
-  two connections for the length of a write (its session and the lock), so the pool is why the
-  setting stops at 8. **From `REBASE_CARDS_BATCH_THRESHOLD` cards (default 10) an admin's start, or
+  two connections for the length of a write (its session and the lock), so
+  `create_engine_from_settings` raises the pool's overflow with it, and the setting stops at 8. **From `REBASE_CARDS_BATCH_THRESHOLD` cards (default 10) an admin's start, or
   `rebase cards-regenerate [--limit N] [--batch]` (`--batch` whatever the threshold), goes through
   Anthropic's Message Batches API instead**: half the price, answered within the hour (24 at
   most), and only for the Anthropic provider (any other falls back to the workers, and the CLI
@@ -696,14 +696,18 @@ for «Scheda anonima», which shows `fonti` as «secondo il modello».
   twelfth tick): when the provider says the batch ended, each result is applied through the
   synchronous write's own steps, `CardWriter.finish` (draft, guards, the one synchronous rewrite
   a gendered or identifying card is asked for) and `CardWriter.store` (the one save), under the
-  person's claim. A result is applied only to the card it was asked for: a CV or an input that
-  changed meanwhile makes the item `superseded` (the answer is paid for, recorded and dropped, the
-  card is still stale); a refusal is written again as a synchronous call, which has the fallback a
+  person's claim. A result is applied only to the card it was asked for: a CV, an input or the
+  `PROMPT_VERSION` that changed meanwhile makes the item `superseded` (the answer is paid for,
+  recorded and dropped, the card is still stale); a card that raises is settled `errored` and
+  never holds the rest; one that needs a rewrite while the model is down waits for the next pass
+  while the others are applied; a refusal is written again as a synchronous call, which has the fallback a
   batch has not; a request the provider did not answer (errored, expired, canceled) leaves its card
   stale for the next start. Usage is recorded when the result is read, at the **batch price**
   (`ai_usage.batch`, cost = 50% of the price row's input, output, thinking and cache reads, as
-  Anthropic bills a batch), once per card (`usage_recorded`), so the cap counts it the day it lands
-  and the cost estimate of «Schede da aggiornare» (synchronous calls only) is not halved by it.
+  Anthropic bills a batch), once per card (`usage_recorded`, committed in the same transaction as
+  the row), so the cap counts it the day it lands, and a batch whose estimated cost (half the
+  synchronous estimate) would pass what is left of the daily cap is refused at submission; the
+  cost estimate of «Schede da aggiornare» (synchronous calls only) is not halved by it.
   **To resume after a restart, nothing is needed**: the state is in the tables and the results at
   the provider for 29 days, so the next poll goes on, or run `docker compose -p rebase --env-file
   /opt/hub/.env exec api uv run --no-sync rebase cards-batch-poll` by hand; a model that does not

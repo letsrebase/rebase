@@ -1653,6 +1653,9 @@ class CardBatchItem(Base):
     )
     cv_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     input_hashes: Mapped[dict[str, str]] = mapped_column(JSONB, nullable=False)
+    # The `PROMPT_VERSION` the request was built with: a deploy that bumps it while the batch
+    # runs must not stamp an answer to the old prompt as the new version's.
+    prompt_version: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(12), nullable=False, default="pending")
     usage_recorded: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")

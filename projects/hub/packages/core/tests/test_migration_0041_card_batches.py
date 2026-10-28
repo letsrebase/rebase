@@ -112,7 +112,7 @@ def _item(connection: Connection, batch: Any, person: Any, status: str = "pendin
     connection.execute(
         text(
             "INSERT INTO card_batch_items (batch_id, freelancer_id, cv_sha256, input_hashes, "
-            "status) VALUES (:b, :f, repeat('a', 64), '{}'::jsonb, :s)"
+            "prompt_version, status) VALUES (:b, :f, repeat('a', 64), '{}'::jsonb, 2, :s)"
         ),
         {"b": batch, "f": person, "s": status},
     )

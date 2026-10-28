@@ -393,6 +393,7 @@ class AiConfigService:
         freelancer_id: UUID | None = None,
         priced_as: str | None = None,
         batch: bool = False,
+        commit: bool = True,
     ) -> AiUsage:
         """Writes one call's row and commits it on its own, so a failure further up never
         loses what was spent. `model` is what answered, as shown; the price is its row's,
@@ -406,7 +407,9 @@ class AiConfigService:
         price when it is null. A model with no price row is recorded `priced = false`, cost
         `NULL`: unpriced, not free. A call that went through a provider's batch API
         (`batch`, REB-853) is billed at `BATCH_DISCOUNT` of every one of those rates, the way
-        Anthropic bills a Message Batch: input, output, thinking and cache reads alike."""
+        Anthropic bills a Message Batch: input, output, thinking and cache reads alike.
+        `commit` false leaves the row in the caller's transaction, for a caller that must
+        commit it together with something else (a batch's `usage_recorded`)."""
         if task not in AI_TASKS:
             raise ValidationFailed("ai_usage", "task", f"compito sconosciuto: {task}")
         if purpose not in AI_USAGE_PURPOSES:
@@ -451,7 +454,8 @@ class AiConfigService:
             batch=batch,
         )
         self.session.add(usage)
-        self.session.commit()
+        if commit:
+            self.session.commit()
         return usage
 
     def seed_from_env(

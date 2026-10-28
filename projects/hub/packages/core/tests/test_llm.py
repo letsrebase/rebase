@@ -1179,9 +1179,15 @@ def test_batch_usage_is_recorded_at_half_the_price(
     batch = _batch(opener)
     answered = batch.collect(handle, Scheda)["id-0"].response
     assert answered is not None
-    person = None
 
-    batch.record(answered, person)  # type: ignore[arg-type]
+    # Not committed by the call: the caller commits it with its own mark that it was recorded.
+    with opener() as session:
+        batch.record(session, handle, answered, None)  # type: ignore[arg-type]
+        session.rollback()
+    assert _usage_rows(opener) == []
+    with opener() as session:
+        batch.record(session, handle, answered, None)  # type: ignore[arg-type]
+        session.commit()
 
     [row] = _usage_rows(opener)
     # 500 input and 180 output at 5 and 25 euro per million, 1000 cache reads at the input
@@ -1206,6 +1212,24 @@ def test_batch_is_refused_before_any_network_when_the_cap_is_spent_but_read_what
 
     assert len(wire.requests) == posts  # nothing went out
     assert batch.ended(handle) is True  # an ended batch is paid for: still read
+
+
+def test_batch_is_refused_when_its_estimate_would_pass_the_cap(
+    opener: SessionOpener, wire: Wire, batch_wire: BatchWire
+) -> None:
+    """The call's own check says the cap is not spent yet; a batch's spend lands when its
+    results are read, so what it is expected to cost is asked of what is left."""
+    with opener() as session:
+        session.execute(text("UPDATE ai_tasks SET daily_cap_eur = 0.05 WHERE task = 'card'"))
+        session.commit()
+    batch = _batch(opener)
+
+    with pytest.raises(LlmCapReached):
+        batch.submit({"id-0": _request()}, Decimal("0.06"))
+    assert [r for r in wire.requests if r.method == "POST"] == []
+
+    handle = batch.submit({"id-0": _request()}, Decimal("0.04"))
+    assert handle.id == BATCH_ID
 
 
 def test_batch_only_for_anthropic(opener: SessionOpener) -> None:

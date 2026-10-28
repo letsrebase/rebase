@@ -35,10 +35,11 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from rebase_core.ai_config import BATCH_DISCOUNT
 from rebase_core.ai_schemas import CardBatchRead
 from rebase_core.audit import utcnow
 from rebase_core.card_draft import CardDraft
-from rebase_core.cards import CardWriter, Composed, Outcome
+from rebase_core.cards import PROMPT_VERSION, CardWriter, Composed, Outcome
 from rebase_core.errors import LlmUnavailable
 from rebase_core.llm import BatchCall, BatchHandle, BatchOutcome, LlmRequest
 from rebase_core.models import CARD_BATCH_ACTIVE, CardBatch, CardBatchItem, Freelancer
@@ -118,6 +119,7 @@ class CardBatches:
                     freelancer_id=freelancer_id,
                     cv_sha256=prepared.cv_sha256,
                     input_hashes=prepared.hashes,
+                    prompt_version=PROMPT_VERSION,
                 )
             )
         session.commit()
@@ -138,7 +140,10 @@ class CardBatches:
             session.add(item)
         session.commit()
         try:
-            handle = self.call.submit(requests)
+            cost = writer.estimate_cost(len(items))
+            # The estimate is of synchronous calls; the batch is half of it. The spend lands
+            # when the results are read, so the cap is asked about now.
+            handle = self.call.submit(requests, None if cost is None else cost * BATCH_DISCOUNT)
         except LlmUnavailable as error:
             batch.status = "failed"
             session.commit()
@@ -188,7 +193,7 @@ class CardBatches:
             except LlmUnavailable as error:
                 logger.warning("card batch %s not read: %s", batch.id, type(error).__name__)
                 return BatchPolled("unavailable", left=self._left(session, batch))
-            return self._apply(writer, batch, outcomes)
+            return self._apply(writer, batch, handle, outcomes)
 
     def _given_up(self, session: Session, batch: CardBatch) -> BatchPolled:
         if (
@@ -202,23 +207,42 @@ class CardBatches:
         return BatchPolled("running", left=self._left(session, batch))
 
     def _apply(
-        self, writer: CardWriter, batch: CardBatch, outcomes: dict[str, BatchOutcome]
+        self,
+        writer: CardWriter,
+        batch: CardBatch,
+        handle: BatchHandle,
+        outcomes: dict[str, BatchOutcome],
     ) -> BatchPolled:
         session = writer.session
         pending = session.scalars(
-            select(CardBatchItem).where(
-                CardBatchItem.batch_id == batch.id, CardBatchItem.status == "pending"
-            )
+            select(CardBatchItem)
+            .where(CardBatchItem.batch_id == batch.id, CardBatchItem.status == "pending")
+            .order_by(CardBatchItem.freelancer_id)
         ).all()
         written = failed = 0
         for item in pending:
-            outcome = self._apply_item(writer, item, outcomes.get(str(item.freelancer_id)))
+            try:
+                outcome = self._apply_item(
+                    writer, item, handle, outcomes.get(str(item.freelancer_id))
+                )
+            except Exception as error:
+                # One card that cannot be applied must not hold the rest, nor the batch, for
+                # ever: it is settled as errored (its card stays stale for the next start),
+                # and the log names the class, never the message.
+                session.rollback()
+                logger.error(
+                    "card batch %s: card %s not applied: %s",
+                    batch.id,
+                    item.freelancer_id,
+                    type(error).__name__,
+                )
+                outcome = self._settle(session, item, "errored")
+            # An item left `unavailable` (a rewrite the model did not answer) waits for the
+            # next pass; the others, which need no model, are applied all the same.
             if outcome == "written":
                 written += 1
             elif outcome in ("failed", "errored"):
                 failed += 1
-            if outcome == "unavailable":
-                break
         left = self._left(session, batch)
         if left == 0:
             batch.status = "applied"
@@ -228,12 +252,16 @@ class CardBatches:
         return BatchPolled("applying", written=written, failed=failed, left=left)
 
     def _apply_item(
-        self, writer: CardWriter, item: CardBatchItem, answer: BatchOutcome | None
+        self,
+        writer: CardWriter,
+        item: CardBatchItem,
+        handle: BatchHandle,
+        answer: BatchOutcome | None,
     ) -> str:
         """One card's result, through the synchronous write's own steps, under the person's
         claim. Returns the item's new status, or `pending` (left for the next pass: the card
         is being written by someone else) or `unavailable` (the model did not answer the
-        rewrite: the rest wait, as a synchronous run stops at the first outage)."""
+        rewrite: the card waits for the next pass)."""
         session = writer.session
         freelancer_id = item.freelancer_id
         with writer.advisory(f"card:{freelancer_id}") as claimed:
@@ -242,9 +270,10 @@ class CardBatches:
             answer = answer or BatchOutcome("expired")
             response = answer.response if answer.status == "succeeded" else None
             if response is not None and not item.usage_recorded:
-                # Paid for whatever becomes of the card. Recorded before it is applied, so a
-                # restart in between leaves the money in the books, once.
-                self.call.record(response, freelancer_id)
+                # Paid for whatever becomes of the card. Recorded before it is applied, in the
+                # same transaction as the mark that says so: in the books once, and a
+                # restart in between leaves it either both or neither.
+                self.call.record(session, handle, response, freelancer_id)
                 item.usage_recorded = True
                 session.commit()
             if response is None:
@@ -258,8 +287,10 @@ class CardBatches:
                 isinstance(prepared, Composed)
                 or prepared.cv_sha256 != item.cv_sha256
                 or prepared.hashes != item.input_hashes
+                or item.prompt_version != PROMPT_VERSION
             ):
-                # What the model read is no longer what the card would be written from.
+                # What the model read is no longer what the card would be written from, or
+                # was asked by a prompt that is not the one running now.
                 return self._settle(session, item, "superseded")
             digest = prepared.cv_sha256
             result: Outcome

@@ -1097,10 +1097,8 @@ class CardWriter:
         the guards, and for a card that gives the gender away or names something a source or
         an employer would, the one rewrite, asked synchronously with `llm` whatever way the
         first answer came (the call, or a Message Batch's result). Raises `LlmUnavailable` and
-        its kin from the rewrite, for the caller to read."""
-        llm = self.llm
-        if llm is None:
-            raise LlmNotConfigured(TASK_OFF)
+        its kin from the rewrite, for the caller to read: only a rewrite needs the model, so
+        a card that passes the guards is finished with none configured."""
         request, known = prepared.request, prepared.known
         sources, facts, hashes = prepared.sources, prepared.facts, prepared.hashes
         first = _draft_from(response, known)
@@ -1138,7 +1136,9 @@ class CardWriter:
                 bool(gendered),
                 bool(leaks),
             )
-            again = llm.complete(
+            if self.llm is None:
+                raise LlmNotConfigured(TASK_OFF)
+            again = self.llm.complete(
                 rewrite_request(request, response.text, gendered=gendered, fields=leaks)
             )
             input_tokens += again.input_tokens
