@@ -42,6 +42,13 @@ JudgeFailure = Literal["refusal", "max_tokens", "shape"]
 # a judging one more). 8,000 leaves the worst answer and its thinking inside, with room.
 JUDGE_MAX_OUTPUT_TOKENS = 8000
 
+# Who judges when `--judge-provider/--judge-model` say nothing (REB-847): the first of these
+# that is not the model that wrote the cards, so a writer never marks its own work.
+DEFAULT_JUDGES: tuple[tuple[str, str], ...] = (
+    ("anthropic", "claude-opus-5-5"),
+    ("anthropic", "claude-sonnet-5-5"),
+)
+
 
 class FieldVerdict(BaseModel):
     model_config = ConfigDict(extra="forbid")
