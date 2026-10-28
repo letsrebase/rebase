@@ -480,6 +480,12 @@ def test_seed_from_env_seals_enables_points_tasks_and_prices_in_euros(
     assert prices["claude-opus-5-5"].input_eur_per_mtok == Decimal("3.6000")
     assert prices["claude-opus-5-5"].cache_read_eur_per_mtok == Decimal("0.1800")
     assert prices["claude-opus-5-5"].thinking_eur_per_mtok is None
+    sonnet = prices["claude-sonnet-5-5"]
+    assert (sonnet.input_eur_per_mtok, sonnet.output_eur_per_mtok) == (
+        Decimal("1.8000"),
+        Decimal("9.0000"),
+    )
+    assert sonnet.cache_read_eur_per_mtok == Decimal("0.0900")
     assert service.can_call("card") == (True, None)
 
 

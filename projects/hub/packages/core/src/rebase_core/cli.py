@@ -20,7 +20,7 @@ from rebase_core.ai_verify import verify
 from rebase_core.campaigns.sender import campaign_sender_from_settings
 from rebase_core.campaigns.tick import run_tick
 from rebase_core.card_eval import format_report, named, results_of, run_eval, sample
-from rebase_core.card_judge import JUDGE_MAX_OUTPUT_TOKENS
+from rebase_core.card_judge import DEFAULT_JUDGES, JUDGE_MAX_OUTPUT_TOKENS
 from rebase_core.cards import PROMPT_VERSION, PROMPT_VERSIONS, CardWriter
 from rebase_core.config import Settings, get_settings
 from rebase_core.contracts.fields import ContractFailed, Value, merge_data
@@ -314,8 +314,9 @@ def cards_eval(
     prompt version asked, then cross-checks every card against the sources it came from:
     the rules (years recomputed from the CV's dates where the text allows, the seniority's
     band, the guards, the identifiers the person's data holds) and a separate judging call,
-    answered by the `card` task's provider and model or by `--judge-provider` and
-    `--judge-model`, that marks each field supported, unsupported or contradicted and flags
+    answered by `--judge-provider` and `--judge-model` or, left out, by the first of
+    `DEFAULT_JUDGES` that is not the writer (the same model as the writer is refused,
+    REB-847), that marks each field supported, unsupported or contradicted and flags
     what was invented. Prints per person and in total the supported fields, the
     contradictions, the guard failures, the identifiers found, the latency and the cost of
     the writing and of the judging apart, and how the run stands against a baseline:
@@ -349,10 +350,17 @@ def cards_eval(
             effort = effort if effort is not None else live.effort
         writer = TaskOverride(provider, model, effort, allow_disabled)
         if judge_provider is None or judge_model is None:
-            judge_provider, judge_model = live.provider, live.model
-            judge_effort = live.effort
-        else:
-            judge_effort = None
+            judge_provider, judge_model = next(
+                judge for judge in DEFAULT_JUDGES if judge != (provider, model)
+            )
+        if (judge_provider, judge_model) == (provider, model):
+            print(
+                f"Il giudice è lo stesso modello che scrive ({provider}/{model}): "
+                "scegli un altro --judge-provider e --judge-model.",
+                file=sys.stderr,
+            )
+            return 2
+        judge_effort = None
         judging = TaskOverride(
             judge_provider, judge_model, judge_effort, allow_disabled, JUDGE_MAX_OUTPUT_TOKENS
         )

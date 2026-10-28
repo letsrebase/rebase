@@ -370,7 +370,7 @@ def test_ai_seed_stores_encrypted_and_prints_hint_only(
         prices = conn.execute(text("SELECT count(*) FROM ai_prices")).scalar_one()
     assert row.enabled is True
     assert _OLD_KEY.encode() not in bytes(row.key_ciphertext)
-    assert prices == 2
+    assert prices == 3
 
 
 def test_ai_seed_twice_refuses_and_changes_nothing(
@@ -622,7 +622,7 @@ def test_cards_eval_prints_the_report_of_the_sample_as_the_task_is_set(
     out = capsys.readouterr().out
     # With no provider or model given, the `card` task's own (migration 0036's seed).
     assert "anthropic/claude-opus-5, effort medium, prompt v2" in out
-    assert "giudice anthropic/claude-opus-5" in out
+    assert "giudice anthropic/claude-opus-5-5" in out
     assert "senza date" in out and str(person)[:8] in out and "campi supportati 8/8" in out
     for private in ("Lovelace", "Backend developer", "Python", "Torino"):
         assert private not in out
@@ -634,10 +634,10 @@ def test_cards_eval_prints_the_report_of_the_sample_as_the_task_is_set(
         "purpose": "eval",
         "freelancer_id": person,
     }
+    # Not the writer: the default judge is the first of DEFAULT_JUDGES that differs from it.
     assert judging["override"] == TaskOverride(
-        "anthropic", "claude-opus-5", "medium", True, max_output_tokens=JUDGE_MAX_OUTPUT_TOKENS
+        "anthropic", "claude-opus-5-5", None, True, max_output_tokens=JUDGE_MAX_OUTPUT_TOKENS
     )
-    assert {**judging, "override": live} == writer
     assert eval_db.scalars(select(FreelancerCard)).all() == []
     assert eval_db.scalars(select(CardEvalRun)).one().summary["complete"] is True
 
@@ -709,6 +709,29 @@ def test_cards_eval_refuses_options_that_do_not_go_together(
     assert main(["cards-eval", "--allow-disabled", *args]) == 2
 
     assert built == [] and capsys.readouterr().err
+
+
+def test_cards_eval_never_lets_the_writer_judge_itself(
+    eval_db: Session, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _person(eval_db, "ada@studio.it", label="lead")
+    built, _ = _fake_ai_calls(monkeypatch, card_response(), judge_response())
+
+    same = ["--provider", "anthropic", "--model", "claude-opus-5-5"]
+    assert (
+        main(
+            ["cards-eval", "--allow-disabled", *same, "--judge-provider", "anthropic"]
+            + ["--judge-model", "claude-opus-5-5"]
+        )
+        == 2
+    )
+    assert "stesso modello che scrive" in capsys.readouterr().err
+    assert built == []
+
+    # A writer that is the first default hands the judging to the next one.
+    assert main(["cards-eval", "--allow-disabled", *same]) == 0
+    assert "giudice anthropic/claude-sonnet-5-5" in capsys.readouterr().out
+    assert built[1]["override"].model == "claude-sonnet-5-5"
 
 
 def test_cards_eval_exits_1_and_says_so_when_the_cap_stops_it(

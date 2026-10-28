@@ -86,7 +86,9 @@ KNOWN_MODELS: dict[str, list[str]] = {
 # USD per million tokens as each provider's own pricing page lists them (Standard tier,
 # short context), for `ai-seed` (Anthropic) and `ai-prices-seed` (the others):
 # (input, output, cache read). Thinking is billed as output: its price stays null.
-# claude.com/pricing, read 2026-10-27; developers.openai.com/api/docs/pricing (the
+# claude.com/pricing, read 2026-10-27 (`claude-sonnet-5-5`: platform.claude.com/docs/en/
+# about-claude/pricing, read 2026-10-28; its 5-minute cache write, $2.50, has no column);
+# developers.openai.com/api/docs/pricing (the
 # successor of openai.com/api/pricing, which refuses automated reads), read 2026-10-27;
 # ai.google.dev/gemini-api/docs/pricing, read 2026-10-27. Google's page lists a dated step
 # for `gemini-4-argon` (doubles on 2026-12-01) and `gemini-3.8-flash` (doubles on
@@ -95,6 +97,7 @@ SEED_USD_PRICES: dict[str, dict[str, tuple[Decimal, Decimal, Decimal]]] = {
     "anthropic": {
         "claude-opus-5": (Decimal("5.00"), Decimal("25.00"), Decimal("0.50")),
         "claude-opus-5-5": (Decimal("4.00"), Decimal("20.00"), Decimal("0.20")),
+        "claude-sonnet-5-5": (Decimal("2.00"), Decimal("10.00"), Decimal("0.10")),
     },
     "openai": {
         "gpt-6.1-sol": (Decimal("2.00"), Decimal("10.00"), Decimal("0.10")),
