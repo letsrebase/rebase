@@ -57,6 +57,13 @@ POLL_LOCK = "card_batch_poll"
 # again) rather than sent a second time, which could pay for it twice.
 SUBMITTING_GIVEN_UP_AFTER = timedelta(minutes=15)
 
+# A batch the provider has had this long since it was sent is given up on: a batch expires
+# after 24 hours, so what is still not applied after two days is one that cannot be (the key
+# gone, the results gone, a card that never settles). Its cards that were not applied are
+# settled `errored`, still stale, and the next start picks them up; without this exit one
+# batch would block every start for ever.
+ACTIVE_GIVEN_UP_AFTER = timedelta(days=2)
+
 
 class BatchPolled(NamedTuple):
     """What one `CardBatches.poll` pass did. `state`: `none` (no batch is active), `running`
@@ -181,6 +188,10 @@ class CardBatches:
             if batch.status == "submitting":
                 return self._given_up(session, batch)
             assert batch.handle is not None
+            if batch.submitted_at is not None and (
+                self.now() - batch.submitted_at > ACTIVE_GIVEN_UP_AFTER
+            ):
+                return self._abandon(session, batch)
             handle = BatchHandle.from_json(batch.handle)
             try:
                 if batch.status == "in_progress":
@@ -194,6 +205,21 @@ class CardBatches:
                 logger.warning("card batch %s not read: %s", batch.id, type(error).__name__)
                 return BatchPolled("unavailable", left=self._left(session, batch))
             return self._apply(writer, batch, handle, outcomes)
+
+    def _abandon(self, session: Session, batch: CardBatch) -> BatchPolled:
+        left = session.scalars(
+            select(CardBatchItem).where(
+                CardBatchItem.batch_id == batch.id, CardBatchItem.status == "pending"
+            )
+        ).all()
+        for item in left:
+            item.status = "errored"
+        batch.status = "failed"
+        session.commit()
+        logger.error(
+            "card batch %s given up after two days: %d cards left stale", batch.id, len(left)
+        )
+        return BatchPolled("failed", failed=len(left))
 
     def _given_up(self, session: Session, batch: CardBatch) -> BatchPolled:
         if (

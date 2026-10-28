@@ -26,6 +26,8 @@ const TASK_LABELS: Record<string, string> = { card: 'Scheda anonima', team_propo
 const SOURCE_LABELS: Record<string, string> = { github: 'GitHub', links: 'Altri link' }
 const STALE_KEY = ['ai-stale-cards'] as const
 const BATCH_REFRESH_MS = 30_000
+const START_REFRESH_MS = 3_000
+const START_WATCH_MS = 60_000
 const EFFORTS = ['low', 'medium', 'high'] as const
 const EFFORT_LABELS: Record<string, string> = { low: 'Basso', medium: 'Medio', high: 'Alto' }
 // A `Select` needs a non-empty string; «no thinking» is the one nullable effort.
@@ -191,15 +193,21 @@ const REASON_LABELS: Record<string, string> = {
 function StaleCards() {
   const client = useQueryClient()
   const [limit, setLimit] = useState('5')
-  const stale = useQuery({
-    queryKey: STALE_KEY,
-    queryFn: () => admin.aiStaleCards(),
-    // A batch is applied by the `cards` service, not by this page: read it again until it is.
-    refetchInterval: (query) => (query.state.data?.batch ? BATCH_REFRESH_MS : false),
-  })
   const start = useMutation({
     mutationFn: (n: number) => admin.aiRegenerateStale(n),
     onSuccess: () => client.invalidateQueries({ queryKey: STALE_KEY }),
+  })
+  // The batch's row is written after the response, so the first read after a start can miss
+  // it: keep reading for a short while after a start that queued cards, and for as long as a
+  // batch is on. The `cards` service applies it, not this page.
+  const stale = useQuery({
+    queryKey: STALE_KEY,
+    queryFn: () => admin.aiStaleCards(),
+    refetchInterval: (query) => {
+      if (query.state.data?.batch) return BATCH_REFRESH_MS
+      const justStarted = start.isSuccess && start.data.queued > 0 && Date.now() - start.submittedAt < START_WATCH_MS
+      return justStarted ? START_REFRESH_MS : false
+    },
   })
   if (stale.isError) {
     return (

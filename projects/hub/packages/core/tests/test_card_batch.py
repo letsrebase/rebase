@@ -21,7 +21,13 @@ from test_card_staleness import (
     _cards,
 )
 
-from rebase_core.card_batch import SUBMITTING_GIVEN_UP_AFTER, BatchPolled, CardBatches, active_batch
+from rebase_core.card_batch import (
+    ACTIVE_GIVEN_UP_AFTER,
+    SUBMITTING_GIVEN_UP_AFTER,
+    BatchPolled,
+    CardBatches,
+    active_batch,
+)
 from rebase_core.cards import PROMPT_VERSION, CardWriter
 from rebase_core.errors import LlmCapReached, LlmUnavailable
 from rebase_core.llm import BatchOutcome, RecordingBatch, RecordingCall
@@ -340,6 +346,27 @@ def test_a_batch_never_sent_is_given_up_after_a_while(clean_hub: Session) -> Non
     assert gone.state == "failed"
     clean_hub.refresh(batch)
     assert batch.status == "failed"
+    assert {c.freelancer_id for c in CardWriter(clean_hub, None).stale_cards()} == set(people)
+
+
+def test_a_batch_that_cannot_be_applied_for_two_days_is_given_up(clean_hub: Session) -> None:
+    people = _stale(clean_hub, 3)
+    call = RecordingBatch(_outcomes(people), ended_after=10_000)
+    _start(clean_hub, call)
+    assert _poll(clean_hub, call).state == "running"
+    clean_hub.execute(
+        text("UPDATE card_batches SET submitted_at = :at"),
+        {"at": NOW - ACTIVE_GIVEN_UP_AFTER - timedelta(minutes=1)},
+    )
+    clean_hub.commit()
+    clean_hub.expire_all()
+
+    gone = _poll(clean_hub, call)
+
+    assert gone == BatchPolled("failed", failed=3)
+    assert {i.status for i in clean_hub.scalars(select(CardBatchItem))} == {"errored"}
+    assert _writer(clean_hub, call).regeneration_running() is False
+    # The cards are still the old ones, still stale: the next start takes them.
     assert {c.freelancer_id for c in CardWriter(clean_hub, None).stale_cards()} == set(people)
 
 

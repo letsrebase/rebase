@@ -248,6 +248,27 @@ describe('the Modelli AI page (REB-833)', () => {
     expect(section.queryByLabelText('Quante')).toBeNull()
   })
 
+  it('keeps reading after a start that queued cards, so a batch written afterwards is shown', async () => {
+    let stale: unknown = STALE
+    mount(CONFIG, {
+      '/api/hub/admin/ai/cards/stale': () => answer(200, stale),
+      '/api/hub/admin/ai/cards/regenerate-stale': () => {
+        // The batch's row is written after the response: the first read still misses it.
+        setTimeout(() => {
+          stale = {
+            ...STALE,
+            batch: { status: 'in_progress', count: 7, done: 0, submitted_at: '2026-10-28T09:00:00Z' },
+          }
+        }, 500)
+        return answer(200, { queued: 7 })
+      },
+    })
+    const section = within(await screen.findByRole('region', { name: 'Schede da aggiornare' }))
+    await userEvent.setup().click(await section.findByRole('button', { name: 'Avvia rigenerazione' }))
+    expect(await section.findByText(/7 schede messe in coda/)).toBeInTheDocument()
+    expect(await section.findByText(/Rigenerazione in corso col Batch API: 7 schede/, {}, { timeout: 8000 })).toBeInTheDocument()
+  }, 15000)
+
   it('says a batch is being sent before it has a time', async () => {
     mount(CONFIG, {
       '/api/hub/admin/ai/cards/stale': () =>
