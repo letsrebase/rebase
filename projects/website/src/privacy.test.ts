@@ -110,8 +110,9 @@ describe('the privacy page on your rights', () => {
 
   it('words them for hub members and for PigroCRM spaces separately', () => {
     expect(text).toContain('cancellare il tuo CV, e con lui la descrizione anonima')
-    expect(text).toContain('oppure di togliere il tuo profilo')
-    expect(text).toContain('li cancelli chiudendo lo spazio')
+    expect(text).toContain('togliere il tuo profilo')
+    expect(text).toContain('il resto resta archiviato')
+    expect(text).toContain('chiudere lo spazio li cancella')
     expect(text).not.toContain('cancellarli insieme allo spazio')
     expect(text).toContain('Garante')
     expect(text).toContain('rispondiamo entro trenta giorni')
