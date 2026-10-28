@@ -41,3 +41,25 @@ def hub_session(hub_engine: Engine) -> Iterator[Session]:
         session.execute(text("DELETE FROM signups"))
         session.commit()
         session.close()
+
+
+@pytest.fixture
+def clean_hub(hub_session: Session) -> Iterator[Session]:
+    """A session over the worker's database that leaves it empty of people, the way the
+    cards' tests need it: the card batches first (they point at the admin and the people
+    the rest deletes), the source switches off again, then everything a card test makes."""
+    yield hub_session
+    hub_session.rollback()
+    hub_session.execute(text("UPDATE ai_sources SET enabled = false, updated_by = NULL"))
+    for table in (
+        "card_batches",
+        "admin_actions",
+        "ai_usage",
+        "comments",
+        "matches",
+        "companies",
+        "freelancers",
+        "users",
+    ):
+        hub_session.execute(text(f"DELETE FROM {table}"))
+    hub_session.commit()

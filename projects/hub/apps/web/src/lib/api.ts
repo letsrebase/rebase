@@ -1761,12 +1761,24 @@ export interface AiStaleCard {
   generated_at: string | null
 }
 
+/** The regeneration running through the Batch API (REB-853): `count` cards sent at
+ * `submitted_at` (`null` while it is being sent), `done` of them settled. */
+export interface AiCardBatch {
+  status: 'submitting' | 'in_progress' | 'ended'
+  count: number
+  done: number
+  submitted_at: string | null
+}
+
 export interface AiStaleCards {
   count: number
   by_reason: { prompt?: number; source?: number }
   /** A decimal as a string; `null` while no `card` call is recorded. */
   estimated_cost_eur: string | null
   items: AiStaleCard[]
+  /** From how many cards a start goes through the Batch API, at half the price. */
+  batch_threshold: number
+  batch: AiCardBatch | null
 }
 
 export interface AiRegenerationStarted {

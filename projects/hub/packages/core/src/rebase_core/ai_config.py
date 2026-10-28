@@ -111,6 +111,9 @@ SEED_USD_PRICES: dict[str, dict[str, tuple[Decimal, Decimal, Decimal]]] = {
 }
 
 _MTOK = Decimal(1_000_000)
+# What a Message Batch is billed at, of the standard price: "All usage is charged at 50
+# percent of the standard API prices" (platform.claude.com, «Batch processing», Pricing).
+BATCH_DISCOUNT = Decimal("0.5")
 # A cap or a price is a few euros; this is far above any and far below what the columns
 # (`Numeric(10, 2)`, `Numeric(12, 4)`) hold, so a typo is a sentence, never a 500.
 MAX_AMOUNT_EUR = Decimal(1_000_000)
@@ -389,6 +392,8 @@ class AiConfigService:
         cache_read_tokens: int = 0,
         freelancer_id: UUID | None = None,
         priced_as: str | None = None,
+        batch: bool = False,
+        commit: bool = True,
     ) -> AiUsage:
         """Writes one call's row and commits it on its own, so a failure further up never
         loses what was spent. `model` is what answered, as shown; the price is its row's,
@@ -400,7 +405,11 @@ class AiConfigService:
         `cache_read_tokens` is billed at the cache price, or at the input price when the
         model has none. Thinking tokens are billed at the thinking price, or at the output
         price when it is null. A model with no price row is recorded `priced = false`, cost
-        `NULL`: unpriced, not free."""
+        `NULL`: unpriced, not free. A call that went through a provider's batch API
+        (`batch`, REB-853) is billed at `BATCH_DISCOUNT` of every one of those rates, the way
+        Anthropic bills a Message Batch: input, output, thinking and cache reads alike.
+        `commit` false leaves the row in the caller's transaction, for a caller that must
+        commit it together with something else (a batch's `usage_recorded`)."""
         if task not in AI_TASKS:
             raise ValidationFailed("ai_usage", "task", f"compito sconosciuto: {task}")
         if purpose not in AI_USAGE_PURPOSES:
@@ -426,6 +435,8 @@ class AiConfigService:
                     else price.input_eur_per_mtok
                 )
             ) / _MTOK
+            if batch:
+                cost *= BATCH_DISCOUNT
             cost = cost.quantize(_COST_PLACES)
         usage = AiUsage(
             at=self.now(),
@@ -440,9 +451,11 @@ class AiConfigService:
             cost_eur=cost,
             priced=price is not None,
             freelancer_id=freelancer_id,
+            batch=batch,
         )
         self.session.add(usage)
-        self.session.commit()
+        if commit:
+            self.session.commit()
         return usage
 
     def seed_from_env(

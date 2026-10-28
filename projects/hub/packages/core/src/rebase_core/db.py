@@ -39,7 +39,16 @@ class TimestampMixin:
 
 
 def create_engine_from_settings(settings: Settings) -> Engine:
-    return create_engine(settings.database_url, pool_pre_ping=True, future=True)
+    # The default pool is five connections and ten more on demand. A card worker holds two for
+    # the length of a write (its session, and the advisory lock that claims the person), plus
+    # the short ones its model seam opens to read the task and record the usage, and the
+    # regeneration's own lock: room for `cards_workers` of them beside the live requests.
+    return create_engine(
+        settings.database_url,
+        pool_pre_ping=True,
+        future=True,
+        max_overflow=10 + 3 * settings.cards_workers,
+    )
 
 
 def session_factory(engine: Engine) -> sessionmaker[Session]:

@@ -14,6 +14,7 @@ from rebase_core.admin_tokens import AdminRead
 from rebase_core.analytics import Tracker, tracker_from_settings
 from rebase_core.audit import utcnow
 from rebase_core.campaigns.sender import CampaignSender, campaign_sender_from_settings
+from rebase_core.card_batch import CardBatches
 from rebase_core.cloud import CLOUD_CLOSED, CloudCaller, CloudTalentService
 from rebase_core.config import Settings, get_settings
 from rebase_core.contracts.render import ContractRenderer, Renderer
@@ -21,7 +22,14 @@ from rebase_core.db import SessionOpener, create_engine_from_settings, session_f
 from rebase_core.documenso import DocumensoClient, client_from_settings
 from rebase_core.engagements import EngagementService
 from rebase_core.http import HttpCall, urllib_call, urllib_engagements_call
-from rebase_core.llm import AiCall, LlmCall, ModelFactory, build_model, call_for_task
+from rebase_core.llm import (
+    AiCall,
+    LlmCall,
+    ModelFactory,
+    batch_for_task,
+    build_model,
+    call_for_task,
+)
 from rebase_core.mail import EmailSender, sender_from_settings
 from rebase_core.members import MemberService
 from rebase_core.schemas import MeRead
@@ -323,7 +331,16 @@ def get_team_llm(settings: SettingsDep, opener: SessionOpenerDep) -> LlmCall | N
     return call_for_task(opener, settings, "team_proposal")
 
 
+def get_card_batches(settings: SettingsDep, opener: SessionOpenerDep) -> CardBatches | None:
+    """The Message Batches path of an admin's regeneration (REB-853), or `None` when the
+    `card` task's provider has none (only Anthropic does): the cards are then written with
+    the workers. A dependency, so a test hands a `RecordingBatch`."""
+    call = batch_for_task(opener, settings, "card")
+    return None if call is None else CardBatches(call, settings.cards_batch_threshold)
+
+
 CardLlmDep = Annotated[LlmCall | None, Depends(get_card_llm)]
+CardBatchesDep = Annotated[CardBatches | None, Depends(get_card_batches)]
 TeamLlmDep = Annotated[LlmCall | None, Depends(get_team_llm)]
 
 

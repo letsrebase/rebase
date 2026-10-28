@@ -203,6 +203,9 @@ class CardsRefreshed(NamedTuple):
     written: int
     failed: int
     stopped: bool = False
+    # Cards sent as one Message Batch instead (REB-853): none are written or failed yet,
+    # they stay stale until the batch's results are applied.
+    batched: int = 0
 
 
 # ---- the proposal (REB-511, spec § 3.3) ----------------------------------------------------

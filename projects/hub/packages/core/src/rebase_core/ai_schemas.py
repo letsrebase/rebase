@@ -79,6 +79,17 @@ class StaleCardRead(BaseModel):
     generated_at: datetime | None
 
 
+class CardBatchRead(BaseModel):
+    """The regeneration running through the Batch API (REB-853): `count` cards sent at
+    `submitted_at` (`None` while it is being sent), `done` of them settled. `status`:
+    `submitting`, `in_progress` (at the provider), `ended` (applying its results)."""
+
+    status: str
+    count: int
+    done: int
+    submitted_at: datetime | None
+
+
 class StaleCardsRead(BaseModel):
     """«Schede da aggiornare»: how many cards are stale (`count`, by reason in
     `by_reason`), what regenerating them would cost (`estimated_cost_eur`: the average
@@ -89,11 +100,16 @@ class StaleCardsRead(BaseModel):
     by_reason: dict[str, int]
     estimated_cost_eur: Decimal | None
     items: list[StaleCardRead]
+    # From how many cards a start goes through the Batch API (half price), and the batch
+    # that is running now, if one is.
+    batch_threshold: int
+    batch: CardBatchRead | None = None
 
 
 class RegenerationStarted(BaseModel):
     """The answer of an admin's start: how many cards were queued; they are written after
-    the response, one at a time."""
+    the response, with a few workers at once or, from the batch threshold, as one Message
+    Batch."""
 
     queued: int
 

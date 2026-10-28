@@ -8,7 +8,14 @@ from fastapi.testclient import TestClient
 from sqlalchemy import Engine, text
 from sqlalchemy.orm import Session
 
-from rebase_api.deps import get_card_llm, get_sender, get_session, get_session_opener, get_team_llm
+from rebase_api.deps import (
+    get_card_batches,
+    get_card_llm,
+    get_sender,
+    get_session,
+    get_session_opener,
+    get_team_llm,
+)
 from rebase_api.main import create_app
 from rebase_api.ratelimit import reset_rate_limit
 from rebase_core.config import Settings, get_settings
@@ -47,6 +54,7 @@ def client(api_session: Session) -> Iterator[TestClient]:
     # No model configured unless a test hands one (`llm` here, `_llm` in the team tests):
     # the real dependencies read «Modelli AI» through the default database URL.
     app.dependency_overrides[get_card_llm] = lambda: None
+    app.dependency_overrides[get_card_batches] = lambda: None
     app.dependency_overrides[get_team_llm] = lambda: None
     # The limiter counts requests per process, so one test's posts would otherwise be
     # spent out of the next test's budget.

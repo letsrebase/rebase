@@ -18,6 +18,7 @@ from sqlalchemy import select
 
 from rebase_api.deps import (
     AdminDep,
+    CardBatchesDep,
     CardLlmDep,
     ProvaCallDep,
     SessionDep,
@@ -35,6 +36,7 @@ from rebase_core.ai_schemas import (
     StaleCardsRead,
     TaskRead,
 )
+from rebase_core.card_batch import active_batch
 from rebase_core.cards import CardWriter, regenerate_after_response
 from rebase_core.errors import LlmUnavailable, NotFound, TeamBuilderOff
 from rebase_core.llm import LlmMessage, LlmRequest
@@ -140,7 +142,7 @@ def set_source_enabled(
 
 
 @router.get("/cards/stale", response_model=StaleCardsRead)
-def stale_cards(admin: AdminDep, session: SessionDep) -> StaleCardsRead:
+def stale_cards(admin: AdminDep, session: SessionDep, settings: SettingsDep) -> StaleCardsRead:
     """«Schede da aggiornare»: the cards a newer prompt version or a change of the hub's
     facts, the position or a source has left behind, with what writing them again would
     cost. A card whose CV changed is not here: the hourly loop writes it by itself."""
@@ -159,6 +161,8 @@ def stale_cards(admin: AdminDep, session: SessionDep) -> StaleCardsRead:
             )
             for item in waiting[:STALE_ITEMS_SHOWN]
         ],
+        batch_threshold=settings.cards_batch_threshold,
+        batch=active_batch(session),
     )
 
 
@@ -167,14 +171,18 @@ def regenerate_stale(
     admin: AdminDep,
     session: SessionDep,
     llm: CardLlmDep,
+    batches: CardBatchesDep,
+    settings: SettingsDep,
     open_session: SessionOpenerDep,
     background: BackgroundTasks,
     body: RegenerateBody,
 ) -> RegenerationStarted:
-    """An admin's start: the oldest `limit` stale cards are written again, one at a time,
-    after the response (`AdminAction` `cards_regenerate` is written when the batch starts).
-    A start while another is running answers `queued` 0. No model configured answers the
-    team builder's own 503, as «Rigenera scheda» does."""
+    """An admin's start: the oldest `limit` stale cards are written again, `cards_workers` at
+    a time, after the response, or, from `cards_batch_threshold` cards up with Anthropic,
+    sent as one Message Batch at half the price that the `cards` service applies when it
+    ends (`AdminAction` `cards_regenerate` is written when the start begins). A start while
+    another is running, or a batch is not yet applied, answers `queued` 0. No model configured
+    answers the team builder's own 503, as «Rigenera scheda» does."""
     if llm is None:
         raise TeamBuilderOff("Il team builder è spento.")
     writer = CardWriter(session, None)
@@ -182,7 +190,15 @@ def regenerate_stale(
     # are still stale until it saves them, and a second batch would pay for them again.
     queued = 0 if writer.regeneration_running() else min(body.limit, len(writer.stale_cards()))
     if queued:
-        background.add_task(regenerate_after_response, open_session, llm, admin.id, body.limit)
+        background.add_task(
+            regenerate_after_response,
+            open_session,
+            llm,
+            admin.id,
+            body.limit,
+            workers=settings.cards_workers,
+            batches=batches,
+        )
     return RegenerationStarted(queued=queued)
 
 

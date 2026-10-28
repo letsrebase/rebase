@@ -31,6 +31,13 @@ the year bands the prompt states (`card_level.banded`, REB-799). An admin's own 
 and years sit on `freelancers` (`seniority_admin`, `anni_admin`), so a regenerated or
 retired card never erases them, and `read` answers the card with them over it.
 
+Bulk writing (REB-853): `refresh_stale` and `regenerate_stale` write with a pool of
+`workers` (`REBASE_CARDS_WORKERS`), each worker on a session of its own and every person
+claimed (a Postgres advisory lock per freelancer, taken in `_write`) so no card is paid for
+twice; the first outage, spent cap or missing model stops the pool and leaves the rest as
+they were. A regeneration above a threshold goes through Anthropic's Message Batches API
+instead (`rebase_core.card_batch`): the same requests, the same guards and the same save.
+
 Who calls it: the wizard and the member's CV upload, after their response, through
 `write_after_response` in a session of its own; the admin's two routes; `rebase
 cards-refresh`, for the backlog; and `FreelancerService.clear_cv`, whose `delete` runs
@@ -40,12 +47,14 @@ in the same transaction as the CV's own removal.
 import hashlib
 import logging
 import re
-from collections.abc import Callable, Iterator
+import threading
+from collections.abc import Callable, Iterator, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Literal, NamedTuple
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 from uuid import UUID
 
 from pydantic import ValidationError
@@ -70,13 +79,20 @@ from rebase_core.card_draft import (
 from rebase_core.card_guard import KnownIdentifiers, identifying
 from rebase_core.card_level import banded, card_read
 from rebase_core.cv_text import CvText
-from rebase_core.db import SessionOpener
+from rebase_core.db import SessionOpener, session_factory
 from rebase_core.errors import LlmCapReached, LlmNotConfigured, LlmUnavailable, NotFound
 from rebase_core.freelancers import ENTITY, FreelancerService
 from rebase_core.github_source import owned_repo_names
 from rebase_core.hub_facts import HubFacts, hub_facts
 from rebase_core.llm import LlmCall, LlmMessage, LlmRequest, LlmResponse
-from rebase_core.models import AiUsage, Freelancer, FreelancerCard, User
+from rebase_core.models import (
+    CARD_BATCH_ACTIVE,
+    AiUsage,
+    CardBatch,
+    Freelancer,
+    FreelancerCard,
+    User,
+)
 from rebase_core.sources import (
     SourceItem,
     SourceService,
@@ -94,6 +110,9 @@ from rebase_core.team_schemas import (
     FreelancerCardRead,
     SourceProvenance,
 )
+
+if TYPE_CHECKING:
+    from rebase_core.card_batch import CardBatches
 
 logger = logging.getLogger(__name__)
 
@@ -603,6 +622,22 @@ class Composed:
     input_hashes: dict[str, str] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class Prepared:
+    """What `CardWriter.prepare` built for one person before any model is asked: the
+    `request` (the prompt, with the answer shape), what `known` could name them, the
+    `sources` and `facts` it read, the hash of every input (`hashes`) and of the CV
+    (`cv_sha256`). A Message Batch keeps the two hashes beside the request, so its answer is
+    applied only to a card whose inputs are still these."""
+
+    request: LlmRequest
+    known: KnownIdentifiers
+    sources: SourceSet
+    facts: HubFacts
+    hashes: dict[str, str]
+    cv_sha256: str
+
+
 class StaleCard(NamedTuple):
     """A card that no longer is what the current prompt and inputs would write, and that
     waits for an admin's start: `prompt` a newer `PROMPT_VERSION`, `source` the hub's
@@ -627,11 +662,18 @@ class CardWriter:
         *,
         now: Callable[[], datetime] = utcnow,
         sources: SourceService | None = None,
+        workers: int = 1,
+        batches: "CardBatches | None" = None,
     ) -> None:
         self.session = session
         self.llm = llm
         self.now = now
         self._source_service = sources
+        # `workers` cards at once in `refresh_stale` and `regenerate_stale`; 1 is the
+        # caller's own session, one card at a time. `batches` is the Message Batches path
+        # of an admin's regeneration, `None` when the provider has none.
+        self.workers = max(1, workers)
+        self.batches = batches
 
     def write(self, freelancer_id: UUID, *, force: bool = False) -> FreelancerCardRead:
         """The card of the freelancer's current CV: written when the CV is new to this
@@ -677,18 +719,70 @@ class CardWriter:
             .order_by(Freelancer.created_at, Freelancer.id)
             .limit(limit)
         ).all()
-        written = failed = 0
-        stopped = False
-        for freelancer_id in stale:
-            outcome = self._write(freelancer_id, force=False)
-            if outcome == "written":
-                written += 1
-            elif outcome in ("failed", "unavailable"):
-                failed += 1
+        return self._write_all(stale, force=False, only_stale=False)
+
+    def _write_all(
+        self, freelancer_ids: Sequence[UUID], *, force: bool, only_stale: bool
+    ) -> CardsRefreshed:
+        """`_write` for each person, `workers` at a time. One worker is this writer's own
+        session, in order. More are a pool, each on a session and a writer of its own (the
+        sources over that session too); the first `unavailable` (an outage, a spent cap, no
+        model) stops the pool: the people not yet started are left as they were, and the
+        ones already in a call finish and count as they come out. A person is claimed by an
+        advisory lock for the whole write (`_write`), so even a list that named someone
+        twice pays once. An exception ends the pool the same way and is raised after the
+        workers have stopped."""
+        if self.workers == 1 or len(freelancer_ids) < 2:
+            written = failed = 0
+            for freelancer_id in freelancer_ids:
+                outcome = self._write(freelancer_id, force=force, only_stale=only_stale)
+                if outcome == "written":
+                    written += 1
+                elif outcome in ("failed", "unavailable"):
+                    failed += 1
+                if outcome == "unavailable":
+                    return CardsRefreshed(written=written, failed=failed, stopped=True)
+            return CardsRefreshed(written=written, failed=failed)
+        # No transaction of ours stays open under the workers.
+        self.session.commit()
+        open_session = session_factory(self.session.get_bind())  # type: ignore[arg-type]
+        stop = threading.Event()
+
+        def work(freelancer_id: UUID) -> Outcome | None:
+            if stop.is_set():
+                return None
+            try:
+                with open_session() as session:
+                    sources = self._source_service.on(session) if self._source_service else None
+                    worker = CardWriter(session, self.llm, now=self.now, sources=sources)
+                    outcome = worker._write(freelancer_id, force=force, only_stale=only_stale)
+            except BaseException:
+                stop.set()
+                raise
             if outcome == "unavailable":
-                stopped = True
-                break
-        return CardsRefreshed(written=written, failed=failed, stopped=stopped)
+                stop.set()
+            return outcome
+
+        written = failed = 0
+        error: BaseException | None = None
+        with ThreadPoolExecutor(
+            max_workers=min(self.workers, len(freelancer_ids)), thread_name_prefix="card"
+        ) as pool:
+            futures = [pool.submit(work, freelancer_id) for freelancer_id in freelancer_ids]
+            for future in futures:
+                try:
+                    done = future.result()
+                except Exception as exc:
+                    stop.set()
+                    error = error or exc
+                    continue
+                if done == "written":
+                    written += 1
+                elif done in ("failed", "unavailable"):
+                    failed += 1
+        if error is not None:
+            raise error
+        return CardsRefreshed(written=written, failed=failed, stopped=stop.is_set())
 
     def delete(self, freelancer_id: UUID) -> None:
         """The card goes with the CV. Not committed here: `clear_cv` commits it with the
@@ -752,7 +846,7 @@ class CardWriter:
                         status=item.status,
                         fetched_at=item.fetched_at,
                     )
-                    for item in self._sources().current(freelancer_id).items
+                    for item in self.source_service().current(freelancer_id).items
                 ],
                 source_hashes=stored.source_hashes or {},
                 stale=self.stale_of(freelancer_id),
@@ -768,7 +862,7 @@ class CardWriter:
         row = self._freelancer(freelancer_id)
         return hash_inputs(
             row.posizione,
-            self._sources().current(freelancer_id),
+            self.source_service().current(freelancer_id),
             hub_facts(self.session, freelancer_id),
         )
 
@@ -828,8 +922,9 @@ class CardWriter:
 
     def estimate_cost(self, count: int) -> Decimal | None:
         """What `count` cards would cost to write: the average cost of the latest
-        `ESTIMATE_CALLS` `card` calls recorded (a real one, not a «Prova» or an evaluation,
-        and one that had a price) times `count`. The latest, not all of them: a call is not
+        `ESTIMATE_CALLS` `card` calls recorded (a real one, not a «Prova», an evaluation or a
+        Message Batch's, and one that had a price) times `count`. The latest, not all of
+        them: a call is not
         marked with the prompt it ran, and the recent ones are the nearest to what the
         prompt carries now, sources included, where the average of every call since the
         first card would stay on the CV-only calls of version 1 (the most a prompt adds is
@@ -837,7 +932,13 @@ class CardWriter:
         as free."""
         latest = (
             select(AiUsage.cost_eur)
-            .where(AiUsage.task == "card", AiUsage.purpose == "run", AiUsage.priced.is_(True))
+            .where(
+                AiUsage.task == "card",
+                AiUsage.purpose == "run",
+                AiUsage.priced.is_(True),
+                # A batch call is half a synchronous one: the estimate is of the call.
+                AiUsage.batch.is_(False),
+            )
             .order_by(AiUsage.at.desc())
             .limit(ESTIMATE_CALLS)
             .subquery()
@@ -847,51 +948,60 @@ class CardWriter:
             return None
         return (Decimal(average) * count).quantize(Decimal("0.0001"))
 
-    def regenerate_stale(self, admin_id: UUID, limit: int) -> CardsRefreshed:
+    def regenerate_stale(self, admin_id: UUID | None, limit: int) -> CardsRefreshed:
         """An admin's start (`AdminAction` `cards_regenerate`): the first `limit` of
         `stale_cards`, each written again whatever its CV's hash says. Nothing else
         spends on a version bump or a change of the inputs. A card that is no longer
-        stale when its turn comes (another start wrote it first) is skipped, so a double
-        click pays once. The batch stops at the first outage or spent cap, as
-        `refresh_stale` does, and the rest stay stale."""
+        stale when its turn comes (another start wrote it first) is skipped, checked under
+        the person's claim, so a double click pays once. The batch stops at the first outage
+        or spent cap, as `refresh_stale` does, and the rest stay stale. `workers` cards are
+        written at once.
+
+        With `batches` and at least its threshold of cards waiting, they are sent instead
+        as one Message Batch (`CardBatches.submit`): `batched` counts them, the batch is
+        carried on by the `cards` service and `rebase cards-batch-poll`, and the cards stay
+        stale until their results are applied. A start while a batch is active queues
+        nothing."""
         if self.llm is None:
             return CardsRefreshed(written=0, failed=0)
         # One start at a time, for the whole batch: a second click while the first is inside
         # its calls would see the same cards still stale and pay for each of them again.
         # It queues nothing and says so (`regeneration_running`).
-        with self._advisory(REGENERATE_LOCK) as started:
-            if not started:
+        with self.advisory(REGENERATE_LOCK) as started:
+            if not started or self.batch_running():
                 return CardsRefreshed(written=0, failed=0)
             waiting = self.stale_cards()[:limit]
-            AdminActionService(self.session).record(
-                AI_CONFIG_ENTITY,
-                AI_CONFIG_ENTITY_ID,
-                "cards_regenerate",
-                admin_id,
-                {"limit": limit, "queued": len(waiting)},
-            )
-            written = failed = 0
-            stopped = False
-            for item in waiting:
-                if self.stale_of(item.freelancer_id) not in ("prompt", "source"):
-                    continue
-                outcome = self._write(item.freelancer_id, force=True)
-                if outcome == "written":
-                    written += 1
-                elif outcome in ("failed", "unavailable"):
-                    failed += 1
-                if outcome == "unavailable":
-                    stopped = True
-                    break
-            return CardsRefreshed(written=written, failed=failed, stopped=stopped)
+            batched = self.batches is not None and self.batches.wanted(len(waiting))
+            details: dict[str, Any] = {"limit": limit, "queued": len(waiting)}
+            if batched:
+                details["batch"] = True
+            # The command line has no admin: nothing is signed there, as `ai-seed` does.
+            if admin_id is not None:
+                AdminActionService(self.session).record(
+                    AI_CONFIG_ENTITY, AI_CONFIG_ENTITY_ID, "cards_regenerate", admin_id, details
+                )
+            ids = [item.freelancer_id for item in waiting]
+            if self.batches is not None and batched:
+                return self.batches.submit(self, ids, admin_id)
+            return self._write_all(ids, force=True, only_stale=True)
 
     def regeneration_running(self) -> bool:
-        """Whether an admin's start is inside its batch right now, in any process."""
-        with self._advisory(REGENERATE_LOCK) as free:
-            return not free
+        """Whether an admin's start is inside its batch right now, in any process, or a
+        Message Batch of cards is still running or being applied."""
+        with self.advisory(REGENERATE_LOCK) as free:
+            return not free or self.batch_running()
+
+    def batch_running(self) -> bool:
+        """Whether a regeneration sent through the Batch API is not yet applied."""
+        return (
+            self.session.scalar(
+                select(CardBatch.id).where(CardBatch.status.in_(CARD_BATCH_ACTIVE)).limit(1)
+            )
+            is not None
+        )
 
     @contextmanager
-    def _advisory(self, name: str) -> Iterator[bool]:
+    def advisory(self, name: str) -> Iterator[bool]:
         """A Postgres advisory lock named `name`, taken without waiting and held until the
         block ends, whether it was got (`True`) or not. Held on a connection of its own:
         the session commits and gives its connection back many times in a write, and a
@@ -934,11 +1044,28 @@ class CardWriter:
         `prompt_version` 1 is for an evaluation's baseline (REB-842): the CV alone, version
         1's words and guards (the person's name, an address, the gender), the answer a
         bare card. Nothing live is ever written under it."""
+        if self.llm is None:
+            raise LlmNotConfigured(TASK_OFF)
+        prepared = self.prepare(freelancer_id, prompt_version)
+        if isinstance(prepared, Composed):
+            return prepared
+        # Claude takes seconds: the transaction ends here, so no pooled connection and
+        # no lock waits on it. `_save` opens the next one.
+        self.session.commit()
+        response = self.llm.complete(prepared.request)
+        return self.finish(freelancer_id, prepared, response)
+
+    def prepare(
+        self, freelancer_id: UUID, prompt_version: int = PROMPT_VERSION
+    ) -> "Prepared | Composed":
+        """The request `compose` sends for this person, with what the answer will be read
+        against, and nothing sent: the CV's text (or, with none, the `no_text` failure, which
+        has no model), the sources and hub facts as stored, the hash of every input. The one
+        place a card's prompt is built: `compose` asks the model with it, and a Message Batch
+        (`card_batch`) sends the same request and applies the answer through `finish`.
+        Reads the database and leaves its transaction open: the caller commits."""
         if prompt_version not in PROMPT_VERSIONS:
             raise ValueError(f"prompt version {prompt_version} cannot be written")
-        llm = self.llm
-        if llm is None:
-            raise LlmNotConfigured(TASK_OFF)
         row = self._freelancer(freelancer_id)
         cv = FreelancerService(self.session).cv_text(freelancer_id)
         if not cv.testo.strip():
@@ -951,15 +1078,29 @@ class CardWriter:
             known = KnownIdentifiers.empty(cognome, nome)
             request = card_prompt_v1(cv, row.posizione)
         else:
-            sources = self._sources().current(freelancer_id)
+            sources = self.source_service().current(freelancer_id)
             facts = hub_facts(self.session, freelancer_id)
             known = known_identifiers(cognome, nome, row.links, sources, facts)
             request = card_prompt(cv, row.posizione, sources, facts)
-        hashes = hash_inputs(row.posizione, sources, facts)
-        # Claude takes seconds: the transaction ends here, so no pooled connection and
-        # no lock waits on it. `_save` opens the next one.
-        self.session.commit()
-        response = llm.complete(request)
+        cv_sha256 = hashlib.sha256(row.cv_bytes).hexdigest() if row.cv_bytes is not None else ""
+        return Prepared(
+            request=request,
+            known=known,
+            sources=sources,
+            facts=facts,
+            hashes=hash_inputs(row.posizione, sources, facts),
+            cv_sha256=cv_sha256,
+        )
+
+    def finish(self, freelancer_id: UUID, prepared: Prepared, response: LlmResponse) -> Composed:
+        """What the model's first answer to `prepared.request` makes of the card: the draft,
+        the guards, and for a card that gives the gender away or names something a source or
+        an employer would, the one rewrite, asked synchronously with `llm` whatever way the
+        first answer came (the call, or a Message Batch's result). Raises `LlmUnavailable` and
+        its kin from the rewrite, for the caller to read: only a rewrite needs the model, so
+        a card that passes the guards is finished with none configured."""
+        request, known = prepared.request, prepared.known
+        sources, facts, hashes = prepared.sources, prepared.facts, prepared.hashes
         first = _draft_from(response, known)
         if not isinstance(first, CardDraft):
             return Composed(
@@ -995,7 +1136,9 @@ class CardWriter:
                 bool(gendered),
                 bool(leaks),
             )
-            again = llm.complete(
+            if self.llm is None:
+                raise LlmNotConfigured(TASK_OFF)
+            again = self.llm.complete(
                 rewrite_request(request, response.text, gendered=gendered, fields=leaks)
             )
             input_tokens += again.input_tokens
@@ -1043,7 +1186,7 @@ class CardWriter:
             input_hashes=hashes,
         )
 
-    def _write(self, freelancer_id: UUID, *, force: bool) -> Outcome:
+    def _write(self, freelancer_id: UUID, *, force: bool, only_stale: bool = False) -> Outcome:
         row = self._freelancer(freelancer_id)
         if row.cv_bytes is None:
             self.delete(freelancer_id)
@@ -1061,22 +1204,32 @@ class CardWriter:
             return "unchanged"
         # One writer per person at a time: a second one (a double click, «Rigenera scheda»
         # while an admin's start is on the same card) would pay for the same card twice.
-        # It finds the card is being written and leaves it to the first.
-        with self._advisory(f"card:{freelancer_id}") as claimed:
+        # It finds the card is being written and leaves it to the first. `only_stale` (an
+        # admin's start) asks again, under the claim, whether the card is still stale: the
+        # first writer may have finished between the list and this turn.
+        with self.advisory(f"card:{freelancer_id}") as claimed:
             if not claimed:
                 return "unchanged"
-            return self._write_claimed(freelancer_id, digest)
+            if only_stale and self.stale_of(freelancer_id) not in ("prompt", "source"):
+                return "unchanged"
+            return self.write_claimed(freelancer_id, digest)
 
-    def _write_claimed(self, freelancer_id: UUID, digest: str) -> Outcome:
+    def write_claimed(self, freelancer_id: UUID, digest: str) -> Outcome:
         # The sources are read again when a card is written (design, «Sources»): a
         # switch that is off reads nothing, and the weekly pass never gets here.
-        sources = self._sources()
+        sources = self.source_service()
         if sources.enabled_kinds():
             sources.refetch(freelancer_id)
         try:
             composed = self.compose(freelancer_id)
         except LlmUnavailable as exc:
-            return self._unanswered(freelancer_id, digest, exc)
+            return self.unanswered(freelancer_id, digest, exc)
+        return self.store(freelancer_id, digest, composed)
+
+    def store(self, freelancer_id: UUID, digest: str, composed: Composed) -> Outcome:
+        """Keeps what `compose` (or a Message Batch's result through `finish`) made of the
+        CV `digest`: the card, or the sentence of its failure. The one save path: the
+        synchronous write and the batch's apply both end here."""
         if composed.card is None:
             assert composed.failure is not None
             return self._fail(freelancer_id, digest, composed.failure)
@@ -1108,7 +1261,7 @@ class CardWriter:
             return "superseded"
         return "written"
 
-    def _unanswered(self, freelancer_id: UUID, digest: str, error: LlmUnavailable) -> Outcome:
+    def unanswered(self, freelancer_id: UUID, digest: str, error: LlmUnavailable) -> Outcome:
         """The call did not give a card. A real outage is `_fail`'s «unavailable». A call
         the seam refused before any network, for the daily cap or a task with no model, is
         not a provider outage and does not read like one: the stored sentence is the
@@ -1202,7 +1355,7 @@ class CardWriter:
             raise NotFound(ENTITY, freelancer_id)
         return row
 
-    def _sources(self) -> SourceService:
+    def source_service(self) -> SourceService:
         if self._source_service is None:
             self._source_service = default_source_service(self.session)
         return self._source_service
@@ -1227,16 +1380,26 @@ def write_after_response(
 
 
 def regenerate_after_response(
-    open_session: SessionOpener, llm: LlmCall | None, admin_id: UUID, limit: int
+    open_session: SessionOpener,
+    llm: LlmCall | None,
+    admin_id: UUID,
+    limit: int,
+    *,
+    workers: int = 1,
+    batches: "CardBatches | None" = None,
 ) -> None:
     """An admin's start of the regeneration (`CardWriter.regenerate_stale`), run after the
-    response in a session of its own, since it takes as long as `limit` cards do. Returns
-    at once without a model and never raises, since nobody is left to read it; the log
-    names the exception's class, never its message."""
+    response in a session of its own, since it takes as long as `limit` cards do (with
+    `workers` at once, or as one Message Batch past `batches`' threshold, which only submits
+    here and is carried on by the `cards` service). Returns at once without a model and never
+    raises, since nobody is left to read it; the log names the exception's class, never its
+    message."""
     if llm is None:
         return
     try:
         with open_session() as session:
-            CardWriter(session, llm).regenerate_stale(admin_id, limit)
+            CardWriter(session, llm, workers=workers, batches=batches).regenerate_stale(
+                admin_id, limit
+            )
     except Exception as error:
         logger.warning("regeneration of the stale cards stopped: %s", type(error).__name__)
