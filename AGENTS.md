@@ -131,6 +131,15 @@ longest job was 174s (REB-561). The `slow` and `planner` markers are deselected 
 every tier and no test carries them since REB-580: the fifty-thousand-row planner corpus
 went, because a space's tables never reach the size where the plan it asserted matters.
 
+**A killed run's PostgreSQL is removed by the next session, and on a local Docker daemon
+none listens publicly.** There the fixture publishes it on `127.0.0.1` (a port published on
+every interface is accepted by Docker's own iptables rules ahead of UFW); a remote daemon
+keeps Docker's default binding, so its exposure is that host's firewall's. It labels the
+container `letsrebase.tests.owner` with the pytest process that started it, so the next
+session removes any whose owner is gone: that is what cleans up after a killed run when
+`TESTCONTAINERS_RYUK_DISABLED=true` is set (REB-854). Never remove a labelled container
+by hand while its owner is alive.
+
 `ci` is the aggregate job and the only status check this repository should ever be
 asked to require, and since 2026-09-10 it is required: the ruleset "main: pull
 request and green ci" refuses a direct push to `main`, a force-push and a branch
