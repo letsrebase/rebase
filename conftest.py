@@ -97,6 +97,7 @@ def _worker_container() -> tuple[PostgresContainer, str | None]:
     if client.get_connection_mode() is ConnectionMode.docker_host and client.host() in {
         "localhost",
         "127.0.0.1",
+        "::1",
     }:
         # docker-py takes (address, port) for a binding; no port means Docker picks one.
         container.ports[str(container.port)] = ("127.0.0.1", None)  # type: ignore[assignment]
