@@ -104,3 +104,17 @@ describe('the privacy page on how Google data is protected', () => {
     expect(text.match(/questo è un impegno/g)?.length).toBe(3)
   })
 })
+
+describe('the privacy page on your rights', () => {
+  const text = section('I tuoi diritti')
+
+  it('words them for hub members and for PigroCRM spaces separately', () => {
+    expect(text).toContain('cancellare il tuo CV, e con lui la descrizione anonima')
+    expect(text).toContain('togliere il tuo profilo')
+    expect(text).toContain('il resto resta archiviato')
+    expect(text).toContain('chiudere lo spazio li cancella')
+    expect(text).not.toContain('cancellarli insieme allo spazio')
+    expect(text).toContain('Garante')
+    expect(text).toContain('rispondiamo entro trenta giorni')
+  })
+})
