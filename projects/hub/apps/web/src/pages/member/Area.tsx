@@ -178,6 +178,11 @@ export function Area() {
           )}
         </Row>
       </dl>
+      <p className="text-sm text-muted-foreground">
+        {profile.cv_filename === null || profile.cv_size === null
+          ? 'La tua scheda anonima nasce dal CV: senza, non possiamo scriverla.'
+          : 'La tua scheda anonima nasce da questo CV. Se lo aggiorni, la riscriviamo da qui.'}
+      </p>
     </section>
   )
 
