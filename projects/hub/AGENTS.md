@@ -571,7 +571,7 @@ is in `WAREHOUSE_TABLES`. The admin area has no page for it and the API no route
   `unsupported` or `contradicted` with a line of reason, lists what the card **invented** and every
   **identifier** of the person it finds in it. It is answered by `--judge-provider` and `--judge-model` (both or neither) or,
   left out, by the first of `DEFAULT_JUDGES` (`claude-opus-5-5`, then `claude-sonnet-5-5`) that is not the
-  writer (REB-847): **the same model judging its own cards tends to find them right**, so a judge equal to the
+  writer, with no reasoning effort set (REB-847): **the same model judging its own cards tends to find them right**, so a judge equal to the
   writer is refused (exit 2). The reasons are stored with the result and never printed.
   **The judge has its own output ceiling**, `JUDGE_MAX_OUTPUT_TOKENS` (8000, `TaskOverride.max_output_tokens`),
   not the `card` task's 2000: its longest legal answer is about 2,900 tokens and it thinks before
