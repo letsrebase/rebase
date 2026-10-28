@@ -310,7 +310,7 @@ function ProviderRow({ provider, locked }: { provider: AiProvider; locked: boole
   }
 
   return (
-    <form onSubmit={submit} className="grid gap-4 px-6 py-5 sm:grid-cols-[10rem_1fr_auto_auto] sm:items-end">
+    <form onSubmit={submit} className="grid gap-4 px-6 py-5 sm:grid-cols-[10rem_minmax(0,1fr)_auto_auto] sm:items-end">
       <div className="space-y-1">
         <p className="font-medium">{label}</p>
         <Badge variant={provider.enabled ? 'default' : 'outline'}>{provider.enabled ? 'Acceso' : 'Spento'}</Badge>
@@ -326,26 +326,28 @@ function ProviderRow({ provider, locked }: { provider: AiProvider; locked: boole
           placeholder={provider.configured ? 'Scrivi per sostituirla' : 'Incolla la chiave'}
           onChange={(event) => setKey(event.target.value)}
         />
-        <p className="text-xs text-muted-foreground">
-          {provider.key_hint ?? 'non configurata'}
-          {provider.saved_at && provider.saved_by_name
-            ? ` · salvata da ${provider.saved_by_name}, ${formatDateTime(provider.saved_at)}`
-            : ''}
-        </p>
       </div>
-      <Button type="submit" disabled={locked || save.isPending || !key.trim()}>
+      {/* The hint sits in its own row under the field so «items-end» lines the buttons up with the input, not with this line. */}
+      <p className="-mt-2 text-xs text-muted-foreground sm:col-span-3 sm:col-start-2 sm:row-start-2">
+        {provider.key_hint ?? 'non configurata'}
+        {provider.saved_at && provider.saved_by_name
+          ? ` · salvata da ${provider.saved_by_name}, ${formatDateTime(provider.saved_at)}`
+          : ''}
+      </p>
+      <Button type="submit" className="sm:w-32" disabled={locked || save.isPending || !key.trim()}>
         {save.isPending ? 'Salvo…' : 'Salva chiave'}
       </Button>
       <Button
         type="button"
         variant="outline"
+        className="sm:w-24"
         disabled={locked || toggle.isPending || (!provider.configured && !provider.enabled)}
         onClick={() => toggle.mutate()}
       >
         {provider.enabled ? 'Spegni' : 'Accendi'}
       </Button>
       {(save.isError || toggle.isError) && (
-        <p role="alert" className="text-sm text-destructive sm:col-span-4">
+        <p role="alert" className="text-sm text-destructive sm:col-span-4 sm:row-start-3">
           {problem(save.error ?? toggle.error, 'Non riesco a salvare.')}
         </p>
       )}
@@ -409,7 +411,7 @@ function TaskForm({ task, config }: { task: AiTask; config: AiConfig }) {
       <div className="space-y-2">
         <Label htmlFor={`${id}-provider`}>Fornitore</Label>
         <Select value={provider} onValueChange={setProvider}>
-          <SelectTrigger id={`${id}-provider`}>
+          <SelectTrigger id={`${id}-provider`} className="w-full">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -438,7 +440,7 @@ function TaskForm({ task, config }: { task: AiTask; config: AiConfig }) {
       <div className="space-y-2">
         <Label htmlFor={`${id}-effort`}>Ragionamento</Label>
         <Select value={effort} onValueChange={setEffort}>
-          <SelectTrigger id={`${id}-effort`}>
+          <SelectTrigger id={`${id}-effort`} className="w-full">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -572,10 +574,11 @@ function Prices({ config }: { config: AiConfig }) {
         </Table>
       )}
       <form onSubmit={submit} className="grid gap-4 px-6 py-5 sm:grid-cols-[1fr_1fr_1fr_1fr_auto] sm:items-end">
-        <div className="space-y-2">
+        {/* A grid, not «space-y-2»: inside a form Radix adds a hidden native select after the trigger, so the trigger would take that margin and sit 8px above its neighbours. */}
+        <div className="grid gap-2">
           <Label htmlFor="price-provider">Fornitore del prezzo</Label>
           <Select value={provider} onValueChange={setProvider}>
-            <SelectTrigger id="price-provider">
+            <SelectTrigger id="price-provider" className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
