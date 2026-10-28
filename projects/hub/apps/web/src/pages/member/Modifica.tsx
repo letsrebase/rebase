@@ -26,8 +26,8 @@ export function editFields(hasCv: boolean): Field<FreelancerApplication>[] {
           ...field,
           optional: true,
           hint: hasCv
-            ? 'Solo se vuoi sostituirlo: un PDF, al massimo 5 MB. Altrimenti teniamo quello che abbiamo.'
-            : 'Non ne abbiamo ancora uno. Un PDF, al massimo 5 MB: caricalo adesso o quando vuoi.',
+            ? 'La tua scheda anonima nasce da questo CV. Se lo aggiorni, la riscriviamo da qui. Per sostituirlo carica un PDF, al massimo 5 MB.'
+            : 'Non ne abbiamo ancora uno, e la tua scheda anonima nasce proprio dal CV. Un PDF, al massimo 5 MB: caricalo adesso o quando vuoi.',
         }
       : field,
   )

@@ -130,13 +130,13 @@ export const FREELANCER_FIELDS: Field<FreelancerApplication>[] = [
     // hand: the card is stored without one, the area they land in asks for it again,
     // and `completa` on the admin side already says which cards are missing it.
     optional: true,
-    hint: 'Un PDF, al massimo 5 MB. Se non ce l’hai qui, salta: puoi caricarlo quando vuoi dalla tua area. Lo leggiamo noi e chi ti proporrà un progetto; puoi chiederci di cancellarlo quando vuoi.',
+    hint: 'Il CV conta: lo leggiamo per scrivere la tua scheda anonima, quella con cui ti proponiamo alle aziende. Più è completo e aggiornato (ruoli, progetti, date, tecnologie), più è facile proporti per il progetto giusto.',
     render: ({ value, set, error, errorId }) => (
       <FileField
         value={value.cv}
         onChange={(cv) => set({ cv })}
         accept="application/pdf,.pdf"
-        hint="PDF fino a 5 MB"
+        hint="PDF fino a 5 MB. Puoi chiederci di cancellarlo quando vuoi."
         invalid={!!error}
         describedBy={error ? errorId : undefined}
       />
