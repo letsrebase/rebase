@@ -216,6 +216,7 @@ jobs:
               - 'projects/pigrocrm/apps/mcp/**'
               - 'projects/pigrocrm/packages/**'
               - 'projects/pigrocrm/conftest.py'
+              - 'conftest.py'
               - 'projects/pigrocrm/ruff.toml'
               - 'pyproject.toml'
               - 'uv.lock'
@@ -255,6 +256,7 @@ jobs:
               - 'projects/hub/packages/**'
               - 'projects/hub/apps/web/src/lib/amount_cases.json'
               - 'projects/hub/conftest.py'
+              - 'conftest.py'
               - 'projects/hub/ruff.toml'
               # The hub's two compose files, the backups' Dockerfile and the hub's deploy
               # workflow (REB-715, REB-717): `test_documenso_compose.py` reads all four, and

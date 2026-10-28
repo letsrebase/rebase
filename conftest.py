@@ -18,21 +18,82 @@ for an empty database instead of a container of its own.
 The server runs with `fsync`, `synchronous_commit` and `full_page_writes` off: a test
 database has nothing to protect from a crash, and every commit, vacuum and bulk load is
 cheaper without the disk waits. None of the three touches what the planner reads.
+
+Two things keep the containers from outliving their run (REB-854). On a local Docker
+daemon the port is published on loopback, because Docker's own firewall rules accept a
+port published on every interface ahead of the host's firewall, so a leaked container
+was a `test`/`test` PostgreSQL open to the internet. And each container carries the
+identity of the pytest process that started it, so the next session removes the ones a
+killed run left behind: Ryuk would, but a local run often turns it off
+(`TESTCONTAINERS_RYUK_DISABLED`) because it flakes on a busy machine.
 """
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
+from pathlib import Path
 from uuid import uuid4
 
+import docker.errors
 import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 from testcontainers.community.postgres import PostgresContainer
+from testcontainers.core.docker_client import ConnectionMode
 
 _IMAGE = "postgres:17-alpine"
 _SERVER_SETTINGS = "postgres -c fsync=off -c synchronous_commit=off -c full_page_writes=off"
+_OWNER_LABEL = "letsrebase.tests.owner"
+
+
+def _process_identity(pid: int) -> str | None:
+    """The boot, PID namespace, pid and start time of a process; None off Linux or once gone.
+
+    The start time is what tells a live owner from a later process that was given its pid,
+    and the boot and namespace are what make a pid comparable at all: a container started
+    from another machine sharing the daemon, or from inside a sandbox, is never judged.
+    """
+    try:
+        boot = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+        namespace = os.readlink("/proc/self/ns/pid")
+        stat = Path(f"/proc/{pid}/stat").read_text()
+    except OSError:
+        return None
+    start = stat.rsplit(")", 1)[1].split()[19]
+    return f"{boot}:{namespace}:{pid}:{start}"
+
+
+def _remove_orphans(container: PostgresContainer) -> None:
+    """Remove the worker containers whose pytest process, on this machine and namespace, is gone."""
+    mine = _process_identity(os.getpid())
+    if mine is None:
+        return
+    here = mine.rsplit(":", 2)[0]
+    client = container.get_docker_client().client
+    for leftover in client.containers.list(all=True, filters={"label": _OWNER_LABEL}):
+        owner = leftover.labels.get(_OWNER_LABEL, "")
+        where, _, pid = owner.rsplit(":", 1)[0].rpartition(":")
+        if where != here or not pid.isdigit() or _process_identity(int(pid)) == owner:
+            continue
+        with suppress(docker.errors.APIError):  # another worker got to it first
+            leftover.remove(force=True, v=True)
+
+
+def _worker_container() -> PostgresContainer:
+    container = PostgresContainer(_IMAGE, driver="psycopg").with_command(_SERVER_SETTINGS)
+    owner = _process_identity(os.getpid())
+    if owner is not None:
+        container.with_kwargs(labels={_OWNER_LABEL: owner})
+    client = container.get_docker_client()
+    if client.get_connection_mode() is ConnectionMode.docker_host and client.host() in {
+        "localhost",
+        "127.0.0.1",
+    }:
+        # docker-py takes (address, port) for a binding; no port means Docker picks one.
+        container.ports[str(container.port)] = ("127.0.0.1", None)  # type: ignore[assignment]
+    return container
 
 
 class PostgresPerWorker:
@@ -124,7 +185,8 @@ class _FreshDatabase:
 @pytest.fixture(scope="session")
 def postgres_per_worker() -> Iterator[PostgresPerWorker]:
     """One PostgreSQL for this worker process, for every test root it runs."""
-    container = PostgresContainer(_IMAGE, driver="psycopg").with_command(_SERVER_SETTINGS)
+    container = _worker_container()
+    _remove_orphans(container)
     with container:
         server = PostgresPerWorker(container.get_connection_url())
         try:

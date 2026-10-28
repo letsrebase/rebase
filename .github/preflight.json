@@ -35,6 +35,7 @@
         "projects/pigrocrm/apps/mcp/**",
         "projects/pigrocrm/packages/**",
         "projects/pigrocrm/conftest.py",
+        "conftest.py",
         "pyproject.toml",
         "uv.lock"
       ],
@@ -180,6 +181,7 @@
         "projects/hub/packages/**",
         "projects/hub/apps/web/src/lib/amount_cases.json",
         "projects/hub/conftest.py",
+        "conftest.py",
         "projects/hub/docker-compose.yml",
         "projects/hub/docker-compose.documenso.yml",
         "projects/hub/db-backup/Dockerfile",
