@@ -590,16 +590,19 @@ def test_a_resolver_that_never_answers_is_an_error_within_the_budget(
     assert time.monotonic() - started < 3
 
 
-def test_a_spent_budget_stops_before_the_next_request(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(web_fetch, "FETCH_TIMEOUT_SECONDS", 0.2)
+def test_a_spent_budget_stops_before_the_next_request() -> None:
+    now = [1000.0]  # the budget's clock, driven by the test and not by the machine's load
 
     class Slow(FakeNetwork):
         def transport(self, request: PinnedRequest) -> RawResponse:
-            time.sleep(0.3)  # robots.txt alone uses the whole budget
+            now[0] += web_fetch.FETCH_TIMEOUT_SECONDS  # robots.txt alone uses the whole budget
             return super().transport(request)
 
     network = Slow({("site.example", "/"): html()})
-    assert network.fetcher().fetch("https://site.example/").status == "error"
+    fetcher = SafeFetcher(
+        transport=network.transport, resolver=network.resolver, clock=lambda: now[0]
+    )
+    assert fetcher.fetch("https://site.example/").status == "error"
     assert [r.target for r in network.requests] == ["/robots.txt"]
 
 

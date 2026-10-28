@@ -22,8 +22,10 @@ def test_a_good_token_opts_out_its_address_and_an_unknown_one_does_nothing(clean
         )
     )
     clean.commit()
+    # Other files leave opt-outs on a shared worker database: compare with what was there.
+    before = clean.query(CampaignOptout).count()
     OptoutService(clean).unsubscribe("nobody")
-    assert clean.query(CampaignOptout).count() == 0
+    assert clean.query(CampaignOptout).count() == before
     OptoutService(clean).unsubscribe("good")
     OptoutService(clean).unsubscribe("good")  # twice: still one row
     row = clean.get(CampaignOptout, "ada@studio.it")
@@ -50,7 +52,7 @@ def test_invalid_tokens_are_rejected_silently(clean: Session, invalid_token: str
         )
     )
     clean.commit()
-
+    before = clean.query(CampaignOptout).count()
     # Count SQL statements to verify the guard prevents database queries
     statement_count = [0]
 
@@ -62,6 +64,6 @@ def test_invalid_tokens_are_rejected_silently(clean: Session, invalid_token: str
     try:
         OptoutService(clean).unsubscribe(invalid_token)
         assert statement_count[0] == 0, f"Expected 0 SQL statements but got {statement_count[0]}"
-        assert clean.query(CampaignOptout).count() == 0
+        assert clean.query(CampaignOptout).count() == before
     finally:
         event.remove(engine, "before_cursor_execute", count_statements)
