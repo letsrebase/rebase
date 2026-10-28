@@ -52,11 +52,13 @@ const CONFIG = {
   known_models: { anthropic: ['claude-opus-5'], openai: [], google: [] },
 }
 
-const NO_STALE = { count: 0, by_reason: {}, estimated_cost_eur: null, items: [] }
+const NO_STALE = { count: 0, by_reason: {}, estimated_cost_eur: null, items: [], batch_threshold: 10, batch: null }
 const STALE = {
   count: 7,
   by_reason: { prompt: 5, source: 2 },
   estimated_cost_eur: '0.42',
+  batch_threshold: 10,
+  batch: null,
   items: [
     { freelancer_id: 'f1', nome: 'Ada Lovelace', reason: 'prompt', generated_at: '2026-09-25T10:00:00Z' },
     { freelancer_id: 'f2', nome: 'Grace Hopper', reason: 'source', generated_at: null },
@@ -222,6 +224,37 @@ describe('the Modelli AI page (REB-833)', () => {
     await user.clear(section.getByLabelText('Quante'))
     await user.type(section.getByLabelText('Quante'), '51')
     expect(section.getByRole('button', { name: 'Avvia rigenerazione' })).toBeDisabled()
+  })
+
+  it('says from how many cards a start goes through the Batch API', async () => {
+    mount(CONFIG, { '/api/hub/admin/ai/cards/stale': () => answer(200, STALE) })
+    const section = within(await screen.findByRole('region', { name: 'Schede da aggiornare' }))
+    expect(await section.findByText(/Da 10 schede in su la rigenerazione passa dal Batch API/)).toBeInTheDocument()
+  })
+
+  it('shows the running batch with its count, when it was sent and how many are applied, and offers no start', async () => {
+    mount(CONFIG, {
+      '/api/hub/admin/ai/cards/stale': () =>
+        answer(200, {
+          ...STALE,
+          batch: { status: 'in_progress', count: 14, done: 3, submitted_at: '2026-10-28T09:00:00Z' },
+        }),
+    })
+    const section = within(await screen.findByRole('region', { name: 'Schede da aggiornare' }))
+    const status = await section.findByRole('status')
+    expect(status).toHaveTextContent(/Rigenerazione in corso col Batch API: 14 schede inviate il/)
+    expect(status).toHaveTextContent(/3 applicate/)
+    expect(section.queryByRole('button', { name: 'Avvia rigenerazione' })).toBeNull()
+    expect(section.queryByLabelText('Quante')).toBeNull()
+  })
+
+  it('says a batch is being sent before it has a time', async () => {
+    mount(CONFIG, {
+      '/api/hub/admin/ai/cards/stale': () =>
+        answer(200, { ...STALE, batch: { status: 'submitting', count: 1, done: 0, submitted_at: null } }),
+    })
+    const section = within(await screen.findByRole('region', { name: 'Schede da aggiornare' }))
+    expect(await section.findByRole('status')).toHaveTextContent('1 scheda in invio, 0 applicate.')
   })
 
   it('says there is nothing to update and offers no button', async () => {

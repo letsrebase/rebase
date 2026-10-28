@@ -19,6 +19,7 @@ from rebase_core.ai_config import PROVIDER_OFF, AiConfigService
 from rebase_core.ai_verify import verify
 from rebase_core.campaigns.sender import campaign_sender_from_settings
 from rebase_core.campaigns.tick import run_tick
+from rebase_core.card_batch import CardBatches
 from rebase_core.card_eval import format_report, named, results_of, run_eval, sample
 from rebase_core.card_judge import DEFAULT_JUDGES, JUDGE_MAX_OUTPUT_TOKENS
 from rebase_core.cards import PROMPT_VERSION, PROMPT_VERSIONS, CardWriter
@@ -37,7 +38,7 @@ from rebase_core.duplicates import UNIQUE_INDEXES, ensure_unique_indexes, find_d
 from rebase_core.errors import DocumensoFailed, DomainError
 from rebase_core.freelancers import freelancer_read
 from rebase_core.http import HttpCall
-from rebase_core.llm import AiCall, TaskOverride, call_for_task
+from rebase_core.llm import AiBatch, AiCall, TaskOverride, batch_for_task, call_for_task
 from rebase_core.mail import CardSummary, EmailSender, sender_from_settings, welcome_mail
 from rebase_core.merge import MergeRead, PersonMergeService
 from rebase_core.models import (
@@ -258,13 +259,94 @@ def cards_refresh(limit: int) -> int:
         return 1
     session = open_session()
     try:
-        result = CardWriter(session, llm).refresh_stale(limit)
+        result = CardWriter(session, llm, workers=settings.cards_workers).refresh_stale(limit)
     finally:
         session.close()
     summary = f"{result.written} schede scritte, {result.failed} non riuscite"
     if result.stopped:
         summary += ", fermato: modello non disponibile"
     print(summary)
+    return 0
+
+
+def cards_regenerate(limit: int, batch: bool) -> int:
+    """`rebase cards-regenerate [--limit N] [--batch]` (REB-853): an admin's start of the
+    regeneration from the command line: the oldest `limit` stale cards («Schede da
+    aggiornare»), written again with `REBASE_CARDS_WORKERS` at once, or, from
+    `REBASE_CARDS_BATCH_THRESHOLD` cards up (always with `--batch`), as one Message Batch
+    at half the price, which `rebase cards-batch-poll` and the `cards` service carry on. A
+    provider with no batch API falls back to the workers, and says so. Nothing is signed
+    in the trail from here. A start while another is on writes nothing and says so."""
+    if limit < 1:
+        print("--limit deve essere almeno 1.", file=sys.stderr)
+        return 2
+    settings = get_settings()
+    open_session = session_factory(create_engine_from_settings(settings))
+    llm = call_for_task(lambda: closing(open_session()), settings, "card")
+    if llm is None:
+        print(
+            "Nessun modello configurato per le schede: apri «Modelli AI».",
+            file=sys.stderr,
+        )
+        return 1
+    call = batch_for_task(lambda: closing(open_session()), settings, "card")
+    if call is None and batch:
+        print("Il fornitore delle schede non ha un Batch API: scrivo una scheda alla volta.")
+    batches = (
+        CardBatches(call, 1 if batch else settings.cards_batch_threshold)
+        if call is not None
+        else None
+    )
+    session = open_session()
+    try:
+        writer = CardWriter(session, llm, workers=settings.cards_workers, batches=batches)
+        if writer.regeneration_running():
+            print("Una rigenerazione è già in corso: nessuna scheda avviata.")
+            return 0
+        result = writer.regenerate_stale(None, limit)
+    finally:
+        session.close()
+    if result.batched:
+        print(f"{result.batched} schede inviate al Batch API: `rebase cards-batch-poll` le applica")
+        return 0
+    summary = f"{result.written} schede scritte, {result.failed} non riuscite"
+    if result.stopped:
+        summary += ", fermato: modello non disponibile"
+    print(summary)
+    return 0
+
+
+def cards_batch_poll() -> int:
+    """`rebase cards-batch-poll` (REB-853): one pass over the regeneration sent through the
+    Batch API: asks whether it ended and, once it has, applies each result as a synchronous
+    write would (`CardBatches.poll`). Run every few minutes by the `cards` service, whatever
+    `REBASE_CARDS_LOOP` says (an admin started the batch), and by hand to resume one after a
+    restart: its state is in the database and its results at the provider. With no batch
+    on, it says so and exits 0 so the loop keeps running."""
+    settings = get_settings()
+    open_session = session_factory(create_engine_from_settings(settings))
+    llm = call_for_task(lambda: closing(open_session()), settings, "card")
+    batch = AiBatch(lambda: closing(open_session()), settings, "card")
+    session = open_session()
+    try:
+        polled = CardBatches(batch, settings.cards_batch_threshold).poll(
+            CardWriter(session, llm, workers=settings.cards_workers)
+        )
+    finally:
+        session.close()
+    lines = {
+        "none": "nessun batch di schede in corso",
+        "busy": "un altro passaggio sta applicando il batch",
+        "running": f"batch in corso al fornitore: {polled.left} schede da applicare",
+        "failed": "batch mai partito: le schede restano da aggiornare",
+        "unavailable": "il fornitore non risponde: riprovo al prossimo passaggio",
+        "applied": f"batch concluso: {polled.written} schede scritte, {polled.failed} non riuscite",
+        "applying": (
+            f"{polled.written} schede scritte, {polled.failed} non riuscite, "
+            f"{polled.left} ancora da applicare"
+        ),
+    }
+    print(lines[polled.state])
     return 0
 
 
@@ -843,6 +925,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Scrive la scheda anonima di chi ha un CV nuovo o cambiato, i più vecchi prima",
     )
     cards_parser.add_argument("--limit", type=int, default=50)
+    regenerate_parser = sub.add_parser(
+        "cards-regenerate",
+        help="Riscrive le schede da aggiornare, in parallelo o, in blocco, col Batch API",
+    )
+    regenerate_parser.add_argument("--limit", type=int, default=50)
+    regenerate_parser.add_argument(
+        "--batch", action="store_true", help="sempre col Batch API, qualunque sia la soglia"
+    )
+    sub.add_parser(
+        "cards-batch-poll",
+        help="Porta avanti il batch di schede inviato al Batch API e ne applica i risultati",
+    )
     sources_parser = sub.add_parser(
         "sources-refetch",
         help="Rilegge GitHub e i link da cui si scrive la scheda, senza chiamare un modello",
@@ -927,6 +1021,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return campaigns_tick()
     if args.command == "cards-refresh":
         return cards_refresh(args.limit)
+    if args.command == "cards-regenerate":
+        return cards_regenerate(args.limit, args.batch)
+    if args.command == "cards-batch-poll":
+        return cards_batch_poll()
     if args.command == "sources-refetch":
         return sources_refetch(args.limit)
     if args.command == "cards-eval":

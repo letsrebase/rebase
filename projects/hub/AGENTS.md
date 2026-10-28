@@ -661,10 +661,57 @@ for «Scheda anonima», which shows `fonti` as «secondo il modello».
   «Modelli AI», «Schede da aggiornare» (`GET /api/hub/admin/ai/cards/stale`), with the estimated
   cost, the average of the recorded `card` calls times the count, «stima non disponibile» while
   none is recorded. **«Avvia rigenerazione»** (`POST .../cards/regenerate-stale`, `{limit}` 1 to
-  50, an `AdminAction` `cards_regenerate`) writes the oldest `limit` after the response, one at a
-  time, each re-checked before its turn so a double click pays once, and stops at the first outage
-  or spent cap. A bump of `PROMPT_VERSION` therefore lists every card of the old version and spends
-  nothing: **deploying version 2 puts all of them in the list**.
+  50, an `AdminAction` `cards_regenerate`) writes the oldest `limit` after the response, each
+  re-checked **under the person's claim** just before its write, so a double click pays once, and
+  stops at the first outage or spent cap (REB-853: with `REBASE_CARDS_WORKERS` at once, or as a
+  Message Batch from `REBASE_CARDS_BATCH_THRESHOLD` cards up, below). A bump of `PROMPT_VERSION`
+  therefore lists every card of the old version and spends nothing: **deploying version 2 puts all
+  of them in the list**.
+- **Bulk writing is parallel, and a bulk regeneration is a Message Batch** (REB-853). `rebase
+  cards-refresh` and an admin's regeneration write with `REBASE_CARDS_WORKERS` workers (default 5,
+  1 to 8; `.env`, `docker-compose.yml`): each is a thread with a session and a `CardWriter` of its
+  own, and each person is **claimed** by the Postgres advisory lock `card:<freelancer id>` that
+  `CardWriter._write` always took, so no card is paid for twice even when two passes overlap. The
+  first `unavailable` (an outage, a spent daily cap, no model) stops the pool: the people not
+  started are left as they were (still stale, no failure recorded), the ones already in a call
+  finish. Counts, `ai_usage` rows and the `AdminAction` are unchanged in shape. Each worker takes
+  two connections for the length of a write (its session and the lock), so the pool is why the
+  setting stops at 8. **From `REBASE_CARDS_BATCH_THRESHOLD` cards (default 10) an admin's start, or
+  `rebase cards-regenerate [--limit N] [--batch]` (`--batch` whatever the threshold), goes through
+  Anthropic's Message Batches API instead**: half the price, answered within the hour (24 at
+  most), and only for the Anthropic provider (any other falls back to the workers, and the CLI
+  says so). A single «Rigenera scheda», `cards-refresh` and the wizard's write stay synchronous.
+  `card_batch.CardBatches.submit` builds each person's request with `CardWriter.prepare`, the same
+  prompt and answer shape the synchronous write sends, and `llm.AiBatch` encodes it with Pydantic
+  AI's own batch encoder (`build_batch_model`): same model, effort, adaptive thinking, schema,
+  output ceiling and `inference_geo` as the `card` task, less what a batch refuses (the
+  server-side fallback and the per-request timeout and retries; extended output is a separate
+  beta, not needed here). `custom_id` is the freelancer id. The batch and one `card_batch_items`
+  row per card (the hash of the CV and of every input, no text; migration 0041) are written
+  **before** the provider is called, and the batch's state is `submitting`, `in_progress`,
+  `ended`, `applied` or `failed`. **One batch is active at a time**: a start while one is not
+  applied queues nothing («Una rigenerazione è già in corso»).
+  `rebase cards-batch-poll` carries it on (the `cards` service runs it every five minutes,
+  whatever `REBASE_CARDS_LOOP` says; the hourly `sources-refetch` and `cards-refresh` are every
+  twelfth tick): when the provider says the batch ended, each result is applied through the
+  synchronous write's own steps, `CardWriter.finish` (draft, guards, the one synchronous rewrite
+  a gendered or identifying card is asked for) and `CardWriter.store` (the one save), under the
+  person's claim. A result is applied only to the card it was asked for: a CV or an input that
+  changed meanwhile makes the item `superseded` (the answer is paid for, recorded and dropped, the
+  card is still stale); a refusal is written again as a synchronous call, which has the fallback a
+  batch has not; a request the provider did not answer (errored, expired, canceled) leaves its card
+  stale for the next start. Usage is recorded when the result is read, at the **batch price**
+  (`ai_usage.batch`, cost = 50% of the price row's input, output, thinking and cache reads, as
+  Anthropic bills a batch), once per card (`usage_recorded`), so the cap counts it the day it lands
+  and the cost estimate of «Schede da aggiornare» (synchronous calls only) is not halved by it.
+  **To resume after a restart, nothing is needed**: the state is in the tables and the results at
+  the provider for 29 days, so the next poll goes on, or run `docker compose -p rebase --env-file
+  /opt/hub/.env exec api uv run --no-sync rebase cards-batch-poll` by hand; a model that does not
+  answer a rewrite leaves the rest for the next pass. A batch left `submitting` for 15 minutes
+  without a provider id is marked `failed` (it was never sent, or its answer was lost with the
+  process: never sent a second time, which could pay twice; an orphan at the provider shows in the
+  Console), and an admin starts again. «Schede da aggiornare» shows the running batch (cards sent,
+  when, how many applied) and refreshes itself until it is applied.
 - **The weekly refetch never calls a model.** `rebase sources-refetch [--limit N]` runs
   `SourceService.refetch_due` (people whose sources are a week old, missing or no longer match
   their links; only people a card is written for: live, not turned down, with a CV; the text of

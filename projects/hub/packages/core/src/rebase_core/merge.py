@@ -293,6 +293,11 @@ LEFT_IN_PLACE: dict[str, str] = {
     "card_eval_profiles.freelancer_id": "a CV's place in the evaluation sample stays with it",
     "card_eval_runs.created_by": "the admin who ran the evaluation",
     "card_eval_results.freelancer_id": "what a run wrote for one CV, about that card as it was",
+    "card_batch_items.freelancer_id": (
+        "a card's place in a regeneration batch, with hashes only: the result is applied "
+        "only if the card's inputs are still those"
+    ),
+    "card_batches.started_by": "the admin who started the regeneration",
 }
 
 

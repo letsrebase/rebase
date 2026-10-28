@@ -24,6 +24,7 @@ from rebase_core import cli, signing
 from rebase_core.ai_config import AiConfigService
 from rebase_core.ai_verify import VerifyReport
 from rebase_core.campaigns.tick import TickResult
+from rebase_core.card_batch import BatchPolled, CardBatches
 from rebase_core.card_judge import JUDGE_MAX_OUTPUT_TOKENS
 from rebase_core.cli import main
 from rebase_core.config import Settings
@@ -32,7 +33,7 @@ from rebase_core.engagements import EngagementService
 from rebase_core.errors import LlmCapReached
 from rebase_core.freelancers import FreelancerService
 from rebase_core.http import urllib_engagements_call
-from rebase_core.llm import LlmResponse, RecordingCall, TaskOverride
+from rebase_core.llm import LlmResponse, RecordingBatch, RecordingCall, TaskOverride
 from rebase_core.models import CardEvalProfile, CardEvalRun, FreelancerCard, User
 from rebase_core.schemas import FreelancerCreate
 from rebase_core.signing import SweepResult
@@ -167,9 +168,10 @@ class _FakeCardWriter:
     instances: list["_FakeCardWriter"] = []
     result = CardsRefreshed(written=3, failed=1)
 
-    def __init__(self, session: object, llm: object) -> None:
+    def __init__(self, session: object, llm: object, **options: object) -> None:
         self.session = session
         self.llm = llm
+        self.options = options
         self.limits: list[int] = []
         _FakeCardWriter.instances.append(self)
 
@@ -202,6 +204,7 @@ def test_cards_refresh_prints_the_counts(
 
     [writer] = _FakeCardWriter.instances
     assert writer.llm is _CARD_CALL
+    assert writer.options == {"workers": 5}  # `REBASE_CARDS_WORKERS`' default
     assert _TASKS_ASKED[-1] == "card"
     assert writer.limits == [10]
     assert capsys.readouterr().out.strip() == "3 schede scritte, 1 non riuscite"
@@ -238,6 +241,129 @@ def test_cards_refresh_says_the_stop(
     monkeypatch.setattr(_FakeCardWriter, "result", result)
 
     assert main(["cards-refresh"]) == 0
+
+    assert capsys.readouterr().out.strip() == line
+
+
+class _FakeRegeneratingWriter(_FakeCardWriter):
+    running = False
+    started: list[tuple[object, int]] = []
+
+    def regeneration_running(self) -> bool:
+        return self.running
+
+    def regenerate_stale(self, admin_id: object, limit: int) -> CardsRefreshed:
+        self.started.append((admin_id, limit))
+        return self.result
+
+
+@pytest.mark.parametrize(
+    ("argv", "threshold"), [(["cards-regenerate"], 10), (["cards-regenerate", "--batch"], 1)]
+)
+def test_cards_regenerate_goes_through_the_batch_api_above_the_threshold(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    argv: list[str],
+    threshold: int,
+) -> None:
+    """REB-853: `--batch` always, otherwise from `REBASE_CARDS_BATCH_THRESHOLD` cards up;
+    the workers are `REBASE_CARDS_WORKERS`; nothing is signed from the command line."""
+    _FakeCardWriter.instances = []
+    _FakeRegeneratingWriter.started = []
+    monkeypatch.setattr(cli, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
+    monkeypatch.setattr(cli, "call_for_task", _configured_card_task)
+    monkeypatch.setattr(cli, "batch_for_task", lambda opener, settings, task: RecordingBatch())
+    monkeypatch.setattr(cli, "CardWriter", _FakeRegeneratingWriter)
+    monkeypatch.setattr(
+        _FakeRegeneratingWriter, "result", CardsRefreshed(written=0, failed=0, batched=14)
+    )
+
+    assert main([*argv, "--limit", "20"]) == 0
+
+    [writer] = _FakeCardWriter.instances
+    assert writer.options["workers"] == 5
+    batches = writer.options["batches"]
+    assert isinstance(batches, CardBatches) and batches.threshold == threshold
+    assert _FakeRegeneratingWriter.started == [(None, 20)]
+    assert "14 schede inviate al Batch API" in capsys.readouterr().out
+
+
+def test_cards_regenerate_without_a_batch_api_writes_with_the_workers(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _FakeCardWriter.instances = []
+    _FakeRegeneratingWriter.started = []
+    monkeypatch.setattr(cli, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
+    monkeypatch.setattr(cli, "call_for_task", _configured_card_task)
+    monkeypatch.setattr(cli, "batch_for_task", lambda opener, settings, task: None)
+    monkeypatch.setattr(cli, "CardWriter", _FakeRegeneratingWriter)
+    monkeypatch.setattr(_FakeRegeneratingWriter, "result", CardsRefreshed(written=4, failed=1))
+
+    assert main(["cards-regenerate", "--batch"]) == 0
+
+    [writer] = _FakeCardWriter.instances
+    assert writer.options["batches"] is None
+    out = capsys.readouterr().out
+    assert "non ha un Batch API" in out and "4 schede scritte, 1 non riuscite" in out
+
+
+def test_cards_regenerate_says_when_one_is_already_on(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _FakeCardWriter.instances = []
+    _FakeRegeneratingWriter.started = []
+    monkeypatch.setattr(cli, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
+    monkeypatch.setattr(cli, "call_for_task", _configured_card_task)
+    monkeypatch.setattr(cli, "batch_for_task", lambda opener, settings, task: None)
+    monkeypatch.setattr(cli, "CardWriter", _FakeRegeneratingWriter)
+    monkeypatch.setattr(_FakeRegeneratingWriter, "running", True)
+
+    assert main(["cards-regenerate"]) == 0
+    monkeypatch.setattr(_FakeRegeneratingWriter, "running", False)
+
+    assert _FakeRegeneratingWriter.started == []
+    assert "già in corso" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    ("polled", "line"),
+    [
+        (BatchPolled("none"), "nessun batch di schede in corso"),
+        (BatchPolled("running", left=14), "batch in corso al fornitore: 14 schede da applicare"),
+        (
+            BatchPolled("applied", written=13, failed=1),
+            "batch concluso: 13 schede scritte, 1 non riuscite",
+        ),
+        (
+            BatchPolled("applying", written=5, failed=0, left=9),
+            "5 schede scritte, 0 non riuscite, 9 ancora da applicare",
+        ),
+        (BatchPolled("unavailable"), "il fornitore non risponde: riprovo al prossimo passaggio"),
+    ],
+)
+def test_cards_batch_poll_says_where_the_batch_stands(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    polled: BatchPolled,
+    line: str,
+) -> None:
+    """One pass of the loop: it always exits 0, so the `cards` service keeps running."""
+
+    class FakeBatches:
+        def __init__(self, call: object, threshold: int) -> None:
+            pass
+
+        def poll(self, writer: object) -> BatchPolled:
+            return polled
+
+    _FakeCardWriter.instances = []
+    monkeypatch.setattr(cli, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
+    monkeypatch.setattr(cli, "call_for_task", _configured_card_task)
+    monkeypatch.setattr(cli, "AiBatch", lambda opener, settings, task: RecordingBatch())
+    monkeypatch.setattr(cli, "CardBatches", FakeBatches)
+    monkeypatch.setattr(cli, "CardWriter", _FakeCardWriter)
+
+    assert main(["cards-batch-poll"]) == 0
 
     assert capsys.readouterr().out.strip() == line
 

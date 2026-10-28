@@ -1581,12 +1581,89 @@ class AiUsage(Base, PrimaryKeyMixin):
     freelancer_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("freelancers.id", ondelete="SET NULL"), default=None
     )
+    # The call went through a provider's batch API (REB-853), and `cost_eur` is at the batch
+    # price: half of the price row's, as Anthropic bills it.
+    batch: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
 
     __table_args__ = (
         Index("ix_ai_usage_task_at", "task", "at"),
         CheckConstraint("task IN ('card', 'team_proposal')", name="ck_ai_usage_task"),
         CheckConstraint("purpose IN ('run', 'prova', 'eval')", name="ck_ai_usage_purpose"),
         CheckConstraint("priced = (cost_eur IS NOT NULL)", name="ck_ai_usage_priced"),
+    )
+
+
+# Where a card batch stands (`CardBatch.status`): being sent, running at the provider, ended
+# there and being applied card by card, applied, or never sent. One batch is active at a time.
+CARD_BATCH_STATUSES = ("submitting", "in_progress", "ended", "applied", "failed")
+CARD_BATCH_ACTIVE = ("submitting", "in_progress", "ended")
+# What became of one card of a batch (`CardBatchItem.status`): waiting for its result, written,
+# failed on its own account (the CV's, as in `cards.Failure`), left as it was because the CV
+# or the inputs changed meanwhile or another writer had the card, or never answered
+# (the provider's error, an expiry, a cancellation): that card stays stale.
+CARD_BATCH_ITEM_STATUSES = ("pending", "written", "failed", "superseded", "unchanged", "errored")
+
+
+class CardBatch(Base, PrimaryKeyMixin, TimestampMixin):
+    """One regeneration sent through the Message Batches API (REB-853): the provider's id
+    and the handle that finds it again after a restart (`handle`: model, group and the time
+    it was created, no secret in it), who started it and when it was sent, ended and applied.
+    Its cards are `CardBatchItem`. At most one is active at a time (`CARD_BATCH_ACTIVE`),
+    which `CardBatchService.submit` checks under the regeneration's advisory lock:
+    the `cards` service's loop and `rebase cards-batch-poll` carry it from there."""
+
+    __tablename__ = "card_batches"
+
+    provider: Mapped[str] = mapped_column(String(20), nullable=False)
+    provider_batch_id: Mapped[str | None] = mapped_column(String(80), default=None, unique=True)
+    handle: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=None)
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="submitting")
+    request_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    started_by: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('submitting', 'in_progress', 'ended', 'applied', 'failed')",
+            name="ck_card_batches_status",
+        ),
+        Index("ix_card_batches_status", "status"),
+    )
+
+
+class CardBatchItem(Base):
+    """One card of a batch: the person (`custom_id` at the provider), the hash of the CV and of
+    every input the request was built from, so a result is applied only to the card it was
+    asked for, and what became of it. `usage_recorded` says the batch price of its answer is
+    in `ai_usage`, so a result applied twice after a restart is paid for in the books once.
+    Hashes only: never the CV, the request or the answer. Gone with the batch and with the
+    person."""
+
+    __tablename__ = "card_batch_items"
+
+    batch_id: Mapped[UUID] = mapped_column(
+        ForeignKey("card_batches.id", ondelete="CASCADE"), primary_key=True
+    )
+    freelancer_id: Mapped[UUID] = mapped_column(
+        ForeignKey("freelancers.id", ondelete="CASCADE"), primary_key=True
+    )
+    cv_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    input_hashes: Mapped[dict[str, str]] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="pending")
+    usage_recorded: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'written', 'failed', 'superseded', 'unchanged', 'errored')",
+            name="ck_card_batch_items_status",
+        ),
+        Index("ix_card_batch_items_freelancer", "freelancer_id"),
     )
 
 

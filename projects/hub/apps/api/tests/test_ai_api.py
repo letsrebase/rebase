@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 
 from rebase_api.deps import (
     get_admin,
+    get_card_batches,
     get_model_factory,
     get_prova_call,
     get_session_opener,
@@ -31,13 +32,14 @@ from rebase_api.deps import (
 )
 from rebase_core.admin_tokens import AdminRead
 from rebase_core.ai_config import AiConfigService
+from rebase_core.card_batch import CardBatches
 from rebase_core.cards import CardWriter
 from rebase_core.config import Settings
 from rebase_core.errors import LlmUnavailable
 from rebase_core.freelancers import FreelancerService
-from rebase_core.llm import LlmRequest, LlmResponse, RecordingCall
+from rebase_core.llm import LlmRequest, LlmResponse, RecordingBatch, RecordingCall
 from rebase_core.mail import RecordingSender
-from rebase_core.models import AdminAction, AiUsage, FreelancerCard, User
+from rebase_core.models import AdminAction, AiUsage, CardBatch, FreelancerCard, User
 from rebase_core.schemas import FreelancerCreate
 
 SECRET = "sk-secret-abcd"
@@ -98,6 +100,7 @@ def admin(client: TestClient, api_session: Session) -> Iterator[User]:
         "saved_by = NULL, saved_at = NULL, enabled = false",
         "UPDATE ai_tasks SET provider = 'anthropic', model = 'claude-opus-5', "
         "effort = 'medium', daily_cap_eur = NULL, enabled = true",
+        "DELETE FROM card_batches",
         "DELETE FROM admin_actions",
         "DELETE FROM users",
     ):
@@ -403,7 +406,7 @@ def written_cards(admin: User, api_session: Session) -> Iterator[list[Any]]:
     api_session.commit()
     yield people
     api_session.rollback()
-    for table in ("ai_usage", "admin_actions", "freelancers"):
+    for table in ("card_batches", "ai_usage", "admin_actions", "freelancers"):
         api_session.execute(text(f"DELETE FROM {table}"))
     api_session.commit()
 
@@ -416,6 +419,7 @@ def test_stale_cards_lists_the_count_the_cost_and_the_reason(
     assert waiting.status_code == 200, waiting.text
     body = waiting.json()
     assert (body["count"], body["by_reason"]) == (2, {"prompt": 2})
+    assert (body["batch_threshold"], body["batch"]) == (10, None)
     assert body["estimated_cost_eur"] is None  # no `card` call recorded yet: never «free»
     assert sorted(item["nome"] for item in body["items"]) == [
         "Persona1 Cognome1",
@@ -431,6 +435,18 @@ def test_stale_cards_lists_the_count_the_cost_and_the_reason(
             model="claude-opus-5",
             priced=True,
             cost_eur=Decimal("0.25"),
+        )
+    )
+    # A call through the Batch API is half a call: it is not what a synchronous one costs.
+    api_session.add(
+        AiUsage(
+            task="card",
+            purpose="run",
+            provider="anthropic",
+            model="claude-opus-5",
+            priced=True,
+            cost_eur=Decimal("0.01"),
+            batch=True,
         )
     )
     api_session.commit()
@@ -491,3 +507,32 @@ def test_a_start_while_another_is_running_queues_nothing(
 
     assert second.json() == {"queued": 0}
     assert llm.requests == []
+
+
+def test_a_start_from_the_threshold_sends_a_batch_and_the_page_reads_it(
+    client: TestClient, written_cards: list[Any], api_session: Session, llm: RecordingCall
+) -> None:
+    """REB-853: two stale cards and a threshold of two: the start sends one Message Batch
+    instead of calling the model, answers how many it queued, and «Schede da aggiornare»
+    then shows the batch (count, sent, settled) until its results are applied; a second start
+    queues nothing."""
+    call = RecordingBatch()
+    client.app.dependency_overrides[get_card_batches] = lambda: CardBatches(call, 2)  # type: ignore[attr-defined]
+
+    started = client.post(f"{BASE}/cards/regenerate-stale", json={"limit": 5})
+
+    assert started.json() == {"queued": 2}
+    assert llm.requests == []  # the writer's own model was never asked
+    assert call.submissions == 1 and len(call.submitted) == 2
+    [action] = api_session.scalars(
+        select(AdminAction).where(AdminAction.kind == "cards_regenerate")
+    )
+    assert action.payload == {"limit": 5, "queued": 2, "batch": True}
+    page = client.get(f"{BASE}/cards/stale").json()
+    assert page["count"] == 2  # still stale until the results are applied
+    assert page["batch"]["status"] == "in_progress"
+    assert (page["batch"]["count"], page["batch"]["done"]) == (2, 0)
+    assert page["batch"]["submitted_at"] is not None
+    assert client.post(f"{BASE}/cards/regenerate-stale", json={"limit": 5}).json() == {"queued": 0}
+    assert call.submissions == 1
+    assert len(api_session.scalars(select(CardBatch)).all()) == 1

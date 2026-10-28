@@ -261,6 +261,11 @@ class SourceService:
         self.now = now
         self._deferred = False  # a read of this call was left for GitHub's limit to lift
 
+    def on(self, session: Session) -> "SourceService":
+        """The same fetchers and clock over another session: a worker of the card pool
+        reads and writes the sources on a session of its own, never the caller's."""
+        return SourceService(session, self.fetcher, self.github, self.now)
+
     # ---- the switches ----------------------------------------------------------------
 
     def enabled_kinds(self) -> set[str]:

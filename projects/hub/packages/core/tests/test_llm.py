@@ -48,12 +48,17 @@ from rebase_core.errors import (
 from rebase_core.llm import (
     FALLBACK_BETA,
     UNAVAILABLE_SENTENCE,
+    AiBatch,
     AiCall,
+    BatchHandle,
+    BatchOutcome,
     LlmMessage,
     LlmRequest,
     LlmResponse,
     RecordingCall,
     TaskOverride,
+    batch_for_task,
+    build_batch_model,
     build_model,
     call_for_task,
 )
@@ -990,3 +995,235 @@ def test_task_on_disabled_provider_refused(opener: SessionOpener) -> None:
         _call(opener, stub).complete(_request())
 
     assert stub.built == []
+
+
+# ---- the Message Batches API (REB-853) --------------------------------------------------
+
+
+BATCH_ID = "msgbatch_01"
+RESULTS_URL = f"https://api.anthropic.com/v1/messages/batches/{BATCH_ID}/results"
+
+
+def _message_batch(*, ended: bool, count: int = 2) -> dict[str, Any]:
+    return {
+        "id": BATCH_ID,
+        "type": "message_batch",
+        "processing_status": "ended" if ended else "in_progress",
+        "request_counts": {
+            "processing": 0 if ended else count,
+            "succeeded": count if ended else 0,
+            "errored": 0,
+            "canceled": 0,
+            "expired": 0,
+        },
+        "created_at": "2026-10-28T09:00:00Z",
+        "expires_at": "2026-10-29T09:00:00Z",
+        "ended_at": "2026-10-28T09:20:00Z" if ended else None,
+        "cancel_initiated_at": None,
+        "archived_at": None,
+        "results_url": RESULTS_URL if ended else None,
+    }
+
+
+class BatchWire:
+    """The Batches endpoints of `api.anthropic.com`: create answers an open batch, retrieve
+    says whether it ended, `results` streams `lines` as JSONL."""
+
+    def __init__(self, ended: bool = True, lines: list[dict[str, Any]] | None = None) -> None:
+        self.ended = ended
+        self.lines = lines or []
+
+    def __call__(self, request: httpx2.Request) -> httpx2.Response:
+        path = request.url.path
+        if request.method == "POST" and path == "/v1/messages/batches":
+            count = len(json.loads(request.content)["requests"])
+            return httpx2.Response(200, json=_message_batch(ended=False, count=count))
+        if path.endswith("/results"):
+            body = "\n".join(json.dumps(line) for line in self.lines)
+            return httpx2.Response(
+                200, content=body, headers={"content-type": "application/binary"}
+            )
+        if request.method == "GET" and path == f"/v1/messages/batches/{BATCH_ID}":
+            return httpx2.Response(200, json=_message_batch(ended=self.ended))
+        return httpx2.Response(404, json={"type": "error", "error": {"type": "not_found_error"}})
+
+
+@pytest.fixture
+def batch_wire(wire: Wire) -> BatchWire:
+    handler = BatchWire()
+    wire._handler = handler
+    return handler
+
+
+def _batch(opener: SessionOpener) -> AiBatch:
+    return AiBatch(opener, _settings(), "card")
+
+
+def _submit(opener: SessionOpener, wire: Wire, count: int = 2) -> tuple[Any, dict[str, Any]]:
+    requests = {f"id-{n}": _request() for n in range(count)}
+    handle = _batch(opener).submit(requests)
+    created = [r for r in wire.requests if r.method == "POST"][-1]
+    return handle, json.loads(created.content)
+
+
+def test_batch_requests_are_the_synchronous_ones_less_what_a_batch_refuses(
+    opener: SessionOpener, wire: Wire, batch_wire: BatchWire
+) -> None:
+    """Same model, effort, thinking, schema, output ceiling, system and messages, by the same
+    Pydantic AI encoder; the server-side fallback (the beta header and `fallbacks`: a batch
+    item that carries it comes back errored) and the per-request timeout and retries are
+    not sent."""
+    wire._handler = lambda request: httpx2.Response(200, json=_beta_message())
+    _wire_call(opener).complete(_request())
+    synchronous = wire.body
+
+    wire._handler = batch_wire
+    _, created = _submit(opener, wire, count=2)
+
+    [first, second] = created["requests"]
+    assert (first["custom_id"], second["custom_id"]) == ("id-0", "id-1")
+    params = first["params"]
+    # What differs is the fallback, and the `stream: false` a batch has no use for.
+    assert params == {k: v for k, v in synchronous.items() if k not in ("fallbacks", "stream")}
+    assert "fallbacks" not in json.dumps(created)
+    post = [r for r in wire.requests if r.method == "POST"][-1]
+    assert FALLBACK_BETA not in post.headers.get("anthropic-beta", "")
+    assert params["thinking"] == {"type": "adaptive"} and params["inference_geo"] == "global"
+    assert params["max_tokens"] == 2000
+
+
+def test_batch_handle_survives_a_restart_as_json(
+    opener: SessionOpener, wire: Wire, batch_wire: BatchWire
+) -> None:
+    handle, _ = _submit(opener, wire)
+
+    again = BatchHandle.from_json(json.loads(json.dumps(handle.to_json())))
+
+    assert again == handle
+    assert (handle.id, handle.provider, handle.model, handle.request_count) == (
+        BATCH_ID,
+        "anthropic",
+        MODEL,
+        2,
+    )
+    assert API_KEY not in json.dumps(handle.to_json())
+
+
+def test_batch_is_asked_whether_it_ended_and_its_answers_are_read(
+    opener: SessionOpener, wire: Wire, batch_wire: BatchWire
+) -> None:
+    handle, _ = _submit(opener, wire)
+    batch_wire.ended = False
+    batch = _batch(opener)
+    assert batch.ended(handle) is False
+
+    batch_wire.ended = True
+    batch_wire.lines = [
+        {
+            "custom_id": "id-0",
+            "result": {"type": "succeeded", "message": _beta_message()},
+        },
+        {
+            "custom_id": "id-1",
+            "result": {
+                "type": "errored",
+                "error": {"type": "error", "error": {"type": "overloaded_error", "message": "x"}},
+            },
+        },
+        {"custom_id": "id-2", "result": {"type": "expired"}},
+    ]
+    assert batch.ended(handle) is True
+
+    outcomes = batch.collect(handle, Scheda)
+
+    assert outcomes["id-1"] == BatchOutcome("errored")
+    assert outcomes["id-2"] == BatchOutcome("expired")
+    answered = outcomes["id-0"].response
+    assert answered is not None
+    assert answered.parsed == Scheda(riassunto="Sviluppatore backend", anni=7)
+    assert (answered.input_tokens, answered.cache_read_tokens) == (500, 1000)
+    assert answered.provider == "anthropic" and answered.stop_reason == "end_turn"
+
+
+def test_batch_refusal_comes_back_as_a_refusal_not_an_error(
+    opener: SessionOpener, wire: Wire, batch_wire: BatchWire
+) -> None:
+    handle, _ = _submit(opener, wire, count=1)
+    batch_wire.lines = [
+        {
+            "custom_id": "id-0",
+            "result": {
+                "type": "succeeded",
+                "message": _beta_message(
+                    [],
+                    stop_reason="refusal",
+                    stop_details={"type": "refusal", "category": "cyber", "explanation": None},
+                ),
+            },
+        }
+    ]
+
+    outcome = _batch(opener).collect(handle, Scheda)["id-0"]
+
+    assert outcome.status == "succeeded" and outcome.response is not None
+    assert (outcome.response.text, outcome.response.stop_reason) == (None, "refusal")
+
+
+def test_batch_usage_is_recorded_at_half_the_price(
+    opener: SessionOpener, wire: Wire, batch_wire: BatchWire
+) -> None:
+    handle, _ = _submit(opener, wire, count=1)
+    batch_wire.lines = [
+        {"custom_id": "id-0", "result": {"type": "succeeded", "message": _beta_message()}}
+    ]
+    batch = _batch(opener)
+    answered = batch.collect(handle, Scheda)["id-0"].response
+    assert answered is not None
+    person = None
+
+    batch.record(answered, person)  # type: ignore[arg-type]
+
+    [row] = _usage_rows(opener)
+    # 500 input and 180 output at 5 and 25 euro per million, 1000 cache reads at the input
+    # price: 0.0025 + 0.0045 + 0.005 = 0.012 as a call, half of it as a batch.
+    assert row.batch is True and row.purpose == "run" and row.priced is True
+    assert row.cost_eur == Decimal("0.006000")
+    assert (row.input_tokens, row.output_tokens, row.cache_read_tokens) == (500, 180, 1000)
+
+
+def test_batch_is_refused_before_any_network_when_the_cap_is_spent_but_read_whatever_it_says(
+    opener: SessionOpener, wire: Wire, batch_wire: BatchWire
+) -> None:
+    handle, _ = _submit(opener, wire, count=1)
+    with opener() as session:
+        session.execute(text("UPDATE ai_tasks SET daily_cap_eur = 0 WHERE task = 'card'"))
+        session.commit()
+    posts = len(wire.requests)
+    batch = _batch(opener)
+
+    with pytest.raises(LlmCapReached):
+        batch.submit({"id-0": _request()})
+
+    assert len(wire.requests) == posts  # nothing went out
+    assert batch.ended(handle) is True  # an ended batch is paid for: still read
+
+
+def test_batch_only_for_anthropic(opener: SessionOpener) -> None:
+    assert batch_for_task(opener, _settings(), "card") is not None
+    with opener() as session:
+        session.execute(text("UPDATE ai_tasks SET provider = 'openai' WHERE task = 'card'"))
+        session.commit()
+    assert batch_for_task(opener, _settings(), "card") is None
+    with pytest.raises(LlmNotConfigured):
+        build_batch_model("openai", "gpt-6.1-terra", "key", None)
+
+
+def test_batch_outage_is_llm_unavailable(
+    opener: SessionOpener, wire: Wire, batch_wire: BatchWire
+) -> None:
+    wire._handler = lambda request: httpx2.Response(
+        500, json={"type": "error", "error": {"type": "api_error", "message": "boom"}}
+    )
+
+    with pytest.raises(LlmUnavailable):
+        _batch(opener).submit({"id-0": _request()})

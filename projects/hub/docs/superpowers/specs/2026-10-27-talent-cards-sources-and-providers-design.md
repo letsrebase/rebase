@@ -159,6 +159,31 @@ source is added:
   version are listed in the admin area with the estimated cost, and an admin starts
   their regeneration. No version bump ever spends on its own.
 
+*Added 2026-10-28 (REB-853, Lorenzo).* The first regeneration of 87 cards took about 18
+minutes, one card at a time, about 11 seconds each, almost all of it waiting on the model.
+Two changes, neither touching what a card is:
+
+- **Parallel.** `cards-refresh` and an admin's regeneration write with a small pool of
+  workers (`REBASE_CARDS_WORKERS`, default 5), each on a session of its own. A person is
+  claimed by an advisory lock for the whole write, and a regeneration re-checks that the card
+  is still stale under that claim, so no card is paid for twice. The first outage, spent cap
+  or missing model stops the pool and leaves the rest as it was.
+- **Bulk goes through the Message Batches API.** From `REBASE_CARDS_BATCH_THRESHOLD` cards (10)
+  a regeneration is one Anthropic Message Batch: half the price of a synchronous call and
+  answered within the hour, which suits work nobody is waiting for. Each request is built by
+  the code that builds the synchronous one (same prompt, answer shape, model, effort and
+  output ceiling), less the server-side fallback and per-request timeout a batch refuses.
+  The batch and a row per card (the CV's hash and the inputs' hashes, never text) are kept
+  before the provider is called, the `cards` service polls it, and each result is applied
+  through the same draft parsing, guards, single synchronous rewrite and save as a
+  synchronous write, so a batch can never produce a card a synchronous write would have
+  refused. A result is applied only to the card it was asked for (a changed CV or input
+  drops it, paid for, and leaves the card stale), a refusal is asked again synchronously
+  (the fallback is not available to a batch), and a request the provider did not answer
+  leaves its card stale. Usage is recorded at the batch price (50%), flagged `batch`. One
+  batch is active at a time, a single «Rigenera scheda» stays synchronous, and any provider
+  but Anthropic falls back to the workers.
+
 ## Evaluation before a change goes live
 
 A fixed sample of about 15 real profiles, chosen to cover the failures seen (undated CV,

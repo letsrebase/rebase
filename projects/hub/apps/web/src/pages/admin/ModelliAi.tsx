@@ -25,6 +25,7 @@ const PROVIDER_LABELS: Record<string, string> = { anthropic: 'Anthropic', openai
 const TASK_LABELS: Record<string, string> = { card: 'Scheda anonima', team_proposal: 'Proposta di team' }
 const SOURCE_LABELS: Record<string, string> = { github: 'GitHub', links: 'Altri link' }
 const STALE_KEY = ['ai-stale-cards'] as const
+const BATCH_REFRESH_MS = 30_000
 const EFFORTS = ['low', 'medium', 'high'] as const
 const EFFORT_LABELS: Record<string, string> = { low: 'Basso', medium: 'Medio', high: 'Alto' }
 // A `Select` needs a non-empty string; «no thinking» is the one nullable effort.
@@ -190,7 +191,12 @@ const REASON_LABELS: Record<string, string> = {
 function StaleCards() {
   const client = useQueryClient()
   const [limit, setLimit] = useState('5')
-  const stale = useQuery({ queryKey: STALE_KEY, queryFn: () => admin.aiStaleCards() })
+  const stale = useQuery({
+    queryKey: STALE_KEY,
+    queryFn: () => admin.aiStaleCards(),
+    // A batch is applied by the `cards` service, not by this page: read it again until it is.
+    refetchInterval: (query) => (query.state.data?.batch ? BATCH_REFRESH_MS : false),
+  })
   const start = useMutation({
     mutationFn: (n: number) => admin.aiRegenerateStale(n),
     onSuccess: () => client.invalidateQueries({ queryKey: STALE_KEY }),
@@ -211,10 +217,18 @@ function StaleCards() {
         : `${start.data.queued} ${start.data.queued === 1 ? 'scheda messa' : 'schede messe'} in coda: si scrivono in background.`}
     </p>
   )
+  const running = data.batch && (
+    <p role="status" className="px-6 pt-4 text-sm">
+      Rigenerazione in corso col Batch API: {data.batch.count} {data.batch.count === 1 ? 'scheda' : 'schede'}
+      {data.batch.submitted_at ? ` inviate il ${formatDateTime(data.batch.submitted_at)}` : ' in invio'}, {data.batch.done}{' '}
+      {data.batch.done === 1 ? 'applicata' : 'applicate'}. Di solito finisce entro un’ora: la pagina si aggiorna da sola.
+    </p>
+  )
   if (data.count === 0) {
     return (
       <>
         {queued}
+        {running}
         <Empty>Nessuna scheda da aggiornare</Empty>
       </>
     )
@@ -229,6 +243,7 @@ function StaleCards() {
   return (
     <div>
       {queued}
+      {running}
       <div className="space-y-4 px-6 py-5">
         <div className="space-y-1 text-sm">
           <p>
@@ -258,24 +273,32 @@ function StaleCards() {
             </li>
           ))}
         </ul>
-        <form onSubmit={submit} className="flex flex-wrap items-end gap-3">
-          <div className="space-y-2">
-            <Label htmlFor="stale-limit">Quante</Label>
-            <Input
-              id="stale-limit"
-              type="number"
-              min={1}
-              max={50}
-              className="w-24"
-              value={limit}
-              aria-invalid={invalid}
-              onChange={(event) => setLimit(event.target.value)}
-            />
-          </div>
-          <Button type="submit" disabled={start.isPending || invalid}>
-            {start.isPending ? 'Avvio…' : 'Avvia rigenerazione'}
-          </Button>
-        </form>
+        {!data.batch && (
+          <form onSubmit={submit} className="flex flex-wrap items-end gap-3">
+            <div className="space-y-2">
+              <Label htmlFor="stale-limit">Quante</Label>
+              <Input
+                id="stale-limit"
+                type="number"
+                min={1}
+                max={50}
+                className="w-24"
+                value={limit}
+                aria-invalid={invalid}
+                onChange={(event) => setLimit(event.target.value)}
+              />
+            </div>
+            <Button type="submit" disabled={start.isPending || invalid}>
+              {start.isPending ? 'Avvio…' : 'Avvia rigenerazione'}
+            </Button>
+          </form>
+        )}
+        {!data.batch && (
+          <p className="text-sm text-muted-foreground">
+            Da {data.batch_threshold} schede in su la rigenerazione passa dal Batch API: costa la metà e finisce, di
+            solito, entro un’ora. Sotto, si scrivono subito, in parallelo.
+          </p>
+        )}
         {invalid && <p className="text-sm text-destructive">Un numero intero da 1 a 50.</p>}
         {start.isError && (
           <p role="alert" className="text-sm text-destructive">

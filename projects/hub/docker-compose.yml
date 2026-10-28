@@ -59,6 +59,11 @@ x-api-environment: &api-environment
   # Not empty defaults: an int field fails at start-up on an empty value.
   REBASE_TEAM_BUILDER_CONCURRENCY: ${REBASE_TEAM_BUILDER_CONCURRENCY:-4}
   REBASE_TEAM_BUILDER_DAILY_CAP: ${REBASE_TEAM_BUILDER_DAILY_CAP:-300}
+  # Cards in bulk (REB-853): the workers `cards-refresh` and an admin's regeneration write
+  # with at once, and the number of cards from which a regeneration is sent to Anthropic's
+  # Message Batches API. Not empty defaults: an int field fails at start-up on an empty value.
+  REBASE_CARDS_WORKERS: ${REBASE_CARDS_WORKERS:-5}
+  REBASE_CARDS_BATCH_THRESHOLD: ${REBASE_CARDS_BATCH_THRESHOLD:-10}
   # The `cards` service's hourly loop (REB-552), no Python setting: whether it actually
   # calls `cards-refresh`, so a deploy that already has a model configured
   # does not send CVs to a provider before the talents' mail (AGENTS.md, "The team
@@ -188,6 +193,10 @@ services:
     # (preview): each run prints «N schede scritte, M non riuscite». Sleeps first, like
     # `sweep`, so the api's `alembic upgrade head` (Dockerfile.api) has already run
     # before the first pass.
+    # Every five minutes it also runs `rebase cards-batch-poll` (REB-853), whatever the loop
+    # says: an admin started the batch, and the poll sends no CV unless a result asks for the
+    # one rewrite a guard demands. With no batch on it prints «nessun batch di schede in
+    # corso» and costs nothing; the hourly pass below is every twelfth tick.
     # `rebase sources-refetch --limit 50` (REB-839) runs first, whatever the loop says: it
     # reads the GitHub accounts and links of people (never a model, never a CV sent
     # anywhere) when a source switch in «Modelli AI» is on, and deletes the text of a link
@@ -198,7 +207,7 @@ services:
       dockerfile: projects/hub/Dockerfile.api
     restart: unless-stopped
     init: true
-    command: ['sh', '-c', 'while :; do sleep 3600; uv run --no-sync rebase sources-refetch --limit 50 || true; if [ "${REBASE_CARDS_LOOP:-off}" = "on" ]; then uv run --no-sync rebase cards-refresh --limit 50; else echo "cards: loop off (REBASE_CARDS_LOOP)"; fi; done']
+    command: ['sh', '-c', 'n=0; while :; do sleep 300; uv run --no-sync rebase cards-batch-poll || true; n=$$((n + 1)); if [ "$$n" -ge 12 ]; then n=0; uv run --no-sync rebase sources-refetch --limit 50 || true; if [ "${REBASE_CARDS_LOOP:-off}" = "on" ]; then uv run --no-sync rebase cards-refresh --limit 50; else echo "cards: loop off (REBASE_CARDS_LOOP)"; fi; fi; done']
     depends_on:
       db:
         condition: service_healthy

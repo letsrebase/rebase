@@ -142,6 +142,16 @@ class Settings(BaseSettings):
     # proposal that asked no model (an empty catalogue) cost nothing and does not count.
     team_builder_daily_cap: int = Field(default=300, ge=1)
 
+    # --- writing cards in bulk (REB-853) -------------------------------------------------
+    # How many cards `cards-refresh` and an admin's regeneration write at once, each worker
+    # on a session of its own and each card claimed per person, so none is paid twice. It
+    # bounds the provider calls in flight, and the database connections the pool takes.
+    cards_workers: int = Field(default=5, ge=1, le=8)
+    # From how many cards a regeneration goes through Anthropic's Message Batches API
+    # (half price, asynchronous) instead of the workers. A single «Rigenera scheda» and
+    # `cards-refresh` never do; a provider other than Anthropic never does either.
+    cards_batch_threshold: int = Field(default=10, ge=1)
+
     # --- the model providers' keys at rest, and GitHub (REB-829) -----------------------
     # `secrets_key`: 32 bytes in base64, the AES-256-GCM key (`secrets.py`) under which
     # «Modelli AI» stores each provider's API key. Empty or malformed: the app refuses to
