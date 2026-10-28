@@ -390,15 +390,19 @@ class SafeFetcher:
         self,
         transport: Transport = pinned_transport,
         resolver: Resolver = socket_resolver,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._transport = transport
         self._resolver = resolver
+        # The budget's clock: a test drives it, so the limit is not read off the machine's load.
+        # (The real transport's socket deadlines keep the real one.)
+        self._clock = clock
 
     def fetch(self, url: str) -> FetchResult:
         """One page as text, or why it is not. Never raises for a bad link or a bad
         host: the outcome is the `status`. The whole call, robots file and every hop
         included, is bounded by `FETCH_TIMEOUT_SECONDS`; running out is `error`."""
-        deadline = time.monotonic() + FETCH_TIMEOUT_SECONDS
+        deadline = self._clock() + FETCH_TIMEOUT_SECONDS
         resolved: dict[str, list[str]] = {}
         robots: dict[str, _RobotsRules | _Refused] = {}
         current = url.strip()
@@ -450,7 +454,7 @@ class SafeFetcher:
 
         thread = threading.Thread(target=work, daemon=True)
         thread.start()
-        thread.join(max(deadline - time.monotonic(), 0))
+        thread.join(max(deadline - self._clock(), 0))
         if not outcome:
             raise _Refused("error")
         answer = outcome[0]
@@ -479,7 +483,7 @@ class SafeFetcher:
         connect moves on to the next address; a failure after that is the answer."""
         failure: OSError = ConnectFailed("no address")
         for position, ip in enumerate(addresses):
-            remaining = deadline - time.monotonic()
+            remaining = deadline - self._clock()
             if remaining <= 0:
                 raise _Refused("error")
             try:
@@ -545,7 +549,7 @@ class SafeFetcher:
                 next_addresses = self._pin(next_host, resolved, deadline)
                 response = self._get(next_host, next_addresses, next_target, deadline)
         except (OSError, http.client.HTTPException) as failure:
-            spent = isinstance(failure, TimeoutError) or time.monotonic() >= deadline
+            spent = isinstance(failure, TimeoutError) or self._clock() >= deadline
             return _Refused("error" if spent else "robots")
         except _Refused as refused:
             # A robots file that redirects somewhere forbidden is not a licence to fetch.
