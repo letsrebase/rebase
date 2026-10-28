@@ -81,7 +81,14 @@ def _remove_orphans(container: PostgresContainer) -> None:
             leftover.remove(force=True, v=True)
 
 
-def _worker_container() -> PostgresContainer:
+def _worker_container() -> tuple[PostgresContainer, str | None]:
+    """The container, and the host to reach it on when that is not testcontainers' default.
+
+    Bound to loopback, the port answers on 127.0.0.1 only, while `localhost` may resolve to
+    `::1` first. With `localhost` in the URL the hub's
+    `test_regenerate_stale_writes_the_limit_after_the_response` failed on every run and passed
+    with `127.0.0.1`, so the URL names the address and nothing depends on how it resolves.
+    """
     container = PostgresContainer(_IMAGE, driver="psycopg").with_command(_SERVER_SETTINGS)
     owner = _process_identity(os.getpid())
     if owner is not None:
@@ -93,7 +100,8 @@ def _worker_container() -> PostgresContainer:
     }:
         # docker-py takes (address, port) for a binding; no port means Docker picks one.
         container.ports[str(container.port)] = ("127.0.0.1", None)  # type: ignore[assignment]
-    return container
+        return container, "127.0.0.1"
+    return container, None
 
 
 class PostgresPerWorker:
@@ -185,10 +193,10 @@ class _FreshDatabase:
 @pytest.fixture(scope="session")
 def postgres_per_worker() -> Iterator[PostgresPerWorker]:
     """One PostgreSQL for this worker process, for every test root it runs."""
-    container = _worker_container()
+    container, host = _worker_container()
     _remove_orphans(container)
     with container:
-        server = PostgresPerWorker(container.get_connection_url())
+        server = PostgresPerWorker(container.get_connection_url(host=host))
         try:
             yield server
         finally:
