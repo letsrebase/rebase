@@ -415,6 +415,34 @@ export interface FreelancerCard {
   anni_admin?: number | null
   /** What the card was written from and by what (REB-839), `null` without a card row. */
   provenance?: CardProvenance | null
+  /** What the CV says of who the person is (REB-855), for admins only: `null` for a card
+   *  written before prompt version 3 or a CV nothing was read from. */
+  persona?: CardPersona | null
+  /** Where the CV and the profile both say something and disagree. */
+  differenze?: PersonaDifference[]
+}
+
+/** Who the CV says the person is, read by the call that writes the card. Every field is
+ *  `null` (or an empty list) when the CV states nothing; `email` is lower case, `linkedin_url`
+ *  a LinkedIn address, `altri_link` `http(s)` addresses and `aziende` the companies named. */
+export interface CardPersona {
+  nome: string | null
+  cognome: string | null
+  email: string | null
+  telefono: string | null
+  citta: string | null
+  linkedin_url: string | null
+  altri_link: string[]
+  aziende: string[]
+}
+
+export type PersonaDifferenceField = 'nome' | 'cognome' | 'email' | 'telefono' | 'linkedin_url'
+
+/** A field where the CV and the profile both have a value and the values differ. */
+export interface PersonaDifference {
+  campo: PersonaDifferenceField
+  cv: string
+  profilo: string
 }
 
 /** One stored source of a person: never its text, only where it was read and how it went. */
@@ -489,7 +517,6 @@ export interface Freelancer {
   remoto: Remoto | null
   links: string[]
   stato: 'nuovo' | 'contattato' | 'attivo' | 'scartato'
-  note: string | null
   /** The page of the site the person started from, `home` or `pigrocrm` (ORB-167). */
   origine: string | null
   utm_source: string | null
@@ -500,8 +527,8 @@ export interface Freelancer {
   compilata_da: 'persona' | 'admin'
   /** CV, rate, position and remote preference all present. */
   completa: boolean
-  /** The thread, newest first. The detail carries it; the list leaves it empty. */
-  commenti: Comment[]
+  /** The notes thread (REB-856), newest first. The detail carries it; the list leaves it empty. */
+  note: Note[]
   /** How many times the person came in through the magic link (ORB-158). */
   accessi: number
   /** Where the lead came from (ORB-161): «form» when the address is also among the
@@ -514,6 +541,8 @@ export interface Freelancer {
   deleted_at: string | null
   /** When an admin marked the talent «Verificato» (REB-518), `null` otherwise. */
   vetted_at: string | null
+  /** The phone on the person's account (REB-855), `null` while they have given none. */
+  telefono?: string | null
 }
 
 export interface Company {
@@ -531,12 +560,12 @@ export interface Company {
   giorni_presenza: number | null
   numero_risorse: number
   stato: 'nuovo' | 'contattato' | 'in_corso' | 'chiuso'
-  note: string | null
   /** The page of the site the person started from, `home` or `pigrocrm` (ORB-167). */
   origine: string | null
   utm_source: string | null
   created_at: string
-  commenti: Comment[]
+  /** The notes thread, newest first; filled by the detail only. */
+  note: Note[]
   /** Same soft-delete as `Freelancer.deleted_at`. */
   deleted_at: string | null
   /** The talent cloud open for this request's referente (REB-518): the detail carries
@@ -561,18 +590,26 @@ export interface TalentCloudGrant {
   revoked_at: string | null
 }
 
-/** One remark in a row's thread: appended, signed and dated, never edited. */
-export interface Comment {
+/** Where a note came from (REB-856). `null` is a note that predates the tracking. */
+export type NoteSource = 'web' | 'mcp' | 'persona' | 'sistema'
+
+/** One note of a row's thread: signed, dated and tracked. The text carries neither the
+ *  date nor the author; `modificabile` says whether an admin may edit or delete it (not
+ *  an event the person or the hub wrote). */
+export interface Note {
   id: string
-  entity_type: 'freelancer' | 'company'
-  entity_id: string
   testo: string
   autore: string
+  autore_id: string | null
+  fonte: NoteSource | null
   created_at: string
+  modificata_at: string | null
+  modificata_da: string | null
+  modificabile: boolean
 }
 
 /** The two rows a thread can hang on, as the API paths name them. */
-export type CommentKind = 'freelancers' | 'companies'
+export type ThreadKind = 'freelancers' | 'companies'
 
 /** One space of PigroCRM as the registry knows it, plus the hub member who opened it
  *  when the address is one the wizard has seen (ORB-142). */
@@ -610,13 +647,26 @@ export interface AdminAction {
     | 'merged'
     | 'absorbed'
     | 'unmerged'
+    /** The notes' trail (REB-856), on the freelancer or the company the note is about,
+     *  and a change of status: `payload.fonte` is the door (`web` or `mcp`). */
+    | 'note_added'
+    | 'note_edited'
+    | 'note_deleted'
+    | 'status_changed'
   admin_id: string
   admin_nome: string
   payload: {
     changed?: string[]
-    before?: Record<string, unknown>
-    after?: Record<string, unknown>
+    /** An `overridden`/`cleared` entry's diff is an object per field; a `note_edited`
+     *  (the text) and a `status_changed` (the state) carry plain strings. */
+    before?: Record<string, unknown> | string
+    after?: Record<string, unknown> | string
     vetted?: boolean
+    /** The door the action came through: `web` or `mcp` (REB-856). */
+    fonte?: NoteSource
+    /** A `note_added` / `note_deleted` entry's text. */
+    testo?: string
+    nota_id?: string
     /** A `pigro_link` entry's: the state the link reached, and the CRM's sentence. */
     esito?: PigroStato
     errore?: string | null
@@ -631,7 +681,7 @@ export interface AdminAction {
   created_at: string
 }
 
-/** What an admin may set or clear on a `Freelancer` beyond `stato`/`note` (REB-347),
+/** What an admin may set or clear on a `Freelancer` beyond `stato` (REB-347),
  *  mirroring `FreelancerOverride` on the server one for one: a key present and `null`
  *  clears a nullable field, a key left out of the body leaves it alone. `links` and
  *  `nome`/`cognome` are never nullable columns, so those are only ever a value. */
@@ -650,7 +700,7 @@ export interface FreelancerOverride {
 }
 
 /** Same contract as `FreelancerOverride`, for a `Company` request's own fields beyond
- *  `stato`/`note`: the eight project answers (REB-314; REB-380 adds the last four),
+ *  `stato`: the eight project answers (REB-314; REB-380 adds the last four),
  *  the company's own name, and the referente's identity on the linked `users` row --
  *  admin-only even for a self-edit. `giorni_presenza` is the one nullable addition,
  *  the same as `FreelancerOverride.remoto`; `remoto`/`numero_risorse`/
@@ -1450,13 +1500,13 @@ export const admin = {
   neverWrite: (email: string) => request<{ ok: boolean }>('/api/hub/campaigns/never-write', json({ email })),
   freelancer: (id: string) => request<Freelancer>(`/api/hub/freelancers/${id}`),
   cvUrl: (id: string) => `/api/hub/freelancers/${id}/cv`,
-  moveFreelancer: (id: string, stato: string, note: string | null) =>
+  moveFreelancer: (id: string, stato: string) =>
     request<Freelancer>(`/api/hub/freelancers/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stato, note }),
+      body: JSON.stringify({ stato }),
     }),
-  /** Sets or clears any field beyond `stato`/`note` (REB-347/355): a key present and
+  /** Sets or clears any field beyond `stato` (REB-347/355): a key present and
    *  `null` clears it, a key left out of `data` leaves it alone. */
   overrideFreelancer: (id: string, data: FreelancerOverride) =>
     request<Freelancer>(`/api/hub/freelancers/${id}/override`, {
@@ -1511,13 +1561,13 @@ export const admin = {
     return request<CompanyList>(`/api/hub/companies${qs ? `?${qs}` : ''}`)
   },
   company: (id: string) => request<Company>(`/api/hub/companies/${id}`),
-  moveCompany: (id: string, stato: string, note: string | null) =>
+  moveCompany: (id: string, stato: string) =>
     request<Company>(`/api/hub/companies/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stato, note }),
+      body: JSON.stringify({ stato }),
     }),
-  /** Sets or clears any field beyond `stato`/`note` (REB-347/355), same contract as
+  /** Sets or clears any field beyond `stato` (REB-347/355), same contract as
    *  `overrideFreelancer`. */
   overrideCompany: (id: string, data: CompanyOverride) =>
     request<Company>(`/api/hub/companies/${id}/override`, {
@@ -1593,18 +1643,22 @@ export const admin = {
     request<AdminTokenList>(`/api/hub/tokens${listQuery(params)}`),
   createToken: (nome: string) => request<CreatedToken>('/api/hub/tokens', json({ nome })),
   revokeToken: (id: string) => request<void>(`/api/hub/tokens/${id}`, { method: 'DELETE' }),
-  comments: (kind: CommentKind, id: string) =>
-    request<Comment[]>(`/api/hub/${kind}/${id}/comments`),
-  /** The author is the session's, so the body is the text alone. */
-  addComment: (kind: CommentKind, id: string, testo: string) =>
-    request<Comment>(`/api/hub/${kind}/${id}/comments`, json({ testo })),
+  notes: (kind: ThreadKind, id: string) => request<Note[]>(`/api/hub/${kind}/${id}/notes`),
+  /** The author is the session's and the source is `web`, so the body is the text alone. */
+  addNote: (kind: ThreadKind, id: string, testo: string) =>
+    request<Note>(`/api/hub/${kind}/${id}/notes`, json({ testo })),
+  /** Replaces the text of a note an admin may edit; refused for the person's own events. */
+  editNote: (noteId: string, testo: string) =>
+    request<Note>(`/api/hub/notes/${noteId}`, { ...json({ testo }), method: 'PATCH' }),
+  /** Soft-deletes a note an admin may delete; the trail keeps its text. */
+  deleteNote: (noteId: string) => request<void>(`/api/hub/notes/${noteId}`, { method: 'DELETE' }),
   /** Who overrode, cleared, deleted, restored or reverted this card or request, and
    *  when (REB-355): the same trail shape for either `kind`, newest first. */
-  auditTrail: (kind: CommentKind, id: string) => request<AdminAction[]>(`/api/hub/${kind}/${id}/audit`),
+  auditTrail: (kind: ThreadKind, id: string) => request<AdminAction[]>(`/api/hub/${kind}/${id}/audit`),
   /** Puts a field back to the value a past `overridden` entry's own `before` names,
    *  itself recorded as a fresh override (REB-355): the response is the plain card or
    *  request, which the caller already reads through its own detail query. */
-  revertAction: (kind: CommentKind, id: string, actionId: string) =>
+  revertAction: (kind: ThreadKind, id: string, actionId: string) =>
     request<unknown>(`/api/hub/${kind}/${id}/audit/${actionId}/revert`, { method: 'POST' }),
   /** «Match» (REB-413): every match in the admin area, newest first. */
   matches: (filters: MatchesFilters & { limit?: number; offset?: number } = {}) => {

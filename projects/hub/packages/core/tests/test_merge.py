@@ -22,7 +22,6 @@ from rebase_core.models import (
     Campaign,
     CampaignOptout,
     CampaignRecipient,
-    Comment,
     Company,
     ContractDocument,
     Freelancer,
@@ -33,6 +32,7 @@ from rebase_core.models import (
     Login,
     MagicLinkToken,
     Match,
+    Note,
     Referral,
     TalentCloudGrant,
     TeamProposal,
@@ -50,7 +50,7 @@ OLD_PDF = PDF + b"%old"
 
 TABLES = (
     "admin_actions",
-    "comments",
+    "notes",
     "referral_rewards",
     "referrals",
     "campaign_recipients",
@@ -235,7 +235,7 @@ def _everything_of(session: Session, b: Freelancer, b_user: User, admin: User) -
             "referral_received",
             Referral(referrer_user_id=other_user.id, kind="freelancer", entity_id=b.id, code="DEF"),
         ),
-        ("comments", Comment(entity_type="freelancer", entity_id=b.id, testo="t", autore="x")),
+        ("notes", Note(entity_type="freelancer", entity_id=b.id, testo="t", autore="x")),
         (
             "audit",
             AdminAction(entity_type="freelancer", entity_id=b.id, kind="vetted", admin_id=admin.id),
@@ -350,7 +350,7 @@ def test_the_absorbed_card_is_soft_deleted_and_points_at_the_survivor(clean: Ses
         select(AdminAction).where(AdminAction.entity_id == a.id, AdminAction.kind == "absorbed")
     ).one()
     assert absorbed.payload["from_freelancer_id"] == str(b.id)
-    thread = clean.scalars(select(Comment).where(Comment.entity_id == a.id)).all()
+    thread = clean.scalars(select(Note).where(Note.entity_id == a.id)).all()
     assert any("vecchia@studio.it" in c.testo for c in thread)
     # Nothing was deleted: the row, its CV and its address are all still there.
     assert clean.get(Freelancer, b.id).cv_bytes == OLD_PDF  # type: ignore[union-attr]
@@ -429,7 +429,6 @@ def test_the_profile_the_survivor_leaves_empty_is_filled_and_the_first_attributi
         posizione="Backend",
         tariffa_giornaliera=Decimal("400"),
         utm_source="linkedin",
-        note="una nota",
         stato="contattato",
     )
     clean.commit()
@@ -439,8 +438,6 @@ def test_the_profile_the_survivor_leaves_empty_is_filled_and_the_first_attributi
     assert survivor is not None
     assert (survivor.posizione, survivor.tariffa_giornaliera) == ("Backend", Decimal("400.00"))
     assert (survivor.utm_source, survivor.stato) == ("linkedin", "contattato")
-    thread = clean.scalars(select(Comment.testo).where(Comment.entity_id == a.id)).all()
-    assert "Nota della scheda unita: una nota" in thread
     user = clean.get(User, a_user.id)
     assert user is not None
     assert (user.linkedin_url, user.telefono) == ("https://www.linkedin.com/in/ada", "333")
@@ -675,6 +672,35 @@ def test_a_swapped_card_keeps_its_provenance(clean: Session) -> None:
     assert card.conflicts == [{"campo": "anni"}]
 
 
+def test_a_swapped_card_keeps_its_persona_with_its_cv_and_undo_gives_it_back(
+    clean: Session,
+) -> None:
+    """The persona is read from one CV: it moves with the CV and its card, both ways."""
+    a, b, _, _, admin = _pair(clean)
+    a.cv_uploaded_at = NOW - timedelta(days=90)
+    b.cv_uploaded_at = NOW
+    persona = {"email": "dev@example.org", "cv_sha256": "b" * 64}
+    clean.add(
+        FreelancerCard(
+            freelancer_id=b.id, cv_sha256="b" * 64, card={"ruolo": "Dev"}, persona=persona
+        )
+    )
+    clean.commit()
+    service = PersonMergeService(clean)
+
+    done = service.merge(a.id, b.id, admin.id)
+
+    clean.expire_all()
+    assert clean.get(FreelancerCard, a.id).persona == persona  # type: ignore[union-attr]
+    assert clean.get(FreelancerCard, b.id) is None
+
+    service.undo(done.action_id, admin.id)
+
+    clean.expire_all()
+    assert clean.get(FreelancerCard, b.id).persona == persona  # type: ignore[union-attr]
+    assert clean.get(FreelancerCard, a.id) is None
+
+
 def test_undo_leaves_what_the_survivor_got_after_the_merge(clean: Session) -> None:
     a, b, a_user, b_user, admin = _pair(clean)
     clean.add(Login(user_id=b_user.id))
@@ -705,17 +731,23 @@ def test_every_foreign_key_to_a_person_is_moved_or_left_on_purpose() -> None:
     assert not stale, sorted(stale)
 
 
-def test_a_note_of_the_absorbed_card_goes_to_the_thread_not_into_the_survivors_note(
+def test_the_notes_of_the_absorbed_card_move_to_the_survivor_by_id_and_stay_whole(
     clean: Session,
 ) -> None:
     a, b, _, _, admin = _pair(clean)
-    a.note, b.note = "nota di A", "nota di B " * 600
+    long_text = "nota di B " * 600
+    mine = Note(entity_type="freelancer", entity_id=a.id, testo="nota di A", autore="Ivan")
+    theirs = Note(entity_type="freelancer", entity_id=b.id, testo=long_text, autore="Ivan")
+    clean.add_all([mine, theirs])
     clean.commit()
     PersonMergeService(clean).merge(a.id, b.id, admin.id)
     clean.expire_all()
-    assert clean.get(Freelancer, a.id).note == "nota di A"  # type: ignore[union-attr]
-    thread = clean.scalars(select(Comment.testo).where(Comment.entity_id == a.id)).all()
-    assert any(t.startswith("Nota della scheda unita: nota di B") for t in thread)
+    thread = {n.testo: n for n in clean.scalars(select(Note).where(Note.entity_id == a.id))}
+    assert {"nota di A", long_text} <= set(thread)
+    assert thread[long_text].id == theirs.id
+    # The merge's own line is the hub's, and nobody may edit it.
+    own = [n for n in thread.values() if n.testo.startswith("Scheda unita con")]
+    assert [(n.fonte, n.autore_id) for n in own] == [("sistema", admin.id)]
 
 
 def test_a_discarded_absorbed_card_does_not_discard_the_survivor(clean: Session) -> None:

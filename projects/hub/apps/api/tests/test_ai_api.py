@@ -467,7 +467,7 @@ def test_regenerate_stale_writes_the_limit_after_the_response(
         select(AdminAction).where(AdminAction.kind == "cards_regenerate")
     )
     assert action.payload == {"limit": 1, "queued": 1}
-    rows = api_session.scalars(select(FreelancerCard).where(FreelancerCard.prompt_version == 2))
+    rows = api_session.scalars(select(FreelancerCard).where(FreelancerCard.prompt_version == 3))
     assert len(rows.all()) == 2
 
     # Nothing is stale after the second start, and a start with nothing queues nothing.

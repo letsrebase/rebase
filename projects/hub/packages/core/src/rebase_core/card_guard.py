@@ -224,7 +224,13 @@ class KnownIdentifiers:
     """What could name this person: `cognome` and `nome` from the user row, `github_login`
     and `repo_names` (the repositories they own) from the GitHub source, `hostnames` of
     the links they gave, `employers` as the CV's card draft names them. Everything but the
-    two names is empty when no source was read."""
+    two names is empty when no source was read.
+
+    What the card call itself read out of the CV (REB-855, `CardDraft.persona`) joins them
+    for that one call: `cv_cognome` and `cv_nome` (the CV may spell the name another way
+    than the account), `emails` (lower case) and `phones` (digits only), and the links'
+    hostnames and GitHub account are added to the two above. The persona itself never
+    goes through this guard: it is the named card, and it is not anonymous."""
 
     cognome: str
     nome: str = ""
@@ -232,6 +238,10 @@ class KnownIdentifiers:
     repo_names: list[str] = field(default_factory=list)
     hostnames: list[str] = field(default_factory=list)
     employers: list[str] = field(default_factory=list)
+    cv_cognome: str = ""
+    cv_nome: str = ""
+    emails: list[str] = field(default_factory=list)
+    phones: list[str] = field(default_factory=list)
 
     @classmethod
     def empty(cls, cognome: str = "", nome: str = "") -> "KnownIdentifiers":
@@ -280,6 +290,19 @@ def _contains(text: tuple[str, ...], phrase: tuple[str, ...]) -> bool:
     return size > 1 and joined in text
 
 
+# A phone number is looked for by its last digits, so a card that wrote «333 1234567» for a
+# CV that says «+39 333 123 4567» is still caught.
+PHONE_KEY_DIGITS = 9
+_DIGIT_RUN = re.compile(r"\d(?:[\d\s().\-/]*\d)?")
+
+
+def _has_phone(value: str, keys: list[str]) -> bool:
+    """Whether `value` has a run of digits (with the separators a phone is written with)
+    that holds one of the phone keys."""
+    runs = (re.sub(r"\D", "", hit.group()) for hit in _DIGIT_RUN.finditer(value))
+    return any(key in run for run in runs for key in keys)
+
+
 def identifying(card: Card, known: KnownIdentifiers) -> list[str]:
     """The names of the fields of `card` that identify the person, in the card's order,
     each once; empty when the card is anonymous.
@@ -292,7 +315,10 @@ def identifying(card: Card, known: KnownIdentifiers) -> list[str]:
     are languages as well as people). A link or an email address is read everywhere.
     The GitHub login, the owned repositories, the links' hostnames and the employers are
     read everywhere, case-insensitively; a repository named exactly like one of the
-    card's own skills is the technology (a fork of `django`), not a leak."""
+    card's own skills is the technology (a fork of `django`), not a leak. What the CV gave
+    beyond the account (REB-855) is read the same way: its name spelled as the CV does, the
+    email address and its local part, and a phone number by its last nine digits, in any
+    field."""
     fields: list[tuple[str, list[str]]] = [
         ("ruolo", [card.ruolo]),
         ("sintesi", [card.sintesi]),
@@ -304,10 +330,13 @@ def identifying(card: Card, known: KnownIdentifiers) -> list[str]:
     named = {"ruolo", "sintesi", "competenze", "settori"}
     prose = {"ruolo", "sintesi"}
 
-    surname = known.cognome.strip()
-    first = known.nome.strip()
-    given = {first, *(word for word in re.split(r"[\s\-]+", first) if len(word) >= 3)}
+    surnames = {name for name in (known.cognome.strip(), known.cv_cognome.strip()) if name}
+    given: set[str] = set()
+    for first in (known.nome.strip(), known.cv_nome.strip()):
+        given |= {first, *(word for word in re.split(r"[\s\-]+", first) if len(word) >= 3)}
     given.discard("")
+    emails = [email.strip().lower() for email in known.emails if email.strip()]
+    phones = [digits[-PHONE_KEY_DIGITS:] for digits in known.phones if len(digits) >= 7]
 
     skills = {_tokens(skill) for skill in card.competenze}
     repos = [
@@ -325,9 +354,15 @@ def identifying(card: Card, known: KnownIdentifiers) -> list[str]:
         )
         if phrase is not None and phrase not in skills
     ]
+    handles = [
+        phrase
+        for phrase in (_phrase(email.partition("@")[0]) for email in emails)
+        if phrase is not None and phrase not in skills
+    ]
     searched = [
         *repos,
         *own,
+        *handles,
     ]
     # An employer is also very often a technology (Google, Microsoft, Oracle, SAP, Amazon):
     # «Google Cloud» among the skills is no leak. So an employer is read only where the
@@ -347,7 +382,9 @@ def identifying(card: Card, known: KnownIdentifiers) -> list[str]:
         for value in values:
             if (
                 _ADDRESS.search(value)
-                or (name in named and surname and _names(value, surname))
+                or any(email in value.lower() for email in emails)
+                or (bool(phones) and _has_phone(value, phones))
+                or (name in named and any(_names(value, surname) for surname in surnames))
                 or (
                     name in prose
                     and any(_names(_without_skills(value, card.competenze), g) for g in given)

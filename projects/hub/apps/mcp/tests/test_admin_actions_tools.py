@@ -18,7 +18,7 @@ from rebase_mcp.server import build_server
 
 def _wipe(factory: sessionmaker[Session]) -> None:
     session = factory()
-    for table in ("admin_actions", "comments", "freelancers", "companies", "users"):
+    for table in ("admin_actions", "notes", "freelancers", "companies", "users"):
         session.execute(text(f"DELETE FROM {table}"))
     session.commit()
     session.close()

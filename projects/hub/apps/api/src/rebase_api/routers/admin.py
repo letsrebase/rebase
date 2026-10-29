@@ -30,7 +30,6 @@ from rebase_core.admin_tokens import AdminList, AdminRead
 from rebase_core.audit import AdminActionRead
 from rebase_core.cards import CardWriter
 from rebase_core.cloud import TalentCloudService
-from rebase_core.comments import CommentService
 from rebase_core.companies import CompanyService
 from rebase_core.duplicates import DuplicateListRead, duplicate_list
 from rebase_core.errors import TeamBuilderOff
@@ -39,6 +38,7 @@ from rebase_core.logins import LoginService
 from rebase_core.mail import EmailSender, Mail
 from rebase_core.merge import MergeRead, MergeRequest, PersonMergeService
 from rebase_core.models import NAME_MAX_LENGTH, User
+from rebase_core.notes import NoteService
 from rebase_core.pagination import CURSOR_MAX_LENGTH
 from rebase_core.perks import PerkService
 from rebase_core.referral_schemas import (
@@ -51,8 +51,6 @@ from rebase_core.referral_schemas import (
 )
 from rebase_core.referrals import ReferralService
 from rebase_core.schemas import (
-    CommentCreate,
-    CommentRead,
     CompanyList,
     CompanyOverride,
     CompanyRead,
@@ -63,6 +61,9 @@ from rebase_core.schemas import (
     FreelancerRead,
     GuideStats,
     LoginStats,
+    NoteCreate,
+    NoteRead,
+    NoteUpdate,
     SignupList,
     StatusChange,
     TalentCloudGrantRead,
@@ -79,6 +80,9 @@ from rebase_core.validation import SafeStr
 router = APIRouter(prefix="/api/hub", tags=["hub-admin"])
 
 _log = logging.getLogger(__name__)
+
+# The door an admin's write comes through, recorded on notes and on status changes.
+SOURCE = "web"
 
 
 def _send(sender: EmailSender, mail: Mail) -> None:
@@ -179,7 +183,7 @@ def get_freelancer(
     http: HttpCallDep,
     freelancer_id: UUID,
 ) -> FreelancerDetail:
-    """The card, its state and comments, and since REB-284 everywhere else the hub
+    """The card, its state and notes, and since REB-284 everywhere else the hub
     already knows this address: the sign-up's own UTM, the last logins and guide
     downloads, and the PigroCRM space when it owns one -- one call, not four."""
     return FreelancerService(session, settings, http).get(freelancer_id)
@@ -193,16 +197,20 @@ def download_cv(_: AdminDep, session: SessionDep, freelancer_id: UUID) -> Respon
 
 @router.patch("/freelancers/{freelancer_id}", response_model=FreelancerRead)
 def move_freelancer(
-    _: AdminDep, session: SessionDep, freelancer_id: UUID, change: StatusChange
+    admin: AdminDep, session: SessionDep, freelancer_id: UUID, change: StatusChange
 ) -> FreelancerRead:
-    return FreelancerService(session).set_status(freelancer_id, change)
+    """Moves the card to another state; recorded on `GET .../audit` as `status_changed`
+    with the admin and the door (`web`)."""
+    return FreelancerService(session).set_status(
+        freelancer_id, change, admin_id=admin.id, fonte=SOURCE
+    )
 
 
 @router.patch("/freelancers/{freelancer_id}/override", response_model=FreelancerRead)
 def override_freelancer(
     admin: AdminDep, session: SessionDep, freelancer_id: UUID, change: FreelancerOverride
 ) -> FreelancerRead:
-    """Sets or clears any profile field beyond `stato`/`note` (REB-347): a name, a
+    """Sets or clears any profile field beyond `stato` (REB-347): a name, a
     rate, a position, the identity on the linked `users` row. Recorded on
     `GET .../audit`; reversible with `POST .../audit/{action_id}/revert`."""
     return FreelancerService(session).override(freelancer_id, change, admin.id)
@@ -294,7 +302,7 @@ def list_duplicates(_: AdminDep, session: SessionDep) -> DuplicateListRead:
 def merge_freelancer(
     admin: AdminDep, session: SessionDep, freelancer_id: UUID, body: MergeRequest
 ) -> MergeRead:
-    """Merges the card `da` into this one (REB-800): its comments, logins, matches,
+    """Merges the card `da` into this one (REB-800): its notes, logins, matches,
     contracts, campaign rows, referrals and audit entries move here, the newer of the two
     CVs stays here with its card flagged for regeneration, and the other card is
     soft-deleted and points at this one. Refused with a sentence when both have a live
@@ -341,16 +349,18 @@ def get_company(_: AdminDep, session: SessionDep, company_id: UUID) -> CompanyRe
 
 @router.patch("/companies/{company_id}", response_model=CompanyRead)
 def move_company(
-    _: AdminDep, session: SessionDep, company_id: UUID, change: StatusChange
+    admin: AdminDep, session: SessionDep, company_id: UUID, change: StatusChange
 ) -> CompanyRead:
-    return CompanyService(session).set_status(company_id, change)
+    """Moves the request to another state; recorded on `GET .../audit` as
+    `status_changed` with the admin and the door (`web`)."""
+    return CompanyService(session).set_status(company_id, change, admin_id=admin.id, fonte=SOURCE)
 
 
 @router.patch("/companies/{company_id}/override", response_model=CompanyRead)
 def override_company(
     admin: AdminDep, session: SessionDep, company_id: UUID, change: CompanyOverride
 ) -> CompanyRead:
-    """Sets or clears any request field beyond `stato`/`note` (REB-347): the project
+    """Sets or clears any request field beyond `stato` (REB-347): the project
     answers, the company's own name, the referente's identity on the linked `users`
     row. Recorded on `GET .../audit`; reversible with
     `POST .../audit/{action_id}/revert`."""
@@ -520,51 +530,66 @@ def draft_card_from_signup(
 ) -> FreelancerRead:
     """The freelancer card an admin writes from what the public web says about a signup
     (ORB-155): incomplete until the person adds the CV, the rate and the rest from the
-    member area. The comment naming the sources is signed by the admin the cookie
+    member area. The note naming the sources is signed by the admin the cookie
     resolves to. 404 for an unknown signup; 422 naming `email` when the person has
     already filled their card, which research never overwrites."""
-    return FreelancerService(session).draft_from_signup(signup_id, payload, admin.nome)
+    return FreelancerService(session).draft_from_signup(signup_id, payload, admin.id, SOURCE)
 
 
-# ---- comments --------------------------------------------------------------------------
+# ---- notes -----------------------------------------------------------------------------
 #
-# Append-only, on the same cookie as everything else here. The author is the admin the
-# cookie resolves to: the body carries the text alone, so nobody can sign as somebody
-# else. No PATCH and no DELETE on purpose: a thread is a record (ORB-59).
+# One thread per card and per request (REB-856), on the same cookie as everything else
+# here. The author is the admin the cookie resolves to and the source is `web`: the body
+# carries the text alone, so nobody can sign as somebody else. An admin's note may be
+# edited and deleted (soft), each recorded in the trail; the person's and the hub's own
+# are events and answer 422.
 
 
-@router.get("/freelancers/{freelancer_id}/comments", response_model=list[CommentRead])
-def list_freelancer_comments(
-    _: AdminDep, session: SessionDep, freelancer_id: UUID
-) -> list[CommentRead]:
-    return CommentService(session).list("freelancer", freelancer_id)
-
-
-@router.post(
-    "/freelancers/{freelancer_id}/comments",
-    response_model=CommentRead,
-    status_code=status.HTTP_201_CREATED,
-)
-def add_freelancer_comment(
-    admin: AdminDep, session: SessionDep, freelancer_id: UUID, payload: CommentCreate
-) -> CommentRead:
-    return CommentService(session).add("freelancer", freelancer_id, payload.testo, admin.nome)
-
-
-@router.get("/companies/{company_id}/comments", response_model=list[CommentRead])
-def list_company_comments(_: AdminDep, session: SessionDep, company_id: UUID) -> list[CommentRead]:
-    return CommentService(session).list("company", company_id)
+@router.get("/freelancers/{freelancer_id}/notes", response_model=list[NoteRead])
+def list_freelancer_notes(_: AdminDep, session: SessionDep, freelancer_id: UUID) -> list[NoteRead]:
+    return NoteService(session).list("freelancer", freelancer_id)
 
 
 @router.post(
-    "/companies/{company_id}/comments",
-    response_model=CommentRead,
+    "/freelancers/{freelancer_id}/notes",
+    response_model=NoteRead,
     status_code=status.HTTP_201_CREATED,
 )
-def add_company_comment(
-    admin: AdminDep, session: SessionDep, company_id: UUID, payload: CommentCreate
-) -> CommentRead:
-    return CommentService(session).add("company", company_id, payload.testo, admin.nome)
+def add_freelancer_note(
+    admin: AdminDep, session: SessionDep, freelancer_id: UUID, payload: NoteCreate
+) -> NoteRead:
+    return NoteService(session).add(
+        "freelancer", freelancer_id, payload.testo, autore_id=admin.id, fonte=SOURCE
+    )
+
+
+@router.get("/companies/{company_id}/notes", response_model=list[NoteRead])
+def list_company_notes(_: AdminDep, session: SessionDep, company_id: UUID) -> list[NoteRead]:
+    return NoteService(session).list("company", company_id)
+
+
+@router.post(
+    "/companies/{company_id}/notes",
+    response_model=NoteRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def add_company_note(
+    admin: AdminDep, session: SessionDep, company_id: UUID, payload: NoteCreate
+) -> NoteRead:
+    return NoteService(session).add(
+        "company", company_id, payload.testo, autore_id=admin.id, fonte=SOURCE
+    )
+
+
+@router.patch("/notes/{note_id}", response_model=NoteRead)
+def edit_note(admin: AdminDep, session: SessionDep, note_id: UUID, payload: NoteUpdate) -> NoteRead:
+    return NoteService(session).update(note_id, payload.testo, admin_id=admin.id, fonte=SOURCE)
+
+
+@router.delete("/notes/{note_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_note(admin: AdminDep, session: SessionDep, note_id: UUID) -> Response:
+    NoteService(session).delete(note_id, admin_id=admin.id, fonte=SOURCE)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 # ---- referrals (P-REB-44) ----------------------------------------------------------

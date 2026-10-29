@@ -28,6 +28,7 @@ from rebase_core.mail import RecordingSender
 from rebase_core.models import (
     Freelancer,
     FreelancerCard,
+    Note,
     TalentCloudGrant,
     TeamProposal,
     TeamRequest,
@@ -61,7 +62,7 @@ def cloud(api_session: Session) -> Iterator[Session]:
         "team_proposals",
         "talent_cloud_grants",
         "admin_actions",
-        "comments",
+        "notes",
         "sessions",
         "magic_link_tokens",
         "logins",
@@ -160,7 +161,6 @@ def _talent(
         remoto="remoto",
         tariffa_giornaliera=Decimal("463.21"),
         stato=stato,
-        note="Nota riservata dell'admin.",
         posizione="Backend developer",
         links=[f"https://{slug}.dev"],
         cv_bytes=PDF,
@@ -172,6 +172,14 @@ def _talent(
     session.add(row)
     session.flush()
     session.add(
+        Note(
+            entity_type="freelancer",
+            entity_id=row.id,
+            testo="Nota riservata dell'admin.",
+            autore="Ivan",
+        )
+    )
+    session.add(
         FreelancerCard(
             freelancer_id=row.id,
             cv_sha256="0" * 64,
@@ -180,6 +188,13 @@ def _talent(
             input_tokens=1200,
             output_tokens=180,
             generated_at=datetime.now(UTC),
+            # What the CV says of the person (REB-855) is the admin's alone: the cloud
+            # shows the account's name and links, never these.
+            persona={
+                "email": "ada.cv@example.org",
+                "telefono": "+39 02 5550123",
+                "aziende": ["Initech Labs"],
+            },
         )
     )
     session.commit()
@@ -330,8 +345,10 @@ def test_the_cloud_lists_the_talents_by_name_and_filters_them(
     assert first["links"] == ["https://hopper.dev"] and first["ha_cv"] is True
     assert first["card"]["sintesi"] == CARD["sintesi"] and first["card"]["luogo"] is None
     assert first["fascia"] == {"min": 500, "max": 650} and first["modalita"] == "remoto"
-    # Never the rate, the state, the notes, the address or the phone.
-    for secret in ("463.21", "tariffa", '"stato"', "Nota riservata", "@studio.it", "+39"):
+    # Never the rate, the state, the notes, the address or the phone, nor what the CV says
+    # of the person.
+    secrets = ("463.21", "tariffa", '"stato"', "Nota riservata", "@studio.it", "+39")
+    for secret in (*secrets, "ada.cv@example.org", "5550123", "Initech", "persona"):
         assert secret not in listed.text, secret
 
     narrowed = client.get(

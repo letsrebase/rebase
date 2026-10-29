@@ -31,7 +31,7 @@ def admin(api_session: Session) -> Iterator[None]:
     api_session.commit()
     yield
     api_session.rollback()
-    for table in ("admin_actions", "comments", "freelancers", "companies", "users", "signups"):
+    for table in ("admin_actions", "notes", "freelancers", "companies", "users", "signups"):
         api_session.execute(text(f"DELETE FROM {table}"))
     api_session.commit()
 

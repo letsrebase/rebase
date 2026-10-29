@@ -47,10 +47,12 @@ __all__ = [
     "CloudTalentList",
     "CloudTalentQuery",
     "CloudTalentRead",
+    "CardPersonaRead",
     "CardProvenance",
     "ConflictRead",
     "FreelancerCardAdminRead",
     "FreelancerCardRead",
+    "PersonaDifference",
     "SourceProvenance",
     "TALENT_ANSWERS",
     "TEAM_PROPOSAL_ERRORS",
@@ -185,12 +187,49 @@ class CardProvenance(BaseModel):
     stale: Literal["cv", "source", "prompt"] | None
 
 
+class CardPersonaRead(BaseModel):
+    """What the CV (and the sources beside it) says of who the person is, read out by the
+    same call that writes the anonymous card (REB-855): for the admin only, stored on the
+    card's row (`freelancer_cards.persona`) and never written into `users`. Everything is
+    what the document states literally, normalised by `card_draft.clean_persona`
+    (`email` in lower case and valid, `linkedin_url` in its stored shape, `telefono` as
+    written and trimmed, only `http(s)` links): a value that did not pass is `None`, or
+    absent from the lists. `aziende` are the employers and clients the CV names. Never
+    part of `Card`, of `FreelancerCardRead`, of the cloud, the talent list or the team
+    builder."""
+
+    nome: str | None = None
+    cognome: str | None = None
+    email: str | None = None
+    telefono: str | None = None
+    citta: str | None = None
+    linkedin_url: str | None = None
+    altri_link: list[str] = Field(default_factory=list)
+    aziende: list[str] = Field(default_factory=list)
+
+
+class PersonaDifference(BaseModel):
+    """A field where the CV and the profile both say something and disagree
+    (`card_draft.differenze`): `campo` is `nome`, `cognome`, `email`, `telefono` or
+    `linkedin_url`, `cv` what the CV says and `profilo` what the account holds. A field one
+    side leaves empty is no disagreement."""
+
+    campo: Literal["nome", "cognome", "email", "telefono", "linkedin_url"]
+    cv: str
+    profilo: str
+
+
 class FreelancerCardAdminRead(FreelancerCardRead):
-    """`FreelancerCardRead` and the provenance of the card, as the admin's page reads it
-    (`GET /freelancers/{id}/card`). `provenance` is `None` while the person has no card
-    row at all."""
+    """`FreelancerCardRead`, the provenance of the card and the named card, as the admin's
+    page reads them (`GET /freelancers/{id}/card`). `provenance` is `None` while the person
+    has no card row at all. `persona` is what the CV says of who the person is (REB-855),
+    `None` for a card written before prompt version 3 and for a person whose CV the model
+    never read; it is kept even when the anonymous card was refused. `differenze` lists
+    where it disagrees with the profile."""
 
     provenance: CardProvenance | None = None
+    persona: CardPersonaRead | None = None
+    differenze: list[PersonaDifference] = Field(default_factory=list)
 
 
 class CardsRefreshed(NamedTuple):
@@ -515,7 +554,7 @@ class CloudTalentRead(BaseModel):
     are, the links they gave, whether rebase vetted them, the anonymous card (its
     `luogo` left out: the CV is one click away), the work mode, the client's band and
     whether there is a CV to open. Never the freelancer's own rate, their state, the
-    admin's notes and comments, nor their address or phone: those are not fields here,
+    admin's notes, nor their address or phone: those are not fields here,
     so no read can carry them."""
 
     freelancer_id: UUID

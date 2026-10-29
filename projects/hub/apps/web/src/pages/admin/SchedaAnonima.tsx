@@ -1,11 +1,20 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useId, useState, type FormEvent, type ReactNode } from 'react'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rebase/ui/select'
-import { admin, ApiError, type CardConflict, type CardProvenance, type FreelancerCard, type Scheda } from '@/lib/api'
+import {
+  admin,
+  ApiError,
+  type CardConflict,
+  type CardProvenance,
+  type FreelancerCard,
+  type PersonaDifferenceField,
+  type Scheda,
+} from '@/lib/api'
+import { useFreelancerCard } from '@/hooks/use-freelancer-card'
 import { bandLabel } from '@/lib/bands'
 import { REMOTO_LABELS, SENIORITY_LABELS, formatDateTime, formatExperience } from '@/lib/format'
 
@@ -57,12 +66,19 @@ function LevelEditor({ freelancerId, read }: { freelancerId: string; read: Freel
       anni_admin: years,
     })
   }
+  // The two fields are `flex-col gap-1`, not `space-y-1`: Radix renders a hidden native
+  // `<select>` after the trigger inside a form, so the trigger is never the last child and
+  // `space-y-1` would give it a bottom margin the number input does not have (REB-857).
+  // Every control is the admin's standard 36px (`h-9`: Input, SelectTrigger, a default
+  // Button), bottom-aligned, and each label stays on one line.
   return (
     <form onSubmit={submit} className="space-y-2 rounded-md border p-3 text-sm">
       <p className="font-medium">Correggi il livello</p>
       <div className="flex flex-wrap items-end gap-3">
-        <div className="space-y-1">
-          <Label htmlFor={`${id}-seniority`}>Seniority dell’admin</Label>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor={`${id}-seniority`} className="whitespace-nowrap">
+            Seniority dell’admin
+          </Label>
           <Select value={seniority} onValueChange={setSeniority}>
             <SelectTrigger id={`${id}-seniority`} className="w-44">
               <SelectValue />
@@ -77,8 +93,10 @@ function LevelEditor({ freelancerId, read }: { freelancerId: string; read: Freel
             </SelectContent>
           </Select>
         </div>
-        <div className="space-y-1">
-          <Label htmlFor={`${id}-anni`}>Anni dell’admin</Label>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor={`${id}-anni`} className="whitespace-nowrap">
+            Anni dell’admin
+          </Label>
           <Input
             id={`${id}-anni`}
             type="number"
@@ -90,14 +108,13 @@ function LevelEditor({ freelancerId, read }: { freelancerId: string; read: Freel
             aria-invalid={invalid}
           />
         </div>
-        <Button type="submit" size="sm" disabled={save.isPending || invalid}>
+        <Button type="submit" disabled={save.isPending || invalid}>
           {save.isPending ? 'Salvo…' : 'Salva il livello'}
         </Button>
         {corrected && (
           <Button
             type="button"
             variant="outline"
-            size="sm"
             disabled={save.isPending}
             onClick={() => {
               setSeniority(NO_CORRECTION)
@@ -210,11 +227,15 @@ function Provenance({ provenance }: { provenance: CardProvenance }) {
   )
 }
 
-function Written({ read }: { read: FreelancerCard }) {
+/**
+ * The rows the anonymous card and the named one both show (role, seniority, years, skills):
+ * one component, so the two sections read the same values and cannot disagree.
+ */
+function CardRows({ read }: { read: FreelancerCard }) {
   const { card } = read
   if (!card) return null
   return (
-    <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-[10rem_1fr]">
+    <>
       <Field label="Ruolo">{card.ruolo}</Field>
       <Field label="Seniority">
         <span className="flex flex-wrap items-center gap-1.5">
@@ -242,6 +263,16 @@ function Written({ read }: { read: FreelancerCard }) {
           '—'
         )}
       </Field>
+    </>
+  )
+}
+
+function Written({ read }: { read: FreelancerCard }) {
+  const { card } = read
+  if (!card) return null
+  return (
+    <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-[10rem_1fr]">
+      <CardRows read={read} />
       <Field label="Settori">{words(card.settori)}</Field>
       <Field label="Lingue">{words(card.lingue)}</Field>
       <Field label="Luogo">{card.luogo ?? '—'}</Field>
@@ -253,6 +284,103 @@ function Written({ read }: { read: FreelancerCard }) {
       </Field>
       {read.error && <Field label="Ultimo errore">{read.error}</Field>}
     </dl>
+  )
+}
+
+const DIFFERENCE_LABELS: Record<PersonaDifferenceField, string> = {
+  nome: 'Nome',
+  cognome: 'Cognome',
+  email: 'Email',
+  telefono: 'Telefono',
+  linkedin_url: 'LinkedIn',
+}
+
+/** A link only for an `http(s)` address, plain text for anything else: the API keeps
+ *  only those, and the page does not trust it to. */
+function WebLink({ href }: { href: string }) {
+  if (!/^https?:\/\//i.test(href)) return <>{href}</>
+  return (
+    <a className="underline underline-offset-2" href={href} target="_blank" rel="noreferrer">
+      {href}
+    </a>
+  )
+}
+
+/**
+ * «Scheda con i dati» (REB-855): who the CV says the person is, which the same call that
+ * wrote the anonymous card read out of it, for admins only, and the card's own role,
+ * seniority, years and skills beside it (`CardRows`). Where the CV and the profile both
+ * say something and differ, a short list says so: the profile is never rewritten from the
+ * CV, the admin decides which is right. A card written before prompt version 3 has no
+ * data yet, and says «Rigenera scheda» reads it.
+ */
+function SchedaConDati({ read }: { read: FreelancerCard }) {
+  const headingId = useId()
+  const { persona, differenze = [] } = read
+  let body: ReactNode
+  if (!persona) {
+    body = (
+      <p className="text-sm text-muted-foreground">
+        Nessun dato letto dal CV: «Rigenera scheda» lo legge con la versione attuale del prompt.
+      </p>
+    )
+  } else {
+    const name = [persona.nome, persona.cognome].filter(Boolean).join(' ')
+    body = (
+      <div className="space-y-3">
+        {differenze.length > 0 && (
+          <div role="alert" className="space-y-1 rounded-md border border-destructive/40 p-3 text-sm">
+            <p className="font-medium text-destructive">Il CV e il profilo non coincidono</p>
+            <ul>
+              {differenze.map((difference) => (
+                <li key={difference.campo}>
+                  {DIFFERENCE_LABELS[difference.campo]}: nel CV «{difference.cv}», nel profilo «{difference.profilo}»
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-[10rem_1fr]">
+          <Field label="Nome">{name || '—'}</Field>
+          <Field label="Email">
+            {persona.email ? (
+              <a className="underline underline-offset-2" href={`mailto:${persona.email}`}>
+                {persona.email}
+              </a>
+            ) : (
+              '—'
+            )}
+          </Field>
+          <Field label="Telefono">{persona.telefono ?? '—'}</Field>
+          <Field label="Città">{persona.citta ?? '—'}</Field>
+          <Field label="LinkedIn">{persona.linkedin_url ? <WebLink href={persona.linkedin_url} /> : '—'}</Field>
+          <Field label="Altri link">
+            {persona.altri_link.length ? (
+              <ul>
+                {persona.altri_link.map((link) => (
+                  <li key={link}>
+                    <WebLink href={link} />
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              '—'
+            )}
+          </Field>
+          <Field label="Aziende e clienti">{words(persona.aziende)}</Field>
+          <CardRows read={read} />
+          {read.card && <Field label="Sintesi">{read.card.sintesi}</Field>}
+        </dl>
+      </div>
+    )
+  }
+  return (
+    <section aria-labelledby={headingId} className="space-y-3 px-6 pb-6">
+      <h2 id={headingId} className="text-sm font-medium">
+        Scheda con i dati
+      </h2>
+      {body}
+    </section>
   )
 }
 
@@ -276,7 +404,7 @@ export function SchedaAnonima({ freelancerId, hasCv }: { freelancerId: string; h
   // «Elimina» and «Ripristina», since each changes what the section reads (the card,
   // the mode, the band from the rate).
   const key = ['freelancer-card', freelancerId] as const
-  const read = useQuery({ queryKey: key, queryFn: () => admin.freelancerCard(freelancerId) })
+  const read = useFreelancerCard(freelancerId)
   const regenerate = useMutation({
     mutationFn: () => admin.regenerateFreelancerCard(freelancerId),
     onSuccess: (updated) => client.setQueryData<FreelancerCard>(key, updated),
@@ -300,29 +428,34 @@ export function SchedaAnonima({ freelancerId, hasCv }: { freelancerId: string; h
     )
   }
   return (
-    <section aria-labelledby={headingId} className="space-y-3 px-6 pb-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 id={headingId} className="text-sm font-medium">
-          Scheda anonima
-        </h2>
-        {hasCv && (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => regenerate.mutate()}
-            disabled={regenerate.isPending}
-          >
-            {regenerate.isPending ? 'Rigenero…' : 'Rigenera scheda'}
-          </Button>
+    <>
+      <section aria-labelledby={headingId} className="space-y-3 px-6 pb-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 id={headingId} className="text-sm font-medium">
+            Scheda anonima
+          </h2>
+          {hasCv && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => regenerate.mutate()}
+              disabled={regenerate.isPending}
+            >
+              {regenerate.isPending ? 'Rigenero…' : 'Rigenera scheda'}
+            </Button>
+          )}
+        </div>
+        {regenerate.isError && (
+          <p role="alert" className="text-sm text-destructive">
+            {regenerate.error instanceof ApiError ? regenerate.error.message : 'Non riesco a rigenerare la scheda.'}
+          </p>
         )}
-      </div>
-      {regenerate.isError && (
-        <p role="alert" className="text-sm text-destructive">
-          {regenerate.error instanceof ApiError ? regenerate.error.message : 'Non riesco a rigenerare la scheda.'}
-        </p>
+        {body}
+      </section>
+      {!read.isPending && !read.isError && (read.data.persona != null || read.data.card != null) && (
+        <SchedaConDati read={read.data} />
       )}
-      {body}
-    </section>
+    </>
   )
 }

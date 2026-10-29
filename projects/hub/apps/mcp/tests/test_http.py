@@ -50,7 +50,14 @@ def ivan_token(mcp_engine: Engine) -> Iterator[str]:
         yield raw
     finally:
         with session_factory(mcp_engine)() as session:
-            for table in ("comments", "freelancers", "signups", "admin_tokens", "users"):
+            for table in (
+                "admin_actions",
+                "notes",
+                "freelancers",
+                "signups",
+                "admin_tokens",
+                "users",
+            ):
                 session.execute(text(f"DELETE FROM {table}"))
             session.commit()
 
@@ -155,7 +162,7 @@ async def test_a_token_lists_the_tools_and_signs_what_it_writes(
     ):
         await session.initialize()
         names = {tool.name for tool in (await session.list_tools()).tools}
-    assert {"read_freelancer_cv", "list_pigro_spaces", "add_freelancer_comment"} <= names
+    assert {"read_freelancer_cv", "list_pigro_spaces", "add_freelancer_note"} <= names
 
     talenti = await _call(app, ivan_token, "list_talenti", {})
     assert talenti["totale"] == 0

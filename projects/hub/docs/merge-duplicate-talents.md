@@ -32,10 +32,10 @@ pairs. A name or a telephone number never merges on its own: only a profile does
 The survivor is the card with the newest CV (`freelancers.cv_uploaded_at`), unless an admin names
 the other with `--survivor`. Into it moves everything of the other person, **by id**: logins,
 sessions and magic links, company requests, team requests, proposals and talent-cloud grants,
-campaign rows, referrals made and received, matches, contract documents, tax data, the comment
+campaign rows, referrals made and received, matches, contract documents, tax data, the notes
 thread, and the audit entries. Where the survivor already has the thing (a referral for the same card,
 a talent already on the same team request, a live grant for the same company, a tax record) the other's
-stays where it was and is counted as `lasciati`. The absorbed card's note goes into the survivor's thread as a comment, whole; a refusal to be mailed given under the absorbed address is given to the survivor's address too; a referral code of the absorbed person credits the survivor.
+stays where it was and is counted as `lasciati`. The absorbed card's notes move into the survivor's thread by id, whole, beside one `sistema` note that says the cards were merged; a refusal to be mailed given under the absorbed address is given to the survivor's address too; a referral code of the absorbed person credits the survivor.
 
 The CV and its anonymous card travel together and the newest stays on the survivor; if the absorbed
 card had the newer one the two swap, and the older file and card stay on the absorbed card. A survivor
@@ -93,7 +93,7 @@ docker exec rebase-api-1 uv run --no-sync rebase talent-duplicates --undo ACTION
 
 `ACTION_ID` is the `azione` the merge printed, or the `id` of the `merged` entry in the absorbed card's
 trail (`GET /api/hub/freelancers/{absorbed id}/audit`, `get_freelancer_audit`). It moves every row the entry
-names back to the absorbed card and person (only the rows still on the survivor: a login or a comment the
+names back to the absorbed card and person (only the rows still on the survivor: a login or a note the
 survivor got since stays with the survivor), gives back the CV and card if they swapped, restores the
 survivor's filled fields and a cleared card failure, takes away the refusal-to-be-mailed the merge copied, makes the absorbed card live and its address its own
 again, and writes an `unmerged` entry on both cards. A merge is undone once. A field the survivor changed since (a phone number, a position, a profile) keeps its new value and is counted in `lasciati`; undo is refused, with a sentence, once the survivor was itself merged into somebody or deleted: undo that merge first.

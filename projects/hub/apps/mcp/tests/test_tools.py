@@ -1,4 +1,4 @@
-"""The hub's MCP tools over its own database: the reads, the status moves, the comments."""
+"""The hub's MCP tools over its own database: the reads, the status moves, the notes."""
 
 import json
 import re
@@ -7,7 +7,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from fakes_cards import CARD, MODEL, card_response, text_pdf
+from fakes_cards import CARD, MODEL, PERSONA, card_response, text_pdf
 from mcp import Client
 from sqlalchemy import text, update
 from sqlalchemy.orm import Session, sessionmaker
@@ -137,6 +137,7 @@ async def test_the_admin_tools_read_and_move_a_candidate_without_the_cv(
         )
     finally:
         session.close()
+    _seed_admin(factory)
 
     async with Client(build_server(factory, lambda: IVAN)) as client:
         listed = _payload(await client.call_tool("list_talenti", {"campi": ["email"]}))
@@ -147,10 +148,15 @@ async def test_the_admin_tools_read_and_move_a_candidate_without_the_cv(
         moved = _payload(
             await client.call_tool(
                 "set_freelancer_status",
-                {"freelancer_id": str(row.id), "stato": "contattato", "note": "scritto oggi"},
+                {"freelancer_id": str(row.id), "stato": "contattato"},
             )
         )
-        assert (moved["stato"], moved["note"]) == ("contattato", "scritto oggi")
+        assert moved["stato"] == "contattato"
+        audit = await client.call_tool("get_freelancer_audit", {"freelancer_id": str(row.id)})
+        assert audit.structured_content is not None
+        [entry] = audit.structured_content["result"]
+        assert entry["kind"] == "status_changed"
+        assert entry["payload"] == {"before": "nuovo", "after": "contattato", "fonte": "mcp"}
 
         refused = await client.call_tool(
             "set_freelancer_status", {"freelancer_id": str(row.id), "stato": "forse"}
@@ -161,7 +167,11 @@ async def test_the_admin_tools_read_and_move_a_candidate_without_the_cv(
         missing = await client.call_tool("get_company", {"company_id": str(row.id)})
         assert missing.is_error
 
-        names = {tool.name for tool in (await client.list_tools()).tools}
+        tools = (await client.list_tools()).tools
+        status_tool = next(t for t in tools if t.name == "set_freelancer_status")
+        # The tool takes the state alone: a remark is a note of its own.
+        assert "note" not in status_tool.input_schema["properties"]
+        names = {tool.name for tool in tools}
         assert names == {
             "create_freelancer_from_signup",
             "list_talenti",
@@ -181,7 +191,9 @@ async def test_the_admin_tools_read_and_move_a_candidate_without_the_cv(
             "revert_freelancer_action",
             "list_duplicati",
             "merge_freelancers",
-            "add_freelancer_comment",
+            "add_freelancer_note",
+            "update_note",
+            "delete_note",
             "list_aziende",
             "get_company",
             "set_company_status",
@@ -190,7 +202,7 @@ async def test_the_admin_tools_read_and_move_a_candidate_without_the_cv(
             "restore_company",
             "get_company_audit",
             "revert_company_action",
-            "add_company_comment",
+            "add_company_note",
             "list_team_requests",
             "list_team_proposals",
             "list_ai_config",
@@ -228,7 +240,7 @@ def _wipe(factory: sessionmaker[Session]) -> None:
     session = factory()
     for table in (
         "admin_actions",
-        "comments",
+        "notes",
         "freelancer_cards",
         "freelancers",
         "companies",
@@ -237,6 +249,16 @@ def _wipe(factory: sessionmaker[Session]) -> None:
         session.execute(text(f"DELETE FROM {table}"))
     session.commit()
     session.close()
+
+
+def _ensure_admin(session: Session) -> UUID:
+    """IVAN as a `users` row: a note and a trail entry name who wrote them, by foreign key."""
+    if session.get(User, IVAN.id) is None:
+        session.add(
+            User(id=IVAN.id, email=IVAN.email, nome=IVAN.nome, cognome="Sala", role="admin")
+        )
+        session.commit()
+    return IVAN.id
 
 
 def _seed_freelancer(factory: sessionmaker[Session]) -> str:
@@ -295,74 +317,145 @@ def _seed_company(factory: sessionmaker[Session]) -> str:
         session.close()
 
 
-async def test_a_comment_from_the_mcp_is_signed_mcp_by_default_and_get_returns_the_thread(
+async def test_a_note_from_the_mcp_is_signed_by_the_token_and_marked_mcp(
     factory: sessionmaker[Session],
 ) -> None:
     freelancer_id = _seed_freelancer(factory)
+    _seed_admin(factory)
     async with Client(build_server(factory, lambda: IVAN)) as client:
         first = _payload(
             await client.call_tool(
-                "add_freelancer_comment",
+                "add_freelancer_note",
                 {"freelancer_id": freelancer_id, "testo": "Sentito al telefono."},
             )
         )
-        assert (first["autore"], first["testo"]) == ("Ivan", "Sentito al telefono.")
-        assert first["entity_type"] == "freelancer" and first["entity_id"] == freelancer_id
+        assert (first["autore"], first["testo"]) == ("Ivan Sala", "Sentito al telefono.")
+        assert (first["autore_id"], first["fonte"], first["modificabile"]) == (
+            str(IVAN.id),
+            "mcp",
+            True,
+        )
+        # The author is the token's: the tool has no argument to name another.
+        tools = {t.name: t for t in (await client.list_tools()).tools}
+        assert "autore" not in tools["add_freelancer_note"].input_schema["properties"]
+        assert "autore" not in tools["add_company_note"].input_schema["properties"]
         second = _payload(
             await client.call_tool(
-                "add_freelancer_comment",
-                {"freelancer_id": freelancer_id, "testo": "Portfolio ricevuto.", "autore": "Ivan"},
+                "add_freelancer_note",
+                {"freelancer_id": freelancer_id, "testo": "Portfolio ricevuto."},
             )
         )
-        assert second["autore"] == "Ivan"
 
         detail = _payload(
             await client.call_tool("get_freelancer", {"freelancer_id": freelancer_id})
         )
-        assert [c["id"] for c in detail["commenti"]] == [second["id"], first["id"]]
-        # The note is untouched, and the list does not carry the thread.
-        assert detail["note"] is None
+        assert [c["id"] for c in detail["note"]] == [second["id"], first["id"]]
+        assert "commenti" not in detail
+        # The list does not carry the thread.
         listed = _payload(await client.call_tool("list_talenti", {}))
-        assert "commenti" not in listed["items"][0]
+        assert "note" not in listed["items"][0]
     _wipe(factory)
 
 
-async def test_a_company_comment_lands_on_the_company_and_a_bad_one_is_a_sentence(
+async def test_a_note_is_edited_and_deleted_over_mcp_and_the_trail_names_the_door(
+    factory: sessionmaker[Session],
+) -> None:
+    freelancer_id = _seed_freelancer(factory)
+    _seed_admin(factory)
+    async with Client(build_server(factory, lambda: IVAN)) as client:
+        note = _payload(
+            await client.call_tool(
+                "add_freelancer_note", {"freelancer_id": freelancer_id, "testo": "Prima."}
+            )
+        )
+        edited = _payload(
+            await client.call_tool("update_note", {"note_id": note["id"], "testo": "Dopo."})
+        )
+        assert (edited["testo"], edited["modificata_da"]) == ("Dopo.", "Ivan Sala")
+        gone = _payload(await client.call_tool("delete_note", {"note_id": note["id"]}))
+        assert gone == {"nota": note["id"], "cancellata": True}
+        detail = _payload(
+            await client.call_tool("get_freelancer", {"freelancer_id": freelancer_id})
+        )
+        assert detail["note"] == []
+        again = await client.call_tool("delete_note", {"note_id": note["id"]})
+        assert again.is_error and "non trovato" in again.content[0].text
+
+        audit = await client.call_tool("get_freelancer_audit", {"freelancer_id": freelancer_id})
+        assert audit.structured_content is not None
+        entries = {entry["kind"]: entry["payload"] for entry in audit.structured_content["result"]}
+        assert set(entries) == {"note_added", "note_edited", "note_deleted"}
+        assert all(payload["fonte"] == "mcp" for payload in entries.values())
+        assert entries["note_edited"]["before"] == "Prima."
+    _wipe(factory)
+
+
+async def test_the_persons_events_are_refused_by_update_and_delete(
+    factory: sessionmaker[Session],
+) -> None:
+    from rebase_core.models import Note
+
+    freelancer_id = _seed_freelancer(factory)
+    session = factory()
+    event = Note(
+        entity_type="freelancer",
+        entity_id=UUID(freelancer_id),
+        testo="CV caricato dalla persona",
+        autore="Ada Lovelace",
+        fonte="persona",
+    )
+    session.add(event)
+    session.commit()
+    event_id = str(event.id)
+    session.close()
+    async with Client(build_server(factory, lambda: IVAN)) as client:
+        for tool, args in (
+            ("update_note", {"note_id": event_id, "testo": "Riscritta."}),
+            ("delete_note", {"note_id": event_id}),
+        ):
+            refused = await client.call_tool(tool, args)
+            assert refused.is_error and "non si modifica" in refused.content[0].text
+        detail = _payload(
+            await client.call_tool("get_freelancer", {"freelancer_id": freelancer_id})
+        )
+        assert [n["testo"] for n in detail["note"]] == ["CV caricato dalla persona"]
+        assert detail["note"][0]["modificabile"] is False
+    _wipe(factory)
+
+
+async def test_a_company_note_lands_on_the_company_and_a_bad_one_is_a_sentence(
     factory: sessionmaker[Session],
 ) -> None:
     company_id = _seed_company(factory)
     freelancer_id = _seed_freelancer(factory)
+    _seed_admin(factory)
     async with Client(build_server(factory, lambda: IVAN)) as client:
         posted = _payload(
             await client.call_tool(
-                "add_company_comment", {"company_id": company_id, "testo": "Budget confermato."}
+                "add_company_note", {"company_id": company_id, "testo": "Budget confermato."}
             )
         )
-        assert (posted["autore"], posted["entity_type"]) == ("Ivan", "company")
+        assert (posted["autore"], posted["fonte"]) == ("Ivan Sala", "mcp")
         detail = _payload(await client.call_tool("get_company", {"company_id": company_id}))
-        assert [c["testo"] for c in detail["commenti"]] == ["Budget confermato."]
+        assert [c["testo"] for c in detail["note"]] == ["Budget confermato."]
 
         # A freelancer id is not a company: not found, as a sentence.
         wrong = await client.call_tool(
-            "add_company_comment", {"company_id": freelancer_id, "testo": "x"}
+            "add_company_note", {"company_id": freelancer_id, "testo": "x"}
         )
         assert wrong.is_error and "non trovato" in wrong.content[0].text
         empty = await client.call_tool(
-            "add_freelancer_comment", {"freelancer_id": freelancer_id, "testo": "   "}
+            "add_freelancer_note", {"freelancer_id": freelancer_id, "testo": "   "}
         )
         assert empty.is_error and "testo" in empty.content[0].text
         long = await client.call_tool(
-            "add_freelancer_comment", {"freelancer_id": freelancer_id, "testo": "x" * 4001}
+            "add_freelancer_note", {"freelancer_id": freelancer_id, "testo": "x" * 4001}
         )
         assert long.is_error and "4000" in long.content[0].text
         untouched = _payload(
             await client.call_tool("get_freelancer", {"freelancer_id": freelancer_id})
         )
-        assert untouched["commenti"] == []
-
-        # Nothing edits or deletes a comment, from here or anywhere.
-        names = {tool.name for tool in (await client.list_tools()).tools}
-        assert not [n for n in names if "comment" in n and not n.startswith("add_")]
+        assert untouched["note"] == []
     _wipe(factory)
 
 
@@ -370,6 +463,7 @@ async def test_a_card_is_written_from_a_signup_with_its_sources_in_the_thread(
     factory: sessionmaker[Session],
 ) -> None:
     _seed(factory, ["ada@studio.it"])
+    _seed_admin(factory)
     async with Client(build_server(factory, lambda: IVAN)) as client:
         lead_rows = _payload(await client.call_tool("list_talenti", {"stato": "lead"}))
         signup_id = lead_rows["items"][0]["id"]
@@ -388,8 +482,11 @@ async def test_a_card_is_written_from_a_signup_with_its_sources_in_the_thread(
         assert created["email"] == "ada@studio.it"
         assert created["compilata_da"] == "admin" and created["completa"] is False
         assert created["cv_filename"] is None and created["tariffa_giornaliera"] is None
-        assert created["commenti"][0]["autore"] == "Ivan"
-        assert "https://www.linkedin.com/in/ada" in created["commenti"][0]["testo"]
+        assert (created["note"][0]["autore"], created["note"][0]["fonte"]) == (
+            "Ivan Sala",
+            "mcp",
+        )
+        assert "https://www.linkedin.com/in/ada" in created["note"][0]["testo"]
         # The card replaces the lead in the merged list, and the lead's own id now
         # answers the card: what «Talenti» shows for that person.
         listed = _payload(await client.call_tool("list_talenti", {}))
@@ -411,6 +508,7 @@ async def test_a_card_from_a_signup_reads_its_rate_with_italian_thousands(
     """REB-485: through the same reading as every other amount tool, and a rate that is
     not one is refused in a sentence naming the field, not a `decimal` traceback."""
     _seed(factory, ["ada@studio.it"])
+    _seed_admin(factory)
     async with Client(build_server(factory, lambda: IVAN)) as client:
         lead_rows = _payload(await client.call_tool("list_talenti", {"stato": "lead"}))
         signup_id = lead_rows["items"][0]["id"]
@@ -522,7 +620,8 @@ async def test_the_cv_is_read_as_text_and_a_card_without_one_answers_a_sentence(
                 posizione="Compiler engineer",
                 fonti=["https://example.com/grace"],
             ),
-            "MCP",
+            _ensure_admin(session),
+            "mcp",
         )
     finally:
         session.close()
@@ -565,7 +664,7 @@ async def test_get_talento_answers_a_card_with_the_detail_and_a_lead_with_the_ro
         assert card["email"] == "ada@studio.it"
         # The detail's own fields, the ones the list row does not carry. Without a
         # `settings`/`http` on this server the Pigro lookup is off, not an error.
-        assert "commenti" in card and "iscrizione_utm" in card and "ultimi_accessi" in card
+        assert "note" in card and "iscrizione_utm" in card and "ultimi_accessi" in card
         assert card["pigro_slug"] is None
 
         lead = _payload(await client.call_tool("get_talento", {"talento_id": lead_id}))
@@ -732,7 +831,7 @@ def _wipe_team(factory: sessionmaker[Session]) -> None:
         "admin_actions",
         "talent_cloud_grants",
         "freelancer_cards",
-        "comments",
+        "notes",
         "freelancers",
         "companies",
         "users",
@@ -848,6 +947,50 @@ async def test_freelancer_card_tools_read_write_and_off_is_the_sentence(
             "get_freelancer_card", {"freelancer_id": "01a00000-0000-7000-8000-0000000000fe"}
         )
         assert missing.is_error
+    _wipe(factory)
+
+
+async def test_get_freelancer_carries_the_cvs_contacts_and_no_other_tool_does(
+    factory: sessionmaker[Session],
+) -> None:
+    """REB-855: what the CV says of the person is an admin's, on `get_freelancer` and
+    nowhere else: the anonymous card, the list and the talent row stay without it."""
+    freelancer_id = _seed_freelancer_with_text_cv(
+        factory, "Ada Lovelace, backend developer a Torino da nove anni: Python, FastAPI, AWS."
+    )
+    session = factory()
+    try:
+        session.execute(
+            text("UPDATE users SET telefono = '02 5550199' WHERE email = 'ada@studio.it'")
+        )
+        session.commit()
+    finally:
+        session.close()
+    _seed_admin(factory)
+    llm = RecordingCall([card_response(persona=PERSONA, employers=["Initech Labs"])])
+    async with Client(build_server(factory, lambda: IVAN, card_llm=lambda: llm)) as client:
+        before = _payload(
+            await client.call_tool("get_freelancer", {"freelancer_id": freelancer_id})
+        )
+        assert before["contatti_cv"] is None and before["differenze_cv"] == []
+        assert before["telefono"] == "02 5550199"
+
+        await client.call_tool("regenerate_freelancer_card", {"freelancer_id": freelancer_id})
+        read = _payload(await client.call_tool("get_freelancer", {"freelancer_id": freelancer_id}))
+        assert read["contatti_cv"]["email"] == "ada.lovelace@example.org"
+        assert read["contatti_cv"]["telefono"] == "+39 333 123 4567"
+        assert read["contatti_cv"]["aziende"] == ["Initech Labs"]
+        assert [d["campo"] for d in read["differenze_cv"]] == ["email", "telefono"]
+
+        others = [
+            await client.call_tool("get_freelancer_card", {"freelancer_id": freelancer_id}),
+            await client.call_tool("list_talenti", {"campi": ["tutti"]}),
+            await client.call_tool("get_talento", {"talento_id": freelancer_id}),
+        ]
+        for other in others:
+            body = json.dumps(_payload(other))
+            for secret in ("ada.lovelace@example.org", "333 123 4567", "Initech", "contatti_cv"):
+                assert secret not in body, secret
     _wipe(factory)
 
 

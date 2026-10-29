@@ -367,7 +367,7 @@ def test_a_prompt_version_nobody_can_write_is_refused_before_any_call(clean: Ses
     writer = RecordingCall([])
 
     with pytest.raises(ValidationFailed):
-        _run(clean, writer, RecordingCall([]), prompt_version=3)
+        _run(clean, writer, RecordingCall([]), prompt_version=4)
 
     assert writer.requests == [] and clean.scalars(select(CardEvalRun)).all() == []
 

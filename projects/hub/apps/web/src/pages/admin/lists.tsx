@@ -18,18 +18,19 @@ import {
 import {
   admin,
   ApiError,
-  type Comment,
   type CompaniesFilters,
   type Company,
   type CompanyOverride,
   type Freelancer,
   type FreelancerDraft,
   type FreelancerOverride,
+  type Note,
   type Remoto,
   type Talento,
   type TalentCloudGrant,
   type TalentiFilters,
 } from '@/lib/api'
+import { useFreelancerCard } from '@/hooks/use-freelancer-card'
 import { SEARCH_DEBOUNCE_MS, isFilterActive, useDebounce } from '@/lib/adminList'
 import { AMOUNT_PROBLEM, acceptedAmount, amountFilter, sentAmount } from '@/lib/amount'
 import {
@@ -50,7 +51,7 @@ import {
 } from '@/lib/format'
 import { cn } from '@rebase/ui/cn'
 import { AuditTrail } from './AuditTrail'
-import { Comments } from './Comments'
+import { Notes } from './Notes'
 import { DuplicateOf, DuplicatePill, DuplicatesLink } from './DuplicateMarks'
 import { CompanyOverrideDialog, FreelancerOverrideDialog, RecordLifecycle } from './Override'
 import { SchedaAnonima } from './SchedaAnonima'
@@ -854,33 +855,25 @@ export function AdminTalentoLead() {
   )
 }
 
+/** The state of a card or a request. A remark about it is a note (`Notes`, REB-856), never
+ *  a field here; the change lands in the record's trail with the admin who made it. */
 function StatusEditor({
   states,
   stato,
-  note,
   onSave,
   saving,
 }: {
   states: readonly string[]
   stato: string
-  note: string | null
-  onSave: (stato: string, note: string) => void
+  onSave: (stato: string) => void
   saving: boolean
 }) {
   const [draftState, setDraftState] = useState(stato)
-  const [draftNote, setDraftNote] = useState(note ?? '')
   return (
     <div className="space-y-3 border p-4">
-      <p className="text-sm font-medium">Stato e note</p>
+      <p className="text-sm font-medium">Stato</p>
       <StateFilter states={states} value={draftState} onChange={(value) => value && setDraftState(value)} />
-      <Textarea
-        aria-label="Note"
-        value={draftNote}
-        onChange={(event) => setDraftNote(event.target.value)}
-        rows={3}
-        placeholder="Una nota per chi rileggerà questa scheda"
-      />
-      <Button size="sm" onClick={() => onSave(draftState, draftNote)} disabled={saving}>
+      <Button size="sm" onClick={() => onSave(draftState)} disabled={saving || draftState === stato}>
         {saving ? 'Salvo…' : 'Salva'}
       </Button>
     </div>
@@ -977,28 +970,28 @@ export function AdminFreelancerDetail() {
     queryFn: async () => (await admin.freelancer(id)) as FreelancerDetail,
   })
   const move = useMutation({
-    mutationFn: ({ stato, note }: { stato: string; note: string }) =>
-      admin.moveFreelancer(id, stato, note.trim() || null),
-    // The PATCH answers the plain card, not the REB-284 sections, and its own
-    // `commenti` is always `[]` (REB-356, same cause as REB-355's own mutations
-    // below): merged onto the cached detail with `commenti` kept from the current
-    // cache, or a save would drop both the sections and the thread from view.
+    mutationFn: (stato: string) => admin.moveFreelancer(id, stato),
+    // The PATCH answers the plain card, not the REB-284 sections, and its own `note` is
+    // always `[]` (REB-356, same cause as REB-355's own mutations below): merged onto the
+    // cached detail with `note` kept from the current cache, or a save would drop both
+    // the sections and the thread from view. The change is a fresh trail entry.
     onSuccess: (updated: Freelancer) => {
       client.setQueryData<FreelancerDetail>(['freelancer', id], (current) =>
-        current && { ...current, ...updated, commenti: current.commenti },
+        current && { ...current, ...updated, note: current.note },
       )
       void client.invalidateQueries({ queryKey: ['freelancers'] })
+      void client.invalidateQueries({ queryKey: auditKey })
     },
   })
   // Every mutation REB-355 adds shares `move`'s own merge-not-replace contract, plus a
   // fresh read of the trail: an override, a clear, a delete or a restore all write a
-  // fresh `AdminAction` the admin expects to see without reloading the page. `commenti`
+  // fresh `AdminAction` the admin expects to see without reloading the page. `note`
   // is kept from the current cache rather than `updated`'s own (always `[]`, since none
   // of these routes' response models fill it -- only `get` does): replacing it here
   // would wipe the thread from view until the next full fetch.
   function mergeAndRefresh(updated: Freelancer) {
     client.setQueryData<FreelancerDetail>(['freelancer', id], (current) =>
-      current && { ...current, ...updated, commenti: current.commenti },
+      current && { ...current, ...updated, note: current.note },
     )
     void client.invalidateQueries({ queryKey: ['freelancers'] })
     void client.invalidateQueries({ queryKey: auditKey })
@@ -1017,12 +1010,12 @@ export function AdminFreelancerDetail() {
   const clearCv = useMutation({ mutationFn: () => admin.clearFreelancerCv(id), onSuccess: mergeAndRefresh })
   const del = useMutation({ mutationFn: () => admin.deleteFreelancer(id), onSuccess: mergeAndRefresh })
   const restore = useMutation({ mutationFn: () => admin.restoreFreelancer(id), onSuccess: mergeAndRefresh })
-  // The thread lives on the detail row, so a new comment goes into the same cache entry
-  // and nothing is fetched twice.
-  const onCommentAdded = (created: Comment) =>
-    client.setQueryData<FreelancerDetail>(['freelancer', id], (current) =>
-      current && { ...current, commenti: [created, ...current.commenti] },
-    )
+  // The thread lives on the detail row, so a change to a note goes into the same cache
+  // entry and nothing is fetched twice; it also wrote a trail entry, read again.
+  const onNotesChange = (update: (previous: Note[]) => Note[]) => {
+    client.setQueryData<FreelancerDetail>(['freelancer', id], (current) => current && { ...current, note: update(current.note) })
+    void client.invalidateQueries({ queryKey: auditKey })
+  }
   if (row.isError) return <Empty>Scheda non trovata.</Empty>
   if (row.isPending) return <Empty>Caricamento…</Empty>
   const f = row.data
@@ -1102,6 +1095,7 @@ export function AdminFreelancerDetail() {
       <div className="grid gap-6 p-6 lg:grid-cols-3">
         <dl className="space-y-3 text-sm lg:col-span-2">
           <Row label="Email"><a className="underline underline-offset-2" href={`mailto:${f.email}`}>{f.email}</a></Row>
+          <CvContactRows freelancerId={f.id} email={f.email} telefono={f.telefono ?? null} live={f.deleted_at === null} />
           <Row label="Posizione">{f.posizione ?? '—'}</Row>
           <Row label="Tariffa a giornata">
             {f.tariffa_giornaliera === null ? '—' : formatEuro(f.tariffa_giornaliera)}
@@ -1135,9 +1129,8 @@ export function AdminFreelancerDetail() {
           <StatusEditor
             states={FREELANCER_STATES}
             stato={f.stato}
-            note={f.note}
             saving={move.isPending}
-            onSave={(stato, note) => move.mutate({ stato, note })}
+            onSave={(stato) => move.mutate(stato)}
           />
         )}
       </div>
@@ -1175,7 +1168,7 @@ export function AdminFreelancerDetail() {
           void client.invalidateQueries({ queryKey: ['freelancer-card', id] })
         }}
       />
-      <Comments kind="freelancers" id={f.id} comments={f.commenti} onAdded={onCommentAdded} />
+      <Notes kind="freelancers" id={f.id} notes={f.note} onChange={onNotesChange} />
       <p className="px-6 pb-6">
         <Link to="/admin/talent" className="inline-flex items-center gap-1 text-sm underline-offset-2 hover:underline">
           <ArrowLeft className="size-4" /> Tutti i talenti
@@ -1189,6 +1182,41 @@ export function AdminFreelancerDetail() {
         saving={override.isPending}
         error={overrideFailure}
       />
+    </>
+  )
+}
+
+/**
+ * «Telefono» and, when it differs from the account's, «Email nel CV» (REB-855): the admin
+ * kept opening the CV for them. The phone is the profile's when the person gave one, else
+ * the one the CV states, marked «dal CV»; both come from the card the page already reads
+ * (`useFreelancerCard`), which only an admin's route returns.
+ */
+function CvContactRows({
+  freelancerId,
+  email,
+  telefono,
+  live,
+}: {
+  freelancerId: string
+  email: string
+  telefono: string | null
+  live: boolean
+}) {
+  const persona = useFreelancerCard(freelancerId, live).data?.persona ?? null
+  const cvEmail = persona?.email && persona.email.toLowerCase() !== email.toLowerCase() ? persona.email : null
+  return (
+    <>
+      <Row label="Telefono">
+        {telefono ?? (persona?.telefono ? `${persona.telefono} · dal CV` : '—')}
+      </Row>
+      {cvEmail && (
+        <Row label="Email nel CV">
+          <a className="underline underline-offset-2" href={`mailto:${cvEmail}`}>
+            {cvEmail}
+          </a>
+        </Row>
+      )}
     </>
   )
 }
@@ -1426,10 +1454,9 @@ export function AdminCompanyDetail() {
   const auditKey = ['audit', 'companies', id] as const
   const row = useQuery({ queryKey: ['company', id], queryFn: () => admin.company(id) })
   const move = useMutation({
-    mutationFn: ({ stato, note }: { stato: string; note: string }) =>
-      admin.moveCompany(id, stato, note.trim() || null),
-    // The PATCH's own `commenti` is always `[]` (REB-356, same cause as REB-355's own
-    // mutations below): merged onto the cached detail with `commenti` kept from the
+    mutationFn: (stato: string) => admin.moveCompany(id, stato),
+    // The PATCH's own `note` is always `[]` (REB-356, same cause as REB-355's own
+    // mutations below): merged onto the cached detail with `note` kept from the
     // current cache, or a save would wipe the thread from view. The same for
     // `talent_cloud_grant` (REB-518), which only `get` fills: a save must not show the
     // talent cloud closed while its grant is live.
@@ -1438,16 +1465,17 @@ export function AdminCompanyDetail() {
         current && {
           ...current,
           ...updated,
-          commenti: current.commenti,
+          note: current.note,
           talent_cloud_grant: current.talent_cloud_grant,
         },
       )
       void client.invalidateQueries({ queryKey: ['companies'] })
+      void client.invalidateQueries({ queryKey: auditKey })
     },
   })
   // Every mutation REB-355 adds shares `move`'s own merge-not-replace contract, plus a
   // fresh read of the trail: an override, a delete or a restore all write a fresh
-  // `AdminAction` the admin expects to see without reloading the page. `commenti` is
+  // `AdminAction` the admin expects to see without reloading the page. `note` is
   // kept from the current cache rather than `updated`'s own (always `[]`, since none of
   // these routes' response models fill it -- only `get` does): replacing it here would
   // wipe the thread from view until the next full fetch. `talent_cloud_grant` is kept
@@ -1457,7 +1485,7 @@ export function AdminCompanyDetail() {
       current && {
         ...current,
         ...updated,
-        commenti: current.commenti,
+        note: current.note,
         talent_cloud_grant: current.talent_cloud_grant,
       },
     )
@@ -1485,10 +1513,10 @@ export function AdminCompanyDetail() {
       void client.invalidateQueries({ queryKey: ['company', id] })
     },
   })
-  const onCommentAdded = (created: Comment) =>
-    client.setQueryData<Company>(['company', id], (current) =>
-      current && { ...current, commenti: [created, ...current.commenti] },
-    )
+  const onNotesChange = (update: (previous: Note[]) => Note[]) => {
+    client.setQueryData<Company>(['company', id], (current) => current && { ...current, note: update(current.note) })
+    void client.invalidateQueries({ queryKey: auditKey })
+  }
   // The door of the talent cloud (REB-518): the answer is the grant, live after «Apri»
   // and closed after «Revoca», kept on the cached request as its own read carries it.
   function setGrant(grant: TalentCloudGrant | null) {
@@ -1554,9 +1582,8 @@ export function AdminCompanyDetail() {
           <StatusEditor
             states={COMPANY_STATES}
             stato={c.stato}
-            note={c.note}
             saving={move.isPending}
-            onSave={(stato, note) => move.mutate({ stato, note })}
+            onSave={(stato) => move.mutate(stato)}
           />
         )}
       </div>
@@ -1578,7 +1605,7 @@ export function AdminCompanyDetail() {
         canRevert={c.deleted_at === null}
         onReverted={() => void client.invalidateQueries({ queryKey: ['company', id] })}
       />
-      <Comments kind="companies" id={c.id} comments={c.commenti} onAdded={onCommentAdded} />
+      <Notes kind="companies" id={c.id} notes={c.note} onChange={onNotesChange} />
       <p className="px-6 pb-6">
         <Link to="/admin/companies" className="inline-flex items-center gap-1 text-sm underline-offset-2 hover:underline">
           <ArrowLeft className="size-4" /> Tutte le aziende

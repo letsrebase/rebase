@@ -39,7 +39,6 @@ from rebase_core.campaigns.sender import RecordingCampaignSender
 from rebase_core.campaigns.service import CampaignService
 from rebase_core.campaigns.states import JOURNEY_STATES, PHASE_ONE_STATES, candidates_for_state
 from rebase_core.campaigns.templates import STATE_TEMPLATES
-from rebase_core.comments import CommentService
 from rebase_core.models import (
     CAMPAIGN_ACTIONS,
     CAMPAIGN_DESTINATIONS,
@@ -47,6 +46,7 @@ from rebase_core.models import (
     CampaignRecipient,
     Login,
 )
+from rebase_core.notes import NoteService
 
 
 def test_every_phase_one_state_has_a_template_that_fits_the_columns() -> None:
@@ -83,7 +83,9 @@ def test_a_cv_uploaded_after_the_snapshot_counts_and_one_from_before_does_not(
     assert done_at(clean, row, "cv") is None
     card.cv_size, card.cv_filename, card.cv_bytes = 4, "cv.pdf", b"%PDF"
     clean.commit()
-    CommentService(clean).add("freelancer", card.id, "CV caricato dalla persona", "Ada Lovelace")
+    NoteService(clean).add(
+        "freelancer", card.id, "CV caricato dalla persona", autore_id=card.user_id, fonte="persona"
+    )
     assert done_at(clean, row, "cv") is not None
 
 

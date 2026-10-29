@@ -395,11 +395,13 @@ the repository takes TLS away on the spot.
 
 Since 2026-09-12 (REB-187) PostHog's data warehouse reads the hub's production database
 (`rebase` on 55435: `signups`, `freelancers`, `companies`, `guide_downloads`, `logins`,
-`comments`) and the CRM's production registry (`pigrocrm_tenants` on 55432: `tenants`),
+`notes`) and the CRM's production registry (`pigrocrm_tenants` on 55432: `tenants`),
 so the events the surfaces send can be joined to the rows behind them. `logins` was
 `member_logins` until the identity merge renamed it (REB-281, migration 0012); the grant
 followed the table, the sync did not, and PostHog paused it with «something this sync
-depends on no longer exists». The preview databases (55434, 55436) are not connected.
+depends on no longer exists». `notes` was `comments` until REB-856 (migration 0042)
+made it the one thread of notes: the same break, so after that deploy the schema is refreshed
+and the sync re-pointed in PostHog, and the old `comments` rows over there deleted. The preview databases (55434, 55436) are not connected.
 The design is `docs/design/2026-09-12-posthog-analytics-design.md`. Both Postgres answer on the
 loopback only, so PostHog reaches them through an SSH tunnel, and the arrangement on the
 server is:

@@ -71,9 +71,13 @@ from rebase_core.card_draft import (
     HUB,
     CardDraft,
     CardFonti,
+    CardPersona,
     Conflict,
+    clean_persona,
     conflicts,
     dated_by,
+    differenze,
+    phone_digits,
     verify_fonti,
 )
 from rebase_core.card_guard import KnownIdentifiers, identifying
@@ -103,11 +107,13 @@ from rebase_core.sources import (
 )
 from rebase_core.team_schemas import (
     Card,
+    CardPersonaRead,
     CardProvenance,
     CardsRefreshed,
     ConflictRead,
     FreelancerCardAdminRead,
     FreelancerCardRead,
+    PersonaDifference,
     SourceProvenance,
 )
 
@@ -125,9 +131,11 @@ REGENERATE_LOCK = "regenerate_stale"
 # says which one wrote it, and an evaluation run which one it measured. Version 1 is
 # the prompt of REB-799 and REB-802, the CV alone; a card with no version recorded is
 # version 1. Version 2 (REB-839) reads the person's other sources too and answers a
-# private `CardDraft`. A bump spends nothing by itself: the cards of another version
-# are listed for an admin to regenerate (`CardWriter.stale_cards`).
-PROMPT_VERSION = 2
+# private `CardDraft`. Version 3 (REB-855) also reads the person's identity and contacts
+# out of the CV, in `persona`, for the admin's named card. A bump spends nothing by
+# itself: the cards of another version are listed for an admin to regenerate
+# (`CardWriter.stale_cards`); the hourly `refresh_stale` only writes a card whose CV is new.
+PROMPT_VERSION = 3
 # The versions `CardWriter.compose` can still write, for an evaluation to measure the
 # present prompt against the previous one (`rebase cards-eval --prompt-version`).
 PROMPT_VERSIONS = (1, PROMPT_VERSION)
@@ -167,6 +175,7 @@ _RETIRED: dict[str, Any] = {
     "source_hashes": null(),
     "conflicts": null(),
     "thinking_tokens": None,
+    "persona": null(),
 }
 
 # What the admin reads beside the card: ours, short, and never what the model said.
@@ -177,8 +186,8 @@ _FAILURES: dict[Failure, str] = {
     "shape": "La risposta di Claude non era una scheda valida.",
     "identifying": "La scheda cita la persona o un indirizzo.",
     "source_identifying": (
-        "La scheda cita un account, un repository, un sito o un datore di lavoro "
-        "della persona, anche dopo la riscrittura."
+        "La scheda cita un account, un repository, un sito, un datore di lavoro, un nome o "
+        "un recapito della persona, anche dopo la riscrittura."
     ),
     "gendered": "La scheda rivela il genere della persona anche dopo la riscrittura.",
     # True of every outage, the backlog's (asked again by the next run) and a
@@ -226,6 +235,55 @@ _HER_PARTICIPLE = re.compile(
     r"(specializzata|esperta|laureata|certificata|appassionata|diplomata)\b",
     re.IGNORECASE,
 )
+
+
+# The key a stored persona carries beside its fields: the SHA-256 of the CV it was read
+# from. A write for another CV that has no persona of its own retires the stored one
+# (`CardWriter._save`), so a person's contacts never outlive the CV they came from. Not a
+# field of `CardPersonaRead`: reads ignore it.
+PERSONA_CV = "cv_sha256"
+
+
+def _stored_persona(persona: CardPersonaRead, digest: str) -> dict[str, Any]:
+    return {**persona.model_dump(mode="json"), PERSONA_CV: digest}
+
+
+def stored_persona(session: Session, freelancer_id: UUID) -> CardPersonaRead | None:
+    """The named card stored for the person, or `None` (no row, no persona read yet, a card
+    written before prompt version 3, or a persona read from a CV that is no longer the one
+    on file: its `PERSONA_CV` tag differs from the SHA-256 of the current CV, so a person's
+    old contacts are never shown beside a new CV). For the admin's page and the admin's MCP
+    tool: nothing else reads `freelancer_cards.persona`."""
+    found = session.execute(
+        select(FreelancerCard.persona, func.encode(func.sha256(Freelancer.cv_bytes), "hex"))
+        .join(Freelancer, Freelancer.id == FreelancerCard.freelancer_id)
+        .where(FreelancerCard.freelancer_id == freelancer_id)
+    ).one_or_none()
+    if found is None or found[0] is None or found[0].get(PERSONA_CV) != found[1]:
+        return None
+    return CardPersonaRead.model_validate(found[0])
+
+
+def persona_differences(
+    session: Session, persona: CardPersonaRead | None, freelancer_id: UUID
+) -> list[PersonaDifference]:
+    """Where the CV's persona disagrees with the profile (`users.nome`, `cognome`,
+    `email`, `telefono`, `linkedin_url`): `card_draft.differenze`, read off the person's
+    account. Empty without a persona."""
+    if persona is None:
+        return []
+    row = session.get(Freelancer, freelancer_id)
+    user = session.get(User, row.user_id) if row is not None else None
+    if user is None:
+        return []
+    return differenze(
+        persona,
+        nome=user.nome,
+        cognome=user.cognome,
+        email=user.email,
+        telefono=user.telefono,
+        linkedin_url=user.linkedin_url,
+    )
 
 
 def _stored_gendered(stored: Any) -> bool:
@@ -313,21 +371,32 @@ candidata» o «il candidato».
 something else."""
 
 
-# What version 2 adds to the rules above (REB-839). The version line comes first, the
-# output's three parts follow; the second block is added only for a person with a source
-# beside the CV, so a person with the CV alone is asked what version 1 asked, in the same
-# words, plus these lines.
-_VERSION_LINE = "Prompt version: 2"
-_OUTPUT_V2 = """\
-The answer has three parts, in the JSON schema you are given:
-- card: the card described above, with every rule above.
+# What versions 2 and 3 add to the rules above (REB-839, REB-855). The version line comes
+# first, the output's four parts follow; the sources block is added only for a person with
+# a source beside the CV, so a person with the CV alone is asked what version 1 asked, in
+# the same words, plus these lines.
+_VERSION_LINE = "Prompt version: 3"
+_OUTPUT_V3 = """\
+The answer has four parts, in the JSON schema you are given:
+- card: the card described above, with every rule above. It is the only part that is \
+ever shown to companies, so the person's name, contacts, links and employers appear \
+nowhere in it.
 - fonti: for each field of the card, the keys of the sources that said it, taken only \
 from the "Sources available" line of the user turn (without that line the only source is \
 "cv", the CV). An empty list when none did. Never invent a key.
 - employers: the name of every employer, client or other organisation the CV or any \
 source block names, as it is written there, whether or not the card mentions it (a \
 GitHub bio that says "Backend @ Acme", a page that says "ex-Globex"). A check keeps them \
-out of the card; they are never shown or kept."""
+out of the card; only the rebase admins read them, on the person's own page.
+- persona: who the person is, for the rebase admins only, never for the card: nome and \
+cognome (the person's own first name and surname as the CV writes them, without titles), \
+email, telefono (the number alone, as written, with the country prefix if there is one), \
+citta (the city where the person lives, as the CV writes it), linkedin_url (the person's \
+own LinkedIn profile) and altri_link (at most 5 other web addresses of the person: their \
+site, GitHub, portfolio). Copy only what the CV or a source block states literally; null \
+(or an empty list) for what none states. Never guess, complete or invent a value, never \
+take one of a referee, a company or a client, and never derive an address from the name. \
+Personal data goes only here: nowhere else in the answer."""
 _SOURCES_V2 = """\
 The user turn also holds sources beside the CV, each in a <source key="..."> block that \
 starts with a header line (FONTE: ...):
@@ -347,7 +416,7 @@ lead).
 
 
 def _system(with_sources: bool) -> str:
-    parts = [_SYSTEM, f"{_VERSION_LINE}\n\n{_OUTPUT_V2}"]
+    parts = [_SYSTEM, f"{_VERSION_LINE}\n\n{_OUTPUT_V3}"]
     if with_sources:
         parts.append(_SOURCES_V2)
     return "\n\n".join(parts)
@@ -468,9 +537,9 @@ NEUTRAL_AGAIN = (
 # the fields found. Fields, never the words: a log or a message built from this never
 # repeats an identifier.
 IDENTIFYING_AGAIN = (
-    "La scheda contiene un identificativo della persona (un account, un repository, un sito "
-    "o un datore di lavoro): riscrivila senza, descrivendo i repository per quello che "
-    "fanno e i datori di lavoro per il loro settore."
+    "La scheda contiene un identificativo della persona (un account, un repository, un sito, "
+    "un datore di lavoro, un nome o un recapito): riscrivila senza, descrivendo i repository "
+    "per quello che fanno e i datori di lavoro per il loro settore."
 )
 
 
@@ -514,6 +583,15 @@ def _draft_from(response: LlmResponse, known: KnownIdentifiers) -> CardDraft | F
             card=draft,
             fonti=CardFonti.model_validate({name: [] for name in FONTI_FIELDS}),
             employers=[],
+            persona=CardPersona(
+                nome=None,
+                cognome=None,
+                email=None,
+                telefono=None,
+                citta=None,
+                linkedin_url=None,
+                altri_link=[],
+            ),
         )
     if not isinstance(draft, CardDraft):
         return "shape"
@@ -541,6 +619,53 @@ def known_identifiers(
         repo_names=repos,
         hostnames=link_hostnames(links),
         employers=list(facts.clients),
+    )
+
+
+def _persona_of(response: LlmResponse) -> tuple[CardDraft, CardPersonaRead] | None:
+    """The draft the seam parsed and its cleaned persona, whether or not the card in it was
+    accepted: a refusal, a cut answer and a body that is not a `CardDraft` have none. What
+    the model read of the person's contacts is kept even when the guard refuses the card
+    (REB-855)."""
+    draft = response.parsed
+    if response.stop_reason in ("refusal", "max_tokens") or not isinstance(draft, CardDraft):
+        return None
+    return draft, clean_persona(draft.persona, draft.employers)
+
+
+def _fill(new: CardPersonaRead, old: CardPersonaRead) -> CardPersonaRead:
+    """`new`, with every field it leaves empty taken from `old`: a rewrite of the card
+    that forgot a phone the first answer had read does not lose it; the companies of both
+    are kept."""
+    return CardPersonaRead(
+        **{
+            name: getattr(new, name) or getattr(old, name)
+            for name in ("nome", "cognome", "email", "telefono", "citta", "linkedin_url")
+        },
+        altri_link=list(dict.fromkeys([*new.altri_link, *old.altri_link])),
+        aziende=list(dict.fromkeys([*new.aziende, *old.aziende])),
+    )
+
+
+def _with_persona(
+    known: KnownIdentifiers, draft: CardDraft, persona: CardPersonaRead
+) -> KnownIdentifiers:
+    """`known` plus what the CV itself says of the person (REB-855): its spelling of the
+    name, the email address and phone number, and the hostnames and GitHub account of its
+    links, so the anonymous card is checked against them too. The model's own words for an
+    email or a phone are read as well as the cleaned ones: a value dropped from the named
+    card for its shape is still a contact that must not reach the anonymous one."""
+    links = [link for link in (persona.linkedin_url, *persona.altri_link) if link]
+    raw = draft.persona
+    phones = {phone_digits(value) for value in (persona.telefono, raw.telefono)}
+    return replace(
+        known,
+        cv_cognome=persona.cognome or "",
+        cv_nome=persona.nome or "",
+        emails=[email for email in {persona.email, raw.email} if email and "@" in email],
+        phones=[digits for digits in phones if digits],
+        github_login=known.github_login or github_login_of(links),
+        hostnames=list(dict.fromkeys([*known.hostnames, *link_hostnames(links)])),
     )
 
 
@@ -608,7 +733,9 @@ class Composed:
     `fonti`, `conflicts` and `input_hashes` are what the card row stores beside the card
     (REB-839): the sources the model says supported each field, checked; the
     disagreements the code found; and the hash of every input the prompt was built from.
-    The employers the model reported are not here: they never leave the call."""
+    `persona` (REB-855) is the named card the same answer held: kept with the card, and also
+    when the guard refused the card, since the contacts are not the card's. The employers
+    the model reported are in it, as `aziende`, and nowhere else."""
 
     card: Card | None
     failure: Failure | None
@@ -620,6 +747,7 @@ class Composed:
     fonti: dict[str, list[str]] = field(default_factory=dict)
     conflicts: list[Conflict] = field(default_factory=list)
     input_hashes: dict[str, str] = field(default_factory=dict)
+    persona: CardPersonaRead | None = None
 
 
 @dataclass(frozen=True)
@@ -851,8 +979,14 @@ class CardWriter:
                 source_hashes=stored.source_hashes or {},
                 stale=self.stale_of(freelancer_id),
             )
+        persona = stored_persona(self.session, freelancer_id)
         return FreelancerCardAdminRead.model_validate(
-            {**base.model_dump(), "provenance": provenance}
+            {
+                **base.model_dump(),
+                "provenance": provenance,
+                "persona": persona,
+                "differenze": persona_differences(self.session, persona, freelancer_id),
+            }
         )
 
     def input_hashes(self, freelancer_id: UUID) -> dict[str, str]:
@@ -1038,12 +1172,12 @@ class CardWriter:
         What the model says it used for each field is checked against the sources that
         exist (`verify_fonti`); years claimed on no source that dates a profession are
         dropped and recorded; a hub that shows more real work than the card counts is
-        recorded. The employers the model reports are read by the guard and gone with this
-        call.
+        recorded. The employers the model reports are read by the guard and kept, with the
+        persona, for the admin's named card (REB-855).
 
         `prompt_version` 1 is for an evaluation's baseline (REB-842): the CV alone, version
         1's words and guards (the person's name, an address, the gender), the answer a
-        bare card. Nothing live is ever written under it."""
+        bare card, and no persona. Nothing live is ever written under it."""
         if self.llm is None:
             raise LlmNotConfigured(TASK_OFF)
         prepared = self.prepare(freelancer_id, prompt_version)
@@ -1102,6 +1236,7 @@ class CardWriter:
         request, known = prepared.request, prepared.known
         sources, facts, hashes = prepared.sources, prepared.facts, prepared.hashes
         first = _draft_from(response, known)
+        parsed = _persona_of(response)
         if not isinstance(first, CardDraft):
             return Composed(
                 None,
@@ -1112,24 +1247,31 @@ class CardWriter:
                 response.output_tokens,
                 response.thinking_tokens,
                 input_hashes=hashes,
+                persona=parsed[1] if parsed is not None else None,
             )
         draft = first
+        persona = clean_persona(first.persona, first.employers)
         employers = [*known.employers, *first.employers]
         model, provider = response.model, response.provider
         input_tokens = response.input_tokens
         output_tokens = response.output_tokens
         thinking_tokens = response.thinking_tokens
         gendered = _gendered(draft.card)
-        leaks = identifying(draft.card, replace(known, employers=employers))
+        # The anonymous card is read against the account's identifiers and against what the
+        # CV says of the person (REB-855); the persona itself is not read by any guard.
+        leaks = identifying(
+            draft.card, replace(_with_persona(known, first, persona), employers=employers)
+        )
         if (gendered or leaks) and response.text is not None:
             # One rewrite, then a gate (REB-574, REB-802, REB-839): a card that still
-            # gives the gender away, or names an employer, an account, a repository or a
-            # site, is failed, never written, with its sentence beside the old card if
-            # the CV's own had one. The row keeps the hash of the CV that failed, so the
-            # same bytes are not paid for again until an admin asks with «Rigenera
-            # scheda». A rewrite that is a refusal, a bad shape or a card that names the
-            # person leaves the first card in hand, still at fault. An outage on the
-            # rewrite is the provider's, as on the first call: no hash, asked again.
+            # gives the gender away, or names an employer, an account, a repository, a
+            # site, the person's name or a contact, is failed, never written, with its
+            # sentence beside the old card if the CV's own had one. The row keeps the hash
+            # of the CV that failed, so the same bytes are not paid for again until an
+            # admin asks with «Rigenera scheda». A rewrite that is a refusal, a bad shape
+            # or a card that names the person leaves the first card in hand, still at
+            # fault. An outage on the rewrite is the provider's, as on the first call: no
+            # hash, asked again.
             logger.info(
                 "card for freelancer %s asked again (gender: %s, identifiers: %s)",
                 freelancer_id,
@@ -1145,6 +1287,9 @@ class CardWriter:
             output_tokens += again.output_tokens
             thinking_tokens += again.thinking_tokens
             rewritten = _draft_from(again, known)
+            if (again_parsed := _persona_of(again)) is not None:
+                # What the rewrite read, with what the first answer had where it forgot.
+                persona = _fill(again_parsed[1], persona)
             if isinstance(rewritten, CardDraft):
                 draft, model, provider = rewritten, again.model, again.provider
                 # The rewrite may forget an employer the first answer named; the guard
@@ -1160,8 +1305,11 @@ class CardWriter:
                     output_tokens,
                     thinking_tokens,
                     input_hashes=hashes,
+                    persona=persona,
                 )
-            if identifying(draft.card, replace(known, employers=employers)):
+            if identifying(
+                draft.card, replace(_with_persona(known, draft, persona), employers=employers)
+            ):
                 return Composed(
                     None,
                     "source_identifying",
@@ -1171,6 +1319,7 @@ class CardWriter:
                     output_tokens,
                     thinking_tokens,
                     input_hashes=hashes,
+                    persona=persona,
                 )
         card, fonti, found = _provenance(draft, sources, facts)
         return Composed(
@@ -1184,6 +1333,7 @@ class CardWriter:
             fonti=fonti,
             conflicts=found,
             input_hashes=hashes,
+            persona=persona,
         )
 
     def _write(self, freelancer_id: UUID, *, force: bool, only_stale: bool = False) -> Outcome:
@@ -1232,7 +1382,7 @@ class CardWriter:
         synchronous write and the batch's apply both end here."""
         if composed.card is None:
             assert composed.failure is not None
-            return self._fail(freelancer_id, digest, composed.failure)
+            return self._fail(freelancer_id, digest, composed.failure, composed.persona)
         saved = self._save(
             freelancer_id,
             digest,
@@ -1255,6 +1405,11 @@ class CardWriter:
                 "source_hashes": composed.input_hashes,
                 "conflicts": [conflict._asdict() for conflict in composed.conflicts],
                 "thinking_tokens": composed.thinking_tokens,
+                "persona": (
+                    _stored_persona(composed.persona, digest)
+                    if composed.persona is not None
+                    else null()
+                ),
             },
         )
         if not saved:
@@ -1275,7 +1430,13 @@ class CardWriter:
         logger.warning("card for freelancer %s not written: %s", freelancer_id, "refused")
         return "unavailable"
 
-    def _fail(self, freelancer_id: UUID, digest: str, kind: Failure) -> Outcome:
+    def _fail(
+        self,
+        freelancer_id: UUID,
+        digest: str,
+        kind: Failure,
+        persona: CardPersonaRead | None = None,
+    ) -> Outcome:
         """The sentence beside the card, and the failed CV's hash unless the failure was
         the provider's: an outage keeps nothing that would stop the next attempt. Every
         failure, an outage too, retires a card written from another CV than the one
@@ -1283,9 +1444,17 @@ class CardWriter:
         stay in the catalogue until Claude answers again. A card of the same CV stays,
         except, after a `gendered` failure, one that itself gives the gender away (a card
         written before REB-802 turned the guard into a gate): the catalogue would go on
-        showing it to companies beside an error nobody reads there."""
+        showing it to companies beside an error nobody reads there. The persona the
+        model read (REB-855) is stored whatever the failure, when there is one: the
+        contacts are not the card's, and the admin wants them even when the guard refused
+        the card."""
         outage = kind == "unavailable"
-        values = {"error": _FAILURES[kind], "error_cv_sha256": None if outage else digest}
+        values: dict[str, Any] = {
+            "error": _FAILURES[kind],
+            "error_cv_sha256": None if outage else digest,
+        }
+        if persona is not None:
+            values["persona"] = _stored_persona(persona, digest)
         if not self._save(
             freelancer_id,
             digest,
@@ -1325,17 +1494,21 @@ class CardWriter:
             self.session.commit()
             logger.info("card for freelancer %s not written: the CV changed", freelancer_id)
             return False
-        if retire_other or retire_gendered:
-            stored = self.session.execute(
-                select(FreelancerCard.cv_sha256, FreelancerCard.card).where(
-                    FreelancerCard.freelancer_id == freelancer_id
-                )
-            ).one_or_none()
-            if stored is not None:
-                written_from, written = stored
-                other = retire_other and written_from is not None and written_from != digest
-                if other or (retire_gendered and _stored_gendered(written)):
-                    values = {**_RETIRED, **values}
+        stored = self.session.execute(
+            select(FreelancerCard.cv_sha256, FreelancerCard.card, FreelancerCard.persona).where(
+                FreelancerCard.freelancer_id == freelancer_id
+            )
+        ).one_or_none()
+        if stored is not None:
+            written_from, written, named = stored
+            other = retire_other and written_from is not None and written_from != digest
+            if other or (retire_gendered and _stored_gendered(written)):
+                values = {**_RETIRED, **values}
+            # The named card belongs to the CV it was read from (`PERSONA_CV` in the stored
+            # value): a write for another CV that read none of its own never leaves the old
+            # one in place, whatever the card's own state.
+            if "persona" not in values and named is not None and named.get(PERSONA_CV) != digest:
+                values = {**values, "persona": null()}
         insert = pg_insert(FreelancerCard).values(freelancer_id=freelancer_id, **values)
         self.session.execute(
             insert.on_conflict_do_update(

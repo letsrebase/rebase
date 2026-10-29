@@ -20,7 +20,7 @@ from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 import rebase_core.campaigns.outcome as outcome_module
-from rebase_core.campaigns.actions import CV_COMMENT_PREFIX, done_at
+from rebase_core.campaigns.actions import CV_NOTE_PREFIX, done_at
 from rebase_core.campaigns.outcome import STAMP_WINDOW, stamp_outcomes
 from rebase_core.campaigns.schemas import ScheduleRequest
 from rebase_core.campaigns.sender import RecordingCampaignSender
@@ -29,10 +29,10 @@ from rebase_core.campaigns.tick import run_tick
 from rebase_core.models import (
     Campaign,
     CampaignRecipient,
-    Comment,
     Company,
     Freelancer,
     Login,
+    Note,
     User,
 )
 
@@ -95,11 +95,12 @@ def test_a_cv_is_stamped_at_the_comment_the_member_service_writes(clean: Session
         update(Freelancer).where(Freelancer.id == card.id).values(cv_size=4, cv_bytes=b"%PDF")
     )
     clean.add(
-        Comment(
+        Note(
             entity_type="freelancer",
             entity_id=card.id,
-            testo=f"{CV_COMMENT_PREFIX}: cv.pdf",
+            testo=f"{CV_NOTE_PREFIX}: cv.pdf",
             autore="Ada",
+            fonte="persona",
             created_at=at,
         )
     )
@@ -366,11 +367,12 @@ def test_a_row_whose_stamping_raises_is_skipped_the_rest_still_stamped(
             update(Freelancer).where(Freelancer.id == card.id).values(cv_size=4, cv_bytes=b"%PDF")
         )
         clean.add(
-            Comment(
+            Note(
                 entity_type="freelancer",
                 entity_id=card.id,
-                testo=f"{CV_COMMENT_PREFIX}: cv.pdf",
+                testo=f"{CV_NOTE_PREFIX}: cv.pdf",
                 autore="Ada",
+                fonte="persona",
                 created_at=at,
             )
         )

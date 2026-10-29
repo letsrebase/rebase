@@ -68,7 +68,7 @@ def clean(hub_session: Session) -> Session:
     yield hub_session  # type: ignore[misc]
     hub_session.rollback()
     hub_session.execute(text("DELETE FROM admin_actions"))
-    hub_session.execute(text("DELETE FROM comments"))
+    hub_session.execute(text("DELETE FROM notes"))
     hub_session.execute(text("DELETE FROM freelancers"))
     hub_session.execute(text("DELETE FROM companies"))
     hub_session.execute(text("DELETE FROM users"))

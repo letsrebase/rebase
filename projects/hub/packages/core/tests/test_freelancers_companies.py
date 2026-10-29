@@ -6,10 +6,12 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 import pytest
+from admins import an_admin
 from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from rebase_core.audit import AdminActionService
 from rebase_core.companies import CompanyService
 from rebase_core.config import Settings
 from rebase_core.errors import NotFound, ValidationFailed
@@ -45,7 +47,8 @@ def _application(email: str = "ada@studio.it", **extra: object) -> FreelancerCre
 def clean(hub_session: Session) -> Session:
     yield hub_session  # type: ignore[misc]
     hub_session.rollback()
-    hub_session.execute(text("DELETE FROM comments"))
+    hub_session.execute(text("DELETE FROM admin_actions"))
+    hub_session.execute(text("DELETE FROM notes"))
     hub_session.execute(text("DELETE FROM freelancers"))
     hub_session.execute(text("DELETE FROM companies"))
     hub_session.execute(text("DELETE FROM users"))
@@ -83,7 +86,9 @@ def test_a_second_application_from_the_same_address_leaves_the_card_unchanged(
     with the same read the first application produced."""
     service = FreelancerService(clean)
     first, _ = service.apply(_application(), PDF, "cv.pdf", "application/pdf")
-    service.set_status(first.id, StatusChange(stato="contattato", note="ha risposto"))
+    service.set_status(
+        first.id, StatusChange(stato="contattato"), admin_id=an_admin(clean), fonte="web"
+    )
     again, created_again = service.apply(
         _application(
             email="ADA@studio.it", posizione="Tech lead", tariffa_giornaliera=Decimal("600")
@@ -99,7 +104,7 @@ def test_a_second_application_from_the_same_address_leaves_the_card_unchanged(
         Decimal("450.00"),
         "cv.pdf",
     )
-    assert (again.stato, again.note) == ("contattato", "ha risposto")
+    assert again.stato == "contattato"
     assert service.cv(again.id).content == PDF
     assert clean.execute(text("SELECT count(*) FROM freelancers")).scalar() == 1
 
@@ -165,7 +170,9 @@ def test_the_list_is_newest_first_filters_by_state_and_counts_the_whole(clean: S
         service.apply(_application(email=f"p{i}@studio.it"), PDF, "cv.pdf", "")[0].id
         for i in range(3)
     ]
-    service.set_status(ids[0], StatusChange(stato="scartato"))
+    service.set_status(
+        ids[0], StatusChange(stato="scartato"), admin_id=an_admin(clean), fonte="web"
+    )
     page = service.list_recent(limit=2)
     assert page.totale == 3 and [item.id for item in page.items] == [ids[2], ids[1]]
     only_new = service.list_recent(stato="nuovo")
@@ -176,7 +183,9 @@ def test_a_state_outside_the_four_is_refused_and_a_missing_row_is_not_found(clea
     service = FreelancerService(clean)
     row, _ = service.apply(_application(), PDF, "cv.pdf", "")
     with pytest.raises(ValidationFailed):
-        service.set_status(row.id, StatusChange(stato="forse"))
+        service.set_status(
+            row.id, StatusChange(stato="forse"), admin_id=an_admin(clean), fonte="web"
+        )
     with pytest.raises(NotFound):
         service.get(uuid4())
 
@@ -204,10 +213,21 @@ def test_a_company_request_is_a_row_every_time(clean: Session) -> None:
     assert "\n" in first.progetto
     assert first_existed is False and second_existed is True
     assert service.list_recent().totale == 2
-    moved = service.set_status(first.id, StatusChange(stato="in_corso", note="  "))
-    assert (moved.stato, moved.note) == ("in_corso", None)
+    admin = an_admin(clean)
+    moved = service.set_status(
+        first.id, StatusChange(stato="in_corso"), admin_id=admin, fonte="mcp"
+    )
+    assert moved.stato == "in_corso"
+    # Where it stood and by which door is in the trail; the same state again writes nothing.
+    service.set_status(first.id, StatusChange(stato="in_corso"), admin_id=admin, fonte="mcp")
+    entries = AdminActionService(clean).timeline("company", first.id)
+    assert [(e.kind, e.admin_id, e.payload) for e in entries] == [
+        ("status_changed", admin, {"before": "nuovo", "after": "in_corso", "fonte": "mcp"})
+    ]
     with pytest.raises(ValidationFailed):
-        service.set_status(first.id, StatusChange(stato="aperto"))
+        service.set_status(first.id, StatusChange(stato="aperto"), admin_id=admin, fonte="web")
+    with pytest.raises(ValidationError):
+        StatusChange(stato="in_corso", note="una nota")  # type: ignore[call-arg]
 
 
 @pytest.mark.parametrize(
@@ -280,7 +300,7 @@ def test_a_card_from_a_signup_is_incomplete_and_carries_the_signup_attribution(
     clean: Session,
 ) -> None:
     signup_id = _signup(clean, utm=SignupUtm(utm_source="openai"))
-    read = FreelancerService(clean).draft_from_signup(signup_id, _draft(), "Claude")
+    read = FreelancerService(clean).draft_from_signup(signup_id, _draft(), an_admin(clean), "web")
     assert read.email == "ada@studio.it" and read.utm_source == "openai"
     assert read.compilata_da == "admin" and read.completa is False
     assert (read.cv_filename, read.cv_size, read.tariffa_giornaliera, read.remoto) == (
@@ -291,9 +311,9 @@ def test_a_card_from_a_signup_is_incomplete_and_carries_the_signup_attribution(
     )
     assert read.posizione == "Backend developer" and read.links == ["https://github.com/ada"]
     assert read.stato == "nuovo"
-    assert len(read.commenti) == 1
-    comment = read.commenti[0]
-    assert comment.autore == "Claude"
+    assert len(read.note) == 1
+    comment = read.note[0]
+    assert (comment.autore, comment.fonte, comment.modificabile) == ("Claude", "web", True)
     assert comment.testo.startswith("Scheda creata dall'iscrizione del ")
     assert "https://www.linkedin.com/in/ada" in comment.testo and "https://ada.dev" in comment.testo
     # «Iscrizioni» can now point at it.
@@ -308,16 +328,17 @@ def test_a_second_research_replaces_the_researched_fields_and_leaves_the_admins(
 ) -> None:
     service = FreelancerService(clean)
     signup_id = _signup(clean)
-    first = service.draft_from_signup(signup_id, _draft(), "Claude")
-    service.set_status(first.id, StatusChange(stato="contattato", note="chiamata fatta"))
+    first = service.draft_from_signup(signup_id, _draft(), an_admin(clean), "web")
+    admin = an_admin(clean)
+    service.set_status(first.id, StatusChange(stato="contattato"), admin_id=admin, fonte="web")
     again = service.draft_from_signup(
-        signup_id, _draft(posizione="CTO", fonti=["https://ada.dev/about"]), "Claude"
+        signup_id, _draft(posizione="CTO", fonti=["https://ada.dev/about"]), admin, "mcp"
     )
     assert again.id == first.id
     assert again.posizione == "CTO"
-    assert (again.stato, again.note) == ("contattato", "chiamata fatta")
-    assert again.commenti[0].testo.startswith("Scheda aggiornata dalla ricerca.")
-    assert len(again.commenti) == 2
+    assert again.stato == "contattato"
+    assert again.note[0].testo.startswith("Scheda aggiornata dalla ricerca.")
+    assert (again.note[0].fonte, len(again.note)) == ("mcp", 2)
 
 
 def test_research_never_overwrites_a_card_the_person_filled(clean: Session) -> None:
@@ -325,14 +346,14 @@ def test_research_never_overwrites_a_card_the_person_filled(clean: Session) -> N
     service.apply(_application(), PDF, "Ada CV.pdf", "application/pdf")
     signup_id = _signup(clean)
     with pytest.raises(ValidationFailed) as refused:
-        service.draft_from_signup(signup_id, _draft(posizione="CTO"), "Claude")
+        service.draft_from_signup(signup_id, _draft(posizione="CTO"), an_admin(clean), "web")
     assert refused.value.details["field"] == "email"
     assert service.list_recent().items[0].posizione == "Backend developer"
 
 
 def test_a_draft_on_an_unknown_signup_is_not_found(clean: Session) -> None:
     with pytest.raises(NotFound):
-        FreelancerService(clean).draft_from_signup(uuid4(), _draft(), "Claude")
+        FreelancerService(clean).draft_from_signup(uuid4(), _draft(), an_admin(clean), "web")
 
 
 def test_the_wizard_does_not_take_over_a_researched_card(clean: Session) -> None:
@@ -341,7 +362,7 @@ def test_the_wizard_does_not_take_over_a_researched_card(clean: Session) -> None
     same address, which would let anyone who knows it claim the card."""
     service = FreelancerService(clean)
     signup_id = _signup(clean)
-    drafted = service.draft_from_signup(signup_id, _draft(), "Claude")
+    drafted = service.draft_from_signup(signup_id, _draft(), an_admin(clean), "web")
     assert drafted.compilata_da == "admin"
     applied, created = service.apply(_application(), PDF, "Ada CV.pdf", "application/pdf")
     assert created is False
@@ -375,7 +396,7 @@ def test_an_empty_cv_is_refused_while_no_cv_at_all_is_not(clean: Session) -> Non
 
 def test_a_card_without_a_cv_has_none_to_download(clean: Session) -> None:
     service = FreelancerService(clean)
-    drafted = service.draft_from_signup(_signup(clean), _draft(), "Claude")
+    drafted = service.draft_from_signup(_signup(clean), _draft(), an_admin(clean), "web")
     with pytest.raises(NotFound) as missing:
         service.cv(drafted.id)
     assert missing.value.details["entity"] == "cv"

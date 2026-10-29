@@ -265,7 +265,8 @@ class Freelancer(Base, PrimaryKeyMixin, TimestampMixin, UtmMixin):
 
     One row per person (`uq_freelancers_user_id`): a person who submits twice has
     corrected their application, and the second submission updates the first. `stato`
-    and `note` are the admin's, never the applicant's.
+    is the admin's, never the applicant's; what an admin says about the person is the
+    `Note` thread (REB-856).
 
     Since ORB-155 a card can also be born from a signup, with what an admin found on
     the public web: a name, a LinkedIn profile, a position, some links. The CV, the rate,
@@ -296,7 +297,6 @@ class Freelancer(Base, PrimaryKeyMixin, TimestampMixin, UtmMixin):
     remoto: Mapped[str | None] = mapped_column(String(10), default=None)
     links: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     stato: Mapped[str] = mapped_column(String(20), nullable=False, default="nuovo")
-    note: Mapped[str | None] = mapped_column(Text, default=None)
     compilata_da: Mapped[str] = mapped_column(String(10), nullable=False, default="persona")
     # `None` while the card is live; a moment once an admin soft-deletes it (REB-347).
     # Never a hard delete -- see `AdminAction`, whose "deleted"/"restored" entries are
@@ -372,7 +372,6 @@ class Company(Base, PrimaryKeyMixin, TimestampMixin, UtmMixin):
     giorni_presenza: Mapped[int | None] = mapped_column(Integer, default=None)
     numero_risorse: Mapped[int] = mapped_column(Integer, nullable=False)
     stato: Mapped[str] = mapped_column(String(20), nullable=False, default="nuovo")
-    note: Mapped[str | None] = mapped_column(Text, default=None)
     # Same soft-delete as `Freelancer.deleted_at`, same reason: several requests per
     # company, and a wrongly-deleted one is a click away from being live again.
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
@@ -638,25 +637,36 @@ class LetterCounter(Base):
     __table_args__ = (CheckConstraint("ultimo >= 1", name="ck_contract_letter_counters_positive"),)
 
 
-# ---- comments: what an admin or an assistant says about a row, over time ---------------
+# ---- notes: what is said about a row, over time ---------------------------------------
 
-COMMENT_ENTITY_TYPES = ("freelancer", "company")
-COMMENT_MAX_LENGTH = 4000
+NOTE_ENTITY_TYPES = ("freelancer", "company")
+NOTE_MAX_LENGTH = 4000
 AUTORE_MAX_LENGTH = NAME_MAX_LENGTH
+# Where a note came from (REB-856). `web` and `mcp` are an admin writing, through the admin
+# area or an agent's token; `persona` is the person's own change of their profile, `sistema`
+# what the hub itself recorded (a merge). The last two are events of the row's life, not
+# remarks: they are never edited or deleted. A row written before the source was tracked has
+# `fonte` NULL and is an admin's, so it may be edited.
+NOTE_SOURCES = ("web", "mcp", "persona", "sistema")
+NOTE_ADMIN_SOURCES = ("web", "mcp")
 
 
-class Comment(Base, PrimaryKeyMixin):
-    """One remark about a freelancer or a company, signed and dated. Append-only, like
-    PigroCRM's timeline entries: no update and no delete anywhere in the hub, so a
-    thread read in a month is the thread as it was written. `note` on the row itself
-    stays the one-line summary an admin overwrites; this is the history beside it
-    (ORB-59, Ivan's decision of 2026-09-09).
+class Note(Base, PrimaryKeyMixin):
+    """One note about a freelancer or a company: the one place an admin, an agent or the
+    person's own change leaves a remark (REB-856; it replaced the append-only `comments`
+    of ORB-59 and the `note` column of both rows, at Lorenzo's request of 2026-10-29).
+
+    The text carries no date or author: `created_at`, `autore` (the display name as it
+    read when it was written), `autore_id` and `fonte` say who and when and by which door,
+    and `modificata_*` who changed it last. An admin may edit or delete a note of their own
+    kind (`NOTE_ADMIN_SOURCES`, or an old row with no source); the delete is soft
+    (`eliminata_*`), so the trail (`AdminAction` `note_*`) can still say what was there.
 
     `entity_type` plus `entity_id` rather than two nullable foreign keys: the service
-    checks the row exists before writing, and one table with one index is what a
-    thread on a third kind of row would reuse without a migration on this table."""
+    checks the row exists before writing, and one table with one index is what a thread on
+    a third kind of row would reuse without a migration on this table."""
 
-    __tablename__ = "comments"
+    __tablename__ = "notes"
 
     entity_type: Mapped[str] = mapped_column(String(20), nullable=False)
     entity_id: Mapped[UUID] = mapped_column(nullable=False)
@@ -665,8 +675,14 @@ class Comment(Base, PrimaryKeyMixin):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    autore_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
+    fonte: Mapped[str | None] = mapped_column(String(10), default=None)
+    modificata_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    modificata_da_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
+    eliminata_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    eliminata_da_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
 
-    __table_args__ = (Index("ix_comments_entity", "entity_type", "entity_id", "created_at"),)
+    __table_args__ = (Index("ix_notes_entity", "entity_type", "entity_id", "created_at"),)
 
 
 # ---- what an admin overrode, cleared, deleted or restored, and when --------------------
@@ -736,18 +752,22 @@ ADMIN_ACTION_KINDS = (
     "eval_accept",
     "eval_rate",
     "cards_regenerate",
+    "note_added",
+    "note_edited",
+    "note_deleted",
+    "status_changed",
 )
 
 
 class AdminAction(Base, PrimaryKeyMixin):
-    """One row per admin-driven change to a `Freelancer`/`Company` record beyond
-    `stato`/`note` (REB-347, `Comment`'s own append-only discipline): who, when, and for
+    """One row per admin-driven change to a `Freelancer`/`Company` record
+    (REB-347; since REB-856 also its status and its notes): who, when, and for
     an `overridden`/`cleared` entry, the field's value before and after
-    (`rebase_core.audit.field_changes`). Append-only like `Comment` -- an admin reverses
+    (`rebase_core.audit.field_changes`). Append-only -- an admin reverses
     an action by writing a new one from this row's own `payload`, never by editing it.
 
     `entity_type` plus `entity_id` rather than a foreign key per entity, the same
-    reasoning `Comment` gives: the service checks the row exists before writing, and one
+    reasoning `Note` gives: the service checks the row exists before writing, and one
     table with one index is what a third entity's own trail would reuse without a
     migration here."""
 
@@ -1152,6 +1172,11 @@ class FreelancerCard(Base, TimestampMixin):
     source_hashes: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=None)
     conflicts: Mapped[list[Any] | None] = mapped_column(JSONB, default=None)
     thinking_tokens: Mapped[int | None] = mapped_column(Integer, default=None)
+    # What the same call read out of the CV about who the person is (REB-855): name, email,
+    # phone, city, links and the companies named, as `CardPersonaRead`. Admin only: no
+    # public, cloud, team-builder or member read touches it. Written with the card, kept
+    # when the guard refused the anonymous card, and retired with it when the CV changes.
+    persona: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=None)
 
 
 class TeamProposal(Base, PrimaryKeyMixin):

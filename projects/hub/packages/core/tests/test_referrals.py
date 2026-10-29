@@ -11,6 +11,7 @@ from decimal import Decimal
 from uuid import UUID
 
 import pytest
+from admins import an_admin
 from fakes_contracts import FakeRenderer
 from fakes_documenso import FakeDocumenso
 from sqlalchemy import event, select, text
@@ -75,7 +76,7 @@ TABLES = (
     "matches",
     "contract_letter_counters",
     "freelancer_fiscal",
-    "comments",
+    "notes",
     "freelancers",
     "companies",
     "users",
@@ -287,7 +288,8 @@ def _draft_for(session: Session, signup_id: UUID) -> UUID:
                 posizione="Backend developer",
                 fonti=["https://cold.dev"],
             ),
-            "Claude",
+            an_admin(session),
+            "web",
         )
         .id
     )

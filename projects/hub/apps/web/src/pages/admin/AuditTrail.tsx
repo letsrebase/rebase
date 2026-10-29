@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
-import { ApiError, admin, type AdminAction, type CommentKind } from '@/lib/api'
+import { ApiError, admin, type AdminAction, type ThreadKind } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
+import { noteSourceLabel } from '@/lib/notes'
 
 const KIND_LABELS: Record<AdminAction['kind'], string> = {
   overridden: 'Modifica',
@@ -17,6 +18,10 @@ const KIND_LABELS: Record<AdminAction['kind'], string> = {
   merged: 'Unita a un’altra scheda',
   absorbed: 'Ha assorbito una scheda',
   unmerged: 'Unione annullata',
+  note_added: 'Nota aggiunta',
+  note_edited: 'Nota modificata',
+  note_deleted: 'Nota eliminata',
+  status_changed: 'Cambio di stato',
 }
 
 /** What a merge did, in one line (REB-800), for the two entries that carry its counts:
@@ -65,6 +70,14 @@ const FIELD_LABELS: Record<string, string> = {
   cv: 'CV',
 }
 
+/** The per-field half of a diff, `{}` for the plain strings a note edit and a status
+ *  change carry. */
+function fieldsOf(value: unknown): Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {}
+}
+
 function renderValue(value: unknown): string {
   if (value === null || value === undefined) return '—'
   if (Array.isArray(value)) return value.length ? value.join(', ') : '—'
@@ -80,7 +93,7 @@ function renderValue(value: unknown): string {
  *
  * Self-contained, unlike `StatusEditor`: the trail is not part of the detail page's own
  * query at all (a separate `GET .../audit`, never embedded in `FreelancerRead`/
- * `CompanyRead` the way `commenti` is), so it fetches and reverts on its own and only
+ * `CompanyRead` the way `note` is), so it fetches and reverts on its own and only
  * asks the page to refetch the record itself (`onReverted`) once a revert lands.
  */
 export function AuditTrail({
@@ -89,7 +102,7 @@ export function AuditTrail({
   canRevert,
   onReverted,
 }: {
-  kind: CommentKind
+  kind: ThreadKind
   id: string
   /** `false` while the record is soft-deleted: the server refuses a revert on it until
    *  it is restored (`FreelancerService.revert`/`CompanyService.revert`'s own `_require`). */
@@ -130,8 +143,11 @@ export function AuditTrail({
       ) : (
         <ol className="divide-y border text-sm">
           {trail.data.map((action) => {
-            const before = action.payload.before ?? {}
-            const after = action.payload.after ?? {}
+            // A `note_edited` and a `status_changed` entry carry plain strings, shown
+            // on their own line below; only a field diff is an object per field.
+            const before = fieldsOf(action.payload.before)
+            const after = fieldsOf(action.payload.after)
+            const source = noteSourceLabel(action.payload.fonte)
             // `changed` names the field REB-347's own service touched, but is not
             // always a key of `before`/`after`: `clear_cv`'s own payload sets
             // `changed: ["cv"]` while keying its diff by `cv_filename`/`cv_mime`/
@@ -146,8 +162,26 @@ export function AuditTrail({
                   <Badge variant="pill">{kindLabel(action)}</Badge>
                   <span className="font-medium text-foreground">{action.admin_nome}</span>
                   <time dateTime={action.created_at}>{formatDateTime(action.created_at)}</time>
+                  {source && <span>{source}</span>}
                 </p>
                 {mergeSummary(action) && <p>{mergeSummary(action)}</p>}
+                {(action.kind === 'note_added' || action.kind === 'note_deleted') && action.payload.testo && (
+                  <p className="whitespace-pre-wrap break-words">{action.payload.testo}</p>
+                )}
+                {action.kind === 'note_edited' && (
+                  <p className="break-words">
+                    <span className="whitespace-pre-wrap line-through">{String(action.payload.before ?? '')}</span>
+                    {' → '}
+                    <span className="whitespace-pre-wrap">{String(action.payload.after ?? '')}</span>
+                  </p>
+                )}
+                {action.kind === 'status_changed' && (
+                  <p>
+                    <span className="line-through">{String(action.payload.before ?? '—')}</span>
+                    {' → '}
+                    <span>{String(action.payload.after ?? '—')}</span>
+                  </p>
+                )}
                 {fields.length > 0 && (
                   <dl className="space-y-1">
                     {fields.map((field) => (

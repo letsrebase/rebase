@@ -6,6 +6,7 @@ from decimal import Decimal
 from uuid import UUID
 
 import pytest
+from admins import an_admin
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -30,7 +31,7 @@ def clean(hub_session: Session) -> Session:
     yield hub_session  # type: ignore[misc]
     hub_session.rollback()
     hub_session.execute(text("DELETE FROM admin_actions"))
-    hub_session.execute(text("DELETE FROM comments"))
+    hub_session.execute(text("DELETE FROM notes"))
     hub_session.execute(text("DELETE FROM freelancers"))
     hub_session.execute(text("DELETE FROM companies"))
     hub_session.execute(text("DELETE FROM users"))
@@ -148,7 +149,7 @@ def test_a_signup_whose_address_already_has_a_card_is_not_also_a_lead(clean: Ses
 
 def test_a_card_drafted_by_an_admin_from_research_is_origine_admin(clean: Session) -> None:
     signup_id = _signup(clean, "ricerca@studio.it")
-    FreelancerService(clean).draft_from_signup(signup_id, _draft(), "Claude")
+    FreelancerService(clean).draft_from_signup(signup_id, _draft(), an_admin(clean), "web")
     listed = TalentiService(clean).list_recent()
     item = next(item for item in listed.items if item.email == "ricerca@studio.it")
     assert item.origine == "admin" and item.stato == "nuovo"
@@ -163,7 +164,9 @@ def test_counts_per_state_include_the_leads_and_are_not_bounded_by_the_limit(
         service.apply(_application(email=f"p{i}@studio.it"), PDF, "cv.pdf", "")[0].id
         for i in range(3)
     ]
-    service.set_status(ids[0], StatusChange(stato="contattato"))
+    service.set_status(
+        ids[0], StatusChange(stato="contattato"), admin_id=an_admin(clean), fonte="web"
+    )
     _signup(clean, "lead1@studio.it")
     _signup(clean, "lead2@studio.it")
     listed = TalentiService(clean).list_recent(limit=1)
@@ -509,7 +512,7 @@ def _three_channels(session: Session) -> dict[str, str]:
         "application/pdf",
     )
     ricerca = _signup(session, "admin@studio.it")
-    FreelancerService(session).draft_from_signup(ricerca, _draft(), "Claude")
+    FreelancerService(session).draft_from_signup(ricerca, _draft(), an_admin(session), "web")
     session.execute(
         text("UPDATE freelancers SET origine = 'pigrocrm' WHERE compilata_da = 'admin'")
     )

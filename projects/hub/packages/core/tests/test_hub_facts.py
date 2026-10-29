@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from rebase_core.errors import NotFound
 from rebase_core.hub_facts import HubFacts, hub_facts
-from rebase_core.models import AdminAction, Comment, Company, Freelancer, Match, User
+from rebase_core.models import AdminAction, Company, Freelancer, Match, Note, User
 
 TODAY = date(2026, 10, 27)
 CLIENT = "Initech Italia srl"
@@ -22,7 +22,7 @@ CLIENT = "Initech Italia srl"
 def clean(hub_session: Session) -> Iterator[Session]:
     yield hub_session
     hub_session.rollback()
-    for table in ("admin_actions", "comments", "matches", "companies", "freelancers", "users"):
+    for table in ("admin_actions", "notes", "matches", "companies", "freelancers", "users"):
         hub_session.execute(text(f"DELETE FROM {table}"))
     hub_session.commit()
 
@@ -66,7 +66,6 @@ def _match(
         budget_giornaliero=Decimal(budget),
         remoto="remoto",
         numero_risorse=1,
-        note="nota riservata dell'admin",
     )
     session.add(company)
     session.flush()
@@ -177,14 +176,11 @@ def test_in_progress_months_do_not_move_the_hash(clean: Session) -> None:
     assert before.text() != later.text()
 
 
-def test_admin_comments_never_included(clean: Session) -> None:
-    person = _person(clean, note="nota riservata sulla persona")
+def test_admin_notes_never_included(clean: Session) -> None:
+    person = _person(clean)
     _match(clean, person)
-    clean.add(
-        Comment(
-            entity_type="freelancer", entity_id=person.id, testo="Commento privato", autore="Ivan"
-        )
-    )
+    for text_ in ("Commento privato", "nota riservata sulla persona"):
+        clean.add(Note(entity_type="freelancer", entity_id=person.id, testo=text_, autore="Ivan"))
     clean.flush()
 
     facts = _facts(clean, person)

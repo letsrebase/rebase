@@ -18,7 +18,7 @@ from test_tools import IVAN, PDF, _payload
 import rebase_mcp.server as server_module
 from rebase_core.errors import ValidationFailed
 from rebase_core.freelancers import FreelancerService
-from rebase_core.models import FreelancerCard
+from rebase_core.models import FreelancerCard, User
 from rebase_core.schemas import (
     FreelancerCreate,
     FreelancerDraft,
@@ -40,7 +40,7 @@ from rebase_mcp.talenti_view import (
 @pytest.fixture(autouse=True)
 def clean(factory: sessionmaker[Session]) -> sessionmaker[Session]:
     session = factory()
-    for table in ("comments", "freelancers", "companies", "users", "signups"):
+    for table in ("admin_actions", "notes", "freelancers", "companies", "users", "signups"):
         session.execute(text(f"DELETE FROM {table}"))
     session.commit()
     session.close()
@@ -96,6 +96,13 @@ def _lead(factory: sessionmaker[Session], email: str) -> str:
         session.close()
 
 
+def _admin_id(session: Session) -> UUID:
+    admin = User(email="claude@rebase.it", nome="Claude", cognome="", role="admin")
+    session.add(admin)
+    session.commit()
+    return admin.id
+
+
 def _admin_draft(factory: sessionmaker[Session], email: str) -> None:
     session = factory()
     try:
@@ -111,7 +118,8 @@ def _admin_draft(factory: sessionmaker[Session], email: str) -> None:
                 links=[],
                 fonti=["https://www.linkedin.com/in/ricerca"],
             ),
-            "Claude",
+            _admin_id(session),
+            "mcp",
         )
     finally:
         session.close()
@@ -267,7 +275,7 @@ async def test_get_talento_carries_every_field_the_list_row_has(
     assert card["settori"] == ["fintech", "sanità"] and card["lingue"][0] == "inglese (C1)"
     assert card["sintesi"] == FULL_CARD["sintesi"]
     assert card["fascia"] is not None and card["fascia"]["min"] <= 450 * 1.3
-    assert "commenti" in card and bare["origine"] == "form" and "pagina_origine" not in bare
+    assert "note" in card and bare["origine"] == "form" and "pagina_origine" not in bare
 
 
 async def test_the_card_filters_and_the_sort_answer_one_request_in_one_call(

@@ -29,7 +29,7 @@ def admin(api_session: Session) -> Iterator[None]:
     for table in (
         "talent_cloud_grants",
         "admin_actions",
-        "comments",
+        "notes",
         "sessions",
         "magic_link_tokens",
         "logins",

@@ -147,14 +147,15 @@ id, the admin's full detail where a card exists:
 | `list_talenti` | the «Talenti» screen: cards and bare sign-ups as one list, with search, filters (also seniority, years, sectors, languages, card state), a sort by rate or years, a short row (`campi` for more) and a cursor |
 | `get_talento` | one talent by id: the list's row (with the card's fields) over the card's detail (state, thread, UTM, logins, downloads, Pigro space), or the bare lead row |
 | `create_freelancer_from_signup` | a card drafted from public sources, with its sources in the thread |
-| `get_freelancer` | a card by id, `FreelancerRead` with its comments |
+| `get_freelancer` | a card by id, `FreelancerRead` with its notes and the account's phone, and what the CV says of the person (`contatti_cv`, `differenze_cv`), for admins only |
 | `read_freelancer_cv` | the CV's text, not its bytes |
 | `set_freelancer_status` | move a candidacy (nuovo / contattato / attivo / scartato) |
-| `add_freelancer_comment` | a dated note on a card's thread |
+| `add_freelancer_note` | a note on a card's thread, signed by the token's admin and marked `mcp` |
+| `update_note`, `delete_note` | edit or soft-delete a note an admin wrote, by id; the person's and the system's notes are refused |
 | `list_aziende` | the «Aziende» screen, with search, filters, cursor |
-| `get_company` | a company request by id, with its comments |
+| `get_company` | a company request by id, with its notes |
 | `set_company_status` | move a request (nuovo / contattato / in_corso / chiuso) |
-| `add_company_comment` | a dated note on a request's thread |
+| `add_company_note` | a note on a request's thread, signed by the token's admin and marked `mcp` |
 | `list_pigro_spaces` | «Istanze Pigro»: the CRM's spaces, read through its API |
 | `guide_stats` | the guide's downloads, totals and latest |
 | `login_stats` | who entered the member area and when |
