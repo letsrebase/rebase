@@ -29,7 +29,7 @@ from rebase_core.models import Freelancer  # noqa: F401  (registers every model 
 # Adding one here is not enough to sync it: the grant and the schema refresh are steps on
 # the server and in PostHog, and the runbook has them in order.
 WAREHOUSE_TABLES = frozenset(
-    {"signups", "freelancers", "companies", "guide_downloads", "logins", "comments"}
+    {"signups", "freelancers", "companies", "guide_downloads", "logins", "notes"}
 )
 
 # Binary columns inside a synced table, each one a decision somebody took on purpose.

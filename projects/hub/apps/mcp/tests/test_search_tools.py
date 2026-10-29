@@ -37,7 +37,7 @@ ENGLISH = re.compile(
 @pytest.fixture(autouse=True)
 def clean(factory: sessionmaker[Session]) -> sessionmaker[Session]:
     session = factory()
-    for table in ("comments", "freelancers", "companies", "users", "signups"):
+    for table in ("admin_actions", "notes", "freelancers", "companies", "users", "signups"):
         session.execute(text(f"DELETE FROM {table}"))
     session.commit()
     session.close()

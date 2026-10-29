@@ -20,11 +20,12 @@ from rebase_core.bands import Band
 from rebase_core.linkedin import normalise_linkedin, reject_control_characters
 from rebase_core.models import (
     AZIENDA_MAX_LENGTH,
-    COMMENT_MAX_LENGTH,
     DURATA_MAX_LENGTH,
     GIORNI_PRESENZA_MAX,
     GIORNI_PRESENZA_MIN,
     NAME_MAX_LENGTH,
+    NOTE_ADMIN_SOURCES,
+    NOTE_MAX_LENGTH,
     ORIGINE_MAX_LENGTH,
     POSIZIONE_MAX_LENGTH,
     REFERRAL_CODE_LENGTH,
@@ -459,27 +460,41 @@ class Ack(BaseModel):
     ok: bool = True
 
 
-class CommentRead(BaseModel):
-    """One entry of a thread, as it was written: who, when, what. Nothing here is ever
-    updated, so this is also the whole history of the row's comments."""
-
-    model_config = ConfigDict(from_attributes=True)
+class NoteRead(BaseModel):
+    """One note of a row's thread (REB-856): who wrote it (`autore`, the name as it read
+    then, and `autore_id`), by which door (`fonte`: `web`, `mcp`, `persona`, `sistema`, or
+    `None` for a note that predates the tracking), when, and, once changed, who changed it
+    last and when. `modificabile` is whether an admin may edit or delete it: not an event
+    of the person's or the hub's own."""
 
     id: UUID
-    entity_type: str
-    entity_id: UUID
     testo: str
     autore: str
+    autore_id: UUID | None
+    fonte: str | None
     created_at: datetime
+    modificata_at: datetime | None
+    modificata_da: str | None
+    modificabile: bool
 
 
-class CommentCreate(BaseModel):
-    """What the admin API takes for a new comment: the text alone. The author is the
-    logged-in admin, never a field the client fills in."""
+class NoteCreate(BaseModel):
+    """What the admin API takes for a new note: the text alone. The author is the
+    logged-in admin and the source is the door, never fields the client fills in."""
 
     model_config = ConfigDict(extra="forbid")
 
-    testo: SafeStr = Field(min_length=1, max_length=COMMENT_MAX_LENGTH)
+    testo: SafeStr = Field(min_length=1, max_length=NOTE_MAX_LENGTH)
+
+
+class NoteUpdate(NoteCreate):
+    """The new text of a note an admin edits."""
+
+
+def note_is_editable(fonte: str | None) -> bool:
+    """Whether an admin may edit or delete a note of this source (`NOTE_ADMIN_SOURCES`,
+    or `None` for a row written before the source was tracked)."""
+    return fonte is None or fonte in NOTE_ADMIN_SOURCES
 
 
 def card_is_complete(
@@ -652,7 +667,7 @@ class FreelancerRead(BaseModel):
     """The row as an admin reads it. Never the CV bytes: those have their own download,
     so a list of two hundred people is not two hundred PDFs in one response.
 
-    `commenti` is the thread, newest first, and only `get` fills it: a list of two
+    `note` is the thread (REB-856), newest first, and only `get` fills it: a list of two
     hundred people is not two hundred threads either, so the list leaves it empty."""
 
     model_config = ConfigDict(from_attributes=True)
@@ -662,6 +677,9 @@ class FreelancerRead(BaseModel):
     cognome: str
     email: str
     linkedin_url: str | None
+    # The phone on the person's account (`users.telefono`, REB-855), `None` while they have
+    # given none; the admin's page shows the CV's beside it, from the card's persona.
+    telefono: str | None = None
     # `None` on a card born from a signup that the person has not completed (ORB-155),
     # and on one whose owner skipped the wizard's optional CV step.
     cv_filename: str | None
@@ -672,7 +690,6 @@ class FreelancerRead(BaseModel):
     remoto: str | None
     links: list[str]
     stato: str
-    note: str | None
     # Who wrote the seven answers last: `persona` or `admin` (`COMPILATA_DA`).
     compilata_da: str
     # How many times the person entered through a magic link, and the last time (ORB-158).
@@ -701,7 +718,7 @@ class FreelancerRead(BaseModel):
     # beats the anonymous card's own seniority and years wherever the card is read.
     seniority_admin: str | None = None
     anni_admin: int | None = None
-    commenti: list[CommentRead] = Field(default_factory=list)
+    note: list[NoteRead] = Field(default_factory=list)
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -836,7 +853,6 @@ class CompanyRead(BaseModel):
     giorni_presenza: int | None
     numero_risorse: int
     stato: str
-    note: str | None
     origine: str | None = None
     utm_source: str | None = None
     utm_medium: str | None = None
@@ -849,7 +865,7 @@ class CompanyRead(BaseModel):
     # Same soft-delete as `FreelancerRead.deleted_at`.
     deleted_at: datetime | None = None
     # The thread, newest first; filled by `get` only, as on `FreelancerRead`.
-    commenti: list[CommentRead] = Field(default_factory=list)
+    note: list[NoteRead] = Field(default_factory=list)
     # The talent cloud this request's referente holds for it, while it is open
     # (REB-518): filled by `get` only, for «Apri il talent cloud» and «Revoca».
     talent_cloud_grant: TalentCloudGrantRead | None = None
@@ -868,10 +884,13 @@ class CompanyList(BaseModel):
 
 
 class StatusChange(BaseModel):
-    """What an admin changes on a row: where it stands, and a note to themselves."""
+    """What an admin changes on a row: where it stands. A remark about it is a note
+    (`NoteCreate`), not a field of this. `extra="forbid"`: a client still sending `note`
+    is told, not silently dropped."""
+
+    model_config = ConfigDict(extra="forbid")
 
     stato: str = Field(min_length=1, max_length=20)
-    note: SafeStr | None = Field(default=None, max_length=PROGETTO_MAX_LENGTH)
 
 
 class VettedChange(BaseModel):
@@ -884,7 +903,7 @@ class VettedChange(BaseModel):
 
 
 class FreelancerOverride(BaseModel):
-    """What an admin may set or clear on a `Freelancer` beyond `stato`/`note`
+    """What an admin may set or clear on a `Freelancer` beyond `stato`
     (REB-347): every field a person could have written through the wizard or the
     member area, plus the three identity fields (`nome`/`cognome`/`linkedin_url`)
     that live on the linked `users` row since REB-281, and `compilata_da`, which
@@ -911,7 +930,6 @@ class FreelancerOverride(BaseModel):
     remoto: Remoto | None = None
     links: list[SafeStr] | None = Field(default=None, max_length=LINKS_MAX)
     stato: FreelancerStato | None = None
-    note: SafeStr | None = Field(default=None, max_length=PROGETTO_MAX_LENGTH)
     compilata_da: Literal["persona", "admin"] | None = None
     # The level an admin sets over the card's own (REB-799): `null` takes the correction
     # off, and the card's reading shows again.
@@ -940,7 +958,7 @@ class FreelancerOverride(BaseModel):
 
 
 class CompanyOverride(BaseModel):
-    """What an admin may set or clear on a `Company` request beyond `stato`/`note`
+    """What an admin may set or clear on a `Company` request beyond `stato`
     (REB-347): the eight project answers a referente could have written
     (`CompanyFields`), the company's own name, and the referente's identity fields on
     the linked `users` row -- both admin-only even for a self-edit, as
@@ -969,7 +987,6 @@ class CompanyOverride(BaseModel):
     )
     numero_risorse: int | None = Field(default=None, ge=1)
     stato: CompanyStato | None = None
-    note: SafeStr | None = Field(default=None, max_length=PROGETTO_MAX_LENGTH)
 
     @field_validator("nome", "cognome", "nome_azienda", "durata", "figura_richiesta", mode="after")
     @classmethod

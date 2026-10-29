@@ -55,7 +55,7 @@ def clean_hub(hub_session: Session) -> Iterator[Session]:
         "card_batches",
         "admin_actions",
         "ai_usage",
-        "comments",
+        "notes",
         "matches",
         "companies",
         "freelancers",

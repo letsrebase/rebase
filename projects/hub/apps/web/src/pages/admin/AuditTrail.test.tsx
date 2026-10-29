@@ -105,7 +105,7 @@ const MERGED: AdminAction = {
   admin_nome: 'Ivan Bianchi',
   payload: {
     into_freelancer_id: 'f2',
-    moved: { logins: ['l1', 'l2'], comments: ['c1'] },
+    moved: { logins: ['l1', 'l2'], notes: ['c1'] },
     cv: 'assorbita',
     scheda_da_rigenerare: true,
   },
@@ -119,6 +119,32 @@ const ABSORBED: AdminAction = {
   payload: { from_freelancer_id: 'f1', moved: { logins: 1 }, cv: 'invariato', scheda_da_rigenerare: false },
 }
 const UNMERGED: AdminAction = { ...MERGED, id: 'a10', kind: 'unmerged', payload: {} }
+
+// The notes' trail and a change of status (REB-856): who, the door, and the text, with
+// `before`/`after` plain strings (not a field diff), and nothing to revert.
+const NOTE_ADDED: AdminAction = {
+  id: 'a11',
+  entity_type: 'freelancer',
+  entity_id: 'f1',
+  kind: 'note_added',
+  admin_id: 'u1',
+  admin_nome: 'Ivan Bianchi',
+  payload: { nota_id: 'n1', fonte: 'mcp', testo: 'Sentito al telefono.' },
+  created_at: '2026-10-29T09:00:00Z',
+}
+const NOTE_EDITED: AdminAction = {
+  ...NOTE_ADDED,
+  id: 'a12',
+  kind: 'note_edited',
+  payload: { nota_id: 'n1', fonte: 'web', before: 'Sentito al telefono.', after: 'Sentito lunedì.' },
+}
+const NOTE_DELETED: AdminAction = { ...NOTE_ADDED, id: 'a13', kind: 'note_deleted', payload: { nota_id: 'n1', fonte: 'web', testo: 'Sentito lunedì.' } }
+const STATUS_CHANGED: AdminAction = {
+  ...NOTE_ADDED,
+  id: 'a14',
+  kind: 'status_changed',
+  payload: { before: 'nuovo', after: 'contattato', fonte: 'mcp' },
+}
 
 function mount({ canRevert = true, onReverted = () => {} }: { canRevert?: boolean; onReverted?: () => void } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
@@ -190,7 +216,7 @@ describe('AuditTrail', () => {
     mount()
     const entry = (await screen.findByText('Unita a un’altra scheda')).closest('li')!
     expect(entry).toHaveTextContent('Ivan Bianchi')
-    // `merged` lists the ids that moved, per relation: 2 logins and 1 comment.
+    // `merged` lists the ids that moved, per relation: 2 logins and 1 note.
     expect(entry).toHaveTextContent('3 righe spostate · CV più recente passato alla scheda tenuta · scheda anonima da riscrivere')
     expect(entry.querySelector('dl')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Ripristina questa modifica' })).toBeNull()
@@ -253,5 +279,31 @@ describe('AuditTrail', () => {
     mount()
     await userEvent.click(await screen.findByRole('button', { name: 'Ripristina questa modifica' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('si può ripristinare solo una modifica di campo')
+  })
+
+  it('says who added, edited and deleted a note and through which door, with no field diff (REB-856)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, [NOTE_DELETED, NOTE_EDITED, NOTE_ADDED]))
+    mount()
+    await screen.findByText('Nota eliminata')
+    const [deleted, edited, added] = screen.getAllByRole('listitem')
+    expect(added).toHaveTextContent('Nota aggiunta')
+    expect(added).toHaveTextContent('Ivan Bianchi')
+    expect(added).toHaveTextContent('MCP')
+    expect(added).toHaveTextContent('Sentito al telefono.')
+    expect(edited).toHaveTextContent('Nota modificata')
+    expect(edited).toHaveTextContent('dal sito')
+    expect(edited).toHaveTextContent('Sentito al telefono. → Sentito lunedì.')
+    expect(deleted).toHaveTextContent('Sentito lunedì.')
+    for (const entry of [added, edited, deleted]) expect(entry?.querySelector('dl')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Ripristina questa modifica' })).toBeNull()
+  })
+
+  it('shows a change of status as before → after with its door (REB-856)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, [STATUS_CHANGED]))
+    mount()
+    const entry = (await screen.findByText('Cambio di stato')).closest('li')!
+    expect(entry).toHaveTextContent('nuovo → contattato')
+    expect(entry).toHaveTextContent('MCP')
+    expect(entry.querySelector('dl')).toBeNull()
   })
 })

@@ -19,9 +19,9 @@ from rebase_core.audit import (
     utcnow,
 )
 from rebase_core.cloud import TalentCloudService
-from rebase_core.comments import CommentService
 from rebase_core.errors import NotFound, ValidationFailed
 from rebase_core.models import COMPANY_STATES, Company, User
+from rebase_core.notes import NoteService
 from rebase_core.pagination import SortSpec, decode_cursor, encode_cursor, keyset_predicate
 from rebase_core.referrals import ReferralService
 from rebase_core.schemas import (
@@ -70,7 +70,6 @@ def _to_read(row: Company, user: User) -> CompanyRead:
         giorni_presenza=row.giorni_presenza,
         numero_risorse=row.numero_risorse,
         stato=row.stato,
-        note=row.note,
         origine=row.origine,
         utm_source=row.utm_source,
         utm_medium=row.utm_medium,
@@ -235,23 +234,34 @@ class CompanyService:
         )
 
     def get(self, company_id: UUID) -> CompanyRead:
-        """The row with its thread of comments, newest first, and since REB-518 the
+        """The row with its thread of notes, newest first, and since REB-518 the
         talent cloud its referente holds for it while it is open. Only here: the list
         leaves both empty."""
         row, user = self._require(company_id)
         read = _to_read(row, user)
-        read.commenti = CommentService(self.session).list(ENTITY, company_id)
+        read.note = NoteService(self.session).list(ENTITY, company_id)
         read.talent_cloud_grant = TalentCloudService(self.session).for_company(company_id)
         return read
 
-    def set_status(self, company_id: UUID, change: StatusChange) -> CompanyRead:
+    def set_status(
+        self, company_id: UUID, change: StatusChange, *, admin_id: UUID, fonte: str
+    ) -> CompanyRead:
+        """Moves the request to `change.stato` and, when it moved, records who and by
+        which door (`fonte`, `web` or `mcp`) as a `status_changed` entry of the trail."""
         if change.stato not in COMPANY_STATES:
             raise ValidationFailed(ENTITY, "stato", f"uno fra {', '.join(COMPANY_STATES)}")
         row, user = self._require(company_id)
+        before = row.stato
         row.stato = change.stato
-        if change.note is not None:
-            row.note = change.note.strip() or None
         self.session.commit()
+        if before != change.stato:
+            AdminActionService(self.session).record(
+                ENTITY,
+                row.id,
+                "status_changed",
+                admin_id,
+                {"before": before, "after": change.stato, "fonte": fonte},
+            )
         return _to_read(row, user)
 
     def override(self, company_id: UUID, data: CompanyOverride, admin_id: UUID) -> CompanyRead:
@@ -340,6 +350,10 @@ class CompanyService:
                 ENTITY, "action_id", "si può ripristinare solo una modifica di campo"
             )
         before = action.payload.get("before", {})
+        if "note" in before:
+            raise ValidationFailed(
+                ENTITY, "action_id", "una nota non si ripristina da qui: si modifica nelle note"
+            )
         restored = {
             field: coerce_stored_value(
                 User if field in _ADMIN_IDENTITY_FIELDS else Company, field, value

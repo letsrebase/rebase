@@ -16,7 +16,7 @@ from rebase_core.config import Settings
 from rebase_core.models import Campaign, Company, Freelancer, Login, Signup, User
 
 CAMPAIGN_TABLES = ("campaign_optouts", "campaign_recipients", "campaigns")
-PEOPLE_TABLES = ("logins", "comments", "freelancers", "companies", "signups", "users")
+PEOPLE_TABLES = ("logins", "notes", "freelancers", "companies", "signups", "users")
 
 T0 = datetime(2026, 9, 25, 7, 30, tzinfo=UTC)
 

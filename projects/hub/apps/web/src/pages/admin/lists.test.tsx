@@ -47,13 +47,12 @@ const INCOMPLETE = {
   remoto: null,
   links: ['https://github.com/ada'],
   stato: 'nuovo',
-  note: null,
   utm_source: 'linkedin',
   utm_campaign: null,
   created_at: '2026-09-10T10:00:00Z',
   compilata_da: 'admin',
   completa: false,
-  commenti: [],
+  note: [],
   accessi: 0,
   provenienza: 'form',
   ultimo_accesso: null,
@@ -150,11 +149,10 @@ const COMPANY_A = {
   giorni_presenza: 3,
   numero_risorse: 2,
   stato: 'nuovo',
-  note: null,
   origine: 'home',
   utm_source: 'linkedin',
   created_at: '2026-09-10T10:00:00Z',
-  commenti: [],
+  note: [],
   deleted_at: null,
 }
 
@@ -507,6 +505,57 @@ describe('the freelancer detail', () => {
     expect(screen.getByText('Da remoto')).toBeInTheDocument()
     expect(screen.getByText(/^3 · ultimo 11 set 2026/)).toBeInTheDocument()
   })
+
+  it('shows the profile’s phone, or the CV’s marked «dal CV», and the CV’s email when it differs (REB-855)', async () => {
+    const persona = {
+      nome: 'Grace',
+      cognome: 'Hopper',
+      email: 'grace.cv@example.org',
+      telefono: '+39 333 123 4567',
+      citta: null,
+      linkedin_url: null,
+      altri_link: [],
+      aziende: [],
+    }
+    routeFetch({
+      'GET /api/hub/freelancers/f2': COMPLETE,
+      'GET /api/hub/freelancers/f2/audit': [],
+      'GET /api/hub/freelancers/f2/card': { ...noCard('f2'), persona, differenze: [] },
+    })
+    mount('/admin/freelance/f2')
+    await screen.findByRole('heading', { name: 'Grace Hopper' })
+    expect(await screen.findByText('+39 333 123 4567 · dal CV')).toBeInTheDocument()
+    // The profile's row and the named card's both link it.
+    for (const link of screen.getAllByRole('link', { name: 'grace.cv@example.org' })) {
+      expect(link).toHaveAttribute('href', 'mailto:grace.cv@example.org')
+    }
+  })
+
+  it('prefers the profile’s phone and leaves out a CV email that is the account’s', async () => {
+    const persona = {
+      nome: null,
+      cognome: null,
+      email: 'GRACE@studio.it',
+      telefono: '+39 333 123 4567',
+      citta: null,
+      linkedin_url: null,
+      altri_link: [],
+      aziende: [],
+    }
+    routeFetch({
+      'GET /api/hub/freelancers/f2': { ...COMPLETE, telefono: '02 5550199' },
+      'GET /api/hub/freelancers/f2/audit': [],
+      'GET /api/hub/freelancers/f2/card': { ...noCard('f2'), persona, differenze: [] },
+    })
+    mount('/admin/freelance/f2')
+    await screen.findByRole('heading', { name: 'Grace Hopper' })
+    expect(await screen.findByText('02 5550199')).toBeInTheDocument()
+    // The CV's number is on the named card below, not on the profile row. Waiting for it
+    // there first means the card has loaded, so the two absences below are not read early.
+    expect(await screen.findByText('+39 333 123 4567')).toBeInTheDocument()
+    expect(screen.queryByText('+39 333 123 4567 · dal CV')).toBeNull()
+    expect(screen.queryByText('Email nel CV')).toBeNull()
+  })
 })
 
 describe('the anonymous card on the freelancer detail (REB-514)', () => {
@@ -583,7 +632,7 @@ describe('the enriched detail: sign-up, logins, downloads, Pigro space (REB-284)
       'Download della guida',
       'Spazio PigroCRM',
       'Registro delle modifiche',
-      'Commenti',
+      'Note',
     ])
     expect(screen.getByText('newsletter')).toBeInTheDocument()
     expect(screen.getByText('email')).toBeInTheDocument()
@@ -642,11 +691,11 @@ describe('the enriched detail: sign-up, logins, downloads, Pigro space (REB-284)
 })
 
 describe('REB-355: override, delete/restore and the audit trail on the freelancer detail', () => {
-  it('overrides a field through "Modifica scheda" and shows it, keeping the existing comment thread', async () => {
+  it('overrides a field through "Modifica scheda" and shows it, keeping the existing notes thread', async () => {
     const withComment = {
       ...INCOMPLETE,
-      commenti: [
-        { id: 'c1', entity_type: 'freelancer', entity_id: 'f1', testo: 'Ha risposto alla call.', autore: 'Ivan', created_at: '2026-09-12T10:00:00Z' },
+      note: [
+        { id: 'c1', testo: 'Ha risposto alla call.', autore: 'Ivan', autore_id: null, fonte: 'web', created_at: '2026-09-12T10:00:00Z', modificata_at: null, modificata_da: null, modificabile: true },
       ],
     }
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
@@ -655,9 +704,9 @@ describe('REB-355: override, delete/restore and the audit trail on the freelance
       if (url === '/api/hub/freelancers/f1/override' && init?.method === 'PATCH') {
         const body = JSON.parse(init.body as string)
         expect(body.posizione).toBe('Staff engineer')
-        // The override response's own `commenti` is always `[]` (only `get` fills it):
+        // The override response's own `note` is always `[]` (only `get` fills it):
         // a merge that took it verbatim would wipe the existing thread from view.
-        return answer(200, { ...withComment, posizione: 'Staff engineer', commenti: [] })
+        return answer(200, { ...withComment, posizione: 'Staff engineer', note: [] })
       }
       return answer(200, withComment)
     })
@@ -719,12 +768,12 @@ describe('REB-355: override, delete/restore and the audit trail on the freelance
   })
 })
 
-describe('REB-356: the state-change mutations keep the comment thread visible', () => {
-  it('keeps the existing comment thread after a state change on the freelancer detail', async () => {
+describe('REB-356: the state-change mutations keep the notes thread visible', () => {
+  it('keeps the existing notes thread after a state change on the freelancer detail', async () => {
     const withComment = {
       ...INCOMPLETE,
-      commenti: [
-        { id: 'c1', entity_type: 'freelancer', entity_id: 'f1', testo: 'Ha risposto alla call.', autore: 'Ivan', created_at: '2026-09-12T10:00:00Z' },
+      note: [
+        { id: 'c1', testo: 'Ha risposto alla call.', autore: 'Ivan', autore_id: null, fonte: 'web', created_at: '2026-09-12T10:00:00Z', modificata_at: null, modificata_da: null, modificabile: true },
       ],
     }
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
@@ -733,9 +782,9 @@ describe('REB-356: the state-change mutations keep the comment thread visible', 
       if (url === '/api/hub/freelancers/f1' && init?.method === 'PATCH') {
         const body = JSON.parse(init.body as string)
         expect(body.stato).toBe('contattato')
-        // The move response's own `commenti` is always `[]` (only `get` fills it):
+        // The move response's own `note` is always `[]` (only `get` fills it):
         // a replace that took it verbatim would wipe the existing thread from view.
-        return answer(200, { ...withComment, stato: 'contattato', commenti: [] })
+        return answer(200, { ...withComment, stato: 'contattato', note: [] })
       }
       return answer(200, withComment)
     })
@@ -750,11 +799,11 @@ describe('REB-356: the state-change mutations keep the comment thread visible', 
     expect(screen.getByText('Ha risposto alla call.')).toBeInTheDocument()
   })
 
-  it('keeps the existing comment thread after a state change on the company detail', async () => {
+  it('keeps the existing notes thread after a state change on the company detail', async () => {
     const withComment = {
       ...COMPANY_A,
-      commenti: [
-        { id: 'c2', entity_type: 'company', entity_id: 'c1', testo: 'In attesa di risposta.', autore: 'Ivan', created_at: '2026-09-12T10:00:00Z' },
+      note: [
+        { id: 'c2', testo: 'In attesa di risposta.', autore: 'Ivan', autore_id: null, fonte: 'web', created_at: '2026-09-12T10:00:00Z', modificata_at: null, modificata_da: null, modificabile: true },
       ],
     }
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
@@ -763,10 +812,10 @@ describe('REB-356: the state-change mutations keep the comment thread visible', 
       if (url === '/api/hub/companies/c1' && init?.method === 'PATCH') {
         const body = JSON.parse(init.body as string)
         expect(body.stato).toBe('contattato')
-        // The moveCompany response's own `commenti` is always `[]` (only `get` fills
+        // The moveCompany response's own `note` is always `[]` (only `get` fills
         // it): the old `setQueryData(['company', id], updated)` replaced the cache
         // outright with that empty array, which is exactly what this guards against.
-        return answer(200, { ...withComment, stato: 'contattato', commenti: [] })
+        return answer(200, { ...withComment, stato: 'contattato', note: [] })
       }
       return answer(200, withComment)
     })

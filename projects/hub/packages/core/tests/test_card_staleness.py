@@ -42,7 +42,7 @@ def clean(hub_session: Session) -> Iterator[Session]:
     for table in (
         "admin_actions",
         "ai_usage",
-        "comments",
+        "notes",
         "matches",
         "companies",
         "freelancers",

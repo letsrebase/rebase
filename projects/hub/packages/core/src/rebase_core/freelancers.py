@@ -18,7 +18,6 @@ from rebase_core.audit import (
     supplied_changes,
     utcnow,
 )
-from rebase_core.comments import CommentService
 from rebase_core.config import Settings
 from rebase_core.cv_text import CvText, extract_text
 from rebase_core.errors import InvalidState, NotFound, ValidationFailed
@@ -34,6 +33,7 @@ from rebase_core.models import (
     Signup,
     User,
 )
+from rebase_core.notes import NoteService
 from rebase_core.perks import PerkService
 from rebase_core.pigro import PigroRegistry, PigroUnavailable
 from rebase_core.referrals import ReferralService
@@ -122,6 +122,7 @@ def freelancer_read(row: Freelancer, user: User) -> FreelancerRead:
         cognome=user.cognome,
         email=user.email,
         linkedin_url=user.linkedin_url,
+        telefono=user.telefono,
         cv_filename=row.cv_filename,
         cv_mime=row.cv_mime,
         cv_size=row.cv_size,
@@ -130,7 +131,6 @@ def freelancer_read(row: Freelancer, user: User) -> FreelancerRead:
         remoto=row.remoto,
         links=list(row.links),
         stato=row.stato,
-        note=row.note,
         compilata_da=row.compilata_da,
         origine=row.origine,
         utm_source=row.utm_source,
@@ -290,16 +290,16 @@ class FreelancerService:
         return freelancer_read(row, user), True
 
     def draft_from_signup(
-        self, signup_id: UUID, data: FreelancerDraft, autore: str
+        self, signup_id: UUID, data: FreelancerDraft, admin_id: UUID, fonte: str
     ) -> FreelancerRead:
         """A card written by an admin from what the public web says about a signup
         (ORB-155): the address and the attribution come from the signup, the answers
         from the research, the CV from nobody -- the person adds it from the member
         area. One row per address still: a second research on a card the admin wrote
-        replaces the researched fields and leaves `stato`, `note` and the CV alone; a
+        replaces the researched fields and leaves `stato`, the notes and the CV alone; a
         research on a card the person filled (`compilata_da == "persona"`) is refused,
-        because their own words win. One comment in the thread names the sources, so
-        whoever reads the card can check where it came from."""
+        because their own words win. One note in the thread, written by `admin_id` through
+        `fonte`, names the sources, so whoever reads the card can check where it came from."""
         signup = self.session.get(Signup, signup_id)
         if signup is None:
             raise NotFound("signup", signup_id)
@@ -349,14 +349,14 @@ class FreelancerService:
             # Two first drafts racing on one address: the index decides, and the loser
             # drafts again on top of the winner's row.
             self.session.rollback()
-            return self.draft_from_signup(signup_id, data, autore)
+            return self.draft_from_signup(signup_id, data, admin_id, fonte)
         sources = ", ".join(data.fonti)
         text = (
             f"Scheda creata dall'iscrizione del {signup.created_at:%d/%m/%Y}. Fonti: {sources}"
             if created
             else f"Scheda aggiornata dalla ricerca. Fonti: {sources}"
         )
-        CommentService(self.session).add(ENTITY, row.id, text, autore)
+        NoteService(self.session).add(ENTITY, row.id, text, autore_id=admin_id, fonte=fonte)
         return self.get(row.id)
 
     def list_recent(
@@ -418,7 +418,7 @@ class FreelancerService:
         return [SignupListItem.model_validate(row) for row in rows], totale
 
     def get(self, freelancer_id: UUID) -> FreelancerDetail:
-        """The row with its thread of comments, newest first, and since REB-284 every
+        """The row with its thread of notes, newest first, and since REB-284 every
         other place the hub already knows this address: the sign-up's own UTM set,
         the last handful of logins and guide downloads, and the PigroCRM space when
         the address owns one. Only here: the list stays `FreelancerRead` alone, since
@@ -435,7 +435,7 @@ class FreelancerService:
         )
         accessi, ultimo = counted if counted is not None else (None, None)
         read = _read_with_logins(row, user, accessi, ultimo, signup_row)
-        read.commenti = CommentService(self.session).list(ENTITY, freelancer_id)
+        read.note = NoteService(self.session).list(ENTITY, freelancer_id)
         detail = FreelancerDetail.model_validate(read)
         detail.iscrizione_utm = _signup_utm(signup_row)
         detail.ultimi_accessi = LoginService(self.session).for_user(user.id)
@@ -464,14 +464,25 @@ class FreelancerService:
         file = cv_of(self._require(freelancer_id))
         return extract_text(file.content, file.filename)
 
-    def set_status(self, freelancer_id: UUID, change: StatusChange) -> FreelancerRead:
+    def set_status(
+        self, freelancer_id: UUID, change: StatusChange, *, admin_id: UUID, fonte: str
+    ) -> FreelancerRead:
+        """Moves the card to `change.stato` and, when it moved, records who and by which
+        door (`fonte`, `web` or `mcp`) as a `status_changed` entry of the trail."""
         if change.stato not in FREELANCER_STATES:
             raise ValidationFailed(ENTITY, "stato", f"uno fra {', '.join(FREELANCER_STATES)}")
         row = self._require(freelancer_id)
+        before = row.stato
         row.stato = change.stato
-        if change.note is not None:
-            row.note = change.note.strip() or None
         self.session.commit()
+        if before != change.stato:
+            AdminActionService(self.session).record(
+                ENTITY,
+                row.id,
+                "status_changed",
+                admin_id,
+                {"before": before, "after": change.stato, "fonte": fonte},
+            )
         user = self.session.get(User, row.user_id)
         assert user is not None
         return freelancer_read(row, user)
@@ -637,6 +648,10 @@ class FreelancerService:
                 ENTITY, "action_id", "si può ripristinare solo una modifica di campo"
             )
         before = action.payload.get("before", {})
+        if "note" in before:
+            raise ValidationFailed(
+                ENTITY, "action_id", "una nota non si ripristina da qui: si modifica nelle note"
+            )
         restored = {
             field: coerce_stored_value(
                 User if field in _ADMIN_IDENTITY_FIELDS else Freelancer, field, value

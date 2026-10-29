@@ -33,6 +33,7 @@ from rebase_core.errors import InvalidState, NotFound, ValidationFailed
 from rebase_core.models import (
     Freelancer,
     FreelancerCard,
+    Note,
     TalentCloudGrant,
     TeamProposal,
     TeamRequest,
@@ -57,7 +58,7 @@ def settings(hub_engine: Engine) -> Settings:
 def clean(hub_session: Session) -> Session:
     yield hub_session  # type: ignore[misc]
     hub_session.rollback()
-    for table in ("talent_cloud_grants", "admin_actions", "comments", "companies", "users"):
+    for table in ("talent_cloud_grants", "admin_actions", "notes", "companies", "users"):
         hub_session.execute(text(f"DELETE FROM {table}"))
     hub_session.commit()
 
@@ -307,7 +308,7 @@ def talents(hub_session: Session) -> Iterator[Session]:
         "team_proposals",
         "talent_cloud_grants",
         "admin_actions",
-        "comments",
+        "notes",
         "freelancers",
         "companies",
         "users",
@@ -356,7 +357,6 @@ def _talent(
         remoto=remoto,
         tariffa_giornaliera=tariffa,
         stato=stato,
-        note=note,
         posizione="Backend developer",
         links=[f"https://{slug}.dev"],
         cv_bytes=PDF if cv else None,
@@ -368,6 +368,10 @@ def _talent(
     )
     session.add(row)
     session.flush()
+    if note:
+        session.add(
+            Note(entity_type="freelancer", entity_id=row.id, testo=note, autore="Ivan", fonte="web")
+        )
     if with_card:
         session.add(
             FreelancerCard(

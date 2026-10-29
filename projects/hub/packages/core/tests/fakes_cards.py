@@ -63,6 +63,30 @@ def text_pdf(line: str) -> bytes:
     return bytes(out)
 
 
+# The persona a CV that states nothing about who the person is answers (REB-855): every
+# field empty, the shape every provider's strict output takes.
+NO_PERSONA: dict[str, Any] = {
+    "nome": None,
+    "cognome": None,
+    "email": None,
+    "telefono": None,
+    "citta": None,
+    "linkedin_url": None,
+    "altri_link": [],
+}
+
+# A CV that states its contacts, for the tests that read the named card.
+PERSONA: dict[str, Any] = {
+    "nome": "Ada",
+    "cognome": "Lovelace",
+    "email": "Ada.Lovelace@Example.org",
+    "telefono": "+39 333 123 4567",
+    "citta": "Torino",
+    "linkedin_url": "linkedin.com/in/ada-lovelace",
+    "altri_link": ["https://ada.example.org", "github.com/ada"],
+}
+
+
 def card_response(
     card: dict[str, Any] | None = None,
     *,
@@ -72,11 +96,12 @@ def card_response(
     output_tokens: int = 180,
     fonti: dict[str, list[str]] | None = None,
     employers: list[str] | None = None,
+    persona: dict[str, Any] | None = None,
 ) -> LlmResponse:
-    """The model's answer as `AiCall` hands it over under prompt version 2: `card` inside
-    the private draft (`fonti` and `employers` beside it), or `text` verbatim for a body
-    that is not one. `parsed` is the body validated as `CardDraft`, as `AiCall` does it,
-    and `None` when it is not one."""
+    """The model's answer as `AiCall` hands it over under prompt version 3: `card` inside
+    the private draft (`fonti`, `employers` and `persona` beside it), or `text` verbatim
+    for a body that is not one. `parsed` is the body validated as `CardDraft`, as `AiCall`
+    does it, and `None` when it is not one. The persona is empty unless one is handed."""
     body = (
         text
         if text is not None
@@ -85,6 +110,7 @@ def card_response(
                 "card": card if card is not None else CARD,
                 "fonti": fonti if fonti is not None else FONTI,
                 "employers": employers or [],
+                "persona": persona if persona is not None else NO_PERSONA,
             }
         )
     )
@@ -105,8 +131,10 @@ def card_response(
 
 
 def draft_body(card: dict[str, Any] | None = None) -> str:
-    """The body of a writing call's answer under prompt version 2, as a provider returns it."""
-    return json.dumps({"card": card or CARD, "fonti": FONTI, "employers": []})
+    """The body of a writing call's answer under prompt version 3, as a provider returns it."""
+    return json.dumps(
+        {"card": card or CARD, "fonti": FONTI, "employers": [], "persona": NO_PERSONA}
+    )
 
 
 def judgement_body(

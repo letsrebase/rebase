@@ -17,7 +17,7 @@ ADMIN_EMAIL = "ivan@rebase.it"
 ADA = "https://www.linkedin.com/in/ada-lovelace"
 TABLES = (
     "admin_actions",
-    "comments",
+    "notes",
     "contract_documents",
     "freelancer_cards",
     "freelancers",

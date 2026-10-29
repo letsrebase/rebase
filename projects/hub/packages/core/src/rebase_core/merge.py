@@ -10,7 +10,7 @@ back. The survivor's own trail gets an `absorbed` entry with the counts.
 **What moves** is the `RELATIONS` below, each by id: the logins, sessions and magic links,
 the company requests, the team asks and talent-cloud grants, the campaign rows, the
 referrals the person made or came through, the matches, the contract documents, the
-comment thread, the audit entries, the talent's asks on team requests, the tax data. A
+notes, the audit entries, the talent's asks on team requests, the tax data. A
 row that would collide with one the survivor already has (a referral for the same card,
 a talent already on the same request, a live cloud grant for the same company, a second
 tax record) stays where it was and is counted as `lasciati`.
@@ -23,7 +23,7 @@ left with a CV and no card, or only a failure for that CV, is flagged
 it: the merge never calls Claude.
 
 **Profile fields** the survivor leaves empty are filled from the absorbed card; the first
-attribution (the UTM set and the page) stays, the older card's; the notes are joined; the
+attribution (the UTM set and the page) stays, the older card's; the
 further `stato` wins over `nuovo`. Every changed value is kept in the entry, as it was.
 
 **What stops it**, each with a sentence: the same card, an admin as the absorbed side, two
@@ -50,7 +50,6 @@ from rebase_core.models import (
     AdminAction,
     CampaignOptout,
     CampaignRecipient,
-    Comment,
     Company,
     ContractDocument,
     Freelancer,
@@ -60,6 +59,7 @@ from rebase_core.models import (
     Login,
     MagicLinkToken,
     Match,
+    Note,
     Referral,
     TalentCloudGrant,
     TeamProposal,
@@ -72,7 +72,6 @@ from rebase_core.sources import delete_sources
 from rebase_core.users import UserService
 
 ENTITY = "freelancer"
-_COMMENT_MAX = 4000
 USER = "user"
 FREELANCER = "freelancer"
 
@@ -103,6 +102,7 @@ _CARD_COLUMNS = (
     "source_hashes",
     "conflicts",
     "thinking_tokens",
+    "persona",
     "created_at",
     "updated_at",
 )
@@ -251,10 +251,10 @@ RELATIONS: tuple[Relation, ...] = (
         movable=_not_a_second_or_a_self_referral,
     ),
     Relation(
-        "comments",
-        Comment.entity_id,
+        "notes",
+        Note.entity_id,
         FREELANCER,
-        where=(Comment.entity_type == "freelancer",),
+        where=(Note.entity_type == "freelancer",),
     ),
     Relation(
         "audit",
@@ -263,6 +263,10 @@ RELATIONS: tuple[Relation, ...] = (
         where=(AdminAction.entity_type.in_(("freelancer", "freelancer_fiscal")),),
     ),
 )
+
+# What a relation was called in the entries written before it was renamed: `undo` reads the
+# old key too, so a merge made while the thread was `comments` can still be put back.
+_LEGACY_KEYS = {"notes": "comments"}
 
 # Every foreign key to `users.id` or `freelancers.id` that the merge deliberately leaves
 # where it is, and why. `test_merge` holds `RELATIONS` plus this list against the schema,
@@ -277,6 +281,9 @@ LEFT_IN_PLACE: dict[str, str] = {
     "contract_documents.created_by": "the admin who made it",
     "contract_documents.sent_by": "the admin who sent it",
     "admin_actions.admin_id": "the admin who acted",
+    "notes.autore_id": "who wrote the note, as written; the note itself moves with the card",
+    "notes.modificata_da_id": "the admin who edited the note",
+    "notes.eliminata_da_id": "the admin who deleted the note",
     "admin_tokens.user_id": "an admin's token; an admin is never merged away",
     "campaigns.created_by": "the admin who made it",
     "talent_cloud_grants.granted_by": "the admin who granted it",
@@ -384,7 +391,7 @@ class PersonMergeService:
 
         author = _name(admin)[:AUTORE_MAX_LENGTH] or "admin"
         self.session.add(
-            Comment(
+            Note(
                 entity_type="freelancer",
                 entity_id=survivor.id,
                 testo=(
@@ -392,19 +399,10 @@ class PersonMergeService:
                     "una sola persona, il CV più recente resta qui."
                 ),
                 autore=author,
+                autore_id=admin_id,
+                fonte="sistema",
             )
         )
-        if absorbed.note:
-            # Its own note stays in the thread, whole, instead of being joined to the
-            # survivor's: a note has no length limit and an entry in the trail has one.
-            self.session.add(
-                Comment(
-                    entity_type="freelancer",
-                    entity_id=survivor.id,
-                    testo=f"Nota della scheda unita: {absorbed.note}"[:_COMMENT_MAX],
-                    autore=author,
-                )
-            )
         payload = {
             "into_freelancer_id": survivor.id,
             "into_user_id": s_user.id,
@@ -474,7 +472,7 @@ class PersonMergeService:
         the absorbed card and person (only if it still sits with the survivor, anything
         written since stays), the survivor's filled fields and CV are restored, the
         absorbed card and address are live again. Once; a merge already undone is
-        refused. Rows the survivor got *after* the merge (a new login, a comment) stay
+        refused. Rows the survivor got *after* the merge (a new login, a note) stay
         with the survivor."""
         action = self.session.get(AdminAction, action_id)
         if action is None or action.kind != "merged":
@@ -575,7 +573,10 @@ class PersonMergeService:
 
         put_back: dict[str, int] = {}
         for relation in RELATIONS:
-            ids = [UUID(i) for i in payload["moved"].get(relation.key, [])]
+            moved_ids = payload["moved"].get(relation.key)
+            if moved_ids is None and relation.key in _LEGACY_KEYS:
+                moved_ids = payload["moved"].get(_LEGACY_KEYS[relation.key])
+            ids = [UUID(i) for i in moved_ids or []]
             if not ids:
                 continue
             model = _model(relation)

@@ -3,7 +3,7 @@ and what each owner may change once signed in.
 
 The way in -- the magic link, session open/close, `resolve` -- moved to
 `rebase_core.users` (REB-278): a person signs in as a `users` row, member or admin
-alike. Every change the person makes is a comment in the row's thread (ORB-59), so
+alike. Every change the person makes is a note in the row's thread (ORB-59, REB-856), so
 the admin sees what moved without an audit table. A company files several requests
 over time (REB-381, `create_additional_request`), and since REB-602 the member area
 lists every one an admin has not soft-deleted and lets the person edit any of them by
@@ -21,10 +21,10 @@ from sqlalchemy.orm import Session
 
 from rebase_core.audit import utcnow
 from rebase_core.cloud import TalentCloudService
-from rebase_core.comments import CommentService
 from rebase_core.errors import NotFound
 from rebase_core.freelancers import check_cv, cv_of
-from rebase_core.models import AUTORE_MAX_LENGTH, Company, Freelancer, User
+from rebase_core.models import Company, Freelancer, User
+from rebase_core.notes import NoteService
 from rebase_core.schemas import (
     CompanyFields,
     CompanyUpdate,
@@ -38,7 +38,7 @@ from rebase_core.schemas import (
 from rebase_core.users import UserService, refuse_linkedin_conflict
 
 ENTITY = "freelancer"
-# What the comment calls each field, in the admin's language, in the wizard's order.
+# What the note calls each field, in the admin's language, in the wizard's order.
 FIELD_LABELS: dict[str, str] = {
     "nome": "nome",
     "cognome": "cognome",
@@ -54,7 +54,7 @@ FIELD_LABELS: dict[str, str] = {
 _IDENTITY_FIELDS = ("nome", "cognome", "linkedin_url")
 
 COMPANY_ENTITY = "company"
-# What the comment calls each field, in the admin's language, in the wizard's order
+# What the note calls each field, in the admin's language, in the wizard's order
 # (REB-314; REB-380 adds the last four): the eight a company contact may change about
 # one of their requests.
 COMPANY_FIELD_LABELS: dict[str, str] = {
@@ -215,11 +215,11 @@ class MemberService:
         return _to_profile(row, user)
 
     def update(self, freelancer_id: UUID, data: MemberUpdate) -> MemberProfile:
-        """Applies the seven answers and leaves one comment naming the ones that moved,
-        signed with the person's name after the change. Nothing moved, no comment --
+        """Applies the seven answers and leaves one note naming the ones that moved,
+        signed with the person's name after the change. Nothing moved, no note --
         unless the card was an admin's draft from a signup (ORB-155): saving it, even
         unchanged, makes it the person's (`compilata_da = "persona"`), and the thread
-        says so. `stato`, `note` and the attribution are never touched here. `nome`/
+        says so. `stato` and the attribution are never touched here. `nome`/
         `cognome`/`linkedin_url` live on the linked `users` row since REB-281, so a
         change to them lands there directly rather than through the card."""
         row = self._require(freelancer_id)
@@ -244,9 +244,9 @@ class MemberService:
         except IntegrityError as exc:
             refuse_linkedin_conflict(self.session, exc)
         if changed:
-            self._comment(user, row, f"Profilo aggiornato dalla persona: {', '.join(changed)}")
+            self._note(user, row, f"Profilo aggiornato dalla persona: {', '.join(changed)}")
         else:
-            self._comment(user, row, "Scheda confermata dalla persona")
+            self._note(user, row, "Scheda confermata dalla persona")
         return _to_profile(row, user)
 
     def update_company(
@@ -254,8 +254,8 @@ class MemberService:
     ) -> MeRead:
         """Applies the eight project answers (REB-314; REB-380 adds the last four) to
         one of the signed-in person's own requests -- `company_id`, or their newest live
-        one when it is `None` (REB-602) -- and leaves a comment naming what moved, the
-        same discipline `update` keeps for the freelancer card. `stato`, `note`,
+        one when it is `None` (REB-602) -- and leaves a note naming what moved, the
+        same discipline `update` keeps for the freelancer card. `stato`,
         `nome_azienda`, `telefono` and the referente's identity are never touched
         here."""
         row = (
@@ -273,12 +273,12 @@ class MemberService:
                 changed.append(label)
         if changed:
             self.session.commit()
-            author = f"{user.nome} {user.cognome}"[:AUTORE_MAX_LENGTH]
-            CommentService(self.session).add(
+            NoteService(self.session).add(
                 COMPANY_ENTITY,
                 row.id,
                 f"Richiesta aggiornata dal referente: {', '.join(changed)}",
-                author,
+                autore_id=user.id,
+                fonte="persona",
             )
         return self.me_read(user_id)
 
@@ -333,7 +333,7 @@ class MemberService:
         row.cv_uploaded_at = utcnow()
         row.compilata_da = "persona"
         self.session.commit()
-        self._comment(
+        self._note(
             user, row, "CV caricato dalla persona" if first else "CV aggiornato dalla persona"
         )
         return _to_profile(row, user)
@@ -348,9 +348,8 @@ class MemberService:
         assert user is not None
         return user
 
-    def _comment(self, user: User, row: Freelancer, text: str) -> None:
-        author = f"{user.nome} {user.cognome}"[:AUTORE_MAX_LENGTH]
-        CommentService(self.session).add(ENTITY, row.id, text, author)
+    def _note(self, user: User, row: Freelancer, text: str) -> None:
+        NoteService(self.session).add(ENTITY, row.id, text, autore_id=user.id, fonte="persona")
 
     def _require(self, freelancer_id: UUID) -> Freelancer:
         row = self.session.get(Freelancer, freelancer_id)

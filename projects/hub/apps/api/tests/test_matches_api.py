@@ -66,7 +66,7 @@ TABLES = (
     "matches",
     "contract_letter_counters",
     "freelancer_fiscal",
-    "comments",
+    "notes",
     "freelancers",
     "companies",
     "users",

@@ -10,6 +10,7 @@ from typing import Any
 from uuid import UUID
 
 import pytest
+from admins import an_admin
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -46,7 +47,7 @@ NOW = datetime(2026, 10, 27, 12, 0, tzinfo=UTC)
 ADA = "https://www.linkedin.com/in/ada-lovelace"
 TABLES = (
     "admin_actions",
-    "comments",
+    "notes",
     "freelancer_cards",
     "freelancers",
     "users",
@@ -219,7 +220,7 @@ def test_an_admin_cannot_draft_a_card_with_a_profile_that_is_already_on_one(
         fonti=["https://www.linkedin.com/in/ada-lovelace"],
     )
     with pytest.raises(ValidationFailed) as refused:
-        FreelancerService(clean).draft_from_signup(signup.id, draft, "Claude")
+        FreelancerService(clean).draft_from_signup(signup.id, draft, an_admin(clean), "web")
     assert refused.value.details["reason"] == LINKEDIN_HAS_CARD
 
 

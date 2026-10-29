@@ -180,6 +180,39 @@ its `users` row points at the survivor (`merged_into_id`), and the `merged` entr
 every moved row so `--undo` can put it back. Production runbook, order of steps, the dump taken first
 and the undo: `docs/merge-duplicate-talents.md`.
 
+## One thread of notes (REB-856)
+
+Everything said about a freelancer or a company is a row of `notes` (`rebase_core.notes`,
+`NoteService`); the `note` column of both tables and the append-only `comments` of ORB-59
+are gone (migration 0042 moved every old `note` in as a note signed «Nota precedente», and
+renamed `comments`). A note has `autore_id` and `autore` (the user and their name as it read
+then; a caller never supplies the name), `created_at`, and `fonte`: `web` (the admin area),
+`mcp` (an agent over a token), `persona` (the person's own change of profile, CV or request,
+written by `MemberService`) or `sistema` (the merge's line); NULL is a note from before the
+tracking. So **the text carries no date and no author**: the MCP tool descriptions tell the
+agent so. An admin edits and deletes the notes whose `fonte` is `web`, `mcp` or NULL
+(`schemas.note_is_editable`); `persona` and `sistema` are events and are refused in a
+sentence. An edit stamps `modificata_at` and `modificata_da_id`; a delete is soft
+(`eliminata_*`), and lists and `get_freelancer`/`get_company` leave deleted notes out.
+Every admin add, edit and delete is an `AdminAction` on the parent (`note_added`,
+`note_edited`, `note_deleted`: `nota_id`, `fonte`, the text, or `before`/`after`), and
+`set_status` on both services takes `admin_id` and `fonte` and writes `status_changed`
+(`before`, `after`, `fonte`) when the state moved: the door of an action is always in the
+trail. `StatusChange` is the state alone (a stale client sending `note` gets a 422).
+
+- API (`routers/admin.py`, source `web`): `GET/POST /api/hub/freelancers/{id}/notes`,
+  `GET/POST /api/hub/companies/{id}/notes`, `PATCH /api/hub/notes/{note_id}`,
+  `DELETE /api/hub/notes/{note_id}` (204).
+- MCP (source `mcp`, the actor is the token's admin): `add_freelancer_note`, `add_company_note`,
+  `update_note(note_id, testo)`, `delete_note(note_id)`; `set_freelancer_status` and
+  `set_company_status` take the state alone, and none of them has an `autore` argument.
+- A revert of an old `overridden` entry on the field `note` is refused with a sentence: a note
+  is edited in the thread. A merge moves the notes by id (`RELATIONS["notes"]`; an undo of a
+  merge made before the rename still finds its rows under the old key `comments`).
+- The web page is `pages/admin/Notes.tsx`; `AuditTrail.tsx` reads the new kinds.
+- PostHog's warehouse read `comments`: it reads `notes` once its schema is refreshed (the
+  runbook, `docs/adding-a-project.md` § 7). `TeamRequest.note` is another thing and stays.
+
 ## The guide is a generated file, committed, and easy to leave stale
 
 `content/guida-primi-passi-freelance.md` is typeset by `tools/build_guide_pdf.py`, with
@@ -327,7 +360,7 @@ spend the reserve until the 429 stops it. A bare 429 is still a retry that count
 **The same pass stamps what each mail led to** (P-REB-41 phase 2, `rebase_core.campaigns.outcome`).
 For every row sent in the last 30 days and still missing a stamp, it writes `entrato_at`
 (the first login after the mail) and `azione_at` (the campaign's action, from the table
-that records it: the CV comment, the card's `created_at`, the request's `updated_at`,
+that records it: the CV note, the card's `created_at`, the request's `updated_at`,
 the tick itself for a card that became complete, or the first click for «Un link»,
 whose page the hub never sees, REB-530). A stamp is written once. The log line
 ends with `N esiti registrati`. The preview's `campaigns` loop runs, since it has a
@@ -605,13 +638,37 @@ the current prompt with `--baseline <that run>`. Record the ids in the PR that c
 
 **The card is written from more than the CV, and every switch is off in production** (REB-837 to
 REB-839, design 2026-10-27, «Sources» and «Provenance, versions and regeneration»). The prompt is
-`PROMPT_VERSION` 2 in `cards.py`: version 1's words, then the version line and the description of
+`PROMPT_VERSION` 3 in `cards.py` (REB-839 wrote version 2, REB-855 version 3): version 1's words, then the version line and the description of
 a private answer (`card_draft.CardDraft`): the `card` as before, `fonti` (which sources the model
 says supported each field) and `employers` (every employer the CV names). `Card` did not change,
 and only `card` is ever the card: the cloud, the talent list and every public read serve `Card`'s
 fields and the level, never `fonti`, `source_hashes`, `conflicts`, `prompt_version` or `provider`;
 only `GET /api/hub/freelancers/{id}/card` (`FreelancerCardAdminRead.provenance`) carries them,
 for «Scheda anonima», which shows `fonti` as «secondo il modello».
+
+**The CV's identity and contacts are read by the same call, and only an admin sees them** (REB-855,
+`PROMPT_VERSION` 3). `CardDraft.persona` (`card_draft.CardPersona`: `nome`, `cognome`, `email`,
+`telefono`, `citta`, `linkedin_url`, `altri_link`, each null or empty unless a document states it
+literally) is answered beside the card, so a person costs one call, never two. `clean_persona`
+normalises it (email lower case and valid by `EmailStr`, LinkedIn through `normalise_linkedin`, the
+phone as written and trimmed up to `TELEFONO_MAX_LENGTH` with at least six digits, only `http(s)`
+links, at most five) and **drops what does not pass: a bad contact never fails a card**. With the
+`employers` the model already answers (as `aziende`) it is stored as
+`freelancer_cards.persona` (JSONB, migration 0043), tagged with the hash of the CV it was read
+from, and **never written into `users`**. It is stored whenever the draft parsed, also when the
+anonymity guard refused the card, so the contacts show regardless; a failure that read none keeps
+the persona of the same CV and retires one of another CV (`_save`), and the row's delete (a CV
+removed) takes it. Who reads it: `GET /api/hub/freelancers/{id}/card` (`FreelancerCardAdminRead`
+`persona` and `differenze`, the fields where the CV and `users` both say something and disagree:
+names and email without case or spacing, the phone by its digits, LinkedIn by its stored shape),
+which feeds «Scheda con i dati» and the «Telefono» and «Email nel CV» rows of the talent page;
+and MCP `get_freelancer` (`telefono`, `contatti_cv`, `differenze_cv`). `FreelancerRead.telefono` is
+`users.telefono`. **Nothing else reads it**: not `get_freelancer_card`, `list_talenti`,
+`get_talento`, `cloud.py`, `team_builder.py`, the evaluation (`card_eval` compares the anonymous
+card only) or the member area (`test_card_persona.py`, the cloud, admin API and MCP tests assert
+it). **Version 3 changes no card by itself**: every card of version 2 reads as stale (`prompt`)
+and waits in «Schede da aggiornare» for an admin's «Avvia rigenerazione» or a «Rigenera
+scheda»; the hourly `refresh_stale` only writes a card whose CV is new.
 
 - **Sources** are GitHub (`github_source.py`, the account their links name, public data, the
   optional `REBASE_GITHUB_TOKEN` only lifts the rate limit), their other links (`web_fetch.py`:
@@ -645,12 +702,16 @@ for «Scheda anonima», which shows `fonti` as «secondo il modello».
   `verify_fonti` drops every key that is not a source of this person.
 - **The guard** (`card_guard.identifying`, called by `compose`) reads the card against the name and
   surname as before (a hit fails the card at once), and against the GitHub login, the owned
-  non-fork repository names, every link's hostname and the employers the model reported. A hit on
+  non-fork repository names, every link's hostname, the employers the model reported and, since
+  REB-855, what the CV itself says of the person (`persona`: the name as the CV spells it, the
+  email address and its local part, the phone number by its last nine digits, the hostnames and
+  GitHub account of its links, `KnownIdentifiers.cv_*`, `emails`, `phones`). A hit on
   those asks for **one rewrite, then fails the card** with the sentence «La scheda cita un account,
-  un repository, un sito o un datore di lavoro...» (`source_identifying`), keeping the card of the
-  same CV if there is one. The rewrite message names the card's fields, never the words. The
-  employers exist in memory for that one write: never in a row, a log, an `ai_usage` record or a
-  conflict (`test_employers_not_stored_anywhere`).
+  un repository, un sito, un datore di lavoro, un nome o un recapito della persona...»
+  (`source_identifying`), keeping the card of the same CV if there is one. The rewrite message
+  names the card's fields, never the words. The employers are stored only as `aziende` of the
+  persona (below), never in another column, a log, an `ai_usage` record or a conflict
+  (`test_employers_are_stored_only_with_the_persona`).
 - **A card is stale when its inputs are not the ones it was written from**, and that never spends
   by itself. `freelancer_cards` keeps `prompt_version` (`NULL` is version 1), `provider`, `fonti`,
   `source_hashes` (`wizard`: the position; `hub`: the hub's facts without the months of a running
@@ -666,7 +727,9 @@ for «Scheda anonima», which shows `fonti` as «secondo il modello».
   stops at the first outage or spent cap (REB-853: with `REBASE_CARDS_WORKERS` at once, or as a
   Message Batch from `REBASE_CARDS_BATCH_THRESHOLD` cards up, below). A bump of `PROMPT_VERSION`
   therefore lists every card of the old version and spends nothing: **deploying version 2 puts all
-  of them in the list**.
+  of them in the list**, and so did version 3. The persona (REB-855) travels the same way through
+  `CardWriter.finish` and `CardWriter.store`, so a card applied from a Message Batch result stores
+  it, and guards the anonymous card with it, exactly as a synchronous write does.
 - **Bulk writing is parallel, and a bulk regeneration is a Message Batch** (REB-853). `rebase
   cards-refresh` and an admin's regeneration write with `REBASE_CARDS_WORKERS` workers (default 5,
   1 to 8; `.env`, `docker-compose.yml`): each is a thread with a session and a `CardWriter` of its

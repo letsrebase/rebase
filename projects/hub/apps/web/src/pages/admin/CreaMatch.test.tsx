@@ -66,11 +66,10 @@ const OPEN = {
   giorni_presenza: null,
   numero_risorse: 1,
   stato: 'nuovo',
-  note: null,
   origine: null,
   utm_source: null,
   created_at: '2026-09-10T10:00:00Z',
-  commenti: [],
+  note: [],
   deleted_at: null,
 }
 const CLOSED = { ...OPEN, id: 'c2', nome_azienda: 'Bianchi Srl', stato: 'chiuso' }

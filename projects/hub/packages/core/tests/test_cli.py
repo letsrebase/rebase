@@ -747,7 +747,7 @@ def test_cards_eval_prints_the_report_of_the_sample_as_the_task_is_set(
     assert code == 0
     out = capsys.readouterr().out
     # With no provider or model given, the `card` task's own (migration 0036's seed).
-    assert "anthropic/claude-opus-5, effort medium, prompt v2" in out
+    assert "anthropic/claude-opus-5, effort medium, prompt v3" in out
     assert "giudice anthropic/claude-opus-5-5" in out
     assert "senza date" in out and str(person)[:8] in out and "campi supportati 8/8" in out
     for private in ("Lovelace", "Backend developer", "Python", "Torino"):

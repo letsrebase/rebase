@@ -45,7 +45,7 @@ def users(hub_engine: Engine, hub_session: Session, settings: Settings) -> UserS
     for table in (
         "sessions",
         "magic_link_tokens",
-        "comments",
+        "notes",
         "freelancers",
         "companies",
         "users",

@@ -13,15 +13,15 @@ from rebase_core.campaigns.states import Candidate, card_state
 from rebase_core.models import (
     Campaign,
     CampaignRecipient,
-    Comment,
     Company,
     Freelancer,
     Login,
+    Note,
     User,
 )
 
 # What `MemberService.replace_cv` writes on a card's first CV (`members.py:303`).
-CV_COMMENT_PREFIX = "CV caricato dalla persona"
+CV_NOTE_PREFIX = "CV caricato dalla persona"
 
 
 def _card(session: Session, email: str) -> Freelancer | None:
@@ -101,15 +101,17 @@ def done_at(
         if azione == "cv":
             if prima.get("ha_cv") or card.cv_size is None:
                 return None
-            commented = session.scalar(
-                select(func.min(Comment.created_at)).where(
-                    Comment.entity_type == "freelancer",
-                    Comment.entity_id == card.id,
-                    Comment.testo.startswith(CV_COMMENT_PREFIX),
-                    Comment.created_at > moment,
+            noted = session.scalar(
+                select(func.min(Note.created_at)).where(
+                    Note.entity_type == "freelancer",
+                    Note.entity_id == card.id,
+                    Note.fonte == "persona",
+                    Note.eliminata_at.is_(None),
+                    Note.testo.startswith(CV_NOTE_PREFIX),
+                    Note.created_at > moment,
                 )
             )
-            return commented or card.updated_at
+            return noted or card.updated_at
         if prima.get("completa") or not _complete(card):
             return None
         return now or card.updated_at

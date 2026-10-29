@@ -5,7 +5,7 @@ Two kinds of fact, both the hub's own and both hard: the admin's seniority and y
 override (REB-799), and the engagements the person has really worked through the hub
 (role, months, how it ended). Nothing else is given to the model: **never the client's
 name** (the role an engagement is filed under is read with the client's name taken out
-of it), the client's budget, the match's notes or the thread of admin comments.
+of it), the client's budget, the match's notes or the thread of admin notes.
 
 Only an engagement that started counts as work: a draft, one in signature and a cancelled
 one never did, and one with no start date cannot be placed in time, so it is left out

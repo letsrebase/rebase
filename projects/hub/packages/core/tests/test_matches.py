@@ -69,7 +69,7 @@ TABLES = (
     "matches",
     "contract_letter_counters",
     "freelancer_fiscal",
-    "comments",
+    "notes",
     "freelancers",
     "companies",
     "users",
@@ -754,7 +754,9 @@ def test_a_cancelled_matchs_client_is_never_prefilled(clean: Session) -> None:
 
 def test_a_closed_request_can_be_neither_previewed_nor_matched(clean: Session) -> None:
     admin_id, freelancer_id, company_id = _setup(clean)
-    CompanyService(clean).set_status(company_id, StatusChange(stato="chiuso"))
+    CompanyService(clean).set_status(
+        company_id, StatusChange(stato="chiuso"), admin_id=admin_id, fonte="web"
+    )
     service = _service(clean)
     for call in (
         lambda: service.create(freelancer_id, _body(company_id), admin_id),
@@ -1047,7 +1049,9 @@ def test_a_create_waiting_for_the_freelancers_lock_reads_the_request_and_tax_dat
 
         # Each commits the holder's transaction, which releases the lock.
         if change == "request_closed":
-            CompanyService(holder).set_status(company_id, StatusChange(stato="chiuso"))
+            CompanyService(holder).set_status(
+                company_id, StatusChange(stato="chiuso"), admin_id=admin_id, fonte="web"
+            )
         else:
             FiscalService(holder).save(
                 freelancer_id,
@@ -1110,7 +1114,9 @@ def test_closing_a_request_while_its_match_is_typeset_waits_for_the_match(
 
     def close() -> None:
         try:
-            CompanyService(closer).set_status(company_id, StatusChange(stato="chiuso"))
+            CompanyService(closer).set_status(
+                company_id, StatusChange(stato="chiuso"), admin_id=admin_id, fonte="web"
+            )
         except BaseException as exc:  # noqa: BLE001 -- surfaced on the main thread below
             errors.append(exc)
 
@@ -1564,7 +1570,9 @@ def test_check_refuses_what_create_refuses(clean: Session, action: str) -> None:
         attempt(freelancer_id, _body(uuid4()))
     with pytest.raises(NotFound):
         attempt(uuid4(), _body(company_id))
-    CompanyService(clean).set_status(company_id, StatusChange(stato="chiuso"))
+    CompanyService(clean).set_status(
+        company_id, StatusChange(stato="chiuso"), admin_id=admin_id, fonte="web"
+    )
     with pytest.raises(ValidationFailed) as refused:
         attempt(freelancer_id, _body(company_id))
     assert refused.value.details["field"] == "company_id"

@@ -62,7 +62,7 @@ def clean(hub_session: Session) -> Iterator[Session]:
     for table in (
         "admin_actions",
         "ai_usage",
-        "comments",
+        "notes",
         "matches",
         "companies",
         "freelancers",
@@ -172,7 +172,7 @@ def test_prompt_without_sources_equals_version_1_substance_plus_version_line() -
             ),
         )
     ]
-    assert "\n\nPrompt version: 2\n\n" in plain.system
+    assert "\n\nPrompt version: 3\n\n" in plain.system
     assert "<source" not in plain.system and "<source" not in plain.messages[0].text
 
 
@@ -407,19 +407,26 @@ def test_gender_rewrite_still_works(clean: Session) -> None:
     assert IDENTIFYING_AGAIN not in llm.requests[1].messages[2].text
 
 
-def test_employers_not_stored_anywhere(clean: Session) -> None:
+def test_employers_are_stored_only_with_the_persona(clean: Session) -> None:
+    """The companies the model names are the named card's `aziende` (REB-855): in the
+    persona column of the card's row, and in no other column, usage record or audit entry,
+    where a leak could start."""
     person = _apply(clean)
     named = card_response(employers=[EMPLOYER, "Globex Corporation"])
     llm = RecordingCall([named, named])
     writer = _writer(clean, llm)
 
-    composed = writer.compose(person)
+    writer.compose(person)
     writer.write(person)
 
+    row = _stored(clean, person)
+    assert row.persona is not None and row.persona["aziende"] == [EMPLOYER, "Globex Corporation"]
+    columns = {
+        c.name: getattr(row, c.name)
+        for c in FreelancerCard.__table__.columns
+        if c.name != "persona"
+    }
     for secret in (EMPLOYER, "Globex"):
-        assert secret not in repr(composed)
-        row = _stored(clean, person)
-        columns = {c.name: getattr(row, c.name) for c in FreelancerCard.__table__.columns}
         assert secret not in json.dumps(columns, default=str)
         for usage in clean.scalars(select(AiUsage)):
             assert secret not in repr(usage.__dict__)
@@ -448,7 +455,7 @@ def test_public_and_cloud_reads_have_no_fonti(clean: Session) -> None:
     service = _sources(clean)
     _writer(clean, RecordingCall([card_response()]), service).write(person)
     stored = _stored(clean, person)
-    assert stored.fonti and stored.source_hashes and stored.prompt_version == 2
+    assert stored.fonti and stored.source_hashes and stored.prompt_version == 3
     assert set(Card.model_fields) == set(CARD)
     provenance = ("fonti", "source_hashes", "conflicts", "provenance", "prompt_version", "provider")
 
@@ -466,7 +473,7 @@ def test_public_and_cloud_reads_have_no_fonti(clean: Session) -> None:
     # The admin's page has them, and only its route does.
     admin = CardWriter(clean, None, sources=service).read_admin(person)
     assert admin.provenance is not None
-    assert admin.provenance.prompt_version == 2
+    assert admin.provenance.prompt_version == 3
     assert admin.provenance.fonti["anni"] == ["cv"]
     assert [s.key for s in admin.provenance.sources] == ["github", "link:1"]
     assert admin.provenance.stale is None

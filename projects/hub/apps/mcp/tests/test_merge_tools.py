@@ -18,7 +18,7 @@ from rebase_mcp.server import build_server
 
 TABLES = (
     "admin_actions",
-    "comments",
+    "notes",
     "contract_documents",
     "freelancer_cards",
     "freelancers",

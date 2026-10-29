@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, within } from '@testing-library/react'
+import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SchedaAnonima } from './SchedaAnonima'
@@ -291,5 +291,97 @@ describe('«Scheda anonima» on the talent page (REB-514, spec § 2.1, § 5.1)',
     expect(within(card).getByText('Scheda scritta prima della registrazione delle fonti')).toBeInTheDocument()
     expect(within(card).getByText(/Prompt v1/)).toBeInTheDocument()
     expect(within(card).getByText('Il CV è cambiato: la scheda si rigenera da sola')).toBeInTheDocument()
+  })
+})
+
+const PERSONA = {
+  nome: 'Ada',
+  cognome: 'Lovelace',
+  email: 'ada.lovelace@example.org',
+  telefono: '+39 333 123 4567',
+  citta: 'Torino',
+  linkedin_url: 'https://www.linkedin.com/in/ada-lovelace',
+  altri_link: ['https://ada.example.org'],
+  aziende: ['Initech Labs', 'Globex'],
+}
+
+function named(): HTMLElement {
+  return screen.getByRole('region', { name: 'Scheda con i dati' })
+}
+
+describe('«Scheda con i dati», the admin-only card of the CV’s contacts (REB-855)', () => {
+  it('shows what the CV states and the anonymous card’s own role, level, skills and summary', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { ...WRITTEN, persona: PERSONA, differenze: [] }))
+    mount()
+
+    await screen.findByRole('region', { name: 'Scheda con i dati' })
+    const dati = named()
+    expect(within(dati).getByText('Ada Lovelace')).toBeInTheDocument()
+    expect(within(dati).getByRole('link', { name: 'ada.lovelace@example.org' })).toHaveAttribute(
+      'href',
+      'mailto:ada.lovelace@example.org',
+    )
+    expect(within(dati).getByText('+39 333 123 4567')).toBeInTheDocument()
+    expect(within(dati).getByText('Torino')).toBeInTheDocument()
+    expect(within(dati).getByRole('link', { name: PERSONA.linkedin_url })).toHaveAttribute('href', PERSONA.linkedin_url)
+    expect(within(dati).getByRole('link', { name: 'https://ada.example.org' })).toBeInTheDocument()
+    expect(within(dati).getByText('Initech Labs, Globex')).toBeInTheDocument()
+    // The same component as the anonymous card's rows: the two cannot disagree.
+    expect(within(dati).getByText('Backend developer')).toBeInTheDocument()
+    expect(within(dati).getByText('9 anni di esperienza')).toBeInTheDocument()
+    expect(within(dati).getByText('FastAPI')).toBeInTheDocument()
+    expect(within(dati).getByText(WRITTEN.card.sintesi)).toBeInTheDocument()
+    expect(within(dati).queryByRole('alert')).toBeNull()
+  })
+
+  it('lists where the CV and the profile disagree as a warning', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      answer(200, {
+        ...WRITTEN,
+        persona: PERSONA,
+        differenze: [
+          { campo: 'email', cv: 'ada.lovelace@example.org', profilo: 'ada@studio.it' },
+          { campo: 'telefono', cv: '+39 333 123 4567', profilo: '02 5550199' },
+        ],
+      }),
+    )
+    mount()
+
+    const alert = await within(await screen.findByRole('region', { name: 'Scheda con i dati' })).findByRole('alert')
+    expect(within(alert).getByText(/Email: nel CV «ada.lovelace@example.org», nel profilo «ada@studio.it»/)).toBeInTheDocument()
+    expect(within(alert).getByText(/Telefono: nel CV «\+39 333 123 4567», nel profilo «02 5550199»/)).toBeInTheDocument()
+  })
+
+  it('shows only an http(s) address as a link', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      answer(200, { ...WRITTEN, persona: { ...PERSONA, altri_link: ['javascript:alert(1)'] }, differenze: [] }),
+    )
+    mount()
+    const dati = await screen.findByRole('region', { name: 'Scheda con i dati' })
+    expect(within(dati).getByText('javascript:alert(1)')).toBeInTheDocument()
+    expect(within(dati).queryByRole('link', { name: 'javascript:alert(1)' })).toBeNull()
+  })
+
+  it('says «Rigenera scheda» reads the data for a card written before the persona, and has no section without a card', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, WRITTEN))
+    mount()
+    const dati = await screen.findByRole('region', { name: 'Scheda con i dati' })
+    expect(within(dati).getByText(/«Rigenera scheda» lo legge/)).toBeInTheDocument()
+
+    spy.mockResolvedValue(answer(200, NONE))
+    cleanup()
+    mount()
+    await screen.findByText('Nessuna scheda ancora.')
+    expect(screen.queryByRole('region', { name: 'Scheda con i dati' })).toBeNull()
+  })
+
+  it('keeps the contacts when the guard refused the anonymous card', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      answer(200, { ...NONE, error: 'La scheda cita un account.', persona: PERSONA, differenze: [] }),
+    )
+    mount()
+    const dati = await screen.findByRole('region', { name: 'Scheda con i dati' })
+    expect(within(dati).getByText('+39 333 123 4567')).toBeInTheDocument()
+    expect(within(dati).queryByText('Ruolo')).toBeNull()
   })
 })

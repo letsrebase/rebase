@@ -5,8 +5,8 @@ An admin's tool, by credential since REB-213: every transport resolves a persona
 `build_server` a callable that answers who that is. Over stdio it is one admin for the
 life of the process; over HTTP (`rebase_mcp.http`) it is whoever signed the request,
 bound for the duration of the call. Everything a tool can do is what the hub's admin API
-does behind its login; the admin's name is what a comment or a drafted card is signed
-with, so the thread says who.
+does behind its login; the admin is who a note, a status change or a drafted card is signed
+by, with the door `mcp`, so the thread and the trail say who and from where.
 
 One session per tool call, closed whatever happened: the SDK dispatches sync tools on
 a thread pool, and a session shared across calls is the defect PigroCRM's MCP server
@@ -40,9 +40,8 @@ from rebase_core.admin_tokens import AdminRead
 from rebase_core.ai_config import AiConfigService
 from rebase_core.amounts import NotAnAmount, italian_amount
 from rebase_core.campaigns.service import CampaignService
-from rebase_core.cards import CardWriter
+from rebase_core.cards import CardWriter, persona_differences, stored_persona
 from rebase_core.cloud import TalentCloudService
-from rebase_core.comments import CommentService
 from rebase_core.companies import CompanyService
 from rebase_core.config import Settings
 from rebase_core.contract_schemas import FiscalData, MatchCreate
@@ -68,6 +67,7 @@ from rebase_core.matches import (
 )
 from rebase_core.merge import PersonMergeService
 from rebase_core.models import Freelancer, Signup, User
+from rebase_core.notes import NoteService
 from rebase_core.perks import PerkService
 from rebase_core.pigro import PigroRegistry, PigroUnavailable
 from rebase_core.regimes import OCCASIONALE, Regime
@@ -112,7 +112,7 @@ INSTRUCTIONS = (
     "rebase, la community di freelance di letsrebase.com. Gli strumenti leggono chi "
     "ha chiesto di entrare (iscrizioni), i freelance che hanno compilato il profilo con il "
     "CV e le aziende che cercano persone; possono cambiare lo stato di una candidatura, "
-    "annotarla e lasciare un commento datato nel suo thread; da un'iscrizione possono "
+    "lasciare una nota firmata e datata nel suo thread; da un'iscrizione possono "
     "creare la scheda freelance con quanto si trova in pubblico su quella persona, che poi "
     "lei completa dalla sua area. Da qui si gestiscono anche i match fra un freelance e "
     "un'azienda, i loro contratti e la firma, come dall'area admin. Si leggono anche le "
@@ -125,6 +125,8 @@ PIGRO_NOT_CONFIGURED = "Il registro di Pigro non è configurato: manca REBASE_PI
 # `MatchService.proposal` names the letter's fields as the admin API's body does
 # (`lettera.compenso`); the tools take them as `condizioni`, and a refusal says so.
 LETTER_PART, CONDITIONS_PART = "lettera.", "condizioni."
+# The door every write of this server comes through, recorded on notes and status changes.
+SOURCE = "mcp"
 TAX_DATA_SAVED = {"dati_fiscali": "salvati"}
 
 logger = logging.getLogger(__name__)
@@ -134,7 +136,7 @@ def _field_refusal(exc: PydanticValidationError) -> ToolError:
     """A tool's input refused in the hub's Italian, «campo: motivo»: `field_reason`'s
     words (those `MatchService.proposal` uses), never Pydantic's own text, which repeats
     the value typed -- a tax identifier does not come back in an answer this way -- and
-    for a text past its limit the limit itself, the way the comment tools say it («al
+    for a text past its limit the limit itself, the way the note tools say it («al
     massimo 4000 caratteri»). An optional text's limit is Pydantic's `too_long`, a plain
     one's `string_too_long`: both carry `max_length`. `set_freelancer_tax_data`,
     `create_match`'s `giorni_previsti` and the team tools refuse through this."""
@@ -252,7 +254,7 @@ def _supplied_text(raw: str) -> str | None:
     """A tool parameter's own contract for `override_freelancer`/`override_company`:
     the caller already checked `is not None` before calling this, so an empty string
     is the one thing left it can mean -- clear the field, the same convention
-    `set_freelancer_status`'s own `note` gives a status change. A nullable column
+    the convention every optional override takes. A nullable column
     accepts it; `rebase_core.audit.reject_cleared_columns` refuses it on one that
     is not, naming the field rather than leaving it silently ignored."""
     return raw or None
@@ -336,15 +338,14 @@ def build_server(
         tariffa_giornaliera: str | None = None,
         remoto: str | None = None,
         links: list[str] | None = None,
-        autore: str | None = None,
     ) -> dict[str, Any]:
         """Crea (o riscrive) la scheda freelance di un'iscrizione con quanto si trova in
         pubblico su quella persona: nome e cognome obbligatori, poi il profilo LinkedIn,
         la posizione come la dichiara lei, altri link (sito, GitHub, portfolio). Tariffa e
         modalità di lavoro solo se una fonte pubblica le dice, altrimenti restano vuote
         con il CV: la persona le completa dalla sua area. `fonti` sono gli indirizzi https
-        da cui vengono le informazioni, da una a dieci, e finiscono nel thread della
-        scheda firmate da `autore` (l'admin dietro il token, se non dici chi scrive). Una
+        da cui vengono le informazioni, da una a dieci, e finiscono come nota nel thread della
+        scheda, firmata dall'admin dietro il token. Una
         scheda che la persona ha già compilato non si tocca: il tool rifiuta."""
         draft = FreelancerDraft(
             nome=nome,
@@ -364,7 +365,7 @@ def build_server(
         return _run(
             lambda s: FreelancerRead.model_validate(
                 FreelancerService(s)
-                .draft_from_signup(UUID(signup_id), draft, autore or admin().nome)
+                .draft_from_signup(UUID(signup_id), draft, admin().id, SOURCE)
                 .model_dump()
             )
         )
@@ -513,7 +514,7 @@ def build_server(
         tutti i suoi campi (anche `settori`, `lingue`, `sintesi` e `fascia`, la banda di
         prezzo per il cliente). Per una scheda freelance risponde il dettaglio completo
         della schermata admin (REB-284), lo stesso che legge «Dettaglio talento»: i dati
-        della persona con lo stato, le note e il thread dei `commenti`, l'attribuzione
+        della persona con lo stato e il thread delle `note`, l'attribuzione
         dell'iscrizione `iscrizione_utm`, gli ultimi accessi e gli ultimi download della
         guida, e lo spazio Pigro quando l'indirizzo ne ha uno. `origine` è quella della
         lista (`wizard` o `admin`); la pagina del sito da cui è partita la persona
@@ -546,13 +547,30 @@ def build_server(
 
     @mcp.tool()
     def get_freelancer(freelancer_id: str) -> dict[str, Any]:
-        """Un freelance, per id, con `commenti`: il thread di chi lo ha seguito, dal più
-        recente, ognuno con autore e data."""
-        return _run(
-            lambda s: FreelancerRead.model_validate(
-                FreelancerService(s).get(UUID(freelancer_id)).model_dump()
-            )
-        )
+        """Un freelance, per id, con `note`: il thread di chi lo ha seguito, dal più
+        recente, ognuna con `id`, autore, data, `fonte` (`web`, `mcp`, `persona`, `sistema`),
+        l'ultima modifica e `modificabile`. Le note cancellate non ci sono. `telefono` è
+        quello dell'account; `contatti_cv` è quanto il CV dice della persona, letto da
+        Claude insieme alla scheda anonima (nome, cognome, email, telefono, città, LinkedIn,
+        altri link, aziende), `None` se la scheda non ne ha ancora (scritta prima della
+        versione 3 del prompt o senza CV) e `differenze_cv` dove il CV e il profilo
+        dicono cose diverse. Sono dati personali: solo per l'admin, mai per le schede
+        anonime, il cloud o il team builder."""
+
+        def call(session: Session) -> dict[str, Any]:
+            key = UUID(freelancer_id)
+            read = FreelancerRead.model_validate(FreelancerService(session).get(key).model_dump())
+            persona = stored_persona(session, key)
+            return {
+                **read.model_dump(mode="json"),
+                "contatti_cv": persona.model_dump(mode="json") if persona is not None else None,
+                "differenze_cv": [
+                    difference.model_dump(mode="json")
+                    for difference in persona_differences(session, persona, key)
+                ],
+            }
+
+        return _call(call)
 
     @mcp.tool()
     def read_freelancer_cv(freelancer_id: str) -> dict[str, Any]:
@@ -565,30 +583,55 @@ def build_server(
         return _run(lambda s: FreelancerService(s).cv_text(UUID(freelancer_id)))
 
     @mcp.tool()
-    def set_freelancer_status(
-        freelancer_id: str, stato: str, note: str | None = None
-    ) -> dict[str, Any]:
-        """Sposta una candidatura fra nuovo, contattato, attivo e scartato, con una nota
-        opzionale per chi la rileggerà. Non tocca quello che la persona ha scritto."""
+    def set_freelancer_status(freelancer_id: str, stato: str) -> dict[str, Any]:
+        """Sposta una candidatura fra nuovo, contattato, attivo e scartato. Non tocca
+        quello che la persona ha scritto. Il cambio finisce nel registro di
+        `get_freelancer_audit` (`status_changed`, con prima e dopo): per il perché usa
+        `add_freelancer_note`."""
         return _run(
             lambda s: FreelancerService(s).set_status(
-                UUID(freelancer_id), StatusChange(stato=stato, note=note)
+                UUID(freelancer_id), StatusChange(stato=stato), admin_id=admin().id, fonte=SOURCE
             )
         )
 
     @mcp.tool()
-    def add_freelancer_comment(
-        freelancer_id: str, testo: str, autore: str | None = None
-    ) -> dict[str, Any]:
-        """Aggiunge un commento al thread di un freelance, senza toccare stato e note: una
-        telefonata fatta, un'impressione, una cosa da ricordare. Resta com'è scritto, con
-        data e autore; non si modifica e non si cancella. Fino a 4000 caratteri, anche su
-        più righe. `autore` è l'admin dietro il token, se non dici chi sta scrivendo."""
+    def add_freelancer_note(freelancer_id: str, testo: str) -> dict[str, Any]:
+        """Aggiunge una nota al thread di un freelance, senza toccare lo stato: una
+        telefonata fatta, un'impressione, una cosa da ricordare. La nota è già firmata
+        (l'admin dietro il token) e datata, con `fonte` `mcp`: il testo non deve iniziare
+        con una data o un'ora né nominare chi scrive. Fino a 4000 caratteri, anche su più
+        righe. Si può correggere con `update_note` e cancellare con `delete_note`, e ogni
+        aggiunta finisce nel registro di `get_freelancer_audit`."""
         return _run(
-            lambda s: CommentService(s).add(
-                "freelancer", UUID(freelancer_id), testo, autore or admin().nome
+            lambda s: NoteService(s).add(
+                "freelancer", UUID(freelancer_id), testo, autore_id=admin().id, fonte=SOURCE
             )
         )
+
+    @mcp.tool()
+    def update_note(note_id: str, testo: str) -> dict[str, Any]:
+        """Sostituisce il testo di una nota di un freelance o di un'azienda, per `id`
+        (lo trovi in `note` di `get_freelancer` e `get_company`). Solo le note scritte da
+        un admin (`fonte` `web` o `mcp`, o senza fonte): quelle della persona o del sistema
+        sono eventi e vengono rifiutate. Resta scritto chi l'ha modificata e quando, e il
+        testo di prima è nel registro (`note_edited`). Il testo non deve iniziare con una
+        data o un'ora né nominare chi scrive: la nota è già firmata e datata."""
+        return _run(
+            lambda s: NoteService(s).update(UUID(note_id), testo, admin_id=admin().id, fonte=SOURCE)
+        )
+
+    @mcp.tool()
+    def delete_note(note_id: str) -> dict[str, Any]:
+        """Cancella una nota di un freelance o di un'azienda, per `id`. Esce dal thread e
+        da `get_freelancer`/`get_company`, ma il registro conserva chi l'ha cancellata e il
+        suo testo (`note_deleted`). Valgono le regole di `update_note`: le note della
+        persona o del sistema non si cancellano."""
+
+        def call(session: Session) -> dict[str, Any]:
+            NoteService(session).delete(UUID(note_id), admin_id=admin().id, fonte=SOURCE)
+            return {"nota": note_id, "cancellata": True}
+
+        return _call(call)
 
     @mcp.tool()
     def override_freelancer(
@@ -601,16 +644,16 @@ def build_server(
         remoto: str | None = None,
         links: list[str] | None = None,
         stato: str | None = None,
-        note: str | None = None,
         compilata_da: str | None = None,
         seniority: str | None = None,
         anni: str | None = None,
     ) -> dict[str, Any]:
-        """Scrive o svuota qualsiasi campo del profilo oltre a stato e note: nome,
+        """Scrive o svuota qualsiasi campo del profilo: nome,
         cognome e profilo LinkedIn (sull'identità condivisa in `users`), tariffa,
-        posizione, modalità di lavoro, link, stato, note e chi ha compilato per ultimo
-        (persona/admin). Ogni parametro omesso resta com'era; una stringa vuota svuota
-        il campo dove è ammesso (tariffa, posizione, LinkedIn, note, modalità di
+        posizione, modalità di lavoro, link, stato e chi ha compilato per ultimo
+        (persona/admin). Le note non sono un campo: stanno nel thread (`add_freelancer_note`,
+        `update_note`). Ogni parametro omesso resta com'era; una stringa vuota svuota
+        il campo dove è ammesso (tariffa, posizione, LinkedIn, modalità di
         lavoro), altrove è rifiutata perché il campo non può restare senza un valore.
         `links` sostituisce l'intera lista, `[]` la svuota. `seniority` (junior, mid,
         senior o lead) e `anni` (0-60) correggono il livello che la scheda anonima
@@ -640,8 +683,6 @@ def build_server(
             kwargs["links"] = links
         if stato is not None:
             kwargs["stato"] = _supplied_text(stato)
-        if note is not None:
-            kwargs["note"] = _supplied_text(note)
         if compilata_da is not None:
             kwargs["compilata_da"] = _supplied_text(compilata_da)
         if seniority is not None:
@@ -748,7 +789,7 @@ def build_server(
 
     @mcp.tool()
     def merge_freelancers(freelancer_id: str, da_id: str) -> dict[str, Any]:
-        """Unisce la scheda `da_id` in `freelancer_id` (REB-800): commenti, accessi,
+        """Unisce la scheda `da_id` in `freelancer_id` (REB-800): note, accessi,
         match, contratti, righe di campagna, referral e voci del registro passano alla
         scheda che resta; il CV più recente resta lì, con la sua scheda anonima segnata
         da riscrivere (la riscrive `cards-refresh`, oppure `regenerate_freelancer_card`);
@@ -777,7 +818,7 @@ def build_server(
     ) -> dict[str, Any]:
         """Le aziende che hanno descritto un progetto sull'hub, come la schermata
         «Aziende»: ogni riga porta azienda, referente, email, progetto, da quando e
-        per quanto, budget a giornata, stato e note. Dal più recente, o dal più
+        per quanto, budget a giornata e stato. Dal più recente, o dal più
         pertinente quando `q` restringe.
         `q` cerca nome azienda, referente, email e progetto; `stato` filtra (nuovo,
         contattato, in_corso, chiuso) e `per_stato` conta con ogni filtro tranne
@@ -811,31 +852,34 @@ def build_server(
 
     @mcp.tool()
     def get_company(company_id: str) -> dict[str, Any]:
-        """Una richiesta di un'azienda, per id, con `commenti`: il thread di chi l'ha
-        seguita, dal più recente, ognuno con autore e data."""
+        """Una richiesta di un'azienda, per id, con `note`: il thread di chi l'ha
+        seguita, dal più recente, ognuna con `id`, autore, data, `fonte` (`web`, `mcp`,
+        `persona`, `sistema`), l'ultima modifica e `modificabile`. Le note cancellate non
+        ci sono."""
         return _run(lambda s: CompanyService(s).get(UUID(company_id)))
 
     @mcp.tool()
-    def set_company_status(company_id: str, stato: str, note: str | None = None) -> dict[str, Any]:
-        """Sposta una richiesta fra nuovo, contattato, in_corso e chiuso, con una nota."""
+    def set_company_status(company_id: str, stato: str) -> dict[str, Any]:
+        """Sposta una richiesta fra nuovo, contattato, in_corso e chiuso. Il cambio finisce
+        nel registro di `get_company_audit` (`status_changed`, con prima e dopo): per il
+        perché usa `add_company_note`."""
         return _run(
             lambda s: CompanyService(s).set_status(
-                UUID(company_id), StatusChange(stato=stato, note=note)
+                UUID(company_id), StatusChange(stato=stato), admin_id=admin().id, fonte=SOURCE
             )
         )
 
     @mcp.tool()
-    def add_company_comment(
-        company_id: str, testo: str, autore: str | None = None
-    ) -> dict[str, Any]:
-        """Aggiunge un commento al thread di una richiesta di un'azienda, senza toccare
-        stato e note: come è andata la call, cosa hanno chiesto, cosa resta da fare. Resta
-        com'è scritto, con data e autore; non si modifica e non si cancella. Fino a 4000
-        caratteri, anche su più righe. `autore` è l'admin dietro il token, se non dici
-        chi scrive."""
+    def add_company_note(company_id: str, testo: str) -> dict[str, Any]:
+        """Aggiunge una nota al thread di una richiesta di un'azienda, senza toccare lo
+        stato: come è andata la call, cosa hanno chiesto, cosa resta da fare. La nota è già
+        firmata (l'admin dietro il token) e datata, con `fonte` `mcp`: il testo non deve
+        iniziare con una data o un'ora né nominare chi scrive. Fino a 4000 caratteri, anche
+        su più righe. Si corregge con `update_note` e si cancella con `delete_note`, e ogni
+        aggiunta finisce nel registro di `get_company_audit`."""
         return _run(
-            lambda s: CommentService(s).add(
-                "company", UUID(company_id), testo, autore or admin().nome
+            lambda s: NoteService(s).add(
+                "company", UUID(company_id), testo, autore_id=admin().id, fonte=SOURCE
             )
         )
 
@@ -855,14 +899,14 @@ def build_server(
         giorni_presenza: str | None = None,
         numero_risorse: str | None = None,
         stato: str | None = None,
-        note: str | None = None,
     ) -> dict[str, Any]:
-        """Scrive o svuota qualsiasi campo della richiesta oltre a stato e note: nome e
+        """Scrive o svuota qualsiasi campo della richiesta: nome e
         cognome del referente e il suo profilo LinkedIn (sull'identità condivisa in
         `users`), nome dell'azienda, figura richiesta, progetto, data di inizio, durata,
         budget a giornata, modalità di lavoro, giorni in sede a settimana, numero di
-        persone richieste, stato e note. Ogni parametro omesso resta com'era; una
-        stringa vuota svuota solo dove è ammesso (LinkedIn, note, giorni in sede),
+        persone richieste e stato. Le note non sono un campo: stanno nel thread
+        (`add_company_note`, `update_note`). Ogni parametro omesso resta com'era; una
+        stringa vuota svuota solo dove è ammesso (LinkedIn, giorni in sede),
         altrove è rifiutata perché il campo non può restare senza un valore.
         `giorni_presenza` va indicato solo, e sempre, quando `remoto` è `ibrido` --
         rifiutato altrimenti, dallo stesso `CHECK` del database. Ogni modifica reale
@@ -899,8 +943,6 @@ def build_server(
             kwargs["numero_risorse"] = _integer(numero_risorse, "numero_risorse")
         if stato is not None:
             kwargs["stato"] = _supplied_text(stato)
-        if note is not None:
-            kwargs["note"] = _supplied_text(note)
         override = CompanyOverride(**kwargs)
         return _run(lambda s: CompanyService(s).override(UUID(company_id), override, admin().id))
 

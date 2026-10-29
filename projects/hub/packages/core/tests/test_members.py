@@ -11,17 +11,18 @@ from decimal import Decimal
 from uuid import UUID
 
 import pytest
+from admins import an_admin
 from pydantic import ValidationError
 from sqlalchemy import Engine, select, text
 from sqlalchemy.orm import Session
 
-from rebase_core.comments import CommentService
 from rebase_core.companies import CompanyService
 from rebase_core.config import Settings
 from rebase_core.errors import NotFound, ValidationFailed
 from rebase_core.freelancers import FreelancerService
 from rebase_core.members import MemberService
 from rebase_core.models import Freelancer
+from rebase_core.notes import NoteService
 from rebase_core.schemas import (
     CompanyCreate,
     CompanyFields,
@@ -92,7 +93,8 @@ def members(hub_engine: Engine, hub_session: Session) -> MemberService:
     for table in (
         "sessions",
         "magic_link_tokens",
-        "comments",
+        "admin_actions",
+        "notes",
         "talent_cloud_grants",
         "companies",
         "freelancers",
@@ -133,7 +135,9 @@ def _draft_card(session: Session, email: str = "ada@studio.it") -> UUID:
         posizione="Backend developer",
         fonti=["https://www.linkedin.com/in/ada"],
     )
-    return FreelancerService(session).draft_from_signup(signup.id, draft, "Claude").id
+    return (
+        FreelancerService(session).draft_from_signup(signup.id, draft, an_admin(session), "web").id
+    )
 
 
 def _request_company(session: Session, email: str = "wile@acme.it", **extra: object) -> UUID:
@@ -150,30 +154,34 @@ def _request_company(session: Session, email: str = "wile@acme.it", **extra: obj
     return row.id
 
 
-def test_an_update_changes_the_row_and_leaves_one_comment_naming_what_moved(
+def test_an_update_changes_the_row_and_leaves_one_note_naming_what_moved(
     members: MemberService, hub_session: Session
 ) -> None:
     freelancer_id = _apply(hub_session)
     FreelancerService(hub_session).set_status(
-        freelancer_id, StatusChange(stato="contattato", note="da sentire")
+        freelancer_id, StatusChange(stato="contattato"), admin_id=an_admin(hub_session), fonte="web"
     )
 
     unchanged = members.update(freelancer_id, MemberUpdate(**GOOD))
     assert unchanged.tariffa_giornaliera == Decimal("450")
-    assert CommentService(hub_session).list("freelancer", freelancer_id) == []
+    assert NoteService(hub_session).list("freelancer", freelancer_id) == []
 
     changed = members.update(
         freelancer_id,
         MemberUpdate(**{**GOOD, "tariffa_giornaliera": "500", "links": []}),
     )
     assert changed.tariffa_giornaliera == Decimal("500") and changed.links == []
-    thread = CommentService(hub_session).list("freelancer", freelancer_id)
+    thread = NoteService(hub_session).list("freelancer", freelancer_id)
     assert len(thread) == 1
     assert thread[0].testo == "Profilo aggiornato dalla persona: tariffa giornaliera, link"
-    assert thread[0].autore == "Ada Lovelace"
+    assert (thread[0].autore, thread[0].fonte, thread[0].modificabile) == (
+        "Ada Lovelace",
+        "persona",
+        False,
+    )
 
     admin_view = FreelancerService(hub_session).get(freelancer_id)
-    assert (admin_view.stato, admin_view.note) == ("contattato", "da sentire")
+    assert admin_view.stato == "contattato"
 
 
 def test_a_name_change_is_also_written_onto_the_linked_user(
@@ -190,7 +198,7 @@ def test_a_name_change_is_also_written_onto_the_linked_user(
     assert (user.nome, user.cognome) == ("Augusta", "King")
 
 
-def test_a_new_cv_is_checked_like_the_wizards_and_leaves_its_comment(
+def test_a_new_cv_is_checked_like_the_wizards_and_leaves_its_note(
     members: MemberService, hub_session: Session
 ) -> None:
     freelancer_id = _apply(hub_session)
@@ -202,7 +210,7 @@ def test_a_new_cv_is_checked_like_the_wizards_and_leaves_its_comment(
     profile = members.replace_cv(freelancer_id, new_pdf, "Ada 2026.pdf", "application/pdf")
     assert (profile.cv_filename, profile.cv_size) == ("Ada 2026.pdf", len(new_pdf))
     assert members.cv(freelancer_id).content == new_pdf
-    thread = CommentService(hub_session).list("freelancer", freelancer_id)
+    thread = NoteService(hub_session).list("freelancer", freelancer_id)
     assert [comment.testo for comment in thread] == ["CV aggiornato dalla persona"]
 
 
@@ -298,7 +306,7 @@ def test_me_read_lists_every_live_request_newest_first_with_nothing_the_admin_wr
         hub_session, durata="3 mesi", remoto="ibrido", giorni_presenza=3, numero_risorse=2
     )
     CompanyService(hub_session).set_status(
-        older_id, StatusChange(stato="in_corso", note="da richiamare")
+        older_id, StatusChange(stato="in_corso"), admin_id=an_admin(hub_session), fonte="web"
     )
     user = UserService(hub_session).by_email("wile@acme.it")
     assert user is not None
@@ -324,13 +332,13 @@ def test_me_read_lists_every_live_request_newest_first_with_nothing_the_admin_wr
     assert bare_read.ha_azienda is False and bare_read.richieste == []
 
 
-def test_a_company_update_by_id_changes_that_row_and_leaves_one_comment(
+def test_a_company_update_by_id_changes_that_row_and_leaves_one_note(
     members: MemberService, hub_session: Session
 ) -> None:
     older_id = _request_company(hub_session, durata="1 mese")
     newest_id = _request_company(hub_session, durata="3 mesi")
     CompanyService(hub_session).set_status(
-        older_id, StatusChange(stato="in_corso", note="da richiamare")
+        older_id, StatusChange(stato="in_corso"), admin_id=an_admin(hub_session), fonte="web"
     )
     user = UserService(hub_session).by_email("wile@acme.it")
     assert user is not None
@@ -339,7 +347,7 @@ def test_a_company_update_by_id_changes_that_row_and_leaves_one_comment(
         user.id, CompanyUpdate(**{**GOOD_COMPANY, "durata": "1 mese"}), older_id
     )
     assert [item.durata for item in unchanged.richieste] == ["3 mesi", "1 mese"]
-    assert CommentService(hub_session).list("company", older_id) == []
+    assert NoteService(hub_session).list("company", older_id) == []
 
     changed = members.update_company(
         user.id,
@@ -348,14 +356,14 @@ def test_a_company_update_by_id_changes_that_row_and_leaves_one_comment(
     )
     older = next(item for item in changed.richieste if item.id == older_id)
     assert older.durata == "4 mesi" and older.budget_giornaliero == Decimal("600")
-    thread = CommentService(hub_session).list("company", older_id)
+    thread = NoteService(hub_session).list("company", older_id)
     assert len(thread) == 1
     assert thread[0].testo == "Richiesta aggiornata dal referente: durata, budget giornaliero"
-    assert thread[0].autore == "Wile E."
+    assert (thread[0].autore, thread[0].fonte) == ("Wile E.", "persona")
 
-    # `stato`/`note` are the admin's, and the newer request is untouched.
+    # `stato` is the admin's, and the newer request is untouched.
     admin_view = CompanyService(hub_session).get(older_id)
-    assert (admin_view.stato, admin_view.note) == ("in_corso", "da richiamare")
+    assert admin_view.stato == "in_corso"
     assert CompanyService(hub_session).get(newest_id).durata == "3 mesi"
 
 
@@ -471,7 +479,7 @@ def test_a_wizard_card_that_came_without_a_cv_is_completed_from_the_area(
 
     after_cv = members.replace_cv(freelancer_id, PDF, "Ada CV.pdf", "application/pdf")
     assert after_cv.completa is True and after_cv.cv_filename == "Ada CV.pdf"
-    texts = [c.testo for c in CommentService(hub_session).list("freelancer", freelancer_id)]
+    texts = [c.testo for c in NoteService(hub_session).list("freelancer", freelancer_id)]
     assert texts[0] == "CV caricato dalla persona"
 
 
@@ -485,7 +493,7 @@ def test_the_person_completes_the_card_and_takes_it_over(
     assert after_cv.completa is True and after_cv.cv_filename == "Ada CV.pdf"
     row = hub_session.scalar(select(Freelancer).where(Freelancer.id == freelancer_id))
     assert row is not None and row.compilata_da == "persona"
-    texts = [c.testo for c in CommentService(hub_session).list("freelancer", freelancer_id)]
+    texts = [c.testo for c in NoteService(hub_session).list("freelancer", freelancer_id)]
     assert texts[0] == "CV caricato dalla persona"
     assert texts[1].startswith("Profilo aggiornato dalla persona: ")
     assert "tariffa giornaliera" in texts[1] and "modalità di lavoro" in texts[1]
@@ -508,7 +516,7 @@ def test_confirming_a_researched_card_unchanged_still_makes_it_the_persons(
     members.update(freelancer_id, MemberUpdate(**{**GOOD, "linkedin_url": None, "links": []}))
     hub_session.refresh(row)
     assert row.compilata_da == "persona"
-    texts = [c.testo for c in CommentService(hub_session).list("freelancer", freelancer_id)]
+    texts = [c.testo for c in NoteService(hub_session).list("freelancer", freelancer_id)]
     assert texts[0] == "Scheda confermata dalla persona"
 
 

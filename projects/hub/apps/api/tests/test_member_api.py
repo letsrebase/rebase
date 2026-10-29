@@ -46,7 +46,8 @@ def clean(api_session: Session) -> Iterator[None]:
         "guide_downloads",
         "sessions",
         "magic_link_tokens",
-        "comments",
+        "admin_actions",
+        "notes",
         "companies",
         "freelancers",
         "users",
@@ -564,7 +565,7 @@ def test_a_member_changes_their_answers_and_the_admin_sees_the_comment(
     assert client.get("/api/hub/me").json()["role"] == "admin"
     listed = client.get("/api/hub/freelancers").json()["items"]
     assert len(listed) == 1 and listed[0]["posizione"] == "Staff engineer"
-    thread = client.get(f"/api/hub/freelancers/{listed[0]['id']}/comments").json()
+    thread = client.get(f"/api/hub/freelancers/{listed[0]['id']}/notes").json()
     assert [comment["testo"] for comment in thread] == [
         "CV aggiornato dalla persona",
         "Profilo aggiornato dalla persona: tariffa giornaliera, posizione, modalità di lavoro, "
@@ -629,7 +630,13 @@ def test_the_member_area_lists_every_request_newest_first_without_the_admins_wor
 ) -> None:
     _request_company(client, durata="1 mese", figura_richiesta="Data engineer")
     _request_company(client, durata="3 mesi")
-    api_session.execute(text("UPDATE companies SET stato = 'in_corso', note = 'da richiamare'"))
+    api_session.execute(text("UPDATE companies SET stato = 'in_corso'"))
+    api_session.execute(
+        text(
+            "INSERT INTO notes (id, entity_type, entity_id, testo, autore) "
+            "SELECT gen_random_uuid(), 'company', id, 'da richiamare', 'Ivan' FROM companies"
+        )
+    )
     api_session.commit()
     profile, _ = _enter(client, sender, "wile@acme.it")
 
@@ -682,11 +689,12 @@ def test_a_company_contact_edits_their_most_recent_request(
     listed = client.get("/api/hub/companies").json()["items"]
     assert len(listed) == 2
     newest = next(item for item in listed if item["durata"] == "4 mesi")
-    thread = client.get(f"/api/hub/companies/{newest['id']}/comments").json()
+    thread = client.get(f"/api/hub/companies/{newest['id']}/notes").json()
     assert [comment["testo"] for comment in thread] == [
         "Richiesta aggiornata dal referente: durata, budget giornaliero"
     ]
-    assert thread[0]["autore"] == "Wile E."
+    assert (thread[0]["autore"], thread[0]["fonte"]) == ("Wile E.", "persona")
+    assert thread[0]["modificabile"] is False
     older = next(item for item in listed if item["durata"] == "1 mese")
     assert older["budget_giornaliero"] == "500.00"
 
@@ -718,11 +726,11 @@ def test_a_company_contact_edits_an_older_request_by_its_id(
     api_session.commit()
     assert client.post("/api/hub/me/logout").status_code == 204
     _enter(client, sender, ADMIN_EMAIL)
-    thread = client.get(f"/api/hub/companies/{older['id']}/comments").json()
+    thread = client.get(f"/api/hub/companies/{older['id']}/notes").json()
     assert [comment["testo"] for comment in thread] == [
         "Richiesta aggiornata dal referente: durata, budget giornaliero"
     ]
-    assert client.get(f"/api/hub/companies/{newest['id']}/comments").json() == []
+    assert client.get(f"/api/hub/companies/{newest['id']}/notes").json() == []
 
 
 def test_a_request_by_id_is_a_404_for_somebody_elses_and_for_a_deleted_one(
@@ -876,10 +884,14 @@ def test_a_member_completes_the_card_an_admin_drafted(
     signup = SignupService(api_session).subscribe(
         SignupCreate(email="ada@studio.it", nome="Ada", cognome="Lovelace")
     )
+    admin = User(email="claude@rebase.it", nome="Claude", cognome="", role="admin")
+    api_session.add(admin)
+    api_session.commit()
     FreelancerService(api_session).draft_from_signup(
         signup.id,
         FreelancerDraft(nome="Ada", cognome="Lovelace", fonti=["https://ada.dev"]),
-        "Claude",
+        admin.id,
+        "web",
     )
     profile, _ = _enter(client, sender, "ada@studio.it")
     assert profile["completa"] is False and profile["cv_filename"] is None
