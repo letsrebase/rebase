@@ -550,7 +550,9 @@ describe('the freelancer detail', () => {
     mount('/admin/freelance/f2')
     await screen.findByRole('heading', { name: 'Grace Hopper' })
     expect(await screen.findByText('02 5550199')).toBeInTheDocument()
-    // The CV's number is on the named card below, not on the profile row.
+    // The CV's number is on the named card below, not on the profile row. Waiting for it
+    // there first means the card has loaded, so the two absences below are not read early.
+    expect(await screen.findByText('+39 333 123 4567')).toBeInTheDocument()
     expect(screen.queryByText('+39 333 123 4567 · dal CV')).toBeNull()
     expect(screen.queryByText('Email nel CV')).toBeNull()
   })
