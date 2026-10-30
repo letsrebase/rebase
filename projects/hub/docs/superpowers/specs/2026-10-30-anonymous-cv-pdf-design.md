@@ -205,7 +205,9 @@ The page, A4, the example CV's order and density, in rebase's colours:
 
 - **Head**: the `titolo` large where the name was; one line under it with the seniority
   and years (the card's, with the admin's correction over it, `card_level.card_read`;
-  left out when there is no card), the city when the card's `luogo` has one, and the work
+  left out when there is no card or the card was written from another CV file than the
+  one on file, and the seniority alone left out when the card marks it uncertain and no
+  admin set one), the city when that same card's `luogo` has one, and the work
   mode from the profile (`Freelancer.remoto`, printed «Da remoto», «Ibrido», «In sede»:
   the web's `REMOTO_LABELS`, which Python has no copy of, so `render.py` defines the three).
   The echo logo at the top right.
@@ -215,8 +217,10 @@ The page, A4, the example CV's order and density, in rebase's colours:
   area, the area bold), Formazione / Education, Certificazioni / Certifications, Lingue /
   Languages, then each of `altre_sezioni`.
 - **Footer** on every page: «Profilo proposto da rebase · ciao@letsrebase.com ·
-  letsrebase.com» and «Rif. <first 8 characters of the freelancer id>», so the company can
-  name the profile when it answers. Page numbers.
+  letsrebase.com» and «Rif. <last 8 characters of the freelancer id>», so the company can
+  name the profile when it answers. Page numbers. The last, not the first: the id is a
+  UUIDv7, whose first characters are the moment the card was made, the same for talents
+  created together and telling when the person signed up; the tail is random.
 - No rate, band, notes, model, date of writing or source anywhere.
 
 The filename is `rebase-cv-<titolo as an ASCII slug>-<ref>.pdf` (through

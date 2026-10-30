@@ -216,7 +216,7 @@ CV = AnonymousCv(
     ],
 )
 
-HEAD = CvHead(seniority="senior", anni=12, luogo="Roma", modalita="ibrido", ref="01a0b39b")
+HEAD = CvHead(seniority="senior", anni=12, luogo="Roma", modalita="ibrido", ref="d41c7e2a")
 
 
 def _text(pdf: bytes) -> str:
@@ -262,7 +262,7 @@ def test_every_role_and_section_prints() -> None:
     ):
         assert _heading(heading) in text, heading
     assert "Profilo proposto da rebase · ciao@letsrebase.com · letsrebase.com" in text
-    assert "Rif. 01a0b39b" in text
+    assert "Rif. d41c7e2a" in text
 
 
 @needs_typst
@@ -274,7 +274,7 @@ def test_the_fixture_fills_two_a4_pages_and_every_page_has_the_footer() -> None:
         assert round(float(page.mediabox.height)) == 842
         text = " ".join(page.extract_text().split())
         assert "Profilo proposto da rebase" in text
-        assert "Rif. 01a0b39b" in text
+        assert "Rif. d41c7e2a" in text
         assert f"{number} / 2" in text
 
 
@@ -350,7 +350,7 @@ def test_same_body_same_bytes() -> None:
 
 @needs_typst
 def test_a_head_with_nothing_known_prints_only_the_title() -> None:
-    head = CvHead(seniority=None, anni=None, luogo=None, modalita=None, ref="01a0b39b")
+    head = CvHead(seniority=None, anni=None, luogo=None, modalita=None, ref="d41c7e2a")
     text = _text(TypstCvRenderer().render(CV, head))
     assert "Oracle DBA e Security Engineer" in text
     assert "Senior ·" not in text
@@ -361,13 +361,13 @@ def test_a_head_with_nothing_known_prints_only_the_title() -> None:
 def test_head_line() -> None:
     assert head_line(HEAD, "it") == "Senior · 12 anni di esperienza · Roma · Ibrido"
     assert head_line(HEAD, "en") == "Senior · 12 years of experience · Roma · Ibrido"
-    one = CvHead(seniority="lead", anni=1, luogo=None, modalita="remoto", ref="01a0b39b")
+    one = CvHead(seniority="lead", anni=1, luogo=None, modalita="remoto", ref="d41c7e2a")
     assert head_line(one, "it") == "Lead · 1 anno di esperienza · Da remoto"
     assert head_line(one, "en") == "Lead · 1 year of experience · Da remoto"
-    none = CvHead(seniority="junior", anni=0, luogo=" ", modalita="in_sede", ref="01a0b39b")
+    none = CvHead(seniority="junior", anni=0, luogo=" ", modalita="in_sede", ref="d41c7e2a")
     assert head_line(none, "it") == "Junior · meno di un anno di esperienza · In sede"
     assert head_line(none, "en") == "Junior · less than a year of experience · In sede"
-    empty = CvHead(seniority=None, anni=None, luogo=None, modalita=None, ref="01a0b39b")
+    empty = CvHead(seniority=None, anni=None, luogo=None, modalita=None, ref="d41c7e2a")
     assert head_line(empty, "it") == ""
     assert MODALITA_LABELS == {"remoto": "Da remoto", "ibrido": "Ibrido", "in_sede": "In sede"}
 
@@ -378,21 +378,21 @@ def _with_titolo(titolo: str) -> AnonymousCv:
 
 def test_filename() -> None:
     assert (
-        filename(_with_titolo("Oracle DBA & Security Engineer"), "01a0b39b")
-        == "rebase-cv-oracle-dba-security-engineer-01a0b39b.pdf"
+        filename(_with_titolo("Oracle DBA & Security Engineer"), "d41c7e2a")
+        == "rebase-cv-oracle-dba-security-engineer-d41c7e2a.pdf"
     )
     assert (
-        filename(_with_titolo("Responsabile qualità e Sécurité"), "01a0b39b")
-        == "rebase-cv-responsabile-qualita-e-securite-01a0b39b.pdf"
+        filename(_with_titolo("Responsabile qualità e Sécurité"), "d41c7e2a")
+        == "rebase-cv-responsabile-qualita-e-securite-d41c7e2a.pdf"
     )
     long = filename(
-        _with_titolo("Senior Full-Stack Developer and Cloud Architect for Payments"), "01a0b39b"
+        _with_titolo("Senior Full-Stack Developer and Cloud Architect for Payments"), "d41c7e2a"
     )
-    slug = re.fullmatch(r"rebase-cv-([a-z0-9-]+)-01a0b39b\.pdf", long)
+    slug = re.fullmatch(r"rebase-cv-([a-z0-9-]+)-d41c7e2a\.pdf", long)
     assert slug is not None
     assert len(slug.group(1)) <= 40
     assert slug.group(1) == "senior-full-stack-developer-and-cloud"
-    assert filename(_with_titolo("— 日本語 —"), "01a0b39b") == "rebase-cv-01a0b39b.pdf"
+    assert filename(_with_titolo("— 日本語 —"), "d41c7e2a") == "rebase-cv-d41c7e2a.pdf"
 
 
 def test_no_typst_is_the_print_failure_sentence(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -303,17 +303,22 @@ def download_anonymous_cv(
     CV file and kept, so a second press is instant and free, and served even with the task
     off; a CV that has to be written needs the `cv_anonimo` task configured (502 with the
     sentence «Modelli AI» gives otherwise). The page's head carries the card's level, the
-    admin's correction over it. One `anon_cv_downloaded` entry on success, naming
-    whether the body was kept. A plain `def`: writing and printing wait up to a minute, in
-    the threadpool rather than on the event loop."""
+    admin's correction over it, and its city, only from a card of the same CV file; a
+    seniority the card marks uncertain is left out until an admin says one. One
+    `anon_cv_downloaded` entry on success, naming whether the body was kept. A plain
+    `def`: writing and printing wait minutes at worst, in the threadpool rather than on the
+    event loop."""
     written = AnonymousCvWriter(session, llm).get_or_write(freelancer_id)
-    # The card as the admin reads it: his seniority and years over Claude's, `None` for
-    # a talent with no card yet.
+    # The card as the admin reads it: his seniority and years over Claude's. `None` for a
+    # talent with no card yet, and for a card of an older CV, which may say another level
+    # or city than the CV printed under it.
     read = CardWriter(session, None).read(freelancer_id)
-    card = read.card
-    ref = str(freelancer_id)[:8]
+    card = read.card if read.cv_sha256 == written.cv_sha256 else None
+    # The id's random tail: its head is a UUIDv7's timestamp, the same for talents created
+    # together and telling when the person signed up.
+    ref = str(freelancer_id)[-8:]
     head = CvHead(
-        seniority=card.seniority if card else None,
+        seniority=card.seniority if card and not card.seniority_incerta else None,
         anni=card.anni if card else None,
         luogo=card.luogo if card else None,
         modalita=read.modalita,

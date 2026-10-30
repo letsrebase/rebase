@@ -82,8 +82,9 @@ class CvPrintFailed(ContractFailed):
 class CvHead:
     """What the page's head says beside the CV's own title, from the hub rather than the CV:
     the card's seniority and years (the admin's correction over them), the card's city and
-    the profile's work mode, each `None` when unknown. `ref` is the first eight characters
-    of the freelancer's id, which the footer prints so a company can name the profile."""
+    the profile's work mode, each `None` when unknown. `ref` is the last eight characters
+    of the freelancer's id (its random tail: the head of a UUIDv7 is when it was made),
+    which the footer prints so a company can name the profile."""
 
     seniority: str | None
     anni: int | None

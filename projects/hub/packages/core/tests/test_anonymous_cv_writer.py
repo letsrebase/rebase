@@ -241,7 +241,7 @@ def test_first_download_writes_and_stores(clean: Session) -> None:
 
     written = _writer(clean, llm).get_or_write(freelancer_id)
 
-    assert written == Written(cv=AnonymousCv.model_validate(BODY), reused=False)
+    assert written == Written(AnonymousCv.model_validate(BODY), reused=False, cv_sha256=_sha(CV))
     [request] = llm.requests
     assert request.output_model is AnonymousCvDraft
     system = request.system.lower()
@@ -285,7 +285,7 @@ def test_second_download_reuses_without_a_call(clean: Session) -> None:
     again = _writer(clean, llm).get_or_write(freelancer_id)
 
     assert llm.requests == []
-    assert again == Written(cv=first.cv, reused=True)
+    assert again == Written(first.cv, reused=True, cv_sha256=_sha(CV))
     # With no model configured, a body already written for this CV is still served.
     assert _writer(clean, None).get_or_write(freelancer_id) == again
 
@@ -317,7 +317,7 @@ def test_reused_body_the_guard_now_refuses_is_written_again(clean: Session) -> N
     written = _writer(clean, llm).get_or_write(freelancer_id)
 
     assert len(llm.requests) == 1
-    assert written == Written(cv=AnonymousCv.model_validate(BODY), reused=False)
+    assert written == Written(AnonymousCv.model_validate(BODY), reused=False, cv_sha256=_sha(CV))
     stored = _stored(clean, freelancer_id)
     assert stored is not None and stored.body == BODY
 
@@ -345,7 +345,9 @@ def test_new_cv_writes_again(clean: Session) -> None:
 
     assert len(llm.requests) == 1
     assert "Backend lead TIM 2019-2025" in llm.requests[0].messages[0].text
-    assert written == Written(cv=AnonymousCv.model_validate(newer), reused=False)
+    assert written == Written(
+        AnonymousCv.model_validate(newer), reused=False, cv_sha256=_sha(CV_2025)
+    )
     stored = _stored(clean, freelancer_id)
     assert stored is not None
     assert (stored.cv_sha256, stored.body) == (_sha(CV_2025), newer)
@@ -397,7 +399,9 @@ def test_identifying_answer_is_rewritten_once(clean: Session) -> None:
     fix = retry.messages[-1].text
     assert "sommario" in fix
     assert "Messina" not in fix and "Mario" not in fix
-    assert written == Written(cv=AnonymousCv.model_validate(clean_body), reused=False)
+    assert written == Written(
+        AnonymousCv.model_validate(clean_body), reused=False, cv_sha256=_sha(CV)
+    )
     stored = _stored(clean, freelancer_id)
     assert stored is not None and stored.body == clean_body
     # Both calls were paid for.

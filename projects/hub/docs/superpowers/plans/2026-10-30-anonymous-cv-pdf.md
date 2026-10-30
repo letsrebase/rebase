@@ -19,7 +19,7 @@
 - Comment density and voice: match `cards.py` and `card_guard.py` (docstrings that say why, in plain English; Italian for every user-facing sentence).
 - No log line, error, usage record or audit entry may carry CV text, the model's answer or an identifier of the person.
 - Task name `cv_anonimo`; table `anonymous_cvs`; audit kind `anon_cv_downloaded` with `{"riusato": bool}`; route `POST /api/hub/freelancers/{freelancer_id}/cv-anonimo`; `CV_PROMPT_VERSION = 1`; the seeded task row: provider, model, effort copied from `card`, `max_output_tokens` 16000, `daily_cap_eur` NULL, `enabled` as `card`'s.
-- Footer copy, verbatim: `Profilo proposto da rebase · ciao@letsrebase.com · letsrebase.com` and `Rif. <first 8 characters of the freelancer id>`.
+- Footer copy, verbatim: `Profilo proposto da rebase · ciao@letsrebase.com · letsrebase.com` and `Rif. <last 8 characters of the freelancer id>` (the UUIDv7's random tail; its first 8 are a timestamp, by the final review's ruling).
 - Work modes printed: `remoto` → «Da remoto», `ibrido` → «Ibrido», `in_sede` → «In sede».
 - Filename: `rebase-cv-<slug of titolo, ASCII, lower case, hyphens, at most 40 chars>-<ref>.pdf`.
 
@@ -140,12 +140,12 @@ Behaviour of `get_or_write`:
 Rendering: a temporary directory per call; write `cv.json` (`{"cv": ..., "head": ..., "palette": ...}`) and copy `cv.typ` and the echo into it; `typst compile --root <dir> --font-path <fonts_dir> --creation-timestamp 0 cv.typ out.pdf`; read the bytes. The template reads `json("cv.json")` and inserts strings as text only (never `eval`). Layout per the spec's § «The PDF»; headings by `lingua` (`it`: Profilo, Esperienze, Competenze, Formazione, Certificazioni, Lingue; `en`: Profile, Experience, Skills, Education, Certifications, Languages); empty sections left out; the head's line joins seniority label («Junior», «Mid», «Senior», «Lead»), «N anni di esperienza» / «N years of experience», city, work mode with « · ».
 
 - [ ] **Step 1: Write the failing tests** (skip the module when `shutil.which("typst") is None`, as `test_contract_pdf.py` does; read text back with `pypdf`):
-  - `test_every_role_and_section_prints`: the fixture's roles, companies, a bullet, a skills area, a school, a certification, a language and the footer's `Rif. 01a0b39b` are in the text.
+  - `test_every_role_and_section_prints`: the fixture's roles, companies, a bullet, a skills area, a school, a certification, a language and the footer's `Rif. d41c7e2a` are in the text.
   - `test_headings_follow_lingua`: `lingua="en"` → «Experience» present, «Esperienze» absent.
   - `test_empty_sections_are_left_out`: no certifications → no heading for them.
   - `test_markup_prints_literally`: strings `#set page(width: 1cm)`, `*bold*`, `$x^2$`, `@ref`, `<label>`, `// comment`, `\` render, compile succeeds, each appears in the text.
   - `test_same_body_same_bytes`: two renders are byte-equal.
-  - `test_filename`: `filename(cv_with_titolo("Oracle DBA & Security Engineer"), "01a0b39b") == "rebase-cv-oracle-dba-security-engineer-01a0b39b.pdf"`; accents folded, length capped.
+  - `test_filename`: `filename(cv_with_titolo("Oracle DBA & Security Engineer"), "d41c7e2a") == "rebase-cv-oracle-dba-security-engineer-d41c7e2a.pdf"`; accents folded, length capped.
 - [ ] **Step 2: Run** `uv run pytest -q projects/hub/packages/core/tests/test_anonymous_cv_pdf.py` → FAIL.
 - [ ] **Step 3: Implement** `render.py` and `cv.typ`.
 - [ ] **Step 4: Run** → PASS. Render the fixture to `/tmp`-free scratch (`tempfile`) and look at both pages as images (`pdftoppm -png`), compare with the spec's layout; fix what reads badly.
@@ -170,7 +170,7 @@ Note: with `CvLlmDep is None` a stored, current body is still served (pass `llm=
   - `test_requires_an_admin` (anonymous 401, member 403).
   - `test_no_cv_is_404_with_the_sentence`.
   - `test_task_off_is_503` (override returns `None`, no stored body).
-  - `test_download_answers_the_pdf_and_records_it`: 200, `application/pdf`, filename `rebase-cv-…-<ref>.pdf`, `FakeCvRenderer` got `CvHead(ref=str(id)[:8], …)` with the card's seniority and the admin's `anni_admin` when set; the audit trail has `anon_cv_downloaded` `{"riusato": false}` by this admin.
+  - `test_download_answers_the_pdf_and_records_it`: 200, `application/pdf`, filename `rebase-cv-…-<ref>.pdf`, `FakeCvRenderer` got `CvHead(ref=str(id)[-8:], …)` with the card's seniority and the admin's `anni_admin` when set; the audit trail has `anon_cv_downloaded` `{"riusato": false}` by this admin.
   - `test_second_download_reuses` → `{"riusato": true}`, one LLM request in total; served even with the task off.
   - `test_guard_failure_is_422_with_the_sentence` and no audit entry.
 - [ ] **Step 2: Run** `TESTCONTAINERS_RYUK_DISABLED=true uv run pytest -q projects/hub/apps/api/tests/test_anonymous_cv_api.py` → FAIL.

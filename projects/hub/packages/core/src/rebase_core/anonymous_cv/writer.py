@@ -196,10 +196,13 @@ def _who_of(identita: Identita) -> Who:
 
 @dataclass(frozen=True)
 class Written:
-    """The anonymous CV of the talent's current CV, and whether it was `reused` (no call)."""
+    """The anonymous CV of the talent's current CV, whether it was `reused` (no call), and
+    the SHA-256 of the CV file it is of, for a reader that must tell whether something else
+    (the card) was written from the same one."""
 
     cv: AnonymousCv
     reused: bool
+    cv_sha256: str
 
 
 @dataclass(frozen=True)
@@ -272,7 +275,7 @@ class AnonymousCvWriter:
             # kept): a guard fixed since, or a profile corrected since, may find what the
             # write let through. Such a body is stale, written again and never served.
             if not identifying_fields(kept, known):
-                return Written(kept, reused=True)
+                return Written(kept, reused=True, cv_sha256=digest)
             logger.info(
                 "anonymous CV for freelancer %s written again: the kept one names the person",
                 freelancer_id,
@@ -291,7 +294,7 @@ class AnonymousCvWriter:
         self.session.commit()
         written, spent = self._compose(freelancer_id, self.llm, request, known)
         self._store(freelancer_id, digest, written, spent)
-        return Written(written, reused=False)
+        return Written(written, reused=False, cv_sha256=digest)
 
     def delete(self, freelancer_id: UUID) -> None:
         """The anonymous CV goes with the CV. Not committed here: `clear_cv` commits it with

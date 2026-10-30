@@ -169,11 +169,15 @@ Spec: `docs/superpowers/specs/2026-10-30-anonymous-cv-pdf-design.md`.
   admin-requested file, not profile data.
 - **The route.** `POST /api/hub/freelancers/{id}/cv-anonimo` (`routers/admin.py`, a plain
   `def`: a first press waits on the model and the print, in the threadpool) answers `application/pdf` as an attachment named
-  `rebase-cv-<slug>-<ref>.pdf`. 404 no talent or no CV, 422 `AnonymousCvFailed` (the guard
+  `rebase-cv-<slug>-<ref>.pdf`, where `ref` (the footer's «Rif.») is the last 8 characters
+  of the id: the first 8 of a UUIDv7 are its creation time, shared by talents created
+  together and telling when the person signed up. 404 no talent or no CV, 422 `AnonymousCvFailed` (the guard
   or the model failed; nothing stored), 502 when the task is off and nothing kept can be
   served (a kept, still guard-clean body is served with the task off) or the provider failed,
   503 `CvPrintFailed`. The page's head takes seniority and years from the card as the admin
-  corrected them, the city from the card, the work mode from the profile.
+  corrected them, the city from the card, the work mode from the profile; nothing from a
+  card of another CV file, and no seniority the card marks uncertain unless an admin set
+  one.
 - **The audit.** One `anon_cv_downloaded` entry on the freelancer per 200, payload
   `{"riusato": bool}`. The name is short on purpose: `admin_actions.kind` holds 20 characters and `audit.record` cuts silently.
 - **The wait.** The task's calls wait 150 seconds and are never retried (`llm.py`,

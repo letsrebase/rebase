@@ -3,6 +3,7 @@ there is nothing to print, and the PDF with its audit entry. The model is a `Rec
 and the printer `FakeCvRenderer`, so no key and no binary."""
 
 import copy
+import hashlib
 import json
 import re
 from collections.abc import Iterator
@@ -235,15 +236,7 @@ def test_download_answers_the_pdf_and_records_it(
     api_session: Session,
 ) -> None:
     freelancer_id = _apply(client, api_session)
-    api_session.add(
-        FreelancerCard(
-            freelancer_id=UUID(freelancer_id),
-            cv_sha256="0" * 64,
-            card=CARD,
-            model=MODEL,
-            generated_at=datetime.now(UTC),
-        )
-    )
+    _card(api_session, freelancer_id)
     row = api_session.get(Freelancer, UUID(freelancer_id))
     assert row is not None
     row.anni_admin = 12
@@ -257,7 +250,9 @@ def test_download_answers_the_pdf_and_records_it(
     assert response.status_code == 200, response.text
     assert response.content == b"%PDF-fake"
     assert response.headers["content-type"].startswith("application/pdf")
-    ref = freelancer_id[:8]
+    # The id's random tail: its head is a UUIDv7's timestamp, shared by talents created
+    # together and telling when the person signed up.
+    ref = freelancer_id[-8:]
     assert response.headers["content-disposition"] == (
         f'attachment; filename="rebase-cv-backend-developer-{ref}.pdf"'
     )
@@ -293,7 +288,73 @@ def test_a_talent_with_no_card_prints_a_bare_head(
     assert client.post(_url(freelancer_id)).status_code == 200
     [(_, head)] = printer.calls
     assert head == CvHead(
-        seniority=None, anni=None, luogo=None, modalita="ibrido", ref=freelancer_id[:8]
+        seniority=None, anni=None, luogo=None, modalita="ibrido", ref=freelancer_id[-8:]
+    )
+
+
+def _card(
+    session: Session, freelancer_id: str, card: dict[str, Any] = CARD, cv: bytes = CV
+) -> None:
+    """A card written from `cv`, the CV on file by default."""
+    session.add(
+        FreelancerCard(
+            freelancer_id=UUID(freelancer_id),
+            cv_sha256=hashlib.sha256(cv).hexdigest(),
+            card=card,
+            model=MODEL,
+            generated_at=datetime.now(UTC),
+        )
+    )
+    session.commit()
+
+
+def test_an_uncertain_seniority_is_left_out(
+    client: TestClient,
+    admin: None,
+    sender: RecordingSender,
+    printer: FakeCvRenderer,
+    api_session: Session,
+) -> None:
+    """A CV that dates no role gives a seniority read from the responsibility alone, which
+    the admin page marks uncertain: the PDF says nothing rather than a guess, until an
+    admin says one."""
+    freelancer_id = _apply(client, api_session)
+    _card(api_session, freelancer_id, {**CARD, "anni": None})
+    _login(client, sender)
+    _model(client, RecordingCall([_answer()]))
+
+    assert client.post(_url(freelancer_id)).status_code == 200
+    row = api_session.get(Freelancer, UUID(freelancer_id))
+    assert row is not None
+    row.seniority_admin = "mid"
+    api_session.commit()
+    assert client.post(_url(freelancer_id)).status_code == 200
+
+    [(_, guessed), (_, said)] = printer.calls
+    ref = freelancer_id[-8:]
+    assert guessed == CvHead(seniority=None, anni=None, luogo="Torino", modalita="ibrido", ref=ref)
+    assert said == CvHead(seniority="mid", anni=None, luogo="Torino", modalita="ibrido", ref=ref)
+
+
+def test_a_card_of_an_older_cv_lends_nothing_to_the_head(
+    client: TestClient,
+    admin: None,
+    sender: RecordingSender,
+    printer: FakeCvRenderer,
+    api_session: Session,
+) -> None:
+    """A card written from another CV may say another level or city: the head keeps only
+    the work mode, which is the profile's."""
+    freelancer_id = _apply(client, api_session)
+    _card(api_session, freelancer_id, cv=text_pdf("Un CV precedente"))
+    _login(client, sender)
+    _model(client, RecordingCall([_answer()]))
+
+    assert client.post(_url(freelancer_id)).status_code == 200
+
+    [(_, head)] = printer.calls
+    assert head == CvHead(
+        seniority=None, anni=None, luogo=None, modalita="ibrido", ref=freelancer_id[-8:]
     )
 
 
