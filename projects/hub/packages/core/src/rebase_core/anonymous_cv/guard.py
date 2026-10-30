@@ -18,12 +18,15 @@ names, read as whole phrases of tokens: the handle of an email, the GitHub login
 in the path of each of the person's links (`linkedin.com/in/<slug>`), the whole host of each
 and the labels of a personal one (not an employer's the CV names itself); and the surname,
 written with a capital, whole and word by word (particles such as «de» aside), on the raw
-text, so a skill called «Mario Messina» is still a leak. A place or a language is the CV's own
+text, so a skill called «Mario Messina» is still a leak; and the first name and surname run
+together as one word (`mariorossi`, `rossimario`, digits aside), since a handle is written so
+with no link around it. A place or a language is the CV's own
 (Messina, Russo, Tedesco).
 
 In the prose (headline, summary, roles, bullets, other sections): the first name, never
 inside the CV's own skills, since Ada, Ruby and Julia are languages too. In a link-like
-token (below) it is read in every string but a place, skills blanked.
+token (below) it is read in every string but a place, skills blanked; outside the prose only
+in a token with a `/` or a dot, so «Max-Planck-Institut» is not Max.
 
 In a link-like token (one with a `/`, `-`, `_` or a dot between two word characters): the
 name as a slug writes it. The token is cut into parts on anything but letters and digits,
@@ -80,7 +83,9 @@ _PROFILE_HOSTS = (
     "facebook.com", "youtube.com", "kaggle.com", "huggingface.co", "notion.site",
     "vercel.app", "netlify.app", "t.me", "wa.me", "substack.com", "wordpress.com",
     "blogspot.com", "wixsite.com", "codepen.io", "leetcode.com", "hackerrank.com",
-    "orcid.org", "researchgate.net", "sourceforge.net",
+    "orcid.org", "researchgate.net", "sourceforge.net", "hub.docker.com", "webflow.io",
+    "framer.website", "credly.com", "upwork.com", "fiverr.com", "toptal.com", "malt.it",
+    "malt.fr",
 )  # fmt: skip
 _PROFILE_HOST = re.compile(
     r"\b(?:" + "|".join(re.escape(host) for host in _PROFILE_HOSTS) + r")(?!\w)",
@@ -88,18 +93,17 @@ _PROFILE_HOST = re.compile(
 )
 # A slug is joined by `-` or `_` as often as it is dotted or pathed (`alex-fegatilli-fau50`).
 _LINK_LIKE = re.compile(r"[/_\-]|\w\.\w")
+_STRICT_LINK = re.compile(r"/|\w\.\w")
 
 
-# Hosts that host many people's pages: the person is the subdomain (`mario.github.io`), the
-# platform is no one.
-_HOSTING = (
-    "github.io", "gitlab.io", "netlify.app", "vercel.app", "notion.site", "wixsite.com",
-    "wordpress.com", "blogspot.com", "substack.com",
-)  # fmt: skip
+# Labels in front of a platform's domain that are the site's own (`scholar.`, `sites.`), not
+# a person's subdomain (`mariorossi.medium.com`).
+_SITE_LABELS = frozenset(["www", "scholar", "sites", "m", "en", "it", "docs", "hub"])
 # Where a profile site puts the user in the first segment of the path.
 _FIRST_SEGMENT = (
     "github.com", "gitlab.com", "x.com", "twitter.com", "instagram.com", "facebook.com",
-    "dev.to", "behance.net", "dribbble.com", "codepen.io", "medium.com",
+    "dev.to", "behance.net", "dribbble.com", "codepen.io", "medium.com", "bitbucket.org",
+    "kaggle.com", "huggingface.co",
 )  # fmt: skip
 # Where it sits after a fixed word: (host, the segment before the user, how many to skip).
 _AFTER = {
@@ -108,12 +112,15 @@ _AFTER = {
     "leetcode.com": ("u", 0),
     "hackerrank.com": ("profile", 0),
     "researchgate.net": ("profile", 0),
+    "sourceforge.net": ("u", 0),
 }
 # Segments of a path that are the site's structure, not anyone.
 _GENERIC_SEGMENTS = frozenset(
     ["users", "user", "u", "profile", "profiles", "channel", "c", "about", "work", "view"]
     + ["badges", "badge", "in", "pub", "citations", "portfolio", "projects", "blog", "posts"]
-    + ["home", "me", "cv", "resume", "en", "it"]
+    + ["home", "me", "cv", "resume", "en", "it", "public_url", "edit", "people", "orgs"]
+    + ["questions", "tags", "search", "explore", "watch", "playlist", "spaces", "models"]
+    + ["datasets", "pages", "topics"]
 )
 
 
@@ -188,15 +195,26 @@ def _path_handles(link: str) -> list[str]:
         return []
     for domain in _FIRST_SEGMENT:
         if _is_host(host, domain):
-            return [segments[0].lstrip("@")]
+            first = segments[0].lstrip("@")
+            if first.lower() == "people":  # facebook.com/people/<name>/<id>
+                return segments[1:2]
+            return [] if first.lower() in _GENERIC_SEGMENTS else [first]
     if _is_host(host, "youtube.com"):
-        return [segments[0][1:]] if segments[0].startswith("@") else []
+        first = segments[0]
+        if first.startswith("@"):
+            return [first[1:]]
+        if first.lower() in ("c", "user"):
+            return segments[1:2]
+        return [] if first.lower() in _GENERIC_SEGMENTS or first.lower() == "channel" else [first]
     for domain, (before, skip) in _AFTER.items():
         if _is_host(host, domain):
             for i, segment in enumerate(segments[:-1]):
                 if segment.lower() == before and i + 1 + skip < len(segments):
                     return [segments[i + 1 + skip]]
-            return []
+            # No marker (`leetcode.com/mariorossi`): the first segment, if it is a name.
+            first = segments[0]
+            ok = not first.isdigit() and first.lower() not in _GENERIC_SEGMENTS
+            return [first] if ok else []
     last = segments[-1]
     if last.isdigit() or last.lower() in STOPLIST or last.lower() in _GENERIC_SEGMENTS:
         return []
@@ -233,11 +251,12 @@ def _bare(handle: str) -> str:
     return stripped if len(re.sub(r"[\W\d_]", "", stripped)) >= 6 else ""
 
 
-def _in_a_link(value: str, candidates: list[str]) -> bool:
+def _in_a_link(value: str, candidates: list[str], *, strict: bool = False) -> bool:
     """Whether a link-like token of `value` has a part that is one of `candidates`
-    (compact, lower case), digits aside."""
+    (compact, lower case), digits aside. `strict` leaves out a bare hyphen: «Max-Planck»."""
+    like = _STRICT_LINK if strict else _LINK_LIKE
     for token in value.split():
-        if not _LINK_LIKE.search(token):
+        if not like.search(token):
             continue
         for part in re.split(r"[\W_]+", _fold(token)):
             if part and any(re.fullmatch(rf"{candidate}\d*", part) for candidate in candidates):
@@ -245,16 +264,26 @@ def _in_a_link(value: str, candidates: list[str]) -> bool:
     return False
 
 
+def _is_run(value: str, runs: list[str]) -> bool:
+    """Whether `value` has a word that is one of `runs` (digits aside)."""
+    parts = re.split(r"[\W_]+", _fold(value))
+    return any(re.fullmatch(rf"{run}\d*", part) for part in parts for run in runs)
+
+
 def _host_phrases(host: str) -> list[tuple[str, ...]]:
     """What a link's host is searched for: a personal domain whole and by its labels. A
-    platform (`youtube.com`, `dev.to`, `scholar.google.com`) names no one, and is caught
-    as a host anyway; on a hosting platform (`mario.github.io`) the subdomain is the person."""
-    for domain in _HOSTING:
-        if _is_host(host, domain) and host != domain:
-            sub = host.removesuffix(f".{domain}")
-            return [phrase] if (phrase := _phrase(sub)) is not None else []
-    if _PROFILE_HOST.search(host) or _is_host(host, "google.com"):
+    platform (`youtube.com`, `dev.to`, `scholar.google.it`) names no one, and is caught as
+    a host anyway; what comes before it (`mariorossi.medium.com`) is the person."""
+    if "google" in host.split(".")[:-1]:
         return []
+    for domain in _PROFILE_HOSTS:
+        if _is_host(host, domain):
+            labels = host.removesuffix(domain).strip(".").split(".")
+            return [
+                phrase
+                for label in labels
+                if label and label not in _SITE_LABELS and (phrase := _phrase(label)) is not None
+            ]
     return _hostname_phrases(host)
 
 
@@ -307,6 +336,13 @@ def identifying_fields(cv: AnonymousCv, who: Who) -> list[str]:
     )
     link_names = [name for name in link_names if len(name) >= 3]
     link_firsts = [name for word in given if len(name := _compact(word)) >= 3]
+    # The name as one run («mariorossi», «rossimario»), a whole word of its own.
+    joined = [
+        run
+        for first in firsts
+        for last in surname_runs
+        for run in (_compact(first) + last, last + _compact(first))
+    ]
 
     # A skill that holds the person's surname is not a technology to blank out.
     folded_surnames = [_fold(term) for term in surname_terms]
@@ -335,10 +371,11 @@ def identifying_fields(cv: AnonymousCv, who: Who) -> list[str]:
                     any(_contains(_tokens(value), phrase) for phrase in phrases)
                     or any(_names(value, surname) for surname in surname_terms)
                     or _in_a_link(value, link_names)
+                    or _is_run(value, joined)
                 )
             )
             or (prose and any(_names(plain, g) for g in given))
-            or (not place and _in_a_link(plain, link_firsts))
+            or (not place and _in_a_link(plain, link_firsts, strict=not prose))
         ):
             hit.append(path)
     return hit

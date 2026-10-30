@@ -147,7 +147,7 @@ def test_personal_domain_whole_host() -> None:
     assert identifying_fields(cv, WHO) == ["altre_sezioni[0].voci[0]"]
 
 
-def test_a_host_label_is_not_the_host() -> None:
+def test_an_employer_called_like_the_site_passes() -> None:
     who = who_of(nome=None, cognome=None, emails=[], phones=[], links=["https://acme.io"])
     cv = CV.model_copy(deep=True)
     cv.esperienze[1].azienda = "Acme S.r.l."
@@ -393,3 +393,58 @@ def test_short_handles_keep_their_digits() -> None:
     assert identifying_fields(cv, _who(links=["https://github.com/fau50"])) == []
     cv = _skill("Java")
     assert identifying_fields(cv, _who(links=["https://gitlab.com/java8"])) == []
+
+
+def _cert(value: str) -> AnonymousCv:
+    cv = CV.model_copy(deep=True)
+    cv.certificazioni = [value]
+    return cv
+
+
+def test_every_profile_handle_is_read() -> None:
+    for link, text in (
+        ("https://leetcode.com/mariorossi/", "LeetCode: mariorossi"),
+        ("https://www.hackerrank.com/mariorossi", "HackerRank mariorossi"),
+        ("https://www.youtube.com/c/MarioRossi", "Canale YouTube MarioRossi"),
+        ("https://www.youtube.com/user/mariorossi", "Canale YouTube mariorossi"),
+        ("https://mariorossi.medium.com", "Blog Medium mariorossi"),
+        ("https://bitbucket.org/mariorossi/fatture", "Bitbucket mariorossi"),
+        ("https://sourceforge.net/u/mariorossi/profile", "SourceForge mariorossi"),
+        ("https://kaggle.com/mariorossi", "Kaggle mariorossi"),
+        ("https://www.facebook.com/people/Mario-Rossi/100012345", "Facebook mario-rossi"),
+    ):
+        who = _who(links=[link])
+        assert identifying_fields(_cert(text), who) == ["certificazioni[0]"], (link, text)
+
+
+def test_more_platforms_name_no_one() -> None:
+    for link, text in (
+        ("https://scholar.google.it/citations?user=AbC123", "Google Cloud"),
+        ("https://scholar.google.co.uk/citations?user=AbC123", "Google Cloud"),
+        ("https://hub.docker.com/u/xdev99", "Docker"),
+        ("https://xdev.webflow.io", "Webflow"),
+        ("https://xdev.framer.website", "Framer"),
+        ("https://www.credly.com/users/xdev99", "Credly"),
+        ("https://www.upwork.com/freelancers/~01abc", "Upwork"),
+        ("https://www.credly.com/badges/1b2c3d4e/public_url", "public URL firmati"),
+        ("https://www.facebook.com/people/Mario-Rossi/100012345", "People management"),
+    ):
+        assert identifying_fields(_voce(text), _who(links=[link])) == [], (link, text)
+
+
+def test_hyphenated_names_outside_prose_pass() -> None:
+    for nome, text in (
+        ("Max", "Max-Planck-Institut"),
+        ("Mercedes", "Mercedes-Benz Italia S.p.A."),
+        ("Marie", "Marie-Curie fellowship"),
+        ("Ada", "ADA-compliant"),
+    ):
+        assert identifying_fields(_cert(text), _who(nome, "Rossi")) == [], text
+
+
+def test_name_run_without_a_link() -> None:
+    who = _who("Mario", "Rossi")
+    for text in ("Blog: mariorossi", "Canale MarioRossi", "rossimario", "mariorossi99"):
+        assert identifying_fields(_voce(text), who) == VOCE, text
+    assert identifying_fields(_voce("Mario Rossi"), who) == VOCE  # the capitalised-word reading
+    assert identifying_fields(_voce("mario rossi"), who) == []
