@@ -32,7 +32,7 @@ with no link around it. A place or a language is the CV's own
 In the prose (headline, summary, roles, bullets, other sections): the first name, never
 inside the CV's own skills, since Ada, Ruby and Julia are languages too. In a link-like
 token (below) it is read in every string but a place, skills blanked; outside the prose only
-in a token with a `/` or a dot, so «Max-Planck-Institut» is not Max.
+in a token with a `/`, an underscore or a dot, so «Max-Planck-Institut» is not Max.
 
 In a link-like token (one with a `/`, `-`, `_` or a dot between two word characters): the
 name as a slug writes it. The token is cut into parts on anything but letters and digits,
@@ -99,7 +99,7 @@ _PROFILE_HOST = re.compile(
 )
 # A slug is joined by `-` or `_` as often as it is dotted or pathed (`alex-fegatilli-fau50`).
 _LINK_LIKE = re.compile(r"[/_\-]|\w\.\w")
-_STRICT_LINK = re.compile(r"/|\w\.\w")
+_STRICT_LINK = re.compile(r"[/_]|\w\.\w")
 
 # A codice fiscale's shape: six letters, the year, the month's letter, the day, the place.
 _CODICE_FISCALE = re.compile(r"\b[A-Z]{6}\d{2}[A-EHLMPRST]\d{2}[A-Z]\d{3}[A-Z]\b", re.IGNORECASE)
@@ -145,7 +145,7 @@ _BIRTH = re.compile(
 
 # Labels in front of a platform's domain that are the site's own (`scholar.`, `sites.`), not
 # a person's subdomain (`mariorossi.medium.com`).
-_SITE_LABELS = frozenset(["www", "scholar", "sites", "m", "en", "it", "docs", "hub"])
+_SITE_LABELS = frozenset(["www", "scholar", "sites", "m", "en", "it", "docs", "hub", "gist"])
 # Where a profile site puts the user in the first segment of the path.
 _FIRST_SEGMENT = (
     "github.com", "gitlab.com", "x.com", "twitter.com", "instagram.com", "facebook.com",
@@ -167,8 +167,11 @@ _GENERIC_SEGMENTS = frozenset(
     + ["badges", "badge", "in", "pub", "citations", "portfolio", "projects", "blog", "posts"]
     + ["home", "me", "cv", "resume", "en", "it", "public_url", "edit", "people", "orgs"]
     + ["questions", "tags", "search", "explore", "watch", "playlist", "spaces", "models"]
-    + ["datasets", "pages", "topics"]
+    + ["datasets", "pages", "topics", "competitions"]
 )
+# Google's own hosts (`scholar.google.it`, `sites.google.co.uk`): google as the registrable
+# domain, not a label of the person's (`google.mariorossi.dev`).
+_GOOGLE = re.compile(r"(?:^|\.)google\.(?:[a-z]{2,3}|(?:co|com)\.[a-z]{2})$")
 
 
 def _unique(*groups: Iterable[str]) -> list[str]:
@@ -261,10 +264,11 @@ def _path_handles(link: str) -> list[str]:
             for i, segment in enumerate(segments[:-1]):
                 if segment.lower() == before and i + 1 + skip < len(segments):
                     return [segments[i + 1 + skip]]
-            # No marker (`leetcode.com/mariorossi`): the first segment, if it is a name.
+            # No marker (`leetcode.com/mariorossi`): the one segment, if it is a name. A
+            # longer path is a page of the site (`/certificates/<id>`, `/story/<x>`).
             first = segments[0]
-            ok = not first.isdigit() and first.lower() not in _GENERIC_SEGMENTS
-            return [first] if ok else []
+            ok = len(segments) == 1 and not first.isdigit()
+            return [first] if ok and first.lower() not in _GENERIC_SEGMENTS else []
     last = segments[-1]
     if last.isdigit() or last.lower() in STOPLIST or last.lower() in _GENERIC_SEGMENTS:
         return []
@@ -354,7 +358,7 @@ def _host_phrases(host: str) -> list[tuple[str, ...]]:
     """What a link's host is searched for: a personal domain whole and by its labels. A
     platform (`youtube.com`, `dev.to`, `scholar.google.it`) names no one, and is caught as
     a host anyway; what comes before it (`mariorossi.medium.com`) is the person."""
-    if "google" in host.split(".")[:-1]:
+    if _GOOGLE.search(host):
         return []
     for domain in _PROFILE_HOSTS:
         if _is_host(host, domain):

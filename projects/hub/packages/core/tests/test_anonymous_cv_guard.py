@@ -447,7 +447,57 @@ def test_name_run_without_a_link() -> None:
     for text in ("Blog: mariorossi", "Canale MarioRossi", "rossimario", "mariorossi99"):
         assert identifying_fields(_voce(text), who) == VOCE, text
     assert identifying_fields(_voce("Mario Rossi"), who) == VOCE  # the capitalised-word reading
-    assert identifying_fields(_voce("mario rossi"), who) == []
+
+
+def test_a_page_of_a_profile_site_is_not_a_handle() -> None:
+    """Without its marker, a profile site's path names a user only when it is one segment
+    long (`leetcode.com/mariorossi`): a certificate, a story, a paper or a problem list is
+    the site's own page."""
+    for link in (
+        "https://www.hackerrank.com/certificates/a1b2c3d4e5",
+        "https://stackoverflow.com/story/mariorossi",
+        "https://www.researchgate.net/publication/123456_Fatture_elettroniche",
+        "https://leetcode.com/problemset/all",
+        "https://www.kaggle.com/competitions/titanic",
+    ):
+        assert _who(links=[link]).handles == [], link
+    assert (
+        identifying_fields(
+            _cert("HackerRank certificates"),
+            _who(links=["https://www.hackerrank.com/certificates/a1b2c3d4e5"]),
+        )
+        == []
+    )
+    assert (
+        identifying_fields(
+            _voce("Kaggle competitions"),
+            _who(links=["https://www.kaggle.com/competitions/titanic"]),
+        )
+        == []
+    )
+    assert _who(links=["https://leetcode.com/mariorossi"]).handles == ["mariorossi"]
+
+
+def test_a_gist_names_its_user_not_gist() -> None:
+    who = _who(links=["https://gist.github.com/mariorossi"])
+    assert identifying_fields(_voce("Snippet condivisi come gist"), who) == []
+    assert identifying_fields(_voce("Gist di mariorossi"), who) == VOCE
+
+
+def test_google_is_skipped_only_as_the_domain() -> None:
+    """`scholar.google.co.uk` is Google's; `google.mariorossi.dev` is the person's own."""
+    assert (
+        identifying_fields(_voce("Blog mariorossi"), _who(links=["https://google.mariorossi.dev"]))
+        == VOCE
+    )
+    for link in ("https://scholar.google.co.uk/citations", "https://sites.google.com/view/x"):
+        assert identifying_fields(_voce("Google Cloud"), _who(links=[link])) == [], link
+
+
+def test_an_underscore_slug_outside_prose() -> None:
+    assert identifying_fields(_cert("Credly: alex_cloud"), _who("Alex", "Rossi")) == [
+        "certificazioni[0]"
+    ]
 
 
 # ---- tax identifiers (C2): a codice fiscale, a partita IVA or an IBAN names one person ----
