@@ -95,7 +95,8 @@ running the core service the admin area runs, with the calling admin as the acto
 where an admin replaces a provider's key (write-only: the answer is «configurata, finisce con
 …abcd»), picks each task's provider, model, effort, token and daily euro cap, edits the price
 table and reads the month's spend. «Prova» sends one fixed non-personal prompt through the
-task's own seam, recorded as `purpose="prova"`, so it spends the task's cap.
+task's own seam, recorded as `purpose="prova"`, so it spends the task's cap. The tasks are
+`card`, `team_proposal` and, since REB-862, `cv_anonimo`.
 
 There is no «Valutazione» page: the evaluation is the command `rebase cards-eval` (REB-842, below),
 which an operator runs and reads, and the admin API has no `card-eval` route.
@@ -151,6 +152,31 @@ campaign without a terminal:
   actions included.
 - `get_campagna`: one campaign, with each person's outcome, and `entrato_dalla_mail` /
   `azione_dalla_mail` when the mail's own link was the door.
+
+## The anonymous CV as a PDF (REB-862)
+
+An admin's «Scarica CV anonimo» sends a talent's CV to a client company without the person.
+Spec: `docs/superpowers/specs/2026-10-30-anonymous-cv-pdf-design.md`.
+
+- **The task.** `cv_anonimo` in «Modelli AI» (`ai_tasks`, seeded by 0044 from the `card` row,
+  `max_output_tokens` 16000): its own call, never part of the card's. The seam is built per
+  talent (`call_for_task(..., freelancer_id=)`, so `ai_usage` names the person) by
+  `deps.get_cv_llm`, which reads `freelancer_id` from the path.
+- **The table.** `anonymous_cvs` (`AnonymousCvRow`) keeps the last body per freelancer, keyed
+  by the SHA-256 of the CV file and `CV_PROMPT_VERSION`; it goes with the person. **Only
+  `AnonymousCvWriter` and the clear/merge paths touch it.** The card, the cloud, the team
+  builder, the member area, the MCP and the lists never read it: the body is an
+  admin-requested file, not profile data.
+- **The route.** `POST /api/hub/freelancers/{id}/cv-anonimo` (`routers/admin.py`, a plain
+  `def`: the print waits up to a minute) answers `application/pdf` as an attachment named
+  `rebase-cv-<slug>-<ref>.pdf`. 404 no talent or no CV, 422 `AnonymousCvFailed` (the guard
+  or the model failed; nothing stored), 502 when the task is off and nothing kept can be
+  served (a kept, still guard-clean body is served with the task off) or the provider failed,
+  503 `CvPrintFailed`. The page's head takes seniority and years from the card as the admin
+  corrected them, the city from the card, the work mode from the profile.
+- **The audit.** One `anonymous_cv_downloaded` entry on the freelancer per 200, payload
+  `{"riusato": bool}`. The column is 40 wide since 0045: at 20 the trail cut this kind.
+- **Logs.** Nothing here logs the CV, the answer or a name.
 
 ## One person, once (REB-800)
 
