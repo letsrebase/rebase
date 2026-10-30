@@ -538,22 +538,26 @@ class FreelancerService:
         it was cleared and when, without the file itself; there is no `revert` for this
         one kind, on purpose (`rebase_core.audit`'s own module docstring).
 
-        The anonymous card written from the CV goes in the same commit (REB-510), and
-        goes even when there is no CV left to clear: a description of a file the hub no
-        longer holds is not one to keep showing, whatever path left it behind, and the
-        admin route and the MCP tool both reach it through here. The CV's `UPDATE` is
-        flushed first, so it holds the freelancer's row lock before the card is deleted:
-        a card write that got the lock first has committed by then and is deleted with
-        the rest, and one still waiting finds the CV gone (`CardWriter._save`)."""
-        # Imported here, not at the top: `cards` reads the CV through this module.
+        The anonymous card written from the CV goes in the same commit (REB-510), and so
+        does the anonymous CV (REB-862); both go even when there is no CV left to clear: a
+        description of a file the hub no longer holds is not one to keep showing, whatever
+        path left it behind, and the admin route and the MCP tool both reach it through
+        here. The CV's `UPDATE` is flushed first, so it holds the freelancer's row lock
+        before either is deleted: a write that got the lock first has committed by then and
+        is deleted with the rest, and one still waiting finds the CV gone
+        (`CardWriter._save`, `AnonymousCvWriter._store`)."""
+        # Imported here, not at the top: both writers read the CV through this module.
+        from rebase_core.anonymous_cv.writer import AnonymousCvWriter
         from rebase_core.cards import CardWriter
 
         row = self._require(freelancer_id)
         user = self.session.get(User, row.user_id)
         assert user is not None
         cards = CardWriter(self.session, None)
+        anonymous = AnonymousCvWriter(self.session, None)
         if row.cv_bytes is None:
             cards.delete(row.id)
+            anonymous.delete(row.id)
             self.session.commit()
             return freelancer_read(row, user)
         before = {"cv_filename": row.cv_filename, "cv_mime": row.cv_mime, "cv_size": row.cv_size}
@@ -561,6 +565,7 @@ class FreelancerService:
         row.cv_uploaded_at = None
         self.session.flush()
         cards.delete(row.id)
+        anonymous.delete(row.id)
         self.session.commit()
         AdminActionService(self.session).record(
             ENTITY,

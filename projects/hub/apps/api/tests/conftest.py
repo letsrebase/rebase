@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from rebase_api.deps import (
     get_card_batches,
     get_card_llm,
+    get_cv_llm,
     get_sender,
     get_session,
     get_session_opener,
@@ -56,6 +57,7 @@ def client(api_session: Session) -> Iterator[TestClient]:
     app.dependency_overrides[get_card_llm] = lambda: None
     app.dependency_overrides[get_card_batches] = lambda: None
     app.dependency_overrides[get_team_llm] = lambda: None
+    app.dependency_overrides[get_cv_llm] = lambda: None
     # The limiter counts requests per process, so one test's posts would otherwise be
     # spent out of the next test's budget.
     reset_rate_limit()

@@ -292,6 +292,10 @@ LEFT_IN_PLACE: dict[str, str] = {
     "referral_settings.updated_by": "the admin who set it",
     "ai_providers.saved_by": "the admin who saved the key",
     "ai_usage.freelancer_id": "the cost of a call as made, about the card it was written for",
+    "anonymous_cvs.freelancer_id": (
+        "keyed by the CV's SHA-256: a moved CV no longer matches and is written again on "
+        "the next download"
+    ),
     "ai_sources.updated_by": "the admin who switched a source on or off",
     "freelancer_sources.freelancer_id": (
         "what pages said about the absorbed card, deleted by the merge; the survivor reads "

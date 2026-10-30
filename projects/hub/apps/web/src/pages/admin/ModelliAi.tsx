@@ -24,7 +24,11 @@ import { Empty, Header } from './lists'
 
 const KEY = ['ai-config'] as const
 const PROVIDER_LABELS: Record<string, string> = { anthropic: 'Anthropic', openai: 'OpenAI', google: 'Google' }
-const TASK_LABELS: Record<string, string> = { card: 'Scheda anonima', team_proposal: 'Proposta di team' }
+const TASK_LABELS: Record<string, string> = {
+  card: 'Scheda anonima',
+  team_proposal: 'Proposta di team',
+  cv_anonimo: 'CV anonimo',
+}
 const SOURCE_LABELS: Record<string, string> = { github: 'GitHub', links: 'Altri link' }
 const STALE_KEY = ['ai-stale-cards'] as const
 // A prefix of `KEY`, so a change of the configuration reads the trail again too.

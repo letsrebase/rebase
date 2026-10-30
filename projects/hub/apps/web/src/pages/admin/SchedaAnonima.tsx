@@ -308,6 +308,23 @@ export function SchedaAnonima({ freelancerId, hasCv }: { freelancerId: string; h
     mutationFn: () => admin.regenerateFreelancerCard(freelancerId),
     onSuccess: (updated) => client.setQueryData<FreelancerCard>(key, updated),
   })
+  const download = useMutation({
+    mutationFn: () => admin.downloadAnonymousCv(freelancerId),
+    onSuccess: ({ blob, filename }) => {
+      // The browser saves a link it is told to download. The URL goes a second later, not
+      // at once: Firefox and Safari read it after `click` returns.
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+      // The download adds a line to the trail.
+      void client.invalidateQueries({ queryKey: ['audit', 'freelancers', freelancerId] })
+    },
+  })
   let body: ReactNode
   if (read.isError) body = <p className="text-sm text-muted-foreground">Non riesco a leggere la scheda anonima.</p>
   else if (read.isPending) body = <p className="text-sm text-muted-foreground">Caricamento…</p>
@@ -333,17 +350,33 @@ export function SchedaAnonima({ freelancerId, hasCv }: { freelancerId: string; h
           Scheda anonima
         </h2>
         {hasCv && (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => regenerate.mutate()}
-            disabled={regenerate.isPending}
-          >
-            {regenerate.isPending ? 'Rigenero…' : 'Rigenera scheda'}
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => download.mutate()}
+              disabled={download.isPending}
+            >
+              {download.isPending ? 'Preparo il CV…' : 'Scarica CV anonimo'}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => regenerate.mutate()}
+              disabled={regenerate.isPending}
+            >
+              {regenerate.isPending ? 'Rigenero…' : 'Rigenera scheda'}
+            </Button>
+          </div>
         )}
       </div>
+      {download.isError && (
+        <p role="alert" className="text-sm text-destructive">
+          {download.error instanceof ApiError ? download.error.message : 'Non riesco a preparare il CV anonimo.'}
+        </p>
+      )}
       {regenerate.isError && (
         <p role="alert" className="text-sm text-destructive">
           {regenerate.error instanceof ApiError ? regenerate.error.message : 'Non riesco a rigenerare la scheda.'}

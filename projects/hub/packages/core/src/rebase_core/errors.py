@@ -22,6 +22,17 @@ class NotFound(DomainError):
         )
 
 
+class NoCv(NotFound):
+    """A talent with no CV on file, where a CV is what is asked for (the anonymous CV,
+    REB-862): a `NotFound`, so a 404 wherever one is, whose `message` is the sentence the
+    admin reads rather than «cv <id> non trovato»."""
+
+    def __init__(self, freelancer_id: UUID) -> None:
+        super().__init__("cv", freelancer_id)
+        self.message = "Nessun CV caricato"
+        self.args = (self.message,)
+
+
 class ValidationFailed(DomainError):
     code = "validation_failed"
 
@@ -78,6 +89,29 @@ class LlmNotConfigured(LlmUnavailable):
     no price for its model, or a saved key that does not open. Refused before any
     network; `message` is the sentence that says which, never key text. The `code` of its
     parent, as `LlmCapReached`."""
+
+
+class AnonymousCvFailed(DomainError):
+    """The anonymous CV could not be written from the CV on file (REB-862): no readable
+    text, the model refused or was cut at the task's ceiling, the answer was not the shape,
+    it still named the person after its one rewrite, or the CV changed during the call.
+    `message` is one sentence of ours, never the model's words. Nothing was stored, so the
+    next press asks again. A 422 in the API."""
+
+    code = "anonymous_cv_failed"
+
+
+class CvPrintFailed(DomainError):
+    """The anonymous CV could not be typeset (REB-862): Typst missing, slow or failing, the
+    brand's files gone, the working directory not made or written. The server's failure,
+    not the request's: a 503 in the API, with this sentence and never `detail`, which is
+    for the log (Typst's diagnostic quotes `cv.typ`, never the CV)."""
+
+    code = "cv_print_failed"
+
+    def __init__(self, detail: str) -> None:
+        super().__init__("Non riesco a stampare il CV anonimo.", detail=detail)
+        self.detail = detail
 
 
 class TeamBuilderOff(DomainError):

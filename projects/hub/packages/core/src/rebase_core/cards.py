@@ -313,8 +313,9 @@ def stored_persona(session: Session, freelancer_id: UUID) -> CardPersonaRead | N
     """The named card stored for the person, or `None` (no row, no persona read yet, a card
     written before prompt version 3, or a persona read from a CV that is no longer the one
     on file: its `PERSONA_CV` tag differs from the SHA-256 of the current CV, so a person's
-    old contacts are never shown beside a new CV). For the admin's page and the admin's MCP
-    tool: nothing else reads `freelancer_cards.persona`."""
+    old contacts are never shown beside a new CV). For the admin's page, the admin's MCP
+    tool and the anonymous CV's writer, whose guard reads it as one more spelling of the
+    person (REB-862): nothing else reads `freelancer_cards.persona`."""
     found = session.execute(
         select(FreelancerCard.persona, func.encode(func.sha256(Freelancer.cv_bytes), "hex"))
         .join(Freelancer, Freelancer.id == FreelancerCard.freelancer_id)

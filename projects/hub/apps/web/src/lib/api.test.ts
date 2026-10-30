@@ -189,6 +189,26 @@ describe('the api client', () => {
     expect(match.nome_azienda).toBe('ACME Srl')
   })
 
+  it('names the anonymous CV after the UTF-8 filename first, and never with a path or a control character', async () => {
+    const pdf = (disposition: string) =>
+      new Response('%PDF-1.7', {
+        status: 200,
+        headers: { 'Content-Type': 'application/pdf', 'Content-Disposition': disposition },
+      })
+    const fetch = vi.spyOn(globalThis, 'fetch')
+
+    fetch.mockResolvedValueOnce(
+      pdf(`attachment; filename="rebase-cv-qualita-1a2b3c4d.pdf"; filename*=UTF-8''rebase-cv-qualit%C3%A0-1a2b3c4d.pdf`),
+    )
+    expect((await admin.downloadAnonymousCv('f1')).filename).toBe('rebase-cv-qualit\u00e0-1a2b3c4d.pdf')
+
+    fetch.mockResolvedValueOnce(pdf(`attachment; filename*=UTF-8''..%2F..%2Fetc%5Crebase%07-cv%0A.pdf`))
+    expect((await admin.downloadAnonymousCv('f1')).filename).toBe('....etcrebase-cv.pdf')
+
+    fetch.mockResolvedValueOnce(pdf('attachment; filename="/"'))
+    expect((await admin.downloadAnonymousCv('f1')).filename).toBe('cv-anonimo.pdf')
+  })
+
   it('points the admin at the CV route by id', () => {
     expect(admin.cvUrl('abc')).toBe('/api/hub/freelancers/abc/cv')
   })

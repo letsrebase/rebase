@@ -763,6 +763,7 @@ ADMIN_ACTION_KINDS = (
     "note_edited",
     "note_deleted",
     "status_changed",
+    "anon_cv_downloaded",
 )
 
 
@@ -1488,10 +1489,10 @@ class ReferralSettings(Base, PrimaryKeyMixin, TimestampMixin):
 
 # The model providers and the tasks they answer (REB-830): «Modelli AI» in the admin
 # area, the Pydantic AI seam in `llm.py`. A provider is one of these three and a task one
-# of these two; the database repeats both lists as `CHECK`s. The efforts are the one
+# of these three; the database repeats both lists as `CHECK`s. The efforts are the one
 # reasoning knob every provider maps in its own words (`llm.build_model`).
 AI_PROVIDERS = ("anthropic", "openai", "google")
-AI_TASKS = ("card", "team_proposal")
+AI_TASKS = ("card", "team_proposal", "cv_anonimo")
 AI_EFFORTS = ("low", "medium", "high")
 # Why a call ran (`ai_usage.purpose`): a real one, an admin's «Prova», an evaluation run.
 # All three consume the cap of the task they ran as.
@@ -1526,10 +1527,10 @@ class AiProvider(Base):
 
 
 class AiTask(Base):
-    """What answers one task (`card`, `team_proposal`): provider, free-text model name,
-    reasoning effort where the provider has one, the output ceiling, and an optional
-    daily cap in euros that stops the task's calls for the rest of the day. The two rows
-    are seeded by migration 0036; `rebase ai-seed` points them at the old Anthropic
+    """What answers one task (`card`, `team_proposal`, `cv_anonimo`): provider, free-text
+    model name, reasoning effort where the provider has one, the output ceiling, and an optional
+    daily cap in euros that stops the task's calls for the rest of the day. The rows
+    are seeded by migrations 0036 and 0044; `rebase ai-seed` points them at the old Anthropic
     settings."""
 
     __tablename__ = "ai_tasks"
@@ -1549,7 +1550,7 @@ class AiTask(Base):
     )
 
     __table_args__ = (
-        CheckConstraint("task IN ('card', 'team_proposal')", name="ck_ai_tasks_task"),
+        CheckConstraint("task IN ('card', 'team_proposal', 'cv_anonimo')", name="ck_ai_tasks_task"),
         CheckConstraint("max_output_tokens > 0", name="ck_ai_tasks_max_output_tokens"),
         CheckConstraint(
             "daily_cap_eur IS NULL OR daily_cap_eur >= 0", name="ck_ai_tasks_daily_cap"
@@ -1621,7 +1622,7 @@ class AiUsage(Base, PrimaryKeyMixin):
 
     __table_args__ = (
         Index("ix_ai_usage_task_at", "task", "at"),
-        CheckConstraint("task IN ('card', 'team_proposal')", name="ck_ai_usage_task"),
+        CheckConstraint("task IN ('card', 'team_proposal', 'cv_anonimo')", name="ck_ai_usage_task"),
         CheckConstraint("purpose IN ('run', 'prova', 'eval')", name="ck_ai_usage_purpose"),
         CheckConstraint("priced = (cost_eur IS NOT NULL)", name="ck_ai_usage_priced"),
     )
@@ -1838,3 +1839,27 @@ class CardEvalResult(Base):
     judgement: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=None)
     judge_latency_ms: Mapped[int | None] = mapped_column(Integer, default=None)
     judge_cost_eur: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), default=None)
+
+
+class AnonymousCvRow(Base):
+    """The last anonymous CV written for a freelancer (REB-862, migration 0044): `body` is
+    the `AnonymousCv` as validated, `cv_sha256` the hash of the CV file it was written
+    from (the value `cards.stored_persona` computes) and `prompt_version` the prompt that
+    wrote it. A download reuses the row only when both still match; otherwise the CV is
+    written again and the row replaced. Gone with the person (`ON DELETE CASCADE`) and
+    with the CV (`FreelancerService.clear_cv`)."""
+
+    __tablename__ = "anonymous_cvs"
+
+    freelancer_id: Mapped[UUID] = mapped_column(
+        ForeignKey("freelancers.id", ondelete="CASCADE"), primary_key=True
+    )
+    cv_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    prompt_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    body: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    provider: Mapped[str] = mapped_column(String(20), nullable=False)
+    model: Mapped[str] = mapped_column(String(CARD_MODEL_MAX_LENGTH), nullable=False)
+    input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    thinking_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

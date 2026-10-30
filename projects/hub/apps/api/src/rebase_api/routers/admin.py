@@ -24,15 +24,27 @@ from uuid import UUID
 from fastapi import APIRouter, BackgroundTasks, Query, Response, status
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-from rebase_api.deps import AdminDep, CardLlmDep, HttpCallDep, SenderDep, SessionDep, SettingsDep
-from rebase_api.downloads import cv_response
+from rebase_api.deps import (
+    AdminDep,
+    CardLlmDep,
+    CvLlmDep,
+    CvRendererDep,
+    HttpCallDep,
+    SenderDep,
+    SessionDep,
+    SettingsDep,
+)
+from rebase_api.downloads import cv_response, pdf_response
 from rebase_core.admin_tokens import AdminList, AdminRead
-from rebase_core.audit import AdminActionRead
+from rebase_core.anonymous_cv.render import CvHead, filename
+from rebase_core.anonymous_cv.writer import AnonymousCvWriter
+from rebase_core.audit import AdminActionRead, AdminActionService
 from rebase_core.cards import CardWriter, Regeneration
 from rebase_core.cloud import TalentCloudService
 from rebase_core.companies import CompanyService
 from rebase_core.duplicates import DuplicateListRead, duplicate_list
 from rebase_core.errors import TeamBuilderOff
+from rebase_core.freelancers import ENTITY as FREELANCER
 from rebase_core.freelancers import FreelancerService
 from rebase_core.logins import LoginService
 from rebase_core.mail import EmailSender, Mail
@@ -272,6 +284,51 @@ def regenerate_freelancer_card(
     writer = CardWriter(session, llm, run=Regeneration(admin.id, "web"))
     writer.write(freelancer_id, force=True)
     return writer.read_admin(freelancer_id)
+
+
+@router.post(
+    "/freelancers/{freelancer_id}/cv-anonimo",
+    response_class=Response,
+    responses={200: {"content": {"application/pdf": {}}}},
+)
+def download_anonymous_cv(
+    admin: AdminDep,
+    session: SessionDep,
+    llm: CvLlmDep,
+    renderer: CvRendererDep,
+    freelancer_id: UUID,
+) -> Response:
+    """«Scarica CV anonimo» (REB-862): the talent's CV without the person, as a PDF in
+    rebase's style, for an admin to send to a client company. The body is written once per
+    CV file and kept, so a second press is instant and free, and served even with the task
+    off; a CV that has to be written needs the `cv_anonimo` task configured (502 with the
+    sentence «Modelli AI» gives otherwise). The page's head carries the card's level, the
+    admin's correction over it, and its city, only from a card of the same CV file; a
+    seniority the card marks uncertain is left out until an admin says one. One
+    `anon_cv_downloaded` entry on success, naming whether the body was kept. A plain
+    `def`: writing and printing wait minutes at worst, in the threadpool rather than on the
+    event loop."""
+    written = AnonymousCvWriter(session, llm).get_or_write(freelancer_id)
+    # The card as the admin reads it: his seniority and years over Claude's. `None` for a
+    # talent with no card yet, and for a card of an older CV, which may say another level
+    # or city than the CV printed under it.
+    read = CardWriter(session, None).read(freelancer_id)
+    card = read.card if read.cv_sha256 == written.cv_sha256 else None
+    # The id's random tail: its head is a UUIDv7's timestamp, the same for talents created
+    # together and telling when the person signed up.
+    ref = str(freelancer_id)[-8:]
+    head = CvHead(
+        seniority=card.seniority if card and not card.seniority_incerta else None,
+        anni=card.anni if card else None,
+        luogo=card.luogo if card else None,
+        modalita=read.modalita,
+        ref=ref,
+    )
+    pdf = renderer.render(written.cv, head)
+    AdminActionService(session).record(
+        FREELANCER, freelancer_id, "anon_cv_downloaded", admin.id, {"riusato": written.reused}
+    )
+    return pdf_response(filename(written.cv, ref), pdf)
 
 
 @router.get("/freelancers/{freelancer_id}/audit", response_model=list[AdminActionRead])

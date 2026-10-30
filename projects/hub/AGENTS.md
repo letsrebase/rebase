@@ -95,7 +95,8 @@ running the core service the admin area runs, with the calling admin as the acto
 where an admin replaces a provider's key (write-only: the answer is «configurata, finisce con
 …abcd»), picks each task's provider, model, effort, token and daily euro cap, edits the price
 table and reads the month's spend. «Prova» sends one fixed non-personal prompt through the
-task's own seam, recorded as `purpose="prova"`, so it spends the task's cap.
+task's own seam, recorded as `purpose="prova"`, so it spends the task's cap. The tasks are
+`card`, `team_proposal` and, since REB-862, `cv_anonimo`.
 
 There is no «Valutazione» page: the evaluation is the command `rebase cards-eval` (REB-842, below),
 which an operator runs and reads, and the admin API has no `card-eval` route.
@@ -151,6 +152,39 @@ campaign without a terminal:
   actions included.
 - `get_campagna`: one campaign, with each person's outcome, and `entrato_dalla_mail` /
   `azione_dalla_mail` when the mail's own link was the door.
+
+## The anonymous CV as a PDF (REB-862)
+
+An admin's «Scarica CV anonimo» sends a talent's CV to a client company without the person.
+Spec: `docs/superpowers/specs/2026-10-30-anonymous-cv-pdf-design.md`.
+
+- **The task.** `cv_anonimo` in «Modelli AI» (`ai_tasks`, seeded by 0044 from the `card` row,
+  `max_output_tokens` 16000): its own call, never part of the card's. `deps.get_cv_llm` builds
+  the seam; the writer names the talent on each request (`LlmRequest.freelancer_id`, as the
+  card's calls do since REB-861), so `ai_usage` names the person.
+- **The table.** `anonymous_cvs` (`AnonymousCvRow`) keeps the last body per freelancer, keyed
+  by the SHA-256 of the CV file and `CV_PROMPT_VERSION`; it goes with the person. **Only
+  `AnonymousCvWriter` and `clear_cv` touch it; the merge leaves it in place** (`LEFT_IN_PLACE`:
+  a body is served only for the exact CV bytes it was written from). The card, the cloud, the team
+  builder, the member area, the MCP and the lists never read it: the body is an
+  admin-requested file, not profile data.
+- **The route.** `POST /api/hub/freelancers/{id}/cv-anonimo` (`routers/admin.py`, a plain
+  `def`: a first press waits on the model and the print, in the threadpool) answers `application/pdf` as an attachment named
+  `rebase-cv-<slug>-<ref>.pdf`, where `ref` (the footer's «Rif.») is the last 8 characters
+  of the id: the first 8 of a UUIDv7 are its creation time, shared by talents created
+  together and telling when the person signed up. 404 no talent or no CV, 422 `AnonymousCvFailed` (the guard
+  or the model failed; nothing stored), 502 when the task is off and nothing kept can be
+  served (a kept, still guard-clean body is served with the task off) or the provider failed,
+  503 `CvPrintFailed`. The page's head takes seniority and years from the card as the admin
+  corrected them, the city from the card, the work mode from the profile; nothing from a
+  card of another CV file, and no seniority the card marks uncertain unless an admin set
+  one.
+- **The audit.** One `anon_cv_downloaded` entry on the freelancer per 200, payload
+  `{"riusato": bool}`. The name is short on purpose: `admin_actions.kind` holds 20 characters and `audit.record` cuts silently.
+- **The wait.** The task's calls wait 150 seconds and are never retried (`llm.py`,
+  `_TASK_HTTP_LIMITS`); the host vhost gives the route 330 seconds, a by-hand change on the
+  installed copies (below, after the team builder's 90 seconds).
+- **Logs.** Nothing here logs the CV, the answer or a name.
 
 ## One person, once (REB-800)
 
@@ -905,6 +939,35 @@ location = /api/hub/me/cloud/proposals {
 
 and the preview's the same on 127.0.0.1:8086; `nginx -t`, then `systemctl reload
 nginx`.
+
+**`POST /api/hub/freelancers/{id}/cv-anonimo` needs 330 seconds on the host vhost**
+(REB-862), and the installed vhosts get it by hand before «Scarica CV anonimo» is used. A
+first press waits while the model writes a two-page CV, one answer of 3-5k tokens that is
+not streamed: the `cv_anonimo` task has its own limits in `llm.py` (`_TASK_HTTP_LIMITS`,
+150 seconds a call and no retry, where every other task keeps 40 and one), and a CV that
+names the person is asked once more. Two calls of 150 seconds plus the print is 330;
+nginx's 60 would answer 504 while the model went on writing a body the admin then pays
+for again. A regex location is never read once `^~ /api/hub/` matches, so both copies here
+carry a longer prefix, `location ^~ /api/hub/freelancers`, that mirrors `/api/hub/`'s
+directives and holds the route in a nested regex; no trailing slash, as
+`/api/hub/matches`, or nginx answers the wizard's `POST /api/hub/freelancers` and the
+admin list with a 301. Production's:
+
+```
+location ^~ /api/hub/freelancers {
+    client_max_body_size 6M;
+    proxy_pass http://127.0.0.1:8084;
+    include /etc/nginx/snippets/rebase-proxy.conf;
+    location ~ ^/api/hub/freelancers/[^/]+/cv-anonimo$ {
+        proxy_pass http://127.0.0.1:8084;
+        include /etc/nginx/snippets/rebase-proxy.conf;
+        proxy_read_timeout 330s;
+    }
+}
+```
+
+and the preview's the same on 127.0.0.1:8086, pasted into the installed copies' existing
+server blocks beside `location ^~ /api/hub/`; `nginx -t`, then `systemctl reload nginx`.
 
 ## Running it
 
