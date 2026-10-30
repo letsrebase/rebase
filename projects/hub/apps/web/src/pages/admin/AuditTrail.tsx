@@ -22,6 +22,7 @@ const KIND_LABELS: Record<AdminAction['kind'], string> = {
   note_edited: 'Nota modificata',
   note_deleted: 'Nota eliminata',
   status_changed: 'Cambio di stato',
+  anon_cv_downloaded: 'CV anonimo scaricato',
 }
 
 /** What a merge did, in one line (REB-800), for the two entries that carry its counts:
@@ -45,6 +46,7 @@ function kindLabel(action: AdminAction): string {
   if (action.kind === 'vetted' && action.payload.vetted !== undefined) {
     return action.payload.vetted ? 'Segnato come verificato' : 'Verifica tolta'
   }
+  if (action.kind === 'anon_cv_downloaded' && action.payload.riusato) return 'CV anonimo scaricato (già pronto)'
   return KIND_LABELS[action.kind]
 }
 

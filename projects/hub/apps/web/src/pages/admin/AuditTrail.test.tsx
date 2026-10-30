@@ -146,6 +146,15 @@ const STATUS_CHANGED: AdminAction = {
   payload: { before: 'nuovo', after: 'contattato', fonte: 'mcp' },
 }
 
+const ANON_CV: AdminAction = {
+  ...DELETE,
+  id: 'a20',
+  kind: 'anon_cv_downloaded',
+  payload: { riusato: false },
+  created_at: '2026-10-30T09:00:00Z',
+}
+const ANON_CV_REUSED: AdminAction = { ...ANON_CV, id: 'a21', payload: { riusato: true }, created_at: '2026-10-30T10:00:00Z' }
+
 function mount({ canRevert = true, onReverted = () => {} }: { canRevert?: boolean; onReverted?: () => void } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   return render(
@@ -236,6 +245,16 @@ describe('AuditTrail', () => {
     mount()
     const entry = (await screen.findByText('Unione annullata')).closest('li')!
     expect(entry).not.toHaveTextContent('righe spostate')
+  })
+
+  it('names a downloaded anonymous CV, and says when it was already made', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, [ANON_CV_REUSED, ANON_CV]))
+    mount()
+    await screen.findByText('CV anonimo scaricato (già pronto)')
+    const entries = screen.getAllByRole('listitem')
+    expect(entries[1]).toHaveTextContent('CV anonimo scaricato')
+    expect(entries[1]).not.toHaveTextContent('già pronto')
+    expect(screen.queryByRole('button', { name: 'Ripristina questa modifica' })).toBeNull()
   })
 
   it('says so when there is nothing yet', async () => {

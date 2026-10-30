@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SchedaAnonima } from './SchedaAnonima'
@@ -160,6 +160,65 @@ describe('«Scheda anonima» on the talent page (REB-514, spec § 2.1, § 5.1)',
     await userEvent.click(await screen.findByRole('button', { name: 'Rigenera scheda' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Il team builder è spento.')
     expect(screen.getByText('Backend developer')).toBeInTheDocument()
+  })
+
+  describe('«Scarica CV anonimo»', () => {
+    it('is absent without a CV', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, NONE))
+      mount({ hasCv: false })
+      await screen.findByText('Nessuna scheda: manca il CV.')
+      expect(screen.queryByRole('button', { name: 'Scarica CV anonimo' })).toBeNull()
+    })
+
+    it('asks for the PDF, says so while it runs and saves it under the server’s filename', async () => {
+      let release!: (response: Response) => void
+      const pdf = new Promise<Response>((resolve) => {
+        release = resolve
+      })
+      const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_input, init) => {
+        if (init?.method === 'POST') return pdf
+        return answer(200, WRITTEN)
+      })
+      const create = vi.fn(() => 'blob:cv')
+      const revoke = vi.fn()
+      Object.assign(URL, { createObjectURL: create, revokeObjectURL: revoke })
+      let saved: string | null = null
+      vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+        saved = this.download
+      })
+      mount()
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Scarica CV anonimo' }))
+      expect(await screen.findByRole('button', { name: 'Preparo il CV…' })).toBeDisabled()
+      expect(spy).toHaveBeenCalledWith(
+        '/api/hub/freelancers/f1/cv-anonimo',
+        expect.objectContaining({ method: 'POST' }),
+      )
+
+      release(
+        new Response('%PDF-1.7', {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/pdf',
+            'Content-Disposition': 'attachment; filename="rebase-cv-backend-developer-12345678.pdf"',
+          },
+        }),
+      )
+      await waitFor(() => expect(saved).toBe('rebase-cv-backend-developer-12345678.pdf'))
+      expect(create).toHaveBeenCalledTimes(1)
+      await waitFor(() => expect(revoke).toHaveBeenCalledWith('blob:cv'))
+      expect(screen.getByRole('button', { name: 'Scarica CV anonimo' })).toBeEnabled()
+    })
+
+    it('shows the API’s sentence when the CV cannot be prepared', async () => {
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (_input, init) => {
+        if (init?.method === 'POST') return answer(422, { detail: 'Il CV contiene ancora il nome della persona.' })
+        return answer(200, WRITTEN)
+      })
+      mount()
+      await userEvent.click(await screen.findByRole('button', { name: 'Scarica CV anonimo' }))
+      expect(await screen.findByRole('alert')).toHaveTextContent('Il CV contiene ancora il nome della persona.')
+    })
   })
 
   it('says the years are not in the CV and the seniority is a guess, when the card dates nothing (REB-799)', async () => {

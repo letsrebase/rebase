@@ -42,7 +42,7 @@ const CONFIG = {
     provider('openai'),
     provider('google'),
   ],
-  tasks: [task('card'), task('team_proposal')],
+  tasks: [task('card'), task('team_proposal'), task('cv_anonimo')],
   sources: [
     { kind: 'github', enabled: false, updated_at: null, updated_by_name: null },
     { kind: 'links', enabled: false, updated_at: null, updated_by_name: null },
@@ -101,6 +101,11 @@ describe('the Modelli AI page (REB-833)', () => {
     await waitFor(() => expect(input).toHaveValue(''))
     expect(screen.queryByText(new RegExp(SECRET))).toBeNull()
     expect(document.body.innerHTML).not.toContain(SECRET)
+  })
+
+  it('names the anonymous CV task in the page’s words', async () => {
+    mount()
+    expect(await screen.findByText('CV anonimo')).toBeInTheDocument()
   })
 
   it('shows the hint for a configured provider', async () => {
