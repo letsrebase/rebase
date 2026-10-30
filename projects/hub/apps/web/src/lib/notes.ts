@@ -33,6 +33,7 @@ export const REGENERATION_REASON_LABELS: Record<string, string> = {
   cap_reached: 'tetto giornaliero raggiunto',
   not_configured: 'compito spento',
   superseded: 'CV o dati cambiati nel frattempo',
+  unchanged: 'persona o CV non più presenti',
   errored: 'nessuna risposta dal Batch API',
   expired: 'batch scaduto',
   not_sent: 'batch non inviato',

@@ -190,7 +190,7 @@ class CardBatches:
             batch.status = "failed"
             session.commit()
             logger.warning("card batch %s not sent: %s", batch.id, type(error).__name__)
-            with writer.acting(replace(run, since=batch.created_at)):
+            with writer.acting(replace(run, batch_since=batch.created_at)):
                 for item in items:
                     writer.card_done(item.freelancer_id, "errored", reason="not_sent")
             writer.end_regeneration(
@@ -330,7 +330,7 @@ class CardBatches:
             cast(Fonte, start.payload.get("fonte", "web")),
             bulk=True,
             start_action_id=start.id,
-            since=batch.created_at,
+            batch_since=batch.created_at,
             retries=True,
         )
         return run, start

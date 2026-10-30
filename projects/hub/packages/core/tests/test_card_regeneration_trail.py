@@ -9,22 +9,31 @@ records its usage at half that, as `AiBatch.record` does. The database is the re
 """
 
 import json
+import re
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
 import pytest
 from fakes_cards import MODEL, card_response
 from sqlalchemy import Engine, select, text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 from test_card_batch import GENDERED, _an_admin, _outcomes, _poll, _stale, _start
 from test_card_staleness import _apply, _cards
 
 from rebase_core.ai_config import AI_CONFIG_ENTITY, AI_CONFIG_ENTITY_ID
 from rebase_core.card_batch import ACTIVE_GIVEN_UP_AFTER, BatchPolled, CardBatches
-from rebase_core.cards import PROMPT_VERSION, CardWriter, Fonte, Regeneration
+from rebase_core.cards import (
+    PROMPT_VERSION,
+    REGENERATION_REASONS,
+    CardWriter,
+    Fonte,
+    Regeneration,
+)
 from rebase_core.db import session_factory
 from rebase_core.errors import LlmCapReached, LlmUnavailable
 from rebase_core.llm import BatchHandle, BatchOutcome, LlmRequest, LlmResponse, RecordingBatch
@@ -519,3 +528,69 @@ def test_the_batch_is_signed_by_the_admin_who_started_it_whoever_polls(clean_hub
 
     assert {a.admin_id for a in _actions(clean_hub, "card_regenerated")} == {admin}
     assert _one(clean_hub, "cards_regenerated").admin_id == admin
+
+
+def test_unrelated_synchronous_spend_on_a_person_never_lands_in_the_batch_cards_cost(
+    clean_hub: Session,
+) -> None:
+    """A wizard or CV write, an hourly refresh or a «Rigenera scheda» on the same person while the
+    batch is open is its own spend, and its own entry when a person started it: the batch card's
+    cost and the end's total are the batch's answers alone."""
+    people = _stale(clean_hub, 3)
+    call = PricedBatch(_outcomes(people), ended_after=1)
+    _start(clean_hub, call)
+    for person in people[:2]:
+        clean_hub.add(
+            AiUsage(
+                task="card",
+                purpose="run",
+                provider="anthropic",
+                model=MODEL,
+                cost_eur=Decimal("0.500000"),
+                priced=True,
+                freelancer_id=person,
+            )
+        )
+    clean_hub.commit()
+
+    assert _poll(clean_hub, call).state == "running"
+    assert _poll(clean_hub, call) == BatchPolled("applied", written=3, failed=0)
+
+    for person in people:
+        assert _cost(_one(clean_hub, "card_regenerated", person).payload) == BATCH_COST
+    assert _cost(_one(clean_hub, "cards_regenerated").payload) == 3 * BATCH_COST
+
+
+def test_a_database_error_mid_run_still_records_the_end_and_raises_the_original(
+    clean_hub: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The error leaves the session's transaction aborted: the end is recorded after a rollback,
+    and the caller gets the database's error, not the one the aborted transaction would raise."""
+    people = _stale(clean_hub, 3)
+    admin = _an_admin(clean_hub)
+
+    def broken(self: CardWriter, ids: Any, **kwargs: Any) -> None:
+        kwargs["outcomes"].update(dict.fromkeys(ids))
+        self.session.execute(text("SELECT 1 / 0"))
+
+    monkeypatch.setattr(CardWriter, "_write_all", broken)
+
+    with pytest.raises(DBAPIError, match="division by zero"):
+        CardWriter(clean_hub, PricedCall(_engine(clean_hub)), now=lambda: NOW).regenerate_stale(  # type: ignore[arg-type]
+            admin, 50, fonte="web"
+        )
+
+    p = _one(clean_hub, "cards_regenerated").payload
+    assert (p["stopped"], p["left"], p["written"], p["skipped"]) == (True, 3, 0, 0)
+    assert p["start_action_id"] == str(_one(clean_hub, "cards_regenerate").id)
+    assert len(people) == 3
+
+
+def test_every_reason_the_backend_can_record_has_a_label_in_the_web() -> None:
+    notes = Path(__file__).resolve().parents[3] / "apps/web/src/lib/notes.ts"
+    block = re.search(r"REGENERATION_REASON_LABELS[^{]*\{(.*?)\n\}", notes.read_text(), re.DOTALL)
+    assert block is not None
+    labelled = set(re.findall(r"^\s+(\w+):", block.group(1), re.MULTILINE))
+
+    assert set(REGENERATION_REASONS) <= labelled
+    assert labelled <= set(REGENERATION_REASONS)

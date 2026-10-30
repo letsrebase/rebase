@@ -63,7 +63,7 @@ from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 from uuid import UUID
 
 from pydantic import ValidationError
-from sqlalchemy import delete, func, null, select, text
+from sqlalchemy import and_, delete, false, func, null, or_, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -187,9 +187,10 @@ NO_ANSWER_REASONS = ("errored", "expired", "not_sent")
 class Regeneration:
     """A write a person started (REB-861), carried by the writer that does it so that each
     card it writes, or fails to, is signed in that talent's trail (`card_regenerated`).
-    `bulk` and `start_action_id` tie a card to the `cards_regenerate` of its start. `since`
-    is where the cost of a card is counted from when it is not the start of its own claim: a
-    Message Batch's cards are paid for from the day it was sent. `retries` says an
+    `bulk` and `start_action_id` tie a card to the `cards_regenerate` of its start.
+    `batch_since` is when the Message Batch of a run was sent: its batch-priced answers count
+    from then, wherever in the apply they were recorded (the rest of a card's cost is the
+    calls made since its own claim began, `CardWriter.card_done`). `retries` says an
     `unavailable` card is left for another pass and is not yet the end of its story (the
     batch's apply)."""
 
@@ -197,7 +198,7 @@ class Regeneration:
     fonte: Fonte
     bulk: bool = False
     start_action_id: UUID | None = None
-    since: datetime | None = None
+    batch_since: datetime | None = None
     retries: bool = False
 
 
@@ -243,6 +244,17 @@ def failure_sentence(kind: Failure) -> str:
     """The sentence of ours that stands for a kind of failure, never the model's words."""
     return _FAILURES[kind]
 
+
+# Every `reason` a `card_regenerated` entry can carry: the web's «Registro» must have a word for
+# each (`REGENERATION_REASON_LABELS`, held to this list by `test_card_regeneration_trail`).
+REGENERATION_REASONS = (
+    *_FAILURES,
+    "cap_reached",
+    "not_configured",
+    "superseded",
+    "unchanged",
+    *NO_ANSWER_REASONS,
+)
 
 # What gives a card's person away as a woman (REB-574): Italian writes the gender into
 # the role, the participle and the pronoun, and in a catalogue of a few dozen people
@@ -1182,6 +1194,10 @@ class CardWriter:
                 with self.acting(run):
                     result = self._write_all(ids, force=True, only_stale=True, outcomes=outcomes)
             except BaseException:
+                # A database error leaves the session's transaction aborted: nothing can be
+                # read or written on it until it is rolled back, and the end is the record
+                # that this run stopped. The original error is what the caller gets.
+                self.session.rollback()
                 left = sum(1 for outcome in outcomes.values() if outcome is None)
                 self.end_regeneration(
                     admin_id=admin_id,
@@ -1234,10 +1250,10 @@ class CardWriter:
 
     def begin_card(self, freelancer_id: UUID) -> None:
         """A card's write starts, under the person's claim: from now on the calls recorded
-        for the person are this write's (`card_done` reads them), unless the run counts from
-        an earlier time (`Regeneration.since`). Does nothing without a `run`."""
+        for the person are this write's (`card_done` reads them), and only they. Does nothing
+        without a `run`."""
         self._since = None
-        if self.run is not None and self.run.since is None:
+        if self.run is not None:
             self._since = self.session.scalar(select(func.clock_timestamp()))
 
     def card_done(
@@ -1258,10 +1274,11 @@ class CardWriter:
         run, begun, self._since = self.run, self._since, None
         if run is None:
             return
-        since = begun or run.since
-        if since is None or (outcome == "unavailable" and run.retries):
+        if (begun is None and run.batch_since is None) or (
+            outcome == "unavailable" and run.retries
+        ):
             return
-        cost, unpriced, calls = self._usage_since(freelancer_id, since)
+        cost, unpriced, calls = self._usage_since(freelancer_id, begun, run.batch_since)
         if outcome in ("unchanged", "deleted") and calls == 0:
             return
         written = outcome == "written"
@@ -1283,16 +1300,30 @@ class CardWriter:
             ENTITY, freelancer_id, CARD_REGENERATED, run.admin_id, payload
         )
 
-    def _usage_since(self, freelancer_id: UUID, since: datetime) -> tuple[Decimal, int, int]:
-        """What the person's `card` calls recorded since `since` cost: the sum of the priced
-        ones, how many had no price, how many there were. An evaluation's and a «Prova»'s are
-        not a regeneration's."""
+    def _usage_since(
+        self, freelancer_id: UUID, since: datetime | None, batch_since: datetime | None
+    ) -> tuple[Decimal, int, int]:
+        """What the person's `card` calls of this write cost: the sum of the priced ones, how
+        many had no price, how many there were. A write's own calls are the ones recorded since
+        its claim began (`since`): the claim is per person, so no other write of the person
+        is in that window. A Message Batch's answer is recorded in the pass that applies the
+        card, in a transaction that may have begun before the claim, and an earlier pass may
+        have recorded it, so the batch-priced rows (`ai_usage.batch`) count from the day it
+        was sent (`batch_since`; one batch is active at a time, so they are its own). Any
+        other synchronous call of the person in that window, the wizard's, the hourly loop's or
+        a «Rigenera scheda», is not this write's. An evaluation's and a «Prova»'s never are."""
+        own = [
+            AiUsage.at >= since if since is not None else false(),
+            and_(AiUsage.batch.is_(True), AiUsage.at >= batch_since)
+            if batch_since is not None
+            else false(),
+        ]
         rows = self.session.execute(
             select(AiUsage.cost_eur, AiUsage.priced).where(
                 AiUsage.task == "card",
                 AiUsage.purpose == "run",
                 AiUsage.freelancer_id == freelancer_id,
-                AiUsage.at >= since,
+                or_(*own),
             )
         ).all()
         cost = sum((Decimal(c) for c, _ in rows if c is not None), Decimal(0))
