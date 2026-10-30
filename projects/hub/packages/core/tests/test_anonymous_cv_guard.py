@@ -634,6 +634,18 @@ def test_nato_the_alliance_is_not_a_birth_label() -> None:
         assert identifying_fields(_bullet(text), NOBODY) == ["esperienze[1].punti[0].testo"], text
 
 
+def test_a_birth_statement_in_capitals_or_after_a_comma_is_refused() -> None:
+    for text in (
+        "NATA A MESSINA IL 01/08/1985",
+        "NATO IL 3 MARZO 1985",
+        "NATA NEL 1990",
+        "NATO NEL 1985",
+        "Ingegnere, nato nel 1985",
+        "(nata nel 1990)",
+    ):
+        assert identifying_fields(_bullet(text), NOBODY) == ["esperienze[1].punti[0].testo"], text
+
+
 def test_birth_and_tax_leak_gaps_are_closed() -> None:
     for text in (
         "P.I. 01234567890",

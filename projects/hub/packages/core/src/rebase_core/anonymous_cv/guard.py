@@ -139,10 +139,12 @@ _DATE = (
 # «nata a supporto dei team» is not one.
 _PLACE = r"(?:(?i:the)\s+)?[A-ZÀ-Ý][\w'’]+"
 _BIRTH_DATE_LABEL = (
-    r"(?:[Nn]at[oa]\s+(?i:il)|(?i:data\s+di\s+nascita|date\s+of\s+birth|born\s+on|dob))"
+    r"(?:[Nn]ato\s+(?i:il)|(?i:nata\s+il)|NATO\s+(?i:il)(?=\W*\d)"
+    r"|(?i:data\s+di\s+nascita|date\s+of\s+birth|born\s+on|dob))"
 )
 _BIRTH_PLACE_LABEL = (
-    r"(?:[Nn]at[oa]\s+(?i:a|ad|in)|(?i:luogo\s+di\s+nascita|place\s+of\s+birth|born\s+in))"
+    r"(?:[Nn]ato\s+(?i:a|ad|in)|(?i:nata\s+(?:a|ad|in))"
+    r"|(?i:luogo\s+di\s+nascita|place\s+of\s+birth|born\s+in))"
 )
 _BIRTH = re.compile(
     rf"(?<!\w)(?:{_BIRTH_DATE_LABEL}|{_BIRTH_PLACE_LABEL})(?!\w)[\s:,]*(?:\S+\s+){{0,3}}?{_DATE}"
@@ -150,7 +152,9 @@ _BIRTH = re.compile(
     # «Born: 3 March 1985» and «nato nel 1985», with or without the place after. «nel <year>»
     # counts only when it opens a statement: «Il progetto è nato nel 2019» is prose.
     rf"|(?<!\w)(?i:born)(?!\w)[\s:,]*{_DATE}"
-    r"|(?:^|[.;:•|\n-])\s*[Nn]at[oa]\s+(?i:nel)\s+(?:19|20)\d{2}(?!\d)"
+    # A comma, a bracket, a dash or a quote opens it too: «Ingegnere, nato nel 1985». All
+    # capitals read as the alliance unless a year follows: «NATO NEL 1985».
+    r"|(?:^|[.;:•|\n,(—–\"'“”‘’-])\s*(?:[Nn]ato|(?i:nata)|NATO)\s+(?i:nel)\s+(?:19|20)\d{2}(?!\d)"
 )
 
 
