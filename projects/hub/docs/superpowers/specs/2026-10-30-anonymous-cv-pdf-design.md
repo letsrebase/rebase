@@ -223,7 +223,7 @@ The filename is `rebase-cv-<titolo as an ASCII slug>-<ref>.pdf` (through
   caricato»), the task off or no key (503, as `TeamBuilderOff`), a writing failure (422
   with the failure sentence), cap reached (the seam's error, as the card route answers it).
 - Each successful download writes an `AdminAction` on the freelancer,
-  `anonymous_cv_downloaded` (added to `ADMIN_ACTION_KINDS`; no `CHECK` holds that list),
+  `anon_cv_downloaded` (added to `ADMIN_ACTION_KINDS`; no `CHECK` holds that list),
   with `{"riusato": bool}`: a CV that leaves the hub for a
   company is in the person's trail with who sent it out and when. The trail's labels
   (`AuditTrail.tsx`) say «CV anonimo scaricato».

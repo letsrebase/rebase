@@ -174,8 +174,8 @@ Spec: `docs/superpowers/specs/2026-10-30-anonymous-cv-pdf-design.md`.
   served (a kept, still guard-clean body is served with the task off) or the provider failed,
   503 `CvPrintFailed`. The page's head takes seniority and years from the card as the admin
   corrected them, the city from the card, the work mode from the profile.
-- **The audit.** One `anonymous_cv_downloaded` entry on the freelancer per 200, payload
-  `{"riusato": bool}`. The column is 40 wide since 0045: at 20 the trail cut this kind.
+- **The audit.** One `anon_cv_downloaded` entry on the freelancer per 200, payload
+  `{"riusato": bool}`. The name is short on purpose: `admin_actions.kind` holds 20 characters and `audit.record` cuts silently.
 - **Logs.** Nothing here logs the CV, the answer or a name.
 
 ## One person, once (REB-800)

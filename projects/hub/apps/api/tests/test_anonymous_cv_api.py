@@ -162,7 +162,7 @@ def _trail(session: Session, freelancer_id: str) -> list[AdminAction]:
         session.scalars(
             select(AdminAction).where(
                 AdminAction.entity_id == UUID(freelancer_id),
-                AdminAction.kind == "anonymous_cv_downloaded",
+                AdminAction.kind == "anon_cv_downloaded",
             )
         )
     )
@@ -269,6 +269,12 @@ def test_download_answers_the_pdf_and_records_it(
         assert word not in printed
     [entry] = _trail(api_session, freelancer_id)
     assert entry.payload == {"riusato": False}
+    # Read back from the column, not through the filter above: a kind cut to the column's
+    # width must never pass silently.
+    kinds = api_session.scalars(
+        select(AdminAction.kind).where(AdminAction.entity_id == UUID(freelancer_id))
+    ).all()
+    assert kinds == ["anon_cv_downloaded"]
     admin_id = api_session.scalar(select(User.id).where(User.email == ADMIN_EMAIL))
     assert entry.admin_id == admin_id
     assert len(call.requests) == 1

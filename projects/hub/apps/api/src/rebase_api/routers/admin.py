@@ -302,7 +302,7 @@ def download_anonymous_cv(
     CV file and kept, so a second press is instant and free, and served even with the task
     off; a CV that has to be written needs the `cv_anonimo` task configured (502 with the
     sentence «Modelli AI» gives otherwise). The page's head carries the card's level, the
-    admin's correction over it. One `anonymous_cv_downloaded` entry on success, naming
+    admin's correction over it. One `anon_cv_downloaded` entry on success, naming
     whether the body was kept. A plain `def`: writing and printing wait up to a minute, in
     the threadpool rather than on the event loop."""
     written = AnonymousCvWriter(session, llm).get_or_write(freelancer_id)
@@ -320,7 +320,7 @@ def download_anonymous_cv(
     )
     pdf = renderer.render(written.cv, head)
     AdminActionService(session).record(
-        FREELANCER, freelancer_id, "anonymous_cv_downloaded", admin.id, {"riusato": written.reused}
+        FREELANCER, freelancer_id, "anon_cv_downloaded", admin.id, {"riusato": written.reused}
     )
     return pdf_response(filename(written.cv, ref), pdf)
 

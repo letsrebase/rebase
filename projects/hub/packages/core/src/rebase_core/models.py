@@ -756,7 +756,7 @@ ADMIN_ACTION_KINDS = (
     "note_edited",
     "note_deleted",
     "status_changed",
-    "anonymous_cv_downloaded",
+    "anon_cv_downloaded",
 )
 
 
@@ -776,7 +776,7 @@ class AdminAction(Base, PrimaryKeyMixin):
 
     entity_type: Mapped[str] = mapped_column(String(20), nullable=False)
     entity_id: Mapped[UUID] = mapped_column(nullable=False)
-    kind: Mapped[str] = mapped_column(String(40), nullable=False)
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)
     admin_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(

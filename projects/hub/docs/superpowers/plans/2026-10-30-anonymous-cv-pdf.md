@@ -18,7 +18,7 @@
 - Never edit `.claude/skills/`. Never touch `projects/pigrocrm`.
 - Comment density and voice: match `cards.py` and `card_guard.py` (docstrings that say why, in plain English; Italian for every user-facing sentence).
 - No log line, error, usage record or audit entry may carry CV text, the model's answer or an identifier of the person.
-- Task name `cv_anonimo`; table `anonymous_cvs`; audit kind `anonymous_cv_downloaded` with `{"riusato": bool}`; route `POST /api/hub/freelancers/{freelancer_id}/cv-anonimo`; `CV_PROMPT_VERSION = 1`; the seeded task row: provider, model, effort copied from `card`, `max_output_tokens` 16000, `daily_cap_eur` NULL, `enabled` as `card`'s.
+- Task name `cv_anonimo`; table `anonymous_cvs`; audit kind `anon_cv_downloaded` with `{"riusato": bool}`; route `POST /api/hub/freelancers/{freelancer_id}/cv-anonimo`; `CV_PROMPT_VERSION = 1`; the seeded task row: provider, model, effort copied from `card`, `max_output_tokens` 16000, `daily_cap_eur` NULL, `enabled` as `card`'s.
 - Footer copy, verbatim: `Profilo proposto da rebase · ciao@letsrebase.com · letsrebase.com` and `Rif. <first 8 characters of the freelancer id>`.
 - Work modes printed: `remoto` → «Da remoto», `ibrido` → «Ibrido», `in_sede` → «In sede».
 - Filename: `rebase-cv-<slug of titolo, ASCII, lower case, hyphens, at most 40 chars>-<ref>.pdf`.
@@ -43,7 +43,7 @@
 - Test: `projects/hub/packages/core/tests/test_migration_0044_anonymous_cvs.py`
 
 **Interfaces:**
-- Produces: `models.AnonymousCvRow` (`__tablename__ = "anonymous_cvs"`): `freelancer_id: UUID` PK FK `freelancers.id` `ondelete="CASCADE"`; `cv_sha256: str` (String(64), not null); `prompt_version: int` (not null); `body: dict` (JSONB, not null); `provider: str` (String(20)); `model: str` (String(CARD_MODEL_MAX_LENGTH)); `input_tokens`, `output_tokens`, `thinking_tokens: int` (not null, default 0); `generated_at: datetime` (tz, not null). `AI_TASKS == ("card", "team_proposal", "cv_anonimo")`. `"anonymous_cv_downloaded" in ADMIN_ACTION_KINDS`.
+- Produces: `models.AnonymousCvRow` (`__tablename__ = "anonymous_cvs"`): `freelancer_id: UUID` PK FK `freelancers.id` `ondelete="CASCADE"`; `cv_sha256: str` (String(64), not null); `prompt_version: int` (not null); `body: dict` (JSONB, not null); `provider: str` (String(20)); `model: str` (String(CARD_MODEL_MAX_LENGTH)); `input_tokens`, `output_tokens`, `thinking_tokens: int` (not null, default 0); `generated_at: datetime` (tz, not null). `AI_TASKS == ("card", "team_proposal", "cv_anonimo")`. `"anon_cv_downloaded" in ADMIN_ACTION_KINDS`.
 
 - [ ] **Step 1: Write the failing migration test**, modelled on `test_migration_0043_card_persona.py`:
   - `test_revision_follows_the_card_persona`: parent of `"0044"` is `"0043"`.
@@ -162,7 +162,7 @@ Rendering: a temporary directory per call; write `cv.json` (`{"cv": ..., "head":
 
 **Interfaces:**
 - Consumes: Task 3's `AnonymousCvWriter`, `Written`; Task 4's `CvRenderer`, `CvHead`, `filename`; `card_level.card_read` for seniority/anni over the admin's correction; `downloads.pdf_response`; `AdminActionService` as `FreelancerService` writes entries.
-- Produces: `POST /api/hub/freelancers/{freelancer_id}/cv-anonimo` → `200 application/pdf`, `Content-Disposition` attachment with `filename(...)`; errors: 401/403 not admin, 404 no talent or no CV, 503 `TeamBuilderOff`-style when `CvLlmDep is None` and no reusable body exists, 422 `AnonymousCvFailed`, the seam's `LlmUnavailable` as the card route answers it. On 200, one `AdminAction` `anonymous_cv_downloaded` on the freelancer with `{"riusato": bool}`, actor the admin.
+- Produces: `POST /api/hub/freelancers/{freelancer_id}/cv-anonimo` → `200 application/pdf`, `Content-Disposition` attachment with `filename(...)`; errors: 401/403 not admin, 404 no talent or no CV, 503 `TeamBuilderOff`-style when `CvLlmDep is None` and no reusable body exists, 422 `AnonymousCvFailed`, the seam's `LlmUnavailable` as the card route answers it. On 200, one `AdminAction` `anon_cv_downloaded` on the freelancer with `{"riusato": bool}`, actor the admin.
 
 Note: with `CvLlmDep is None` a stored, current body is still served (pass `llm=None` to the writer; it raises only when a call is needed).
 
@@ -170,7 +170,7 @@ Note: with `CvLlmDep is None` a stored, current body is still served (pass `llm=
   - `test_requires_an_admin` (anonymous 401, member 403).
   - `test_no_cv_is_404_with_the_sentence`.
   - `test_task_off_is_503` (override returns `None`, no stored body).
-  - `test_download_answers_the_pdf_and_records_it`: 200, `application/pdf`, filename `rebase-cv-…-<ref>.pdf`, `FakeCvRenderer` got `CvHead(ref=str(id)[:8], …)` with the card's seniority and the admin's `anni_admin` when set; the audit trail has `anonymous_cv_downloaded` `{"riusato": false}` by this admin.
+  - `test_download_answers_the_pdf_and_records_it`: 200, `application/pdf`, filename `rebase-cv-…-<ref>.pdf`, `FakeCvRenderer` got `CvHead(ref=str(id)[:8], …)` with the card's seniority and the admin's `anni_admin` when set; the audit trail has `anon_cv_downloaded` `{"riusato": false}` by this admin.
   - `test_second_download_reuses` → `{"riusato": true}`, one LLM request in total; served even with the task off.
   - `test_guard_failure_is_422_with_the_sentence` and no audit entry.
 - [ ] **Step 2: Run** `TESTCONTAINERS_RYUK_DISABLED=true uv run pytest -q projects/hub/apps/api/tests/test_anonymous_cv_api.py` → FAIL.
@@ -184,7 +184,7 @@ Note: with `CvLlmDep is None` a stored, current body is still served (pass `llm=
 - Modify: `projects/hub/apps/web/src/lib/api.ts` (`admin.downloadAnonymousCv(id): Promise<{ blob: Blob; filename: string }>`, POST, reads the filename from `Content-Disposition`, throws `ApiError` with the API's sentence on a non-2xx)
 - Modify: `projects/hub/apps/web/src/pages/admin/SchedaAnonima.tsx` (the button beside «Rigenera scheda» when `hasCv`; label «Scarica CV anonimo», pending «Preparo il CV…», disabled while pending; saves through an object URL and a temporary `<a download>`; error under the heading with `role="alert"`, the `ApiError` message or «Non riesco a preparare il CV anonimo.»)
 - Modify: `projects/hub/apps/web/src/pages/admin/ModelliAi.tsx` (`TASK_LABELS.cv_anonimo = 'CV anonimo'`)
-- Modify: `projects/hub/apps/web/src/pages/admin/AuditTrail.tsx` (label for `anonymous_cv_downloaded`: «CV anonimo scaricato», and «(già pronto)» when `riusato`)
+- Modify: `projects/hub/apps/web/src/pages/admin/AuditTrail.tsx` (label for `anon_cv_downloaded`: «CV anonimo scaricato», and «(già pronto)» when `riusato`)
 - Test: `SchedaAnonima.test.tsx`, `ModelliAi.test.tsx`, `AuditTrail.test.tsx`
 
 **Interfaces:**

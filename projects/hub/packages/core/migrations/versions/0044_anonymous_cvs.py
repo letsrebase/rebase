@@ -16,7 +16,7 @@ REB-862: an admin downloads a person's CV as an anonymous PDF, written by a call
   file it came from, so the same CV is not paid for twice. It goes with the person
   (`ON DELETE CASCADE`).
 
-`ADMIN_ACTION_KINDS` gains `anonymous_cv_downloaded` in Python only, as the column holds
+`ADMIN_ACTION_KINDS` gains `anon_cv_downloaded` in Python only, as the column holds
 no CHECK. `IF NOT EXISTS` and `ON CONFLICT DO NOTHING`, so a retried deploy lands on the
 same schema.
 """
