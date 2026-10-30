@@ -3,9 +3,9 @@
   "commentTypes": ["logic", "syntax", "style"],
   "effort": "base",
   "excludeAuthors": ["dependabot[bot]"],
-  "autoReview": ["open"],
+  "autoReview": [],
   "triggerOnDrafts": false,
-  "statusCheck": true,
+  "statusCheck": false,
   "shouldUpdateDescription": false,
   "fixWithAI": true,
   "summarySection": {

@@ -16,7 +16,7 @@
   "github": {
     "merge": "merge",
     "required_check": "ci",
-    "review_bots": ["greptile", "coderabbit"]
+    "review_bots": []
   },
   "commits": {
     "types": ["feat", "fix", "refactor", "perf", "test", "docs", "ci", "chore", "style", "revert"],
