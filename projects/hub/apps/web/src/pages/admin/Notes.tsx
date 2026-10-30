@@ -47,8 +47,8 @@ function NoteItem({
     failureOf(remove.error, 'Non riesco a eliminare la nota.')
 
   return (
-    <li className="space-y-1 px-4 py-3">
-      <p className="flex flex-wrap items-baseline gap-x-2 text-xs text-muted-foreground">
+    <li className="space-y-1 py-3 first:pt-0 last:pb-0">
+      <p className="flex flex-wrap items-baseline gap-x-2 wrap-anywhere text-xs text-muted-foreground">
         <span className="font-medium text-foreground">{note.autore}</span>
         <time dateTime={note.created_at}>{formatDateTime(note.created_at)}</time>
         {source && <Badge variant="pill">{source}</Badge>}
@@ -185,25 +185,11 @@ export function Notes({
   const failure = failureOf(add.error, 'Non riesco a salvare la nota.')
 
   return (
-    <section aria-label="Note" className="space-y-4 px-6 pb-6">
+    <section aria-label="Note" className="space-y-3 border p-4">
       <h2 className="text-sm font-medium">
         Note
         {notes.length > 0 && <span className="ml-2 font-normal text-muted-foreground">{notes.length}</span>}
       </h2>
-      {notes.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Nessuna nota, per ora.</p>
-      ) : (
-        <ol className="divide-y border text-sm">
-          {notes.map((note) => (
-            <NoteItem
-              key={note.id}
-              note={note}
-              onEdited={(edited) => onChange((previous) => previous.map((item) => (item.id === edited.id ? edited : item)))}
-              onDeleted={(noteId) => onChange((previous) => previous.filter((item) => item.id !== noteId))}
-            />
-          ))}
-        </ol>
-      )}
       <form
         className="space-y-2"
         onSubmit={(event) => {
@@ -229,6 +215,20 @@ export function Notes({
           {add.isPending ? 'Aggiungo…' : 'Aggiungi nota'}
         </Button>
       </form>
+      {notes.length === 0 ? (
+        <p className="text-sm text-muted-foreground">Nessuna nota, per ora.</p>
+      ) : (
+        <ol className="divide-y text-sm">
+          {notes.map((note) => (
+            <NoteItem
+              key={note.id}
+              note={note}
+              onEdited={(edited) => onChange((previous) => previous.map((item) => (item.id === edited.id ? edited : item)))}
+              onDeleted={(noteId) => onChange((previous) => previous.filter((item) => item.id !== noteId))}
+            />
+          ))}
+        </ol>
+      )}
     </section>
   )
 }

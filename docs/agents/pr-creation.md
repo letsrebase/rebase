@@ -47,10 +47,7 @@ each work commit's last line as usual.
 
 On a milestone's draft PR the branch carries no issue id, so the Linear automation does
 not fire: comment the PR URL on every card it lists, and move each card yourself. The
-independent review runs on the whole diff against `main` before `gh pr ready`; the bots'
-loop below runs after it, on the sha that will merge, since neither bot reads a draft by
-itself (`drafts: false` in `.coderabbit.yaml`, `triggerOnDrafts: false` in
-`.greptile/config.json`).
+independent review runs on the whole diff against `main` before `gh pr ready`.
 
 ## Working concurrently
 
@@ -116,6 +113,16 @@ port, is `docs/pr-screenshots/README.md`. When nothing visible changed, or a pai
 video cannot be captured, the section says so and why. Deleting it reads as forgetting.
 
 ## The review loop: Greptile, then CodeRabbit, then CodeRabbit against Greptile
+
+**Paused since 2026-10-30 (Lorenzo, REB-864).** Both bots are off: `auto_review.enabled:
+false` in `.coderabbit.yaml`, `autoReview: []` and `statusCheck: false` in
+`.greptile/config.json`, and `review_bots: []` in `.github/workflow.json`. Waiting on them
+made every PR far too slow: CodeRabbit's included allowance is one review an hour, which held
+#691 for hours across four pushes, and Greptile had reviewed nothing since #670. A PR now
+merges on green `ci` once the independent review's findings are fixed or answered, and
+nobody asks either bot with `@coderabbitai review` or `@greptileai`. The steps below are kept
+for the day the bots are turned back on, which reverses those four settings and this
+paragraph in one PR.
 
 **Two reviewers read every push, Greptile from the second one only when asked, and
 CodeRabbit then reads Greptile.** Both start by themselves when the PR opens or turns
