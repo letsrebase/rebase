@@ -137,8 +137,10 @@ every interface is accepted by Docker's own iptables rules ahead of UFW); a remo
 keeps Docker's default binding, so its exposure is that host's firewall's. It labels the
 container `letsrebase.tests.owner` with the pytest process that started it, so the next
 session removes any whose owner is gone: that is what cleans up after a killed run when
-`TESTCONTAINERS_RYUK_DISABLED=true` is set (REB-854). Never remove a labelled container
-by hand while its owner is alive.
+`TESTCONTAINERS_RYUK_DISABLED=true` is set (REB-854). CI sets it in `_python-gate.yml`
+(REB-860): Ryuk, the one container published on every interface, failed to start there
+with «address already in use» five times in two days, and a runner is discarded after
+the job anyway. Never remove a labelled container by hand while its owner is alive.
 
 `ci` is the aggregate job and the only status check this repository should ever be
 asked to require, and since 2026-09-10 it is required: the ruleset "main: pull
