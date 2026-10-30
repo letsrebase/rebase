@@ -119,13 +119,17 @@ class LlmRequest(BaseModel):
     itself. A docstring on it is for whoever maintains it and never goes to the model.
     The output ceiling is the task's (`ai_tasks.max_output_tokens`, set in «Modelli AI»);
     `max_tokens` is a ceiling of the caller's own, below it, for a call that needs less
-    (the «Prova» probe)."""
+    (the «Prova» probe). `freelancer_id` is the person a card call is about, never sent to
+    a provider: it goes on the usage row (`ai_usage.freelancer_id`), which is how a card's
+    cost is read back (REB-861); a call built with its own `freelancer_id` (an evaluation)
+    keeps it when the request names none."""
 
     system: str
     system_cached: str | None = None
     messages: list[LlmMessage]
     output_model: type[BaseModel]
     max_tokens: int | None = None
+    freelancer_id: UUID | None = None
 
 
 class LlmResponse(BaseModel):
@@ -430,7 +434,7 @@ class AiCall:
             purpose=self._purpose,
             configured=configured,
             response=response,
-            freelancer_id=self._freelancer_id,
+            freelancer_id=request.freelancer_id or self._freelancer_id,
         )
         return response
 

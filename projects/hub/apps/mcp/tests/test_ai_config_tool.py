@@ -16,7 +16,12 @@ from sqlalchemy.orm import Session, sessionmaker
 from test_tools import IVAN, _payload
 
 from rebase_core.admin_tokens import AdminTokenService
-from rebase_core.ai_config import AiConfigService
+from rebase_core.ai_config import (
+    AI_CONFIG_ENTITY,
+    AI_CONFIG_ENTITY_ID,
+    AiConfigService,
+)
+from rebase_core.audit import AdminActionService
 from rebase_core.config import Settings
 from rebase_core.db import session_factory
 from rebase_core.models import User
@@ -68,6 +73,47 @@ async def test_list_ai_config_has_no_key_and_no_ciphertext(
     anthropic = next(p for p in body["providers"] if p["provider"] == "anthropic")
     assert anthropic["key_hint"] == "configurata, finisce con …abcd"
     assert {t["task"] for t in body["tasks"]} == {"card", "team_proposal"}
+    # REB-861: the configuration's trail, with who did it and never the key.
+    assert [(e["kind"], e["admin_nome"]) for e in body["registro"]] == [("ai_key", "Ivan Sala")]
+    assert body["registro"][0]["payload"]["key_hint"] == "configurata, finisce con …abcd"
+
+
+async def test_the_trail_is_the_last_fifty_entries_newest_first(
+    factory: sessionmaker[Session], admin_with_key: User
+) -> None:
+    """The start and the end of a regeneration are entries of it, as a key is."""
+    with factory() as session:
+        recorder = AdminActionService(session)
+        recorder.record(
+            AI_CONFIG_ENTITY,
+            AI_CONFIG_ENTITY_ID,
+            "cards_regenerate",
+            admin_with_key.id,
+            {"limit": 5, "queued": 3, "fonte": "cli", "batch": False},
+        )
+        for n in range(55):
+            recorder.record(
+                AI_CONFIG_ENTITY,
+                AI_CONFIG_ENTITY_ID,
+                "ai_switch",
+                admin_with_key.id,
+                {"provider": "openai", "n": n},
+            )
+        recorder.record(
+            AI_CONFIG_ENTITY,
+            AI_CONFIG_ENTITY_ID,
+            "cards_regenerated",
+            admin_with_key.id,
+            {"written": 3, "failed": 0, "failures": [], "cost_eur": "0.03", "fonte": "cli"},
+        )
+    async with Client(build_server(factory, lambda: IVAN, settings=_settings())) as client:
+        body = _payload(await client.call_tool("list_ai_config", {}))
+
+    registro = body["registro"]
+    assert len(registro) == 50
+    assert registro[0]["kind"] == "cards_regenerated"
+    assert registro[0]["payload"]["fonte"] == "cli" and registro[0]["admin_nome"] == "Ivan Sala"
+    assert [e["payload"]["n"] for e in registro[1:4]] == [54, 53, 52]
 
 
 async def test_no_tool_writes_a_key(factory: sessionmaker[Session]) -> None:

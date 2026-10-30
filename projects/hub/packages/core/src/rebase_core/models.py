@@ -721,8 +721,13 @@ ADMIN_ACTION_ENTITY_TYPES = (
 # `eval_expected` (its payload names the fields that changed, never their values: an
 # expected card is personal data), `eval_accept` and `eval_rate`. REB-839 adds
 # `cards_regenerate` on `ai_config`: an admin's start of the regeneration of the cards
-# that are stale by prompt version or by their inputs (its payload: the limit and how
-# many were queued).
+# that are stale by prompt version or by their inputs (its payload: the limit, how many
+# were queued, `fonte`, `batch` and its `batch_id`). REB-861 signs and sources every start
+# (the command line too: `--admin`), records the end of each bulk regeneration as
+# `cards_regenerated` on `ai_config` (counts, cost, failures by reason, no personal data)
+# and each card a regeneration rewrites, or fails to, as `card_regenerated` on the
+# freelancer. The hourly `cards-refresh` and the wizard's write are started by no person
+# and record nothing.
 ADMIN_ACTION_KINDS = (
     "overridden",
     "cleared",
@@ -752,6 +757,8 @@ ADMIN_ACTION_KINDS = (
     "eval_accept",
     "eval_rate",
     "cards_regenerate",
+    "cards_regenerated",
+    "card_regenerated",
     "note_added",
     "note_edited",
     "note_deleted",

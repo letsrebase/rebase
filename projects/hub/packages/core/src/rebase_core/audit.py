@@ -203,7 +203,7 @@ class AdminActionService:
         kind: str,
         admin_id: UUID,
         payload: dict[str, Any] | None = None,
-    ) -> None:
+    ) -> UUID | None:
         """Writes one entry and commits it on its own, deliberately never inside the
         caller's own transaction: every caller here has already committed the change
         this entry describes by the time it calls `record`, so a failure writing the
@@ -211,7 +211,8 @@ class AdminActionService:
         error -- can only cost the entry itself, never the change it was about to
         describe. Logged rather than raised, for the same reason: a lost line in the
         trail is a smaller failure than refusing an admin's override because the trail
-        could not keep up with it."""
+        could not keep up with it. Answers the entry's id, or `None` when it was lost, for
+        the caller that points at it later (a regeneration's end names its start)."""
         try:
             row = AdminAction(
                 entity_type=entity_type[:_ENTITY_TYPE_MAX_LENGTH],
@@ -221,7 +222,10 @@ class AdminActionService:
                 payload=sanitize_payload(payload or {}),
             )
             self.session.add(row)
+            self.session.flush()
+            row_id = row.id
             self.session.commit()
+            return row_id
         except Exception:
             self.session.rollback()
             _log.warning(
@@ -231,6 +235,7 @@ class AdminActionService:
                 entity_id,
                 exc_info=True,
             )
+            return None
 
     def timeline(
         self, entity_type: str, entity_id: UUID, limit: int = TIMELINE_LIMIT_DEFAULT

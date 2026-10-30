@@ -78,7 +78,7 @@ def _an_admin(session: Session) -> UUID:
 
 
 def _start(session: Session, call: RecordingBatch, limit: int = 50) -> CardsRefreshed:
-    return _writer(session, call).regenerate_stale(_an_admin(session), limit)
+    return _writer(session, call).regenerate_stale(_an_admin(session), limit, fonte="web")
 
 
 def _poll(session: Session, call: RecordingBatch, llm: object = NO_ANSWERS) -> BatchPolled:
@@ -115,7 +115,13 @@ def test_a_start_above_the_threshold_sends_one_batch_and_writes_nothing(clean_hu
     assert {_version(clean_hub, p) for p in people} == {1}
     assert active_batch(clean_hub) is not None and active_batch(clean_hub).count == 3  # type: ignore[union-attr]
     [action] = clean_hub.scalars(select(AdminAction).where(AdminAction.kind == "cards_regenerate"))
-    assert action.payload == {"limit": 50, "queued": 3, "batch": True}
+    assert action.payload == {
+        "limit": 50,
+        "queued": 3,
+        "fonte": "web",
+        "batch": True,
+        "batch_id": str(batch.id),
+    }
 
 
 def test_the_batch_requests_are_the_ones_the_synchronous_write_builds(clean_hub: Session) -> None:
@@ -137,12 +143,12 @@ def test_below_the_threshold_the_workers_write_it(clean_hub: Session) -> None:
     call = RecordingBatch()
     llm = RecordingCall([card_response(), card_response()])
 
-    result = _writer(clean_hub, call, llm).regenerate_stale(_an_admin(clean_hub), 50)
+    result = _writer(clean_hub, call, llm).regenerate_stale(_an_admin(clean_hub), 50, fonte="web")
 
     assert result == CardsRefreshed(written=2, failed=0)
     assert call.submissions == 0 and clean_hub.scalars(select(CardBatch)).all() == []
     [action] = clean_hub.scalars(select(AdminAction).where(AdminAction.kind == "cards_regenerate"))
-    assert action.payload == {"limit": 50, "queued": 2}
+    assert action.payload == {"limit": 50, "queued": 2, "fonte": "web", "batch": False}
 
 
 def test_a_second_start_while_a_batch_is_active_queues_nothing(clean_hub: Session) -> None:

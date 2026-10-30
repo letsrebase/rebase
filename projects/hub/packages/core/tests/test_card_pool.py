@@ -149,7 +149,7 @@ def test_a_spent_cap_stops_the_pool_like_an_outage(clean_hub: Session) -> None:
     llm = SlowCall(spent, delay=0.1)
 
     result = CardWriter(clean_hub, llm, now=lambda: NOW, workers=2).regenerate_stale(
-        _admin(clean_hub), 6
+        _admin(clean_hub), 6, fonte="web"
     )
 
     assert result.stopped is True and result.written == 0
@@ -189,13 +189,15 @@ def test_regenerate_stale_with_workers_records_one_action_and_writes_each_once(
     admin = _admin(clean_hub)
     llm = SlowCall(delay=0.1)
 
-    result = CardWriter(clean_hub, llm, now=lambda: NOW, workers=3).regenerate_stale(admin, 4)
+    result = CardWriter(clean_hub, llm, now=lambda: NOW, workers=3).regenerate_stale(
+        admin, 4, fonte="web"
+    )
 
     assert result == CardsRefreshed(written=4, failed=0)
     assert len(llm.requests) == 4 and llm.most_in_flight > 1
     assert len(CardWriter(clean_hub, None).stale_cards()) == 1
     [action] = clean_hub.scalars(select(AdminAction).where(AdminAction.kind == "cards_regenerate"))
-    assert action.payload == {"limit": 4, "queued": 4}
+    assert action.payload == {"limit": 4, "queued": 4, "fonte": "web", "batch": False}
 
 
 def test_a_worker_that_raises_ends_the_pool_and_raises_after_it(clean_hub: Session) -> None:

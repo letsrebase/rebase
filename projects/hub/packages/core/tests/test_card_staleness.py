@@ -171,7 +171,9 @@ def test_source_hash_change_marks_the_card_and_waits_for_an_admin(clean: Session
     # An admin's start writes it again from the new source.
     admin = _admin(clean)
     llm = _answers(1)
-    done = CardWriter(clean, llm, now=lambda: NOW, sources=service).regenerate_stale(admin, 5)
+    done = CardWriter(clean, llm, now=lambda: NOW, sources=service).regenerate_stale(
+        admin, 5, fonte="web"
+    )
     assert done == CardsRefreshed(written=1, failed=0)
     assert "a ledger for the whole of Europe" in llm.requests[0].messages[0].text
     assert _reasons(clean) == {}
@@ -289,12 +291,15 @@ def test_regenerate_requires_admin_action_and_respects_limit_and_cap(clean: Sess
     admin = _admin(clean)
     llm = _answers(2)
 
-    done = CardWriter(clean, llm, now=lambda: NOW).regenerate_stale(admin, 2)
+    done = CardWriter(clean, llm, now=lambda: NOW).regenerate_stale(admin, 2, fonte="web")
 
     assert done == CardsRefreshed(written=2, failed=0)
     assert len(llm.requests) == 2
     [action] = clean.scalars(select(AdminAction).where(AdminAction.kind == "cards_regenerate"))
-    assert (action.admin_id, action.payload) == (admin, {"limit": 2, "queued": 2})
+    assert (action.admin_id, action.payload) == (
+        admin,
+        {"limit": 2, "queued": 2, "fonte": "web", "batch": False},
+    )
     assert len(_reasons(clean)) == 1
     # The written ones are version 2 with their inputs; the third is still waiting.
     fresh = [p for p in people if p not in _reasons(clean)]
@@ -302,9 +307,9 @@ def test_regenerate_requires_admin_action_and_respects_limit_and_cap(clean: Sess
 
     # A start with nothing to write calls nothing, and a second click on the same cards
     # pays once: each is read again before its turn.
-    again = CardWriter(clean, _answers(1), now=lambda: NOW).regenerate_stale(admin, 5)
+    again = CardWriter(clean, _answers(1), now=lambda: NOW).regenerate_stale(admin, 5, fonte="web")
     assert again == CardsRefreshed(written=1, failed=0)
-    nothing = CardWriter(clean, NO_ANSWERS, now=lambda: NOW).regenerate_stale(admin, 5)
+    nothing = CardWriter(clean, NO_ANSWERS, now=lambda: NOW).regenerate_stale(admin, 5, fonte="web")
     assert nothing == CardsRefreshed(written=0, failed=0) and NO_ANSWERS.requests == []
 
 
@@ -317,7 +322,7 @@ def test_cap_reached_stops_batch_with_reason(clean: Session) -> None:
     llm = _Scripted(answers)
     first_in_line = CardWriter(clean, None).stale_cards()[0].freelancer_id
 
-    done = CardWriter(clean, llm, now=lambda: NOW).regenerate_stale(admin, 3)
+    done = CardWriter(clean, llm, now=lambda: NOW).regenerate_stale(admin, 3, fonte="web")
 
     assert done == CardsRefreshed(written=0, failed=1, stopped=True)
     assert len(llm.requests) == 1  # the next call would be refused the same
@@ -331,7 +336,9 @@ def test_without_a_model_regenerating_does_nothing_and_records_nothing(clean: Se
     _cards(clean, 1)
     _backdate(clean, 1)
 
-    assert CardWriter(clean, None).regenerate_stale(_admin(clean), 5) == CardsRefreshed(0, 0)
+    assert CardWriter(clean, None).regenerate_stale(
+        _admin(clean), 5, fonte="web"
+    ) == CardsRefreshed(0, 0)
     assert (
         clean.scalars(select(AdminAction).where(AdminAction.kind == "cards_regenerate")).all() == []
     )
@@ -388,14 +395,14 @@ def test_a_second_start_while_one_runs_pays_for_nothing(clean: Session, hub_engi
         try:
             writer = CardWriter(other, second_llm, now=lambda: NOW)
             seen["running"] = writer.regeneration_running()
-            seen["start"] = writer.regenerate_stale(admin, 5)
+            seen["start"] = writer.regenerate_stale(admin, 5, fonte="web")
             writer.write(in_flight, force=True)
         finally:
             other.close()
 
     llm = _Scripted([card_response(), card_response(), card_response()], during=meanwhile)
 
-    done = CardWriter(clean, llm, now=lambda: NOW).regenerate_stale(admin, 3)
+    done = CardWriter(clean, llm, now=lambda: NOW).regenerate_stale(admin, 3, fonte="web")
 
     assert seen["running"] is True
     assert seen["start"] == CardsRefreshed(written=0, failed=0)
@@ -427,7 +434,7 @@ def test_a_card_that_keeps_failing_does_not_take_every_start(clean: Session) -> 
     assert waiting[-1].freelancer_id == failing
 
     llm = _answers(2)
-    done = CardWriter(clean, llm, now=lambda: NOW).regenerate_stale(_admin(clean), 2)
+    done = CardWriter(clean, llm, now=lambda: NOW).regenerate_stale(_admin(clean), 2, fonte="web")
 
     assert done == CardsRefreshed(written=2, failed=0)
     assert _reasons(clean) == {failing: "prompt"}

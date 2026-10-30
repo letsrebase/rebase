@@ -52,6 +52,58 @@ const CONFIG = {
   known_models: { anthropic: ['claude-opus-5'], openai: [], google: [] },
 }
 
+// The «Registro» (REB-861): newest first, a regeneration's start and its end among the changes.
+const AUDIT = [
+  {
+    id: 'e4',
+    kind: 'cards_regenerated',
+    admin_nome: 'Ivan Sala',
+    payload: {
+      fonte: 'cli',
+      start_action_id: 'e3',
+      written: 4,
+      failed: 1,
+      superseded: 1,
+      skipped: 0,
+      errored: 0,
+      cost_eur: '0.051000',
+      failures: [
+        { freelancer_id: 'f1', reason: 'source_identifying' },
+        { freelancer_id: 'f2', reason: 'superseded' },
+      ],
+    },
+    created_at: '2026-10-30T10:00:00Z',
+  },
+  {
+    id: 'e3',
+    kind: 'cards_regenerate',
+    admin_nome: 'Ivan Sala',
+    payload: { limit: 20, queued: 6, fonte: 'cli', batch: true, batch_id: 'b1' },
+    created_at: '2026-10-30T09:00:00Z',
+  },
+  {
+    id: 'e2',
+    kind: 'cards_regenerate',
+    admin_nome: 'Ivan Sala',
+    payload: { limit: 5, queued: 1, fonte: 'web', batch: false },
+    created_at: '2026-10-29T09:00:00Z',
+  },
+  {
+    id: 'e1',
+    kind: 'ai_task',
+    admin_nome: 'Ivan Sala',
+    payload: { task: 'card', changed: ['model', 'daily_cap_eur'] },
+    created_at: '2026-10-28T09:00:00Z',
+  },
+  {
+    id: 'e0',
+    kind: 'ai_switch',
+    admin_nome: 'Ivan Sala',
+    payload: { source: 'github', changed: ['enabled'], after: { enabled: true } },
+    created_at: '2026-10-27T09:00:00Z',
+  },
+]
+
 const NO_STALE = { count: 0, by_reason: {}, estimated_cost_eur: null, items: [], batch_threshold: 10, batch: null }
 const STALE = {
   count: 7,
@@ -71,6 +123,7 @@ function mount(config: unknown = CONFIG, overrides: Record<string, () => Respons
     if (overrides[path]) return overrides[path]()
     if (path === '/api/hub/admin/ai') return answer(200, config)
     if (path === '/api/hub/admin/ai/cards/stale') return answer(200, NO_STALE)
+    if (path === '/api/hub/admin/ai/audit') return answer(200, [])
     return answer(404, { detail: 'not found' })
   })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -283,5 +336,27 @@ describe('the Modelli AI page (REB-833)', () => {
     const section = within(await screen.findByRole('region', { name: 'Schede da aggiornare' }))
     expect(await section.findByText('Nessuna scheda da aggiornare')).toBeInTheDocument()
     expect(section.queryByRole('button')).toBeNull()
+  })
+
+  it('says there is nothing in the Registro yet', async () => {
+    mount()
+    const section = within(await screen.findByRole('region', { name: 'Registro' }))
+    expect(await section.findByText('Nessuna modifica registrata.')).toBeInTheDocument()
+  })
+
+  it('lists the configuration changes and every regeneration, start and end, with who and the cost (REB-861)', async () => {
+    mount(CONFIG, { '/api/hub/admin/ai/audit': () => answer(200, AUDIT) })
+    const section = within(await screen.findByRole('region', { name: 'Registro' }))
+    const entries = await section.findAllByRole('listitem')
+    expect(entries).toHaveLength(5)
+    expect(entries[0]).toHaveTextContent(
+      'Rigenerazione conclusa: 4 scritte, 2 non riuscite (1 cita un account, un sito o un datore di lavoro, 1 CV o dati cambiati nel frattempo), costo 0,051',
+    )
+    expect(entries[0]).toHaveTextContent('Ivan Sala')
+    expect(entries[1]).toHaveTextContent('Rigenerazione avviata: 6 schede, da riga di comando, Batch API')
+    expect(entries[2]).toHaveTextContent('Rigenerazione avviata: 1 scheda, dal sito')
+    expect(entries[2]).not.toHaveTextContent('Batch API')
+    expect(entries[3]).toHaveTextContent('Compito «Scheda anonima» modificato: modello, tetto giornaliero')
+    expect(entries[4]).toHaveTextContent('Fonte «GitHub» accesa')
   })
 })

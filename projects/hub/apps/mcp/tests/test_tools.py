@@ -9,14 +9,14 @@ from uuid import UUID
 
 from fakes_cards import CARD, MODEL, PERSONA, card_response, text_pdf
 from mcp import Client
-from sqlalchemy import text, update
+from sqlalchemy import select, text, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from rebase_core.admin_tokens import AdminRead
 from rebase_core.config import Settings
 from rebase_core.llm import LlmResponse, RecordingCall
 from rebase_core.mail import RecordingSender
-from rebase_core.models import Freelancer, FreelancerCard, TeamProposal, User
+from rebase_core.models import AdminAction, Freelancer, FreelancerCard, TeamProposal, User
 from rebase_core.perks import guide_bytes
 from rebase_core.schemas import SignupCreate
 from rebase_core.service import SignupService
@@ -873,6 +873,19 @@ async def test_the_model_is_asked_on_each_call_not_when_the_server_is_built(
             await client.call_tool("regenerate_freelancer_card", {"freelancer_id": freelancer_id})
         )
         assert written["card"]["ruolo"] == CARD["ruolo"]
+    # REB-861: signed in the talent's trail, as the admin behind the token, by the MCP door.
+    with factory() as session:
+        [action] = session.scalars(
+            select(AdminAction).where(AdminAction.kind == "card_regenerated")
+        ).all()
+    assert (action.entity_type, str(action.entity_id), action.admin_id) == (
+        "freelancer",
+        freelancer_id,
+        IVAN.id,
+    )
+    assert action.payload["fonte"] == "mcp" and action.payload["bulk"] is False
+    assert (action.payload["esito"], action.payload["model"]) == ("scritta", MODEL)
+    assert "start_action_id" not in action.payload
     _wipe(factory)
 
 

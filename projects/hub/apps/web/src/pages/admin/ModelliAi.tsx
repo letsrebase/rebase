@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import {
   ApiError,
   admin,
+  type AiAuditAction,
   type AiConfig,
   type AiProva,
   type AiProvider,
@@ -17,7 +18,8 @@ import {
   type AiStaleCards,
   type AiTask,
 } from '@/lib/api'
-import { formatDateTime, formatEuro } from '@/lib/format'
+import { formatDateTime, formatEuro, formatSmallEuro } from '@/lib/format'
+import { noteSourceLabel, regenerationReason } from '@/lib/notes'
 import { Empty, Header } from './lists'
 
 const KEY = ['ai-config'] as const
@@ -25,6 +27,10 @@ const PROVIDER_LABELS: Record<string, string> = { anthropic: 'Anthropic', openai
 const TASK_LABELS: Record<string, string> = { card: 'Scheda anonima', team_proposal: 'Proposta di team' }
 const SOURCE_LABELS: Record<string, string> = { github: 'GitHub', links: 'Altri link' }
 const STALE_KEY = ['ai-stale-cards'] as const
+// A prefix of `KEY`, so a change of the configuration reads the trail again too.
+const AUDIT_KEY = [...KEY, 'audit'] as const
+const OPEN_REFRESH_MS = 10_000
+const OPEN_WATCH_MS = 3 * 24 * 60 * 60 * 1000
 const BATCH_REFRESH_MS = 30_000
 const START_REFRESH_MS = 3_000
 const START_WATCH_MS = 60_000
@@ -35,16 +41,6 @@ const NO_EFFORT = 'none'
 const NO_SECRETS_KEY =
   'Manca REBASE_SECRETS_KEY: senza, le chiavi non si possono salvare né leggere. Configurala sul server e riavvia.'
 
-// A probe costs a fraction of a cent: `formatEuro`'s two places would show it as 0,00 €.
-const smallEuro = new Intl.NumberFormat('it-IT', {
-  style: 'currency',
-  currency: 'EUR',
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 6,
-})
-function formatSmallEuro(value: string): string {
-  return smallEuro.format(Number(value))
-}
 
 function problem(error: unknown, fallback: string): string {
   return error instanceof ApiError ? error.message : fallback
@@ -127,12 +123,21 @@ function Sections({ config }: { config: AiConfig }) {
         </h2>
         <Prices config={config} />
       </section>
-      <section aria-labelledby="ai-spesa">
+      <section aria-labelledby="ai-spesa" className="border-b">
         <h2 id="ai-spesa" className="px-6 pt-6 text-lg font-semibold">
           Spesa del mese
           <span className="ml-2 text-base font-normal text-muted-foreground">{config.spend.month}</span>
         </h2>
         <Spend config={config} />
+      </section>
+      <section aria-labelledby="ai-registro">
+        <h2 id="ai-registro" className="px-6 pt-6 text-lg font-semibold">
+          Registro
+        </h2>
+        <p className="px-6 pb-3 pt-1 text-sm text-muted-foreground">
+          Chi ha cambiato la configurazione e ogni rigenerazione delle schede, dall’avvio alla fine, con il costo.
+        </p>
+        <Registro />
       </section>
     </>
   )
@@ -195,7 +200,12 @@ function StaleCards() {
   const [limit, setLimit] = useState('5')
   const start = useMutation({
     mutationFn: (n: number) => admin.aiRegenerateStale(n),
-    onSuccess: () => client.invalidateQueries({ queryKey: STALE_KEY }),
+    onSuccess: () => {
+      // The start is signed after the response, as the batch's row is: read the trail again
+      // once it has had a moment to land.
+      window.setTimeout(() => void client.invalidateQueries({ queryKey: AUDIT_KEY }), START_REFRESH_MS)
+      return client.invalidateQueries({ queryKey: STALE_KEY })
+    },
   })
   // The batch's row is written after the response, so the first read after a start can miss
   // it: keep reading for a short while after a start that queued cards, and for as long as a
@@ -658,6 +668,117 @@ function Prices({ config }: { config: AiConfig }) {
       </form>
     </>
   )
+}
+
+function Registro() {
+  const trail = useQuery({
+    queryKey: AUDIT_KEY,
+    queryFn: () => admin.aiAudit(),
+    // A regeneration started after REB-861 that has no end yet is on: look again until it ends.
+    refetchInterval: (query) => (query.state.data?.some((entry) => isOpen(entry, query.state.data ?? [])) ? OPEN_REFRESH_MS : false),
+  })
+  if (trail.isError) {
+    return (
+      <p role="alert" className="px-6 py-4 text-sm text-destructive">
+        Non riesco a leggere il registro.
+      </p>
+    )
+  }
+  if (!trail.data) return <p className="px-6 py-4 text-sm text-muted-foreground">Caricamento…</p>
+  if (trail.data.length === 0) return <Empty>Nessuna modifica registrata.</Empty>
+  return (
+    <ol className="divide-y border-t text-sm">
+      {trail.data.map((entry) => {
+        const source = noteSourceLabel(entry.payload.fonte)
+        return (
+          <li key={entry.id} className="space-y-1 px-6 py-3">
+            <p className="break-words">{registroLabel(entry)}</p>
+            <p className="flex flex-wrap items-baseline gap-x-2 text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">{entry.admin_nome}</span>
+              <time dateTime={entry.created_at}>{formatDateTime(entry.created_at)}</time>
+              {source && entry.kind === 'cards_regenerated' && <span>{source}</span>}
+            </p>
+          </li>
+        )
+      })}
+    </ol>
+  )
+}
+
+/** A start with no end yet, and recent: the regeneration it began is still on. Only a start
+ *  that names its door (`fonte`) counts: one written before REB-861 never gets an end. */
+function isOpen(entry: AiAuditAction, all: AiAuditAction[]): boolean {
+  if (entry.kind !== 'cards_regenerate' || !entry.payload.fonte) return false
+  if (Date.now() - new Date(entry.created_at).getTime() > OPEN_WATCH_MS) return false
+  return !all.some((other) => other.kind === 'cards_regenerated' && other.payload.start_action_id === entry.id)
+}
+
+const TASK_FIELD_LABELS: Record<string, string> = {
+  provider: 'fornitore',
+  model: 'modello',
+  effort: 'ragionamento',
+  max_output_tokens: 'token massimi',
+  daily_cap_eur: 'tetto giornaliero',
+  enabled: 'acceso',
+}
+
+function plural(count: number, one: string, many: string): string {
+  return `${count} ${count === 1 ? one : many}`
+}
+
+/** One entry of the «Registro» in a sentence. The regeneration's two entries are the ones
+ *  an admin reads for what it did and what it cost (REB-861): the start says how many cards
+ *  and through which door, the end how many were written, how many were not and why. */
+function registroLabel(entry: AiAuditAction): string {
+  const p = entry.payload
+  const provider = p.provider ? (PROVIDER_LABELS[p.provider] ?? p.provider) : ''
+  switch (entry.kind) {
+    case 'ai_key':
+      return p.azione === 'seed' ? `Chiave ${provider} importata dalla configurazione precedente` : `Chiave ${provider} sostituita`
+    case 'ai_switch': {
+      const on = p.after?.enabled === true
+      return p.source
+        ? `Fonte «${SOURCE_LABELS[p.source] ?? p.source}» ${on ? 'accesa' : 'spenta'}`
+        : `${provider} ${on ? 'acceso' : 'spento'}`
+    }
+    case 'ai_task': {
+      const fields = (p.changed ?? []).map((field) => TASK_FIELD_LABELS[field] ?? field).join(', ')
+      return `Compito «${TASK_LABELS[p.task ?? ''] ?? p.task}» modificato${fields ? `: ${fields}` : ''}`
+    }
+    case 'ai_price':
+      return `Prezzo di ${provider} ${p.model} modificato`
+    case 'eval_add':
+      return 'Persona aggiunta al campione di valutazione'
+    case 'eval_remove':
+      return 'Persona tolta dal campione di valutazione'
+    case 'eval_expected':
+      return 'Scheda attesa del campione modificata'
+    case 'eval_accept':
+      return 'Scheda del campione accettata come attesa'
+    case 'eval_rate':
+      return 'Voto dato a una scheda del campione'
+    case 'cards_regenerate': {
+      const source = noteSourceLabel(p.fonte)
+      return `Rigenerazione avviata: ${plural(p.queued ?? 0, 'scheda', 'schede')}${source ? `, ${source}` : ''}${p.batch ? ', Batch API' : ''}`
+    }
+    case 'cards_regenerated': {
+      const failures = p.failures ?? []
+      const reasons = new Map<string, number>()
+      for (const failure of failures) reasons.set(failure.reason, (reasons.get(failure.reason) ?? 0) + 1)
+      const why = [...reasons].map(([reason, count]) => `${count} ${regenerationReason(reason)}`).join(', ')
+      const parts = [
+        plural(p.written ?? 0, 'scritta', 'scritte'),
+        `${plural(failures.length, 'non riuscita', 'non riuscite')}${why ? ` (${why})` : ''}`,
+      ]
+      if (p.skipped) parts.push(plural(p.skipped, 'saltata', 'saltate'))
+      if (p.stopped) parts.push('fermata: modello non disponibile')
+      if (p.batch_status === 'failed') parts.push('batch non applicato')
+      if (p.cost_eur !== undefined) {
+        parts.push(`costo ${formatSmallEuro(p.cost_eur)}${p.unpriced ? ` (${p.unpriced} senza prezzo)` : ''}`)
+      }
+      return `Rigenerazione conclusa: ${parts.join(', ')}`
+    }
+  }
 }
 
 function Spend({ config }: { config: AiConfig }) {

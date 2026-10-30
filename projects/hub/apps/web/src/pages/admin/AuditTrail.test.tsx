@@ -146,6 +146,40 @@ const STATUS_CHANGED: AdminAction = {
   payload: { before: 'nuovo', after: 'contattato', fonte: 'mcp' },
 }
 
+// A regeneration of the card (REB-861): written or not, in bulk or on its own, by which door, with
+// its cost. One entry per card, signed by the admin who asked.
+const CARD_REGENERATED: AdminAction = {
+  id: 'a15',
+  entity_type: 'freelancer',
+  entity_id: 'f1',
+  kind: 'card_regenerated',
+  admin_id: 'u1',
+  admin_nome: 'Ivan Bianchi',
+  payload: {
+    fonte: 'cli',
+    bulk: true,
+    start_action_id: 's1',
+    prompt_version: 3,
+    model: 'claude-opus-5',
+    esito: 'scritta',
+    cost_eur: '0.012300',
+  },
+  created_at: '2026-10-30T09:00:00Z',
+}
+const CARD_NOT_REGENERATED: AdminAction = {
+  ...CARD_REGENERATED,
+  id: 'a16',
+  payload: {
+    fonte: 'web',
+    bulk: false,
+    prompt_version: 3,
+    model: 'claude-opus-5',
+    esito: 'non_scritta',
+    reason: 'source_identifying',
+    cost_eur: '0.020000',
+  },
+}
+
 function mount({ canRevert = true, onReverted = () => {} }: { canRevert?: boolean; onReverted?: () => void } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   return render(
@@ -305,5 +339,29 @@ describe('AuditTrail', () => {
     expect(entry).toHaveTextContent('nuovo → contattato')
     expect(entry).toHaveTextContent('MCP')
     expect(entry.querySelector('dl')).toBeNull()
+  })
+
+  it('says a card was regenerated, in bulk, from the command line, with the cost (REB-861)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, [CARD_REGENERATED]))
+    mount()
+    const entry = (await screen.findByText('Scheda rigenerata')).closest('li')!
+    expect(entry).toHaveTextContent('Ivan Bianchi')
+    expect(entry).toHaveTextContent('da riga di comando')
+    expect(entry).toHaveTextContent('in blocco')
+    expect(entry).toHaveTextContent('prompt v3')
+    expect(entry).toHaveTextContent('0,0123')
+    expect(entry.querySelector('dl')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Ripristina questa modifica' })).toBeNull()
+  })
+
+  it('says why a single regeneration did not write the card, and what it cost (REB-861)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, [CARD_NOT_REGENERATED]))
+    mount()
+    const entry = (
+      await screen.findByText('Scheda non rigenerata: cita un account, un sito o un datore di lavoro')
+    ).closest('li')!
+    expect(entry).toHaveTextContent('dal sito')
+    expect(entry).toHaveTextContent('singola')
+    expect(entry).toHaveTextContent('0,02')
   })
 })
