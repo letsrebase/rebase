@@ -297,8 +297,8 @@ def test_a_configured_task_gives_a_call(opener: SessionOpener) -> None:
 
 
 def test_a_call_for_a_person_records_their_id(opener: SessionOpener) -> None:
-    """The anonymous CV's route builds the seam for the talent it writes (REB-862): each
-    call's usage row names them, as an evaluation's card calls do."""
+    """A request that names the talent it is about (`LlmRequest.freelancer_id`, REB-861) puts
+    them on its usage row, for the anonymous CV's task as for the card's (REB-862)."""
     with opener() as session:
         person = User(email="mario@studio.it", nome="Mario", cognome="Messina")
         session.add(person)
@@ -309,11 +309,9 @@ def test_a_call_for_a_person_records_their_id(opener: SessionOpener) -> None:
         freelancer_id = freelancer.id
     stub = Stub()
 
-    call = call_for_task(
-        opener, _settings(), "cv_anonimo", freelancer_id=freelancer_id, model_factory=stub.factory
-    )
+    call = call_for_task(opener, _settings(), "cv_anonimo", model_factory=stub.factory)
     assert call is not None
-    call.complete(_request())
+    call.complete(_request().model_copy(update={"freelancer_id": freelancer_id}))
 
     [row] = _usage_rows(opener)
     assert (row.task, row.purpose, row.freelancer_id) == ("cv_anonimo", "run", freelancer_id)

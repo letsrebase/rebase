@@ -5,7 +5,6 @@ from collections.abc import Callable, Iterator
 from contextlib import closing
 from datetime import datetime
 from typing import Annotated
-from uuid import UUID
 
 from fastapi import Depends, HTTPException, Request, Response, status
 from sqlalchemy import Engine
@@ -346,14 +345,12 @@ CardBatchesDep = Annotated[CardBatches | None, Depends(get_card_batches)]
 TeamLlmDep = Annotated[LlmCall | None, Depends(get_team_llm)]
 
 
-def get_cv_llm(
-    settings: SettingsDep, opener: SessionOpenerDep, freelancer_id: UUID
-) -> LlmCall | None:
+def get_cv_llm(settings: SettingsDep, opener: SessionOpenerDep) -> LlmCall | None:
     """The model seam for the anonymous CV (REB-862), or `None` when no model is configured
     for the `cv_anonimo` task: a kept body is then still served, and only a CV that needs
-    writing is refused. Built per talent, from the route's own `freelancer_id`, so every
-    usage row of the call names the person it was about."""
-    return call_for_task(opener, settings, "cv_anonimo", freelancer_id=freelancer_id)
+    writing is refused. The writer names the talent on each request, so every usage row of
+    the call names the person it was about."""
+    return call_for_task(opener, settings, "cv_anonimo")
 
 
 def get_cv_renderer() -> CvRenderer:

@@ -234,8 +234,8 @@ class _Spent:
 class AnonymousCvWriter:
     """`llm` is `None` when no model is configured for the `cv_anonimo` task
     (`call_for_task`): a body already written for the CV on file is still served, and only a
-    write is refused. The seam records each call's usage, against the talent when it was
-    built for them (`call_for_task(..., freelancer_id=...)`)."""
+    write is refused. The seam records each call's usage against the talent the request
+    names (`LlmRequest.freelancer_id`)."""
 
     def __init__(
         self, session: Session, llm: LlmCall | None, *, now: Callable[[], datetime] = utcnow
@@ -280,7 +280,10 @@ class AnonymousCvWriter:
             raise self._failed(freelancer_id, "no_text")
         if self.llm is None:
             raise LlmNotConfigured(NOT_CONFIGURED)
-        request = cv_request(cv)
+        # The person the call is about goes on its usage row (`LlmRequest.freelancer_id`), and
+        # on the rewrite's, which copies the request; it is never part of what a provider is
+        # sent.
+        request = cv_request(cv).model_copy(update={"freelancer_id": freelancer_id})
         # The model takes seconds, a long CV a minute: the transaction ends here, so no
         # pooled connection and no lock waits on it. `_store` opens the next one.
         self.session.commit()

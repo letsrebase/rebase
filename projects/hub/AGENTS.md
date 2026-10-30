@@ -159,9 +159,9 @@ An admin's «Scarica CV anonimo» sends a talent's CV to a client company withou
 Spec: `docs/superpowers/specs/2026-10-30-anonymous-cv-pdf-design.md`.
 
 - **The task.** `cv_anonimo` in «Modelli AI» (`ai_tasks`, seeded by 0044 from the `card` row,
-  `max_output_tokens` 16000): its own call, never part of the card's. The seam is built per
-  talent (`call_for_task(..., freelancer_id=)`, so `ai_usage` names the person) by
-  `deps.get_cv_llm`, which reads `freelancer_id` from the path.
+  `max_output_tokens` 16000): its own call, never part of the card's. `deps.get_cv_llm` builds
+  the seam; the writer names the talent on each request (`LlmRequest.freelancer_id`, as the
+  card's calls do since REB-861), so `ai_usage` names the person.
 - **The table.** `anonymous_cvs` (`AnonymousCvRow`) keeps the last body per freelancer, keyed
   by the SHA-256 of the CV file and `CV_PROMPT_VERSION`; it goes with the person. **Only
   `AnonymousCvWriter` and the clear/merge paths touch it.** The card, the cloud, the team

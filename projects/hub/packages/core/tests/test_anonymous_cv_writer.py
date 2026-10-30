@@ -239,6 +239,9 @@ def test_first_download_writes_and_stores(clean: Session) -> None:
     assert '<source key="cv">' in turn.text
     assert "Mario Messina Backend developer TIM 2019-2024" in turn.text
     assert "Mario Messina.pdf" not in turn.text
+    # The person the call is about goes on its usage row (REB-861's seam), never to the model.
+    assert request.freelancer_id == freelancer_id
+    assert str(freelancer_id) not in request.system + turn.text
 
     stored = _stored(clean, freelancer_id)
     assert stored is not None
@@ -372,6 +375,7 @@ def test_identifying_answer_is_rewritten_once(clean: Session) -> None:
 
     assert len(llm.requests) == 2
     retry = llm.requests[1]
+    assert retry.freelancer_id == freelancer_id
     assert retry.system == llm.requests[0].system
     assert retry.output_model is AnonymousCvDraft
     assert [message.role for message in retry.messages] == ["user", "assistant", "user"]
