@@ -62,7 +62,7 @@ from rebase_core.llm import (
     build_model,
     call_for_task,
 )
-from rebase_core.models import AiTask, AiUsage, User
+from rebase_core.models import AiTask, AiUsage, Freelancer, User
 
 API_KEY = "sk-ant-test-not-a-real-key"
 SECRETS_KEY = base64.b64encode(os.urandom(32)).decode()
@@ -104,7 +104,8 @@ def _settings() -> Settings:
 @pytest.fixture
 def opener(hub_engine: Engine) -> Iterator[SessionOpener]:
     """A session opener over the worker's database with the card task callable: key saved,
-    Anthropic on, a price for `claude-opus-5`. Wiped back to what migration 0036 seeded."""
+    Anthropic on, a price for `claude-opus-5`. Wiped back to what migrations 0036 and 0044
+    seeded."""
 
     def open_session() -> Any:
         return closing(Session(hub_engine))
@@ -126,8 +127,10 @@ def opener(hub_engine: Engine) -> Iterator[SessionOpener]:
             "key_last4 = NULL, saved_by = NULL, saved_at = NULL, enabled = false",
             "UPDATE ai_tasks SET provider = 'anthropic', model = 'claude-opus-5', "
             "effort = 'medium', daily_cap_eur = NULL, enabled = true, "
-            "max_output_tokens = CASE task WHEN 'card' THEN 2000 ELSE 8000 END",
+            "max_output_tokens = CASE task WHEN 'card' THEN 2000 WHEN 'cv_anonimo' THEN 16000 "
+            "ELSE 8000 END",
             "DELETE FROM admin_actions",
+            "DELETE FROM freelancers",
             "DELETE FROM users",
         ):
             session.execute(text(statement))
@@ -291,6 +294,29 @@ def test_disabled_task_returns_none(opener: SessionOpener) -> None:
 
 def test_a_configured_task_gives_a_call(opener: SessionOpener) -> None:
     assert isinstance(call_for_task(opener, _settings(), "card"), AiCall)
+
+
+def test_a_call_for_a_person_records_their_id(opener: SessionOpener) -> None:
+    """The anonymous CV's route builds the seam for the talent it writes (REB-862): each
+    call's usage row names them, as an evaluation's card calls do."""
+    with opener() as session:
+        person = User(email="mario@studio.it", nome="Mario", cognome="Messina")
+        session.add(person)
+        session.flush()
+        freelancer = Freelancer(user_id=person.id)
+        session.add(freelancer)
+        session.commit()
+        freelancer_id = freelancer.id
+    stub = Stub()
+
+    call = call_for_task(
+        opener, _settings(), "cv_anonimo", freelancer_id=freelancer_id, model_factory=stub.factory
+    )
+    assert call is not None
+    call.complete(_request())
+
+    [row] = _usage_rows(opener)
+    assert (row.task, row.purpose, row.freelancer_id) == ("cv_anonimo", "run", freelancer_id)
 
 
 def test_cap_reached_raises_before_provider_is_built(opener: SessionOpener) -> None:
