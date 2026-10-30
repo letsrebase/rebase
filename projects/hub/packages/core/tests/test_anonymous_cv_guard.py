@@ -613,6 +613,8 @@ def test_words_about_being_born_pass() -> None:
         "Il servizio è nato in un hackathon",
         "Born in the cloud: un'architettura serverless",
         "Il progetto è nato il giorno in cui il cliente ha chiesto un'app",
+        "Il progetto è nato nel 2019",
+        "Un team nato nel 2020 a Torino",
     ):
         assert identifying_fields(_bullet(text), NOBODY) == [], text
 
@@ -640,6 +642,9 @@ def test_birth_and_tax_leak_gaps_are_closed() -> None:
         "Born 3 March 1985",
         "Nato nel 1985 a Messina",
         "nata nel 1990",
+        "Nato nel 1985 a Messina",
+        "Profilo. Nata nel 1990",
+        "Italiana | Nato nel 1985",
         "MSSMRA85M01F15LK",
     ):
         assert identifying_fields(_bullet(text), NOBODY) == ["esperienze[1].punti[0].testo"], text

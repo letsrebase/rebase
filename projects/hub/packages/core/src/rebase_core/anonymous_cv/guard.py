@@ -147,9 +147,10 @@ _BIRTH_PLACE_LABEL = (
 _BIRTH = re.compile(
     rf"(?<!\w)(?:{_BIRTH_DATE_LABEL}|{_BIRTH_PLACE_LABEL})(?!\w)[\s:,]*(?:\S+\s+){{0,3}}?{_DATE}"
     rf"|(?<!\w){_BIRTH_PLACE_LABEL}(?!\w)[\s:,]*{_PLACE}"
-    # «Born: 3 March 1985» and «nato nel 1985», with or without the place after.
+    # «Born: 3 March 1985» and «nato nel 1985», with or without the place after. «nel <year>»
+    # counts only when it opens a statement: «Il progetto è nato nel 2019» is prose.
     rf"|(?<!\w)(?i:born)(?!\w)[\s:,]*{_DATE}"
-    r"|(?<!\w)[Nn]at[oa]\s+(?i:nel)\s+(?:19|20)\d{2}(?!\d)"
+    r"|(?:^|[.;:•|\n-])\s*[Nn]at[oa]\s+(?i:nel)\s+(?:19|20)\d{2}(?!\d)"
 )
 
 
