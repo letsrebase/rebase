@@ -940,6 +940,29 @@ def test_wire_outage_is_llm_unavailable_without_key_or_prompt_in_the_log(
     assert len(wire.requests) == 2
 
 
+def test_the_anonymous_cv_waits_longer_than_a_card(opener: SessionOpener, wire: Wire) -> None:
+    """A two-page CV is one answer of 3-5k tokens, not streamed: a minute or two on a large
+    model (REB-862). Its task waits 150 seconds a call; the card keeps its 40."""
+    _wire_call(opener).complete(_request())
+    AiCall(opener, _settings(), "cv_anonimo").complete(_request())
+
+    card, cv = (request.extensions["timeout"]["read"] for request in wire.requests)
+    assert (card, cv) == (40.0, 150.0)
+
+
+def test_the_anonymous_cv_is_never_retried(opener: SessionOpener, wire: Wire) -> None:
+    """A retry would double a wait the admin is watching: the anonymous CV's call is made
+    once, where the card's is made twice (above)."""
+    wire._handler = lambda request: httpx2.Response(
+        500, json={"type": "error", "error": {"type": "api_error", "message": "boom"}}
+    )
+
+    with pytest.raises(LlmUnavailable):
+        AiCall(opener, _settings(), "cv_anonimo").complete(_request())
+
+    assert len(wire.requests) == 1
+
+
 def test_wire_rate_limit_is_llm_unavailable(opener: SessionOpener, wire: Wire) -> None:
     wire._handler = lambda request: httpx2.Response(
         429,

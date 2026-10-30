@@ -168,7 +168,7 @@ Spec: `docs/superpowers/specs/2026-10-30-anonymous-cv-pdf-design.md`.
   builder, the member area, the MCP and the lists never read it: the body is an
   admin-requested file, not profile data.
 - **The route.** `POST /api/hub/freelancers/{id}/cv-anonimo` (`routers/admin.py`, a plain
-  `def`: the print waits up to a minute) answers `application/pdf` as an attachment named
+  `def`: a first press waits on the model and the print, in the threadpool) answers `application/pdf` as an attachment named
   `rebase-cv-<slug>-<ref>.pdf`. 404 no talent or no CV, 422 `AnonymousCvFailed` (the guard
   or the model failed; nothing stored), 502 when the task is off and nothing kept can be
   served (a kept, still guard-clean body is served with the task off) or the provider failed,
@@ -176,6 +176,9 @@ Spec: `docs/superpowers/specs/2026-10-30-anonymous-cv-pdf-design.md`.
   corrected them, the city from the card, the work mode from the profile.
 - **The audit.** One `anon_cv_downloaded` entry on the freelancer per 200, payload
   `{"riusato": bool}`. The name is short on purpose: `admin_actions.kind` holds 20 characters and `audit.record` cuts silently.
+- **The wait.** The task's calls wait 150 seconds and are never retried (`llm.py`,
+  `_TASK_HTTP_LIMITS`); the host vhost gives the route 330 seconds, a by-hand change on the
+  installed copies (below, after the team builder's 90 seconds).
 - **Logs.** Nothing here logs the CV, the answer or a name.
 
 ## One person, once (REB-800)
@@ -931,6 +934,35 @@ location = /api/hub/me/cloud/proposals {
 
 and the preview's the same on 127.0.0.1:8086; `nginx -t`, then `systemctl reload
 nginx`.
+
+**`POST /api/hub/freelancers/{id}/cv-anonimo` needs 330 seconds on the host vhost**
+(REB-862), and the installed vhosts get it by hand before «Scarica CV anonimo» is used. A
+first press waits while the model writes a two-page CV, one answer of 3-5k tokens that is
+not streamed: the `cv_anonimo` task has its own limits in `llm.py` (`_TASK_HTTP_LIMITS`,
+150 seconds a call and no retry, where every other task keeps 40 and one), and a CV that
+names the person is asked once more. Two calls of 150 seconds plus the print is 330;
+nginx's 60 would answer 504 while the model went on writing a body the admin then pays
+for again. A regex location is never read once `^~ /api/hub/` matches, so both copies here
+carry a longer prefix, `location ^~ /api/hub/freelancers`, that mirrors `/api/hub/`'s
+directives and holds the route in a nested regex; no trailing slash, as
+`/api/hub/matches`, or nginx answers the wizard's `POST /api/hub/freelancers` and the
+admin list with a 301. Production's:
+
+```
+location ^~ /api/hub/freelancers {
+    client_max_body_size 6M;
+    proxy_pass http://127.0.0.1:8084;
+    include /etc/nginx/snippets/rebase-proxy.conf;
+    location ~ ^/api/hub/freelancers/[^/]+/cv-anonimo$ {
+        proxy_pass http://127.0.0.1:8084;
+        include /etc/nginx/snippets/rebase-proxy.conf;
+        proxy_read_timeout 330s;
+    }
+}
+```
+
+and the preview's the same on 127.0.0.1:8086, pasted into the installed copies' existing
+server blocks beside `location ^~ /api/hub/`; `nginx -t`, then `systemctl reload nginx`.
 
 ## Running it
 

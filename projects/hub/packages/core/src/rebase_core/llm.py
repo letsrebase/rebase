@@ -92,6 +92,16 @@ FALLBACK_BETA = "server-side-fallback-2026-07-01"
 _TIMEOUT_SECONDS = 40.0
 _MAX_RETRIES = 1
 
+# A task whose one answer is long has its own limits, laid over the ones above on every call
+# it makes, «Prova» too. The anonymous CV (REB-862) is a two-page CV written whole, 3-5k
+# tokens of an answer that is not streamed: a minute or two on a large model, so 40 seconds
+# would cut most of them. 150 seconds, and no retry, which would double a wait the admin is
+# watching; its route has a host timeout of its own to match (AGENTS.md, «The anonymous CV
+# as a PDF»). A Message Batch sends neither (`build_batch_model`).
+_TASK_HTTP_LIMITS: dict[str, dict[str, Any]] = {
+    "cv_anonimo": {"timeout": 150.0, "max_retries": 0},
+}
+
 # The API accepts only "global" or "us" for `inference_geo`; "eu" answers a 400
 # ("must be one of ['global', 'us']", proven on the preview 2026-09-28). Keeping
 # inference inside the European Union would need Vertex AI or Bedrock in an EU
@@ -349,7 +359,8 @@ class AiCall:
         provider, model, effort, ceiling, key = self._resolve()
         model_instance, model_settings = self._model_factory(provider, model, key, effort)
         max_tokens = ceiling if request.max_tokens is None else min(request.max_tokens, ceiling)
-        settings = {**model_settings, "max_tokens": max_tokens}
+        settings = {**model_settings, **_TASK_HTTP_LIMITS.get(self._task, {})}
+        settings["max_tokens"] = max_tokens
         if request.system_cached is not None:
             settings.update(_CACHE_SYSTEM)
         try:
