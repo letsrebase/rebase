@@ -40,7 +40,7 @@ from rebase_core.admin_tokens import AdminRead
 from rebase_core.ai_config import AiConfigService
 from rebase_core.amounts import NotAnAmount, italian_amount
 from rebase_core.campaigns.service import CampaignService
-from rebase_core.cards import CardWriter, persona_differences, stored_persona
+from rebase_core.cards import CardWriter, Regeneration, persona_differences, stored_persona
 from rebase_core.cloud import TalentCloudService
 from rebase_core.companies import CompanyService
 from rebase_core.config import Settings
@@ -749,20 +749,24 @@ def build_server(
         come lo mostra la pagina. Senza una chiave di Claude configurata risponde che
         il team builder è spento, invece di lasciare la scheda com'era fingendo di
         averla riscritta. Il livello che l'admin ha corretto (`override_freelancer`,
-        `seniority` e `anni`) resta com'è."""
+        `seniority` e `anni`) resta com'è. L'esito è firmato nel registro della scheda
+        (`get_freelancer_audit`, `card_regenerated`, `fonte` `mcp`)."""
         llm = card_llm() if card_llm is not None else None
         if llm is None:
             # `CardWriter.write` itself has no opinion on a missing key -- it just
             # answers the card unchanged, `list_pigro_spaces`'s own precondition,
             # checked before `_call` the same way.
             raise ToolError("Il team builder è spento.")
-        return _run(lambda s: CardWriter(s, llm).write(UUID(freelancer_id), force=True))
+        run = Regeneration(admin().id, "mcp")
+        return _run(lambda s: CardWriter(s, llm, run=run).write(UUID(freelancer_id), force=True))
 
     @mcp.tool()
     def get_freelancer_audit(freelancer_id: str, limit: int = 50) -> list[dict[str, Any]]:
         """Chi ha modificato, svuotato, cancellato o ripristinato questa scheda, e
         quando: ogni voce con l'amministratore, il tipo di azione e, per una modifica di
-        campo, il valore prima e dopo. Funziona anche su una scheda cancellata. Dalla più
+        campo, il valore prima e dopo. Anche ogni volta che la scheda anonima è stata
+        riscritta (`card_regenerated`: esito, motivo se non scritta, `fonte`, costo, se in
+        blocco). Funziona anche su una scheda cancellata. Dalla più
         recente. Solo lettura; per annullare una modifica di campo usa
         `revert_freelancer_action` con l'id della voce."""
         return _run_list(lambda s: FreelancerService(s).audit_timeline(UUID(freelancer_id), limit))
@@ -985,8 +989,22 @@ def build_server(
         `team_proposal`) fornitore, modello, livello di ragionamento, massimo di token,
         tetto giornaliero in euro, quanto ha speso oggi e perché non può partire, se non
         può; i prezzi per milione di token e la spesa del mese per compito e fornitore.
-        Le chiavi si cambiano solo dalla pagina: nessun tool le scrive."""
-        return _run(lambda s: AiConfigService(s, team_settings()).read())
+        `registro` sono le ultime 50 voci del registro della configurazione, dalla più
+        recente, ognuna con l'amministratore: le chiavi, gli interruttori, i compiti e i
+        prezzi cambiati, e ogni rigenerazione delle schede, quando è stata avviata (`fonte`
+        `web` o `cli`, quante schede, se col Batch API) e quando è finita (quante scritte,
+        non riuscite, scartate, il costo in euro e per ogni scheda non scritta il motivo,
+        mai un nome o il testo di una scheda). Le chiavi si cambiano solo dalla pagina:
+        nessun tool le scrive."""
+
+        def read(s: Session) -> dict[str, Any]:
+            service = AiConfigService(s, team_settings())
+            return {
+                **service.read().model_dump(mode="json"),
+                "registro": [entry.model_dump(mode="json") for entry in service.trail(50)],
+            }
+
+        return _call(read)
 
     # ---- the team requests, the engine, and the talent cloud (REB-520, spec § 8) -------
 

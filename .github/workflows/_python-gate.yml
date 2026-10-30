@@ -97,9 +97,8 @@ jobs:
       # that arrives before it is done starts its own pull and the daemon shares the
       # layers in flight, and one that finds it failed pulls as before, so a failure
       # here costs nothing and never reds the job. The database image is read from the
-      # root `conftest.py`, which is what starts it; the reaper is testcontainers' own,
-      # started once per worker before the database (`testcontainers/core/config.py`),
-      # and its tag moves with the package in `uv.lock`.
+      # root `conftest.py`, which is what starts it. Ryuk, testcontainers' reaper, is not
+      # pulled: the Test step turns it off (REB-860, below).
       # Each pull writes its outcome to a log the step before the tests prints, so a
       # failed warm-up is a warning in the job log rather than a silent return of the
       # setup delay; the job never fails on it.
@@ -108,7 +107,7 @@ jobs:
         run: |
           database=$(grep -oE '^_IMAGE = "[^"]+"' conftest.py | cut -d'"' -f2)
           log="$RUNNER_TEMP/image-pull.log"
-          for image in "${database}" testcontainers/ryuk:0.8.1; do
+          for image in "${database}"; do
             { docker pull -q "${image}" > /dev/null 2>&1 && echo "pulled ${image}" \
               || echo "FAILED to pull ${image}"; } >> "${log}" 2>&1 &
           done
@@ -252,9 +251,18 @@ jobs:
         # under `-n` each worker starts its own, which is what makes the workers
         # independent rather than fighting over one database. With a `shard`, the
         # paths are that shard's files; without one, the roots the caller named.
+        #
+        # Ryuk is off here (REB-860). It is the one container testcontainers publishes on
+        # every interface, while the workers' PostgreSQL is published on loopback since
+        # REB-854, and from 2026-10-29 its start failed five attempts in two days with
+        # «failed to listen on TCP socket: address already in use», two of them on a
+        # release tag. A runner is thrown away after the job, and a killed local run is
+        # reaped by the owner label in the root `conftest.py`, so Ryuk has nothing left
+        # to clean up here.
         env:
           SHARD_FILES_PATH: ${{ steps.shard.outputs.files-path }}
           TEST_ROOTS: ${{ inputs.tests }}
+          TESTCONTAINERS_RYUK_DISABLED: "true"
         run: |
           set -euo pipefail
           if [ -n "$SHARD_FILES_PATH" ]; then

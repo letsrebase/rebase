@@ -28,21 +28,38 @@ refuses a second under the regeneration's advisory lock.
 
 import logging
 from collections.abc import Callable, Sequence
+from dataclasses import replace
 from datetime import datetime, timedelta
-from typing import Literal, NamedTuple
+from typing import Literal, NamedTuple, cast
 from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from rebase_core.ai_config import BATCH_DISCOUNT
+from rebase_core.ai_config import AI_CONFIG_ENTITY, BATCH_DISCOUNT
 from rebase_core.ai_schemas import CardBatchRead
 from rebase_core.audit import utcnow
 from rebase_core.card_draft import CardDraft
-from rebase_core.cards import PROMPT_VERSION, CardWriter, Composed, Outcome
-from rebase_core.errors import LlmUnavailable
+from rebase_core.cards import (
+    CARD_REGENERATED,
+    CARDS_REGENERATE,
+    NO_ANSWER_REASONS,
+    PROMPT_VERSION,
+    CardWriter,
+    Composed,
+    Fonte,
+    Outcome,
+    Regeneration,
+)
+from rebase_core.errors import LlmCapReached, LlmNotConfigured, LlmUnavailable, NotFound
 from rebase_core.llm import BatchCall, BatchHandle, BatchOutcome, LlmRequest
-from rebase_core.models import CARD_BATCH_ACTIVE, CardBatch, CardBatchItem, Freelancer
+from rebase_core.models import (
+    CARD_BATCH_ACTIVE,
+    AdminAction,
+    CardBatch,
+    CardBatchItem,
+    Freelancer,
+)
 from rebase_core.team_schemas import CardsRefreshed
 
 logger = logging.getLogger(__name__)
@@ -79,6 +96,15 @@ class BatchPolled(NamedTuple):
     left: int = 0
 
 
+def _stop_reason(error: LlmUnavailable) -> str:
+    """Why a submission was refused, as `cards.STOP_REASONS` names it."""
+    if isinstance(error, LlmCapReached):
+        return "cap_reached"
+    if isinstance(error, LlmNotConfigured):
+        return "not_configured"
+    return "unavailable"
+
+
 class CardBatches:
     """The Message Batches path of the card writer. `call` is the provider's batch API
     (`llm.batch_for_task`); `threshold` the number of cards from which an admin's start
@@ -97,55 +123,98 @@ class CardBatches:
     # ---- submit ----------------------------------------------------------------------
 
     def submit(
-        self, writer: CardWriter, ids: Sequence[UUID], admin_id: UUID | None
+        self,
+        writer: CardWriter,
+        ids: Sequence[UUID],
+        admin_id: UUID,
+        *,
+        fonte: Fonte,
+        limit: int,
     ) -> CardsRefreshed:
-        """Sends the cards of `ids` that are still stale as one batch, and records it. Called
-        under the regeneration's advisory lock, with no batch active. A person whose CV has no
-        text is not sent (no model would read it): the synchronous writer fails it with its
-        sentence. The provider refusing the submission (a spent cap, no key, an outage) marks
-        the batch `failed` and leaves every card stale: `stopped`."""
+        """Sends the cards of `ids` that are still stale as one batch, and records it, and
+        the admin's start (`CardWriter.record_start`, with the batch's id, which `poll` finds
+        it by). Called under the regeneration's advisory lock, with no batch active. A person
+        whose CV has no text is not sent (no model would read it): the synchronous writer
+        fails it with its sentence. The provider refusing the submission (a spent cap, no key,
+        an outage) marks the batch `failed` and leaves every card stale: `stopped`; the end
+        is recorded then. A start with nothing to send ends at once."""
         session = writer.session
         sources = writer.source_service()
         refetch = bool(sources.enabled_kinds())
         requests: dict[str, LlmRequest] = {}
         items: list[CardBatchItem] = []
         no_text: list[UUID] = []
-        for freelancer_id in ids:
-            if writer.stale_of(freelancer_id) not in ("prompt", "source"):
-                continue
-            # As `write_claimed` does: the sources are read again when a card is written.
-            if refetch:
-                sources.refetch(freelancer_id)
-            prepared = writer.prepare(freelancer_id)
-            if isinstance(prepared, Composed):
-                no_text.append(freelancer_id)
-                continue
-            requests[str(freelancer_id)] = prepared.request
-            items.append(
-                CardBatchItem(
-                    freelancer_id=freelancer_id,
-                    cv_sha256=prepared.cv_sha256,
-                    input_hashes=prepared.hashes,
-                    prompt_version=PROMPT_VERSION,
+        batch: CardBatch | None = None
+        try:
+            for freelancer_id in ids:
+                try:
+                    if writer.stale_of(freelancer_id) not in ("prompt", "source"):
+                        continue
+                    # As `write_claimed` does: the sources are read again when a card is written.
+                    if refetch:
+                        sources.refetch(freelancer_id)
+                    prepared = writer.prepare(freelancer_id)
+                except NotFound:
+                    # Gone since the list was made (deleted): nothing to send, nothing spent,
+                    # and the end counts it among the skipped.
+                    session.rollback()
+                    continue
+                if isinstance(prepared, Composed):
+                    no_text.append(freelancer_id)
+                    continue
+                requests[str(freelancer_id)] = prepared.request
+                items.append(
+                    CardBatchItem(
+                        freelancer_id=freelancer_id,
+                        cv_sha256=prepared.cv_sha256,
+                        input_hashes=prepared.hashes,
+                        prompt_version=PROMPT_VERSION,
+                    )
                 )
+            session.commit()
+            if items:
+                batch = CardBatch(
+                    provider=self.call.provider,
+                    status="submitting",
+                    request_count=len(items),
+                    started_by=admin_id,
+                )
+                session.add(batch)
+                session.flush()
+                for item in items:
+                    item.batch_id = batch.id
+                    session.add(item)
+                session.commit()
+        except BaseException:
+            # The route has answered that cards were queued: a run that cannot even prepare them
+            # still leaves its start and its end, whatever state the session was left in, and
+            # sends nothing. The original error is what the caller gets.
+            session.rollback()
+            started = writer.record_start(admin_id, fonte, limit, len(ids))
+            writer.end_regeneration(
+                admin_id=admin_id,
+                fonte=fonte,
+                start_action_id=started,
+                queued=len(ids),
+                stopped=True,
+                stop_reason="error",
+                left=len(ids),
             )
-        session.commit()
-        for freelancer_id in no_text:
-            writer.write(freelancer_id, force=True)
-        if not items:
-            return CardsRefreshed(written=0, failed=0)
-        batch = CardBatch(
-            provider=self.call.provider,
-            status="submitting",
-            request_count=len(items),
-            started_by=admin_id,
+            raise
+        # The start is signed once the batch has an id to name, and before the provider is
+        # called: what the hub is about to pay for is never something its trail does not know.
+        start = writer.record_start(
+            admin_id, fonte, limit, len(ids), batch.id if batch is not None else None
         )
-        session.add(batch)
-        session.flush()
-        for item in items:
-            item.batch_id = batch.id
-            session.add(item)
-        session.commit()
+        run = Regeneration(admin_id, fonte, bulk=True, start_action_id=start)
+        with writer.acting(run):
+            for freelancer_id in no_text:
+                writer.write(freelancer_id, force=True)
+        if batch is None:
+            writer.end_regeneration(
+                admin_id=admin_id, fonte=fonte, start_action_id=start, queued=len(ids)
+            )
+            return CardsRefreshed(written=0, failed=0)
         try:
             cost = writer.estimate_cost(len(items))
             # The estimate is of synchronous calls; the batch is half of it. The spend lands
@@ -155,6 +224,20 @@ class CardBatches:
             batch.status = "failed"
             session.commit()
             logger.warning("card batch %s not sent: %s", batch.id, type(error).__name__)
+            with writer.acting(replace(run, batch_since=batch.created_at)):
+                for item in items:
+                    writer.card_done(item.freelancer_id, "errored", reason="not_sent")
+            writer.end_regeneration(
+                admin_id=admin_id,
+                fonte=fonte,
+                start_action_id=start,
+                queued=len(ids),
+                batch_id=batch.id,
+                batch_status="failed",
+                stopped=True,
+                stop_reason=_stop_reason(error),
+                known={"errored": len(items)},
+            )
             return CardsRefreshed(written=0, failed=0, stopped=True)
         batch.provider_batch_id = handle.id
         batch.handle = handle.to_json()
@@ -185,13 +268,14 @@ class CardBatches:
             ).first()
             if batch is None:
                 return BatchPolled("none")
+            run, start = self._run_of(session, batch)
             if batch.status == "submitting":
-                return self._given_up(session, batch)
+                return self._given_up(writer, batch, run, start)
             assert batch.handle is not None
             if batch.submitted_at is not None and (
                 self.now() - batch.submitted_at > ACTIVE_GIVEN_UP_AFTER
             ):
-                return self._abandon(session, batch)
+                return self._abandon(writer, batch, run, start)
             handle = BatchHandle.from_json(batch.handle)
             try:
                 if batch.status == "in_progress":
@@ -204,9 +288,16 @@ class CardBatches:
             except LlmUnavailable as error:
                 logger.warning("card batch %s not read: %s", batch.id, type(error).__name__)
                 return BatchPolled("unavailable", left=self._left(session, batch))
-            return self._apply(writer, batch, handle, outcomes)
+            return self._apply(writer, batch, handle, outcomes, run, start)
 
-    def _abandon(self, session: Session, batch: CardBatch) -> BatchPolled:
+    def _abandon(
+        self,
+        writer: CardWriter,
+        batch: CardBatch,
+        run: Regeneration | None,
+        start: AdminAction | None,
+    ) -> BatchPolled:
+        session = writer.session
         left = session.scalars(
             select(CardBatchItem).where(
                 CardBatchItem.batch_id == batch.id, CardBatchItem.status == "pending"
@@ -219,9 +310,20 @@ class CardBatches:
         logger.error(
             "card batch %s given up after two days: %d cards left stale", batch.id, len(left)
         )
+        with writer.acting(run):
+            for item in left:
+                writer.card_done(item.freelancer_id, "errored", reason="expired")
+        self._conclude(writer, batch, run, start, "failed")
         return BatchPolled("failed", failed=len(left))
 
-    def _given_up(self, session: Session, batch: CardBatch) -> BatchPolled:
+    def _given_up(
+        self,
+        writer: CardWriter,
+        batch: CardBatch,
+        run: Regeneration | None,
+        start: AdminAction | None,
+    ) -> BatchPolled:
+        session = writer.session
         if (
             batch.provider_batch_id is None
             and self.now() - batch.created_at > SUBMITTING_GIVEN_UP_AFTER
@@ -229,8 +331,65 @@ class CardBatches:
             batch.status = "failed"
             session.commit()
             logger.warning("card batch %s was never sent: marked failed", batch.id)
+            with writer.acting(run):
+                for freelancer_id in session.scalars(
+                    select(CardBatchItem.freelancer_id).where(CardBatchItem.batch_id == batch.id)
+                ).all():
+                    writer.card_done(freelancer_id, "errored", reason="not_sent")
+            self._conclude(writer, batch, run, start, "failed")
             return BatchPolled("failed")
         return BatchPolled("running", left=self._left(session, batch))
+
+    @staticmethod
+    def _run_of(
+        session: Session, batch: CardBatch
+    ) -> tuple[Regeneration | None, AdminAction | None]:
+        """Who started the batch, from the start recorded with its id (`submit`): the admin
+        (`started_by`), the door and the entry the card's and the end's records point back
+        to. `None` for a batch that has none (one sent before REB-861), which then records
+        nothing of its own."""
+        if batch.started_by is None:
+            return None, None
+        start = session.scalars(
+            select(AdminAction)
+            .where(
+                AdminAction.entity_type == AI_CONFIG_ENTITY,
+                AdminAction.kind == CARDS_REGENERATE,
+                AdminAction.payload["batch_id"].astext == str(batch.id),
+            )
+            .limit(1)
+        ).first()
+        if start is None:
+            return None, None
+        run = Regeneration(
+            batch.started_by,
+            cast(Fonte, start.payload.get("fonte", "web")),
+            bulk=True,
+            start_action_id=start.id,
+            batch_since=batch.created_at,
+            retries=True,
+        )
+        return run, start
+
+    @staticmethod
+    def _conclude(
+        writer: CardWriter,
+        batch: CardBatch,
+        run: Regeneration | None,
+        start: AdminAction | None,
+        status: str,
+    ) -> None:
+        """The end of the batch's regeneration, recorded once, when it is applied or given up."""
+        if run is None or start is None:
+            return
+        writer.end_regeneration(
+            admin_id=run.admin_id,
+            fonte=run.fonte,
+            start_action_id=start.id,
+            queued=int(start.payload.get("queued") or batch.request_count),
+            batch_id=batch.id,
+            batch_status=status,
+        )
 
     def _apply(
         self,
@@ -238,6 +397,8 @@ class CardBatches:
         batch: CardBatch,
         handle: BatchHandle,
         outcomes: dict[str, BatchOutcome],
+        run: Regeneration | None,
+        start: AdminAction | None,
     ) -> BatchPolled:
         session = writer.session
         pending = session.scalars(
@@ -246,34 +407,50 @@ class CardBatches:
             .order_by(CardBatchItem.freelancer_id)
         ).all()
         written = failed = 0
-        for item in pending:
-            try:
-                outcome = self._apply_item(
-                    writer, item, handle, outcomes.get(str(item.freelancer_id))
-                )
-            except Exception as error:
-                # One card that cannot be applied must not hold the rest, nor the batch, for
-                # ever: it is settled as errored (its card stays stale for the next start),
-                # and the log names the class, never the message.
-                session.rollback()
-                logger.error(
-                    "card batch %s: card %s not applied: %s",
-                    batch.id,
-                    item.freelancer_id,
-                    type(error).__name__,
-                )
-                outcome = self._settle(session, item, "errored")
-            # An item left `unavailable` (a rewrite the model did not answer) waits for the
-            # next pass; the others, which need no model, are applied all the same.
-            if outcome == "written":
-                written += 1
-            elif outcome in ("failed", "errored"):
-                failed += 1
+        # Each card the batch writes, or fails to, is signed in its talent's trail, as the
+        # admin who started it (`run`): an `unavailable` one is tried again by the next pass
+        # and recorded when it is settled.
+        with writer.acting(run):
+            for item in pending:
+                try:
+                    outcome = self._apply_item(
+                        writer, item, handle, outcomes.get(str(item.freelancer_id))
+                    )
+                except Exception as error:
+                    # One card that cannot be applied must not hold the rest, nor the batch,
+                    # for ever: it is settled as errored (its card stays stale for the next
+                    # start), and the log names the class, never the message. A card whose
+                    # outcome was already committed and entered (the settle failed) is settled
+                    # with that outcome and gets no second entry.
+                    session.rollback()
+                    logger.error(
+                        "card batch %s: card %s not applied: %s",
+                        batch.id,
+                        item.freelancer_id,
+                        type(error).__name__,
+                    )
+                    status = self._recorded_status(session, run, item.freelancer_id)
+                    if status is None:
+                        writer.card_done(item.freelancer_id, "errored")
+                        status = "errored"
+                    try:
+                        outcome = self._settle(session, item, status)
+                    except Exception:
+                        # Left pending: the next pass settles it from its entry.
+                        session.rollback()
+                        outcome = "pending"
+                # An item left `unavailable` (a rewrite the model did not answer) waits for
+                # the next pass; the others, which need no model, are applied all the same.
+                if outcome == "written":
+                    written += 1
+                elif outcome in ("failed", "errored"):
+                    failed += 1
         left = self._left(session, batch)
         if left == 0:
             batch.status = "applied"
             batch.applied_at = self.now()
             session.commit()
+            self._conclude(writer, batch, run, start, "applied")
             return BatchPolled("applied", written=written, failed=failed)
         return BatchPolled("applying", written=written, failed=failed, left=left)
 
@@ -293,6 +470,10 @@ class CardBatches:
         with writer.advisory(f"card:{freelancer_id}") as claimed:
             if not claimed:
                 return "pending"
+            writer.begin_card(freelancer_id)
+            earlier = self._recorded_status(session, writer.run, freelancer_id)
+            if earlier is not None:
+                return self._settle(session, item, earlier)
             answer = answer or BatchOutcome("expired")
             response = answer.response if answer.status == "succeeded" else None
             if response is not None and not item.usage_recorded:
@@ -303,9 +484,11 @@ class CardBatches:
                 item.usage_recorded = True
                 session.commit()
             if response is None:
+                writer.card_done(freelancer_id, "errored")
                 return self._settle(session, item, "errored")
             row = session.get(Freelancer, freelancer_id)
             if row is None or row.deleted_at is not None or row.cv_bytes is None:
+                writer.card_done(freelancer_id, "unchanged")
                 return self._settle(session, item, "unchanged")
             prepared = writer.prepare(freelancer_id)
             session.commit()
@@ -317,6 +500,7 @@ class CardBatches:
             ):
                 # What the model read is no longer what the card would be written from, or
                 # was asked by a prompt that is not the one running now.
+                writer.card_done(freelancer_id, "superseded")
                 return self._settle(session, item, "superseded")
             digest = prepared.cv_sha256
             result: Outcome
@@ -341,9 +525,45 @@ class CardBatches:
 
     @staticmethod
     def _settle(session: Session, item: CardBatchItem, status: str) -> str:
-        item.status = status
-        session.commit()
+        """Marks the item settled. A commit that fails is tried once more on a clean
+        transaction; a second failure is raised."""
+        try:
+            item.status = status
+            session.commit()
+        except Exception:
+            session.rollback()
+            item.status = status
+            session.commit()
         return status
+
+    @staticmethod
+    def _recorded_status(
+        session: Session, run: Regeneration | None, freelancer_id: UUID
+    ) -> str | None:
+        """The item status a card's own entry of this regeneration (`card_regenerated`) says it
+        reached, or `None` when it has none. A card's save and its entry are committed before
+        the item is settled, so a settle that failed leaves the outcome recorded and the item
+        pending: the card is never written, or entered, a second time."""
+        if run is None or run.start_action_id is None:
+            return None
+        payload = session.scalar(
+            select(AdminAction.payload)
+            .where(
+                AdminAction.entity_id == freelancer_id,
+                AdminAction.kind == CARD_REGENERATED,
+                AdminAction.payload["start_action_id"].astext == str(run.start_action_id),
+            )
+            .order_by(AdminAction.created_at.desc(), AdminAction.id.desc())
+            .limit(1)
+        )
+        if payload is None:
+            return None
+        if payload.get("esito") == "scritta":
+            return "written"
+        reason = payload.get("reason")
+        if reason in ("superseded", "unchanged"):
+            return str(reason)
+        return "errored" if reason in NO_ANSWER_REASONS else "failed"
 
     @staticmethod
     def _left(session: Session, batch: CardBatch) -> int:

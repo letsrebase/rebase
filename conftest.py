@@ -25,7 +25,8 @@ port published on every interface ahead of the host's firewall, so a leaked cont
 was a `test`/`test` PostgreSQL open to the internet. And each container carries the
 identity of the pytest process that started it, so the next session removes the ones a
 killed run left behind: Ryuk would, but a local run often turns it off
-(`TESTCONTAINERS_RYUK_DISABLED`) because it flakes on a busy machine.
+(`TESTCONTAINERS_RYUK_DISABLED`) because it flakes on a busy machine, and CI always does
+(REB-860).
 """
 
 from __future__ import annotations

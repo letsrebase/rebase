@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Outlet, RouterProvider, createMemoryHistory, createRootRoute, createRoute, createRouter } from '@tanstack/react-router'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SidebarNav } from '@/components/SidebarNav'
@@ -52,6 +52,58 @@ const CONFIG = {
   known_models: { anthropic: ['claude-opus-5'], openai: [], google: [] },
 }
 
+// The «Registro» (REB-861): newest first, a regeneration's start and its end among the changes.
+const AUDIT = [
+  {
+    id: 'e4',
+    kind: 'cards_regenerated',
+    admin_nome: 'Ivan Sala',
+    payload: {
+      fonte: 'cli',
+      start_action_id: 'e3',
+      written: 4,
+      failed: 1,
+      superseded: 1,
+      skipped: 0,
+      errored: 0,
+      cost_eur: '0.051000',
+      failures: [
+        { freelancer_id: 'f1', reason: 'source_identifying' },
+        { freelancer_id: 'f2', reason: 'superseded' },
+      ],
+    },
+    created_at: '2026-10-30T10:00:00Z',
+  },
+  {
+    id: 'e3',
+    kind: 'cards_regenerate',
+    admin_nome: 'Ivan Sala',
+    payload: { limit: 20, queued: 6, fonte: 'cli', batch: true, batch_id: 'b1' },
+    created_at: '2026-10-30T09:00:00Z',
+  },
+  {
+    id: 'e2',
+    kind: 'cards_regenerate',
+    admin_nome: 'Ivan Sala',
+    payload: { limit: 5, queued: 1, fonte: 'web', batch: false },
+    created_at: '2026-10-29T09:00:00Z',
+  },
+  {
+    id: 'e1',
+    kind: 'ai_task',
+    admin_nome: 'Ivan Sala',
+    payload: { task: 'card', changed: ['model', 'daily_cap_eur'] },
+    created_at: '2026-10-28T09:00:00Z',
+  },
+  {
+    id: 'e0',
+    kind: 'ai_switch',
+    admin_nome: 'Ivan Sala',
+    payload: { source: 'github', changed: ['enabled'], after: { enabled: true } },
+    created_at: '2026-10-27T09:00:00Z',
+  },
+]
+
 const NO_STALE = { count: 0, by_reason: {}, estimated_cost_eur: null, items: [], batch_threshold: 10, batch: null }
 const STALE = {
   count: 7,
@@ -71,6 +123,7 @@ function mount(config: unknown = CONFIG, overrides: Record<string, () => Respons
     if (overrides[path]) return overrides[path]()
     if (path === '/api/hub/admin/ai') return answer(200, config)
     if (path === '/api/hub/admin/ai/cards/stale') return answer(200, NO_STALE)
+    if (path === '/api/hub/admin/ai/audit') return answer(200, [])
     return answer(404, { detail: 'not found' })
   })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -288,5 +341,148 @@ describe('the Modelli AI page (REB-833)', () => {
     const section = within(await screen.findByRole('region', { name: 'Schede da aggiornare' }))
     expect(await section.findByText('Nessuna scheda da aggiornare')).toBeInTheDocument()
     expect(section.queryByRole('button')).toBeNull()
+  })
+
+  it('says there is nothing in the Registro yet', async () => {
+    mount()
+    const section = within(await screen.findByRole('region', { name: 'Registro' }))
+    expect(await section.findByText('Nessuna modifica registrata.')).toBeInTheDocument()
+  })
+
+  it('lists the configuration changes and every regeneration, start and end, with who and the cost (REB-861)', async () => {
+    mount(CONFIG, { '/api/hub/admin/ai/audit': () => answer(200, AUDIT) })
+    const section = within(await screen.findByRole('region', { name: 'Registro' }))
+    const entries = await section.findAllByRole('listitem')
+    expect(entries).toHaveLength(5)
+    expect(entries[0]).toHaveTextContent(
+      'Rigenerazione conclusa: 4 scritte, 2 non riuscite (1 cita un account, un sito o un datore di lavoro, 1 CV o dati cambiati nel frattempo), costo 0,051',
+    )
+    expect(entries[0]).toHaveTextContent('Ivan Sala')
+    expect(entries[1]).toHaveTextContent('Rigenerazione avviata: 6 schede, da riga di comando, Batch API')
+    expect(entries[2]).toHaveTextContent('Rigenerazione avviata: 1 scheda, dal sito')
+    expect(entries[2]).not.toHaveTextContent('Batch API')
+    expect(entries[3]).toHaveTextContent('Compito «Scheda anonima» modificato: modello, tetto giornaliero')
+    expect(entries[4]).toHaveTextContent('Fonte «GitHub» accesa')
+  })
+
+  it('says a regeneration stopped, why when it is known, and how many cards were never started (REB-861)', async () => {
+    const ended = (id: string, extra: object) => ({
+      id,
+      kind: 'cards_regenerated',
+      admin_nome: 'Ivan Sala',
+      payload: { fonte: 'web', written: 1, failed: 0, skipped: 0, failures: [], cost_eur: '0.01', stopped: true, ...extra },
+      created_at: '2026-10-30T10:00:00Z',
+    })
+    mount(CONFIG, {
+      '/api/hub/admin/ai/audit': () =>
+        answer(200, [ended('s2', { left: 4, stop_reason: 'cap_reached' }), ended('s1', { left: 0 })]),
+    })
+    const section = within(await screen.findByRole('region', { name: 'Registro' }))
+    const [capped, unknown] = await section.findAllByRole('listitem')
+    expect(capped).toHaveTextContent('interrotta: tetto giornaliero raggiunto, 4 non avviate')
+    expect(unknown).toHaveTextContent('interrotta, costo')
+    expect(unknown).not.toHaveTextContent('modello non disponibile')
+    expect(unknown).not.toHaveTextContent('non avviat')
+  })
+
+  it('looks for the start of a regeneration it just asked for until it is signed, however long the cards take to prepare (REB-861)', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      let audits = 0
+      mount(CONFIG, {
+        '/api/hub/admin/ai/cards/stale': () => answer(200, STALE),
+        '/api/hub/admin/ai/cards/regenerate-stale': () => answer(200, { queued: 6 }),
+        '/api/hub/admin/ai/audit': () => {
+          audits += 1
+          // The start is written after the cards are prepared: not there for the first reads.
+          return answer(200, audits > 4 ? [{ ...AUDIT[1], id: 'new', created_at: new Date().toISOString() }] : [])
+        },
+      })
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+      const stale = within(await screen.findByRole('region', { name: 'Schede da aggiornare' }))
+      await user.click(await stale.findByRole('button', { name: 'Avvia rigenerazione' }))
+      const registro = within(screen.getByRole('region', { name: 'Registro' }))
+      expect(registro.queryByText(/Rigenerazione avviata/)).toBeNull()
+      for (let waited = 0; waited < 30_000 && !registro.queryByText(/Rigenerazione avviata/); waited += 3_000) {
+        await act(() => vi.advanceTimersByTimeAsync(3_000))
+      }
+      expect(await registro.findByText(/Rigenerazione avviata: 6 schede/)).toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps looking for its own start when another run starts and ends first (REB-861)', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const at = new Date().toISOString()
+      const otherStart = {
+        id: 'other',
+        kind: 'cards_regenerate',
+        admin_nome: 'Ivan Sala',
+        payload: { limit: 1, queued: 1, fonte: 'cli', batch: false },
+        created_at: at,
+      }
+      const otherEnd = {
+        id: 'other-end',
+        kind: 'cards_regenerated',
+        admin_nome: 'Ivan Sala',
+        payload: { fonte: 'cli', start_action_id: 'other', written: 1, failed: 0, skipped: 0, failures: [], cost_eur: '0.01' },
+        created_at: at,
+      }
+      let audits = 0
+      mount(CONFIG, {
+        '/api/hub/admin/ai/cards/stale': () => answer(200, STALE),
+        '/api/hub/admin/ai/cards/regenerate-stale': () => answer(200, { queued: 6 }),
+        '/api/hub/admin/ai/audit': () => {
+          audits += 1
+          if (audits <= 2) return answer(200, [])
+          // Another run is signed and ends while this page's cards are still being prepared.
+          if (audits <= 5) return answer(200, [otherEnd, otherStart])
+          return answer(200, [{ ...AUDIT[1], id: 'mine', created_at: at }, otherEnd, otherStart])
+        },
+      })
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+      const stale = within(await screen.findByRole('region', { name: 'Schede da aggiornare' }))
+      await user.click(await stale.findByRole('button', { name: 'Avvia rigenerazione' }))
+      const registro = within(screen.getByRole('region', { name: 'Registro' }))
+      for (let waited = 0; waited < 45_000 && !registro.queryByText(/Rigenerazione avviata: 6 schede/); waited += 3_000) {
+        await act(() => vi.advanceTimersByTimeAsync(3_000))
+      }
+      expect(await registro.findByText(/Rigenerazione avviata: 6 schede/)).toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('says the outcome cannot be rebuilt when the start was lost, with what is known and no zeros (REB-861)', async () => {
+    const lost = (id: string, extra: object) => ({
+      id,
+      kind: 'cards_regenerated',
+      admin_nome: 'Ivan Sala',
+      payload: {
+        fonte: 'cli',
+        start_action_id: null,
+        start_missing: true,
+        written: null,
+        failed: null,
+        superseded: null,
+        skipped: null,
+        errored: null,
+        cost_eur: null,
+        failures: null,
+        ...extra,
+      },
+      created_at: '2026-10-30T10:00:00Z',
+    })
+    mount(CONFIG, {
+      '/api/hub/admin/ai/audit': () => answer(200, [lost('l2', { written: 2, failed: 1 }), lost('l1', {})]),
+    })
+    const section = within(await screen.findByRole('region', { name: 'Registro' }))
+    const [known, nothing] = await section.findAllByRole('listitem')
+    expect(known).toHaveTextContent('Rigenerazione conclusa: esito non ricostruibile (2 scritte, 1 non riuscita)')
+    expect(nothing).toHaveTextContent('Rigenerazione conclusa: esito non ricostruibile')
+    expect(nothing).not.toHaveTextContent('scritte')
+    expect(nothing).not.toHaveTextContent('costo')
   })
 })

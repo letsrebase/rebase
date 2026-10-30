@@ -2,8 +2,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
 import { ApiError, admin, type AdminAction, type ThreadKind } from '@/lib/api'
-import { formatDateTime } from '@/lib/format'
-import { noteSourceLabel } from '@/lib/notes'
+import { formatDateTime, formatSmallEuro } from '@/lib/format'
+import { noteSourceLabel, regenerationReason } from '@/lib/notes'
 
 const KIND_LABELS: Record<AdminAction['kind'], string> = {
   overridden: 'Modifica',
@@ -22,6 +22,7 @@ const KIND_LABELS: Record<AdminAction['kind'], string> = {
   note_edited: 'Nota modificata',
   note_deleted: 'Nota eliminata',
   status_changed: 'Cambio di stato',
+  card_regenerated: 'Scheda rigenerata',
   anon_cv_downloaded: 'CV anonimo scaricato',
 }
 
@@ -46,8 +47,23 @@ function kindLabel(action: AdminAction): string {
   if (action.kind === 'vetted' && action.payload.vetted !== undefined) {
     return action.payload.vetted ? 'Segnato come verificato' : 'Verifica tolta'
   }
+  if (action.kind === 'card_regenerated' && action.payload.esito === 'non_scritta') {
+    return `Scheda non rigenerata: ${regenerationReason(action.payload.reason)}`
+  }
   if (action.kind === 'anon_cv_downloaded' && action.payload.riusato) return 'CV anonimo scaricato (già pronto)'
   return KIND_LABELS[action.kind]
+}
+
+/** What a regeneration of this card was (REB-861), in one line: started from a bulk start or on
+ *  its own, the model and prompt version that wrote it and what its calls cost. The door
+ *  is the entry's own badge, as on a note. */
+function regenerationDetail(action: AdminAction): string {
+  const { bulk, model, prompt_version: version, cost_eur: cost, unpriced } = action.payload
+  const parts = [bulk ? 'in blocco' : 'singola']
+  if (model) parts.push(model)
+  if (version) parts.push(`prompt v${version}`)
+  if (cost !== undefined) parts.push(`costo ${formatSmallEuro(cost)}${unpriced ? ' (una chiamata senza prezzo)' : ''}`)
+  return parts.join(' · ')
 }
 
 const FIELD_LABELS: Record<string, string> = {
@@ -167,6 +183,7 @@ export function AuditTrail({
                   {source && <span>{source}</span>}
                 </p>
                 {mergeSummary(action) && <p>{mergeSummary(action)}</p>}
+                {action.kind === 'card_regenerated' && <p>{regenerationDetail(action)}</p>}
                 {(action.kind === 'note_added' || action.kind === 'note_deleted') && action.payload.testo && (
                   <p className="whitespace-pre-wrap break-words">{action.payload.testo}</p>
                 )}

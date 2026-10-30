@@ -270,3 +270,16 @@ export function memberDocumentStateLabel(kind: 'quadro' | 'lettera', stato: stri
   const labels = kind === 'quadro' ? MEMBER_FRAMEWORK_STATE_LABELS : MEMBER_LETTER_STATE_LABELS
   return labels[stato] ?? stato
 }
+
+// A model call costs a fraction of a cent: `formatEuro`'s two places would show it as 0,00 €.
+const smallEuro = new Intl.NumberFormat('it-IT', {
+  style: 'currency',
+  currency: 'EUR',
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 6,
+})
+
+/** `"0.012300"` from the API as `0,0123 €`: what a call or a regeneration cost. */
+export function formatSmallEuro(value: string): string {
+  return smallEuro.format(Number(value))
+}

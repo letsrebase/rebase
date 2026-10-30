@@ -82,7 +82,7 @@ running the core service the admin area runs, with the calling admin as the acto
 
 - `list_team_requests`, `get_team_request`: «Richieste team» and a request's page.
 - `list_team_proposals`: «Proposte», every «Proponi il team» asked, filed or not.
-- `list_ai_config`: «Modelli AI», read only: providers (the hint, never a key), tasks, prices, the month's spend. No tool writes a key.
+- `list_ai_config`: «Modelli AI», read only: providers (the hint, never a key), tasks, prices, the month's spend, and `registro`, the last 50 entries of the configuration's trail (keys, switches, prices and every regeneration of the cards, start and end). No tool writes a key.
 - `set_team_request_summary`: «Salva il riassunto», refused while it names the company.
 - `contact_team_talents`: «Contatta i talenti», or with `only_silent` «Rimanda a chi non ha risposto».
 - `set_team_request_status`: «Segna come contattata», «Chiudi», with an optional note.
@@ -748,7 +748,8 @@ scheda»; the hourly `refresh_stale` only writes a card whose CV is new.
   «Modelli AI», «Schede da aggiornare» (`GET /api/hub/admin/ai/cards/stale`), with the estimated
   cost, the average of the recorded `card` calls times the count, «stima non disponibile» while
   none is recorded. **«Avvia rigenerazione»** (`POST .../cards/regenerate-stale`, `{limit}` 1 to
-  50, an `AdminAction` `cards_regenerate`) writes the oldest `limit` after the response, each
+  50, a signed `AdminAction` `cards_regenerate` and, at its end, `cards_regenerated`: see «Every
+  regeneration a person starts is traced in full» below) writes the oldest `limit` after the response, each
   re-checked **under the person's claim** just before its write, so a double click pays once, and
   stops at the first outage or spent cap (REB-853: with `REBASE_CARDS_WORKERS` at once, or as a
   Message Batch from `REBASE_CARDS_BATCH_THRESHOLD` cards up, below). A bump of `PROMPT_VERSION`
@@ -766,7 +767,7 @@ scheda»; the hourly `refresh_stale` only writes a card whose CV is new.
   finish. Counts, `ai_usage` rows and the `AdminAction` are unchanged in shape. Each worker takes
   two connections for the length of a write (its session and the lock), so
   `create_engine_from_settings` raises the pool's overflow with it, and the setting stops at 8. **From `REBASE_CARDS_BATCH_THRESHOLD` cards (default 10) an admin's start, or
-  `rebase cards-regenerate [--limit N] [--batch]` (`--batch` whatever the threshold), goes through
+  `rebase cards-regenerate --admin EMAIL [--limit N] [--batch]` (`--batch` whatever the threshold), goes through
   Anthropic's Message Batches API instead**: half the price, answered within the hour (24 at
   most), and only for the Anthropic provider (any other falls back to the workers, and the CLI
   says so). A single «Rigenera scheda», `cards-refresh` and the wizard's write stay synchronous.
@@ -805,6 +806,44 @@ scheda»; the hourly `refresh_stale` only writes a card whose CV is new.
   process: never sent a second time, which could pay twice; an orphan at the provider shows in the
   Console), and an admin starts again. «Schede da aggiornare» shows the running batch (cards sent,
   when, how many applied) and refreshes itself until it is applied.
+- **Every regeneration a person starts is traced in full** (REB-861, `cards.Regeneration`,
+  `CardWriter.regenerate_stale`, `record_start`, `card_done`, `end_regeneration`). Three entries of
+  the admin trail, none with personal data (counts, costs, reasons and people's ids; never a name
+  or a card's text):
+  - **`cards_regenerate`** on `ai_config`, the start, always signed: `{limit, queued, fonte, batch,
+    batch_id?}` with `fonte` `web` («Avvia rigenerazione») or `cli` (`rebase cards-regenerate
+    --admin EMAIL`, which is **required**: a missing, unknown or non-admin address refuses with an
+    Italian message and exit 2, and nothing starts). A batch's start is recorded once the batch has
+    an id (before the provider is called), and `batch_id` is how the poll finds it again, with no
+    column of its own: a batch sent before REB-861 has no such start and records nothing.
+  - **`card_regenerated`** on the freelancer, one per card the regeneration rewrote or failed to:
+    `{fonte (web|mcp|cli), bulk, start_action_id (bulk only), prompt_version, model, esito
+    (scritta|non_scritta), reason (non_scritta only), cost_eur, unpriced?}`, signed by the admin. The
+    reasons are `cards.Failure` (`refusal`, `shape`, `identifying`, `source_identifying`,
+    `gendered`, `max_tokens`, `no_text`, `unavailable`), `cap_reached`, `not_configured`,
+    `superseded` (the batch's answer was dropped because the CV or an input changed) and, for a
+    batch, `errored` (no answer, or one that could not be applied), `expired`, `not_sent`. The cost
+    is the person's `ai_usage` rows since the write began (since the batch was sent, for one):
+    `LlmRequest.freelancer_id` puts the person on the usage row of a call, which is how it is read
+    back. A card that was no longer stale, or taken by another writer, is not this regeneration's
+    and records nothing. The single «Rigenera scheda» (the web route, `fonte` `web`; MCP
+    `regenerate_freelancer_card`, `fonte` `mcp`, as the token's admin) records it too, with `bulk`
+    false. **The hourly `cards-refresh` for a new CV and the wizard's own write are started by no
+    person and stay unrecorded.** It shows in the talent's «Registro delle modifiche»
+    (`AuditTrail.tsx`: «Scheda rigenerata» or «Scheda non rigenerata: motivo», «in blocco» or
+    «singola», the door, the cost).
+  - **`cards_regenerated`** on `ai_config`, the end, written once, signed by the admin who started
+    it: when the worker pool returns, when a batch is applied, or when one is given up or was never
+    sent. `{fonte, start_action_id, batch_id?, batch_status? (applied|failed), written, failed,
+    superseded, skipped (no longer stale, or the person or CV gone), errored, cost_eur, unpriced?,
+    failures: [{freelancer_id, reason}], stopped?, left?}`, counted from the cards' own entries (the
+    latest per person), so the end can never disagree with them. A card whose rewrite finds the model
+    down waits for the next pass and is recorded when it is settled.
+
+  **Where to read it:** `GET /api/hub/admin/ai/audit?limit=50` (admin only, newest first, the
+  `AdminActionRead` shape with the admin's name; `AiConfigService.trail`) feeds the «Registro»
+  section of «Modelli AI», and MCP `list_ai_config` answers the same last 50 as `registro`. A
+  regeneration with a start and no end is on, and the page keeps reading until it ends.
 - **The weekly refetch never calls a model.** `rebase sources-refetch [--limit N]` runs
   `SourceService.refetch_due` (people whose sources are a week old, missing or no longer match
   their links; only people a card is written for: live, not turned down, with a CV; the text of

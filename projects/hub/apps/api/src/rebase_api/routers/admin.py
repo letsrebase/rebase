@@ -39,7 +39,7 @@ from rebase_core.admin_tokens import AdminList, AdminRead
 from rebase_core.anonymous_cv.render import CvHead, filename
 from rebase_core.anonymous_cv.writer import AnonymousCvWriter
 from rebase_core.audit import AdminActionRead, AdminActionService
-from rebase_core.cards import CardWriter
+from rebase_core.cards import CardWriter, Regeneration
 from rebase_core.cloud import TalentCloudService
 from rebase_core.companies import CompanyService
 from rebase_core.duplicates import DuplicateListRead, duplicate_list
@@ -272,15 +272,16 @@ def get_freelancer_card(
 
 @router.post("/freelancers/{freelancer_id}/card", response_model=FreelancerCardAdminRead)
 def regenerate_freelancer_card(
-    _: AdminDep, session: SessionDep, llm: CardLlmDep, freelancer_id: UUID
+    admin: AdminDep, session: SessionDep, llm: CardLlmDep, freelancer_id: UUID
 ) -> FreelancerCardAdminRead:
     """«Rigenera scheda»: the card written again from the current CV, now, even from the
     CV that last failed, which is otherwise not tried again until it changes. A failure
     answers 200 with the previous card and `error`, as the page shows it; no key answers
-    the team builder's own 503, rather than the card unchanged as if written again."""
+    the team builder's own 503, rather than the card unchanged as if written again. What
+    became of it is signed in the talent's trail (`card_regenerated`, `fonte` `web`)."""
     if llm is None:
         raise TeamBuilderOff("Il team builder è spento.")
-    writer = CardWriter(session, llm)
+    writer = CardWriter(session, llm, run=Regeneration(admin.id, "web"))
     writer.write(freelancer_id, force=True)
     return writer.read_admin(freelancer_id)
 
