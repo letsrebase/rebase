@@ -1144,14 +1144,17 @@ export function AdminFreelancerDetail() {
             </p>
           )}
         </div>
-        {f.deleted_at === null && (
-          <StatusEditor
-            states={FREELANCER_STATES}
-            stato={f.stato}
-            saving={move.isPending}
-            onSave={(stato) => move.mutate(stato)}
-          />
-        )}
+        <div className="min-w-0 space-y-6">
+          {f.deleted_at === null && (
+            <StatusEditor
+              states={FREELANCER_STATES}
+              stato={f.stato}
+              saving={move.isPending}
+              onSave={(stato) => move.mutate(stato)}
+            />
+          )}
+          <Notes kind="freelancers" id={f.id} notes={f.note} onChange={onNotesChange} />
+        </div>
       </div>
       {f.deleted_at === null && (
         <SchedaAnonima freelancerId={f.id} hasCv={f.cv_filename !== null} />
@@ -1187,7 +1190,6 @@ export function AdminFreelancerDetail() {
           void client.invalidateQueries({ queryKey: ['freelancer-card', id] })
         }}
       />
-      <Notes kind="freelancers" id={f.id} notes={f.note} onChange={onNotesChange} />
       <p className="px-6 pb-6">
         <Link to="/admin/talent" className="inline-flex items-center gap-1 text-sm underline-offset-2 hover:underline">
           <ArrowLeft className="size-4" /> Tutti i talenti
@@ -1691,14 +1693,17 @@ export function AdminCompanyDetail() {
           <Row label="Persone richieste">{c.numero_risorse}</Row>
           <Row label="Arrivata">{formatDate(c.created_at)}{c.utm_source ? ` · da ${c.utm_source}` : ''}{c.origine ? ` · pagina ${c.origine}` : ''}</Row>
         </dl>
-        {c.deleted_at === null && (
-          <StatusEditor
-            states={COMPANY_STATES}
-            stato={c.stato}
-            saving={move.isPending}
-            onSave={(stato) => move.mutate(stato)}
-          />
-        )}
+        <div className="min-w-0 space-y-6">
+          {c.deleted_at === null && (
+            <StatusEditor
+              states={COMPANY_STATES}
+              stato={c.stato}
+              saving={move.isPending}
+              onSave={(stato) => move.mutate(stato)}
+            />
+          )}
+          <Notes kind="companies" id={c.id} notes={c.note} onChange={onNotesChange} />
+        </div>
       </div>
       {c.deleted_at === null && (
         <TalentCloudDoor
@@ -1718,7 +1723,6 @@ export function AdminCompanyDetail() {
         canRevert={c.deleted_at === null}
         onReverted={() => void client.invalidateQueries({ queryKey: ['company', id] })}
       />
-      <Notes kind="companies" id={c.id} notes={c.note} onChange={onNotesChange} />
       <p className="px-6 pb-6">
         <Link to="/admin/companies" className="inline-flex items-center gap-1 text-sm underline-offset-2 hover:underline">
           <ArrowLeft className="size-4" /> Tutte le aziende

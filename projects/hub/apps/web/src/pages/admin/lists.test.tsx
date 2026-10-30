@@ -715,13 +715,13 @@ describe('the enriched detail: sign-up, logins, downloads, Pigro space (REB-284)
     await screen.findByRole('heading', { name: 'Grace Hopper' })
     const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)
     expect(headings).toEqual([
+      'Note',
       'Scheda anonima',
       'Iscrizione alla newsletter',
       'Ultimi accessi',
       'Download della guida',
       'Spazio PigroCRM',
       'Registro delle modifiche',
-      'Note',
     ])
     expect(screen.getByText('newsletter')).toBeInTheDocument()
     expect(screen.getByText('email')).toBeInTheDocument()
