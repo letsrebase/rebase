@@ -14,7 +14,8 @@ REB-862: an admin downloads a person's CV as an anonymous PDF, written by a call
   Anthropic's `claude-opus-5` at `medium`, off, as 0036 seeds the others.
 * `anonymous_cvs`: the last CV written for a freelancer, keyed by the SHA-256 of the CV
   file it came from, so the same CV is not paid for twice. It goes with the person
-  (`ON DELETE CASCADE`).
+  (`ON DELETE CASCADE`). Not synced to PostHog's warehouse: `posthog_ro` is granted table
+  by table, never this one, since a CV in any form stays in the hub.
 
 `ADMIN_ACTION_KINDS` gains `anon_cv_downloaded` in Python only, as the column holds
 no CHECK. `IF NOT EXISTS` and `ON CONFLICT DO NOTHING`, so a retried deploy lands on the

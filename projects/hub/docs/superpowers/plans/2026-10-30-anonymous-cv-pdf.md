@@ -162,14 +162,14 @@ Rendering: a temporary directory per call; write `cv.json` (`{"cv": ..., "head":
 
 **Interfaces:**
 - Consumes: Task 3's `AnonymousCvWriter`, `Written`; Task 4's `CvRenderer`, `CvHead`, `filename`; `card_level.card_read` for seniority/anni over the admin's correction; `downloads.pdf_response`; `AdminActionService` as `FreelancerService` writes entries.
-- Produces: `POST /api/hub/freelancers/{freelancer_id}/cv-anonimo` → `200 application/pdf`, `Content-Disposition` attachment with `filename(...)`; errors: 401/403 not admin, 404 no talent or no CV, 503 `TeamBuilderOff`-style when `CvLlmDep is None` and no reusable body exists, 422 `AnonymousCvFailed`, the seam's `LlmUnavailable` as the card route answers it. On 200, one `AdminAction` `anon_cv_downloaded` on the freelancer with `{"riusato": bool}`, actor the admin.
+- Produces: `POST /api/hub/freelancers/{freelancer_id}/cv-anonimo` → `200 application/pdf`, `Content-Disposition` attachment with `filename(...)`; errors: 401/403 not admin, 404 no talent or no CV, 502 (the existing `LlmNotConfigured` handler, by ruling, not a `TeamBuilderOff`-style 503) when `CvLlmDep is None` and no reusable body exists, 422 `AnonymousCvFailed`, the seam's `LlmUnavailable` as the card route answers it. On 200, one `AdminAction` `anon_cv_downloaded` on the freelancer with `{"riusato": bool}`, actor the admin.
 
 Note: with `CvLlmDep is None` a stored, current body is still served (pass `llm=None` to the writer; it raises only when a call is needed).
 
 - [ ] **Step 1: Write the failing tests** (dependency overrides: `get_cv_llm` → `RecordingCall`, `get_cv_renderer` → `FakeCvRenderer`):
   - `test_requires_an_admin` (anonymous 401, member 403).
   - `test_no_cv_is_404_with_the_sentence`.
-  - `test_task_off_is_503` (override returns `None`, no stored body).
+  - `test_task_off_is_502_with_the_sentence` (override returns `None`, no stored body; 502 by ruling).
   - `test_download_answers_the_pdf_and_records_it`: 200, `application/pdf`, filename `rebase-cv-…-<ref>.pdf`, `FakeCvRenderer` got `CvHead(ref=str(id)[-8:], …)` with the card's seniority and the admin's `anni_admin` when set; the audit trail has `anon_cv_downloaded` `{"riusato": false}` by this admin.
   - `test_second_download_reuses` → `{"riusato": true}`, one LLM request in total; served even with the task off.
   - `test_guard_failure_is_422_with_the_sentence` and no audit entry.

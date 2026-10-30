@@ -164,7 +164,8 @@ Spec: `docs/superpowers/specs/2026-10-30-anonymous-cv-pdf-design.md`.
   card's calls do since REB-861), so `ai_usage` names the person.
 - **The table.** `anonymous_cvs` (`AnonymousCvRow`) keeps the last body per freelancer, keyed
   by the SHA-256 of the CV file and `CV_PROMPT_VERSION`; it goes with the person. **Only
-  `AnonymousCvWriter` and the clear/merge paths touch it.** The card, the cloud, the team
+  `AnonymousCvWriter` and `clear_cv` touch it; the merge leaves it in place** (`LEFT_IN_PLACE`:
+  a body is served only for the exact CV bytes it was written from). The card, the cloud, the team
   builder, the member area, the MCP and the lists never read it: the body is an
   admin-requested file, not profile data.
 - **The route.** `POST /api/hub/freelancers/{id}/cv-anonimo` (`routers/admin.py`, a plain

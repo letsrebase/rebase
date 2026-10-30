@@ -239,10 +239,13 @@ The filename is `rebase-cv-<titolo as an ASCII slug>-<ref>.pdf` (through
 ## API and page
 
 - `POST /api/hub/freelancers/{id}/cv-anonimo` (admin only; POST because it may call a
-  model and spend): answers the PDF as an attachment. It may take as long as a «Rigenera
-  scheda». Errors as sentences, in the admin API's own shapes: no CV (404 with «Nessun CV
-  caricato»), the task off or no key (503, as `TeamBuilderOff`), a writing failure (422
-  with the failure sentence), cap reached (the seam's error, as the card route answers it).
+  model and spend): answers the PDF as an attachment. A first press waits on the model, up
+  to two calls of 150 seconds, and the print, so the host vhost gives the route 330 seconds.
+  Errors as sentences, in the admin API's own shapes: no CV (404 with «Nessun CV
+  caricato»), the task off or no key with nothing kept to serve (502, the existing handler
+  of the seam's `LlmNotConfigured`, by the controller's ruling: one place maps the seam's
+  refusals), a writing failure (422 with the failure sentence), cap reached (the seam's
+  error, as the card route answers it), the print failing (503).
 - Each successful download writes an `AdminAction` on the freelancer,
   `anon_cv_downloaded` (added to `ADMIN_ACTION_KINDS`; no `CHECK` holds that list),
   with `{"riusato": bool}`: a CV that leaves the hub for a
