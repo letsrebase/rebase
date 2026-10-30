@@ -455,7 +455,7 @@ def test_read_lists_the_seeded_providers_tasks_and_known_models(
 ) -> None:
     config = _service(hub_session).read()
     assert [p.provider for p in config.providers] == ["anthropic", "openai", "google"]
-    assert [t.task for t in config.tasks] == ["card", "team_proposal"]
+    assert [t.task for t in config.tasks] == ["card", "team_proposal", "cv_anonimo"]
     assert config.known_models["anthropic"][0] == "claude-opus-5"
     assert set(config.known_models) == {"anthropic", "openai", "google"}
     assert config.prices == []

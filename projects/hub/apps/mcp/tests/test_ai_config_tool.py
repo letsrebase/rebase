@@ -67,7 +67,7 @@ async def test_list_ai_config_has_no_key_and_no_ciphertext(
     assert body["secrets_key_present"] is True
     anthropic = next(p for p in body["providers"] if p["provider"] == "anthropic")
     assert anthropic["key_hint"] == "configurata, finisce con …abcd"
-    assert {t["task"] for t in body["tasks"]} == {"card", "team_proposal"}
+    assert {t["task"] for t in body["tasks"]} == {"card", "team_proposal", "cv_anonimo"}
 
 
 async def test_no_tool_writes_a_key(factory: sessionmaker[Session]) -> None:

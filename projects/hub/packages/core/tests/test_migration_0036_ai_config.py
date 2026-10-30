@@ -129,6 +129,8 @@ def test_upgrade_creates_four_tables_and_columns(hub_postgres: Any) -> None:
                 )
             ).all() == [
                 ("card", "anthropic", "claude-opus-5", "medium", 2000, None, True),
+                # 0044's row, copied from the card's
+                ("cv_anonimo", "anthropic", "claude-opus-5", "medium", 16000, None, True),
                 ("team_proposal", "anthropic", "claude-opus-5", "medium", 8000, None, True),
             ]
             assert connection.execute(text("SELECT count(*) FROM ai_prices")).scalar_one() == 0
