@@ -1,6 +1,6 @@
 # Company requests into the rebase CRM
 
-Status: draft, waiting for Lorenzo's approval. Card: REB-865. Project: «File every
+Status: approved by Lorenzo on 2026-10-30. Card: REB-865. Project: «File every
 completed hub company request in the rebase CRM» (P-REB-71).
 
 ## Why
@@ -255,12 +255,10 @@ already has its default. The CRM ships first (milestone 2), then the hub.
 - Creating attività or reminders for the new deal; the CRM's own rules can do that.
 - Choosing the deal's owner automatically.
 - Filing team requests that never become a `companies` row.
-
-## Open question for Lorenzo
-
-The requests already on the hub: file none (the default here, since nobody asked), or file
-those still `nuovo`, `contattato` or `in_corso` once, with a `rebase crm-backfill --dry-run`
-first?
+- Filing the requests already on the hub. Lorenzo, 2026-10-30: they are not carried over;
+  rows written before this ships keep a null `crm_stato`, the sweep never picks them up,
+  and one reaches the CRM only when an admin presses «Riprova» or «Collega a un altro
+  deal» on it.
 
 ## Cards
 
