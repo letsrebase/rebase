@@ -42,3 +42,11 @@ export const REGENERATION_REASON_LABELS: Record<string, string> = {
 export function regenerationReason(reason: string | undefined): string {
   return reason ? (REGENERATION_REASON_LABELS[reason] ?? reason) : 'motivo non registrato'
 }
+
+/** Why a regeneration ended early (`cards_regenerated.stop_reason`, `cards.STOP_REASONS`). */
+export const STOP_REASON_LABELS: Record<string, string> = {
+  unavailable: 'modello non disponibile',
+  cap_reached: 'tetto giornaliero raggiunto',
+  not_configured: 'compito spento',
+  error: 'errore',
+}

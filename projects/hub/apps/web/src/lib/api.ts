@@ -1914,6 +1914,8 @@ export interface AiAuditAction {
     unpriced?: number
     failures?: { freelancer_id: string; reason: string }[]
     stopped?: boolean
+    /** Why it stopped, when known (`unavailable`, `cap_reached`, `not_configured`, `error`). */
+    stop_reason?: string
     left?: number
     batch_status?: 'applied' | 'failed'
   }

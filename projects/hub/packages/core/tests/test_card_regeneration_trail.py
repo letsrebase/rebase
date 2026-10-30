@@ -30,6 +30,7 @@ from rebase_core.card_batch import ACTIVE_GIVEN_UP_AFTER, BatchPolled, CardBatch
 from rebase_core.cards import (
     PROMPT_VERSION,
     REGENERATION_REASONS,
+    STOP_REASONS,
     CardWriter,
     Fonte,
     Regeneration,
@@ -37,7 +38,7 @@ from rebase_core.cards import (
 from rebase_core.db import session_factory
 from rebase_core.errors import LlmCapReached, LlmUnavailable
 from rebase_core.llm import BatchHandle, BatchOutcome, LlmRequest, LlmResponse, RecordingBatch
-from rebase_core.models import AdminAction, AiUsage, CardBatch
+from rebase_core.models import AdminAction, AiUsage, CardBatch, CardBatchItem
 from rebase_core.team_schemas import CardsRefreshed
 
 NOW = datetime(2026, 10, 28, 9, 0, tzinfo=UTC)
@@ -175,7 +176,7 @@ def test_a_start_is_signed_and_sourced_and_its_end_counts_the_cards_and_the_cost
     )
     assert p["failures"] == [{"freelancer_id": str(people[0]), "reason": "refusal"}]
     assert _cost(p) == 4 * CALL_COST
-    assert "stopped" not in p and "batch_id" not in p
+    assert "stopped" not in p and "stop_reason" not in p and "batch_id" not in p
     _no_personal_data(start, end)
 
 
@@ -219,7 +220,23 @@ def test_an_outage_ends_the_regeneration_stopped_with_the_people_never_started(
     p = _one(clean_hub, "cards_regenerated").payload
     assert (p["written"], p["failed"], p["skipped"], p["left"], p["stopped"]) == (0, 1, 0, 4, True)
     assert [f["reason"] for f in p["failures"]] == ["unavailable"]
+    assert p["stop_reason"] == "unavailable"
     assert len(_actions(clean_hub, "card_regenerated")) == 1
+
+
+def test_a_spent_cap_ends_the_regeneration_stopped_for_that_reason(clean_hub: Session) -> None:
+    _stale(clean_hub, 3)
+
+    class Spent:
+        def complete(self, request: object) -> object:
+            raise LlmCapReached("Tetto giornaliero raggiunto")
+
+    CardWriter(clean_hub, Spent(), now=lambda: NOW).regenerate_stale(  # type: ignore[arg-type]
+        _an_admin(clean_hub), 50, fonte="web"
+    )
+
+    p = _one(clean_hub, "cards_regenerated").payload
+    assert (p["stopped"], p["stop_reason"], p["left"]) == (True, "cap_reached", 2)
 
 
 def test_a_card_that_is_no_longer_stale_when_its_turn_comes_is_skipped_not_recorded(
@@ -474,6 +491,7 @@ def test_a_refused_submission_ends_the_regeneration_failed(clean_hub: Session) -
     assert start.payload["batch_id"] == str(batch.id)
     p = _one(clean_hub, "cards_regenerated").payload
     assert (p["batch_status"], p["stopped"], p["written"], p["errored"]) == ("failed", True, 0, 3)
+    assert p["stop_reason"] == "cap_reached"
     assert {f["reason"] for f in p["failures"]} == {"not_sent"}
     assert {f["freelancer_id"] for f in p["failures"]} == {str(x) for x in people}
     for person in people:
@@ -582,6 +600,7 @@ def test_a_database_error_mid_run_still_records_the_end_and_raises_the_original(
 
     p = _one(clean_hub, "cards_regenerated").payload
     assert (p["stopped"], p["left"], p["written"], p["skipped"]) == (True, 3, 0, 0)
+    assert p["stop_reason"] == "error"
     assert p["start_action_id"] == str(_one(clean_hub, "cards_regenerate").id)
     assert len(people) == 3
 
@@ -594,3 +613,69 @@ def test_every_reason_the_backend_can_record_has_a_label_in_the_web() -> None:
 
     assert set(REGENERATION_REASONS) <= labelled
     assert labelled <= set(REGENERATION_REASONS)
+    stops = re.search(r"STOP_REASON_LABELS[^{]*\{(.*?)\n\}", notes.read_text(), re.DOTALL)
+    assert stops is not None
+    assert set(re.findall(r"^\s+(\w+):", stops.group(1), re.MULTILINE)) == set(STOP_REASONS)
+
+
+def _failing_settle(monkeypatch: pytest.MonkeyPatch, person: UUID, times: int) -> list[str]:
+    """`CardBatches._settle` that fails `times` times for the person's `written` settle, the
+    commit after a card was saved and entered; the calls it saw are kept."""
+    real = CardBatches._settle
+    seen: list[str] = []
+
+    def settle(session: Session, item: Any, status: str) -> str:
+        if item.freelancer_id == person and status == "written" and len(seen) < times:
+            seen.append(status)
+            raise RuntimeError("the settle commit failed")
+        return real(session, item, status)
+
+    monkeypatch.setattr(CardBatches, "_settle", staticmethod(settle))
+    return seen
+
+
+def test_a_settle_that_fails_after_the_card_was_saved_enters_it_once_and_settles_it_written(
+    clean_hub: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    people = _stale(clean_hub, 3)
+    admin = _an_admin(clean_hub)
+    call = PricedBatch(_outcomes(people))
+    _start(clean_hub, call)
+    seen = _failing_settle(monkeypatch, people[0], times=1)
+
+    polled = _poll(clean_hub, call)
+
+    assert seen == ["written"]
+    assert polled == BatchPolled("applied", written=3, failed=0)
+    entries = _actions(clean_hub, "card_regenerated", people[0])
+    assert [(e.payload["esito"], e.admin_id) for e in entries] == [("scritta", admin)]
+    assert {i.status for i in clean_hub.scalars(select(CardBatchItem))} == {"written"}
+    end = _one(clean_hub, "cards_regenerated").payload
+    assert (end["written"], end["errored"], end["failed"]) == (3, 0, 0)
+
+
+def test_an_item_that_cannot_be_settled_is_settled_from_its_entry_by_the_next_pass(
+    clean_hub: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The settle fails again in the handler: the item waits, and the next pass, with no model
+    at all, settles it from the entry already recorded instead of saving and entering it again."""
+    people = _stale(clean_hub, 3)
+    call = PricedBatch(_outcomes(people))
+    _start(clean_hub, call)
+    seen = _failing_settle(monkeypatch, people[0], times=2)
+
+    first = _poll(clean_hub, call)
+
+    assert seen == ["written", "written"]
+    assert first == BatchPolled("applying", written=2, failed=0, left=1)
+    assert _actions(clean_hub, "cards_regenerated") == []
+
+    second = _poll(clean_hub, call)
+
+    assert second == BatchPolled("applied", written=1, failed=0)
+    assert [e.payload["esito"] for e in _actions(clean_hub, "card_regenerated", people[0])] == [
+        "scritta"
+    ]
+    assert {i.status for i in clean_hub.scalars(select(CardBatchItem))} == {"written"}
+    end = _one(clean_hub, "cards_regenerated").payload
+    assert (end["written"], end["errored"]) == (3, 0)

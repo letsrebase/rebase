@@ -245,6 +245,10 @@ def failure_sentence(kind: Failure) -> str:
     return _FAILURES[kind]
 
 
+# Why a regeneration can stop early (`cards_regenerated.stop_reason`): the provider did not
+# answer, the daily cap was reached, no model is configured, or something else raised.
+STOP_REASONS = ("unavailable", "cap_reached", "not_configured", "error")
+
 # Every `reason` a `card_regenerated` entry can carry: the web's «Registro» must have a word for
 # each (`REGENERATION_REASON_LABELS`, held to this list by `test_card_regeneration_trail`).
 REGENERATION_REASONS = (
@@ -1205,6 +1209,7 @@ class CardWriter:
                     start_action_id=start,
                     queued=len(ids),
                     stopped=True,
+                    stop_reason="error",
                     left=left,
                 )
                 raise
@@ -1340,6 +1345,7 @@ class CardWriter:
         batch_status: str | None = None,
         stopped: bool = False,
         left: int = 0,
+        stop_reason: str | None = None,
     ) -> None:
         """The end of a bulk regeneration, on `ai_config`, signed by the admin who started
         it (`cards_regenerated`): what became of the `queued` cards, counted from each card's
@@ -1348,7 +1354,8 @@ class CardWriter:
         provider, or one that could not be applied), `skipped` (no longer stale, or a
         person or CV gone), the cost of the calls (`cost_eur`, the sum of the priced ones,
         `unpriced` how many had no price) and `failures`, each person's id and the reason, with
-        no name and no card text. `stopped` says the pool met an outage or a spent cap, `left`
+        no name and no card text. `stopped` says the run ended early, `stop_reason` why when it
+        is one of `STOP_REASONS`, `left`
         how many people it never started. Written once: when the pool returns, when a batch is
         applied, or when one is given up."""
         cards: dict[UUID, dict[str, Any]] = {}
@@ -1401,6 +1408,14 @@ class CardWriter:
         if stopped:
             details["stopped"] = True
             details["left"] = left
+            # Why, when it is known: the call that stopped the pool says so in its own entry
+            # (an outage, the daily cap, no model), a batch that was refused in the exception
+            # it met, and anything else that ended the run early is `error`.
+            cause = stop_reason or next(
+                (f["reason"] for f in failures if f["reason"] in STOP_REASONS), None
+            )
+            if cause is not None:
+                details["stop_reason"] = cause
         AdminActionService(self.session).record(
             AI_CONFIG_ENTITY, AI_CONFIG_ENTITY_ID, CARDS_REGENERATED, admin_id, details
         )

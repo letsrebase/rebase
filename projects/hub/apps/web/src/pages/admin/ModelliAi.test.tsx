@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Outlet, RouterProvider, createMemoryHistory, createRootRoute, createRoute, createRouter } from '@tanstack/react-router'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SidebarNav } from '@/components/SidebarNav'
@@ -358,5 +358,52 @@ describe('the Modelli AI page (REB-833)', () => {
     expect(entries[2]).not.toHaveTextContent('Batch API')
     expect(entries[3]).toHaveTextContent('Compito «Scheda anonima» modificato: modello, tetto giornaliero')
     expect(entries[4]).toHaveTextContent('Fonte «GitHub» accesa')
+  })
+
+  it('says a regeneration stopped, why when it is known, and how many cards were never started (REB-861)', async () => {
+    const ended = (id: string, extra: object) => ({
+      id,
+      kind: 'cards_regenerated',
+      admin_nome: 'Ivan Sala',
+      payload: { fonte: 'web', written: 1, failed: 0, skipped: 0, failures: [], cost_eur: '0.01', stopped: true, ...extra },
+      created_at: '2026-10-30T10:00:00Z',
+    })
+    mount(CONFIG, {
+      '/api/hub/admin/ai/audit': () =>
+        answer(200, [ended('s2', { left: 4, stop_reason: 'cap_reached' }), ended('s1', { left: 0 })]),
+    })
+    const section = within(await screen.findByRole('region', { name: 'Registro' }))
+    const [capped, unknown] = await section.findAllByRole('listitem')
+    expect(capped).toHaveTextContent('interrotta: tetto giornaliero raggiunto, 4 non avviate')
+    expect(unknown).toHaveTextContent('interrotta, costo')
+    expect(unknown).not.toHaveTextContent('modello non disponibile')
+    expect(unknown).not.toHaveTextContent('non avviat')
+  })
+
+  it('looks for the start of a regeneration it just asked for until it is signed, however long the cards take to prepare (REB-861)', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      let audits = 0
+      mount(CONFIG, {
+        '/api/hub/admin/ai/cards/stale': () => answer(200, STALE),
+        '/api/hub/admin/ai/cards/regenerate-stale': () => answer(200, { queued: 6 }),
+        '/api/hub/admin/ai/audit': () => {
+          audits += 1
+          // The start is written after the cards are prepared: not there for the first reads.
+          return answer(200, audits > 4 ? [{ ...AUDIT[1], id: 'new', created_at: new Date().toISOString() }] : [])
+        },
+      })
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+      const stale = within(await screen.findByRole('region', { name: 'Schede da aggiornare' }))
+      await user.click(await stale.findByRole('button', { name: 'Avvia rigenerazione' }))
+      const registro = within(screen.getByRole('region', { name: 'Registro' }))
+      expect(registro.queryByText(/Rigenerazione avviata/)).toBeNull()
+      for (let waited = 0; waited < 30_000 && !registro.queryByText(/Rigenerazione avviata/); waited += 3_000) {
+        await act(() => vi.advanceTimersByTimeAsync(3_000))
+      }
+      expect(await registro.findByText(/Rigenerazione avviata: 6 schede/)).toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

@@ -41,7 +41,9 @@ from rebase_core.ai_schemas import CardBatchRead
 from rebase_core.audit import utcnow
 from rebase_core.card_draft import CardDraft
 from rebase_core.cards import (
+    CARD_REGENERATED,
     CARDS_REGENERATE,
+    NO_ANSWER_REASONS,
     PROMPT_VERSION,
     CardWriter,
     Composed,
@@ -49,7 +51,7 @@ from rebase_core.cards import (
     Outcome,
     Regeneration,
 )
-from rebase_core.errors import LlmUnavailable
+from rebase_core.errors import LlmCapReached, LlmNotConfigured, LlmUnavailable
 from rebase_core.llm import BatchCall, BatchHandle, BatchOutcome, LlmRequest
 from rebase_core.models import (
     CARD_BATCH_ACTIVE,
@@ -92,6 +94,15 @@ class BatchPolled(NamedTuple):
     written: int = 0
     failed: int = 0
     left: int = 0
+
+
+def _stop_reason(error: LlmUnavailable) -> str:
+    """Why a submission was refused, as `cards.STOP_REASONS` names it."""
+    if isinstance(error, LlmCapReached):
+        return "cap_reached"
+    if isinstance(error, LlmNotConfigured):
+        return "not_configured"
+    return "unavailable"
 
 
 class CardBatches:
@@ -201,6 +212,7 @@ class CardBatches:
                 batch_id=batch.id,
                 batch_status="failed",
                 stopped=True,
+                stop_reason=_stop_reason(error),
             )
             return CardsRefreshed(written=0, failed=0, stopped=True)
         batch.provider_batch_id = handle.id
@@ -383,7 +395,9 @@ class CardBatches:
                 except Exception as error:
                     # One card that cannot be applied must not hold the rest, nor the batch,
                     # for ever: it is settled as errored (its card stays stale for the next
-                    # start), and the log names the class, never the message.
+                    # start), and the log names the class, never the message. A card whose
+                    # outcome was already committed and entered (the settle failed) is settled
+                    # with that outcome and gets no second entry.
                     session.rollback()
                     logger.error(
                         "card batch %s: card %s not applied: %s",
@@ -391,8 +405,16 @@ class CardBatches:
                         item.freelancer_id,
                         type(error).__name__,
                     )
-                    writer.card_done(item.freelancer_id, "errored")
-                    outcome = self._settle(session, item, "errored")
+                    status = self._recorded_status(session, run, item.freelancer_id)
+                    if status is None:
+                        writer.card_done(item.freelancer_id, "errored")
+                        status = "errored"
+                    try:
+                        outcome = self._settle(session, item, status)
+                    except Exception:
+                        # Left pending: the next pass settles it from its entry.
+                        session.rollback()
+                        outcome = "pending"
                 # An item left `unavailable` (a rewrite the model did not answer) waits for
                 # the next pass; the others, which need no model, are applied all the same.
                 if outcome == "written":
@@ -425,6 +447,9 @@ class CardBatches:
             if not claimed:
                 return "pending"
             writer.begin_card(freelancer_id)
+            earlier = self._recorded_status(session, writer.run, freelancer_id)
+            if earlier is not None:
+                return self._settle(session, item, earlier)
             answer = answer or BatchOutcome("expired")
             response = answer.response if answer.status == "succeeded" else None
             if response is not None and not item.usage_recorded:
@@ -476,9 +501,45 @@ class CardBatches:
 
     @staticmethod
     def _settle(session: Session, item: CardBatchItem, status: str) -> str:
-        item.status = status
-        session.commit()
+        """Marks the item settled. A commit that fails is tried once more on a clean
+        transaction; a second failure is raised."""
+        try:
+            item.status = status
+            session.commit()
+        except Exception:
+            session.rollback()
+            item.status = status
+            session.commit()
         return status
+
+    @staticmethod
+    def _recorded_status(
+        session: Session, run: Regeneration | None, freelancer_id: UUID
+    ) -> str | None:
+        """The item status a card's own entry of this regeneration (`card_regenerated`) says it
+        reached, or `None` when it has none. A card's save and its entry are committed before
+        the item is settled, so a settle that failed leaves the outcome recorded and the item
+        pending: the card is never written, or entered, a second time."""
+        if run is None or run.start_action_id is None:
+            return None
+        payload = session.scalar(
+            select(AdminAction.payload)
+            .where(
+                AdminAction.entity_id == freelancer_id,
+                AdminAction.kind == CARD_REGENERATED,
+                AdminAction.payload["start_action_id"].astext == str(run.start_action_id),
+            )
+            .order_by(AdminAction.created_at.desc(), AdminAction.id.desc())
+            .limit(1)
+        )
+        if payload is None:
+            return None
+        if payload.get("esito") == "scritta":
+            return "written"
+        reason = payload.get("reason")
+        if reason in ("superseded", "unchanged"):
+            return str(reason)
+        return "errored" if reason in NO_ANSWER_REASONS else "failed"
 
     @staticmethod
     def _left(session: Session, batch: CardBatch) -> int:

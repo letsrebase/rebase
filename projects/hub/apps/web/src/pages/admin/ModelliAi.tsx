@@ -19,7 +19,7 @@ import {
   type AiTask,
 } from '@/lib/api'
 import { formatDateTime, formatEuro, formatSmallEuro } from '@/lib/format'
-import { noteSourceLabel, regenerationReason } from '@/lib/notes'
+import { noteSourceLabel, regenerationReason, STOP_REASON_LABELS } from '@/lib/notes'
 import { Empty, Header } from './lists'
 
 const KEY = ['ai-config'] as const
@@ -34,6 +34,13 @@ const OPEN_WATCH_MS = 3 * 24 * 60 * 60 * 1000
 const BATCH_REFRESH_MS = 30_000
 const START_REFRESH_MS = 3_000
 const START_WATCH_MS = 60_000
+// How long the «Registro» looks for the start of a regeneration this page asked for.
+const START_APPEAR_MS = 120_000
+/** A start this page asked for: when, and the newest start the trail had then. */
+interface StartWatch {
+  at: number
+  baseline: string | null
+}
 const EFFORTS = ['low', 'medium', 'high'] as const
 const EFFORT_LABELS: Record<string, string> = { low: 'Basso', medium: 'Medio', high: 'Alto' }
 // A `Select` needs a non-empty string; «no thinking» is the one nullable effort.
@@ -67,6 +74,8 @@ export function AdminModelliAi() {
 }
 
 function Sections({ config }: { config: AiConfig }) {
+  const client = useQueryClient()
+  const [watch, setWatch] = useState<StartWatch | null>(null)
   const locked = !config.secrets_key_present
   return (
     <>
@@ -105,7 +114,9 @@ function Sections({ config }: { config: AiConfig }) {
         <h2 id="ai-aggiornare" className="px-6 pt-6 text-lg font-semibold">
           Schede da aggiornare
         </h2>
-        <StaleCards />
+        <StaleCards
+          onStarted={() => setWatch({ at: Date.now(), baseline: newestStart(client.getQueryData<AiAuditAction[]>(AUDIT_KEY)) })}
+        />
       </section>
       <section aria-labelledby="ai-compiti" className="border-b">
         <h2 id="ai-compiti" className="px-6 pt-6 text-lg font-semibold">
@@ -137,7 +148,7 @@ function Sections({ config }: { config: AiConfig }) {
         <p className="px-6 pb-3 pt-1 text-sm text-muted-foreground">
           Chi ha cambiato la configurazione e ogni rigenerazione delle schede, dall’avvio alla fine, con il costo.
         </p>
-        <Registro />
+        <Registro watch={watch} />
       </section>
     </>
   )
@@ -195,15 +206,15 @@ const REASON_LABELS: Record<string, string> = {
   source: 'per fonti cambiate',
 }
 
-function StaleCards() {
+function StaleCards({ onStarted }: { onStarted: () => void }) {
   const client = useQueryClient()
   const [limit, setLimit] = useState('5')
   const start = useMutation({
     mutationFn: (n: number) => admin.aiRegenerateStale(n),
-    onSuccess: () => {
-      // The start is signed after the response, as the batch's row is: read the trail again
-      // once it has had a moment to land.
-      window.setTimeout(() => void client.invalidateQueries({ queryKey: AUDIT_KEY }), START_REFRESH_MS)
+    onSuccess: (started) => {
+      // The start is signed after the response: the «Registro» looks for it (`StartWatch`).
+      if (started.queued > 0) onStarted()
+      void client.invalidateQueries({ queryKey: AUDIT_KEY })
       return client.invalidateQueries({ queryKey: STALE_KEY })
     },
   })
@@ -670,12 +681,27 @@ function Prices({ config }: { config: AiConfig }) {
   )
 }
 
-function Registro() {
+/** The newest start in the trail (it is newest first), or `null`. */
+function newestStart(trail: AiAuditAction[] | undefined): string | null {
+  return trail?.find((entry) => entry.kind === 'cards_regenerate')?.id ?? null
+}
+
+function Registro({ watch }: { watch: StartWatch | null }) {
   const trail = useQuery({
     queryKey: AUDIT_KEY,
     queryFn: () => admin.aiAudit(),
-    // A regeneration started after REB-861 that has no end yet is on: look again until it ends.
-    refetchInterval: (query) => (query.state.data?.some((entry) => isOpen(entry, query.state.data ?? [])) ? OPEN_REFRESH_MS : false),
+    refetchInterval: (query) => {
+      const data = query.state.data ?? []
+      // A regeneration started after REB-861 that has no end yet is on: look again until it ends.
+      if (data.some((entry) => isOpen(entry, data))) return OPEN_REFRESH_MS
+      // A start this page just asked for is signed in the background, after the cards are prepared
+      // (a batch prepares each one first): look until it is there, for a while, then the line above
+      // takes over.
+      if (watch && Date.now() - watch.at < START_APPEAR_MS && newestStart(data) === watch.baseline) {
+        return START_REFRESH_MS
+      }
+      return false
+    },
   })
   if (trail.isError) {
     return (
@@ -771,7 +797,11 @@ function registroLabel(entry: AiAuditAction): string {
         `${plural(failures.length, 'non riuscita', 'non riuscite')}${why ? ` (${why})` : ''}`,
       ]
       if (p.skipped) parts.push(plural(p.skipped, 'saltata', 'saltate'))
-      if (p.stopped) parts.push('fermata: modello non disponibile')
+      if (p.stopped) {
+        const cause = p.stop_reason ? (STOP_REASON_LABELS[p.stop_reason] ?? p.stop_reason) : null
+        parts.push(`interrotta${cause ? `: ${cause}` : ''}`)
+        if (p.left) parts.push(plural(p.left, 'non avviata', 'non avviate'))
+      }
       if (p.batch_status === 'failed') parts.push('batch non applicato')
       if (p.cost_eur !== undefined) {
         parts.push(`costo ${formatSmallEuro(p.cost_eur)}${p.unpriced ? ` (${p.unpriced} senza prezzo)` : ''}`)
