@@ -22,10 +22,11 @@ from fakes_cards import MODEL, card_response
 from sqlalchemy import Engine, select, text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
-from test_card_batch import GENDERED, _an_admin, _outcomes, _poll, _stale, _start
+from test_card_batch import GENDERED, _an_admin, _outcomes, _poll, _stale, _start, _writer
 from test_card_staleness import _apply, _cards
 
 from rebase_core.ai_config import AI_CONFIG_ENTITY, AI_CONFIG_ENTITY_ID
+from rebase_core.audit import AdminActionService
 from rebase_core.card_batch import ACTIVE_GIVEN_UP_AFTER, BatchPolled, CardBatches
 from rebase_core.cards import (
     PROMPT_VERSION,
@@ -36,7 +37,7 @@ from rebase_core.cards import (
     Regeneration,
 )
 from rebase_core.db import session_factory
-from rebase_core.errors import LlmCapReached, LlmUnavailable
+from rebase_core.errors import LlmCapReached, LlmUnavailable, NotFound
 from rebase_core.llm import BatchHandle, BatchOutcome, LlmRequest, LlmResponse, RecordingBatch
 from rebase_core.models import AdminAction, AiUsage, CardBatch, CardBatchItem
 from rebase_core.team_schemas import CardsRefreshed
@@ -679,3 +680,112 @@ def test_an_item_that_cannot_be_settled_is_settled_from_its_entry_by_the_next_pa
     assert {i.status for i in clean_hub.scalars(select(CardBatchItem))} == {"written"}
     end = _one(clean_hub, "cards_regenerated").payload
     assert (end["written"], end["errored"]) == (3, 0)
+
+
+def _lose_the_start(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The trail is best-effort: a start whose write failed answers no id."""
+    real = AdminActionService.record
+
+    def record(
+        self: AdminActionService,
+        entity_type: str,
+        entity_id: UUID,
+        kind: str,
+        admin_id: UUID,
+        payload: dict[str, Any] | None = None,
+    ) -> UUID | None:
+        if kind == "cards_regenerate":
+            return None
+        return real(self, entity_type, entity_id, kind, admin_id, payload)
+
+    monkeypatch.setattr(AdminActionService, "record", record)
+
+
+def test_a_lost_start_makes_the_end_say_so_and_keep_only_what_the_pool_counted(
+    clean_hub: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    people = _stale(clean_hub, 3)
+    refused = {people[0]: card_response(stop_reason="refusal")}
+    llm = PricedCall(
+        _engine(clean_hub),
+        lambda request: refused.get(request.freelancer_id, card_response()),  # type: ignore[arg-type]
+    )
+    _lose_the_start(monkeypatch)
+
+    CardWriter(clean_hub, llm, now=lambda: NOW).regenerate_stale(
+        _an_admin(clean_hub), 50, fonte="web"
+    )
+
+    assert _actions(clean_hub, "cards_regenerate") == []
+    p = _one(clean_hub, "cards_regenerated").payload
+    assert p["start_missing"] is True and p["start_action_id"] is None
+    # What the pool counted is kept; everything it cannot know is null, never zero.
+    assert (p["written"], p["failed"]) == (2, 1)
+    assert [p[key] for key in ("superseded", "skipped", "errored", "cost_eur", "failures")] == [
+        None
+    ] * 5
+
+
+def test_a_lost_start_on_a_refused_batch_keeps_what_is_known(
+    clean_hub: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _stale(clean_hub, 3)
+    _lose_the_start(monkeypatch)
+
+    _start(clean_hub, PricedBatch(refuse=LlmCapReached("Tetto giornaliero raggiunto")))
+
+    p = _one(clean_hub, "cards_regenerated").payload
+    assert p["start_missing"] is True and p["errored"] == 3 and p["written"] is None
+    assert (p["stopped"], p["stop_reason"], p["cost_eur"]) == (True, "cap_reached", None)
+
+
+def test_a_person_who_is_gone_when_the_batch_is_prepared_is_skipped_and_the_rest_is_sent(
+    clean_hub: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    people = _stale(clean_hub, 3)
+    real = CardWriter.prepare
+
+    def prepare(self: CardWriter, freelancer_id: UUID, *args: Any, **kwargs: Any) -> Any:
+        if freelancer_id == people[0]:
+            raise NotFound("freelancer", freelancer_id)
+        return real(self, freelancer_id, *args, **kwargs)
+
+    monkeypatch.setattr(CardWriter, "prepare", prepare)
+    call = PricedBatch(_outcomes(people))
+
+    _start(clean_hub, call)
+
+    assert sorted(call.submitted) == sorted(str(p) for p in people[1:])
+    assert _one(clean_hub, "cards_regenerate").payload["queued"] == 3
+    assert _poll(clean_hub, call) == BatchPolled("applied", written=2, failed=0)
+    p = _one(clean_hub, "cards_regenerated").payload
+    assert (p["written"], p["skipped"], p["errored"], p["failed"]) == (2, 1, 0, 0)
+    assert _actions(clean_hub, "card_regenerated", people[0]) == []
+
+
+def test_a_batch_that_cannot_be_prepared_still_leaves_its_start_and_its_end(
+    clean_hub: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The route had already answered that cards were queued. A database error aborts the
+    transaction: the session is rolled back, the start and the end are recorded, nothing is sent
+    and the original error is raised."""
+    _stale(clean_hub, 3)
+    admin = _an_admin(clean_hub)
+
+    def prepare(self: CardWriter, freelancer_id: UUID, *args: Any, **kwargs: Any) -> Any:
+        self.session.execute(text("SELECT 1 / 0"))
+
+    monkeypatch.setattr(CardWriter, "prepare", prepare)
+    call = PricedBatch()
+
+    with pytest.raises(DBAPIError, match="division by zero"):
+        _start(clean_hub, call)
+
+    assert call.submissions == 0 and clean_hub.scalars(select(CardBatch)).all() == []
+    start = _one(clean_hub, "cards_regenerate")
+    assert start.admin_id == admin
+    assert start.payload == {"limit": 50, "queued": 3, "fonte": "web", "batch": False}
+    p = _one(clean_hub, "cards_regenerated").payload
+    assert (p["stopped"], p["stop_reason"], p["left"], p["written"]) == (True, "error", 3, 0)
+    assert p["start_action_id"] == str(start.id)
+    assert _writer(clean_hub, call).regeneration_running() is False

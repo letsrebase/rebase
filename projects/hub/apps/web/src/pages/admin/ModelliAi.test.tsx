@@ -449,4 +449,35 @@ describe('the Modelli AI page (REB-833)', () => {
       vi.useRealTimers()
     }
   })
+
+  it('says the outcome cannot be rebuilt when the start was lost, with what is known and no zeros (REB-861)', async () => {
+    const lost = (id: string, extra: object) => ({
+      id,
+      kind: 'cards_regenerated',
+      admin_nome: 'Ivan Sala',
+      payload: {
+        fonte: 'cli',
+        start_action_id: null,
+        start_missing: true,
+        written: null,
+        failed: null,
+        superseded: null,
+        skipped: null,
+        errored: null,
+        cost_eur: null,
+        failures: null,
+        ...extra,
+      },
+      created_at: '2026-10-30T10:00:00Z',
+    })
+    mount(CONFIG, {
+      '/api/hub/admin/ai/audit': () => answer(200, [lost('l2', { written: 2, failed: 1 }), lost('l1', {})]),
+    })
+    const section = within(await screen.findByRole('region', { name: 'Registro' }))
+    const [known, nothing] = await section.findAllByRole('listitem')
+    expect(known).toHaveTextContent('Rigenerazione conclusa: esito non ricostruibile (2 scritte, 1 non riuscita)')
+    expect(nothing).toHaveTextContent('Rigenerazione conclusa: esito non ricostruibile')
+    expect(nothing).not.toHaveTextContent('scritte')
+    expect(nothing).not.toHaveTextContent('costo')
+  })
 })

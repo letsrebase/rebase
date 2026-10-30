@@ -1904,15 +1904,18 @@ export interface AiAuditAction {
     fonte?: ActionSource
     /** A `cards_regenerated` entry's: the start it ends and what became of the cards. */
     start_action_id?: string | null
-    written?: number
-    failed?: number
-    superseded?: number
-    skipped?: number
-    errored?: number
+    /** The counts, the cost and the failures are `null` when the start's entry was lost
+     *  (`start_missing`) and the caller could not count them itself. */
+    written?: number | null
+    failed?: number | null
+    superseded?: number | null
+    skipped?: number | null
+    errored?: number | null
     /** The calls' cost in euros, as a decimal string. */
-    cost_eur?: string
+    cost_eur?: string | null
     unpriced?: number
-    failures?: { freelancer_id: string; reason: string }[]
+    failures?: { freelancer_id: string; reason: string }[] | null
+    start_missing?: boolean
     stopped?: boolean
     /** Why it stopped, when known (`unavailable`, `cap_reached`, `not_configured`, `error`). */
     stop_reason?: string

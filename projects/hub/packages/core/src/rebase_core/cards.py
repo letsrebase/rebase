@@ -53,7 +53,7 @@ import hashlib
 import logging
 import re
 import threading
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
@@ -248,6 +248,9 @@ def failure_sentence(kind: Failure) -> str:
 # Why a regeneration can stop early (`cards_regenerated.stop_reason`): the provider did not
 # answer, the daily cap was reached, no model is configured, or something else raised.
 STOP_REASONS = ("unavailable", "cap_reached", "not_configured", "error")
+
+# The counts of a regeneration's end (`cards_regenerated`), `null` when its start was lost.
+_RUN_COUNTS = ("written", "failed", "superseded", "skipped", "errored")
 
 # Every `reason` a `card_regenerated` entry can carry: the web's «Registro» must have a word for
 # each (`REGENERATION_REASON_LABELS`, held to this list by `test_card_regeneration_trail`).
@@ -1220,6 +1223,7 @@ class CardWriter:
                 queued=len(ids),
                 stopped=result.stopped,
                 left=sum(1 for outcome in outcomes.values() if outcome is None),
+                known={"written": result.written, "failed": result.failed},
             )
             return result
 
@@ -1346,6 +1350,7 @@ class CardWriter:
         stopped: bool = False,
         left: int = 0,
         stop_reason: str | None = None,
+        known: Mapping[str, int] | None = None,
     ) -> None:
         """The end of a bulk regeneration, on `ai_config`, signed by the admin who started
         it (`cards_regenerated`): what became of the `queued` cards, counted from each card's
@@ -1355,9 +1360,13 @@ class CardWriter:
         person or CV gone), the cost of the calls (`cost_eur`, the sum of the priced ones,
         `unpriced` how many had no price) and `failures`, each person's id and the reason, with
         no name and no card text. `stopped` says the run ended early, `stop_reason` why when it
-        is one of `STOP_REASONS`, `left`
-        how many people it never started. Written once: when the pool returns, when a batch is
-        applied, or when one is given up."""
+        is one of `STOP_REASONS`, `left` how many people it never started. Written once: when
+        the pool returns, when a batch is applied, or when one is given up.
+
+        With no `start_action_id` (the start's entry was lost, the trail being best-effort) no
+        card's entry can be found, so the counts and the cost are not known: they are `null`,
+        with `start_missing` true, except what the caller counted itself (`known`, by the names
+        of `_RUN_COUNTS`, such as the worker pool's written and failed)."""
         cards: dict[UUID, dict[str, Any]] = {}
         if start_action_id is not None:
             rows = self.session.execute(
@@ -1400,6 +1409,17 @@ class CardWriter:
             "cost_eur": cost,
             "failures": failures,
         }
+        if start_action_id is None:
+            # The start's entry was lost (the trail is best-effort), so no card's entry points at
+            # it and nothing above is known. Say so rather than report zeros: only what the
+            # caller counted itself is kept, the rest is `null`.
+            counted = known or {}
+            details.update(
+                {key: counted.get(key) for key in _RUN_COUNTS},
+                cost_eur=None,
+                failures=None,
+                start_missing=True,
+            )
         if batch_id is not None:
             details["batch_id"] = batch_id
             details["batch_status"] = batch_status

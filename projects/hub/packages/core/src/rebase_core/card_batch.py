@@ -51,7 +51,7 @@ from rebase_core.cards import (
     Outcome,
     Regeneration,
 )
-from rebase_core.errors import LlmCapReached, LlmNotConfigured, LlmUnavailable
+from rebase_core.errors import LlmCapReached, LlmNotConfigured, LlmUnavailable, NotFound
 from rebase_core.llm import BatchCall, BatchHandle, BatchOutcome, LlmRequest
 from rebase_core.models import (
     CARD_BATCH_ACTIVE,
@@ -144,40 +144,63 @@ class CardBatches:
         requests: dict[str, LlmRequest] = {}
         items: list[CardBatchItem] = []
         no_text: list[UUID] = []
-        for freelancer_id in ids:
-            if writer.stale_of(freelancer_id) not in ("prompt", "source"):
-                continue
-            # As `write_claimed` does: the sources are read again when a card is written.
-            if refetch:
-                sources.refetch(freelancer_id)
-            prepared = writer.prepare(freelancer_id)
-            if isinstance(prepared, Composed):
-                no_text.append(freelancer_id)
-                continue
-            requests[str(freelancer_id)] = prepared.request
-            items.append(
-                CardBatchItem(
-                    freelancer_id=freelancer_id,
-                    cv_sha256=prepared.cv_sha256,
-                    input_hashes=prepared.hashes,
-                    prompt_version=PROMPT_VERSION,
-                )
-            )
-        session.commit()
         batch: CardBatch | None = None
-        if items:
-            batch = CardBatch(
-                provider=self.call.provider,
-                status="submitting",
-                request_count=len(items),
-                started_by=admin_id,
-            )
-            session.add(batch)
-            session.flush()
-            for item in items:
-                item.batch_id = batch.id
-                session.add(item)
+        try:
+            for freelancer_id in ids:
+                try:
+                    if writer.stale_of(freelancer_id) not in ("prompt", "source"):
+                        continue
+                    # As `write_claimed` does: the sources are read again when a card is written.
+                    if refetch:
+                        sources.refetch(freelancer_id)
+                    prepared = writer.prepare(freelancer_id)
+                except NotFound:
+                    # Gone since the list was made (deleted): nothing to send, nothing spent,
+                    # and the end counts it among the skipped.
+                    session.rollback()
+                    continue
+                if isinstance(prepared, Composed):
+                    no_text.append(freelancer_id)
+                    continue
+                requests[str(freelancer_id)] = prepared.request
+                items.append(
+                    CardBatchItem(
+                        freelancer_id=freelancer_id,
+                        cv_sha256=prepared.cv_sha256,
+                        input_hashes=prepared.hashes,
+                        prompt_version=PROMPT_VERSION,
+                    )
+                )
             session.commit()
+            if items:
+                batch = CardBatch(
+                    provider=self.call.provider,
+                    status="submitting",
+                    request_count=len(items),
+                    started_by=admin_id,
+                )
+                session.add(batch)
+                session.flush()
+                for item in items:
+                    item.batch_id = batch.id
+                    session.add(item)
+                session.commit()
+        except BaseException:
+            # The route has answered that cards were queued: a run that cannot even prepare them
+            # still leaves its start and its end, whatever state the session was left in, and
+            # sends nothing. The original error is what the caller gets.
+            session.rollback()
+            started = writer.record_start(admin_id, fonte, limit, len(ids))
+            writer.end_regeneration(
+                admin_id=admin_id,
+                fonte=fonte,
+                start_action_id=started,
+                queued=len(ids),
+                stopped=True,
+                stop_reason="error",
+                left=len(ids),
+            )
+            raise
         # The start is signed once the batch has an id to name, and before the provider is
         # called: what the hub is about to pay for is never something its trail does not know.
         start = writer.record_start(
@@ -213,6 +236,7 @@ class CardBatches:
                 batch_status="failed",
                 stopped=True,
                 stop_reason=_stop_reason(error),
+                known={"errored": len(items)},
             )
             return CardsRefreshed(written=0, failed=0, stopped=True)
         batch.provider_batch_id = handle.id

@@ -781,6 +781,21 @@ function registroLabel(entry: AiAuditAction): string {
       return `Rigenerazione avviata: ${plural(p.queued ?? 0, 'scheda', 'schede')}${source ? `, ${source}` : ''}${p.batch ? ', Batch API' : ''}`
     }
     case 'cards_regenerated': {
+      const stop: string[] = []
+      if (p.stopped) {
+        const cause = p.stop_reason ? (STOP_REASON_LABELS[p.stop_reason] ?? p.stop_reason) : null
+        stop.push(`interrotta${cause ? `: ${cause}` : ''}`)
+        if (p.left) stop.push(plural(p.left, 'non avviata', 'non avviate'))
+      }
+      if (p.start_missing) {
+        // The start's entry was lost: the counts are `null`, not zero. Say what is known.
+        const known: string[] = []
+        if (typeof p.written === 'number') known.push(plural(p.written, 'scritta', 'scritte'))
+        if (typeof p.failed === 'number') known.push(plural(p.failed, 'non riuscita', 'non riuscite'))
+        if (p.errored) known.push(`${p.errored} senza risposta`)
+        known.push(...stop)
+        return `Rigenerazione conclusa: esito non ricostruibile${known.length ? ` (${known.join(', ')})` : ''}`
+      }
       const failures = p.failures ?? []
       const reasons = new Map<string, number>()
       for (const failure of failures) reasons.set(failure.reason, (reasons.get(failure.reason) ?? 0) + 1)
@@ -790,13 +805,9 @@ function registroLabel(entry: AiAuditAction): string {
         `${plural(failures.length, 'non riuscita', 'non riuscite')}${why ? ` (${why})` : ''}`,
       ]
       if (p.skipped) parts.push(plural(p.skipped, 'saltata', 'saltate'))
-      if (p.stopped) {
-        const cause = p.stop_reason ? (STOP_REASON_LABELS[p.stop_reason] ?? p.stop_reason) : null
-        parts.push(`interrotta${cause ? `: ${cause}` : ''}`)
-        if (p.left) parts.push(plural(p.left, 'non avviata', 'non avviate'))
-      }
+      parts.push(...stop)
       if (p.batch_status === 'failed') parts.push('batch non applicato')
-      if (p.cost_eur !== undefined) {
+      if (p.cost_eur != null) {
         parts.push(`costo ${formatSmallEuro(p.cost_eur)}${p.unpriced ? ` (${p.unpriced} senza prezzo)` : ''}`)
       }
       return `Rigenerazione conclusa: ${parts.join(', ')}`
