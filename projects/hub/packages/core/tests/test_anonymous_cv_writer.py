@@ -273,6 +273,50 @@ def test_second_download_reuses_without_a_call(clean: Session) -> None:
     assert _writer(clean, None).get_or_write(freelancer_id) == again
 
 
+def _keep(session: Session, freelancer_id: UUID, body: dict[str, Any]) -> None:
+    """A body kept for the CV on file under this prompt version, as an older guard let it
+    through."""
+    session.add(
+        AnonymousCvRow(
+            freelancer_id=freelancer_id,
+            cv_sha256=_sha(CV),
+            prompt_version=CV_PROMPT_VERSION,
+            body=body,
+            provider="anthropic",
+            model=MODEL,
+            generated_at=NOW,
+        )
+    )
+    session.commit()
+
+
+def test_reused_body_the_guard_now_refuses_is_written_again(clean: Session) -> None:
+    """A guard fixed later covers the bodies already kept: one it refuses now is stale, and
+    is written again rather than served."""
+    freelancer_id = _apply(clean)
+    _keep(clean, freelancer_id, _with(sommario="Mario Messina, backend developer in TIM."))
+    llm = RecordingCall([cv_response()])
+
+    written = _writer(clean, llm).get_or_write(freelancer_id)
+
+    assert len(llm.requests) == 1
+    assert written == Written(cv=AnonymousCv.model_validate(BODY), reused=False)
+    stored = _stored(clean, freelancer_id)
+    assert stored is not None and stored.body == BODY
+
+
+def test_reused_body_the_guard_now_refuses_is_not_served_without_a_model(
+    clean: Session,
+) -> None:
+    freelancer_id = _apply(clean)
+    _keep(clean, freelancer_id, _with(sommario="Mario Messina, backend developer in TIM."))
+
+    with pytest.raises(LlmNotConfigured) as error:
+        _writer(clean, None).get_or_write(freelancer_id)
+
+    assert error.value.message == "Il compito «CV anonimo» non è configurato in «Modelli AI»."
+
+
 def test_new_cv_writes_again(clean: Session) -> None:
     freelancer_id = _apply(clean)
     _writer(clean, RecordingCall([cv_response()])).get_or_write(freelancer_id)

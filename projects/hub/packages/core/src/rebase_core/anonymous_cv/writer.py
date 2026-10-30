@@ -44,10 +44,11 @@ from rebase_core.models import AnonymousCvRow, Freelancer, User
 
 logger = logging.getLogger(__name__)
 
-# The version of the prompt and of the rules it is read with (`_SYSTEM`, the guard, the
-# shape): a stored body says which one wrote it, and is served only under the same one. A
-# change to any of the three bumps it, so a body that an older prompt wrote, or an older
-# guard passed, is written again at its next download, never served as it is.
+# The version of the prompt and of the shape it answers (`_SYSTEM`, `AnonymousCvDraft`): a
+# stored body says which one wrote it, and is served only under the same one, so a change to
+# either bumps it and every kept body is written again at its next download. The guard needs
+# no bump: it reads a kept body again before it is served (`get_or_write`), so a guard fixed
+# later covers the bodies already kept.
 CV_PROMPT_VERSION = 1
 
 NOT_CONFIGURED = "Il compito «CV anonimo» non è configurato in «Modelli AI»."
@@ -245,30 +246,40 @@ class AnonymousCvWriter:
 
     def get_or_write(self, freelancer_id: UUID) -> Written:
         """The anonymous CV of the talent's CV on file: the stored one when it was written
-        from these very bytes by this prompt version, with no call; otherwise written now,
-        checked and stored. Raises `NotFound` for no talent (or a deleted one) and `NoCv`
-        for no CV; `AnonymousCvFailed` when it cannot be written (`_FAILURES`), with nothing
-        stored; `LlmNotConfigured` with no model when a call is needed; and whatever
-        `LlmUnavailable` the seam raises, untouched, as the first call and the rewrite alike."""
+        from these very bytes by this prompt version and the guard still passes it, with no
+        call; otherwise written now, checked and stored. Raises `NotFound` for no talent (or
+        a deleted one) and `NoCv` for no CV; `AnonymousCvFailed` when it cannot be written
+        (`_FAILURES`), with nothing stored; `LlmNotConfigured` with no model when a call is
+        needed; and whatever `LlmUnavailable` the seam raises, untouched, as the first call
+        and the rewrite alike."""
         row = self._freelancer(freelancer_id)
         try:
             content = cv_of(row).content
         except NotFound:
             raise NoCv(freelancer_id) from None
         digest = hashlib.sha256(content).hexdigest()
+        known = self._known(row)
         stored = self.session.get(AnonymousCvRow, freelancer_id, populate_existing=True)
         if (
             stored is not None
             and stored.cv_sha256 == digest
             and stored.prompt_version == CV_PROMPT_VERSION
         ):
-            return Written(AnonymousCv.model_validate(stored.body), reused=True)
+            kept = AnonymousCv.model_validate(stored.body)
+            # Read again against who the person is now (the answer's `identita` is not
+            # kept): a guard fixed since, or a profile corrected since, may find what the
+            # write let through. Such a body is stale, written again and never served.
+            if not identifying_fields(kept, known):
+                return Written(kept, reused=True)
+            logger.info(
+                "anonymous CV for freelancer %s written again: the kept one names the person",
+                freelancer_id,
+            )
         cv = FreelancerService(self.session).cv_text(freelancer_id)
         if not cv.testo.strip():
             raise self._failed(freelancer_id, "no_text")
         if self.llm is None:
             raise LlmNotConfigured(NOT_CONFIGURED)
-        known = self._known(row)
         request = cv_request(cv)
         # The model takes seconds, a long CV a minute: the transaction ends here, so no
         # pooled connection and no lock waits on it. `_store` opens the next one.
@@ -288,7 +299,7 @@ class AnonymousCvWriter:
     # ---- helpers ---------------------------------------------------------------------
 
     def _known(self, row: Freelancer) -> Who:
-        """Who the person is, by the two readings the hub has before the call: the profile
+        """Who the person is, by the two readings the hub has without a call: the profile
         (`users`' name, email, phone and LinkedIn, and `freelancers.links`) and the anonymous
         card's stored persona when there is one for this CV (`cards.stored_persona`). The
         answer's own `identita` is the third, added when it arrives."""
