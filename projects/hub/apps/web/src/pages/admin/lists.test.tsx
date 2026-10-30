@@ -505,56 +505,145 @@ describe('the freelancer detail', () => {
     expect(screen.getByText('Da remoto')).toBeInTheDocument()
     expect(screen.getByText(/^3 · ultimo 11 set 2026/)).toBeInTheDocument()
   })
+})
 
-  it('shows the profile’s phone, or the CV’s marked «dal CV», and the CV’s email when it differs (REB-855)', async () => {
-    const persona = {
-      nome: 'Grace',
-      cognome: 'Hopper',
-      email: 'grace.cv@example.org',
-      telefono: '+39 333 123 4567',
-      citta: null,
-      linkedin_url: null,
-      altri_link: [],
-      aziende: [],
-    }
-    routeFetch({
-      'GET /api/hub/freelancers/f2': COMPLETE,
-      'GET /api/hub/freelancers/f2/audit': [],
-      'GET /api/hub/freelancers/f2/card': { ...noCard('f2'), persona, differenze: [] },
-    })
-    mount('/admin/freelance/f2')
-    await screen.findByRole('heading', { name: 'Grace Hopper' })
+const CV_PERSONA = {
+  nome: 'Grace',
+  cognome: 'Hopper',
+  email: 'grace.cv@example.org',
+  telefono: '+39 333 123 4567',
+  citta: 'Torino',
+  linkedin_url: 'https://www.linkedin.com/in/grace-cv',
+  altri_link: ['https://github.com/grace-cv', 'https://github.com/ada'],
+  aziende: ['Acme Pagamenti', 'Bottega Digitale'],
+}
+
+/** The value cell of a profile row, by its label. */
+function valueOf(label: string): HTMLElement {
+  const term = screen.getByText(label, { selector: 'dt' })
+  return term.nextElementSibling as HTMLElement
+}
+
+async function mountDetail(profile: Record<string, unknown>, card: Record<string, unknown>) {
+  routeFetch({
+    'GET /api/hub/freelancers/f2': { ...COMPLETE, ...profile },
+    'GET /api/hub/freelancers/f2/audit': [],
+    'GET /api/hub/freelancers/f2/card': { ...noCard('f2'), ...card },
+  })
+  mount('/admin/freelance/f2')
+  await screen.findByRole('heading', { name: 'Grace Hopper' })
+}
+
+describe('the CV’s data in the profile card (REB-855)', () => {
+  it('shows the CV’s phone marked «dal CV» when the profile has none', async () => {
+    await mountDetail({ telefono: null }, { persona: CV_PERSONA, differenze: [] })
     expect(await screen.findByText('+39 333 123 4567 · dal CV')).toBeInTheDocument()
-    // The profile's row and the named card's both link it.
-    for (const link of screen.getAllByRole('link', { name: 'grace.cv@example.org' })) {
-      expect(link).toHaveAttribute('href', 'mailto:grace.cv@example.org')
-    }
   })
 
-  it('prefers the profile’s phone and leaves out a CV email that is the account’s', async () => {
-    const persona = {
-      nome: null,
-      cognome: null,
-      email: 'GRACE@studio.it',
-      telefono: '+39 333 123 4567',
-      citta: null,
-      linkedin_url: null,
-      altri_link: [],
-      aziende: [],
-    }
-    routeFetch({
-      'GET /api/hub/freelancers/f2': { ...COMPLETE, telefono: '02 5550199' },
-      'GET /api/hub/freelancers/f2/audit': [],
-      'GET /api/hub/freelancers/f2/card': { ...noCard('f2'), persona, differenze: [] },
-    })
-    mount('/admin/freelance/f2')
-    await screen.findByRole('heading', { name: 'Grace Hopper' })
-    expect(await screen.findByText('02 5550199')).toBeInTheDocument()
-    // The CV's number is on the named card below, not on the profile row. Waiting for it
-    // there first means the card has loaded, so the two absences below are not read early.
-    expect(await screen.findByText('+39 333 123 4567')).toBeInTheDocument()
-    expect(screen.queryByText('+39 333 123 4567 · dal CV')).toBeNull()
+  it('shows the profile’s phone alone when the CV states the same number, however it is spaced', async () => {
+    await mountDetail({ telefono: '+393331234567' }, { persona: CV_PERSONA, differenze: [] })
+    await screen.findByText('Aziende e clienti')
+    expect(valueOf('Telefono')).toHaveTextContent(/^\+393331234567$/)
+  })
+
+  it('shows both phones, the CV’s on a second line, when they differ', async () => {
+    await mountDetail({ telefono: '02 5550199' }, { persona: CV_PERSONA, differenze: [] })
+    await screen.findByText('Aziende e clienti')
+    const phone = valueOf('Telefono')
+    expect(phone).toHaveTextContent('02 5550199')
+    expect(within(phone).getByText(/\+39 333 123 4567/)).toHaveTextContent('+39 333 123 4567 · dal CV')
+  })
+
+  it('shows the CV’s email only when it is not the account’s, ignoring case', async () => {
+    await mountDetail({}, { persona: CV_PERSONA, differenze: [] })
+    expect(await screen.findByText('Email nel CV')).toBeInTheDocument()
+    expect(within(valueOf('Email nel CV')).getByRole('link')).toHaveAttribute('href', 'mailto:grace.cv@example.org')
+    cleanup()
+    await mountDetail({}, { persona: { ...CV_PERSONA, email: 'GRACE@studio.it' }, differenze: [] })
+    await screen.findByText('Aziende e clienti')
     expect(screen.queryByText('Email nel CV')).toBeNull()
+  })
+
+  it('shows the CV’s city marked «dal CV», and no row without one', async () => {
+    await mountDetail({}, { persona: CV_PERSONA, differenze: [] })
+    expect(await screen.findByText('Torino · dal CV')).toBeInTheDocument()
+    cleanup()
+    await mountDetail({}, { persona: { ...CV_PERSONA, citta: null }, differenze: [] })
+    await screen.findByText('Aziende e clienti')
+    expect(screen.queryByText('Città')).toBeNull()
+  })
+
+  it('falls back to the CV’s LinkedIn only when the profile has none', async () => {
+    await mountDetail({ linkedin_url: null }, { persona: CV_PERSONA, differenze: [] })
+    await screen.findByText('Aziende e clienti')
+    const row = valueOf('LinkedIn')
+    expect(within(row).getByRole('link')).toHaveAttribute('href', 'https://www.linkedin.com/in/grace-cv')
+    expect(row).toHaveTextContent('· dal CV')
+    cleanup()
+    await mountDetail({}, { persona: CV_PERSONA, differenze: [] })
+    await screen.findByText('Aziende e clienti')
+    const own = valueOf('LinkedIn')
+    expect(within(own).getByRole('link')).toHaveAttribute('href', 'https://www.linkedin.com/in/ada')
+    expect(own).not.toHaveTextContent('dal CV')
+  })
+
+  it('lists the profile’s links, then the CV’s not already among them, marked «dal CV»', async () => {
+    await mountDetail({}, { persona: CV_PERSONA, differenze: [] })
+    await screen.findByText('Aziende e clienti')
+    const items = within(valueOf('Link')).getAllByRole('listitem')
+    expect(items.map((item) => item.textContent)).toEqual([
+      'https://github.com/ada',
+      'https://github.com/grace-cv · dal CV',
+    ])
+  })
+
+  it('shows the companies and clients the CV names, marked «dal CV», and no row without any', async () => {
+    await mountDetail({}, { persona: CV_PERSONA, differenze: [] })
+    expect(await screen.findByText('Acme Pagamenti, Bottega Digitale · dal CV')).toBeInTheDocument()
+    cleanup()
+    await mountDetail({}, { persona: { ...CV_PERSONA, aziende: [] }, differenze: [] })
+    await screen.findByText('Torino · dal CV')
+    expect(screen.queryByText('Aziende e clienti')).toBeNull()
+  })
+
+  it('warns at the top of the card where the CV and the profile disagree, and keeps names to the alert', async () => {
+    await mountDetail(
+      {},
+      {
+        persona: CV_PERSONA,
+        differenze: [
+          { campo: 'cognome', cv: 'Hoppers', profilo: 'Hopper' },
+          { campo: 'email', cv: 'grace.cv@example.org', profilo: 'grace@studio.it' },
+        ],
+      },
+    )
+    const alert = await screen.findByRole('alert')
+    expect(within(alert).getByText('Il CV e il profilo non coincidono')).toBeInTheDocument()
+    expect(within(alert).getByText(/Cognome: nel CV «Hoppers», nel profilo «Hopper»/)).toBeInTheDocument()
+    expect(within(alert).getByText(/Email: nel CV «grace.cv@example.org», nel profilo «grace@studio.it»/)).toBeInTheDocument()
+    expect(screen.queryByText('Nome', { selector: 'dt' })).toBeNull()
+  })
+
+  it('shows no alert when nothing differs', async () => {
+    await mountDetail({}, { persona: CV_PERSONA, differenze: [] })
+    await screen.findByText('Aziende e clienti')
+    expect(screen.queryByText('Il CV e il profilo non coincidono')).toBeNull()
+  })
+
+  it('shows only an http(s) CV address as a link', async () => {
+    await mountDetail({}, { persona: { ...CV_PERSONA, altri_link: ['javascript:alert(1)'] }, differenze: [] })
+    expect(await screen.findByText('javascript:alert(1) · dal CV')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'javascript:alert(1)' })).toBeNull()
+  })
+
+  it('says «Rigenera scheda» reads the CV for a card without the data, when there is a CV', async () => {
+    await mountDetail({}, { persona: null })
+    expect(await screen.findByText('Dati dal CV non ancora letti: «Rigenera scheda» li legge.')).toBeInTheDocument()
+    expect(screen.queryByText('Aziende e clienti')).toBeNull()
+    cleanup()
+    await mountDetail({ cv_filename: null, cv_size: null }, { persona: null })
+    await screen.findByText('Nessuna scheda: manca il CV.')
+    expect(screen.queryByText(/Dati dal CV non ancora letti/)).toBeNull()
   })
 })
 
