@@ -43,7 +43,7 @@ ENTITY = "admin_action"
 TIMELINE_LIMIT_DEFAULT = 50
 TIMELINE_LIMIT_MAX = 200
 _ENTITY_TYPE_MAX_LENGTH = 20
-_KIND_MAX_LENGTH = 20
+_KIND_MAX_LENGTH = 40
 
 
 # ---- the diff shape ----------------------------------------------------------------

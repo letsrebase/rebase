@@ -32,6 +32,7 @@ from rebase_api.routers import (
 from rebase_core import analytics
 from rebase_core.contracts.fields import ContractFailed
 from rebase_core.errors import (
+    AnonymousCvFailed,
     DocumensoFailed,
     DomainError,
     LlmUnavailable,
@@ -57,8 +58,9 @@ async def domain_error_handler(request: Request, exc: Exception) -> JSONResponse
     """A domain error is a sentence and a status, never a stack trace. `NotFound` is a
     404, `ValidationFailed` a 422 in FastAPI's own shape so a form can point at the
     field, `LlmUnavailable` a 502, `ContractFailed` a 503, `DocumensoFailed` a 502,
-    `SigningUnavailable` a 503, `TeamBuilderOff` a 503, `TeamBuilderBusy` a 503 with
-    `Retry-After`, anything else a 409."""
+    `SigningUnavailable` a 503, `AnonymousCvFailed` a 422 with its sentence,
+    `TeamBuilderOff` a 503, `TeamBuilderBusy` a 503 with `Retry-After`, anything else a
+    409."""
     assert isinstance(exc, DomainError)
     if isinstance(exc, NotFound):
         return JSONResponse({"detail": exc.message}, status_code=404)
@@ -79,6 +81,11 @@ async def domain_error_handler(request: Request, exc: Exception) -> JSONResponse
         # Claude did not answer: a gateway's failure, in the one Italian sentence a
         # page can show as it stands (`llm.py`, REB-508).
         return JSONResponse({"detail": exc.message}, status_code=502)
+    if isinstance(exc, AnonymousCvFailed):
+        # The CV could not be written (no text, a refusal, a body that still names the
+        # person): the request was fine, the CV on file is what cannot be done. One
+        # sentence of ours, in the `detail` a page shows as it stands.
+        return JSONResponse({"detail": exc.message}, status_code=422)
     if isinstance(exc, ContractFailed):
         # A contract that could not be typeset is the server's failure, not the
         # request's: pandoc missing, a template that no longer compiles, a malformed

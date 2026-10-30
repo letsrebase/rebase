@@ -5,6 +5,7 @@ from collections.abc import Callable, Iterator
 from contextlib import closing
 from datetime import datetime
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import Depends, HTTPException, Request, Response, status
 from sqlalchemy import Engine
@@ -12,6 +13,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from rebase_core.admin_tokens import AdminRead
 from rebase_core.analytics import Tracker, tracker_from_settings
+from rebase_core.anonymous_cv.render import CvRenderer, TypstCvRenderer
 from rebase_core.audit import utcnow
 from rebase_core.campaigns.sender import CampaignSender, campaign_sender_from_settings
 from rebase_core.card_batch import CardBatches
@@ -342,6 +344,26 @@ def get_card_batches(settings: SettingsDep, opener: SessionOpenerDep) -> CardBat
 CardLlmDep = Annotated[LlmCall | None, Depends(get_card_llm)]
 CardBatchesDep = Annotated[CardBatches | None, Depends(get_card_batches)]
 TeamLlmDep = Annotated[LlmCall | None, Depends(get_team_llm)]
+
+
+def get_cv_llm(
+    settings: SettingsDep, opener: SessionOpenerDep, freelancer_id: UUID
+) -> LlmCall | None:
+    """The model seam for the anonymous CV (REB-862), or `None` when no model is configured
+    for the `cv_anonimo` task: a kept body is then still served, and only a CV that needs
+    writing is refused. Built per talent, from the route's own `freelancer_id`, so every
+    usage row of the call names the person it was about."""
+    return call_for_task(opener, settings, "cv_anonimo", freelancer_id=freelancer_id)
+
+
+def get_cv_renderer() -> CvRenderer:
+    """What prints the anonymous CV: Typst. A dependency, so the API's tests hand
+    `FakeCvRenderer` and need no binary."""
+    return TypstCvRenderer()
+
+
+CvLlmDep = Annotated[LlmCall | None, Depends(get_cv_llm)]
+CvRendererDep = Annotated[CvRenderer, Depends(get_cv_renderer)]
 
 
 def get_model_factory() -> ModelFactory:
