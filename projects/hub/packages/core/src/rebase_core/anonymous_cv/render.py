@@ -11,14 +11,15 @@ that says `#set page(...)` or `*bold*` prints those characters and cannot change
 Every word the page prints that is not the CV's is here, not in the template: the headings
 in the CV's language, the head's line and the footer. The template only lays them out.
 
-Nothing here logs. A failure is `CvPrintFailed`, a `ContractFailed` so the API answers it as
-it answers a contract that could not be typeset (a 503: the server's failure, not the
-request's), with a sentence about the CV rather than a contract and nothing else: the API
-neither returns nor logs a `ContractFailed`'s `detail`. That detail is Typst's own
-diagnostic, which quotes the lines of `cv.typ` it failed on, not the CV the JSON carries.
+A failure is `CvPrintFailed` (`errors.py`), which the API answers as it answers a contract
+that could not be typeset (a 503: the server's failure, not the request's), with a sentence
+about the CV and nothing else. Its `detail` is for the log: a compile that fails logs Typst's
+own diagnostic at warning, cut to `_DIAGNOSTIC_MAX_LENGTH`, which quotes the lines of
+`cv.typ` it failed on, never the CV the JSON carries. Nothing else here logs.
 """
 
 import json
+import logging
 import re
 import shutil
 import subprocess
@@ -32,20 +33,27 @@ from rebase_core.anonymous_cv.schema import AnonymousCv
 from rebase_core.contracts.brand import ECHO, fonts_dir, palette
 from rebase_core.contracts.fields import ContractFailed
 from rebase_core.contracts.render import TOOL_TIMEOUT_SECONDS
-from rebase_core.errors import DomainError
+from rebase_core.errors import CvPrintFailed
+
+logger = logging.getLogger(__name__)
 
 TEMPLATE = Path(__file__).resolve().parent / "cv.typ"
 
-# The web's `REMOTO_LABELS` (`lib/format.ts`), which Python has no copy of. Printed in
-# Italian whatever the CV's language, like the footer: they are rebase's words.
+# How much of Typst's diagnostic a failed print logs.
+_DIAGNOSTIC_MAX_LENGTH = 2000
+
+# The web's `REMOTO_LABELS` (`lib/format.ts`), which Python has no copy of, and the same
+# three in English for a CV in English, whose head line would otherwise switch language
+# halfway. The footer stays Italian: it is rebase's own line.
 MODALITA_LABELS = {"remoto": "Da remoto", "ibrido": "Ibrido", "in_sede": "In sede"}
+MODALITA_LABELS_EN = {"remoto": "Remote", "ibrido": "Hybrid", "in_sede": "On-site"}
 # The web's `SENIORITY_LABELS`, the card's four levels as a company reads them.
 SENIORITY_LABELS = {"junior": "Junior", "mid": "Mid", "senior": "Senior", "lead": "Lead"}
 
 FOOTER = "Profilo proposto da rebase · ciao@letsrebase.com · letsrebase.com"
 
 # The sections' headings in the CV's language (`AnonymousCv.lingua`); each of
-# `altre_sezioni` is headed by its own `titolo`.
+# `altre_sezioni` is headed by its own `titolo`, or by `altre` when it has none.
 HEADINGS: dict[str, dict[str, str]] = {
     "it": {
         "sommario": "Profilo",
@@ -54,6 +62,7 @@ HEADINGS: dict[str, dict[str, str]] = {
         "formazione": "Formazione",
         "certificazioni": "Certificazioni",
         "lingue": "Lingue",
+        "altre": "Altro",
     },
     "en": {
         "sommario": "Profile",
@@ -62,20 +71,12 @@ HEADINGS: dict[str, dict[str, str]] = {
         "formazione": "Education",
         "certificazioni": "Certifications",
         "lingue": "Languages",
+        "altre": "Other",
     },
 }
 
 # The longest slug of the title a filename carries (`rebase-cv-<slug>-<ref>.pdf`).
 SLUG_MAX_LENGTH = 40
-
-
-class CvPrintFailed(ContractFailed):
-    """The CV could not be typeset: Typst missing, slow or failing, the brand's files gone.
-    A `ContractFailed`, so the API's handler answers it with a 503 and this sentence."""
-
-    def __init__(self, detail: str) -> None:
-        DomainError.__init__(self, "Non riesco a stampare il CV anonimo.", detail=detail)
-        self.detail = detail
 
 
 @dataclass(frozen=True)
@@ -140,8 +141,9 @@ def head_line(head: CvHead, lingua: Literal["it", "en"]) -> str:
         parts.append(_years(head.anni, lingua))
     if head.luogo and head.luogo.strip():
         parts.append(head.luogo.strip())
-    if head.modalita in MODALITA_LABELS:
-        parts.append(MODALITA_LABELS[head.modalita])
+    labels = MODALITA_LABELS_EN if lingua == "en" else MODALITA_LABELS
+    if head.modalita in labels:
+        parts.append(labels[head.modalita])
     return " · ".join(parts)
 
 
@@ -181,22 +183,37 @@ def _typst(args: list[str]) -> subprocess.CompletedProcess[str]:
         raise CvPrintFailed(f"typst took longer than {TOOL_TIMEOUT_SECONDS} seconds") from exc
 
 
+def _failed(diagnostic: str) -> CvPrintFailed:
+    """A compile that failed or warned: Typst's words go to the log, cut, so a broken
+    template can be read from the server; the admin reads the sentence."""
+    logger.warning("the anonymous CV did not print: %s", diagnostic[:_DIAGNOSTIC_MAX_LENGTH])
+    return CvPrintFailed(diagnostic)
+
+
 def render(cv: AnonymousCv, head: CvHead) -> bytes:
     """The PDF, typeset in a directory of its own that is removed when this returns. The
     echo is copied in beside the template, since Typst reads a picture only from inside its
-    `--root`; the static fonts are the one thing shared between calls (`brand.fonts_dir`)."""
-    workdir = Path(tempfile.mkdtemp(prefix="rebase-cv-"))
+    `--root`; the static fonts are the one thing shared between calls (`brand.fonts_dir`).
+    A directory that cannot be made or written (a full disk, a string no UTF-8 can hold) is
+    the print's failure like Typst's, never a bare 500; its detail names the error's type,
+    not its words, which may quote the CV."""
+    try:
+        workdir = Path(tempfile.mkdtemp(prefix="rebase-cv-"))
+    except OSError as exc:
+        raise CvPrintFailed(f"cannot make the working directory: {type(exc).__name__}") from exc
     try:
         try:
             document = _document(cv, head)
             fonts = fonts_dir()
             shutil.copyfile(TEMPLATE, workdir / TEMPLATE.name)
             shutil.copyfile(ECHO, workdir / ECHO.name)
+            (workdir / "cv.json").write_text(json.dumps(document, ensure_ascii=False), "utf-8")
         except ContractFailed as exc:
             raise CvPrintFailed(exc.detail) from exc
-        except OSError as exc:
-            raise CvPrintFailed(f"cannot copy the template or the echo: {exc}") from exc
-        (workdir / "cv.json").write_text(json.dumps(document, ensure_ascii=False), "utf-8")
+        except (OSError, ValueError) as exc:
+            raise CvPrintFailed(
+                f"cannot write the working directory: {type(exc).__name__}"
+            ) from exc
         output = workdir / "cv.pdf"
         compiled = _typst(
             [
@@ -213,10 +230,10 @@ def render(cv: AnonymousCv, head: CvHead) -> bytes:
             ]
         )
         if compiled.returncode != 0:
-            raise CvPrintFailed(f"typst failed:\n{compiled.stderr.strip()}")
+            raise _failed(f"typst failed:\n{compiled.stderr.strip()}")
         warnings = [line for line in compiled.stderr.splitlines() if "warning" in line]
         if warnings:
-            raise CvPrintFailed("typst warned:\n" + "\n".join(warnings))
+            raise _failed("typst warned:\n" + "\n".join(warnings))
         return output.read_bytes()
     finally:
         shutil.rmtree(workdir, ignore_errors=True)

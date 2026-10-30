@@ -408,7 +408,7 @@ def test_a_print_failure_is_503_and_records_nothing(
     sender: RecordingSender,
     api_session: Session,
 ) -> None:
-    from rebase_core.anonymous_cv.render import CvPrintFailed
+    from rebase_core.errors import CvPrintFailed
 
     class Broken:
         def render(self, cv: Any, head: CvHead) -> bytes:

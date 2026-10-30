@@ -8,17 +8,19 @@ The renders need `typst` (and fontTools for the brand's Outfit), which every mac
 runs the hub's suite has (`renderer: true` in ci.yml); without it they skip, and the
 filename's rule still runs."""
 
+import logging
 import re
 import shutil
+import subprocess
 from io import BytesIO
 
 import pytest
 from pypdf import PdfReader
 
+from rebase_core.anonymous_cv import render
 from rebase_core.anonymous_cv.render import (
     MODALITA_LABELS,
     CvHead,
-    CvPrintFailed,
     FakeCvRenderer,
     TypstCvRenderer,
     filename,
@@ -34,6 +36,7 @@ from rebase_core.anonymous_cv.schema import (
     Titolo,
 )
 from rebase_core.contracts.fields import ContractFailed
+from rebase_core.errors import CvPrintFailed, DomainError
 
 needs_typst = pytest.mark.skipif(shutil.which("typst") is None, reason="typst is not installed")
 
@@ -291,7 +294,7 @@ def test_headings_follow_lingua() -> None:
     ):
         assert _heading(english) in text, english
         assert _heading(italian) not in text, italian
-    assert "Senior · 12 years of experience · Roma · Ibrido" in text
+    assert "Senior · 12 years of experience · Roma · Hybrid" in text
 
 
 @needs_typst
@@ -360,13 +363,13 @@ def test_a_head_with_nothing_known_prints_only_the_title() -> None:
 
 def test_head_line() -> None:
     assert head_line(HEAD, "it") == "Senior · 12 anni di esperienza · Roma · Ibrido"
-    assert head_line(HEAD, "en") == "Senior · 12 years of experience · Roma · Ibrido"
+    assert head_line(HEAD, "en") == "Senior · 12 years of experience · Roma · Hybrid"
     one = CvHead(seniority="lead", anni=1, luogo=None, modalita="remoto", ref="d41c7e2a")
     assert head_line(one, "it") == "Lead · 1 anno di esperienza · Da remoto"
-    assert head_line(one, "en") == "Lead · 1 year of experience · Da remoto"
+    assert head_line(one, "en") == "Lead · 1 year of experience · Remote"
     none = CvHead(seniority="junior", anni=0, luogo=" ", modalita="in_sede", ref="d41c7e2a")
     assert head_line(none, "it") == "Junior · meno di un anno di esperienza · In sede"
-    assert head_line(none, "en") == "Junior · less than a year of experience · In sede"
+    assert head_line(none, "en") == "Junior · less than a year of experience · On-site"
     empty = CvHead(seniority=None, anni=None, luogo=None, modalita=None, ref="d41c7e2a")
     assert head_line(empty, "it") == ""
     assert MODALITA_LABELS == {"remoto": "Da remoto", "ibrido": "Ibrido", "in_sede": "In sede"}
@@ -396,13 +399,111 @@ def test_filename() -> None:
 
 
 def test_no_typst_is_the_print_failure_sentence(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A `ContractFailed`, so the API answers it as a 503 with the sentence, never Typst's."""
+    """A domain error of its own (`cv_print_failed`), which the API answers as a 503 with
+    the sentence, never Typst's; not a contract's."""
     monkeypatch.setenv("PATH", "")
     with pytest.raises(CvPrintFailed) as failed:
         TypstCvRenderer().render(CV, HEAD)
-    assert isinstance(failed.value, ContractFailed)
+    assert isinstance(failed.value, DomainError)
+    assert not isinstance(failed.value, ContractFailed)
+    assert failed.value.code == "cv_print_failed"
     assert failed.value.message == "Non riesco a stampare il CV anonimo."
     assert str(failed.value) == "Non riesco a stampare il CV anonimo."
+    assert failed.value.detail == "typst is not on PATH"
+
+
+def test_a_working_directory_that_cannot_be_made_is_the_sentence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def full(*args: object, **kwargs: object) -> str:
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(render.tempfile, "mkdtemp", full)
+    with pytest.raises(CvPrintFailed) as failed:
+        TypstCvRenderer().render(CV, HEAD)
+    assert failed.value.message == "Non riesco a stampare il CV anonimo."
+
+
+def test_a_body_that_cannot_be_written_is_the_sentence() -> None:
+    """A lone surrogate is a Python string and no UTF-8: the body cannot be written to
+    `cv.json`, which is the print's failure, not a bare 500."""
+    broken = CV.model_copy(update={"sommario": "Testo \ud800 rotto"})
+    with pytest.raises(CvPrintFailed) as failed:
+        TypstCvRenderer().render(broken, HEAD)
+    assert failed.value.message == "Non riesco a stampare il CV anonimo."
+
+
+def test_a_failed_compile_logs_typsts_words_cut(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Typst's diagnostic quotes `cv.typ`, never the CV: it goes to the log at warning, cut
+    to 2000 characters, so a broken template can be read from the server."""
+    diagnostic = "error: unknown variable: oops\n  ┌─ cv.typ:12:3\n" + "x" * 5000
+
+    def failing(args: list[str]) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(args, 1, stdout="", stderr=diagnostic)
+
+    monkeypatch.setattr(render, "_typst", failing)
+    logging.getLogger("rebase_core.anonymous_cv.render").disabled = False
+    with (
+        caplog.at_level(logging.WARNING, logger="rebase_core.anonymous_cv.render"),
+        pytest.raises(CvPrintFailed),
+    ):
+        TypstCvRenderer().render(CV, HEAD)
+    [record] = caplog.records
+    assert record.levelno == logging.WARNING
+    assert "unknown variable: oops" in record.getMessage()
+    assert "x" * 1900 in record.getMessage()
+    assert "x" * 2000 not in record.getMessage()
+    assert CV.sommario not in record.getMessage()
+
+
+@needs_typst
+def test_blank_strings_print_nothing() -> None:
+    """A blank string is absent: no lone colon after a lead or an area with no words, no
+    heading over nothing, no separator with nothing on one side."""
+    blank = CV.model_copy(
+        update={
+            "sommario": "  ",
+            "esperienze": [
+                Esperienza(
+                    ruolo="Backend developer",
+                    azienda=" ",
+                    luogo=" ",
+                    periodo=" ",
+                    punti=[
+                        _bullet(" ", titolo="Consulenza"),
+                        _bullet(" ", titolo=" "),
+                        _bullet("Ha scritto le API.", titolo=" "),
+                    ],
+                )
+            ],
+            "competenze": [
+                Gruppo(area=" ", voci=["Python", " ", "Go"]),
+                Gruppo(area="Vuoto", voci=[" "]),
+            ],
+            "formazione": [Titolo(titolo=" ", istituto=" ", luogo=" ", periodo=" ")],
+            "certificazioni": [" "],
+            "lingue": [
+                Lingua(lingua=" ", livello="C1"),
+                Lingua(lingua="Inglese", livello=" "),
+            ],
+            "altre_sezioni": [
+                Sezione(titolo=" ", voci=["Un parser di fatture"]),
+                Sezione(titolo="Vuota", voci=[" "]),
+            ],
+        }
+    )
+    text = _text(TypstCvRenderer().render(blank, HEAD))
+    assert ":" not in text.replace("ciao@letsrebase.com", "")
+    for heading in ("Profilo", "Formazione", "Certificazioni"):
+        assert _heading(heading) not in text, heading
+    assert "VUOTO" not in text and "Vuoto" not in text and "VUOTA" not in text
+    assert "Consulenza" in text and "Ha scritto le API." in text
+    assert "Python, Go" in text
+    assert _heading("Lingue") in text and "Inglese" in text and "C1" not in text
+    # A section the CV did not title still prints, under a heading of ours.
+    assert _heading("Altro") in text and "Un parser di fatture" in text
 
 
 def test_the_fake_records_and_answers_a_pdf() -> None:

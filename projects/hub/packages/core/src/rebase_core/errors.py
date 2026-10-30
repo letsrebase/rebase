@@ -101,6 +101,19 @@ class AnonymousCvFailed(DomainError):
     code = "anonymous_cv_failed"
 
 
+class CvPrintFailed(DomainError):
+    """The anonymous CV could not be typeset (REB-862): Typst missing, slow or failing, the
+    brand's files gone, the working directory not made or written. The server's failure,
+    not the request's: a 503 in the API, with this sentence and never `detail`, which is
+    for the log (Typst's diagnostic quotes `cv.typ`, never the CV)."""
+
+    code = "cv_print_failed"
+
+    def __init__(self, detail: str) -> None:
+        super().__init__("Non riesco a stampare il CV anonimo.", detail=detail)
+        self.detail = detail
+
+
 class TeamBuilderOff(DomainError):
     """The team builder cannot run in this environment: `REBASE_TEAM_BUILDER_ENABLED` is
     false, or no model is configured for the `team_proposal` task in «Modelli AI» (spec

@@ -11,6 +11,9 @@
 // `#value` inside a content block): a string is never parsed as markup, so `*bold*`,
 // `#set page(...)` or `$x$` in a CV print as those characters. Nothing here may change that:
 // no `eval`, no `raw` with a language, no `show` rule that matches text.
+//
+// A blank string is an absent one (`present`): it prints no lone colon after a lead, no
+// heading over nothing and no separator with nothing on one side.
 
 #let data = json("cv.json")
 #let cv = data.cv
@@ -96,6 +99,8 @@
 )
 
 #let present(s) = s != none and s.trim() != ""
+// A string as text, or nothing when it is blank.
+#let opt(s) = if present(s) { text(s) }
 
 // The example's italic, slanted by hand: Outfit has no italic either.
 #let oblique(s) = if present(s) { skew(ax: -11deg, text(s)) }
@@ -129,7 +134,9 @@
 
 // The head: the CV's title large and centred where the name was, the line under it.
 #align(center)[
-  #block(below: 0.8em, text(size: 19pt, weight: 500, cv.titolo))
+  #if present(cv.titolo) {
+    block(below: 0.8em, text(size: 19pt, weight: 500, cv.titolo))
+  }
   #if present(data.head.riga) {
     text(size: 10pt, fill: inkquiet, spaced(data.head.riga))
   }
@@ -141,9 +148,27 @@
   text(cv.sommario)
 }
 
-#if cv.esperienze.len() > 0 {
+// A bullet: the bold lead and its text, the lead alone (no colon to close) or the text
+// alone; one with neither is not a bullet.
+#let point(p) = {
+  if present(p.titolo) and present(p.testo) {
+    [#lead(p.titolo) #p.testo]
+  } else if present(p.titolo) {
+    strong(p.titolo)
+  } else {
+    text(p.testo)
+  }
+}
+
+#let roles = {
+  cv
+    .esperienze
+    .map(r => (..r, punti: r.punti.filter(p => present(p.titolo) or present(p.testo))))
+    .filter(r => (r.ruolo, r.azienda, r.luogo, r.periodo).any(present) or r.punti.len() > 0)
+}
+#if roles.len() > 0 {
   section(headings.esperienze)
-  for (i, role) in cv.esperienze.enumerate() {
+  for (i, role) in roles.enumerate() {
     // The two rows stay with the first bullet: a role's name at the foot of a page with
     // its work on the next reads as two roles. Without a company the place takes its
     // slot, rather than sitting alone at the right of an empty line.
@@ -153,31 +178,37 @@
       (oblique(role.luogo), none)
     }
     block(above: if i == 0 { 0.7em } else { 1.15em }, below: 0.5em, sticky: true, rows(
-      (strong(role.ruolo), role.periodo),
+      (if present(role.ruolo) { strong(role.ruolo) }, opt(role.periodo)),
       second,
     ))
-    bullets(role.punti.map(p => {
-      if present(p.titolo) [#lead(p.titolo) #p.testo] else { text(p.testo) }
-    }))
+    bullets(role.punti.map(point))
   }
 }
 
-#let groups = cv.competenze.filter(g => g.voci.len() > 0)
+#let groups = {
+  cv.competenze.map(g => (area: g.area, voci: g.voci.filter(present))).filter(g => g.voci.len() > 0)
+}
 #if groups.len() > 0 {
   section(headings.competenze)
   // One paragraph per area, a long one hanging under its own name. The first stays with
   // the heading, so a page never ends on the heading and a single area.
   for (i, group) in groups.enumerate() {
-    let line = par(hanging-indent: 1em)[#lead(group.area) #group.voci.join(", ")]
+    let words = group.voci.join(", ")
+    let line = if present(group.area) {
+      par(hanging-indent: 1em)[#lead(group.area) #words]
+    } else {
+      par(hanging-indent: 1em, text(words))
+    }
     block(above: 0.5em, below: 0.5em, sticky: i == 0, line)
   }
 }
 
-#if cv.formazione.len() > 0 {
+#let degrees = cv.formazione.filter(t => present(t.titolo) or present(t.istituto))
+#if degrees.len() > 0 {
   section(headings.formazione)
-  for (i, title) in cv.formazione.enumerate() {
+  for (i, title) in degrees.enumerate() {
     let pairs = if present(title.istituto) {
-      ((strong(title.istituto), title.luogo), (oblique(title.titolo), title.periodo))
+      ((strong(title.istituto), opt(title.luogo)), (oblique(title.titolo), opt(title.periodo)))
     } else {
       let when = (title.luogo, title.periodo).filter(present).map(text).join(sep)
       ((strong(title.titolo), when),)
@@ -186,20 +217,24 @@
   }
 }
 
-#if cv.certificazioni.len() > 0 {
+#let certificates = cv.certificazioni.filter(present)
+#if certificates.len() > 0 {
   section(headings.certificazioni)
-  bullets(cv.certificazioni.map(text))
+  bullets(certificates.map(text))
 }
 
-#if cv.lingue.len() > 0 {
+#let languages = cv.lingue.filter(l => present(l.lingua))
+#if languages.len() > 0 {
   section(headings.lingue)
-  cv
-    .lingue
+  languages
     .map(l => if present(l.livello) [#lead(l.lingua) #l.livello] else { strong(l.lingua) })
     .join(sep)
 }
 
-#for other in cv.altre_sezioni.filter(s => s.voci.len() > 0) {
-  section(other.titolo)
-  bullets(other.voci.map(text))
+// A section the CV gives no title still prints, under the page's own word for it.
+#for other in cv.altre_sezioni.map(s => (titolo: s.titolo, voci: s.voci.filter(present))) {
+  if other.voci.len() > 0 {
+    section(if present(other.titolo) { other.titolo } else { headings.altre })
+    bullets(other.voci.map(text))
+  }
 }
