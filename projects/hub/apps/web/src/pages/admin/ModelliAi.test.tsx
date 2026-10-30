@@ -406,4 +406,47 @@ describe('the Modelli AI page (REB-833)', () => {
       vi.useRealTimers()
     }
   })
+
+  it('keeps looking for its own start when another run starts and ends first (REB-861)', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const at = new Date().toISOString()
+      const otherStart = {
+        id: 'other',
+        kind: 'cards_regenerate',
+        admin_nome: 'Ivan Sala',
+        payload: { limit: 1, queued: 1, fonte: 'cli', batch: false },
+        created_at: at,
+      }
+      const otherEnd = {
+        id: 'other-end',
+        kind: 'cards_regenerated',
+        admin_nome: 'Ivan Sala',
+        payload: { fonte: 'cli', start_action_id: 'other', written: 1, failed: 0, skipped: 0, failures: [], cost_eur: '0.01' },
+        created_at: at,
+      }
+      let audits = 0
+      mount(CONFIG, {
+        '/api/hub/admin/ai/cards/stale': () => answer(200, STALE),
+        '/api/hub/admin/ai/cards/regenerate-stale': () => answer(200, { queued: 6 }),
+        '/api/hub/admin/ai/audit': () => {
+          audits += 1
+          if (audits <= 2) return answer(200, [])
+          // Another run is signed and ends while this page's cards are still being prepared.
+          if (audits <= 5) return answer(200, [otherEnd, otherStart])
+          return answer(200, [{ ...AUDIT[1], id: 'mine', created_at: at }, otherEnd, otherStart])
+        },
+      })
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+      const stale = within(await screen.findByRole('region', { name: 'Schede da aggiornare' }))
+      await user.click(await stale.findByRole('button', { name: 'Avvia rigenerazione' }))
+      const registro = within(screen.getByRole('region', { name: 'Registro' }))
+      for (let waited = 0; waited < 45_000 && !registro.queryByText(/Rigenerazione avviata: 6 schede/); waited += 3_000) {
+        await act(() => vi.advanceTimersByTimeAsync(3_000))
+      }
+      expect(await registro.findByText(/Rigenerazione avviata: 6 schede/)).toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

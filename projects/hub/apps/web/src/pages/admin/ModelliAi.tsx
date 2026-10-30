@@ -36,10 +36,9 @@ const START_REFRESH_MS = 3_000
 const START_WATCH_MS = 60_000
 // How long the «Registro» looks for the start of a regeneration this page asked for.
 const START_APPEAR_MS = 120_000
-/** A start this page asked for: when, and the newest start the trail had then. */
+/** A start this page asked for, and when. */
 interface StartWatch {
   at: number
-  baseline: string | null
 }
 const EFFORTS = ['low', 'medium', 'high'] as const
 const EFFORT_LABELS: Record<string, string> = { low: 'Basso', medium: 'Medio', high: 'Alto' }
@@ -74,7 +73,6 @@ export function AdminModelliAi() {
 }
 
 function Sections({ config }: { config: AiConfig }) {
-  const client = useQueryClient()
   const [watch, setWatch] = useState<StartWatch | null>(null)
   const locked = !config.secrets_key_present
   return (
@@ -115,7 +113,7 @@ function Sections({ config }: { config: AiConfig }) {
           Schede da aggiornare
         </h2>
         <StaleCards
-          onStarted={() => setWatch({ at: Date.now(), baseline: newestStart(client.getQueryData<AiAuditAction[]>(AUDIT_KEY)) })}
+          onStarted={() => setWatch({ at: Date.now() })}
         />
       </section>
       <section aria-labelledby="ai-compiti" className="border-b">
@@ -681,11 +679,6 @@ function Prices({ config }: { config: AiConfig }) {
   )
 }
 
-/** The newest start in the trail (it is newest first), or `null`. */
-function newestStart(trail: AiAuditAction[] | undefined): string | null {
-  return trail?.find((entry) => entry.kind === 'cards_regenerate')?.id ?? null
-}
-
 function Registro({ watch }: { watch: StartWatch | null }) {
   const trail = useQuery({
     queryKey: AUDIT_KEY,
@@ -695,9 +688,9 @@ function Registro({ watch }: { watch: StartWatch | null }) {
       // A regeneration started after REB-861 that has no end yet is on: look again until it ends.
       if (data.some((entry) => isOpen(entry, data))) return OPEN_REFRESH_MS
       // A start this page just asked for is signed in the background, after the cards are prepared
-      // (a batch prepares each one first): look until it is there, for a while, then the line above
-      // takes over.
-      if (watch && Date.now() - watch.at < START_APPEAR_MS && newestStart(data) === watch.baseline) {
+      // (a batch prepares each one first): look for the whole window, whatever else the trail shows
+      // meanwhile, then the line above takes over.
+      if (watch && Date.now() - watch.at < START_APPEAR_MS) {
         return START_REFRESH_MS
       }
       return false
