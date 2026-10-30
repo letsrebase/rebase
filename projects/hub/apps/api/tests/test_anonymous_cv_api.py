@@ -394,8 +394,8 @@ def test_guard_failure_is_422_with_the_sentence(
     assert response.status_code == 422
     assert response.json() == {
         "detail": (
-            "Il CV contiene ancora il nome, un recapito o un link della persona anche dopo "
-            "la riscrittura."
+            "Il CV contiene ancora il nome, un recapito, un link, un codice fiscale, una partita "
+            "IVA o la data di nascita della persona anche dopo la riscrittura."
         )
     }
     assert printer.calls == []

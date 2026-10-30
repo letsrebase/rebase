@@ -615,3 +615,32 @@ def test_words_about_being_born_pass() -> None:
         "Il progetto è nato il giorno in cui il cliente ha chiesto un'app",
     ):
         assert identifying_fields(_bullet(text), NOBODY) == [], text
+
+
+def test_nato_the_alliance_is_not_a_birth_label() -> None:
+    for text in (
+        "Consulente per la NATO a Bruxelles",
+        "Progetti NATO in Belgio",
+        "Worked for NATO in Brussels",
+        "Joined NATO in 2019 as a contractor",
+    ):
+        assert identifying_fields(_bullet(text), NOBODY) == [], text
+    cv = CV.model_copy(deep=True)
+    cv.esperienze[0].luogo = "NATO in Brussels"
+    assert identifying_fields(cv, NOBODY) == []
+    for text in ("Nato a Messina il 3 marzo 1985", "nata il 01/08/1985"):
+        assert identifying_fields(_bullet(text), NOBODY) == ["esperienze[1].punti[0].testo"], text
+
+
+def test_birth_and_tax_leak_gaps_are_closed() -> None:
+    for text in (
+        "P.I. 01234567890",
+        "P. I. 01234567890",
+        "Born: 3 March 1985",
+        "Born 3 March 1985",
+        "Nato nel 1985 a Messina",
+        "nata nel 1990",
+        "MSSMRA85M01F15LK",
+    ):
+        assert identifying_fields(_bullet(text), NOBODY) == ["esperienze[1].punti[0].testo"], text
+    assert identifying_fields(_bullet("Born and raised in a DevOps culture"), NOBODY) == []

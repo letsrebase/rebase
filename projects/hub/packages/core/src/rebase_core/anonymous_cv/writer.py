@@ -67,8 +67,8 @@ _FAILURES: dict[Failure, str] = {
     ),
     "shape": "La risposta del modello non era un CV valido.",
     "identifying": (
-        "Il CV contiene ancora il nome, un recapito o un link della persona anche dopo la "
-        "riscrittura."
+        "Il CV contiene ancora il nome, un recapito, un link, un codice fiscale, una partita "
+        "IVA o la data di nascita della persona anche dopo la riscrittura."
     ),
     "changed": "Il CV è cambiato mentre lo scrivevo: riprova.",
 }
@@ -133,8 +133,9 @@ altro."""
 # The correction an identifying answer is asked again with, before the fields found. Fields,
 # never the words: a message built from this never repeats an identifier.
 IDENTIFYING_AGAIN = (
-    "Il CV contiene il nome, un recapito o un link della persona: riscrivilo con le stesse "
-    "regole, senza, scrivendo intorno a loro e lasciando il resto com'è."
+    "Il CV contiene il nome, un recapito, un link, un codice fiscale, una partita IVA o la "
+    "data di nascita della persona: riscrivilo con le stesse regole, senza, scrivendo intorno "
+    "a loro e lasciando il resto com'è."
 )
 
 

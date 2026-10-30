@@ -444,8 +444,8 @@ def test_identifying_twice_fails_and_stores_nothing(
         _writer(clean, llm).get_or_write(freelancer_id)
 
     assert error.value.message == (
-        "Il CV contiene ancora il nome, un recapito o un link della persona anche dopo "
-        "la riscrittura."
+        "Il CV contiene ancora il nome, un recapito, un link, un codice fiscale, una partita "
+        "IVA o la data di nascita della persona anche dopo la riscrittura."
     )
     assert len(llm.requests) == 2
     assert _stored(clean, freelancer_id) is None

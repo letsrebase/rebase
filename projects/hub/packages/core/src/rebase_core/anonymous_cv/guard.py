@@ -102,7 +102,10 @@ _LINK_LIKE = re.compile(r"[/_\-]|\w\.\w")
 _STRICT_LINK = re.compile(r"[/_]|\w\.\w")
 
 # A codice fiscale's shape: six letters, the year, the month's letter, the day, the place.
-_CODICE_FISCALE = re.compile(r"\b[A-Z]{6}\d{2}[A-EHLMPRST]\d{2}[A-Z]\d{3}[A-Z]\b", re.IGNORECASE)
+_CODICE_FISCALE = re.compile(
+    r"\b[A-Z]{6}[\dLMNPQRSTUV]{2}[A-EHLMPRST][\dLMNPQRSTUV]{2}[A-Z][\dLMNPQRSTUV]{3}[A-Z]\b",
+    re.IGNORECASE,
+)
 # An Italian IBAN, compact or in the bank's groups of four: the candidate is read with its
 # spaces, then checked compact, so «IT20 anni di esperienza» is not one.
 _IBAN_IT_SPACED = re.compile(r"\bIT\d{2}(?:\s?[0-9A-Z]){23}\b", re.IGNORECASE)
@@ -113,7 +116,7 @@ _IBAN_AFTER_LABEL = re.compile(
 )
 # Eleven digits (spaced, dotted or dashed) a few characters after a tax label: a partita IVA,
 # or a company's codice fiscale. «Partita IVA attiva dal 2019» has no such number.
-_TAX_LABEL = r"(?:p\.?\s?iva|partita\s+iva|vat|iva|c\.\s?f\.?|cf|codice\s+fiscale)"
+_TAX_LABEL = r"(?:p\.?\s?iva|p\.\s?i\.?|partita\s+iva|vat|iva|c\.\s?f\.?|cf|codice\s+fiscale)"
 _LABELLED_TAX_NUMBER = re.compile(
     rf"(?<!\w){_TAX_LABEL}(?!\w)[^\d\n]{{0,12}}?\d(?:[ .\-]?\d){{10}}(?![ .\-]?\d)",
     re.IGNORECASE,
@@ -135,11 +138,18 @@ _DATE = (
 # A place is a capitalised word right after «nato a» or «born in» («the» allowed in English):
 # «nata a supporto dei team» is not one.
 _PLACE = r"(?:(?i:the)\s+)?[A-ZÀ-Ý][\w'’]+"
-_BIRTH_DATE_LABEL = r"(?i:nat[oa]\s+il|data\s+di\s+nascita|date\s+of\s+birth|born\s+on|dob)"
-_BIRTH_PLACE_LABEL = r"(?i:nat[oa]\s+(?:a|ad|in)|luogo\s+di\s+nascita|place\s+of\s+birth|born\s+in)"
+_BIRTH_DATE_LABEL = (
+    r"(?:[Nn]at[oa]\s+(?i:il)|(?i:data\s+di\s+nascita|date\s+of\s+birth|born\s+on|dob))"
+)
+_BIRTH_PLACE_LABEL = (
+    r"(?:[Nn]at[oa]\s+(?i:a|ad|in)|(?i:luogo\s+di\s+nascita|place\s+of\s+birth|born\s+in))"
+)
 _BIRTH = re.compile(
     rf"(?<!\w)(?:{_BIRTH_DATE_LABEL}|{_BIRTH_PLACE_LABEL})(?!\w)[\s:,]*(?:\S+\s+){{0,3}}?{_DATE}"
     rf"|(?<!\w){_BIRTH_PLACE_LABEL}(?!\w)[\s:,]*{_PLACE}"
+    # «Born: 3 March 1985» and «nato nel 1985», with or without the place after.
+    rf"|(?<!\w)(?i:born)(?!\w)[\s:,]*{_DATE}"
+    r"|(?<!\w)[Nn]at[oa]\s+(?i:nel)\s+(?:19|20)\d{2}(?!\d)"
 )
 
 
