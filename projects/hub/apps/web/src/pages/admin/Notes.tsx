@@ -48,7 +48,7 @@ function NoteItem({
 
   return (
     <li className="space-y-1 py-3 first:pt-0 last:pb-0">
-      <p className="flex flex-wrap items-baseline gap-x-2 break-words text-xs text-muted-foreground">
+      <p className="flex flex-wrap items-baseline gap-x-2 wrap-anywhere text-xs text-muted-foreground">
         <span className="font-medium text-foreground">{note.autore}</span>
         <time dateTime={note.created_at}>{formatDateTime(note.created_at)}</time>
         {source && <Badge variant="pill">{source}</Badge>}
