@@ -77,12 +77,13 @@ class AnonymousCv(_Strict):
 
 class Identita(_Strict):
     """What the CV says of the person, each only as the CV states it: what the guard looks
-    for in `AnonymousCv`. Never kept."""
+    for in `AnonymousCv`. Never kept. Every number the CV gives, since a CV often has a
+    mobile and an office line."""
 
     nome: Short | None
     cognome: Short | None
     email: Short | None
-    telefono: Short | None
+    telefoni: list[Short] = Field(max_length=10)
     link: list[Contact] = Field(max_length=20)
 
 

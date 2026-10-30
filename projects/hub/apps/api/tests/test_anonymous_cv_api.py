@@ -52,7 +52,7 @@ NO_IDENTITA: dict[str, Any] = {
     "nome": None,
     "cognome": None,
     "email": None,
-    "telefono": None,
+    "telefoni": [],
     "link": [],
 }
 

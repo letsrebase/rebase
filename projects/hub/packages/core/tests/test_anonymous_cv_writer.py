@@ -71,7 +71,7 @@ NO_IDENTITA: dict[str, Any] = {
     "nome": None,
     "cognome": None,
     "email": None,
-    "telefono": None,
+    "telefoni": [],
     "link": [],
 }
 # What the system prompt must name, each in its words: what never goes in the CV.
@@ -431,11 +431,11 @@ def test_identifying_twice_fails_and_stores_nothing(
 
 
 def test_identity_from_the_answer_is_checked(clean: Session) -> None:
-    """The profile has no phone: the number the CV itself states, read back in `identita`,
-    is what the guard finds in a bullet."""
+    """The profile has no phone: the numbers the CV itself states, read back in `identita`,
+    are what the guard finds in a bullet, the second as surely as the first."""
     freelancer_id = _apply(clean)
-    identita = {**NO_IDENTITA, "telefono": "333 1234567"}
-    leaking = cv_response(_with_bullet("Reperibile al 333 1234567."), identita=identita)
+    identita = {**NO_IDENTITA, "telefoni": ["333 1234567", "+39 06 9876 5432"]}
+    leaking = cv_response(_with_bullet("Ufficio: 06 98765432."), identita=identita)
     llm = RecordingCall([leaking, cv_response(identita=identita)])
 
     written = _writer(clean, llm).get_or_write(freelancer_id)

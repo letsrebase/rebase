@@ -48,7 +48,9 @@ logger = logging.getLogger(__name__)
 # stored body says which one wrote it, and is served only under the same one, so a change to
 # either bumps it and every kept body is written again at its next download. The guard needs
 # no bump: it reads a kept body again before it is served (`get_or_write`), so a guard fixed
-# later covers the bodies already kept.
+# later covers the bodies already kept. Version 1 is the prompt and draft as REB-862 first
+# ships them: the changes before its merge (tax identifiers, every phone in `identita`) kept
+# the number, since no body was kept anywhere but a test.
 CV_PROMPT_VERSION = 1
 
 NOT_CONFIGURED = "Il compito «CV anonimo» non è configurato in «Modelli AI»."
@@ -108,8 +110,9 @@ scritto, null quando manca).
 - altre_sezioni: progetti, pubblicazioni, interventi, volontariato e ogni altra sezione del \
 CV che chi legge un CV vorrebbe, con il suo titolo e le sue voci.
 - identita: chi è la persona secondo il CV, solo come il CV lo scrive: nome, cognome, email, \
-telefono e link (ogni indirizzo web della persona); null, o una lista vuota, per quello che il \
-CV non dice. Non è mai stampato: serve solo a un controllo che li cerca nel CV anonimo.
+telefoni (ogni numero che il CV dà) e link (ogni indirizzo web della persona); null, o una \
+lista vuota, per quello che il CV non dice. Non è mai stampato: serve solo a un controllo che \
+li cerca nel CV anonimo.
 
 Non scrivere mai, in nessun campo tranne identita:
 - il nome e il cognome della persona: scrivi intorno a loro, mai un segnaposto come "[nome]" \
@@ -189,7 +192,7 @@ def _who_of(identita: Identita) -> Who:
         nome=identita.nome,
         cognome=identita.cognome,
         emails=[identita.email],
-        phones=[identita.telefono],
+        phones=identita.telefoni,
         links=identita.link,
     )
 

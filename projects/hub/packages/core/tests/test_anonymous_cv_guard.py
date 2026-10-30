@@ -531,3 +531,37 @@ def test_tax_ids_are_merged_once() -> None:
         nome=None, cognome=None, emails=[], phones=[], links=[], tax_ids=[" 01234567890", None]
     )
     assert one.merged(two).tax_ids == ["01234567890"]
+
+
+# ---- the date and place of birth (I3) ------------------------------------------------------
+
+
+def test_a_birth_statement_is_refused() -> None:
+    for text in (
+        "Nato il 3 marzo 1985",
+        "nata il 03/03/1985 a Messina",
+        "Nato a Messina",
+        "nata ad Ancona nel 1990",
+        "Data di nascita: 3.3.1985",
+        "Date of birth: March 3, 1985",
+        "Born on 3 March 1985",
+        "born in Rome",
+        "Born in the UK in 1985",
+        "DOB 1985-03-03",
+        "Luogo di nascita: Palermo",
+    ):
+        assert identifying_fields(_bullet(text), NOBODY) == ["esperienze[1].punti[0].testo"], text
+    # In a place too.
+    cv = CV.model_copy(deep=True)
+    cv.esperienze[0].luogo = "Messina (nato il 3/3/1985)"
+    assert identifying_fields(cv, NOBODY) == ["esperienze[0].luogo"]
+
+
+def test_words_about_being_born_pass() -> None:
+    for text in (
+        "Una piattaforma nata a supporto dei team di vendita",
+        "Il servizio è nato in un hackathon",
+        "Born in the cloud: un'architettura serverless",
+        "Il progetto è nato il giorno in cui il cliente ha chiesto un'app",
+    ):
+        assert identifying_fields(_bullet(text), NOBODY) == [], text

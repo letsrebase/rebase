@@ -29,8 +29,11 @@ by area, education, certifications, languages. Two pages.
    in rebase's style for any talent with a CV on file.
 2. The PDF carries every role, every education entry, every certification and the
    languages of the CV, in the CV's own words and language.
-3. No first name, surname, email, phone, postal address, date of birth or link of the
-   person anywhere in the PDF. A text that still has one is never rendered.
+3. No first name, surname, email, phone, postal address, date of birth, tax identifier or
+   link of the person anywhere in the PDF. A text in which the guard still finds one is
+   never rendered: the guard checks the name, the contacts, the links, the tax identifiers
+   and the birth date; the postal address has no shape to check, and relies on the prompt
+   and on the admin's read of the PDF before it is sent.
 4. Same CV, same PDF: the text is written once per CV file and reused until the CV
    changes, so a second download is instant, free and identical.
 
@@ -92,8 +95,8 @@ AnonymousCv
 ```
 
 The model answers `AnonymousCvDraft`: `cv: AnonymousCv` plus a private `identita`
-(`nome`, `cognome`, `email`, `telefono`, `link: list[str]`, each only as the CV states it,
-`None` or empty otherwise). `identita` is the guard's input and nothing else: it is never
+(`nome`, `cognome`, `email`, `telefoni: list[str]` (every number the CV gives, at most
+ten), `link: list[str]`, each only as the CV states it, `None` or empty otherwise). `identita` is the guard's input and nothing else: it is never
 stored, logged, returned or printed. It makes the guard independent of the card: a talent
 whose card was never written, was written before prompt version 3 or from another CV still
 gets the CV's own spelling of the name and the CV's contacts checked.
@@ -146,7 +149,14 @@ are Lorenzo's and stay as they are, and a CV is written only when an admin asks 
     label («P.IVA», «partita IVA», «VAT», «IVA», «C.F.», «CF», «codice fiscale»), and the
     person's own partita IVA and codice fiscale however spaced (`freelancer_fiscal`, which
     also gives the PEC, read as an email). Eleven digits with no label that are not the
-    person's pass: an order number has them too.
+    person's pass: an order number has them too;
+  - a statement of birth, in every string: «nato il», «nata il», «data di nascita», «date
+    of birth», «born on», «DOB» with a date a few words on, and «nato a», «nata a», «born
+    in», «luogo di nascita» with a date or a capitalised place right after.
+
+  The postal address is **not** checked: it has no shape the guard can tell from a client's
+  or an office's address, which the CV keeps. It stays out by the prompt alone, and the
+  admin reads the PDF before sending it.
 
   Employers, repositories and clients are **not** checked, unlike the card's guard. It
   answers the names of the offending fields, never the matched word, like `identifying`.

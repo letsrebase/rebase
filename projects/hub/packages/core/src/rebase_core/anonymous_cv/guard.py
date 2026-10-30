@@ -15,6 +15,9 @@ There is no generic «domain with a path» rule on purpose: `Node.js/Express`, `
 codice fiscale or an Italian IBAN by its shape, any IBAN after the word, eleven digits after
 a label (`P.IVA`, `VAT`, `C.F.`, ...) and the person's own partita IVA or codice fiscale
 however it is spaced. Eleven digits alone are not refused: an order number has them too.
+And a statement of birth: «nato il», «born on», «data di nascita» or «DOB» with a date a few
+words on, «nato a» or «born in» with a date or a place right after it. A postal address has
+no shape to check, so it is left to the prompt and to the admin who reads the PDF.
 
 In every string but a place (`luogo`) or a language (`lingue`): the identifiers that are
 names, read as whole phrases of tokens: the handle of an email, the GitHub logins, the handle
@@ -114,6 +117,29 @@ _TAX_LABEL = r"(?:p\.?\s?iva|partita\s+iva|vat|iva|c\.\s?f\.?|cf|codice\s+fiscal
 _LABELLED_TAX_NUMBER = re.compile(
     rf"(?<!\w){_TAX_LABEL}(?!\w)[^\d\n]{{0,12}}?\d(?:[ .\-]?\d){{10}}(?![ .\-]?\d)",
     re.IGNORECASE,
+)
+
+# A date of birth as a CV writes one: 3/3/1985, 1985-03-03, «3 marzo 1985», «March 3, 1985»,
+# or a year alone.
+_MONTHS = (
+    r"(?i:gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre"
+    r"|novembre|dicembre|january|february|march|april|may|june|july|august|september"
+    r"|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\.?"
+)
+_DATE = (
+    r"(?:\d{1,4}\s?[/.\-]\s?\d{1,2}\s?[/.\-]\s?\d{1,4}"
+    rf"|\d{{1,2}}(?:°|st|nd|rd|th)?\s+(?:(?i:of)\s+)?{_MONTHS}"
+    rf"|{_MONTHS}\s+\d{{1,4}}"
+    r"|(?:19|20)\d{2}(?!\d))"
+)
+# A place is a capitalised word right after «nato a» or «born in» («the» allowed in English):
+# «nata a supporto dei team» is not one.
+_PLACE = r"(?:(?i:the)\s+)?[A-ZÀ-Ý][\w'’]+"
+_BIRTH_DATE_LABEL = r"(?i:nat[oa]\s+il|data\s+di\s+nascita|date\s+of\s+birth|born\s+on|dob)"
+_BIRTH_PLACE_LABEL = r"(?i:nat[oa]\s+(?:a|ad|in)|luogo\s+di\s+nascita|place\s+of\s+birth|born\s+in)"
+_BIRTH = re.compile(
+    rf"(?<!\w)(?:{_BIRTH_DATE_LABEL}|{_BIRTH_PLACE_LABEL})(?!\w)[\s:,]*(?:\S+\s+){{0,3}}?{_DATE}"
+    rf"|(?<!\w){_BIRTH_PLACE_LABEL}(?!\w)[\s:,]*{_PLACE}"
 )
 
 
@@ -422,6 +448,7 @@ def identifying_fields(cv: AnonymousCv, who: Who) -> list[str]:
             or any(email in value.lower() for email in emails)
             or (bool(phones) and _has_phone(value, phones))
             or _has_tax_id(value, tax_ids)
+            or _BIRTH.search(value)
             or (
                 not place
                 and (
