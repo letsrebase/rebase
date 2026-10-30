@@ -396,7 +396,8 @@ The workflow kit's three are `pr-creation` (branch, title, body, review and merg
 the hand-off to Linear), `linear-ticket` (the board workflow in one `save_issue` call,
 the state changes, the API quirks) and `linear-content` (how an issue, a comment, a
 closing comment or a project update is written). This repository's own steps for them
-are in `docs/agents/` (the Greptile and CodeRabbit loop, milestone branches, releases),
+are in `docs/agents/` (the Greptile and CodeRabbit loop, paused since 2026-10-30 with both
+bots off, REB-864; milestone branches; releases),
 and its own skills sit beside them (`client-repo-onboarding`, `posthog-analytics`,
 `social-content`). They point at this file, `docs/tracker.md`, `.github/workflow.json`
 and `docs/design/DECISIONS.md` and restate as little of them as they can: the documents

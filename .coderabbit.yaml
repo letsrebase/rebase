@@ -27,8 +27,11 @@ reviews:
   high_level_summary_in_walkthrough: true
   in_progress_fortune: false
 
+  # Off since 2026-10-30 (Lorenzo, REB-864): the included allowance of one review an hour
+  # held every PR for hours. `@coderabbitai review` on a PR still asks for one by hand.
+  # Turning it back on is `true` here plus the loop in docs/agents/pr-creation.md.
   auto_review:
-    enabled: true
+    enabled: false
     drafts: false
     # A Dependabot PR gets no review here (docs/design/DECISIONS.md, 2026-10-05): a
     # bump changes pins and locks, and the ten included reviews an hour go to the
