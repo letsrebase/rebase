@@ -311,7 +311,8 @@ export function SchedaAnonima({ freelancerId, hasCv }: { freelancerId: string; h
   const download = useMutation({
     mutationFn: () => admin.downloadAnonymousCv(freelancerId),
     onSuccess: ({ blob, filename }) => {
-      // The browser saves a link it is told to download; the URL goes as soon as it has.
+      // The browser saves a link it is told to download. The URL goes a second later, not
+      // at once: Firefox and Safari read it after `click` returns.
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
@@ -319,7 +320,7 @@ export function SchedaAnonima({ freelancerId, hasCv }: { freelancerId: string; h
       document.body.appendChild(link)
       link.click()
       link.remove()
-      URL.revokeObjectURL(url)
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
       // The download adds a line to the trail.
       void client.invalidateQueries({ queryKey: ['audit', 'freelancers', freelancerId] })
     },

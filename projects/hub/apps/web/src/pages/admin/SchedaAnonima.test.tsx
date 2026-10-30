@@ -57,7 +57,14 @@ function section(): HTMLElement {
   return screen.getByRole('region', { name: 'Scheda anonima' })
 }
 
-afterEach(() => vi.restoreAllMocks())
+// jsdom has no `URL.createObjectURL`: a test that hands one puts the originals back after.
+const URL_METHODS = { createObjectURL: URL.createObjectURL, revokeObjectURL: URL.revokeObjectURL }
+
+afterEach(() => {
+  vi.restoreAllMocks()
+  vi.useRealTimers()
+  Object.assign(URL, URL_METHODS)
+})
 
 describe('«Scheda anonima» on the talent page (REB-514, spec § 2.1, § 5.1)', () => {
   it('shows every field of the card, the mode, the band core read and when it was written', async () => {
@@ -171,6 +178,7 @@ describe('«Scheda anonima» on the talent page (REB-514, spec § 2.1, § 5.1)',
     })
 
     it('asks for the PDF, says so while it runs and saves it under the server’s filename', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true })
       let release!: (response: Response) => void
       const pdf = new Promise<Response>((resolve) => {
         release = resolve
@@ -206,7 +214,10 @@ describe('«Scheda anonima» on the talent page (REB-514, spec § 2.1, § 5.1)',
       )
       await waitFor(() => expect(saved).toBe('rebase-cv-backend-developer-12345678.pdf'))
       expect(create).toHaveBeenCalledTimes(1)
-      await waitFor(() => expect(revoke).toHaveBeenCalledWith('blob:cv'))
+      // Not at once: Firefox and Safari read the URL after the click returns.
+      expect(revoke).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(revoke).toHaveBeenCalledWith('blob:cv')
       expect(screen.getByRole('button', { name: 'Scarica CV anonimo' })).toBeEnabled()
     })
 

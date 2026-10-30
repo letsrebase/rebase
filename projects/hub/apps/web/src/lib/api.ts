@@ -62,19 +62,28 @@ async function requestBlob(path: string, init: RequestInit = {}): Promise<Blob> 
   return response.blob()
 }
 
-/** The name the API gives a download: `filename*=UTF-8''…` first, then `filename="…"`. */
+/** The name the API gives a download: `filename*=UTF-8''…` first, then `filename="…"`.
+ *  Never a path or a control character, which a decoded `%2F` or `%0A` would otherwise
+ *  hand the browser: they are dropped, and a name left empty is `fallback`. */
 function dispositionFilename(header: string | null, fallback: string): string {
   if (!header) return fallback
   const star = /filename\*\s*=\s*UTF-8''([^;]+)/i.exec(header)
   if (star?.[1]) {
     try {
-      return decodeURIComponent(star[1].trim())
+      return safeFilename(decodeURIComponent(star[1].trim())) || fallback
     } catch {
       // A malformed escape: fall through to the plain name.
     }
   }
   const plain = /filename\s*=\s*"?([^";]+)"?/i.exec(header)
-  return plain?.[1]?.trim() || fallback
+  return safeFilename(plain?.[1] ?? '') || fallback
+}
+
+function safeFilename(name: string): string {
+  return [...name]
+    .filter((c) => c !== '/' && c !== '\\' && c.charCodeAt(0) >= 0x20 && c.charCodeAt(0) !== 0x7f)
+    .join('')
+    .trim()
 }
 
 const json = (body: unknown): RequestInit => ({
@@ -1566,8 +1575,9 @@ export const admin = {
   regenerateFreelancerCard: (id: string) =>
     request<FreelancerCard>(`/api/hub/freelancers/${id}/card`, { method: 'POST' }),
   /** «Scarica CV anonimo» (REB-862): the CV rewritten without the person's name, contacts
-   *  or links, as a PDF. The first press can take up to a minute (a model call); the API's
-   *  sentence comes back as an `ApiError` (no CV, a leak that survived, the task off). */
+   *  or links, as a PDF. The first press can take minutes (a model call of up to 150
+   *  seconds, and one rewrite at most); the API's sentence comes back as an `ApiError` (no
+   *  CV, a leak that survived, the task off). */
   downloadAnonymousCv: async (id: string): Promise<{ blob: Blob; filename: string }> => {
     const response = await fetch(`/api/hub/freelancers/${id}/cv-anonimo`, {
       credentials: 'same-origin',
