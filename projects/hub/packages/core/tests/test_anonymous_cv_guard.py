@@ -159,3 +159,29 @@ def test_merged_unites_without_repeating() -> None:
 
 def test_strings_paths_in_order() -> None:
     assert [path for path, _ in strings(CV)][:3] == ["titolo", "sommario", "esperienze[0].ruolo"]
+
+
+def _voce(value: str) -> AnonymousCv:
+    cv = CV.model_copy(deep=True)
+    cv.altre_sezioni[0].voci[0] = value
+    return cv
+
+
+def test_bare_profile_link() -> None:
+    who = who_of(nome=None, cognome=None, emails=[], phones=[], links=[])
+    for word in ("linkedin.com/in/someone-else", "github.com/acme", "Github.com/Acme"):
+        assert identifying_fields(_voce(word), who) == ["altre_sezioni[0].voci[0]"]
+    assert identifying_fields(_voce("GitHub Actions e LinkedIn"), who) == []
+
+
+def test_name_inside_a_slug() -> None:
+    who = who_of(nome="Alex", cognome="Fegatilli", emails=[], phones=[], links=[])
+    for word in ("alex-fegatilli-fau50", "fegatilli.dev"):
+        assert identifying_fields(_voce(word), who) == ["altre_sezioni[0].voci[0]"]
+
+
+def test_skills_with_dots_and_slashes_pass() -> None:
+    cv = CV.model_copy(deep=True)
+    cv.competenze = []
+    cv.esperienze[1].punti[0].testo = "migrato da Node.js/Express ad ASP.NET Core"
+    assert identifying_fields(cv, WHO) == []

@@ -5,12 +5,20 @@ say could name the person. It answers the **paths** of the offending strings, ne
 that matched, so a log line built from the answer never repeats an identifier. The readers are
 the card's (`card_guard`), imported and not copied: a fix there is a fix here.
 
-Three readings, from wide to narrow, because a CV is mostly names of other things. An address,
-the person's email, the handle of it and of the GitHub account, their own site and their
-phone are read in every string. The surname, written with a capital, is read everywhere but in
-a place (`luogo`) or a language (Messina, Russo, Tedesco). The first name is read only where
-prose is: the headline, the summary, the roles, the bullets and the other sections, since
-Ada, Ruby and Julia are languages too, and never inside the CV's own skills.
+Three readings, from wide to narrow, because a CV is mostly names of other things.
+
+In every string: an address (`https://`, `www.`, `@`); a profile or portfolio host written
+bare (`linkedin.com/in/...`, `github.com/...`) from a fixed list, whoever's it is, since the
+model writes links without a scheme; the person's name inside a link-like token
+(`alex-fegatilli-fau50`, `fegatilli.dev`: a token with a `/`, `-`, `_` or a dot between two
+word characters), case-insensitively because a slug is lower case; the person's email, the
+handle of it and of the GitHub account, their own site and their phone. There is no generic
+«domain with a path» rule on purpose: `Node.js/Express`, `ASP.NET` and `Vue.js` are skills.
+
+The surname, written with a capital, is read everywhere but in a place (`luogo`) or a
+language (Messina, Russo, Tedesco). The first name is read only where prose is: the headline,
+the summary, the roles, the bullets and the other sections, since Ada, Ruby and Julia are
+languages too, and never inside the CV's own skills.
 """
 
 import re
@@ -40,6 +48,45 @@ _PROSE = re.compile(
 )
 # Where the surname is not read: a place or a language is the CV's own.
 _PLACE_OR_LANGUAGE = re.compile(r"\.luogo$|^lingue\[")
+# Profile and portfolio sites: a mention of one is a personal link, whoever it belongs to.
+# Matched as a host (a word boundary before, no word character after), so «GitHub» or
+# «LinkedIn» without a TLD are only words.
+_PROFILE_HOST = re.compile(
+    r"\b(?:"
+    + "|".join(
+        re.escape(host)
+        for host in (
+            "linkedin.com",
+            "lnkd.in",
+            "github.com",
+            "github.io",
+            "gitlab.com",
+            "gitlab.io",
+            "bitbucket.org",
+            "stackoverflow.com",
+            "medium.com",
+            "dev.to",
+            "behance.net",
+            "dribbble.com",
+            "about.me",
+            "linktr.ee",
+            "x.com",
+            "twitter.com",
+            "instagram.com",
+            "facebook.com",
+            "youtube.com",
+            "kaggle.com",
+            "huggingface.co",
+            "notion.site",
+            "vercel.app",
+            "netlify.app",
+        )
+    )
+    + r")(?!\w)",
+    re.IGNORECASE,
+)
+# A slug is joined by `-` or `_` as often as it is dotted or pathed (`alex-fegatilli-fau50`).
+_LINK_LIKE = re.compile(r"[/_\-]|\w\.\w")
 _SKILL_PATH = re.compile(r"^competenze\[\d+\]\.voci\[\d+\]$")
 
 
@@ -114,6 +161,16 @@ def identifying_fields(cv: AnonymousCv, who: Who) -> list[str]:
         if phrase is not None
     ]
 
+    # The person's names, lower case, for the link-like tokens (under three characters
+    # are too weak to search inside a slug).
+    slug_names = [name.lower() for name in {*surnames, *given} if len(name) >= 3]
+
+    def in_a_link(value: str) -> bool:
+        return any(
+            _LINK_LIKE.search(token) and any(name in token.lower() for name in slug_names)
+            for token in value.split()
+        )
+
     every = strings(cv)
     skills = [value for path, value in every if _SKILL_PATH.match(path)]
 
@@ -122,6 +179,8 @@ def identifying_fields(cv: AnonymousCv, who: Who) -> list[str]:
         plain = _without_skills(value, skills)
         if (
             _ADDRESS.search(value)
+            or _PROFILE_HOST.search(value)
+            or in_a_link(value)
             or any(email in value.lower() for email in emails)
             or (bool(phones) and _has_phone(value, phones))
             or any(_contains(_tokens(value), phrase) for phrase in phrases)
