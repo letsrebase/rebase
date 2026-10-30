@@ -448,3 +448,86 @@ def test_name_run_without_a_link() -> None:
         assert identifying_fields(_voce(text), who) == VOCE, text
     assert identifying_fields(_voce("Mario Rossi"), who) == VOCE  # the capitalised-word reading
     assert identifying_fields(_voce("mario rossi"), who) == []
+
+
+# ---- tax identifiers (C2): a codice fiscale, a partita IVA or an IBAN names one person ----
+
+NOBODY = who_of(nome=None, cognome=None, emails=[], phones=[], links=[])
+
+
+def _bullet(text: str) -> AnonymousCv:
+    cv = CV.model_copy(deep=True)
+    cv.esperienze[1].punti[0].testo = text
+    return cv
+
+
+def test_a_labelled_partita_iva_is_refused() -> None:
+    for text in (
+        "Freelance con P.IVA 01234567890",
+        "Freelance, P. IVA: 0123 456 7890.",
+        "Partita IVA n. 01234567890",
+        "VAT IT01234567890",
+        "Iscritto all'albo, IVA 01234567890",
+        "CF 01234567890 (ditta individuale)",
+        "codice fiscale: 01234567890",
+    ):
+        assert identifying_fields(_bullet(text), NOBODY) == ["esperienze[1].punti[0].testo"], text
+
+
+def test_a_codice_fiscale_is_refused_anywhere() -> None:
+    assert identifying_fields(_bullet("C.F. MSSMRA85M01F158K"), NOBODY) == [
+        "esperienze[1].punti[0].testo"
+    ]
+    # Its shape alone, in any case, in a place too.
+    cv = CV.model_copy(deep=True)
+    cv.esperienze[0].luogo = "Messina mssmra85m01f158k"
+    assert identifying_fields(cv, NOBODY) == ["esperienze[0].luogo"]
+
+
+def test_a_known_partita_iva_is_refused_without_a_label() -> None:
+    who = who_of(nome=None, cognome=None, emails=[], phones=[], links=[], tax_ids=["01234567890"])
+    assert identifying_fields(_bullet("Rif. 012 3456 7890"), who) == [
+        "esperienze[1].punti[0].testo"
+    ]
+    cv = CV.model_copy(deep=True)
+    cv.esperienze[0].luogo = "Messina 01234567890"
+    assert identifying_fields(cv, who) == ["esperienze[0].luogo"]
+
+
+def test_a_known_codice_fiscale_written_spaced_is_refused() -> None:
+    who = who_of(
+        nome=None, cognome=None, emails=[], phones=[], links=[], tax_ids=["mss mra 85m01 f158k"]
+    )
+    assert who.tax_ids == ["MSSMRA85M01F158K"]
+    assert identifying_fields(_bullet("Codice MSS MRA 85M01 F158K"), who) == [
+        "esperienze[1].punti[0].testo"
+    ]
+
+
+def test_words_about_a_partita_iva_pass() -> None:
+    assert identifying_fields(_bullet("Partita IVA attiva dal 2019"), NOBODY) == []
+    assert identifying_fields(_bullet("Libero professionista con P.IVA dal 2019"), NOBODY) == []
+
+
+def test_an_unlabelled_unknown_number_passes() -> None:
+    who = who_of(nome=None, cognome=None, emails=[], phones=[], links=[], tax_ids=["01234567890"])
+    assert identifying_fields(_bullet("Ordine di lavoro 98765432109 consegnato"), who) == []
+
+
+def test_an_iban_is_refused() -> None:
+    for text in (
+        "Pagamenti su IT60X0542811101000000123456",
+        "Pagamenti su IT60 X054 2811 1010 0000 0123 456",
+        "IBAN: DE89 3704 0044 0532 0130 00",
+    ):
+        assert identifying_fields(_bullet(text), NOBODY) == ["esperienze[1].punti[0].testo"], text
+    # A code shaped like a foreign IBAN with no «IBAN» before it is a code.
+    assert identifying_fields(_bullet("Progetto DE89 3704 0044 0532"), NOBODY) == []
+
+
+def test_tax_ids_are_merged_once() -> None:
+    one = who_of(nome=None, cognome=None, emails=[], phones=[], links=[], tax_ids=["01234567890"])
+    two = who_of(
+        nome=None, cognome=None, emails=[], phones=[], links=[], tax_ids=[" 01234567890", None]
+    )
+    assert one.merged(two).tax_ids == ["01234567890"]

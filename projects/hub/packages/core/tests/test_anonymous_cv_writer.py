@@ -31,8 +31,10 @@ from rebase_core.anonymous_cv.writer import (
     Written,
 )
 from rebase_core.cards import NO_TEXT, PERSONA_CV
+from rebase_core.contract_schemas import FiscalData
 from rebase_core.db import session_factory
 from rebase_core.errors import AnonymousCvFailed, LlmNotConfigured, LlmUnavailable, NotFound
+from rebase_core.fiscal import FiscalService
 from rebase_core.freelancers import FreelancerService
 from rebase_core.llm import LlmRequest, LlmResponse, RecordingCall
 from rebase_core.members import MemberService
@@ -94,6 +96,13 @@ EXCLUSIONS = (
     "portfolio",
     "sito di un'azienda",
     "[nome]",
+    "partita iva",
+    "vat number",
+    "codice fiscale",
+    "tax code",
+    "pec",
+    "iban",
+    "numero di un documento",
 )
 
 
@@ -169,11 +178,16 @@ class _During(RecordingCall):
         return super().complete(request)
 
 
-def _apply(session: Session, cv: bytes | None = CV, links: list[str] | None = None) -> UUID:
+def _apply(
+    session: Session,
+    cv: bytes | None = CV,
+    links: list[str] | None = None,
+    email: str = "mario@studio.it",
+) -> UUID:
     data = FreelancerCreate(
         nome="Mario",
         cognome="Messina",
-        email="mario@studio.it",
+        email=email,
         tariffa_giornaliera=Decimal("450.00"),
         posizione="Backend developer",
         remoto="remoto",
@@ -450,6 +464,87 @@ def test_the_cards_persona_is_checked(clean: Session) -> None:
 
     assert len(llm.requests) == 2
     assert "esperienze[0].punti[0].testo" in llm.requests[1].messages[-1].text
+
+
+def _rewritten_for(llm: RecordingCall, path: str) -> None:
+    """The answer was asked again once, for `path`."""
+    assert len(llm.requests) == 2
+    assert path in llm.requests[1].messages[-1].text
+
+
+def test_the_tax_data_is_checked(clean: Session, logs: pytest.LogCaptureFixture) -> None:
+    """The partita IVA and codice fiscale an admin saved for the contracts (REB-387) are
+    the person: the partita IVA written with no label, which only the saved one can catch,
+    is asked again, and neither number reaches a log."""
+    freelancer_id = _apply(clean)
+    FiscalService(clean).save(
+        freelancer_id,
+        FiscalData(
+            codice_fiscale="MSSMRA85M01F158K",
+            partita_iva="01234567890",
+            domicilio="Via Roma 1, Messina",
+            pec="studio.fatture@pec.it",
+        ),
+        _admin(clean),
+    )
+    llm = RecordingCall([cv_response(_with_bullet("Fatture n. 0123 456 7890.")), cv_response()])
+
+    written = _writer(clean, llm).get_or_write(freelancer_id)
+
+    _rewritten_for(llm, "esperienze[0].punti[0].testo")
+    assert written.cv == AnonymousCv.model_validate(BODY)
+    for secret in ("01234567890", "0123 456 7890", "MSSMRA85M01F158K", "studio.fatture"):
+        assert secret not in logs.text
+
+
+def test_the_pec_is_checked_as_an_email(clean: Session) -> None:
+    """The PEC's handle, written without its domain, is the person as an email's is."""
+    freelancer_id = _apply(clean)
+    FiscalService(clean).save(
+        freelancer_id,
+        FiscalData(
+            codice_fiscale="MSSMRA85M01F158K",
+            partita_iva=None,
+            domicilio="Via Roma 1, Messina",
+            pec="studio.fatture@pec.it",
+        ),
+        _admin(clean),
+    )
+    llm = RecordingCall(
+        [cv_response(_with_bullet("Firma le fatture come studio.fatture.")), cv_response()]
+    )
+
+    _writer(clean, llm).get_or_write(freelancer_id)
+
+    _rewritten_for(llm, "esperienze[0].punti[0].testo")
+
+
+def test_the_profiles_link_is_checked(clean: Session) -> None:
+    """The handle of a link on the profile (`freelancers.links`) is found in a bullet that
+    writes it bare, with no host around it."""
+    freelancer_id = _apply(clean, links=["https://github.com/mmessina90"])
+    llm = RecordingCall(
+        [cv_response(_with_bullet("Mantiene il progetto mmessina90 su fatture.")), cv_response()]
+    )
+
+    _writer(clean, llm).get_or_write(freelancer_id)
+
+    _rewritten_for(llm, "esperienze[0].punti[0].testo")
+
+
+def test_the_profiles_email_is_checked(clean: Session) -> None:
+    """The profile's email, by its handle: an answer that signs with it is asked again."""
+    freelancer_id = _apply(clean, email="zorro.dev@studio.it")
+    llm = RecordingCall(
+        [
+            cv_response(_with(sommario="Backend developer, firma i commit come zorro.dev.")),
+            cv_response(),
+        ]
+    )
+
+    _writer(clean, llm).get_or_write(freelancer_id)
+
+    _rewritten_for(llm, "sommario")
 
 
 def test_refusal(clean: Session) -> None:

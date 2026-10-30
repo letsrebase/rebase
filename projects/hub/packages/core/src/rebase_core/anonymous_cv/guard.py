@@ -11,7 +11,10 @@ In every string: an address (`https://`, `www.`, `@`); a profile or portfolio ho
 bare (`linkedin.com/in/...`, `github.com/...`) from a fixed list, whoever's it is, since the
 model writes links without a scheme; the person's whole email; their phone by its last digits.
 There is no generic «domain with a path» rule on purpose: `Node.js/Express`, `ASP.NET` and
-`Vue.js` are skills.
+`Vue.js` are skills. And a tax identifier, which names one person as surely as a name: a
+codice fiscale or an Italian IBAN by its shape, any IBAN after the word, eleven digits after
+a label (`P.IVA`, `VAT`, `C.F.`, ...) and the person's own partita IVA or codice fiscale
+however it is spaced. Eleven digits alone are not refused: an order number has them too.
 
 In every string but a place (`luogo`) or a language (`lingue`): the identifiers that are
 names, read as whole phrases of tokens: the handle of an email, the GitHub logins, the handle
@@ -95,6 +98,24 @@ _PROFILE_HOST = re.compile(
 _LINK_LIKE = re.compile(r"[/_\-]|\w\.\w")
 _STRICT_LINK = re.compile(r"/|\w\.\w")
 
+# A codice fiscale's shape: six letters, the year, the month's letter, the day, the place.
+_CODICE_FISCALE = re.compile(r"\b[A-Z]{6}\d{2}[A-EHLMPRST]\d{2}[A-Z]\d{3}[A-Z]\b", re.IGNORECASE)
+# An Italian IBAN, compact or in the bank's groups of four: the candidate is read with its
+# spaces, then checked compact, so «IT20 anni di esperienza» is not one.
+_IBAN_IT_SPACED = re.compile(r"\bIT\d{2}(?:\s?[0-9A-Z]){23}\b", re.IGNORECASE)
+_IBAN_IT = re.compile(r"IT\d{2}[A-Z]\d{10}[0-9A-Z]{12}", re.IGNORECASE)
+# Any country's, only after the word: «DE89 3704 0044» alone may be a code.
+_IBAN_AFTER_LABEL = re.compile(
+    r"\bIBAN\b\W{0,4}[A-Z]{2}\d{2}(?:\s?[0-9A-Z]{4}){3,7}\b", re.IGNORECASE
+)
+# Eleven digits (spaced, dotted or dashed) a few characters after a tax label: a partita IVA,
+# or a company's codice fiscale. «Partita IVA attiva dal 2019» has no such number.
+_TAX_LABEL = r"(?:p\.?\s?iva|partita\s+iva|vat|iva|c\.\s?f\.?|cf|codice\s+fiscale)"
+_LABELLED_TAX_NUMBER = re.compile(
+    rf"(?<!\w){_TAX_LABEL}(?!\w)[^\d\n]{{0,12}}?\d(?:[ .\-]?\d){{10}}(?![ .\-]?\d)",
+    re.IGNORECASE,
+)
+
 
 # Labels in front of a platform's domain that are the site's own (`scholar.`, `sites.`), not
 # a person's subdomain (`mariorossi.medium.com`).
@@ -152,7 +173,8 @@ def _words(name: str) -> list[str]:
 class Who:
     """What could name this person: the names as the account and the CV spell them, the
     emails (lower case) and phones (digits only) of both, the GitHub logins, the hostnames
-    of the links and the handles in their paths."""
+    of the links and the handles in their paths, and the tax identifiers the hub keeps for
+    them (upper case, letters and digits only)."""
 
     nomi: list[str]
     cognomi: list[str]
@@ -161,6 +183,7 @@ class Who:
     github_logins: list[str]
     hostnames: list[str]
     handles: list[str]
+    tax_ids: list[str]
 
     def merged(self, other: "Who") -> "Who":
         """Both, each identifier once: the account's `Who` and the one the CV gave."""
@@ -172,6 +195,7 @@ class Who:
             github_logins=_unique(self.github_logins, other.github_logins),
             hostnames=_unique(self.hostnames, other.hostnames),
             handles=_unique(self.handles, other.handles),
+            tax_ids=_unique(self.tax_ids, other.tax_ids),
         )
 
 
@@ -228,8 +252,10 @@ def who_of(
     emails: Iterable[str | None],
     phones: Iterable[str | None],
     links: Iterable[str | None],
+    tax_ids: Iterable[str | None] = (),
 ) -> Who:
-    """A `Who` from raw values: blanks dropped, emails lower-cased, phones as digits."""
+    """A `Who` from raw values: blanks dropped, emails lower-cased, phones as digits, tax
+    identifiers upper case with their spaces and dots dropped."""
     urls = [link.strip() for link in links if link and link.strip()]
     return Who(
         nomi=[nome.strip()] if nome and nome.strip() else [],
@@ -241,7 +267,35 @@ def who_of(
         ),
         hostnames=link_hostnames(urls),
         handles=_unique(*(_path_handles(url) for url in urls)),
+        tax_ids=_unique(compact for value in tax_ids if value and (compact := _tax_compact(value))),
     )
+
+
+def _tax_compact(value: str) -> str:
+    return re.sub(r"[\W_]+", "", value).upper()
+
+
+def _has_tax_id(value: str, known: list[str]) -> bool:
+    """Whether `value` holds a tax identifier: one by its shape or its label, or one of the
+    person's own (`known`, compact), however it is spaced, dotted or dashed. A known number
+    is read between non-digits («IT01234567890» is the partita IVA), a known code between
+    non-alphanumerics."""
+    if (
+        _CODICE_FISCALE.search(value)
+        or _IBAN_AFTER_LABEL.search(value)
+        or _LABELLED_TAX_NUMBER.search(value)
+        or any(
+            _IBAN_IT.fullmatch(re.sub(r"\s", "", m.group()))
+            for m in _IBAN_IT_SPACED.finditer(value)
+        )
+    ):
+        return True
+    for tax_id in known:
+        edge = r"\d" if tax_id.isdigit() else r"[0-9A-Za-z]"
+        spaced = r"[ .\-]?".join(re.escape(character) for character in tax_id)
+        if re.search(rf"(?<!{edge}){spaced}(?!{edge})", value, re.IGNORECASE):
+            return True
+    return False
 
 
 def _bare(handle: str) -> str:
@@ -298,6 +352,8 @@ def identifying_fields(cv: AnonymousCv, who: Who) -> list[str]:
     given = _unique(firsts, *(_words(name) for name in firsts))
     emails = [email for email in who.emails if email]
     phones = [digits[-PHONE_KEY_DIGITS:] for digits in who.phones if len(digits) >= 7]
+    # A partita IVA has 11 digits and a codice fiscale 16 characters (11 for a company).
+    tax_ids = [tax_id for tax_id in who.tax_ids if len(tax_id) >= 11]
 
     # An employer the CV names itself is not the person's site, even when the person's
     # site is called like it: the company's own page is theirs.
@@ -365,6 +421,7 @@ def identifying_fields(cv: AnonymousCv, who: Who) -> list[str]:
             or _PROFILE_HOST.search(value)
             or any(email in value.lower() for email in emails)
             or (bool(phones) and _has_phone(value, phones))
+            or _has_tax_id(value, tax_ids)
             or (
                 not place
                 and (

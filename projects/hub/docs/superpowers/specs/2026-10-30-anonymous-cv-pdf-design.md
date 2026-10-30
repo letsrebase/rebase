@@ -123,7 +123,8 @@ are Lorenzo's and stay as they are, and a CV is written only when an admin asks 
   and tidy (consistent dates, bullets, grouping), never add a fact, a level or a skill;
   leave out the person's first name and surname everywhere (write around them, never a
   placeholder like «[nome]»), their email, phone, postal address, date and place of birth,
-  nationality, marital status, photo caption, the privacy-consent line, and **every link,
+  nationality, marital status, photo caption, the privacy-consent line, the partita IVA,
+  codice fiscale, PEC, IBAN and any document number, and **every link,
   URL, handle and username** (LinkedIn, GitHub, a personal site, a portfolio, a company
   site too: Ivan, «eventuali link specifici»). Company, client, school and city names stay.
   The CV text goes in the card's inert block (`cards._block`), so text inside the CV is
@@ -139,7 +140,13 @@ are Lorenzo's and stay as they are, and a CV is written only when an admin asks 
     (`card_draft.phone_digits`, so another spacing or a `+39` still matches);
   - any address at all (`card_guard._ADDRESS`: a scheme, `www.`, `@`);
   - the GitHub login and the hostnames of the person's links (`sources.github_login_of`,
-    `sources.link_hostnames`).
+    `sources.link_hostnames`);
+  - a tax identifier, in every string, a place included: a codice fiscale or an Italian IBAN
+    by its shape, any IBAN after the word «IBAN», eleven digits a few characters after a
+    label («P.IVA», «partita IVA», «VAT», «IVA», «C.F.», «CF», «codice fiscale»), and the
+    person's own partita IVA and codice fiscale however spaced (`freelancer_fiscal`, which
+    also gives the PEC, read as an email). Eleven digits with no label that are not the
+    person's pass: an order number has them too.
 
   Employers, repositories and clients are **not** checked, unlike the card's guard. It
   answers the names of the offending fields, never the matched word, like `identifying`.

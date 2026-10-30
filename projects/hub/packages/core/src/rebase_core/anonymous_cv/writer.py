@@ -40,7 +40,7 @@ from rebase_core.cv_text import CvText
 from rebase_core.errors import AnonymousCvFailed, LlmNotConfigured, NoCv, NotFound
 from rebase_core.freelancers import ENTITY, FreelancerService, cv_of
 from rebase_core.llm import LlmCall, LlmMessage, LlmRequest, LlmResponse
-from rebase_core.models import AnonymousCvRow, Freelancer, User
+from rebase_core.models import AnonymousCvRow, Freelancer, FreelancerFiscal, User
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +115,8 @@ Non scrivere mai, in nessun campo tranne identita:
 - il nome e il cognome della persona: scrivi intorno a loro, mai un segnaposto come "[nome]" \
 o "il candidato";
 - la sua email, il suo numero di telefono, il suo indirizzo postale;
+- la partita IVA (VAT number), il codice fiscale (tax code), la PEC, l'IBAN e il numero di un \
+documento (carta d'identità, passaporto, patente);
 - la data e il luogo di nascita, la nazionalità, lo stato civile, la didascalia di una foto, \
 la riga del consenso al trattamento dei dati personali;
 - nessun link, URL, handle o nome utente: né LinkedIn, né GitHub, né il sito personale, né un \
@@ -303,17 +305,25 @@ class AnonymousCvWriter:
 
     def _known(self, row: Freelancer) -> Who:
         """Who the person is, by the two readings the hub has without a call: the profile
-        (`users`' name, email, phone and LinkedIn, and `freelancers.links`) and the anonymous
-        card's stored persona when there is one for this CV (`cards.stored_persona`). The
-        answer's own `identita` is the third, added when it arrives."""
+        (`users`' name, email, phone and LinkedIn, `freelancers.links`, and the tax data an
+        admin saved for the contracts: codice fiscale, partita IVA, the PEC as an email) and
+        the anonymous card's stored persona when there is one for this CV
+        (`cards.stored_persona`). The answer's own `identita` is the third, added when it
+        arrives."""
         user = self.session.get(User, row.user_id)
         assert user is not None
+        fiscal = self.session.scalar(
+            select(FreelancerFiscal)
+            .where(FreelancerFiscal.freelancer_id == row.id)
+            .execution_options(populate_existing=True)
+        )
         known = who_of(
             nome=user.nome,
             cognome=user.cognome,
-            emails=[user.email],
+            emails=[user.email, fiscal.pec if fiscal else None],
             phones=[user.telefono],
             links=[*row.links, user.linkedin_url],
+            tax_ids=[fiscal.codice_fiscale, fiscal.partita_iva] if fiscal else [],
         )
         persona = stored_persona(self.session, row.id)
         if persona is None:
