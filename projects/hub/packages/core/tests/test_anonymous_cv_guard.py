@@ -218,9 +218,12 @@ def test_address_alone() -> None:
 
 
 def test_whole_host_alone() -> None:
-    who = _who(links=["https://fau50.dev"])
-    assert identifying_fields(_voce("fau50.dev"), who) == VOCE
-    assert identifying_fields(_voce("fau50"), who) == VOCE  # the label of a personal host
+    # A two-letter label is not searched alone, so only the whole host can catch it.
+    who = _who(links=["https://ab.dev"])
+    assert identifying_fields(_voce("ab.dev"), who) == VOCE
+    assert identifying_fields(_voce("ab"), who) == []
+    personal = _who(links=["https://fau50.dev"])
+    assert identifying_fields(_voce("fau50"), personal) == VOCE  # the label of the host
 
 
 def test_slugs_are_caught() -> None:
@@ -287,7 +290,7 @@ def test_handle_in_the_path_of_a_link() -> None:
     assert identifying_fields(_voce("afegatilli"), who) == VOCE
 
 
-def test_company_site_does_not_refuse_the_company() -> None:
+def test_employer_named_in_the_cv_is_not_the_persons_site() -> None:
     who = _who(links=["https://acme-labs.io"])
     cv = CV.model_copy(deep=True)
     cv.esperienze[1].azienda = "Acme Labs S.r.l."
@@ -316,3 +319,77 @@ def test_surname_is_not_read_in_a_language() -> None:
     cv = CV.model_copy(deep=True)
     cv.lingue[1] = Lingua(lingua="Tedesco", livello=None)
     assert identifying_fields(cv, _who("Mario", "Tedesco")) == []
+
+
+def test_platform_links_name_no_one() -> None:
+    cases = (
+        ("https://youtube.com/@alexf", "YouTube"),
+        ("https://instagram.com/alexf", "Instagram"),
+        ("https://facebook.com/alexf", "Facebook Ads"),
+        ("https://twitter.com/alexf", "Twitter API"),
+        ("https://hackerrank.com/profile/alexf", "HackerRank Python (Gold)"),
+        ("https://leetcode.com/u/alexf", "LeetCode"),
+        ("https://scholar.google.com/citations", "Google Cloud Professional Architect"),
+        ("https://about.me/alexf", "about"),
+        ("https://dev.to/alexf", "from dev to prod"),
+        ("https://about.me/alexf", "about me"),
+    )
+    for link, text in cases:
+        assert identifying_fields(_voce(text), _who(links=[link])) == [], (link, text)
+    assert identifying_fields(_voce("alexf"), _who(links=["https://instagram.com/alexf"])) == VOCE
+
+
+def test_generic_path_segments_name_no_one() -> None:
+    cases = (
+        ("https://stackoverflow.com/users/1234567/mario-rossi", "Served 2M users"),
+        ("https://youtube.com/channel/UC1234", "Multi-channel"),
+        ("https://youtube.com/user/x", "User research"),
+        ("https://researchgate.net/profile/Mario-Rossi", "customer profile service"),
+        ("https://mariorossi.dev/about", "about"),
+        ("https://mariorossi.dev/work", "Remote work"),
+        ("https://credly.com/badges/0f1e", "Open Badges"),
+        ("https://sites.google.com/view/x", "Point of view"),
+    )
+    for link, text in cases:
+        assert identifying_fields(_voce(text), _who(links=[link])) == [], (link, text)
+    for link, text in (
+        ("https://linkedin.com/in/afegatilli-99", "afegatilli-99"),
+        ("https://stackoverflow.com/users/1234567/mario-rossi", "mario-rossi"),
+        ("https://mariorossi.dev/folio-zeta", "folio-zeta"),
+        ("https://mario.github.io", "mario"),
+    ):
+        assert identifying_fields(_voce(text), _who(links=[link])) == VOCE, (link, text)
+
+
+def test_italian_particles() -> None:
+    for cognome, text in (
+        ("Dal Lago", "Dal 2019 ha guidato il team"),
+        ("Dalla Costa", "Dalla fase di analisi al rilascio"),
+        ("Dalle Mura", "Dalle specifiche al codice"),
+        ("Dall'Ara", "Dall'analisi al rilascio"),
+        ("Dell'Acqua", "server Dell PowerEdge"),
+        ("Dell'Orto", "Dell EMC"),
+    ):
+        cv = CV.model_copy(update={"sommario": text})
+        assert identifying_fields(cv, _who("Mario", cognome)) == [], (cognome, text)
+    cv = CV.model_copy(update={"sommario": "Acqua e Lago"})
+    assert identifying_fields(cv, _who("Mario", "Dell'Acqua")) == ["sommario"]
+
+
+def test_first_name_in_a_slug_outside_prose() -> None:
+    cv = CV.model_copy(deep=True)
+    cv.certificazioni = ["Credly: alex-cloud.dev"]
+    assert identifying_fields(cv, _who("Alex", "Rossi")) == ["certificazioni[0]"]
+
+
+def test_skill_is_blanked_unless_it_holds_the_surname_as_a_word() -> None:
+    cv = _skill("Julia").model_copy(update={"sommario": "Sviluppo in Julia e Python."})
+    assert identifying_fields(cv, _who("Julia", "Li")) == []
+
+
+def test_short_handles_keep_their_digits() -> None:
+    cv = CV.model_copy(deep=True)
+    cv.formazione[0].istituto = "FAU Erlangen-Nürnberg"
+    assert identifying_fields(cv, _who(links=["https://github.com/fau50"])) == []
+    cv = _skill("Java")
+    assert identifying_fields(cv, _who(links=["https://gitlab.com/java8"])) == []

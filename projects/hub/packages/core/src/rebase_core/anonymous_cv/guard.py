@@ -22,7 +22,8 @@ text, so a skill called «Mario Messina» is still a leak. A place or a language
 (Messina, Russo, Tedesco).
 
 In the prose (headline, summary, roles, bullets, other sections): the first name, never
-inside the CV's own skills, since Ada, Ruby and Julia are languages too.
+inside the CV's own skills, since Ada, Ruby and Julia are languages too. In a link-like
+token (below) it is read in every string but a place, skills blanked.
 
 In a link-like token (one with a `/`, `-`, `_` or a dot between two word characters): the
 name as a slug writes it. The token is cut into parts on anything but letters and digits,
@@ -42,6 +43,7 @@ from rebase_core.card_draft import phone_digits
 from rebase_core.card_guard import (
     _ADDRESS,
     PHONE_KEY_DIGITS,
+    STOPLIST,
     _contains,
     _has_phone,
     _hostname_phrases,
@@ -65,7 +67,8 @@ _SKILL_PATH = re.compile(r"^competenze\[\d+\]\.voci\[\d+\]$")
 # The small words of a compound surname (De Luca, van der Berg, D'Amico): not a name alone.
 _PARTICLES = frozenset(
     ["de", "di", "da", "del", "della", "delle", "dei", "degli", "van", "von", "der", "den"]
-    + ["la", "le", "lo", "dos", "das", "du", "d"]
+    + ["la", "le", "lo", "dos", "das", "du", "d", "dal", "dalla", "dalle", "dallo", "dall"]
+    + ["dell", "dello", "dagli", "dai"]
 )
 # Profile and portfolio sites: a mention of one is a personal link, whoever it belongs to.
 # Matched as a host (a word boundary before, no word character after), so «GitHub» or
@@ -87,6 +90,33 @@ _PROFILE_HOST = re.compile(
 _LINK_LIKE = re.compile(r"[/_\-]|\w\.\w")
 
 
+# Hosts that host many people's pages: the person is the subdomain (`mario.github.io`), the
+# platform is no one.
+_HOSTING = (
+    "github.io", "gitlab.io", "netlify.app", "vercel.app", "notion.site", "wixsite.com",
+    "wordpress.com", "blogspot.com", "substack.com",
+)  # fmt: skip
+# Where a profile site puts the user in the first segment of the path.
+_FIRST_SEGMENT = (
+    "github.com", "gitlab.com", "x.com", "twitter.com", "instagram.com", "facebook.com",
+    "dev.to", "behance.net", "dribbble.com", "codepen.io", "medium.com",
+)  # fmt: skip
+# Where it sits after a fixed word: (host, the segment before the user, how many to skip).
+_AFTER = {
+    "linkedin.com": ("in", 0),
+    "stackoverflow.com": ("users", 1),
+    "leetcode.com": ("u", 0),
+    "hackerrank.com": ("profile", 0),
+    "researchgate.net": ("profile", 0),
+}
+# Segments of a path that are the site's structure, not anyone.
+_GENERIC_SEGMENTS = frozenset(
+    ["users", "user", "u", "profile", "profiles", "channel", "c", "about", "work", "view"]
+    + ["badges", "badge", "in", "pub", "citations", "portfolio", "projects", "blog", "posts"]
+    + ["home", "me", "cv", "resume", "en", "it"]
+)
+
+
 def _unique(*groups: Iterable[str]) -> list[str]:
     return list(dict.fromkeys(item for group in groups for item in group))
 
@@ -106,7 +136,7 @@ def _words(name: str) -> list[str]:
     """The words of a name of 3+ letters that are not particles, as written."""
     return [
         word
-        for word in re.split(r"[\s\-']+", name)
+        for word in re.split(r"[\s\-'\u2019]+", name)
         if len(_compact(word)) >= 3 and _fold(word) not in _PARTICLES
     ]
 
@@ -138,16 +168,39 @@ class Who:
         )
 
 
+def _is_host(host: str, domain: str) -> bool:
+    return host == domain or host.endswith(f".{domain}")
+
+
 def _path_handles(link: str) -> list[str]:
-    """The first and the last segment of a link's path: the user of `github.com/<user>`,
-    the slug of `linkedin.com/in/<slug>`, a personal site's page."""
+    """The handle a link's path holds, only where its shape says it is a person: the user
+    of `github.com/<user>` or `linkedin.com/in/<slug>` on a profile site, and on any other
+    host the last segment when it is not a number or a word every site has (`/about`,
+    `/work`, `/view`): «Remote work» must not be refused for a page called `/work`."""
     url = link if "://" in link else f"https://{link}"
     try:
         parsed = urlparse(url)
     except ValueError:
         return []
+    host = (parsed.hostname or "").removeprefix("www.")
     segments = [segment for segment in parsed.path.split("/") if segment]
-    return _unique(segments[:1], segments[-1:])
+    if not segments:
+        return []
+    for domain in _FIRST_SEGMENT:
+        if _is_host(host, domain):
+            return [segments[0].lstrip("@")]
+    if _is_host(host, "youtube.com"):
+        return [segments[0][1:]] if segments[0].startswith("@") else []
+    for domain, (before, skip) in _AFTER.items():
+        if _is_host(host, domain):
+            for i, segment in enumerate(segments[:-1]):
+                if segment.lower() == before and i + 1 + skip < len(segments):
+                    return [segments[i + 1 + skip]]
+            return []
+    last = segments[-1]
+    if last.isdigit() or last.lower() in STOPLIST or last.lower() in _GENERIC_SEGMENTS:
+        return []
+    return [last]
 
 
 def who_of(
@@ -173,6 +226,13 @@ def who_of(
     )
 
 
+def _bare(handle: str) -> str:
+    """`handle` without its trailing number («afegatilli-99»), when 6 letters or more are
+    left: «fau50» would otherwise search «fau», and «java8» «java»."""
+    stripped = re.sub(r"[\W_]*\d+$", "", handle)
+    return stripped if len(re.sub(r"[\W\d_]", "", stripped)) >= 6 else ""
+
+
 def _in_a_link(value: str, candidates: list[str]) -> bool:
     """Whether a link-like token of `value` has a part that is one of `candidates`
     (compact, lower case), digits aside."""
@@ -183,6 +243,19 @@ def _in_a_link(value: str, candidates: list[str]) -> bool:
             if part and any(re.fullmatch(rf"{candidate}\d*", part) for candidate in candidates):
                 return True
     return False
+
+
+def _host_phrases(host: str) -> list[tuple[str, ...]]:
+    """What a link's host is searched for: a personal domain whole and by its labels. A
+    platform (`youtube.com`, `dev.to`, `scholar.google.com`) names no one, and is caught
+    as a host anyway; on a hosting platform (`mario.github.io`) the subdomain is the person."""
+    for domain in _HOSTING:
+        if _is_host(host, domain) and host != domain:
+            sub = host.removesuffix(f".{domain}")
+            return [phrase] if (phrase := _phrase(sub)) is not None else []
+    if _PROFILE_HOST.search(host) or _is_host(host, "google.com"):
+        return []
+    return _hostname_phrases(host)
 
 
 def identifying_fields(cv: AnonymousCv, who: Who) -> list[str]:
@@ -207,7 +280,7 @@ def identifying_fields(cv: AnonymousCv, who: Who) -> list[str]:
     host_phrases = [
         phrase
         for host in who.hostnames
-        for phrase in _hostname_phrases(host.removeprefix("www."))
+        for phrase in _host_phrases(host.removeprefix("www."))
         if phrase not in employers
     ]
     # Identifiers that are names: read as phrases, wherever a name may be read.
@@ -217,7 +290,7 @@ def identifying_fields(cv: AnonymousCv, who: Who) -> list[str]:
             *(_phrase(email.partition("@")[0]) for email in emails),
             *(_phrase(login) for login in who.github_logins),
             *(_phrase(handle) for handle in who.handles),
-            *(_phrase(re.sub(r"[\W_]*\d+$", "", handle)) for handle in who.handles),
+            *(_phrase(_bare(handle)) for handle in who.handles if _bare(handle)),
             *host_phrases,
         )
         if phrase is not None
@@ -240,7 +313,10 @@ def identifying_fields(cv: AnonymousCv, who: Who) -> list[str]:
     skills = [
         value
         for path, value in every
-        if _SKILL_PATH.match(path) and not any(name in _fold(value) for name in folded_surnames)
+        if _SKILL_PATH.match(path)
+        and not any(
+            re.search(rf"(?<!\w){re.escape(n)}(?!\w)", _fold(value)) for n in folded_surnames
+        )
     ]
 
     hit: list[str] = []
@@ -261,7 +337,8 @@ def identifying_fields(cv: AnonymousCv, who: Who) -> list[str]:
                     or _in_a_link(value, link_names)
                 )
             )
-            or (prose and (any(_names(plain, g) for g in given) or _in_a_link(plain, link_firsts)))
+            or (prose and any(_names(plain, g) for g in given))
+            or (not place and _in_a_link(plain, link_firsts))
         ):
             hit.append(path)
     return hit
