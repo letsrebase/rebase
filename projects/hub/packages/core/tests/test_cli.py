@@ -247,14 +247,25 @@ def test_cards_refresh_says_the_stop(
 
 class _FakeRegeneratingWriter(_FakeCardWriter):
     running = False
-    started: list[tuple[object, int]] = []
+    started: list[tuple[object, int, str]] = []
 
     def regeneration_running(self) -> bool:
         return self.running
 
-    def regenerate_stale(self, admin_id: object, limit: int) -> CardsRefreshed:
-        self.started.append((admin_id, limit))
+    def regenerate_stale(self, admin_id: object, limit: int, *, fonte: str) -> CardsRefreshed:
+        self.started.append((admin_id, limit, fonte))
         return self.result
+
+
+@pytest.fixture
+def regen_admin(eval_db: Session) -> UUID:
+    """The settings point at the test database, where an administrator and a member exist:
+    the command resolves `--admin` against it. Cleaned by `eval_db`."""
+    admin = User(email="ivan@rebase.it", nome="Ivan", cognome="Sala", role="admin")
+    member = User(email="ada@example.org", nome="Ada", cognome="Lovelace", role="member")
+    eval_db.add_all([admin, member])
+    eval_db.commit()
+    return admin.id
 
 
 @pytest.mark.parametrize(
@@ -263,14 +274,15 @@ class _FakeRegeneratingWriter(_FakeCardWriter):
 def test_cards_regenerate_goes_through_the_batch_api_above_the_threshold(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
+    regen_admin: UUID,
     argv: list[str],
     threshold: int,
 ) -> None:
     """REB-853: `--batch` always, otherwise from `REBASE_CARDS_BATCH_THRESHOLD` cards up;
-    the workers are `REBASE_CARDS_WORKERS`; nothing is signed from the command line."""
+    the workers are `REBASE_CARDS_WORKERS`. REB-861: signed by `--admin`, whose address is
+    matched without regard to case, with `fonte` `cli`."""
     _FakeCardWriter.instances = []
     _FakeRegeneratingWriter.started = []
-    monkeypatch.setattr(cli, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
     monkeypatch.setattr(cli, "call_for_task", _configured_card_task)
     monkeypatch.setattr(cli, "batch_for_task", lambda opener, settings, task: RecordingBatch())
     monkeypatch.setattr(cli, "CardWriter", _FakeRegeneratingWriter)
@@ -278,28 +290,27 @@ def test_cards_regenerate_goes_through_the_batch_api_above_the_threshold(
         _FakeRegeneratingWriter, "result", CardsRefreshed(written=0, failed=0, batched=14)
     )
 
-    assert main([*argv, "--limit", "20"]) == 0
+    assert main([*argv, "--limit", "20", "--admin", " Ivan@Rebase.it "]) == 0
 
     [writer] = _FakeCardWriter.instances
     assert writer.options["workers"] == 5
     batches = writer.options["batches"]
     assert isinstance(batches, CardBatches) and batches.threshold == threshold
-    assert _FakeRegeneratingWriter.started == [(None, 20)]
+    assert _FakeRegeneratingWriter.started == [(regen_admin, 20, "cli")]
     assert "14 schede inviate al Batch API" in capsys.readouterr().out
 
 
 def test_cards_regenerate_without_a_batch_api_writes_with_the_workers(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], regen_admin: UUID
 ) -> None:
     _FakeCardWriter.instances = []
     _FakeRegeneratingWriter.started = []
-    monkeypatch.setattr(cli, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
     monkeypatch.setattr(cli, "call_for_task", _configured_card_task)
     monkeypatch.setattr(cli, "batch_for_task", lambda opener, settings, task: None)
     monkeypatch.setattr(cli, "CardWriter", _FakeRegeneratingWriter)
     monkeypatch.setattr(_FakeRegeneratingWriter, "result", CardsRefreshed(written=4, failed=1))
 
-    assert main(["cards-regenerate", "--batch"]) == 0
+    assert main(["cards-regenerate", "--batch", "--admin", "ivan@rebase.it"]) == 0
 
     [writer] = _FakeCardWriter.instances
     assert writer.options["batches"] is None
@@ -308,21 +319,52 @@ def test_cards_regenerate_without_a_batch_api_writes_with_the_workers(
 
 
 def test_cards_regenerate_says_when_one_is_already_on(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], regen_admin: UUID
 ) -> None:
     _FakeCardWriter.instances = []
     _FakeRegeneratingWriter.started = []
-    monkeypatch.setattr(cli, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
     monkeypatch.setattr(cli, "call_for_task", _configured_card_task)
     monkeypatch.setattr(cli, "batch_for_task", lambda opener, settings, task: None)
     monkeypatch.setattr(cli, "CardWriter", _FakeRegeneratingWriter)
     monkeypatch.setattr(_FakeRegeneratingWriter, "running", True)
 
-    assert main(["cards-regenerate"]) == 0
+    assert main(["cards-regenerate", "--admin", "ivan@rebase.it"]) == 0
     monkeypatch.setattr(_FakeRegeneratingWriter, "running", False)
 
     assert _FakeRegeneratingWriter.started == []
     assert "già in corso" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    ("argv", "message"),
+    [
+        # REB-861: a regeneration is always signed, so nothing starts without an admin.
+        ([], "--admin vuole l'indirizzo di un amministratore"),
+        (["--admin", "  "], "--admin vuole l'indirizzo di un amministratore"),
+        (["--admin", "nessuno@rebase.it"], "Nessun amministratore con email nessuno@rebase.it"),
+        # A member of the hub is not an administrator.
+        (["--admin", "ada@example.org"], "Nessun amministratore con email ada@example.org"),
+    ],
+    ids=["missing", "blank", "unknown", "member"],
+)
+def test_cards_regenerate_refuses_without_an_administrator(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    regen_admin: UUID,
+    argv: list[str],
+    message: str,
+) -> None:
+    _FakeCardWriter.instances = []
+    _FakeRegeneratingWriter.started = []
+    monkeypatch.setattr(cli, "call_for_task", _configured_card_task)
+    monkeypatch.setattr(cli, "batch_for_task", lambda opener, settings, task: None)
+    monkeypatch.setattr(cli, "CardWriter", _FakeRegeneratingWriter)
+
+    assert main(["cards-regenerate", *argv]) == 2
+
+    captured = capsys.readouterr()
+    assert message in captured.err and captured.out == ""
+    assert _FakeCardWriter.instances == [] and _FakeRegeneratingWriter.started == []
 
 
 @pytest.mark.parametrize(

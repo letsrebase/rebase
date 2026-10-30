@@ -269,19 +269,35 @@ def cards_refresh(limit: int) -> int:
     return 0
 
 
-def cards_regenerate(limit: int, batch: bool) -> int:
-    """`rebase cards-regenerate [--limit N] [--batch]` (REB-853): an admin's start of the
-    regeneration from the command line: the oldest `limit` stale cards («Schede da
-    aggiornare»), written again with `REBASE_CARDS_WORKERS` at once, or, from
+def cards_regenerate(limit: int, batch: bool, admin_email: str | None) -> int:
+    """`rebase cards-regenerate --admin EMAIL [--limit N] [--batch]` (REB-853, REB-861): an
+    admin's start of the regeneration from the command line: the oldest `limit` stale cards
+    («Schede da aggiornare»), written again with `REBASE_CARDS_WORKERS` at once, or, from
     `REBASE_CARDS_BATCH_THRESHOLD` cards up (always with `--batch`), as one Message Batch
     at half the price, which `rebase cards-batch-poll` and the `cards` service carry on. A
-    provider with no batch API falls back to the workers, and says so. Nothing is signed
-    in the trail from here. A start while another is on writes nothing and says so."""
+    provider with no batch API falls back to the workers, and says so. `--admin` is the
+    address of the administrator who asks, and is required: the start, each card and the end
+    are signed in the trail with it, `fonte` `cli`; with none, or one that is not an
+    administrator's, nothing is started and the exit code is 2. A start while another is on
+    writes nothing and says so."""
     if limit < 1:
         print("--limit deve essere almeno 1.", file=sys.stderr)
         return 2
+    if not admin_email or not admin_email.strip():
+        print(
+            "--admin vuole l'indirizzo di un amministratore: la rigenerazione è firmata.",
+            file=sys.stderr,
+        )
+        return 2
     settings = get_settings()
     open_session = session_factory(create_engine_from_settings(settings))
+    email = admin_email.strip().lower()
+    with closing(open_session()) as lookup:
+        admin = UserService(lookup, settings).by_email(email)
+        admin_id = admin.id if admin is not None and admin.role == "admin" else None
+    if admin_id is None:
+        print(f"Nessun amministratore con email {email}", file=sys.stderr)
+        return 2
     llm = call_for_task(lambda: closing(open_session()), settings, "card")
     if llm is None:
         print(
@@ -303,7 +319,7 @@ def cards_regenerate(limit: int, batch: bool) -> int:
         if writer.regeneration_running():
             print("Una rigenerazione è già in corso: nessuna scheda avviata.")
             return 0
-        result = writer.regenerate_stale(None, limit)
+        result = writer.regenerate_stale(admin_id, limit, fonte="cli")
     finally:
         session.close()
     if result.batched:
@@ -933,6 +949,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     regenerate_parser.add_argument(
         "--batch", action="store_true", help="sempre col Batch API, qualunque sia la soglia"
     )
+    # Not `required=True`: argparse would refuse in English, and the refusal is ours.
+    regenerate_parser.add_argument(
+        "--admin",
+        help="l'indirizzo dell'amministratore che avvia la rigenerazione (obbligatorio: la firma)",
+    )
     sub.add_parser(
         "cards-batch-poll",
         help="Porta avanti il batch di schede inviato al Batch API e ne applica i risultati",
@@ -1022,7 +1043,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "cards-refresh":
         return cards_refresh(args.limit)
     if args.command == "cards-regenerate":
-        return cards_regenerate(args.limit, args.batch)
+        return cards_regenerate(args.limit, args.batch, args.admin)
     if args.command == "cards-batch-poll":
         return cards_batch_poll()
     if args.command == "sources-refetch":

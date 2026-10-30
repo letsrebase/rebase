@@ -36,6 +36,7 @@ from rebase_core.ai_schemas import (
     StaleCardsRead,
     TaskRead,
 )
+from rebase_core.audit import AdminActionRead
 from rebase_core.card_batch import active_batch
 from rebase_core.cards import CardWriter, regenerate_after_response
 from rebase_core.errors import LlmUnavailable, NotFound, TeamBuilderOff
@@ -117,6 +118,16 @@ def read_config(admin: AdminDep, service: ServiceDep) -> AiConfigRead:
     return service.read()
 
 
+@router.get("/audit", response_model=list[AdminActionRead])
+def ai_audit(admin: AdminDep, service: ServiceDep, limit: int = 50) -> list[AdminActionRead]:
+    """«Registro» of «Modelli AI» (REB-861): what an admin did to the configuration (keys,
+    switches, tasks, prices, the evaluation set) and every regeneration of the cards, its
+    start and its end, newest first, each with who did it. No personal data: the payloads
+    carry counts, costs and the people's ids, never a name or a card's text. `limit` is
+    clamped to 1..200."""
+    return service.trail(limit)
+
+
 @router.put("/providers/{provider}/key", response_model=ProviderRead)
 def save_key(admin: AdminDep, service: ServiceDep, provider: str, body: KeyBody) -> ProviderRead:
     """409 with the sentence while `REBASE_SECRETS_KEY` is missing: nothing is stored."""
@@ -180,7 +191,9 @@ def regenerate_stale(
     """An admin's start: the oldest `limit` stale cards are written again, `cards_workers` at
     a time, after the response, or, from `cards_batch_threshold` cards up with Anthropic,
     sent as one Message Batch at half the price that the `cards` service applies when it
-    ends (`AdminAction` `cards_regenerate` is written when the start begins). A start while
+    ends (`AdminAction` `cards_regenerate` is written when the start begins, and
+    `cards_regenerated` when it ends, each card `card_regenerated` in its talent's trail). A
+    start while
     another is running, or a batch is not yet applied, answers `queued` 0. No model configured
     answers the team builder's own 503, as «Rigenera scheda» does."""
     if llm is None:
@@ -196,6 +209,7 @@ def regenerate_stale(
             llm,
             admin.id,
             body.limit,
+            fonte="web",
             workers=settings.cards_workers,
             batches=batches,
         )

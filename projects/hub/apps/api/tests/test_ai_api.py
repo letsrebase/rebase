@@ -157,6 +157,7 @@ ROUTES = [
     ("put", f"{BASE}/sources/github/enabled", {"enabled": True}),
     ("get", f"{BASE}/cards/stale", None),
     ("post", f"{BASE}/cards/regenerate-stale", {"limit": 5}),
+    ("get", f"{BASE}/audit", None),
 ]
 
 
@@ -454,7 +455,11 @@ def test_stale_cards_lists_the_count_the_cost_and_the_reason(
 
 
 def test_regenerate_stale_writes_the_limit_after_the_response(
-    client: TestClient, written_cards: list[Any], api_session: Session, llm: RecordingCall
+    client: TestClient,
+    admin: User,
+    written_cards: list[Any],
+    api_session: Session,
+    llm: RecordingCall,
 ) -> None:
     started = client.post(f"{BASE}/cards/regenerate-stale", json={"limit": 1})
 
@@ -466,7 +471,12 @@ def test_regenerate_stale_writes_the_limit_after_the_response(
     [action] = api_session.scalars(
         select(AdminAction).where(AdminAction.kind == "cards_regenerate")
     )
-    assert action.payload == {"limit": 1, "queued": 1}
+    assert action.payload == {"limit": 1, "queued": 1, "fonte": "web", "batch": False}
+    # The start is signed by the admin who clicked, and ended once the card is written.
+    assert action.admin_id == admin.id
+    [end] = api_session.scalars(select(AdminAction).where(AdminAction.kind == "cards_regenerated"))
+    assert end.admin_id == admin.id and end.payload["start_action_id"] == str(action.id)
+    assert (end.payload["written"], end.payload["failed"]) == (1, 0)
     rows = api_session.scalars(select(FreelancerCard).where(FreelancerCard.prompt_version == 3))
     assert len(rows.all()) == 2
 
@@ -510,7 +520,11 @@ def test_a_start_while_another_is_running_queues_nothing(
 
 
 def test_a_start_from_the_threshold_sends_a_batch_and_the_page_reads_it(
-    client: TestClient, written_cards: list[Any], api_session: Session, llm: RecordingCall
+    client: TestClient,
+    admin: User,
+    written_cards: list[Any],
+    api_session: Session,
+    llm: RecordingCall,
 ) -> None:
     """REB-853: two stale cards and a threshold of two: the start sends one Message Batch
     instead of calling the model, answers how many it queued, and «Schede da aggiornare»
@@ -527,7 +541,15 @@ def test_a_start_from_the_threshold_sends_a_batch_and_the_page_reads_it(
     [action] = api_session.scalars(
         select(AdminAction).where(AdminAction.kind == "cards_regenerate")
     )
-    assert action.payload == {"limit": 5, "queued": 2, "batch": True}
+    [batch] = api_session.scalars(select(CardBatch)).all()
+    assert action.payload == {
+        "limit": 5,
+        "queued": 2,
+        "fonte": "web",
+        "batch": True,
+        "batch_id": str(batch.id),
+    }
+    assert batch.started_by == admin.id
     page = client.get(f"{BASE}/cards/stale").json()
     assert page["count"] == 2  # still stale until the results are applied
     assert page["batch"]["status"] == "in_progress"
@@ -536,3 +558,37 @@ def test_a_start_from_the_threshold_sends_a_batch_and_the_page_reads_it(
     assert client.post(f"{BASE}/cards/regenerate-stale", json={"limit": 5}).json() == {"queued": 0}
     assert call.submissions == 1
     assert len(api_session.scalars(select(CardBatch)).all()) == 1
+
+
+def test_the_audit_lists_the_configuration_and_every_regeneration_newest_first(
+    client: TestClient, admin: User, written_cards: list[Any], llm: RecordingCall
+) -> None:
+    """REB-861: the «Registro» of «Modelli AI»: what an admin did to the keys and prices and
+    the start and the end of each regeneration, newest first, each with who did it, and never
+    a name or a card's text."""
+    assert client.put(f"{BASE}/providers/anthropic/key", json={"key": SECRET}).status_code == 200
+    _price(client)
+    assert client.post(f"{BASE}/cards/regenerate-stale", json={"limit": 2}).json() == {"queued": 2}
+
+    audit = client.get(f"{BASE}/audit")
+
+    assert audit.status_code == 200, audit.text
+    body = audit.json()
+    assert [entry["kind"] for entry in body] == [
+        "cards_regenerated",
+        "cards_regenerate",
+        "ai_price",
+        "ai_key",
+    ]
+    assert {entry["admin_nome"] for entry in body} == {"Ivan Sala"}
+    assert {entry["entity_type"] for entry in body} == {"ai_config"}
+    end, start = body[0]["payload"], body[1]
+    assert end["start_action_id"] == start["id"]
+    assert (end["written"], end["failed"], end["failures"]) == (2, 0, [])
+    assert start["payload"] == {"limit": 2, "queued": 2, "fonte": "web", "batch": False}
+    for private in ("Persona", "Cognome", SECRET):
+        assert private not in audit.text
+    assert [e["kind"] for e in client.get(f"{BASE}/audit?limit=2").json()] == [
+        "cards_regenerated",
+        "cards_regenerate",
+    ]

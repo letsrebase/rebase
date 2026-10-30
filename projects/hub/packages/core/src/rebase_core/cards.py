@@ -38,6 +38,11 @@ twice; the first outage, spent cap or missing model stops the pool and leaves th
 they were. A regeneration above a threshold goes through Anthropic's Message Batches API
 instead (`rebase_core.card_batch`): the same requests, the same guards and the same save.
 
+What a person started is traced (REB-861): `regenerate_stale` records a signed start, each card
+written or failed in a regeneration (`Regeneration`, a single «Rigenera scheda» too) is an entry
+of that talent's trail, and the end is one more of `ai_config`'s, with the cost. The hourly
+`refresh_stale` and the wizard's write are started by no person and record nothing.
+
 Who calls it: the wizard and the member's CV upload, after their response, through
 `write_after_response` in a session of its own; the admin's two routes; `rebase
 cards-refresh`, for the backlog; and `FreelancerService.clear_cv`, whose `delete` runs
@@ -48,7 +53,7 @@ import hashlib
 import logging
 import re
 import threading
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
@@ -58,7 +63,7 @@ from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 from uuid import UUID
 
 from pydantic import ValidationError
-from sqlalchemy import delete, func, null, select, text
+from sqlalchemy import and_, delete, false, func, null, or_, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -91,6 +96,7 @@ from rebase_core.hub_facts import HubFacts, hub_facts
 from rebase_core.llm import LlmCall, LlmMessage, LlmRequest, LlmResponse
 from rebase_core.models import (
     CARD_BATCH_ACTIVE,
+    AdminAction,
     AiUsage,
     CardBatch,
     Freelancer,
@@ -127,6 +133,12 @@ NO_TEXT = "Il CV non ha testo leggibile."
 # The advisory lock of an admin's start of the regeneration (`CardWriter.regenerate_stale`).
 REGENERATE_LOCK = "regenerate_stale"
 
+# The trail of a regeneration (REB-861): its start and its end on `ai_config`, and each card
+# on the freelancer.
+CARDS_REGENERATE = "cards_regenerate"
+CARDS_REGENERATED = "cards_regenerated"
+CARD_REGENERATED = "card_regenerated"
+
 # The version of the prompt and of the rules above it (`_SYSTEM`, the guards): a card
 # says which one wrote it, and an evaluation run which one it measured. Version 1 is
 # the prompt of REB-799 and REB-802, the CV alone; a card with no version recorded is
@@ -158,6 +170,37 @@ Outcome = Literal[
     "deleted",
     "superseded",
 ]
+
+# Who started a write (REB-861): the door the person used. `cli` is `rebase cards-regenerate`.
+Fonte = Literal["web", "mcp", "cli"]
+
+# The reasons a regeneration did not write a card that are not one of `Failure`: the answer
+# was dropped because the CV or an input changed meanwhile (`superseded`), the provider never
+# answered it or applying it raised (`errored`), the batch was given up after two days
+# (`expired`) or never sent (`not_sent`), the call was refused for the daily cap
+# (`cap_reached`) or no model was configured (`not_configured`), the person or the CV
+# was gone when the answer came (`unchanged`, recorded only when the answer had been paid for).
+NO_ANSWER_REASONS = ("errored", "expired", "not_sent")
+
+
+@dataclass(frozen=True)
+class Regeneration:
+    """A write a person started (REB-861), carried by the writer that does it so that each
+    card it writes, or fails to, is signed in that talent's trail (`card_regenerated`).
+    `bulk` and `start_action_id` tie a card to the `cards_regenerate` of its start.
+    `batch_since` is when the Message Batch of a run was sent: its batch-priced answers count
+    from then, wherever in the apply they were recorded (the rest of a card's cost is the
+    calls made since its own claim began, `CardWriter.card_done`). `retries` says an
+    `unavailable` card is left for another pass and is not yet the end of its story (the
+    batch's apply)."""
+
+    admin_id: UUID
+    fonte: Fonte
+    bulk: bool = False
+    start_action_id: UUID | None = None
+    batch_since: datetime | None = None
+    retries: bool = False
+
 
 # The last successful generation, written together and retired together. `card` is
 # retired with SQL `NULL`, never `None`: the JSONB type binds `None` as the JSON value
@@ -201,6 +244,24 @@ def failure_sentence(kind: Failure) -> str:
     """The sentence of ours that stands for a kind of failure, never the model's words."""
     return _FAILURES[kind]
 
+
+# Why a regeneration can stop early (`cards_regenerated.stop_reason`): the provider did not
+# answer, the daily cap was reached, no model is configured, or something else raised.
+STOP_REASONS = ("unavailable", "cap_reached", "not_configured", "error")
+
+# The counts of a regeneration's end (`cards_regenerated`), `null` when its start was lost.
+_RUN_COUNTS = ("written", "failed", "superseded", "skipped", "errored")
+
+# Every `reason` a `card_regenerated` entry can carry: the web's «Registro» must have a word for
+# each (`REGENERATION_REASON_LABELS`, held to this list by `test_card_regeneration_trail`).
+REGENERATION_REASONS = (
+    *_FAILURES,
+    "cap_reached",
+    "not_configured",
+    "superseded",
+    "unchanged",
+    *NO_ANSWER_REASONS,
+)
 
 # What gives a card's person away as a woman (REB-574): Italian writes the gender into
 # the role, the participle and the pronoun, and in a catalogue of a few dozen people
@@ -792,6 +853,7 @@ class CardWriter:
         sources: SourceService | None = None,
         workers: int = 1,
         batches: "CardBatches | None" = None,
+        run: Regeneration | None = None,
     ) -> None:
         self.session = session
         self.llm = llm
@@ -802,6 +864,10 @@ class CardWriter:
         # of an admin's regeneration, `None` when the provider has none.
         self.workers = max(1, workers)
         self.batches = batches
+        # The person who started what this writer writes, if one did (`Regeneration`):
+        # `None` for the wizard's write and the hourly `refresh_stale`, which record nothing.
+        self.run = run
+        self._since: datetime | None = None
 
     def write(self, freelancer_id: UUID, *, force: bool = False) -> FreelancerCardRead:
         """The card of the freelancer's current CV: written when the CV is new to this
@@ -850,7 +916,12 @@ class CardWriter:
         return self._write_all(stale, force=False, only_stale=False)
 
     def _write_all(
-        self, freelancer_ids: Sequence[UUID], *, force: bool, only_stale: bool
+        self,
+        freelancer_ids: Sequence[UUID],
+        *,
+        force: bool,
+        only_stale: bool,
+        outcomes: dict[UUID, Outcome | None] | None = None,
     ) -> CardsRefreshed:
         """`_write` for each person, `workers` at a time. One worker is this writer's own
         session, in order. More are a pool, each on a session and a writer of its own (the
@@ -859,11 +930,16 @@ class CardWriter:
         ones already in a call finish and count as they come out. A person is claimed by an
         advisory lock for the whole write (`_write`), so even a list that named someone
         twice pays once. An exception ends the pool the same way and is raised after the
-        workers have stopped."""
+        workers have stopped. `outcomes`, when given, is filled with what became of each
+        person, `None` for one never started."""
+        if outcomes is not None:
+            outcomes.update(dict.fromkeys(freelancer_ids))
         if self.workers == 1 or len(freelancer_ids) < 2:
             written = failed = 0
             for freelancer_id in freelancer_ids:
                 outcome = self._write(freelancer_id, force=force, only_stale=only_stale)
+                if outcomes is not None:
+                    outcomes[freelancer_id] = outcome
                 if outcome == "written":
                     written += 1
                 elif outcome in ("failed", "unavailable"):
@@ -882,7 +958,9 @@ class CardWriter:
             try:
                 with open_session() as session:
                     sources = self._source_service.on(session) if self._source_service else None
-                    worker = CardWriter(session, self.llm, now=self.now, sources=sources)
+                    worker = CardWriter(
+                        session, self.llm, now=self.now, sources=sources, run=self.run
+                    )
                     outcome = worker._write(freelancer_id, force=force, only_stale=only_stale)
             except BaseException:
                 stop.set()
@@ -897,13 +975,15 @@ class CardWriter:
             max_workers=min(self.workers, len(freelancer_ids)), thread_name_prefix="card"
         ) as pool:
             futures = [pool.submit(work, freelancer_id) for freelancer_id in freelancer_ids]
-            for future in futures:
+            for freelancer_id, future in zip(freelancer_ids, futures, strict=True):
                 try:
                     done = future.result()
                 except Exception as exc:
                     stop.set()
                     error = error or exc
                     continue
+                if outcomes is not None:
+                    outcomes[freelancer_id] = done
                 if done == "written":
                     written += 1
                 elif done in ("failed", "unavailable"):
@@ -1082,19 +1162,25 @@ class CardWriter:
             return None
         return (Decimal(average) * count).quantize(Decimal("0.0001"))
 
-    def regenerate_stale(self, admin_id: UUID | None, limit: int) -> CardsRefreshed:
-        """An admin's start (`AdminAction` `cards_regenerate`): the first `limit` of
-        `stale_cards`, each written again whatever its CV's hash says. Nothing else
+    def regenerate_stale(self, admin_id: UUID, limit: int, *, fonte: Fonte) -> CardsRefreshed:
+        """An admin's start (`AdminAction` `cards_regenerate`, signed, with its `fonte`: the
+        web or the command line): the first `limit` of `stale_cards`, each written again
+        whatever its CV's hash says. Nothing else
         spends on a version bump or a change of the inputs. A card that is no longer
         stale when its turn comes (another start wrote it first) is skipped, checked under
         the person's claim, so a double click pays once. The batch stops at the first outage
         or spent cap, as `refresh_stale` does, and the rest stay stale. `workers` cards are
         written at once.
 
+        Each card it writes, or fails to, is signed in that talent's trail
+        (`card_regenerated`, `Regeneration`), and the end is recorded once, when the pool
+        returns (`cards_regenerated`, `end_regeneration`).
+
         With `batches` and at least its threshold of cards waiting, they are sent instead
-        as one Message Batch (`CardBatches.submit`): `batched` counts them, the batch is
-        carried on by the `cards` service and `rebase cards-batch-poll`, and the cards stay
-        stale until their results are applied. A start while a batch is active queues
+        as one Message Batch (`CardBatches.submit`, which records the start with the batch's
+        id): `batched` counts them, the batch is carried on by the `cards` service and
+        `rebase cards-batch-poll`, which records the end when it is applied, and the cards
+        stay stale until their results are applied. A start while a batch is active queues
         nothing."""
         if self.llm is None:
             return CardsRefreshed(written=0, failed=0)
@@ -1105,19 +1191,254 @@ class CardWriter:
             if not started or self.batch_running():
                 return CardsRefreshed(written=0, failed=0)
             waiting = self.stale_cards()[:limit]
-            batched = self.batches is not None and self.batches.wanted(len(waiting))
-            details: dict[str, Any] = {"limit": limit, "queued": len(waiting)}
-            if batched:
-                details["batch"] = True
-            # The command line has no admin: nothing is signed there, as `ai-seed` does.
-            if admin_id is not None:
-                AdminActionService(self.session).record(
-                    AI_CONFIG_ENTITY, AI_CONFIG_ENTITY_ID, "cards_regenerate", admin_id, details
-                )
             ids = [item.freelancer_id for item in waiting]
-            if self.batches is not None and batched:
-                return self.batches.submit(self, ids, admin_id)
-            return self._write_all(ids, force=True, only_stale=True)
+            if self.batches is not None and self.batches.wanted(len(ids)):
+                return self.batches.submit(self, ids, admin_id, fonte=fonte, limit=limit)
+            start = self.record_start(admin_id, fonte, limit, len(ids))
+            outcomes: dict[UUID, Outcome | None] = {}
+            run = Regeneration(admin_id, fonte, bulk=True, start_action_id=start)
+            try:
+                with self.acting(run):
+                    result = self._write_all(ids, force=True, only_stale=True, outcomes=outcomes)
+            except BaseException:
+                # A database error leaves the session's transaction aborted: nothing can be
+                # read or written on it until it is rolled back, and the end is the record
+                # that this run stopped. The original error is what the caller gets.
+                self.session.rollback()
+                left = sum(1 for outcome in outcomes.values() if outcome is None)
+                self.end_regeneration(
+                    admin_id=admin_id,
+                    fonte=fonte,
+                    start_action_id=start,
+                    queued=len(ids),
+                    stopped=True,
+                    stop_reason="error",
+                    left=left,
+                )
+                raise
+            self.end_regeneration(
+                admin_id=admin_id,
+                fonte=fonte,
+                start_action_id=start,
+                queued=len(ids),
+                stopped=result.stopped,
+                left=sum(1 for outcome in outcomes.values() if outcome is None),
+                known={"written": result.written, "failed": result.failed},
+            )
+            return result
+
+    # ---- the trail of a regeneration (REB-861) ---------------------------------------
+
+    @contextmanager
+    def acting(self, run: Regeneration | None) -> Iterator[None]:
+        """The writes of this block are `run`'s: signed in each talent's trail."""
+        before, self.run = self.run, run
+        try:
+            yield
+        finally:
+            self.run = before
+
+    def record_start(
+        self, admin_id: UUID, fonte: Fonte, limit: int, queued: int, batch_id: UUID | None = None
+    ) -> UUID | None:
+        """The signed start of a regeneration, on `ai_config`: who asked (`fonte`: the web or
+        the command line), how many it queued of the `limit` asked, and whether and as which
+        Message Batch it was sent. Answers the entry's id, which each card's entry and the end
+        point back to."""
+        details: dict[str, Any] = {
+            "limit": limit,
+            "queued": queued,
+            "fonte": fonte,
+            "batch": batch_id is not None,
+        }
+        if batch_id is not None:
+            details["batch_id"] = batch_id
+        return AdminActionService(self.session).record(
+            AI_CONFIG_ENTITY, AI_CONFIG_ENTITY_ID, CARDS_REGENERATE, admin_id, details
+        )
+
+    def begin_card(self, freelancer_id: UUID) -> None:
+        """A card's write starts, under the person's claim: from now on the calls recorded
+        for the person are this write's (`card_done` reads them), and only they. Does nothing
+        without a `run`."""
+        self._since = None
+        if self.run is not None:
+            self._since = self.session.scalar(select(func.clock_timestamp()))
+
+    def card_done(
+        self,
+        freelancer_id: UUID,
+        outcome: str,
+        *,
+        reason: str | None = None,
+        model: str | None = None,
+    ) -> None:
+        """What became of the card a person asked to have written, signed in the talent's
+        trail (`card_regenerated`): written (`scritta`) or not (`non_scritta`, with the
+        reason: a `Failure`, `superseded` or one of `NO_ANSWER_REASONS`), by which door, the
+        model, the prompt version and what the calls cost (the `ai_usage` rows of the person
+        since the write began). No personal data and no card text: ours, never the model's
+        words. Does nothing without a `run`, for an outcome that is not one (`unchanged`
+        with nothing spent) and for an `unavailable` card the run tries again."""
+        run, begun, self._since = self.run, self._since, None
+        if run is None:
+            return
+        if (begun is None and run.batch_since is None) or (
+            outcome == "unavailable" and run.retries
+        ):
+            return
+        cost, unpriced, calls = self._usage_since(freelancer_id, begun, run.batch_since)
+        if outcome in ("unchanged", "deleted") and calls == 0:
+            return
+        written = outcome == "written"
+        payload: dict[str, Any] = {
+            "fonte": run.fonte,
+            "bulk": run.bulk,
+            "prompt_version": PROMPT_VERSION,
+            "model": model or None,
+            "esito": "scritta" if written else "non_scritta",
+            "cost_eur": cost,
+        }
+        if run.bulk:
+            payload["start_action_id"] = run.start_action_id
+        if not written:
+            payload["reason"] = "superseded" if outcome == "superseded" else reason or outcome
+        if unpriced:
+            payload["unpriced"] = unpriced
+        AdminActionService(self.session).record(
+            ENTITY, freelancer_id, CARD_REGENERATED, run.admin_id, payload
+        )
+
+    def _usage_since(
+        self, freelancer_id: UUID, since: datetime | None, batch_since: datetime | None
+    ) -> tuple[Decimal, int, int]:
+        """What the person's `card` calls of this write cost: the sum of the priced ones, how
+        many had no price, how many there were. A write's own calls are the ones recorded since
+        its claim began (`since`): the claim is per person, so no other write of the person
+        is in that window. A Message Batch's answer is recorded in the pass that applies the
+        card, in a transaction that may have begun before the claim, and an earlier pass may
+        have recorded it, so the batch-priced rows (`ai_usage.batch`) count from the day it
+        was sent (`batch_since`; one batch is active at a time, so they are its own). Any
+        other synchronous call of the person in that window, the wizard's, the hourly loop's or
+        a «Rigenera scheda», is not this write's. An evaluation's and a «Prova»'s never are."""
+        own = [
+            AiUsage.at >= since if since is not None else false(),
+            and_(AiUsage.batch.is_(True), AiUsage.at >= batch_since)
+            if batch_since is not None
+            else false(),
+        ]
+        rows = self.session.execute(
+            select(AiUsage.cost_eur, AiUsage.priced).where(
+                AiUsage.task == "card",
+                AiUsage.purpose == "run",
+                AiUsage.freelancer_id == freelancer_id,
+                or_(*own),
+            )
+        ).all()
+        cost = sum((Decimal(c) for c, _ in rows if c is not None), Decimal(0))
+        return cost, sum(1 for _, priced in rows if not priced), len(rows)
+
+    def end_regeneration(
+        self,
+        *,
+        admin_id: UUID,
+        fonte: Fonte,
+        start_action_id: UUID | None,
+        queued: int,
+        batch_id: UUID | None = None,
+        batch_status: str | None = None,
+        stopped: bool = False,
+        left: int = 0,
+        stop_reason: str | None = None,
+        known: Mapping[str, int] | None = None,
+    ) -> None:
+        """The end of a bulk regeneration, on `ai_config`, signed by the admin who started
+        it (`cards_regenerated`): what became of the `queued` cards, counted from each card's
+        own entry (the latest one per person): `written`, `failed`, `superseded` (the answer
+        was dropped, the CV or an input having changed), `errored` (no answer from the
+        provider, or one that could not be applied), `skipped` (no longer stale, or a
+        person or CV gone), the cost of the calls (`cost_eur`, the sum of the priced ones,
+        `unpriced` how many had no price) and `failures`, each person's id and the reason, with
+        no name and no card text. `stopped` says the run ended early, `stop_reason` why when it
+        is one of `STOP_REASONS`, `left` how many people it never started. Written once: when
+        the pool returns, when a batch is applied, or when one is given up.
+
+        With no `start_action_id` (the start's entry was lost, the trail being best-effort) no
+        card's entry can be found, so the counts and the cost are not known: they are `null`,
+        with `start_missing` true, except what the caller counted itself (`known`, by the names
+        of `_RUN_COUNTS`, such as the worker pool's written and failed)."""
+        cards: dict[UUID, dict[str, Any]] = {}
+        if start_action_id is not None:
+            rows = self.session.execute(
+                select(AdminAction.entity_id, AdminAction.payload)
+                .where(
+                    AdminAction.kind == CARD_REGENERATED,
+                    AdminAction.payload["start_action_id"].astext == str(start_action_id),
+                )
+                .order_by(AdminAction.created_at, AdminAction.id)
+            ).all()
+            for freelancer_id, payload in rows:
+                cards[freelancer_id] = payload
+        written = failed = superseded = errored = unpriced = 0
+        cost = Decimal(0)
+        failures: list[dict[str, str]] = []
+        for freelancer_id, payload in cards.items():
+            cost += Decimal(str(payload.get("cost_eur") or 0))
+            unpriced += int(payload.get("unpriced") or 0)
+            if payload.get("esito") == "scritta":
+                written += 1
+                continue
+            reason = str(payload.get("reason"))
+            if reason == "unchanged":
+                continue
+            if reason == "superseded":
+                superseded += 1
+            elif reason in NO_ANSWER_REASONS:
+                errored += 1
+            else:
+                failed += 1
+            failures.append({"freelancer_id": str(freelancer_id), "reason": reason})
+        details: dict[str, Any] = {
+            "fonte": fonte,
+            "start_action_id": start_action_id,
+            "written": written,
+            "failed": failed,
+            "superseded": superseded,
+            "skipped": max(0, queued - written - failed - superseded - errored - left),
+            "errored": errored,
+            "cost_eur": cost,
+            "failures": failures,
+        }
+        if start_action_id is None:
+            # The start's entry was lost (the trail is best-effort), so no card's entry points at
+            # it and nothing above is known. Say so rather than report zeros: only what the
+            # caller counted itself is kept, the rest is `null`.
+            counted = known or {}
+            details.update(
+                {key: counted.get(key) for key in _RUN_COUNTS},
+                cost_eur=None,
+                failures=None,
+                start_missing=True,
+            )
+        if batch_id is not None:
+            details["batch_id"] = batch_id
+            details["batch_status"] = batch_status
+        if unpriced:
+            details["unpriced"] = unpriced
+        if stopped:
+            details["stopped"] = True
+            details["left"] = left
+            # Why, when it is known: the call that stopped the pool says so in its own entry
+            # (an outage, the daily cap, no model), a batch that was refused in the exception
+            # it met, and anything else that ended the run early is `error`.
+            cause = stop_reason or next(
+                (f["reason"] for f in failures if f["reason"] in STOP_REASONS), None
+            )
+            if cause is not None:
+                details["stop_reason"] = cause
+        AdminActionService(self.session).record(
+            AI_CONFIG_ENTITY, AI_CONFIG_ENTITY_ID, CARDS_REGENERATED, admin_id, details
+        )
 
     def regeneration_running(self) -> bool:
         """Whether an admin's start is inside its batch right now, in any process, or a
@@ -1218,7 +1539,9 @@ class CardWriter:
             request = card_prompt(cv, row.posizione, sources, facts)
         cv_sha256 = hashlib.sha256(row.cv_bytes).hexdigest() if row.cv_bytes is not None else ""
         return Prepared(
-            request=request,
+            # The person the call is about goes on its usage row, which is how a card's cost
+            # is read back (`card_done`); it is never part of what a provider is sent.
+            request=request.model_copy(update={"freelancer_id": freelancer_id}),
             known=known,
             sources=sources,
             facts=facts,
@@ -1362,6 +1685,7 @@ class CardWriter:
                 return "unchanged"
             if only_stale and self.stale_of(freelancer_id) not in ("prompt", "source"):
                 return "unchanged"
+            self.begin_card(freelancer_id)
             return self.write_claimed(freelancer_id, digest)
 
     def write_claimed(self, freelancer_id: UUID, digest: str) -> Outcome:
@@ -1379,7 +1703,13 @@ class CardWriter:
     def store(self, freelancer_id: UUID, digest: str, composed: Composed) -> Outcome:
         """Keeps what `compose` (or a Message Batch's result through `finish`) made of the
         CV `digest`: the card, or the sentence of its failure. The one save path: the
-        synchronous write and the batch's apply both end here."""
+        synchronous write and the batch's apply both end here. When a person started the
+        write (`run`), what became of the card is signed in the talent's trail."""
+        outcome = self._store(freelancer_id, digest, composed)
+        self.card_done(freelancer_id, outcome, reason=composed.failure, model=composed.model)
+        return outcome
+
+    def _store(self, freelancer_id: UUID, digest: str, composed: Composed) -> Outcome:
         if composed.card is None:
             assert composed.failure is not None
             return self._fail(freelancer_id, digest, composed.failure, composed.persona)
@@ -1423,12 +1753,23 @@ class CardWriter:
         reason «Modelli AI» shows («Tetto giornaliero raggiunto», …), and nothing is
         retired, since the previous card is as good as it was. Both stop the batch, as an
         outage does: the next call would be refused the same."""
-        if not isinstance(error, LlmCapReached | LlmNotConfigured):
-            return self._fail(freelancer_id, digest, "unavailable")
+        outcome, reason = self._unanswered(freelancer_id, digest, error)
+        self.card_done(freelancer_id, outcome, reason=reason)
+        return outcome
+
+    def _unanswered(
+        self, freelancer_id: UUID, digest: str, error: LlmUnavailable
+    ) -> tuple[Outcome, str]:
+        if isinstance(error, LlmCapReached):
+            reason = "cap_reached"
+        elif isinstance(error, LlmNotConfigured):
+            reason = "not_configured"
+        else:
+            return self._fail(freelancer_id, digest, "unavailable"), "unavailable"
         if not self._save(freelancer_id, digest, {"error": error.message, "error_cv_sha256": None}):
-            return "superseded"
+            return "superseded", reason
         logger.warning("card for freelancer %s not written: %s", freelancer_id, "refused")
-        return "unavailable"
+        return "unavailable", reason
 
     def _fail(
         self,
@@ -1558,6 +1899,7 @@ def regenerate_after_response(
     admin_id: UUID,
     limit: int,
     *,
+    fonte: Fonte,
     workers: int = 1,
     batches: "CardBatches | None" = None,
 ) -> None:
@@ -1572,7 +1914,7 @@ def regenerate_after_response(
     try:
         with open_session() as session:
             CardWriter(session, llm, workers=workers, batches=batches).regenerate_stale(
-                admin_id, limit
+                admin_id, limit, fonte=fonte
             )
     except Exception as error:
         logger.warning("regeneration of the stale cards stopped: %s", type(error).__name__)

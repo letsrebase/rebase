@@ -593,6 +593,10 @@ export interface TalentCloudGrant {
 /** Where a note came from (REB-856). `null` is a note that predates the tracking. */
 export type NoteSource = 'web' | 'mcp' | 'persona' | 'sistema'
 
+/** The door a trail entry came through: a note's (`NoteSource`) or, for a regeneration of
+ *  the cards, `cli` too (REB-861). */
+export type ActionSource = NoteSource | 'cli'
+
 /** One note of a row's thread: signed, dated and tracked. The text carries neither the
  *  date nor the author; `modificabile` says whether an admin may edit or delete it (not
  *  an event the person or the hub wrote). */
@@ -653,6 +657,7 @@ export interface AdminAction {
     | 'note_edited'
     | 'note_deleted'
     | 'status_changed'
+    | 'card_regenerated'
   admin_id: string
   admin_nome: string
   payload: {
@@ -662,13 +667,14 @@ export interface AdminAction {
     before?: Record<string, unknown> | string
     after?: Record<string, unknown> | string
     vetted?: boolean
-    /** The door the action came through: `web` or `mcp` (REB-856). */
-    fonte?: NoteSource
+    /** The door the action came through: `web` or `mcp` (REB-856), `cli` for a
+     *  regeneration started from the command line (REB-861). */
+    fonte?: ActionSource
     /** A `note_added` / `note_deleted` entry's text. */
     testo?: string
     nota_id?: string
     /** A `pigro_link` entry's: the state the link reached, and the CRM's sentence. */
-    esito?: PigroStato
+    esito?: PigroStato | 'scritta' | 'non_scritta'
     errore?: string | null
     /** A `merged` / `absorbed` entry's (REB-800). `moved` is a list of row ids per
      *  relation on `merged` (what an undo reads) and a count per relation on `absorbed`. */
@@ -677,6 +683,16 @@ export interface AdminAction {
     moved?: Record<string, number | string[]>
     cv?: MergeResult['cv']
     scheda_da_rigenerare?: boolean
+    /** A `card_regenerated` entry's (REB-861): a regeneration of the card, one of a bulk
+     *  start (`bulk`, `start_action_id`) or a single «Rigenera scheda», the prompt version
+     *  and model that wrote it, the reason it was not written and what its calls cost. */
+    bulk?: boolean
+    start_action_id?: string | null
+    prompt_version?: number
+    model?: string | null
+    reason?: string
+    cost_eur?: string
+    unpriced?: number
   }
   created_at: string
 }
@@ -1731,6 +1747,8 @@ export const admin = {
     }),
   /** «Modelli AI» (REB-833): the providers' keys are write-only, the answer carries the hint. */
   aiConfig: () => request<AiConfig>('/api/hub/admin/ai'),
+  /** «Registro» (REB-861): the configuration's trail, newest first. */
+  aiAudit: (limit = 50) => request<AiAuditAction[]>(`/api/hub/admin/ai/audit?limit=${limit}`),
   aiSaveKey: (provider: string, key: string) =>
     request<AiProvider>(`/api/hub/admin/ai/providers/${provider}/key`, { ...json({ key }), method: 'PUT' }),
   aiSetEnabled: (provider: string, enabled: boolean) =>
@@ -1847,6 +1865,64 @@ export interface AiConfig {
   prices: AiPrice[]
   spend: { month: string; rows: AiSpendRow[] }
   known_models: Record<string, string[]>
+}
+
+/** One entry of the «Registro» of «Modelli AI» (REB-861): what an admin changed in the
+ *  configuration and every regeneration of the cards, its start and its end. The payloads
+ *  carry counts, costs and the people's ids, never a name or a card's text. */
+export interface AiAuditAction {
+  id: string
+  kind:
+    | 'ai_key'
+    | 'ai_switch'
+    | 'ai_task'
+    | 'ai_price'
+    | 'eval_add'
+    | 'eval_remove'
+    | 'eval_expected'
+    | 'eval_accept'
+    | 'eval_rate'
+    | 'cards_regenerate'
+    | 'cards_regenerated'
+  admin_nome: string
+  payload: {
+    provider?: string
+    model?: string
+    /** An `ai_switch` entry's source (`github`, `links`) when it is not a provider's. */
+    source?: string
+    /** An `ai_key` entry's: `chiave sostituita`, or `seed` for the command line's import. */
+    azione?: string
+    task?: string
+    changed?: string[]
+    after?: Record<string, unknown>
+    /** A `cards_regenerate` entry's: how many cards were asked for and queued, whether
+     *  they went through the Batch API (and as which batch), and the door. */
+    limit?: number
+    queued?: number
+    batch?: boolean
+    batch_id?: string
+    fonte?: ActionSource
+    /** A `cards_regenerated` entry's: the start it ends and what became of the cards. */
+    start_action_id?: string | null
+    /** The counts, the cost and the failures are `null` when the start's entry was lost
+     *  (`start_missing`) and the caller could not count them itself. */
+    written?: number | null
+    failed?: number | null
+    superseded?: number | null
+    skipped?: number | null
+    errored?: number | null
+    /** The calls' cost in euros, as a decimal string. */
+    cost_eur?: string | null
+    unpriced?: number
+    failures?: { freelancer_id: string; reason: string }[] | null
+    start_missing?: boolean
+    stopped?: boolean
+    /** Why it stopped, when known (`unavailable`, `cap_reached`, `not_configured`, `error`). */
+    stop_reason?: string
+    left?: number
+    batch_status?: 'applied' | 'failed'
+  }
+  created_at: string
 }
 
 export interface AiTaskUpdate {

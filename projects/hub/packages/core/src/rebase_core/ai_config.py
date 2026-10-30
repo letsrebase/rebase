@@ -39,7 +39,7 @@ from rebase_core.ai_schemas import (
     SpendRow,
     TaskRead,
 )
-from rebase_core.audit import AdminActionService, field_changes, utcnow
+from rebase_core.audit import AdminActionRead, AdminActionService, field_changes, utcnow
 from rebase_core.config import Settings
 from rebase_core.errors import (
     InvalidState,
@@ -230,6 +230,15 @@ class AiConfigService:
         if row is None or row.key_ciphertext is None or row.key_nonce is None:
             return None
         return unseal(row.key_ciphertext, row.key_nonce, secrets_key_bytes(self.settings))
+
+    def trail(self, limit: int = 50) -> list[AdminActionRead]:
+        """The `ai_config` entries of the trail, newest first, each with the admin's name
+        (REB-861): the keys, switches, tasks, prices and evaluation set an admin changed,
+        and every regeneration of the cards, its start and its end. The page's «Registro»
+        and the MCP's `registro`. `limit` is clamped to the trail's own bounds."""
+        return AdminActionService(self.session).timeline(
+            AI_CONFIG_ENTITY, AI_CONFIG_ENTITY_ID, limit
+        )
 
     def spent_today(self, task: str) -> Decimal:
         """What the task spent since midnight in Rome, every purpose together. An unpriced

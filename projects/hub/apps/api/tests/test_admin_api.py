@@ -4,6 +4,7 @@ import hashlib
 import json
 import re
 from collections.abc import Iterator
+from typing import Any
 from uuid import UUID
 
 import pytest
@@ -979,6 +980,12 @@ def _apply_with_text(client: TestClient) -> str:
     return str(item["id"])
 
 
+def _regenerations(client: TestClient, freelancer_id: str) -> list[dict[str, Any]]:
+    """The talent's `card_regenerated` entries, newest first."""
+    trail = client.get(f"/api/hub/freelancers/{freelancer_id}/audit").json()
+    return [entry for entry in trail if entry["kind"] == "card_regenerated"]
+
+
 def test_without_the_cookie_the_card_routes_are_a_401(client: TestClient, admin: None) -> None:
     assert client.get(f"/api/hub/freelancers/{MISSING}/card").status_code == 401
     assert client.post(f"/api/hub/freelancers/{MISSING}/card").status_code == 401
@@ -1013,12 +1020,21 @@ def test_an_admin_reads_and_regenerates_the_anonymous_card(
     for key in ("fonti", "source_hashes", "conflicts", "provenance", "prompt_version"):
         assert f'"{key}"' not in talents
 
+    # The wizard's own write was started by no person: nothing of it in the trail (REB-861).
+    assert _regenerations(client, freelancer_id) == []
+
     # «Rigenera scheda»: the same CV is written again, on request.
     again = client.post(f"/api/hub/freelancers/{freelancer_id}/card")
     assert again.status_code == 200, again.text
     assert len(llm.requests) == 2
     assert again.json()["card"] == {**CARD, "seniority_incerta": False}
     assert again.json()["provenance"]["prompt_version"] == 3
+    # Signed in the talent's trail, with the door (REB-861).
+    [written] = _regenerations(client, freelancer_id)
+    assert written["admin_nome"]
+    assert (written["payload"]["fonte"], written["payload"]["bulk"]) == ("web", False)
+    assert (written["payload"]["esito"], written["payload"]["prompt_version"]) == ("scritta", 3)
+    assert "start_action_id" not in written["payload"]
 
     # A refusal keeps the card and says so; the next «Rigenera» ignores the failed hash.
     refusing = RecordingCall([card_response(stop_reason="refusal"), card_response()])
@@ -1028,6 +1044,12 @@ def test_an_admin_reads_and_regenerates_the_anonymous_card(
     retried = client.post(f"/api/hub/freelancers/{freelancer_id}/card").json()
     assert len(refusing.requests) == 2
     assert retried["card"] == {**CARD, "seniority_incerta": False} and retried["error"] is None
+    # Newest first: the second try written, the refusal with its reason, the first write.
+    outcomes = [
+        (a["payload"]["esito"], a["payload"].get("reason"))
+        for a in _regenerations(client, freelancer_id)
+    ]
+    assert outcomes == [("scritta", None), ("non_scritta", "refusal"), ("scritta", None)]
 
     assert client.get(f"/api/hub/freelancers/{MISSING}/card").status_code == 404
     assert client.post(f"/api/hub/freelancers/{MISSING}/card").status_code == 404
