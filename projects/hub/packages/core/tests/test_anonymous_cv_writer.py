@@ -334,6 +334,31 @@ def test_reused_body_the_guard_now_refuses_is_not_served_without_a_model(
     assert error.value.message == "Il compito «CV anonimo» non è configurato in «Modelli AI»."
 
 
+def test_a_kept_body_that_is_no_longer_a_cv_is_written_again(clean: Session) -> None:
+    """A body kept under this version that the shape no longer reads (a field renamed by
+    hand, a limit lowered) is stale: written again, never a 500."""
+    freelancer_id = _apply(clean)
+    _keep(clean, freelancer_id, {**BODY, "riassunto": "un campo che non c'è più"})
+    llm = RecordingCall([cv_response()])
+
+    written = _writer(clean, llm).get_or_write(freelancer_id)
+
+    assert len(llm.requests) == 1
+    assert written.cv == AnonymousCv.model_validate(BODY)
+    stored = _stored(clean, freelancer_id)
+    assert stored is not None and stored.body == BODY
+
+
+def test_a_kept_body_that_is_no_longer_a_cv_is_not_served_without_a_model(
+    clean: Session,
+) -> None:
+    freelancer_id = _apply(clean)
+    _keep(clean, freelancer_id, {"lingua": "fr"})
+
+    with pytest.raises(LlmNotConfigured):
+        _writer(clean, None).get_or_write(freelancer_id)
+
+
 def test_new_cv_writes_again(clean: Session) -> None:
     freelancer_id = _apply(clean)
     _writer(clean, RecordingCall([cv_response()])).get_or_write(freelancer_id)
@@ -428,6 +453,54 @@ def test_identifying_twice_fails_and_stores_nothing(
     assert str(freelancer_id) in logs.text
     for secret in ("Mario", "Messina", "backend developer", "sommario"):
         assert secret not in logs.text
+
+
+@pytest.mark.parametrize(
+    ("again", "sentence"),
+    [
+        (cv_response(stop_reason="refusal"), "Il modello ha rifiutato di scrivere il CV."),
+        (
+            cv_response(stop_reason="max_tokens"),
+            "Il CV è troppo lungo per il tetto di risposta del compito: alzalo in «Modelli AI».",
+        ),
+        (cv_response(raw='{"cv": "un testo"}'), "La risposta del modello non era un CV valido."),
+    ],
+)
+def test_a_rewrite_that_fails_says_why_and_stores_nothing(
+    clean: Session, again: LlmResponse, sentence: str
+) -> None:
+    """The rewrite is a call like the first: refused, cut or not the shape, it fails with
+    its own sentence rather than «still identifying»."""
+    freelancer_id = _apply(clean)
+    llm = RecordingCall([cv_response(_with(sommario="Mario Messina, backend developer.")), again])
+
+    with pytest.raises(AnonymousCvFailed) as error:
+        _writer(clean, llm).get_or_write(freelancer_id)
+
+    assert error.value.message == sentence
+    assert len(llm.requests) == 2
+    assert _stored(clean, freelancer_id) is None
+
+
+def test_an_outage_on_the_rewrite_propagates_and_stores_nothing(clean: Session) -> None:
+    freelancer_id = _apply(clean)
+    down = LlmUnavailable("Il modello non ha risposto: riprova tra poco.")
+
+    class _DownOnTheRewrite(RecordingCall):
+        def complete(self, request: LlmRequest) -> LlmResponse:
+            if self.requests:
+                self.requests.append(request)
+                raise down
+            return super().complete(request)
+
+    llm = _DownOnTheRewrite([cv_response(_with(sommario="Mario Messina, backend developer."))])
+
+    with pytest.raises(LlmUnavailable) as error:
+        _writer(clean, llm).get_or_write(freelancer_id)
+
+    assert error.value is down
+    assert len(llm.requests) == 2
+    assert _stored(clean, freelancer_id) is None
 
 
 def test_identity_from_the_answer_is_checked(clean: Session) -> None:

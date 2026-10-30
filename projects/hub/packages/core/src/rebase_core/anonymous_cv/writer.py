@@ -28,6 +28,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
+from pydantic import ValidationError
 from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
@@ -267,22 +268,9 @@ class AnonymousCvWriter:
             raise NoCv(freelancer_id) from None
         digest = hashlib.sha256(content).hexdigest()
         known = self._known(row)
-        stored = self.session.get(AnonymousCvRow, freelancer_id, populate_existing=True)
-        if (
-            stored is not None
-            and stored.cv_sha256 == digest
-            and stored.prompt_version == CV_PROMPT_VERSION
-        ):
-            kept = AnonymousCv.model_validate(stored.body)
-            # Read again against who the person is now (the answer's `identita` is not
-            # kept): a guard fixed since, or a profile corrected since, may find what the
-            # write let through. Such a body is stale, written again and never served.
-            if not identifying_fields(kept, known):
-                return Written(kept, reused=True, cv_sha256=digest)
-            logger.info(
-                "anonymous CV for freelancer %s written again: the kept one names the person",
-                freelancer_id,
-            )
+        kept = self._kept(freelancer_id, digest, known)
+        if kept is not None:
+            return Written(kept, reused=True, cv_sha256=digest)
         cv = FreelancerService(self.session).cv_text(freelancer_id)
         if not cv.testo.strip():
             raise self._failed(freelancer_id, "no_text")
@@ -308,6 +296,35 @@ class AnonymousCvWriter:
         )
 
     # ---- helpers ---------------------------------------------------------------------
+
+    def _kept(self, freelancer_id: UUID, digest: str, known: Who) -> AnonymousCv | None:
+        """The body kept for these very bytes under this prompt version, when it can still be
+        served: read as an `AnonymousCv` (one the shape no longer reads is stale, never a
+        500) and read again by the guard against who the person is now, since the answer's
+        `identita` is not kept and a guard fixed since, or a profile corrected since, may
+        find what the write let through. A stale body is written again, never served."""
+        stored = self.session.get(AnonymousCvRow, freelancer_id, populate_existing=True)
+        if (
+            stored is None
+            or stored.cv_sha256 != digest
+            or stored.prompt_version != CV_PROMPT_VERSION
+        ):
+            return None
+        try:
+            kept = AnonymousCv.model_validate(stored.body)
+        except ValidationError:
+            logger.info(
+                "anonymous CV for freelancer %s written again: the kept one is not a CV",
+                freelancer_id,
+            )
+            return None
+        if identifying_fields(kept, known):
+            logger.info(
+                "anonymous CV for freelancer %s written again: the kept one names the person",
+                freelancer_id,
+            )
+            return None
+        return kept
 
     def _known(self, row: Freelancer) -> Who:
         """Who the person is, by the two readings the hub has without a call: the profile
