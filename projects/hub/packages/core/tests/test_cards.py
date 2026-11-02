@@ -25,14 +25,10 @@ from sqlalchemy.orm import Session
 from rebase_core.bands import Band
 from rebase_core.card_draft import CardDraft
 from rebase_core.card_level import LEAD_FROM, MID_FROM, SENIOR_FROM
-from rebase_core.cards import (
-    NEUTRAL_AGAIN,
-    NO_TEXT,
-    CardWriter,
-    _gendered,
-    card_prompt,
-    write_after_response,
-)
+from rebase_core.card_persona import gendered_words
+from rebase_core.card_prompt import NEUTRAL_AGAIN, card_prompt
+from rebase_core.card_types import NO_TEXT
+from rebase_core.card_writer import CardWriter, write_after_response
 from rebase_core.cv_text import CvText
 from rebase_core.db import session_factory
 from rebase_core.errors import LlmCapReached, LlmNotConfigured
@@ -149,11 +145,12 @@ def clean(hub_session: Session) -> Iterator[Session]:
 
 @pytest.fixture
 def logs(clean: Session, caplog: pytest.LogCaptureFixture) -> pytest.LogCaptureFixture:
-    """`caplog` on this module's logger. After `clean`, on purpose: the database fixture
+    """`caplog` on the card writer's loggers. After `clean`, on purpose: the database fixture
     runs Alembic's `env.py`, whose `fileConfig` disables every logger `alembic.ini` does
-    not list, this one among them (the trap `test_llm.py` documents)."""
-    logging.getLogger("rebase_core.cards").disabled = False
-    caplog.set_level(logging.INFO, logger="rebase_core.cards")
+    not list, these among them (the trap `test_llm.py` documents)."""
+    for name in ("rebase_core.card_writer", "rebase_core.card_store"):
+        logging.getLogger(name).disabled = False
+        caplog.set_level(logging.INFO, logger=name)
     return caplog
 
 
@@ -660,7 +657,7 @@ def test_the_guard_reads_what_refers_to_the_person(
     a feminine participle where only the person can be its noun: whole words, in any
     case, in the role, the summary, the skills and the sectors, each named once in lower
     case, which is what the rewrite asks Claude to change."""
-    assert _gendered(Card.model_validate({**CARD, field: value})) == words
+    assert gendered_words(Card.model_validate({**CARD, field: value})) == words
 
 
 @pytest.mark.parametrize(
@@ -682,7 +679,7 @@ def test_the_guard_reads_what_refers_to_the_person(
 def test_the_guard_leaves_what_is_not_the_person(field: str, value: str | list[str]) -> None:
     """A hit costs a second call, so nothing the person is not: «un'agenzia
     specializzata» and «una piattaforma certificata» say nothing of who wrote the CV."""
-    assert _gendered(Card.model_validate({**CARD, field: value})) == []
+    assert gendered_words(Card.model_validate({**CARD, field: value})) == []
 
 
 def test_a_card_that_is_not_the_person_is_written_at_once(clean: Session) -> None:

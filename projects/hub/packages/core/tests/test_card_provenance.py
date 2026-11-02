@@ -29,13 +29,8 @@ from rebase_core.card_draft import (
     conflicts,
     verify_fonti,
 )
-from rebase_core.cards import (
-    IDENTIFYING_AGAIN,
-    NEUTRAL_AGAIN,
-    CardWriter,
-    card_prompt,
-    source_keys,
-)
+from rebase_core.card_prompt import IDENTIFYING_AGAIN, NEUTRAL_AGAIN, card_prompt, source_keys
+from rebase_core.card_writer import CardWriter
 from rebase_core.cloud import CloudTalentService
 from rebase_core.cv_text import CvText
 from rebase_core.freelancer_schemas import FreelancerCreate
@@ -537,7 +532,7 @@ def test_a_client_of_the_hub_in_the_card_is_one_rewrite_then_a_failure(clean: Se
 
 
 def test_the_sources_in_a_prompt_are_capped_in_total() -> None:
-    from rebase_core.cards import MAX_SOURCE_CHARS
+    from rebase_core.card_prompt import MAX_SOURCE_CHARS
 
     pages = [
         SourceItem("link", f"https://p{n}.example/", n, "x" * 20_000, "e" * 64, "ok", NOW)

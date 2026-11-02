@@ -11,20 +11,25 @@ from collections.abc import Callable, Iterator
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from fakes_cards import CARD, card_response, text_pdf
-from sqlalchemy import Engine, select, text
+from sqlalchemy import Engine, event, select, text
 from sqlalchemy.orm import Session
 from test_hub_facts import _match
 from test_sources import FakeFetcher, FakeGithub, snapshot_of
 
-from rebase_core.cards import ESTIMATE_CALLS, PROMPT_VERSION, CardWriter, stale_reason
+from rebase_core import card_staleness
+from rebase_core.card_prompt import PROMPT_VERSION
+from rebase_core.card_provenance import stale_reason
+from rebase_core.card_staleness import ESTIMATE_CALLS
+from rebase_core.card_writer import CardWriter
 from rebase_core.db import session_factory
 from rebase_core.errors import LlmCapReached
 from rebase_core.freelancer_schemas import FreelancerCreate
 from rebase_core.freelancers import FreelancerService
+from rebase_core.hub_facts import hub_facts, hub_facts_many
 from rebase_core.llm import LlmResponse, RecordingCall
 from rebase_core.models import AdminAction, AiUsage, Freelancer, FreelancerCard, User
 from rebase_core.sources import SourceService
@@ -438,6 +443,120 @@ def test_a_card_that_keeps_failing_does_not_take_every_start(clean: Session) -> 
 
     assert done == CardsRefreshed(written=2, failed=0)
     assert _reasons(clean) == {failing: "prompt"}
+
+
+def _statements(engine: Engine, work: Callable[[], Any]) -> tuple[Any, int]:
+    """What `work` returns and how many statements it sent to the database."""
+    sent: list[str] = []
+
+    def count(*args: Any) -> None:
+        sent.append(args[2])
+
+    event.listen(engine, "before_cursor_execute", count)
+    try:
+        return work(), len(sent)
+    finally:
+        event.remove(engine, "before_cursor_execute", count)
+
+
+def test_batched_hashes_and_facts_equal_the_per_person_ones(clean: Session) -> None:
+    """`stale_cards` reads the inputs of a page of people by `IN (...)`; the hashes it
+    compares are the ones `input_hashes` gives person by person, sources and the hub's facts
+    included (REB-891)."""
+    people = [_apply(clean, n, LINKS) for n in (1, 2, 3)]
+    github = FakeGithub()
+    service = _service(clean, github)
+    for person in people[:2]:  # the third has no source stored: an empty set, not an absence
+        service.refetch(person)
+    row = clean.get(Freelancer, people[0])
+    assert row is not None
+    _match(clean, row, inizio=date(2025, 1, 1), fine=date(2025, 6, 30))
+    clean.commit()
+    writer = CardWriter(clean, None, sources=service)
+
+    batched = writer.input_hashes_many([*people, uuid4(), people[0]])
+
+    assert set(batched) == set(people)
+    assert batched == {person: writer.input_hashes(person) for person in people}
+    assert "hub" in batched[people[0]] and "hub" not in batched[people[1]]
+    assert "github" in batched[people[1]] and "github" not in batched[people[2]]
+    assert hub_facts_many(clean, [*people, uuid4()]) == {
+        person: hub_facts(clean, person) for person in people
+    }
+
+
+def test_the_stale_list_costs_the_same_statements_for_any_number_of_cards(
+    clean: Session, hub_engine: Engine
+) -> None:
+    people = _cards(clean, 6)
+    _backdate(clean, PROMPT_VERSION)  # the current version: every card is hashed
+    writer = CardWriter(clean, None)
+
+    _, few = _statements(hub_engine, lambda: writer.stale_cards(2))
+    _, many = _statements(hub_engine, writer.stale_cards)
+
+    assert few == many
+    assert few <= 8  # the page, the people, their sources, the hub's three: not 4 per card
+    assert len(people) == 6
+
+
+def test_the_stale_list_is_read_by_pages_in_the_same_order_and_a_limit_stops_it(
+    clean: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    people = _cards(clean, 5)
+    _backdate(clean, 1)
+    for n, person in enumerate(people):
+        clean.execute(
+            text("UPDATE freelancer_cards SET generated_at = :at WHERE freelancer_id = :i"),
+            {"at": datetime(2026, 10, 1 + n, tzinfo=UTC), "i": person},
+        )
+    clean.commit()
+    whole = CardWriter(clean, None).stale_cards()
+    assert [item.freelancer_id for item in whole] == people
+
+    monkeypatch.setattr(card_staleness, "STALE_PAGE", 2)  # three pages: 2, 2, 1
+
+    assert CardWriter(clean, None).stale_cards() == whole
+    assert CardWriter(clean, None).stale_cards(3) == whole[:3]
+    assert CardWriter(clean, None).stale_cards(0) == []
+    assert CardWriter(clean, None).stale_cards(99) == whole
+
+
+def test_starts_of_a_few_cards_reach_every_stale_card_across_passes(
+    clean: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    people = _cards(clean, 5)
+    _backdate(clean, 1)
+    monkeypatch.setattr(card_staleness, "STALE_PAGE", 2)
+    admin = _admin(clean)
+    written = 0
+
+    for _ in range(3):
+        done = CardWriter(clean, _answers(2), now=lambda: NOW).regenerate_stale(
+            admin, 2, fonte="web"
+        )
+        written += done.written
+
+    assert written == len(people)
+    assert _reasons(clean) == {}
+
+
+def test_a_card_whose_cv_changed_is_stale_by_the_stored_digest(clean: Session) -> None:
+    """The CV is compared by `freelancers.cv_sha256`, which the database generates: a new
+    file moves it, the card's own digest does not follow, and no bytes are hashed in Python."""
+    [person] = _cards(clean, 1)
+    before = clean.scalar(select(Freelancer.cv_sha256).where(Freelancer.id == person))
+    assert before == clean.get(FreelancerCard, person).cv_sha256  # type: ignore[union-attr]
+    clean.execute(
+        text("UPDATE freelancers SET cv_bytes = :b WHERE id = :i"),
+        {"b": text_pdf("Un altro CV, scritto altrove."), "i": person},
+    )
+    clean.commit()
+
+    assert clean.scalar(select(Freelancer.cv_sha256).where(Freelancer.id == person)) != before
+    assert CardWriter(clean, None).stale_of(person) == "cv"
+    assert CardWriter(clean, _answers(1), now=lambda: NOW).refresh_stale(limit=5).written == 1
+    assert CardWriter(clean, None).stale_of(person) is None
 
 
 class _Scripted:

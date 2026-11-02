@@ -40,7 +40,7 @@ from rebase_core.card_eval import (
     run_eval,
     sample,
 )
-from rebase_core.cards import PROMPT_VERSION
+from rebase_core.card_prompt import PROMPT_VERSION
 from rebase_core.config import Settings
 from rebase_core.db import Base
 from rebase_core.errors import InvalidState, LlmUnavailable, NotFound, ValidationFailed

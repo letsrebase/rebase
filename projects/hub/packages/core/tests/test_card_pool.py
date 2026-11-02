@@ -26,7 +26,8 @@ from test_card_staleness import (
     _cards,
 )
 
-from rebase_core.cards import PROMPT_VERSION, CardWriter
+from rebase_core.card_prompt import PROMPT_VERSION
+from rebase_core.card_writer import CardWriter
 from rebase_core.errors import LlmCapReached, LlmUnavailable
 from rebase_core.llm import LlmRequest, LlmResponse
 from rebase_core.models import AdminAction, FreelancerCard

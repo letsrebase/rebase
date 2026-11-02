@@ -21,10 +21,11 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from rebase_core.card_draft import FONTI_FIELDS
-from rebase_core.cards import source_blocks, source_keys
+from rebase_core.card_prompt import source_blocks, source_keys
 from rebase_core.cv_text import CvText
 from rebase_core.hub_facts import HubFacts
-from rebase_core.llm import LlmCall, LlmMessage, LlmRequest, LlmResponse
+from rebase_core.llm import LlmCall, LlmRequest, LlmResponse
+from rebase_core.llm_prompt import FailureKind, complete_request, prompt_request, read_response
 from rebase_core.sources import SourceSet
 from rebase_core.team_schemas import Card
 
@@ -32,7 +33,7 @@ Verdict = Literal["supported", "unsupported", "contradicted"]
 VERDICTS: tuple[Verdict, ...] = ("supported", "unsupported", "contradicted")
 # Why no verdict came out of a call that was answered: the judge's own failures, the
 # provider's outage being the caller's (`LlmUnavailable`).
-JudgeFailure = Literal["refusal", "max_tokens", "shape"]
+JudgeFailure = FailureKind
 
 # The judge's own output ceiling, tokens, whatever the `card` task's is (2000 in production,
 # which is a card's): the longest answer the schema allows is eight verdicts with a reason of
@@ -153,23 +154,13 @@ def judge_prompt(
     if blocks:
         keys = ", ".join(source_keys(sources, facts))
         user += f"\n\nSources available: {keys}\n\n" + "\n\n".join(blocks)
-    return LlmRequest(
-        system=_SYSTEM,
-        messages=[LlmMessage(role="user", text=user)],
-        output_model=CardJudgement,
-    )
+    return prompt_request(_SYSTEM, [user], CardJudgement)
 
 
 def judgement_from(response: LlmResponse) -> CardJudgement | JudgeFailure:
     """The judge's answer, or the kind of failure: `stop_reason` is read before the body,
     as the seam hands it over, which has already validated it as `CardJudgement`."""
-    if response.stop_reason == "refusal":
-        return "refusal"
-    if response.stop_reason == "max_tokens":
-        return "max_tokens"
-    if not isinstance(response.parsed, CardJudgement):
-        return "shape"
-    return response.parsed
+    return read_response("card", response, CardJudgement).result
 
 
 def judge(
@@ -182,5 +173,7 @@ def judge(
     today: date,
 ) -> CardJudgement | JudgeFailure:
     """One call: the verdicts, or why there are none. A provider that cannot answer raises
-    `LlmUnavailable` (a cap reached and a missing key included) for the caller to read."""
-    return judgement_from(llm.complete(judge_prompt(card, cv, posizione, sources, facts, today)))
+    `LlmUnavailable` (a cap reached and a missing key included) for the caller to read: this
+    is `complete_request`, which propagates, not `try_complete_request`, which answers none."""
+    request = judge_prompt(card, cv, posizione, sources, facts, today)
+    return complete_request(llm, "card", request, CardJudgement).result

@@ -28,17 +28,14 @@ from test_card_staleness import _apply, _cards
 from rebase_core.ai_config import AI_CONFIG_ENTITY, AI_CONFIG_ENTITY_ID
 from rebase_core.audit import AdminActionService
 from rebase_core.card_batch import ACTIVE_GIVEN_UP_AFTER, BatchPolled, CardBatches
-from rebase_core.cards import (
-    PROMPT_VERSION,
-    REGENERATION_REASONS,
-    STOP_REASONS,
-    CardWriter,
-    Fonte,
-    Regeneration,
-)
+from rebase_core.card_prompt import PROMPT_VERSION
+from rebase_core.card_regen import REGENERATION_REASONS, STOP_REASONS
+from rebase_core.card_types import Fonte, Regeneration
+from rebase_core.card_writer import CardWriter
 from rebase_core.db import session_factory
 from rebase_core.errors import LlmCapReached, LlmUnavailable, NotFound
-from rebase_core.llm import BatchHandle, BatchOutcome, LlmRequest, LlmResponse, RecordingBatch
+from rebase_core.llm import LlmRequest, LlmResponse
+from rebase_core.llm_batch import BatchHandle, BatchOutcome, RecordingBatch
 from rebase_core.models import AdminAction, AiUsage, CardBatch, CardBatchItem
 from rebase_core.team_schemas import CardsRefreshed
 

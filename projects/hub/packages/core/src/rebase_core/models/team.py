@@ -42,7 +42,7 @@ class FreelancerCard(Base, TimestampMixin):
     """Claude's anonymous read of a freelancer's CV (spec § 2.1), one row per card
     (`freelancer_id` is the primary key: at most one per person, gone with the person on
     `ON DELETE CASCADE`). `cv_sha256`, `card`, `model` and the two token counts are the
-    *last successful* generation, written together by `rebase_core.cards.CardWriter`
+    *last successful* generation, written together by `rebase_core.card_writer.CardWriter`
     (spec § 5.1) or not at all -- a freelancer whose CV has never produced a card has
     every one of these `NULL`. `error` and `error_cv_sha256` are the *last failure*,
     independent of whether a card exists at all: an empty CV, a refusal, a `max_tokens`

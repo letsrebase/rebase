@@ -18,18 +18,15 @@ request without a draft. The AI improves a filing and never blocks one. Nothing 
 request's text or the answer.
 """
 
-import logging
 import math
 from dataclasses import dataclass
 from datetime import date
 
 from pydantic import BaseModel, Field
 
-from rebase_core.cards import _block
-from rebase_core.errors import LlmUnavailable
-from rebase_core.llm import LlmCall, LlmMessage, LlmRequest
-
-logger = logging.getLogger(__name__)
+from rebase_core.card_prompt import data_block
+from rebase_core.llm import LlmCall, LlmRequest
+from rebase_core.llm_prompt import prompt_request, try_complete_request
 
 RUOLO_MAX = 80
 GIORNI_MIN = 0.5
@@ -177,7 +174,7 @@ def request_text(figura_richiesta: str, progetto: str, durata: str, periodo_da: 
         f"Inizio desiderato: {periodo_da.isoformat()}\n"
         f"Progetto:\n{progetto}"
     )
-    return _block(_KEY, "FONTE: richiesta dell'azienda", body)
+    return data_block(_KEY, "FONTE: richiesta dell'azienda", body)
 
 
 # What «Prova» sends for this task: an invented request, so the probe shows a real draft
@@ -194,14 +191,10 @@ SAMPLE_PERIODO_DA = date(2030, 1, 15)
 
 def lead_request(figura_richiesta: str, progetto: str, durata: str, periodo_da: date) -> LlmRequest:
     """The call as it is made: the rules, the one data block, the lenient schema."""
-    return LlmRequest(
-        system=_SYSTEM,
-        messages=[
-            LlmMessage(
-                role="user", text=request_text(figura_richiesta, progetto, durata, periodo_da)
-            )
-        ],
-        output_model=LeadDraftOut,
+    return prompt_request(
+        _SYSTEM,
+        [request_text(figura_richiesta, progetto, durata, periodo_da)],
+        LeadDraftOut,
     )
 
 
@@ -218,16 +211,13 @@ def draft_lead(
     files the request with no draft."""
     if llm is None:
         return None
-    request = lead_request(figura_richiesta, progetto, durata, periodo_da)
-    try:
-        response = llm.complete(request)
-    except LlmUnavailable as error:
-        logger.info("crm_lead: no draft (%s)", error.code)
-        return None
-    except Exception as error:  # the filing goes ahead whatever the provider did
-        logger.warning("crm_lead: no draft (%s)", type(error).__name__)
-        return None
-    if not isinstance(response.parsed, LeadDraftOut):
-        logger.info("crm_lead: no draft (%s)", response.stop_reason)
-        return None
-    return LeadDraft.from_output(response.parsed)
+    # `try_complete_request` answers `None` for every way there is no answer, the provider's
+    # library included: the filing goes ahead whatever the model did.
+    answer = try_complete_request(
+        llm,
+        "crm_lead",
+        lead_request(figura_richiesta, progetto, durata, periodo_da),
+        LeadDraftOut,
+        label="crm_lead",
+    )
+    return LeadDraft.from_output(answer) if answer is not None else None

@@ -18,7 +18,9 @@ from sqlalchemy.orm import Session
 
 from rebase_core.card_draft import CardPersona, clean_persona, differenze, phone_digits
 from rebase_core.card_guard import KnownIdentifiers, identifying
-from rebase_core.cards import IDENTIFYING_AGAIN, CardWriter, stored_persona
+from rebase_core.card_persona import stored_persona
+from rebase_core.card_prompt import IDENTIFYING_AGAIN
+from rebase_core.card_writer import CardWriter
 from rebase_core.cloud import CloudTalentService
 from rebase_core.freelancer_schemas import FreelancerCreate
 from rebase_core.freelancers import FreelancerService

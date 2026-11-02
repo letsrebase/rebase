@@ -30,7 +30,8 @@ from rebase_core.anonymous_cv.writer import (
     AnonymousCvWriter,
     Written,
 )
-from rebase_core.cards import NO_TEXT, PERSONA_CV
+from rebase_core.card_persona import PERSONA_CV
+from rebase_core.card_types import NO_TEXT
 from rebase_core.contract_schemas import FiscalData
 from rebase_core.db import session_factory
 from rebase_core.errors import AnonymousCvFailed, LlmNotConfigured, LlmUnavailable, NotFound
