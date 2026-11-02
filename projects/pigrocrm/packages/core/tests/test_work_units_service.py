@@ -342,8 +342,9 @@ def test_a_second_live_day_on_the_same_date_is_a_conflict(db_session: Session) -
     service = WorkUnitService(db_session)
     service.create(_day(contract, date(2026, 3, 2)), WRITER)
 
-    with pytest.raises(Conflict, match="gia' una giornata"):
+    with pytest.raises(Conflict) as refused:
         service.create(_day(contract, date(2026, 3, 2)), WRITER)
+    assert refused.value.details["data"] == "2026-03-02"
 
 
 def test_a_revoked_day_frees_its_date(db_session: Session) -> None:
@@ -476,12 +477,18 @@ def test_move_refuses_what_the_days_page_would_not_offer(db_session: Session) ->
     flagged = service.create(_day(contract, date(2026, 3, 2)), WRITER)
     proposed = service.create(_day(contract, date(2026, 3, 3), "proposto"), WRITER)
 
-    with pytest.raises(Conflict, match="da qui"):
-        service.move(proposed.id, "approvato", WRITER, "senza prova")
-    with pytest.raises(Conflict, match="da qui"):
-        service.move(flagged.id, "lavorato", WRITER, "il trigger lo riscriverebbe")
-    with pytest.raises(Conflict, match="da qui"):
-        service.move(flagged.id, "fatturato", WRITER, "lo fa una fattura")
+    for work_unit, target, reason in (
+        (proposed, "approvato", "senza prova"),
+        (flagged, "lavorato", "il trigger lo riscriverebbe"),
+        (flagged, "fatturato", "lo fa una fattura"),
+    ):
+        with pytest.raises(Conflict) as refused:
+            service.move(work_unit.id, target, WRITER, reason)
+        # The graph allows these edges (`transition` does them); `move` refuses them.
+        assert (refused.value.details["da"], refused.value.details["a"]) == (
+            work_unit.stato,
+            target,
+        )
 
     assert service.get(flagged.id).stato == "lavorato_senza_approvazione"
     assert service.get(proposed.id).stato == "proposto"

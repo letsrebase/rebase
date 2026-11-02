@@ -118,8 +118,9 @@ def test_an_address_that_is_not_one_is_refused_before_any_day_is_written(
     contract = _contract(db_session)
     body = _prepare(_day(date(2026, 11, 2))).model_copy(update={"to_addresses": ["pippo"]})
 
-    with pytest.raises(ValidationFailed, match="non e' un indirizzo"):
+    with pytest.raises(ValidationFailed) as refused:
         _service(db_session).prepare(contract.id, body, WRITER)
+    assert refused.value.details["field"] == "to_addresses"
 
     assert db_session.scalars(select(WorkUnit)).all() == []
 
@@ -162,10 +163,11 @@ def test_a_date_the_contract_already_holds_a_day_for_refuses_the_whole_request(
     contract = _contract(db_session)
     _service(db_session).prepare(contract.id, _prepare(_day(date(2026, 11, 3))), WRITER)
 
-    with pytest.raises(Conflict, match="2026-11-03"):
+    with pytest.raises(Conflict) as refused:
         _service(db_session).prepare(
             contract.id, _prepare(_day(date(2026, 11, 2)), _day(date(2026, 11, 3))), WRITER
         )
+    assert refused.value.details["date"] == ["2026-11-03"]
 
     # Nothing of the refused request was written: only the first request's day exists.
     assert db_session.scalars(select(WorkUnit.data)).all() == [date(2026, 11, 3)]
