@@ -122,6 +122,7 @@ _AZIENDA_SCOPE_REVISIONS = (
     "0056_contract_email_templates.py",
     "0060_clause_notes.py",
     "0064_notes_thread.py",
+    "0066_definer_functions_search_path.py",
 )
 
 

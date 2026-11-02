@@ -8,7 +8,7 @@ CRM user, and the registry of in-flight authorisations that makes each `state` J
 single-use.
 
 Both `refresh_token_*` columns are `sa.LargeBinary`, which is `BYTEA` on Postgres: the
-refresh token is sealed with AES-256-GCM (`core/gmail/crypto.py`) under a key that
+refresh token is sealed with AES-256-GCM (`core/crypto.py`) under a key that
 lives outside the database, so what lands here is ciphertext plus its nonce and never
 anything readable. `sa.BLOB()` -- which autogenerate sometimes emits for the same
 mapped type -- would be wrong here.

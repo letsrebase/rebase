@@ -100,8 +100,8 @@ class GoogleOAuthState(Base, PrimaryKeyMixin, TimestampMixin):
     NULL`, which Postgres serialises on the row lock, so two simultaneous callbacks
     produce exactly one winner. A read-then-write pair over a boolean would not.
 
-    Expired rows are pruned on each sync cycle -- unlike `refresh_tokens`, which
-    residuo R8 records as never pruned at all.
+    Expired rows are pruned whenever a flow starts a consent (`google/states.py`) --
+    unlike `refresh_tokens`, which residuo R8 records as never pruned at all.
 
     `purpose` is what spec 9 §5.2 adds for the Drive credential: one in-flight
     authorisation registry serves both flows, so the callback for one cannot be replayed
@@ -375,5 +375,5 @@ class PaymentReminder(Base, PrimaryKeyMixin, TimestampMixin):
     sequence: Mapped[int] = mapped_column(Integer, nullable=False)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     email_draft_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("email_drafts.id", ondelete="SET NULL"), default=None
+        ForeignKey("email_drafts.id", ondelete="SET NULL"), default=None, index=True
     )
