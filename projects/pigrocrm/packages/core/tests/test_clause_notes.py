@@ -10,8 +10,9 @@ from test_contracts_service import _create_payload, _customer
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.contracts.clause_note_service import ClauseNoteService
 from pigrocrm.core.contracts.schemas import ClauseNoteCreate, ClauseNoteUpdate
-from pigrocrm.core.contracts.service import ClauseNoteService, ContractService
+from pigrocrm.core.contracts.service import ContractService
 from pigrocrm.core.errors import NotFound, PermissionDenied
 
 ADMIN = Actor(id=None, type="system", role="admin")

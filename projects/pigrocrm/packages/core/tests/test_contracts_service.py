@@ -11,6 +11,10 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.analytics.service import AnalyticsService
 from pigrocrm.core.contract_expenses.schemas import ContractExpenseCreate
 from pigrocrm.core.contract_expenses.service import ContractExpenseService
+from pigrocrm.core.contracts.projection_service import ContractProjectionService
+from pigrocrm.core.contracts.rate_card_service import RateCardService
+from pigrocrm.core.contracts.renewal_assumption_service import RenewalAssumptionService
+from pigrocrm.core.contracts.repository import ContractRepository
 from pigrocrm.core.contracts.schemas import (
     ContractCreate,
     ContractListQuery,
@@ -21,12 +25,7 @@ from pigrocrm.core.contracts.schemas import (
     RateCardUpdate,
     RenewalAssumptionUpsert,
 )
-from pigrocrm.core.contracts.service import (
-    ContractProjectionService,
-    ContractService,
-    RateCardService,
-    RenewalAssumptionService,
-)
+from pigrocrm.core.contracts.service import ContractService
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.fields.schemas import FieldDefinitionCreate
@@ -191,6 +190,34 @@ def test_rate_card_create_turns_an_overlap_into_a_clean_conflict_not_a_raw_db_er
     # own callers -- and only the first, non-overlapping card actually exists.
     surviving = rate_cards.list_for_contract(contract.id, ADMIN)
     assert [c.valido_a for c in surviving] == [date(2026, 6, 30)]
+
+
+def test_an_overlap_conflict_leaves_the_callers_other_pending_work_alone(
+    db_session: Session,
+) -> None:
+    """The refusal confines itself to the rate card's own savepoint: a write the caller
+    made earlier in the same session and has not committed is still there afterwards."""
+    customer = _customer(db_session)
+    contract = ContractService(db_session).create(_create_payload(customer.id), ADMIN)
+    rate_cards = RateCardService(db_session)
+    rate_cards.create(
+        contract.id,
+        _rate_card_payload(valido_da=date(2026, 1, 1), valido_a=date(2026, 6, 30)),
+        ADMIN,
+    )
+    pending = Customer(ragione_sociale="Pending S.r.l.")
+    db_session.add(pending)
+
+    with pytest.raises(Conflict):
+        rate_cards.create(
+            contract.id,
+            _rate_card_payload(valido_da=date(2026, 6, 1), valido_a=date(2026, 12, 31)),
+            ADMIN,
+        )
+
+    assert pending in db_session
+    db_session.flush()
+    assert db_session.get(Customer, pending.id) is not None
 
 
 def test_rate_card_create_rejects_ore_minime_outside_orario_with_a_clean_validation_error(
@@ -934,3 +961,17 @@ def test_an_expense_policy_the_trigger_cannot_read_is_refused_on_create(
     customer = _customer(db_session)
     with pytest.raises(pydantic.ValidationError, match="politica_spese"):
         _create_payload(customer.id, politica_spese=policy)
+
+
+def test_a_customers_and_an_aziendas_contracts_are_filtered_in_sql(db_session: Session) -> None:
+    first = _customer(db_session)
+    second = _customer(db_session)
+    contracts = ContractService(db_session)
+    mine = contracts.create(_create_payload(first.id), ADMIN)
+    other = contracts.create(_create_payload(second.id), ADMIN)
+
+    repo = ContractRepository(db_session)
+    assert [c.id for c in repo.list_for_customer(first.id)] == [mine.id]
+    assert repo.list_for_customer(uuid4()) == []
+    assert {c.id for c in repo.list_active(azienda_id=mine.azienda_id)} >= {mine.id, other.id}
+    assert repo.list_active(azienda_id=uuid4()) == []

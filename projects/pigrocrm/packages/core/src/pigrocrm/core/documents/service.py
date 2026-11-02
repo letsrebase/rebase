@@ -37,6 +37,7 @@ from pigrocrm.core.documents.templating import DocumentTemplating
 from pigrocrm.core.documents.text import DocumentText
 from pigrocrm.core.documents.uploads import DocumentUploads
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
+from pigrocrm.core.fields.custom import merge_custom
 from pigrocrm.core.schemas import reject_cleared_columns, supplied_changes
 from pigrocrm.core.storage.base import DocumentStorage
 
@@ -80,8 +81,11 @@ class DocumentService:
         changes = supplied_changes(data, exclude={"custom_fields"})
         reject_cleared_columns(ENTITY, Document, changes)
         if data.custom_fields is not None:
-            changes["custom_fields"] = self._context.update_custom_fields(
-                document, data.custom_fields
+            changes["custom_fields"] = merge_custom(
+                ENTITY,
+                self._context.fields.specs_for(ENTITY),
+                document.custom_fields,
+                data.custom_fields,
             )
         for key, value in changes.items():
             setattr(document, key, value)

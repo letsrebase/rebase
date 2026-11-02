@@ -240,3 +240,14 @@ def test_every_answer_carries_its_provenance(service: DocumentService, customer:
 
     assert letto.provenienza == PROVENIENZA
     assert letto.titolo == "Modulo d'ordine"
+
+
+def test_the_gmail_attachment_ceiling_defaults_to_the_text_source_ceiling() -> None:
+    """One ceiling for "a file this size is not worth parsing", defined once in
+    `drive/reader.py` and read by documents; the setting is its environment-overridable
+    twin and must start from the same number."""
+    from pigrocrm.core.config import Settings
+    from pigrocrm.core.drive.reader import DOWNLOAD_MAX_BYTES
+
+    assert Settings(jwt_secret="x" * 32).gmail_attachment_max_bytes == DOWNLOAD_MAX_BYTES
+    assert TEXT_SOURCE_MAX_BYTES == DOWNLOAD_MAX_BYTES

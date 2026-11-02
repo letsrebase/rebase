@@ -27,7 +27,7 @@ from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.contracts.models import Contract, RateCard
-from pigrocrm.core.contracts.service import (
+from pigrocrm.core.contracts.rules import (
     check_payment_terms_together,
     check_rate_card_shape,
     check_renewal_notice,

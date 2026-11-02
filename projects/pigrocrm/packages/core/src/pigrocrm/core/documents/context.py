@@ -177,27 +177,6 @@ class DocumentContext:
     def validated_custom(self, values: dict[str, Any]) -> dict[str, Any]:
         return validate_custom_fields(ENTITY, self.fields.specs_for(ENTITY), values)
 
-    def update_custom_fields(self, document: Document, provided: dict[str, Any]) -> dict[str, Any]:
-        """Validates only the keys the caller is touching, never the merge with what
-        is stored. Identical in shape to `CustomerService._update_custom_fields`; see
-        that method's docstring for the archiving contract this preserves."""
-        active_by_key = {spec.key: spec for spec in self.fields.specs_for(ENTITY)}
-        to_remove: set[str] = set()
-        for key, value in provided.items():
-            if value is not None:
-                continue
-            spec = active_by_key.get(key)
-            if spec is not None and spec.required:
-                raise ValidationFailed(
-                    ENTITY, key, "campo obbligatorio", expected="un valore non vuoto"
-                )
-            to_remove.add(key)
-        to_set = {key: value for key, value in provided.items() if value is not None}
-        touched = [spec for spec in active_by_key.values() if spec.key in to_set]
-        merged = {k: v for k, v in document.custom_fields.items() if k not in to_remove}
-        merged.update(validate_custom_fields(ENTITY, touched, to_set))
-        return merged
-
     # ---- rows -----------------------------------------------------------------
 
     def create_row(

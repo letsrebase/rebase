@@ -11,10 +11,12 @@ from test_contracts_service import _create_payload, _customer
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.contracts.clause_note_service import ClauseNoteService
 from pigrocrm.core.contracts.models import Contract, RateCard
+from pigrocrm.core.contracts.rate_card_service import RateCardService
 from pigrocrm.core.contracts.renewal import add_months, renewed_term
 from pigrocrm.core.contracts.schemas import ContractRenew, RateCardCreate, RenewalDuration
-from pigrocrm.core.contracts.service import ClauseNoteService, ContractService, RateCardService
+from pigrocrm.core.contracts.service import ContractService
 from pigrocrm.core.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
 
 ADMIN = Actor(id=None, type="system", role="admin")

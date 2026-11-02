@@ -6,6 +6,10 @@ from fastapi import APIRouter, Query, status
 
 from pigrocrm.core.activities.schemas import ActivityRead
 from pigrocrm.core.activities.service import ActivityService
+from pigrocrm.core.contracts.clause_note_service import ClauseNoteService
+from pigrocrm.core.contracts.projection_service import ContractProjectionService
+from pigrocrm.core.contracts.rate_card_service import RateCardService
+from pigrocrm.core.contracts.renewal_assumption_service import RenewalAssumptionService
 from pigrocrm.core.contracts.schemas import (
     ClauseNoteCreate,
     ClauseNoteRead,
@@ -27,13 +31,7 @@ from pigrocrm.core.contracts.schemas import (
     RenewalAssumptionRead,
     RenewalAssumptionUpsert,
 )
-from pigrocrm.core.contracts.service import (
-    ClauseNoteService,
-    ContractProjectionService,
-    ContractService,
-    RateCardService,
-    RenewalAssumptionService,
-)
+from pigrocrm.core.contracts.service import ContractService
 from pigrocrm.core.db import CURSOR_MAX_LENGTH, SortDirection
 from pigrocrm.core.validation import SafeStr
 from pigrocrm_api.deps import ActorDep, SessionDep
