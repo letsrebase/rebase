@@ -344,7 +344,7 @@ _SHARED_PREDICATES = [
         (TimeEntryRepository.count_won_deals_to_invoice, DealRepository.list),
     ),
     (
-        "_overdue_predicate()",
+        "overdue_predicate()",
         (InvoiceRepository.count_scadute_non_incassate, InvoiceRepository.list),
     ),
 ]

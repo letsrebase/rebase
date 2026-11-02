@@ -564,7 +564,7 @@ def test_the_overdue_card_equals_its_drill_through(seeded: Seeded) -> None:
 
 
 def test_the_overdue_filter_excludes_each_row_it_must(seeded: Seeded) -> None:
-    """One row per clause of `_overdue_predicate`, each differing in exactly one: due today
+    """One row per clause of `overdue_predicate`, each differing in exactly one: due today
     (`<`, not `<=`), no due date at all, already collected, and annulled."""
     rows = _invoices(seeded.engine, InvoiceListQuery(scadute=True, limit=_ALL))
     scadenze = {row.data_scadenza for row in rows}

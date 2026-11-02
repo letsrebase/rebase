@@ -109,7 +109,7 @@ _FASCE_ETICHETTE: dict[str, str] = {
     "senza_scadenza": "Senza scadenza",
 }
 # The overdue bucket's drill-through: `?scadute=true` on the invoice list is
-# `_overdue_predicate`, the predicate the bucket is summed with (criterion 2).
+# `overdue_predicate`, the predicate the bucket is summed with (criterion 2).
 _SCADUTO_LINK = "/app/invoices?scadute=true"
 # The concentration signal's own drill-through (REB-371): the economic tab, where
 # every customer's share of the year's revenue is listed
@@ -316,7 +316,7 @@ class DashboardService:
         Every other `collegamento` names a filter that exists and that shares its predicate
         function with the count beside it (criterion 2), so a card and the list behind it
         cannot describe different rows: `invoiced_not_won_predicate`,
-        `won_with_unbilled_hours_predicate` and `_overdue_predicate` each have exactly two
+        `won_with_unbilled_hours_predicate` and `overdue_predicate` each have exactly two
         callers, one per side.
 
         §6.2's own fourth signal is still not here: "offerta accettata, deal non vinto" is on
