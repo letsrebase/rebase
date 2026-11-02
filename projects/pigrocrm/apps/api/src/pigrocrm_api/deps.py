@@ -221,8 +221,12 @@ def get_storage(request: Request, settings: SettingsDep) -> DocumentStorage:
                 storage = _tenant_storages.get(slug)
                 if storage is None:
                     if settings.storage_backend == "gdrive":
-                        factory = _tenant_session_factory(slug, settings)
-                        storage = storage_from_settings(settings, session_factory=lambda: factory())
+                        # Resolved per call: the registry may have disposed this space's
+                        # engine since, and a captured factory would keep the old one.
+                        storage = storage_from_settings(
+                            settings,
+                            session_factory=lambda: _tenant_session_factory(slug, settings)(),
+                        )
                     else:
                         root = Path(settings.storage_local_root) / "tenants" / slug
                         storage = LocalFileStorage(root)

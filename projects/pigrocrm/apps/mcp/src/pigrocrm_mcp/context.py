@@ -63,8 +63,17 @@ class ScopedSessionProvider:
     one from an unscoped read would reintroduce exactly that leak.
     """
 
-    def __init__(self, factory: sessionmaker[Session]) -> None:
-        self._factory = factory
+    def __init__(
+        self, factory: sessionmaker[Session] | Callable[[], sessionmaker[Session]]
+    ) -> None:
+        """A `sessionmaker`, or a callable that answers one: the registry may dispose and
+        rebuild a space's engine between two calls, so a space's provider resolves its
+        factory per call (`registry.session_factory(slug)`) and never captures one."""
+        self._resolve: Callable[[], sessionmaker[Session]] = (
+            (lambda: cast("sessionmaker[Session]", factory))
+            if isinstance(factory, sessionmaker)
+            else factory
+        )
 
     def __call__(self) -> Session:
         try:
@@ -91,11 +100,11 @@ class ScopedSessionProvider:
         reaches `scope` -- with `getattr` -- so a plain callable provider (this package's
         own test fixture) stays a plain callable.
         """
-        return self._factory()
+        return self._resolve()()
 
     @contextmanager
     def scope(self) -> Iterator[Session]:
-        session = self._factory()
+        session = self._resolve()()
         token = _CURRENT_SESSION.set(session)
         try:
             yield session

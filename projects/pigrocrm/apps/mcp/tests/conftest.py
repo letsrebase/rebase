@@ -1,3 +1,4 @@
+import os
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -7,10 +8,16 @@ from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.config import Settings
+from pigrocrm.core.config import Settings, get_settings
 from pigrocrm.core.db import create_engine_from_settings, session_factory
 from pigrocrm.core.storage import LocalFileStorage
-from pigrocrm_mcp.server import build_server
+
+# The HTTP app refuses a placeholder signing key (PCORE-B-05) and `pigrocrm_mcp.http` builds one
+# at import: the secret is set before anything imports it.
+os.environ.setdefault("PIGROCRM_JWT_SECRET", "test-secret-for-the-mcp-test-suite-only")
+get_settings.cache_clear()  # an import above may have read the settings already
+
+from pigrocrm_mcp.server import build_server  # noqa: E402
 
 ADMIN = Actor(id=None, type="mcp", role="admin")
 

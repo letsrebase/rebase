@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import DBAPIError
 
+from pigrocrm.core.config import get_settings, require_production_secrets
 from pigrocrm.core.errors import DomainError
 from pigrocrm_api.errors import (
     domain_error_handler,
@@ -60,6 +61,9 @@ from pigrocrm_api.tenancy import TenantPrefixMiddleware
 
 
 def create_app() -> FastAPI:
+    # A placeholder signing key on a TLS installation is a forgeable session: the app does
+    # not exist until the secret is real (PCORE-B-05).
+    require_production_secrets(get_settings())
     app = FastAPI(
         title="PigroCRM API",
         version="0.1.0",

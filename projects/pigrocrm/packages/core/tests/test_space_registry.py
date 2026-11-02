@@ -173,7 +173,12 @@ def test_a_space_pool_is_small_and_the_least_recently_used_engine_is_disposed(
     registry = SpaceRegistry(settings, max_open_spaces=1)
     try:
         first_factory = registry.session_factory(provisioned)
-        assert first_factory.kw["bind"].pool.size() == 2
+        assert first_factory.kw["bind"].pool.size() == 4
+        # One request may hold two connections at once (the dashboards' snapshot session):
+        # neither waits for the other.
+        with first_factory() as one, first_factory() as two:
+            assert one.execute(text("select 1")).scalar_one() == 1
+            assert two.execute(text("select 1")).scalar_one() == 1
         second_factory = registry.session_factory(second)
         # One space may stay open: the first was the least recently used and went.
         assert list(registry._spaces) == [second]

@@ -1,3 +1,4 @@
+import os
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -13,9 +14,15 @@ from pigrocrm.core.auth.service import UserService
 from pigrocrm.core.config import Settings, get_settings
 from pigrocrm.core.db import create_engine_from_settings, session_factory
 from pigrocrm.core.storage import LocalFileStorage
-from pigrocrm_api.deps import get_session, get_storage
-from pigrocrm_api.main import create_app
-from pigrocrm_api.ratelimit import reset_rate_limit
+
+# `create_app()` refuses a placeholder signing key (PCORE-B-05), and `pigrocrm_api.main` builds
+# one at import: the secret is set before anything imports it.
+os.environ.setdefault("PIGROCRM_JWT_SECRET", "test-secret-for-the-api-test-suite-only")
+get_settings.cache_clear()  # an import above may have read the settings already
+
+from pigrocrm_api.deps import get_session, get_storage  # noqa: E402
+from pigrocrm_api.main import create_app  # noqa: E402
+from pigrocrm_api.ratelimit import reset_rate_limit  # noqa: E402
 
 ADMIN_EMAIL = "admin@pigro.it"
 ADMIN_PASSWORD = "supersegreta1"

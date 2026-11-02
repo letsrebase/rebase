@@ -33,13 +33,16 @@ _ROOT = ""
 # What one space may hold open in one process, and for how long (B-17). A space has a
 # database of its own, so engines scale with the spaces in use, not with the traffic: a
 # small pool each, the least recently used engine disposed past `MAX_OPEN_SPACES` and any
-# that has gone `IDLE_SECONDS` unused. The API and the MCP server each hold a registry,
-# so the worst case against Postgres's default 100 connections is
-# `2 * MAX_OPEN_SPACES * (POOL_SIZE + POOL_OVERFLOW)` plus the root's and the registry's.
-MAX_OPEN_SPACES = 12
+# that has gone `IDLE_SECONDS` unused. A request may hold two connections at once (the
+# dashboards' snapshot session opens beside the request's own), so the pool is four with
+# four more on overflow. The API and the MCP server each hold a registry: the connections
+# kept open at rest are at most `2 * MAX_OPEN_SPACES * POOL_SIZE` (64), and the burst
+# ceiling `2 * MAX_OPEN_SPACES * (POOL_SIZE + POOL_OVERFLOW)` (128) needs every open
+# space at four concurrent requests; the root's and the registry's pools come on top.
+MAX_OPEN_SPACES = 8
 IDLE_SECONDS = 600.0
-POOL_SIZE = 2
-POOL_OVERFLOW = 2
+POOL_SIZE = 4
+POOL_OVERFLOW = 4
 POOL_RECYCLE_SECONDS = 1800
 
 

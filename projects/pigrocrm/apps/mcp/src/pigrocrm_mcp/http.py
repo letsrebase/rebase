@@ -41,7 +41,7 @@ from starlette.types import ASGIApp
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.pat_service import PAT_PREFIX, PatService
-from pigrocrm.core.config import Settings, get_settings
+from pigrocrm.core.config import Settings, get_settings, require_production_secrets
 from pigrocrm.core.errors import DomainError, ValidationFailed
 from pigrocrm.core.storage import DocumentStorage, LocalFileStorage, storage_from_settings
 from pigrocrm.core.tenants import (
@@ -89,6 +89,7 @@ class _Authenticated:
 
 class McpHttpApp:
     def __init__(self, settings: Settings, *, overrides_ttl: float = OVERRIDES_TTL_SECONDS) -> None:
+        require_production_secrets(settings)
         self._settings = settings
         self._registry = SpaceRegistry(settings, overrides_ttl=overrides_ttl)
         self._spaces: dict[str, _SpaceApp] = {}
@@ -273,7 +274,7 @@ class McpHttpApp:
     async def _build(self, slug: str | None, auth: _Authenticated) -> _SpaceApp:
         if self._task_group is None:
             raise RuntimeError("McpHttpApp is not running: enter its lifespan first")
-        provider = ScopedSessionProvider(self._registry.session_factory(slug))
+        provider = ScopedSessionProvider(lambda: self._registry.session_factory(slug))
         storage = _storage_for(slug, auth.settings, provider)
         server = build_server(
             provider,

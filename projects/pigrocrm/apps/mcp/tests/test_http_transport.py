@@ -85,6 +85,8 @@ def root_token(mcp_engine: Engine) -> Iterator[tuple[str, UUID]]:
 
 @pytest_asyncio.fixture
 async def served(http_settings: Settings) -> AsyncIterator[tuple[McpHttpApp, httpx2.AsyncClient]]:
+    # The registry database is the boot's to create; the server only reads it.
+    ensure_tenants_database(http_settings).dispose()
     app = create_app(http_settings, overrides_ttl=0.0)
     async with app.lifespan():
         transport = httpx2.ASGITransport(app=app)
@@ -189,7 +191,7 @@ async def test_a_revoked_token_is_indistinguishable_from_an_unknown_one(
     raw, user_id = root_token
     with session_factory(mcp_engine)() as session:
         service = PatService(session, settings=Settings(_env_file=None))  # type: ignore[call-arg]
-        [record] = service.list(Actor(id=user_id, type="user", role="collaboratore"))
+        [record] = service.list_own(Actor(id=user_id, type="user", role="collaboratore"))
         service.revoke(record.id, Actor(id=user_id, type="user", role="collaboratore"))
         session.commit()
     _, client = served
@@ -249,7 +251,9 @@ async def test_the_token_use_is_stamped(
     app, _ = served
     await _tool_names(app, "http://prova/mcp", raw)
     with session_factory(mcp_engine)() as session:
-        [record] = PatService(session).list(Actor(id=user_id, type="user", role="collaboratore"))
+        [record] = PatService(session).list_own(
+            Actor(id=user_id, type="user", role="collaboratore")
+        )
     assert record.last_used_at is not None
 
 
