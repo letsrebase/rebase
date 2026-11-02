@@ -2,8 +2,8 @@
 page and the cloud may ask Claude for, together, before the next one answers 503.
 
 Beta has no quota for a person (Ivan: no limits), and a script is not a person: the
-concurrency cap (the API's semaphore, `rebase_api.deps.get_proposal_slots`) bounds how
-much runs at once, and this bounds what a day can cost. The count is the
+concurrency cap (`team_slots.ProposalSlots`) bounds how much runs at once, and this
+bounds what a day can cost. The count is the
 `team_proposals` rows of `pubblico` and `cloud` origin created since midnight in Rome,
 where the day of the people running rebase begins; a row written with no call (an
 empty catalogue, `team_builder.NO_CALL_MODEL`) cost nothing and is not counted, and nor

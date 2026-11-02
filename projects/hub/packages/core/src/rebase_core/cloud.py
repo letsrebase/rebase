@@ -20,12 +20,13 @@ answered one no mail at all. Nothing here logs a name or an address.
 **The cloud itself** (REB-519, spec § 4.2) is `CloudTalentService`, below: the talents
 by name for whoever holds a live grant, filtered, vetted first then by name, at most
 `CLOUD_LIST_CAP`; the CV of one of them; and who is asking, for the requests the cloud
-files with no form. One filter, `team_builder.cloud_visible`, decides who is in the
+files with no form. One filter, `team_catalogue.cloud_visible`, decides who is in the
 cloud for the list, the CV and «Richiedi» alike, and one sentence, «Profilo non
 disponibile.», answers any id outside it, so the answer never says why.
 """
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
@@ -43,7 +44,8 @@ from rebase_core.config import Settings
 from rebase_core.errors import InvalidState, NotFound, ValidationFailed
 from rebase_core.freelancer_schemas import CvFile
 from rebase_core.freelancers import cv_of
-from rebase_core.mail import Mail, talent_cloud_opened_mail
+from rebase_core.mail import Mail
+from rebase_core.mail_team import talent_cloud_opened_mail
 from rebase_core.models import (
     CARD_SENIORITIES,
     REMOTE_OPTIONS,
@@ -55,7 +57,7 @@ from rebase_core.models import (
 )
 from rebase_core.referrals import ReferralService
 from rebase_core.search import any_element_matches
-from rebase_core.team_builder import cloud_visible
+from rebase_core.team_catalogue import cloud_visible
 from rebase_core.team_schemas import Card, CloudTalentList, CloudTalentQuery, CloudTalentRead
 
 logger = logging.getLogger(__name__)
@@ -87,11 +89,11 @@ class TalentCloudService:
         """«Apri il talent cloud»: the live grant of the request's referente for this
         request, written now with the mail to them, or the one already there with none.
         `NotFound` for a request that is not there or was deleted."""
-        assert self.settings is not None, "grant needs the settings for the mail's link"
+        settings = self._require_settings()
         company, user = self._require_company(company_id)
         existing = self._live(user.id, company.id)
         if existing is not None:
-            return self._read(existing), None
+            return self._reads([existing])[0], None
         row = TalentCloudGrant(user_id=user.id, company_id=company.id, granted_by=admin_id)
         self.session.add(row)
         try:
@@ -108,15 +110,17 @@ class TalentCloudService:
             # The other click committed first: the index, not the read above, is what
             # serializes the two, and the loser answers the winner's row.
             existing = self._live(user.id, company.id)
-            assert existing is not None
-            return self._read(existing), None
+            if existing is None:
+                # The winner's grant was closed before this read it: nothing is open.
+                raise InvalidState(NOT_OPEN) from None
+            return self._reads([existing])[0], None
         mail = talent_cloud_opened_mail(
             user.email,
             nome=user.nome,
             azienda=company.nome_azienda,
-            url=f"{self.settings.hub_url.rstrip('/')}/me/cloud",
+            url=f"{settings.hub_url.rstrip('/')}/me/cloud",
         )
-        return self._read(row), mail
+        return self._reads([row])[0], mail
 
     def revoke(self, company_id: UUID, admin_id: UUID) -> TalentCloudGrantRead:
         """«Revoca il talent cloud»: closes this request's live grant, and only this
@@ -129,7 +133,7 @@ class TalentCloudService:
         row.revoked_at = utcnow()
         row.revoked_by = admin_id
         self.session.commit()
-        return self._read(row)
+        return self._reads([row])[0]
 
     def list(self) -> list[TalentCloudGrantRead]:
         """Every grant, live and closed, newest first, at most `LIST_CAP`. A grant of a
@@ -143,7 +147,7 @@ class TalentCloudService:
             .order_by(TalentCloudGrant.granted_at.desc(), TalentCloudGrant.id.desc())
             .limit(LIST_CAP)
         ).all()
-        return [self._read(row) for row in rows]
+        return list(self._reads(rows))
 
     def for_company(self, company_id: UUID) -> TalentCloudGrantRead | None:
         """The live grant a request's page shows beside «Revoca il talent cloud», or
@@ -152,7 +156,7 @@ class TalentCloudService:
         if company is None:
             return None
         row = self._live(company.user_id, company.id)
-        return self._read(row) if row is not None else None
+        return self._reads([row])[0] if row is not None else None
 
     def for_user(self, user_id: UUID) -> TalentCloudGrant | None:
         """The person's newest live grant across their companies, on a request that is
@@ -204,26 +208,53 @@ class TalentCloudService:
             raise NotFound(ENTITY, company_id)
         return found[0], found[1]
 
-    def _read(self, row: TalentCloudGrant) -> TalentCloudGrantRead:
-        company = self.session.get(Company, row.company_id)
-        user = self.session.get(User, row.user_id)
-        assert company is not None and user is not None
-        granted_by = self.session.get(User, row.granted_by)
-        revoked_by = self.session.get(User, row.revoked_by) if row.revoked_by else None
-        return TalentCloudGrantRead(
-            id=row.id,
-            user_id=row.user_id,
-            company_id=row.company_id,
-            azienda=company.nome_azienda,
-            referente=f"{user.nome} {user.cognome}".strip(),
-            email=user.email,
-            granted_by=row.granted_by,
-            granted_by_nome=granted_by.nome if granted_by is not None else None,
-            granted_at=row.granted_at,
-            revoked_by=row.revoked_by,
-            revoked_by_nome=revoked_by.nome if revoked_by is not None else None,
-            revoked_at=row.revoked_at,
-        )
+    def _require_settings(self) -> Settings:
+        if self.settings is None:
+            raise RuntimeError("TalentCloudService.grant needs the settings for the mail's link")
+        return self.settings
+
+    def _reads(self, rows: Sequence[TalentCloudGrant]) -> Sequence[TalentCloudGrantRead]:
+        """The grants as the admin reads them, with the company and the people they name
+        loaded once for all of them, not once per row."""
+        if not rows:
+            return []
+        companies = {
+            company.id: company
+            for company in self.session.scalars(
+                select(Company).where(Company.id.in_({row.company_id for row in rows}))
+            )
+        }
+        user_ids = {row.user_id for row in rows} | {row.granted_by for row in rows}
+        user_ids |= {row.revoked_by for row in rows if row.revoked_by is not None}
+        users = {
+            user.id: user
+            for user in self.session.scalars(select(User).where(User.id.in_(user_ids)))
+        }
+        reads: list[TalentCloudGrantRead] = []
+        for row in rows:
+            company = companies.get(row.company_id)
+            user = users.get(row.user_id)
+            if company is None or user is None:  # foreign keys: not a state the table allows
+                raise NotFound(ENTITY, row.company_id)
+            granted_by = users.get(row.granted_by)
+            revoked_by = users.get(row.revoked_by) if row.revoked_by is not None else None
+            reads.append(
+                TalentCloudGrantRead(
+                    id=row.id,
+                    user_id=row.user_id,
+                    company_id=row.company_id,
+                    azienda=company.nome_azienda,
+                    referente=f"{user.nome} {user.cognome}".strip(),
+                    email=user.email,
+                    granted_by=row.granted_by,
+                    granted_by_nome=granted_by.nome if granted_by is not None else None,
+                    granted_at=row.granted_at,
+                    revoked_by=row.revoked_by,
+                    revoked_by_nome=revoked_by.nome if revoked_by is not None else None,
+                    revoked_at=row.revoked_at,
+                )
+            )
+        return reads
 
 
 # ---- the cloud itself (REB-519, spec § 4.2) ------------------------------------------------
@@ -358,9 +389,9 @@ class CloudTalentService:
         grant = TalentCloudService(self.session).for_user(user_id)
         if grant is None:
             return None
-        company = self.session.get(Company, grant.company_id)
-        user = self.session.get(User, user_id)
-        assert company is not None and user is not None  # foreign keys
+        # Foreign keys: both rows are there, and `get_one` says so if they are not.
+        company = self.session.get_one(Company, grant.company_id)
+        user = self.session.get_one(User, user_id)
         return CloudCaller(
             user_id=user.id,
             email=user.email,

@@ -586,6 +586,10 @@ class CloudTalentList(ResponseModel):
     capped: bool
 
 
+# What a cloud request that names both or neither of its two targets is refused with.
+CLOUD_REQUEST_ONE_OF = "serve una proposta oppure un talento, uno dei due"
+
+
 class CloudRequestCreate(BaseModel):
     """What the cloud files, with no form: «Assumi team» on the builder's proposal
     (`proposal_id`) or «Richiedi» on one card (`freelancer_id`), exactly one of the two.
@@ -599,5 +603,5 @@ class CloudRequestCreate(BaseModel):
     @model_validator(mode="after")
     def _one_of_the_two(self) -> "CloudRequestCreate":
         if (self.proposal_id is None) == (self.freelancer_id is None):
-            raise ValueError("serve una proposta oppure un talento, uno dei due")
+            raise ValueError(CLOUD_REQUEST_ONE_OF)
         return self
