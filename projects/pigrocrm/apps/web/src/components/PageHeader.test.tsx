@@ -28,6 +28,22 @@ describe('PageHeader', () => {
     expect(screen.queryByText('Il registro del mese.')).not.toBeInTheDocument()
   })
 
+  it('draws `aboveTabs` between the title and the tab strip, and nothing without it', () => {
+    render(
+      <PageHeader
+        icon={LayoutDashboard}
+        title="Home"
+        aboveTabs={<p>Niente da fare.</p>}
+        tabs={<div role="tablist" aria-label="Sezioni" />}
+      />,
+    )
+    const title = screen.getByRole('heading', { level: 1, name: 'Home' })
+    const above = screen.getByText('Niente da fare.')
+    const tabs = screen.getByRole('tablist', { name: 'Sezioni' })
+    expect(title.compareDocumentPosition(above) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(above.compareDocumentPosition(tabs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
   it('renders the actions, which is where a page puts its primary button', () => {
     render(
       <PageHeader

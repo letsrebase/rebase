@@ -51,7 +51,9 @@ export function AttivitaItem({
   }
 
   return (
-    <li className="flex items-center justify-between gap-3">
+    // Stacked on a phone, side by side from `sm`: three buttons beside the title left it a
+    // column a word wide at 390px once the sidebar is the rail (the Home's band shows it).
+    <li className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
       <span className="flex min-w-0 flex-col gap-0.5">
         <span className={open ? undefined : 'line-through opacity-60'}>{attivita.titolo}</span>
         {showScadenza && (
