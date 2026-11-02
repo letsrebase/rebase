@@ -3,10 +3,11 @@ call reaches the client with the actor's identity and the space as a group, whil
 tool's own answer to the agent is unchanged and the tools it lists are the same ones
 (REB-642)."""
 
+import json
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from mcp import Client
@@ -236,3 +237,51 @@ async def test_a_refused_call_keeps_its_message_and_counts_as_an_error(
     assert len(calls) == 1
     assert calls[0]["properties"]["$mcp_is_error"] is True
     assert "$exception" not in [e.get("event") for e in events]
+
+
+async def test_no_event_carries_what_the_agent_sent_or_got_back(
+    mcp_session: Session,
+    tmp_path: Path,
+    seeded_user_id: UUID,
+    capture_kept_on_this_machine: list[dict[str, Any]],
+) -> None:
+    """With a key, the adapter would send the tool's arguments, its result and its error
+    sentence to PostHog Cloud: customer names, tax ids, notes, mail bodies (PMCP-01).
+    The events keep the call's shape and lose its content, on the path a deployed CRM
+    runs (`build_server` with a key)."""
+    events = capture_kept_on_this_machine
+    actor = Actor(id=seeded_user_id, type="user", role="admin")
+    name = "Zorblax Industriale Srl"
+    tax_id = "98765432109"
+    missing = str(uuid4())
+    server = build_server(
+        lambda: mcp_session,
+        lambda: actor,
+        LocalFileStorage(tmp_path),
+        _settings(posthog_key=KEY, root_slug="studio"),
+    )
+
+    async with Client(server) as agent:
+        created = await agent.call_tool(
+            "create_customer", {"ragione_sociale": name, "partita_iva": tax_id}
+        )
+        customer_id = (created.structured_content or json.loads(created.content[0].text))["id"]
+        await agent.call_tool("get_customer", {"customer_id": customer_id})
+        refused = await agent.call_tool("get_customer", {"customer_id": missing})
+        assert refused.is_error
+
+    calls = [e for e in events if e.get("event") == "$mcp_tool_call"]
+    assert len(calls) == 3
+    for call in calls:
+        properties = call["properties"]
+        assert properties["$groups"] == {"spazio": "studio"}
+        assert "$mcp_duration_ms" in properties and "$mcp_is_error" in properties
+    assert [c["properties"]["$mcp_tool_name"] for c in calls] == [
+        "create_customer",
+        "get_customer",
+        "get_customer",
+    ]
+    assert calls[2]["properties"]["$mcp_is_error"] is True
+    serialized = json.dumps(events, default=str)
+    for content in (name, tax_id, customer_id, missing):
+        assert content not in serialized
