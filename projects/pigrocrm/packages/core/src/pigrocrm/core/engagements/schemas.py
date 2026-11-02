@@ -1,5 +1,6 @@
 """What the hub sends through the engagements door and what the door answers (spec
-2026-09-25 § 2.3), and the report of a match's hours it reads back (§ 2.4).
+2026-09-25 § 2.3), and the report of a match's hours it reads back (§ 2.4); and the body
+and answer of the leads route (spec 2026-10-30 § 2, § 3).
 
 The bounds are the CRM's own rules for a customer (`CustomerService._check_fiscal`) and
 the hub's for a name, applied at the door, so a value the space would refuse is a 422
@@ -134,3 +135,64 @@ class EngagementReport(BaseModel):
     ore_fatturate: Decimal
     ore_non_fatturate: Decimal
     fatture: list[ReportInvoice]
+
+
+# The bounds below are the CRM's own: `customers.ragione_sociale` 255, `people` 120/40/255,
+# `deals.nome` 255 and `deals.valore_previsto` Numeric(12, 2). The hub cuts or drops what
+# does not fit before sending (spec 2026-10-30 § 3), so a value past them is a 422 naming
+# the field, never a request that half exists.
+LEAD_COMPANY_MAX_LENGTH = 255
+LEAD_PERSON_NAME_MAX_LENGTH = 120
+LEAD_PHONE_MAX_LENGTH = 40
+LEAD_LINKEDIN_MAX_LENGTH = 255
+LEAD_DEAL_NAME_MAX_LENGTH = 255
+
+
+class LeadReferente(BaseModel):
+    """The company's contact person, as the wizard collected them."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    nome: SafeStr = Field(min_length=1, max_length=LEAD_PERSON_NAME_MAX_LENGTH)
+    cognome: SafeStr | None = Field(default=None, max_length=LEAD_PERSON_NAME_MAX_LENGTH)
+    email: EmailStr
+    telefono: SafeStr | None = Field(default=None, max_length=LEAD_PHONE_MAX_LENGTH)
+    linkedin_url: SafeStr | None = Field(default=None, max_length=LEAD_LINKEDIN_MAX_LENGTH)
+
+
+class LeadDeal(BaseModel):
+    """The deal as the hub built it, AI draft included. `tariffa_oraria` and
+    `ore_preventivate` are deliberately not here: in the CRM they value the hours logged
+    on a deal, and a prospect's typed budget is not that."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    nome: SafeStr = Field(min_length=1, max_length=LEAD_DEAL_NAME_MAX_LENGTH)
+    valore_previsto: Decimal | None = Field(default=None, ge=0, max_digits=12, decimal_places=2)
+    data_chiusura_prevista: date | None = None
+    note: SafeStr | None = None
+
+
+class LeadUpsert(BaseModel):
+    """The body of `PUT /api/rebase/leads/{request_id}`. `deal_id` is the admin path: it
+    links the request to a deal the CRM already has and creates nothing else."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    azienda: SafeStr = Field(min_length=1, max_length=LEAD_COMPANY_MAX_LENGTH)
+    referente: LeadReferente
+    deal: LeadDeal
+    deal_id: UUID | None = None
+
+
+class LeadRead(BaseModel):
+    """What the door filed for a request. `creato` says whether this call wrote the deal
+    (201) or found it by its marker, or linked an explicit one (200). `person_id` is
+    `None` only when a retry finds the deal and nobody with the referente's address any
+    more, or an explicit deal whose customer has no such person."""
+
+    customer_id: UUID
+    person_id: UUID | None
+    deal_id: UUID
+    deal_url: str
+    creato: bool

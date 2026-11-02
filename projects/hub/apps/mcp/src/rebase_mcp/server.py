@@ -91,7 +91,6 @@ from rebase_core.team_requests import (
 )
 from rebase_core.team_requests import TeamRequestService
 from rebase_core.team_schemas import (
-    TeamProposalCreate,
     TeamRequestNote,
     TeamRequestRead,
     TeamRequestSummary,
@@ -117,8 +116,11 @@ INSTRUCTIONS = (
     "lei completa dalla sua area. Da qui si gestiscono anche i match fra un freelance e "
     "un'azienda, i loro contratti e la firma, come dall'area admin. Si leggono anche le "
     "campagne di mail della sezione «Campagne» e, per ogni persona, cosa ha fatto dopo la "
-    "mail. Sono dati di altre persone: da usare solo per decidere quando e cosa scrivere "
-    "loro, mai da riportare altrove."
+    "mail. Per cercare persone adatte a una richiesta si usano `list_talenti`, "
+    "`get_talento` e `get_freelancer_card`; da qui non parte nessuna mail di "
+    "disponibilità ai talenti: chi va contattato lo contatta una persona, a mano. Sono "
+    "dati di altre persone: da usare solo per decidere quando e cosa scrivere loro, mai "
+    "da riportare altrove."
 )
 
 PIGRO_NOT_CONFIGURED = "Il registro di Pigro non è configurato: manca REBASE_PIGRO_REGISTRY_TOKEN."
@@ -274,7 +276,6 @@ def build_server(
     renderer: Renderer | None = None,
     signing: SigningFactory | None = None,
     card_llm: LlmSource | None = None,
-    team_llm: LlmSource | None = None,
     sender: EmailSender | None = None,
     engagements: EngagementsFactory | None = None,
 ) -> MCPServer:
@@ -290,14 +291,15 @@ def build_server(
     `FakeRenderer` and a service over fakes. Without them a contract is not written and
     a send answers that signing is not active here, as the admin area does.
 
-    `team_llm` and `card_llm` answer the model seam (REB-508, `call_for_task`) for
-    `propose_team` and `regenerate_freelancer_card`, asked on each call because an admin
-    can configure a model in «Modelli AI» while this server runs; `None` from either
-    (no model configured for that task) -- then, as the admin area already does, the
-    tool refuses with the team builder's own sentence rather than a silent no-op;
-    `sender` is the availability mails' and the talent cloud's
+    `card_llm` answers the model seam (REB-508, `call_for_task`) for
+    `regenerate_freelancer_card`, asked on each call because an admin can configure a
+    model in «Modelli AI» while this server runs; `None` (no model configured for the
+    card task) -- then, as the admin area already does, the tool refuses with the team
+    builder's own sentence rather than a silent no-op; `sender` is the talent cloud's
     (`sender_from_settings`), `None` without a mail key. A test hands `RecordingCall`
-    and `RecordingSender`, the same way `mail.py`'s own tests do.
+    and `RecordingSender`, the same way `mail.py`'s own tests do. There is no team
+    proposal and no availability mail here (REB-876): a search is the talent tools, and
+    a person writes to the candidates.
 
     `engagements` builds the `EngagementService` behind `get_match_report` and
     `link_match_to_pigro` (REB-501), with `urllib_engagements_call` in production, the
@@ -320,8 +322,8 @@ def build_server(
         return SigningService(session, renderer=renderer)
 
     def team_settings() -> Settings:
-        """The team requests, the engine and the cloud all need real settings (a hub
-        URL, a contracts mailbox); the same `assert`-narrowing `cloud.py`'s own
+        """The team requests, the AI configuration and the cloud all need real settings
+        (a hub URL, a contracts mailbox); the same `assert`-narrowing `cloud.py`'s own
         `grant` uses for the same reason. A server built for tools that never touch
         this family (most of this suite's tests) still needs none."""
         assert settings is not None, "i tool del team builder e del cloud richiedono `settings`"
@@ -1006,7 +1008,7 @@ def build_server(
 
         return _call(read)
 
-    # ---- the team requests, the engine, and the talent cloud (REB-520, spec § 8) -------
+    # ---- the team requests and the talent cloud (REB-520, spec § 8) ----------------------
 
     @mcp.tool()
     def list_team_requests(
@@ -1033,13 +1035,14 @@ def build_server(
         limit: int = TEAM_PROPOSAL_LIST_LIMIT_DEFAULT,
         cursor: str | None = None,
     ) -> dict[str, Any]:
-        """«Proposte»: ogni «Proponi il team» chiesto dalla pagina pubblica, dal talent
-        cloud o da un admin, dalla più recente, anche quando nessuna richiesta è poi
-        stata inviata: la descrizione del progetto, quante persone sono state chieste,
-        la nota di un «Rigenera», chi l'ha chiesto, il riassunto, quanti membri aveva
-        la proposta e chi erano (`team`: posizione, `freelancer_id`, ruolo proposto,
-        nome e cognome, vuoti per un talento nel frattempo eliminato), e `request_id`
-        della richiesta «Assumi team» se c'è. `errore` è vuoto su una
+        """«Proposte»: ogni «Proponi il team» chiesto dalla pagina pubblica o dal talent
+        cloud (e, nelle righe più vecchie, da un admin), dalla più recente, anche quando
+        nessuna richiesta è poi stata inviata: la descrizione del progetto, quante
+        persone sono state chieste, la nota di un «Rigenera», chi l'ha chiesto, il
+        riassunto, quanti membri aveva la proposta e chi erano (`team`: posizione,
+        `freelancer_id`, ruolo proposto, nome e cognome, vuoti per un talento nel
+        frattempo eliminato), e `request_id` della richiesta «Assumi team» se c'è.
+        `errore` è vuoto su una
         proposta che ha risposto e il codice del rifiuto (`llm_unavailable`,
         `team_builder_busy`) su un tentativo senza proposta. `origine` (`pubblico`,
         `cloud`, `admin`) ed `esito` (`ok`, `errore`) filtrano; una parola che non è
@@ -1062,29 +1065,14 @@ def build_server(
     @mcp.tool()
     def set_team_request_summary(request_id: str, riassunto: str) -> dict[str, Any]:
         """«Salva il riassunto» (spec § 3.5): il testo che i talenti leggeranno nella
-        mail di disponibilità, riscritto qui dall'admin prima di scrivere loro.
-        Rifiutato con la stessa frase di `contact_team_talents` se nomina ancora
-        l'azienda: il riassunto va corretto dove è scritto."""
+        mail di disponibilità, riscritto qui dall'admin prima che qualcuno li contatti da
+        «Contatta i talenti» nell'area admin: da qui la mail non parte. Rifiutato se
+        nomina ancora l'azienda: il riassunto va corretto dove è scritto."""
         change = TeamRequestSummary(riassunto=riassunto)
         return _run(
             lambda s: TeamRequestService(s, settings=team_settings()).set_summary(
                 UUID(request_id), change.riassunto, admin().id
             )
-        )
-
-    @mcp.tool()
-    def contact_team_talents(request_id: str, only_silent: bool = False) -> dict[str, Any]:
-        """«Contatta i talenti» (`only_silent` falso, la prima volta) o «Rimanda a chi
-        non ha risposto» (vero, spec § 3.6): una mail a ciascun talento del team con il
-        riassunto, il ruolo proposto e la propria tariffa, e due link, «Sono
-        disponibile» e «Non sono disponibile», buoni per trenta giorni. Rifiutato, con
-        la sua frase, per una richiesta chiusa, un riassunto che nomina ancora
-        l'azienda, una seconda prima volta, o nessun talento rimasto da scrivere;
-        senza una chiave di invio configurata risponde che l'invio non è attivo qui."""
-        return _run(
-            lambda s: TeamRequestService(
-                s, settings=team_settings(), sender=sender
-            ).contact_talents(UUID(request_id), admin().id, only_silent=only_silent)
         )
 
     @mcp.tool()
@@ -1109,31 +1097,6 @@ def build_server(
             return read
 
         return _run(call)
-
-    @mcp.tool()
-    def propose_team(
-        descrizione: str, nota: str | None = None, previous_id: str | None = None
-    ) -> dict[str, Any]:
-        """Propone un team da una descrizione di progetto (spec § 3.3, § 3.4), come il
-        box pubblico, ma a nome dell'admin (`origine` `admin`): il riassunto, una carta
-        per persona con ruolo, motivazione, giorni a settimana e fascia di prezzo, e la
-        fascia del team al giorno e al mese. Non conta per il limite giornaliero delle
-        richieste pubbliche. `previous_id`, una propria proposta più recente di un
-        giorno, la rigenera con la squadra precedente come punto di partenza; `nota`
-        cosa cambiare («togli il designer»). Nessun profilo che corrisponde risponde
-        comunque con una squadra vuota e la frase del motivo; senza una chiave di
-        Claude configurata, o a interruttore spento, risponde che il team builder è
-        spento."""
-        data = TeamProposalCreate(
-            descrizione=descrizione,
-            nota=nota,
-            previous_id=UUID(previous_id) if previous_id else None,
-        )
-        return _run(
-            lambda s: TeamBuilder(
-                s, team_llm() if team_llm is not None else None, team_settings()
-            ).propose(data, origine="admin", user_id=admin().id)
-        )
 
     @mcp.tool()
     def grant_talent_cloud(company_id: str) -> dict[str, Any]:
