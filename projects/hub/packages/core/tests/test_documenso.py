@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 import pytest
 from fakes_documenso import BASE, TOKEN, FakeDocumenso
 
-from rebase_core.cli import documenso_check
+from rebase_core.cli.signing import documenso_check
 from rebase_core.config import Settings
 from rebase_core.contracts.fields import ContractFailed
 from rebase_core.contracts.render import SignatureBlank

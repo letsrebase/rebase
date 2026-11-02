@@ -561,7 +561,7 @@ def test_entering_is_recorded_and_the_card_and_the_stats_read_it_back(
 def test_the_welcome_mailing_speaks_to_every_address_the_hub_knows(
     members: MemberService, hub_session: Session, settings: Settings
 ) -> None:
-    from rebase_core.cli import send_welcome
+    from rebase_core.cli.members import send_welcome
     from rebase_core.mail import RecordingSender
     from rebase_core.service import SignupService
     from rebase_core.signup_schemas import SignupCreate
