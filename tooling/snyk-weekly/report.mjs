@@ -251,7 +251,15 @@ export function headline(summary) {
 // characters for an issue body or a comment: rows are dropped from the bottom (the
 // least severe first) and the report says how many, since the run's job summary always
 // has the whole table.
-export function renderReport({ rows, errors = [], meta, maxLength = Infinity }) {
+// A public GitHub issue and job summary must not publish an unfixed vulnerability, so
+// `withhold` leaves out the rows that have no fixed version yet and every Snyk Code
+// finding (`file:line` of our own code): they appear as counts only, and the detail
+// stays on the Linear card (CI-A-06).
+export function isUnfixed(row) {
+  return row.kind === "code" || row.fixedIn.length === 0;
+}
+
+export function renderReport({ rows, errors = [], meta, maxLength = Infinity, withhold = false }) {
   const summary = summarize(rows);
   const head = [];
   const commit = meta.sha ? `\`main\` at [\`${meta.sha.slice(0, 7)}\`](https://github.com/${meta.repo}/commit/${meta.sha})` : "`main`";
@@ -270,7 +278,9 @@ export function renderReport({ rows, errors = [], meta, maxLength = Infinity }) 
   }
 
   const lows = `**Low**, counted per source: ${KINDS.map((k) => `${k} ${summary.lowsByKind[k]}`).join(", ")}.`;
-  const filed = rows.filter((r) => r.severity !== "low");
+  const atOrAbove = rows.filter((r) => r.severity !== "low");
+  const withheld = withhold ? atOrAbove.filter(isUnfixed) : [];
+  const filed = withhold ? atOrAbove.filter((r) => !isUnfixed(r)) : atOrAbove;
   const rendered = filed.map((r) => renderRow(r, meta));
 
   const assemble = (keep) => {
@@ -284,6 +294,12 @@ export function renderReport({ rows, errors = [], meta, maxLength = Infinity }) 
     if (keep < filed.length) {
       parts.push(
         `...and ${filed.length - keep} more rows, left out to fit here; the run's job summary has the whole table.`,
+      );
+    }
+    if (withheld.length) {
+      const by = Object.fromEntries(SEVERITIES.slice(0, 3).map((s) => [s, withheld.filter((r) => r.severity === s).length]));
+      parts.push(
+        `**Withheld from this public text:** ${countLine(by)}, findings in our own code or with no fixed version yet. Their detail is on the Linear card.`,
       );
     }
     parts.push(lows);

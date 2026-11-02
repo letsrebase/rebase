@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Files the weekly Snyk report (REB-525): reads the JSON the scans wrote, builds one
 // markdown table (report.mjs) and files it on Linear and GitHub (filing.mjs). No AI and
-// no dependencies: Node 22's fetch is the only client.
+// no dependencies: Node's fetch is the only client.
 //
 // Usage, from the repository root:
 //   node tooling/snyk-weekly/snyk-weekly.mjs --dir <scan dir> [--dry-run]
@@ -248,15 +248,17 @@ async function main() {
   const week = args.week ?? weekOf(new Date());
   const meta = { week, repo: args.repo, sha: args.sha, runUrl: args.runUrl, artifactUrl: args.artifactUrl, scanned };
 
-  // The whole table goes to the job summary, which has no practical limit; what is
-  // filed is cut to fit GitHub's.
-  const full = renderReport({ rows, errors, meta });
-  if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${full.markdown}\n`);
+  // Public text (the job summary and the GitHub issue) withholds findings in our own
+  // code and those with no fixed version yet: counts only. The Linear card carries
+  // the whole table. What is filed is cut to fit GitHub's limit.
+  const publicFull = renderReport({ rows, errors, meta, withhold: true });
+  if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${publicFull.markdown}\n`);
+  const { markdown: publicReport } = renderReport({ rows, errors, meta, maxLength: REPORT_MAX, withhold: true });
   const { markdown: report, summary } = renderReport({ rows, errors, meta, maxLength: REPORT_MAX });
 
   log(`Snyk, week of ${week}: ${headline(summary)}${summary.worst ? "" : " (nothing to file)"}.`);
-  log("----- report -----");
-  log(report);
+  log("----- public report (job log, GitHub issue) -----");
+  log(publicReport);
   log("----- filing -----");
 
   const githubToken = process.env.GITHUB_TOKEN;
@@ -265,6 +267,7 @@ async function main() {
   const result = await fileReport({
     title: titleFor(week),
     report,
+    publicReport,
     summary,
     priority: priorityFor(summary.worst),
     scanErrors: errors.length,

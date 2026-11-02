@@ -50,7 +50,7 @@ export function planFiling({ hasFindings, openGithub, openLinear }) {
 }
 
 export function linearDescription({ report, githubUrl }) {
-  const issue = githubUrl ? ` The same table is on the GitHub issue ${githubUrl}.` : "";
+  const issue = githubUrl ? ` The GitHub issue ${githubUrl} carries the same table without the findings in our own code and those with no fixed version yet, which are only here.` : "";
   return [
     `**Observed.** The weekly Snyk scan of \`main\` found what the table below lists.${issue}`,
     "**Needed.** Fix what it lists: a version bump lands here, anything larger gets a card of its own. A finding that does not apply is ignored in Snyk's UI with its reason, since the org's Consistent Ignores read no inline comment.",
@@ -109,7 +109,7 @@ function recordCard(body, card) {
 // runs. A Linear error is caught and recorded instead, so the GitHub issue is still
 // filed and says why the card is missing: the workspace is on Linear's Free plan, which
 // refuses a new issue past its cap (docs/tracker.md, § Where things are).
-export async function fileReport({ title, report, summary, priority, scanErrors = 0, repo, linear, github, dryRun, log = () => {} }) {
+export async function fileReport({ title, report, publicReport = report, summary, priority, scanErrors = 0, repo, linear, github, dryRun, log = () => {} }) {
   const actions = [];
   const failures = [];
   const act = (line) => {
@@ -181,7 +181,7 @@ export async function fileReport({ title, report, summary, priority, scanErrors 
     if (!dryRun) {
       await github.ensureLabel();
       const linearCard = card ?? (openLinear ? { identifier: openLinear.identifier, url: openLinear.url } : null);
-      issue = await github.create({ title, body: githubBody({ report, linearCard, linearError: cardError ?? "no card was due" }) });
+      issue = await github.create({ title, body: githubBody({ report: publicReport, linearCard, linearError: cardError ?? "no card was due" }) });
       log(`Created #${issue.number}: ${issue.url}`);
     }
   }
@@ -236,7 +236,7 @@ export async function fileReport({ title, report, summary, priority, scanErrors 
     else if (plan.createLinear && cardError && !dryRun) extra.push(`**Still no Linear card:** ${cardError}.`);
     if (linearError && hasFindings) extra.push(`**No Linear update this week:** ${linearError}.`);
     act(`comment the ${clean ? "clean result" : "report"} on GitHub issue #${openGithub.number}`);
-    if (!dryRun) await github.comment(openGithub.number, comment({ report, clean, partial, extra }));
+    if (!dryRun) await github.comment(openGithub.number, comment({ report: publicReport, clean, partial, extra }));
   }
   if (plan.commentLinear) {
     act(`comment the ${clean ? "clean result" : "report"} on Linear card ${openLinear.identifier}`);

@@ -60,16 +60,16 @@ jobs:
     steps:
       # The job's token is handed to the filing step alone, not left in .git/config for
       # every build and scan below.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
 
       # The same uv as `_python-gate.yml` and `ci.yml`, which is the one that wrote uv.lock.
-      - uses: astral-sh/setup-uv@v7
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           version: '0.9.24'
 
@@ -205,7 +205,7 @@ jobs:
       - name: Keep the JSON
         id: upload
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: snyk-json
           path: ${{ runner.temp }}/snyk-json/
