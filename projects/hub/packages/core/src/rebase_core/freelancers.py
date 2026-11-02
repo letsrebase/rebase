@@ -655,17 +655,17 @@ class FreelancerService:
         return user
 
     def applications_with_cv_since(self, since: datetime) -> int:
-        """The cards the wizard itself created with a CV since `since`: the count the
-        public application route holds against `applications_with_cv_per_hour`. Counts
-        `compilata_da = 'persona'` (an admin's draft is not an application) and reads
-        `cv_size`, never the bytes."""
+        """The CVs people themselves stored since `since`: the count the public application
+        route holds against `applications_with_cv_per_hour`. It reads `cv_uploaded_at`, so a
+        resubmission that replaces an existing card's CV (and starts a card write) counts as
+        much as a new card, and `compilata_da = 'persona'`, since an admin's draft is not an
+        application. Never the bytes."""
         return (
             self.session.scalar(
                 select(func.count())
                 .select_from(Freelancer)
                 .where(
-                    Freelancer.created_at >= since,
-                    Freelancer.cv_size.is_not(None),
+                    Freelancer.cv_uploaded_at >= since,
                     Freelancer.compilata_da == "persona",
                 )
             )

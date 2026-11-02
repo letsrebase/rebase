@@ -26,7 +26,7 @@ from sqlalchemy.orm import Session
 from rebase_core.card_types import NO_TEXT
 from rebase_core.card_writer import CardWriter
 from rebase_core.db import session_factory
-from rebase_core.errors import LlmCapReached, LlmNotConfigured
+from rebase_core.errors import CvTextUnavailable, LlmCapReached, LlmNotConfigured
 from rebase_core.freelancers import FreelancerService
 from rebase_core.llm import (
     LlmUnavailable,
@@ -144,6 +144,29 @@ def test_a_scan_replacing_a_cv_retires_its_card(clean_hub: Session) -> None:
     stored = stored_card(clean_hub, freelancer_id)
     assert stored is not None and stored.error_cv_sha256 == sha(SCAN)
     assert card_is_sql_null(clean_hub, freelancer_id)
+
+
+def test_a_parser_that_could_not_run_parks_no_hash_and_is_tried_again(
+    clean_hub: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A CV the host could not parse (the process did not start, or was killed) says nothing
+    about the file: unlike a scan it stores no hash, so the next pass reads it again."""
+    freelancer_id = apply_freelancer(clean_hub)
+
+    def broken(self: FreelancerService, freelancer_id: object) -> None:
+        raise CvTextUnavailable("down")
+
+    with monkeypatch.context() as patched:
+        patched.setattr(FreelancerService, "cv_text", broken)
+        read = CardWriter(clean_hub, RecordingCall([])).write(freelancer_id)
+
+    assert read.card is None and read.error
+    stored = stored_card(clean_hub, freelancer_id)
+    assert stored is not None and stored.error_cv_sha256 is None
+
+    retried = CardWriter(clean_hub, RecordingCall([card_response()])).write(freelancer_id)
+
+    assert retried.card == CardRead.model_validate(CARD)
 
 
 def test_the_same_cv_refused_on_regenerate_keeps_its_card(clean_hub: Session) -> None:

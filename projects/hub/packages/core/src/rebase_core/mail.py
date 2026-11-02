@@ -16,7 +16,6 @@ import base64
 import json
 import logging
 from dataclasses import dataclass
-from http.client import HTTPException
 from typing import Protocol
 
 from rebase_core.config import Settings
@@ -98,7 +97,7 @@ class ResendSender:
         }
         try:
             status, _ = self.http("POST", RESEND_URL, headers, payload)
-        except (OSError, HTTPException) as error:
+        except Exception as error:  # noqa: BLE001 - the seam's contract is "never raises"
             _log.warning("Resend unreachable: %s", type(error).__name__)
             return False
         if 200 <= status < 300:

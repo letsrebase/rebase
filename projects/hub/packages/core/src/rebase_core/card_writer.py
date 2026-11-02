@@ -93,7 +93,7 @@ from rebase_core.card_staleness import CardStaleness
 from rebase_core.card_store import CardStore
 from rebase_core.card_types import Composed, Fonte, Outcome, Prepared, Regeneration
 from rebase_core.db import SessionOpener, session_factory
-from rebase_core.errors import LlmNotConfigured, LlmUnavailable
+from rebase_core.errors import CvTextUnavailable, LlmNotConfigured, LlmUnavailable
 from rebase_core.freelancers import FreelancerService
 from rebase_core.hub_facts import HubFacts, hub_facts
 from rebase_core.llm import LlmCall, LlmResponse
@@ -431,7 +431,10 @@ class CardWriter(CardStore, CardStaleness):
         if prompt_version not in PROMPT_VERSIONS:
             raise ValueError(f"prompt version {prompt_version} cannot be written")
         row = self._freelancer(freelancer_id)
-        cv = FreelancerService(self.session).cv_text(freelancer_id)
+        try:
+            cv = FreelancerService(self.session).cv_text(freelancer_id)
+        except CvTextUnavailable:  # the host's, not the file's: an outage, tried again later
+            return Composed(None, "unavailable", "", "", 0, 0, 0)
         if not cv.testo.strip():
             return Composed(None, "no_text", "", "", 0, 0, 0)
         owner = self.session.get(User, row.user_id)

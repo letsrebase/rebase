@@ -111,6 +111,18 @@ def test_an_unreachable_provider_is_logged_by_the_exception_class_only(
     assert "la rete" not in caplog.text
 
 
+def test_whatever_the_transport_raises_the_sender_answers_false() -> None:
+    """The protocol says `send` never raises, so an error of a kind nobody listed does not
+    escape either."""
+
+    def broken(*args: object) -> tuple[int, bytes]:
+        raise ValueError("a bug in the transport")
+
+    mail = Mail(to="ada@studio.it", subject="x", text="y")
+
+    assert ResendSender(KEY, FROM, http=broken).send(mail) is False
+
+
 def test_the_recording_sender_keeps_what_was_sent() -> None:
     sender = RecordingSender()
     mail = Mail(to="ada@studio.it", subject="x", text="y")

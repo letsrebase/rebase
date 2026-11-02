@@ -17,9 +17,12 @@ the response or on an agent's request.
 
 Every failure of the PDF itself is the same answer, empty text with the pages it managed
 to count, never an exception: an encrypted file, a truncated one, a `%PDF` header on
-something that is not a PDF. A parse that overruns its deadline, runs out of memory or
-dies is the same answer: the card writer then fails the CV as one with no readable text,
-and does not try the same bytes again. The shape follows the one PigroCRM measured for its
+something that is not a PDF. A parse that overruns its deadline or ends with an error
+status is the same answer: the card writer then fails the CV as one with no readable text,
+and does not try the same bytes again. A parser that cannot start, or is killed by a signal,
+says nothing about the file: that is `CvTextUnavailable`, an outage the card writer retries
+(a loaded host can refuse a process, and a CV marked unreadable for that would stay so until
+its owner uploaded it again). The shape follows the one PigroCRM measured for its
 documents; it is written again here because the hub imports nothing from the CRM.
 """
 
@@ -31,12 +34,14 @@ import sys
 from pydantic import BaseModel
 
 from rebase_core.cv_text_worker import MAX_CHARS, MAX_PAGES, TRUNCATION_MARKER
+from rebase_core.errors import CvTextUnavailable
 
 __all__ = [
     "MAX_CHARS",
     "MAX_PAGES",
     "PARSE_TIMEOUT_SECONDS",
     "TRUNCATION_MARKER",
+    "UNAVAILABLE",
     "CvText",
     "extract_text",
 ]
@@ -47,6 +52,7 @@ logger = logging.getLogger(__name__)
 # not one. The card is written after the response and the MCP tool is an agent's call, so
 # the deadline can be generous without a visitor waiting on it.
 PARSE_TIMEOUT_SECONDS = 20.0
+UNAVAILABLE = "Non riesco a leggere il CV adesso: riprova tra poco."
 
 
 class CvText(BaseModel):
@@ -76,7 +82,10 @@ def extract_text(
         return unreadable
     except OSError as error:
         logger.warning("CV text not read: the parser did not start (%s)", type(error).__name__)
-        return unreadable
+        raise CvTextUnavailable(UNAVAILABLE) from None
+    if done.returncode < 0:  # killed by a signal: the host's doing, not the file's
+        logger.warning("CV text not read: the parser was killed (signal %s)", -done.returncode)
+        raise CvTextUnavailable(UNAVAILABLE)
     if done.returncode != 0:
         logger.warning("CV text not read: the parser ended with status %s", done.returncode)
         return unreadable
