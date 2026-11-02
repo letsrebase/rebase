@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# One backup of one Postgres database, run inside a backup service of
-# docker-compose.documenso.yml (`documenso-backup`, REB-715, and `hub-backup`, REB-717),
-# in an image made from the database's own (../Dockerfile), so it needs nothing that image
-# and `apk add curl openssl` do not carry. The two services run this same script and differ
-# in settings only: BACKUP_NAME (what the backup is called: the prefix in the bucket, the
+# One backup of one Postgres database, or of every database of one server, run inside a backup
+# service of docker-compose.documenso.yml (`documenso-backup`, REB-715, and `hub-backup`,
+# REB-717) or of PigroCRM's docker-compose.backup.yml (`db-backup`), in an image made from
+# the database's own (../Dockerfile), so it needs nothing that image and `apk add curl
+# openssl` do not carry. The services run this same script and differ in settings only:
+# BACKUP_NAME (what the backup is called: the prefix in the bucket, the
 # stem of every file) and BACKUP_HEAD_SQL (the query that says which schema version the
-# database is at).
+# database is at). PigroCRM's service sets BACKUP_ALL_DATABASES=true too: see below.
 #
 # What it saves: the whole database, as a `pg_dump` custom-format archive. For Documenso
 # that is every uploaded and sealed PDF (NEXT_PUBLIC_UPLOAD_TRANSPORT=database), their audit
@@ -13,6 +14,14 @@
 # contracts and their signed copies. `pg_dump` reads one snapshot, so it is consistent on a
 # database that is being written to. Not in it, and not anywhere off the host: the
 # application's secrets and keys (docs/restore-from-backup.md, "What the dump does not hold").
+#
+# With BACKUP_ALL_DATABASES=true the backup is of the whole server instead of PGDATABASE alone:
+# `globals.sql` (roles, `pg_dumpall --globals-only`) and one `<database>.dump` for every
+# database but the templates and `postgres`. PigroCRM keeps its register in one database and
+# every space in a database of its own, opened at run time, so the list is read at every
+# run and a space opened this afternoon is in tonight's backup. PGDATABASE is then only where
+# the script connects (and where BACKUP_HEAD_SQL is asked). A `SHA256SUMS` file in the bundle
+# holds the checksum of each file, which restore.sh verifies.
 #
 # The bundle is a tar of the archive and a MANIFEST, encrypted as a CMS envelope to the
 # public certificate(s) in BACKUP_CERT_B64: one base64 line holding one PEM certificate, or
@@ -71,12 +80,40 @@ stamp=$(date -u +%Y%m%dT%H%M%SZ)
 stage="$work/stage"
 mkdir "$stage"
 
-pg_dump --format=custom --no-owner --no-acl --file "$stage/$dump_file"
-[ -s "$stage/$dump_file" ] || die "pg_dump left an empty archive"
 # An archive `pg_restore` cannot read is not a backup: say so now, not on the day it is needed.
-pg_restore --list "$stage/$dump_file" > /dev/null || die "pg_restore cannot read the archive pg_dump wrote"
-dump_bytes=$(stat -c %s "$stage/$dump_file")
-dump_sha=$(sha256sum "$stage/$dump_file" | cut -d' ' -f1)
+dump_one() { # <database> <file>
+  PGDATABASE=$1 pg_dump --format=custom --no-owner --no-acl --file "$stage/$2"
+  [ -s "$stage/$2" ] || die "pg_dump left an empty archive for $1"
+  pg_restore --list "$stage/$2" > /dev/null || die "pg_restore cannot read the archive pg_dump wrote for $1"
+}
+if [ "${BACKUP_ALL_DATABASES:-}" = true ]; then
+  # Every database that accepts connections but the templates and `postgres`, read now: a
+  # space opened since the last run is in this one. A name has to be safe as a file name.
+  databases=$(psql --no-psqlrc --tuples-only --no-align --command \
+    "SELECT datname FROM pg_database WHERE NOT datistemplate AND datallowconn AND datname <> 'postgres' ORDER BY datname") \
+    || die "could not list the databases"
+  [ -n "$databases" ] || die "the server holds no database to back up"
+  while IFS= read -r database; do
+    [[ $database =~ ^[A-Za-z0-9_.-]+$ ]] || die "a database name that is not a safe file name: '$database'"
+  done <<< "$databases"
+  # Roles (the application's login role among them) are not in any one database's archive.
+  pg_dumpall --globals-only --file "$stage/globals.sql"
+  [ -s "$stage/globals.sql" ] || die "pg_dumpall left an empty globals file"
+  while IFS= read -r database; do
+    dump_one "$database" "$database.dump"
+  done <<< "$databases"
+  files=(globals.sql)
+  while IFS= read -r database; do files+=("$database.dump"); done <<< "$databases"
+  (cd "$stage" && sha256sum "${files[@]}" > SHA256SUMS)
+  files+=(SHA256SUMS)
+  dump_bytes=$(cat "$stage"/*.dump | wc -c)
+  dump_sha=
+else
+  dump_one "$PGDATABASE" "$dump_file"
+  files=("$dump_file")
+  dump_bytes=$(stat -c %s "$stage/$dump_file")
+  dump_sha=$(sha256sum "$stage/$dump_file" | cut -d' ' -f1)
+fi
 
 # Where the schema stood, by the query the service is configured with (a Prisma migration
 # name for Documenso, an Alembic revision for the hub): a backup taken before an upgrade
@@ -88,15 +125,16 @@ server_version=$(psql_value 'SHOW server_version')
   echo "taken_at=$stamp"
   echo "name=$name"
   echo "database=$PGDATABASE"
+  [ -z "${databases:-}" ] || echo "databases=$(tr '\n' ',' <<< "$databases" | sed 's/,$//')"
   echo "server_version=${server_version:-unknown}"
   echo "pg_dump_version=$(pg_dump --version)"
   echo "last_migration=${last_migration:-unknown}"
   echo "dump_bytes=$dump_bytes"
-  echo "dump_sha256=$dump_sha"
+  [ -z "$dump_sha" ] || echo "dump_sha256=$dump_sha"
 } > "$stage/MANIFEST"
 
 bundle="$work/bundle.tar"
-tar -C "$stage" -cf "$bundle" "$dump_file" MANIFEST
+tar -C "$stage" -cf "$bundle" "${files[@]}" MANIFEST
 rm -rf "$stage"
 object="$name-$stamp.tar.cms"
 encrypted="$work/$object"

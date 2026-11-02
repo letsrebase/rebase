@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# The backup and restore drill of both databases' backups, Documenso's (REB-715) and the
-# hub's (REB-717), on throwaway servers, with the real compose files and the real scripts.
+# The backup and restore drill of the database backups, Documenso's (REB-715), the hub's
+# (REB-717) and PigroCRM's whole-server one (INFRA-A-07), on throwaway servers, with the real compose files and the real scripts.
 # Needs Docker, openssl, python3 and curl; touches nothing outside a temporary directory
 # and a compose project called `dbdrill-<random>`, so two runs on one machine (two
 # worktrees, preflight and a hand run) never share containers. Neither application is
@@ -20,7 +20,11 @@
 #   4. the same for the hub: the real `db` with an Alembic revision and rows in it, the
 #      `hub-backup` service's script and loop (its own monitor), the object under `hub/`
 #      and not under `documenso/`, and a restore whose row counts of every table and
-#      revision match the source's.
+#      revision match the source's;
+#   5. PigroCRM's whole-server mode on the same server: a register and two spaces' databases
+#      in one bundle with the roles and a SHA256SUMS, every database restored with its rows,
+#      a tampered archive refused; and the CRM overlay's `db-backup` service resolved by
+#      compose.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -327,4 +331,66 @@ docker rm -f "$loop" >/dev/null
 [ "$(pings /hub-check/fail)" -eq 0 ] || { echo "FAIL: the hub's backup reported a failure it did not have" >&2; exit 1; }
 echo "the hub's backup pings its own check and nobody else's"
 
-printf '\nOK: both backups, their encryption, the monitors, restore and every refusal held\n'
+step "5. PigroCRM: the whole server in one backup (every database, the roles), the overlay's own service"
+crm_dir="$(dirname "$hub_dir")/pigrocrm"
+crm_env=(
+  POSTGRES_PASSWORD=x PIGROCRM_APP_PASSWORD=x PIGROCRM_JWT_SECRET=x PIGROCRM_DATA_DIR=/tmp/never-mounted
+  PIGROCRM_BACKUP_CERT_B64=x PIGROCRM_BACKUP_R2_ACCOUNT_ID=drill PIGROCRM_BACKUP_BUCKET=drill-bucket
+  PIGROCRM_BACKUP_ACCESS_KEY_ID=x PIGROCRM_BACKUP_SECRET_ACCESS_KEY=x PIGROCRM_BACKUP_PING_URL=http://ping:8080/crm-check
+)
+env "${crm_env[@]}" docker compose --project-directory "$crm_dir" -f "$crm_dir/docker-compose.yml" -f "$crm_dir/docker-compose.backup.yml" config --format json | python3 -c '
+import json, sys
+services = json.load(sys.stdin)["services"]
+backup = services["db-backup"]
+assert "ports" not in backup, "the CRM backup publishes a port"
+assert backup["depends_on"]["db"]["condition"] == "service_healthy"
+assert backup["environment"]["BACKUP_ALL_DATABASES"] == "true"
+assert backup["environment"]["BACKUP_NAME"] == "pigrocrm"
+assert backup["environment"]["PGHOST"] == "db"
+assert backup["tmpfs"], "no tmpfs scratch"
+assert backup["cap_drop"] == ["ALL"]
+'
+# The hub's `db` stands in for the CRM's server: a register database and two spaces' own.
+psql_hub -c 'CREATE DATABASE pigro_t_alpha' >/dev/null
+psql_hub -c 'CREATE DATABASE pigro_t_beta' >/dev/null
+for space in alpha beta; do
+  docker exec -i "$hubdb" psql -v ON_ERROR_STOP=1 -U rebase -d "pigro_t_$space" -At <<SQL >/dev/null
+CREATE TABLE fatture (id serial PRIMARY KEY, numero text NOT NULL);
+INSERT INTO fatture (numero) SELECT '$space-' || i FROM generate_series(1, 5) AS i;
+SQL
+done
+crm_log=$(compose run --rm --no-deps -T --entrypoint /bin/bash -e BACKUP_NAME=pigrocrm -e BACKUP_ALL_DATABASES=true hub-backup /scripts/backup.sh)
+echo "$crm_log"
+crm_key=$(listing pigrocrm/ | grep -o 'pigrocrm/pigrocrm-[0-9TZ]*\.tar\.cms' | head -n 1)
+[ -n "$crm_key" ] || { echo "FAIL: no object under pigrocrm/ in the bucket" >&2; exit 1; }
+s3 -o "$tmp/crm-object.cms" "http://$s3_ip:7070/drill-bucket/$crm_key"
+mkdir -m 700 "$tmp/crm-restored"
+"$backup_dir/scripts/restore.sh" "$tmp/crm-object.cms" "$tmp/second.key" "$tmp/crm-restored" "$tmp/second.crt" >/dev/null
+for f in globals.sql rebase.dump pigro_t_alpha.dump pigro_t_beta.dump SHA256SUMS MANIFEST; do
+  [ -s "$tmp/crm-restored/$f" ] || { echo "FAIL: the CRM bundle lacks $f" >&2; exit 1; }
+done
+if [ -e "$tmp/crm-restored/postgres.dump" ]; then echo "FAIL: the bundle holds the postgres database" >&2; exit 1; fi
+grep -qx 'databases=pigro_t_alpha,pigro_t_beta,rebase' "$tmp/crm-restored/MANIFEST" || { echo "FAIL: the MANIFEST does not list the three databases: $(cat "$tmp/crm-restored/MANIFEST")" >&2; exit 1; }
+grep -q 'CREATE ROLE rebase' "$tmp/crm-restored/globals.sql" || { echo "FAIL: globals.sql holds no role" >&2; exit 1; }
+# Every database comes back with its rows.
+for space in alpha beta; do
+  scratch_psql -d restored -c "CREATE DATABASE pigro_t_$space" >/dev/null
+  docker exec -i "$scratch_name" pg_restore --exit-on-error --no-owner --no-acl -U documenso -d "pigro_t_$space" < "$tmp/crm-restored/pigro_t_$space.dump"
+  [ "$(docker exec -i "$scratch_name" psql -U documenso -d "pigro_t_$space" -At -c 'SELECT count(*) FROM fatture')" = 5 ] \
+    || { echo "FAIL: the restored space $space lacks its rows" >&2; exit 1; }
+done
+# A file that does not match its checksum is refused, and so is a bundle with one missing from the sums.
+tampered=$(mktemp -d "$tmp/crm-tampered.XXXXXX")
+cp -a "$tmp/crm-restored/." "$tampered/"
+printf 'x' >> "$tampered/pigro_t_alpha.dump"
+tar -C "$tampered" -cf "$tmp/crm-tampered.tar" .
+openssl cms -encrypt -binary -aes-256-cbc -in "$tmp/crm-tampered.tar" -out "$tmp/crm-tampered.cms" -outform DER "$tmp/lorenzo.crt"
+if "$backup_dir/scripts/restore.sh" "$tmp/crm-tampered.cms" "$tmp/lorenzo.key" "$tmp/crm-tampered-out" "$tmp/lorenzo.crt" 2>/dev/null; then
+  echo "FAIL: restore.sh accepted a space's archive that does not match SHA256SUMS" >&2; exit 1
+fi
+# The object keeps to its own prefix and holds none of the rows in clear.
+if listing hub/ | grep -q 'pigrocrm-[0-9TZ]*\.tar\.cms'; then echo "FAIL: a CRM backup is under hub/" >&2; exit 1; fi
+if grep -aq 'alpha-1' "$tmp/crm-object.cms"; then echo "FAIL: a space's rows are in the object in clear" >&2; exit 1; fi
+echo "the whole server in one backup: register and both spaces restore with their rows, globals and checksums are in, a tampered archive is refused"
+
+printf '\nOK: all three backups, their encryption, the monitors, restore and every refusal held\n'
