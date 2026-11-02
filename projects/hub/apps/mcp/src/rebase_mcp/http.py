@@ -31,6 +31,7 @@ from starlette.types import ASGIApp
 from rebase_core.admin_tokens import INVALID_TOKEN, AdminRead, AdminTokenService, is_token
 from rebase_core.config import Settings, get_settings
 from rebase_core.contracts.render import ContractRenderer
+from rebase_core.crm_link import CrmLeadService
 from rebase_core.db import create_engine_from_settings, session_factory
 from rebase_core.engagements import EngagementService
 from rebase_core.errors import DomainError
@@ -77,6 +78,18 @@ class McpHttpApp:
         http = urllib_engagements_call if self._http is urllib_call else self._http
         return EngagementService(session, self._settings, http, sender=self._sender)
 
+    def crm_leads(self, session: Session) -> CrmLeadService:
+        """The service behind `link_company_to_pigro` (REB-869), over the same seam as
+        `engagements`, asking «Modelli AI» for the `crm_lead` draft only when one is
+        needed."""
+        http = urllib_engagements_call if self._http is urllib_call else self._http
+        return CrmLeadService(
+            session,
+            self._settings,
+            http,
+            lambda: call_for_task(self._open, self._settings, "crm_lead"),
+        )
+
     def _open(self) -> AbstractContextManager[Session]:
         """A session for the model seam, which reads «Modelli AI» on each call."""
         return closing(self._factory()())
@@ -97,6 +110,7 @@ class McpHttpApp:
                 card_llm=lambda: call_for_task(self._open, settings, "card"),
                 sender=self._sender,
                 engagements=self.engagements,
+                crm_leads=self.crm_leads,
             )
             self._starlette = server.streamable_http_app(
                 streamable_http_path=MCP_PATH,

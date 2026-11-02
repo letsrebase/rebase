@@ -74,9 +74,10 @@ a `SigningService` over `FakeDocumenso`.
 - `record_notice`: «Registra disdetta» on an active framework agreement.
 - `cancel_match`: «Annulla» on a match in draft or in signature.
 - `close_match`: «Chiudi match», the engagement ends.
+- `link_company_to_pigro`: «Riprova» on a company request (REB-869), the way `link_match_to_pigro` is for matches: files it in the CRM now as the calling admin and answers the request with `crm_stato`, `crm_situazione` and `crm_deal_url`; with `deal_id` it is «Collega a un altro deal». `get_company` and `list_aziende` carry the same three fields.
 - `set_freelancer_tax_data`: saves the tax data, the partita IVA optional; answers that they are saved, never the values.
 
-The team builder and the talent cloud are twelve tools more (REB-520, spec § 8 of
+The team builder and the talent cloud are thirteen tools more (REB-520, spec § 8 of
 `docs/superpowers/specs/2026-09-25-team-builder-and-talent-cloud-design.md`), each
 running the core service the admin area runs, with the calling admin as the actor:
 
@@ -84,26 +85,30 @@ running the core service the admin area runs, with the calling admin as the acto
 - `list_team_proposals`: «Proposte», every «Proponi il team» asked, filed or not.
 - `list_ai_config`: «Modelli AI», read only: providers (the hint, never a key), tasks, prices, the month's spend, and `registro`, the last 50 entries of the configuration's trail (keys, switches, prices and every regeneration of the cards, start and end). No tool writes a key.
 - `set_team_request_summary`: «Salva il riassunto», refused while it names the company.
+- `contact_team_talents`: «Contatta i talenti», or with `only_silent` «Rimanda a chi non ha risposto», on a request filed from the site or the cloud.
 - `set_team_request_status`: «Segna come contattata», «Chiudi», with an optional note.
 - `get_freelancer_card`, `regenerate_freelancer_card`: the anonymous card, and «Rigenera scheda». The card's `seniority` and `anni` are the admin's when `override_freelancer` set them (`seniority`, `anni`), Claude's otherwise; `anni` is `null` and `seniority_incerta` true when the CV dates no role (REB-799).
 - `set_freelancer_vetted`: «Segna come verificato» and «Togli la verifica».
 - `grant_talent_cloud`, `revoke_talent_cloud`, `list_talent_cloud_grants`: the cloud's grants.
 
-**No team is proposed and no talent is mailed over MCP** (REB-876, Lorenzo 2026-11-02).
-`propose_team` and `contact_team_talents` were tools until then and are gone on purpose:
-an agent finds the people for a request with `list_talenti`, `get_talento` and the cards,
-which spends nothing on the team builder's model, and a person writes to the candidates
-by hand, from drafts the agent can prepare. «Contatta i talenti» stays in the admin area,
-«Proponi il team» on the public page and in the talent cloud (the admin area only reads
-«Proposte»), and the server's instructions say that no availability mail goes out from it.
-Rows with `origine` `admin` are older than this and stay readable.
+**No team is proposed over MCP, and a search there writes to nobody** (REB-876, Lorenzo
+2026-11-02). `propose_team` was a tool until then and is gone on purpose: an agent finds
+the people for a request with `list_talenti`, `get_talento` and the cards, which spends
+nothing on the team builder's model, and a person writes to the candidates by hand, from
+drafts the agent can prepare. `contact_team_talents` went with it and came back the same
+day, at Lorenzo's word: it is the one availability mail the server sends, to the talents
+of a request a company filed from the site or the cloud, and only when an admin asks.
+«Proponi il team» stays on the public page and in the talent cloud (the admin area only
+reads «Proposte»), and the server's instructions say all of this. Rows with `origine`
+`admin` are older than this and stay readable.
 
 «Modelli AI» (`/hub/admin/modelli-ai`, REB-833, `routers/ai.py` under `/api/hub/admin/ai`) is
 where an admin replaces a provider's key (write-only: the answer is «configurata, finisce con
 …abcd»), picks each task's provider, model, effort, token and daily euro cap, edits the price
 table and reads the month's spend. «Prova» sends one fixed non-personal prompt through the
 task's own seam, recorded as `purpose="prova"`, so it spends the task's cap. The tasks are
-`card`, `team_proposal` and, since REB-862, `cv_anonimo`.
+`card`, `team_proposal`, since REB-862 `cv_anonimo` and, since REB-867, `crm_lead`. «Prova» of
+`crm_lead` sends an invented request and shows the draft as the deal would take it.
 
 There is no «Valutazione» page: the evaluation is the command `rebase cards-eval` (REB-842, below),
 which an operator runs and reads, and the admin API has no `card-eval` route.
@@ -192,6 +197,43 @@ Spec: `docs/superpowers/specs/2026-10-30-anonymous-cv-pdf-design.md`.
   `_TASK_HTTP_LIMITS`); the host vhost gives the route 330 seconds, a by-hand change on the
   installed copies (below, after the team builder's 90 seconds).
 - **Logs.** Nothing here logs the CV, the answer or a name.
+
+## The CRM draft task (REB-867)
+
+`crm_lead` (`rebase_core.crm_lead`, migration 0045, seeded from the `team_proposal` row, effort
+`low`, 1500 tokens, 1 euro a day, **off**) drafts a CRM deal from a company request. Spec:
+`docs/superpowers/specs/2026-10-30-company-requests-into-the-rebase-crm-design.md` § 3. The model
+reads `figura_richiesta`, `progetto`, `durata` and `periodo_da` and nothing else: never the
+company's name, the referente or the budget (`draft_lead` takes no such argument). Its answer's
+schema is lenient on purpose and `LeadDraft.from_output` holds each field to its bound (ruolo 80
+characters, days 0.5 to 5, weeks 1 to 104 whole, ten skills of 40, sintesi 800): a value outside
+is dropped, never clamped. A call that cannot answer gives `None` and the filing goes ahead with
+no draft. Switch it on in «Modelli AI» only once `privacy.html` names what it sends.
+
+## A request filed in the CRM (REB-868)
+
+Every request written by `CompanyService.request` (the wizard) or
+`MemberService.create_additional_request` (a member's second one) is `crm_stato =
+da_collegare` in the transaction of its row; a row written before migration 0046 has `NULL`
+and the sweep never picks it up (no backfill: it reaches the CRM only by an admin's «Riprova»
+or «Collega a un altro deal»). `rebase_core.crm_link.CrmLeadService` is `EngagementService`'s
+twin: `link(company_id, admin_id, deal_id)` locks the row to read what is sent and stamp the
+attempt, **releases it before the AI call and the HTTP call**, and locks again to write the
+answer; the draft of `crm_lead` is made once and kept in `crm_bozza`, so a CRM that is down
+is retried without spending the cap again. The call is `PUT {pigro_api_url}/api/rebase/leads/
+{id}` under `REBASE_PIGRO_ENGAGEMENTS_TOKEN` (no token: the request waits as `da_collegare`);
+`201`/`200` is `collegato`, `422` is `rifiutato` (only a person asks again), anything else
+`errore` (the sweep retries). The deal is built in code and every value is cut to the CRM's
+limits; `tariffa_oraria` and `ore_preventivate` are never sent. The first attempt is a
+`BackgroundTasks` job (`deps.get_crm_filing`); the sweep is `crm_sweep` in `rebase
+contracts-sweep`, its own round and its own line, outside `SigningService`, and leaves a row
+alone for five minutes after it was written or attempted so it never races that job.
+`POST /api/hub/companies/{id}/crm/link` is «Riprova»; with `{"deal_id"}` it is «Collega a un
+altro deal»: no draft, and a refusal is a 409 that changes nothing stored (the sweep would
+otherwise file the request by its address and make the second customer being corrected).
+The trail entry is `crm_link`. The admin company page shows the state, the CRM's sentence and
+the deal's link in `pages/admin/CrmLink.tsx`, with «Riprova» and «Collega a un altro deal»;
+`link_company_to_pigro` is the same for agents (REB-869).
 
 ## One person, once (REB-800)
 
@@ -535,9 +577,10 @@ what their card says, that the public builder shows it without their name, and t
 companies rebase admits see their profile by name with the CV. **The `mcp` service uses
 «Modelli AI» and the Resend key** as `api` does: `regenerate_freelancer_card` calls the
 configured model (asked on each call, so a model configured while it runs applies at
-once), and `grant_talent_cloud` sends mail. Recreate it beside `api` when the Resend key
-changes; without a model or a mail key those tools answer as the admin area does (the
-card refused with the builder's sentence, the cloud opened with no mail).
+once), and `contact_team_talents` and `grant_talent_cloud` send mail. Recreate it beside
+`api` when the Resend key changes; without a model or a mail key those tools answer as
+the admin area does (the card refused with the builder's sentence, sending not active
+here, the cloud opened with no mail).
 
 **The key** is saved in «Modelli AI», encrypted, never in the repository or the
 environment (see «Model provider keys» below); the old `REBASE_ANTHROPIC_API_KEY` and

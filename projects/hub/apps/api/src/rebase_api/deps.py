@@ -5,6 +5,7 @@ from collections.abc import Callable, Iterator
 from contextlib import closing
 from datetime import datetime
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import Depends, HTTPException, Request, Response, status
 from sqlalchemy import Engine
@@ -19,6 +20,7 @@ from rebase_core.card_batch import CardBatches
 from rebase_core.cloud import CLOUD_CLOSED, CloudCaller, CloudTalentService
 from rebase_core.config import Settings, get_settings
 from rebase_core.contracts.render import ContractRenderer, Renderer
+from rebase_core.crm_link import CrmLeadService, link_after_response
 from rebase_core.db import SessionOpener, create_engine_from_settings, session_factory
 from rebase_core.documenso import DocumensoClient, client_from_settings
 from rebase_core.engagements import EngagementService
@@ -315,6 +317,42 @@ def get_session_opener() -> SessionOpener:
 
 
 SessionOpenerDep = Annotated[SessionOpener, Depends(get_session_opener)]
+
+
+def get_crm_llm(settings: SettingsDep, opener: SessionOpenerDep) -> Callable[[], LlmCall | None]:
+    """What answers the seam of the `crm_lead` task (REB-867) when a request's draft is
+    needed: a callable, so «Modelli AI» is read at that moment and not when the request
+    arrived. A dependency, so a test hands a `RecordingCall`."""
+    return lambda: call_for_task(opener, settings, "crm_lead")
+
+
+CrmLlmDep = Annotated[Callable[[], LlmCall | None], Depends(get_crm_llm)]
+
+
+def get_crm_leads(
+    session: SessionDep, settings: SettingsDep, http: HttpCallDep, llm: CrmLlmDep
+) -> CrmLeadService:
+    """The filing of a company request in rebase's CRM (REB-868): «Riprova» and «Collega a
+    un altro deal». It reads through the engagements seam, whose 90 seconds leave room for
+    a CRM that is slow to answer."""
+    return CrmLeadService(session, settings, _engagements_call(http), llm)
+
+
+CrmLeadsDep = Annotated[CrmLeadService, Depends(get_crm_leads)]
+
+CrmFiling = Callable[[UUID], None]
+
+
+def get_crm_filing(
+    settings: SettingsDep, http: HttpCallDep, opener: SessionOpenerDep, llm: CrmLlmDep
+) -> CrmFiling:
+    """The first attempt at filing a new request in the CRM, for `BackgroundTasks`: runs
+    after the response in a session of its own and never raises (the sweep recovers)."""
+    engagements = _engagements_call(http)
+    return lambda company_id: link_after_response(opener, settings, engagements, llm, company_id)
+
+
+CrmFilingDep = Annotated[CrmFiling, Depends(get_crm_filing)]
 
 
 def get_card_llm(settings: SettingsDep, opener: SessionOpenerDep) -> LlmCall | None:

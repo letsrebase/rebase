@@ -1,6 +1,7 @@
 """The hub's MCP tools over its own database: the reads, the status moves, the notes."""
 
 import json
+import re
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -206,6 +207,7 @@ async def test_the_admin_tools_read_and_move_a_candidate_without_the_cv(
             "list_ai_config",
             "get_team_request",
             "set_team_request_summary",
+            "contact_team_talents",
             "set_team_request_status",
             "grant_talent_cloud",
             "revoke_talent_cloud",
@@ -226,6 +228,7 @@ async def test_the_admin_tools_read_and_move_a_candidate_without_the_cv(
             "cancel_match",
             "close_match",
             "link_match_to_pigro",
+            "link_company_to_pigro",
             "get_match_report",
             "set_freelancer_tax_data",
         }
@@ -1160,6 +1163,65 @@ async def test_set_team_request_status_refuses_a_bad_note_before_moving_anything
     _wipe_team(factory)
 
 
+async def test_contact_team_talents_mails_once_then_rimanda_only_the_silent(
+    factory: sessionmaker[Session],
+) -> None:
+    session = factory()
+    members = [_talent_with_card(session, 1), _talent_with_card(session, 2)]
+    session.close()
+    request_id = _team_request(factory, members)
+    _seed_admin(factory)
+    sender = RecordingSender()
+
+    async with Client(
+        build_server(factory, lambda: IVAN, settings=_team_settings(), sender=sender)
+    ) as client:
+        contacted = _payload(
+            await client.call_tool("contact_team_talents", {"request_id": request_id})
+        )
+        assert contacted["stato"] == "contattata"
+        assert len(sender.sent) == 2
+        addresses = {mail.to for mail in sender.sent}
+        assert addresses == {"talento1@studio.it", "talento2@studio.it"}
+        assert all(mail.subject == "Un progetto per te: sei disponibile?" for mail in sender.sent)
+
+        again = await client.call_tool("contact_team_talents", {"request_id": request_id})
+        assert again.is_error
+        assert "già stati contattati" in again.content[0].text
+
+        first_mail = next(mail for mail in sender.sent if mail.to == "talento1@studio.it")
+        found = re.search(r"[?&]t=([A-Za-z0-9_-]+)&r=si", first_mail.text)
+        assert found
+        session2 = factory()
+        TeamRequestService(session2, settings=_team_settings()).answer(found.group(1), "si")
+        session2.close()
+
+        rimanda = _payload(
+            await client.call_tool(
+                "contact_team_talents", {"request_id": request_id, "only_silent": True}
+            )
+        )
+        assert rimanda["stato"] == "contattata"
+        assert len(sender.sent) == 3
+        assert sender.sent[2].to == "talento2@studio.it"
+    _wipe_team(factory)
+
+
+async def test_contact_team_talents_without_a_sender_is_the_no_sender_sentence(
+    factory: sessionmaker[Session],
+) -> None:
+    session = factory()
+    member = _talent_with_card(session)
+    session.close()
+    request_id = _team_request(factory, [member])
+
+    async with Client(build_server(factory, lambda: IVAN, settings=_team_settings())) as client:
+        refused = await client.call_tool("contact_team_talents", {"request_id": request_id})
+        assert refused.is_error
+        assert "L'invio delle email non è attivo" in refused.content[0].text
+    _wipe_team(factory)
+
+
 async def test_list_team_proposals_reads_every_ask_with_its_request(
     factory: sessionmaker[Session],
 ) -> None:
@@ -1488,3 +1550,128 @@ async def test_get_match_report_of_an_unlinked_match_is_the_states_sentence(
         assert "Pigro non ha ancora il deal" in refused.content[0].text
     finally:
         _wipe_matches(factory)
+
+
+# ---- REB-869: a company request filed in the CRM ------------------------------------------
+
+
+def _crm_server(
+    factory: sessionmaker[Session], fake: Any, token: str = "un-token-per-la-porta"
+) -> Any:
+    from rebase_core.config import Settings
+    from rebase_core.crm_link import CrmLeadService
+
+    settings = Settings(  # type: ignore[call-arg]
+        _env_file=None, pigro_api_url="https://pigro.test", pigro_engagements_token=token
+    )
+    return build_server(
+        factory,
+        lambda: IVAN,
+        settings=settings,
+        crm_leads=lambda session: CrmLeadService(session, settings, fake, None),
+    )
+
+
+async def test_link_company_to_pigro_files_the_request_and_get_company_carries_the_state(
+    factory: sessionmaker[Session],
+) -> None:
+    """«Riprova» for agents: the recorded door answers, the company comes back `collegato`
+    with the deal's address, and `get_company` and `list_aziende` carry the same state."""
+    from fakes_pigro import DEAL, DEAL_URL, TOKEN, RecordedPigro
+
+    _wipe(factory)
+    company_id = _seed_company(factory)
+    _seed_admin(factory)
+    fake = RecordedPigro(
+        [
+            (503, b'{"detail": "Spazio dei lead non configurato"}'),
+            (
+                201,
+                json.dumps(
+                    {
+                        "customer_id": str(UUID(int=7)),
+                        "person_id": None,
+                        "deal_id": str(DEAL),
+                        "deal_url": DEAL_URL,
+                        "creato": True,
+                    }
+                ).encode(),
+            ),
+        ]
+    )
+    try:
+        async with Client(_crm_server(factory, fake, TOKEN)) as client:
+            before = _payload(await client.call_tool("get_company", {"company_id": company_id}))
+            assert before["crm_stato"] == "da_collegare"
+
+            failed = _payload(
+                await client.call_tool("link_company_to_pigro", {"company_id": company_id})
+            )
+            assert failed["crm_stato"] == "errore"
+            assert failed["crm_situazione"] == (
+                "Il CRM non ha risposto: Spazio dei lead non configurato."
+            )
+
+            linked = _payload(
+                await client.call_tool("link_company_to_pigro", {"company_id": company_id})
+            )
+            assert (linked["crm_stato"], linked["crm_deal_url"]) == ("collegato", DEAL_URL)
+            assert linked["crm_situazione"] is None
+
+            listed = _payload(await client.call_tool("list_aziende", {}))
+            assert [r["crm_stato"] for r in listed["items"]] == ["collegato"]
+        assert [c[1] for c in fake.calls] == [
+            f"https://pigro.test/api/rebase/leads/{company_id}"
+        ] * 2
+        session = factory()
+        try:
+            from rebase_core.audit import AdminActionService
+
+            newest = AdminActionService(session).timeline("company", UUID(company_id))[0]
+            assert (newest.kind, newest.admin_id) == ("crm_link", IVAN.id)
+        finally:
+            session.close()
+    finally:
+        _wipe(factory)
+
+
+async def test_link_company_to_pigro_links_another_deal_and_says_why_it_cannot(
+    factory: sessionmaker[Session],
+) -> None:
+    from fakes_pigro import RecordedPigro
+
+    _wipe(factory)
+    company_id = _seed_company(factory)
+    _seed_admin(factory)
+    other = str(UUID(int=99))
+    fake = RecordedPigro([(422, b'{"detail": "deal_id: non valido"}')])
+    try:
+        async with Client(_crm_server(factory, fake)) as client:
+            refused = await client.call_tool(
+                "link_company_to_pigro", {"company_id": company_id, "deal_id": other}
+            )
+        assert refused.is_error
+        assert "Il CRM ha rifiutato la richiesta: deal_id: non valido." in refused.content[0].text
+        assert json.loads(fake.calls[0][3])["deal_id"] == other
+    finally:
+        _wipe(factory)
+
+
+async def test_link_company_to_pigro_without_a_token_or_a_request_is_a_sentence(
+    factory: sessionmaker[Session],
+) -> None:
+    from fakes_pigro import RecordedPigro
+
+    _wipe(factory)
+    company_id = _seed_company(factory)
+    try:
+        async with Client(build_server(factory, lambda: IVAN)) as client:
+            off = await client.call_tool("link_company_to_pigro", {"company_id": company_id})
+        assert off.is_error and "REBASE_PIGRO_ENGAGEMENTS_TOKEN" in off.content[0].text
+        async with Client(_crm_server(factory, RecordedPigro([(201, b"{}")]))) as client:
+            missing = await client.call_tool(
+                "link_company_to_pigro", {"company_id": str(UUID(int=5))}
+            )
+        assert missing.is_error and "non trovato" in missing.content[0].text
+    finally:
+        _wipe(factory)

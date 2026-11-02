@@ -584,6 +584,14 @@ export interface Company {
   giorni_presenza: number | null
   numero_risorse: number
   stato: 'nuovo' | 'contattato' | 'in_corso' | 'chiuso'
+  /** Where the request stands in rebase's CRM (REB-868): `null` for a request from before
+   *  the link existed, which only an admin's «Riprova» files. */
+  crm_stato: 'da_collegare' | 'collegato' | 'errore' | 'rifiutato' | null
+  /** The CRM's own sentence for a request that is not linked, ready to show. */
+  crm_situazione: string | null
+  /** The deal's address once linked. */
+  crm_deal_url: string | null
+  crm_attempted_at: string | null
   /** The page of the site the person started from, `home` or `pigrocrm` (ORB-167). */
   origine: string | null
   utm_source: string | null
@@ -670,6 +678,7 @@ export interface AdminAction {
     | 'vetted'
     /** «Riprova su Pigro» (REB-498), recorded on entity `match`. */
     | 'pigro_link'
+    | 'crm_link'
     /** Two cards of one person merged (REB-800): `merged` is on the absorbed card,
      *  `absorbed` on the one that stayed, `unmerged` on both once the shell put it back. */
     | 'merged'
@@ -1637,6 +1646,12 @@ export const admin = {
   /** Soft-deletes the request: it drops off `GET /companies`, and `restoreCompany`
    *  reverses it. Never a hard delete (REB-347/355). */
   deleteCompany: (id: string) => request<Company>(`/api/hub/companies/${id}`, { method: 'DELETE' }),
+  /** «Riprova» (REB-868): the request is filed in rebase's CRM now and comes back as it
+   *  stands. With `dealId`, «Collega a un altro deal»: the CRM links that deal and creates
+   *  nothing; a refusal is a 409 with its sentence. A 503 says this environment has no
+   *  link to the CRM. The CRM may take a while to answer: no timeout here cuts it short. */
+  linkCompanyToCrm: (id: string, dealId?: string) =>
+    request<Company>(`/api/hub/companies/${id}/crm/link`, json(dealId ? { deal_id: dealId } : {})),
   restoreCompany: (id: string) => request<Company>(`/api/hub/companies/${id}/restore`, { method: 'POST' }),
   /** «Apri il talent cloud» (REB-518): the live grant to the request's referente, new
    *  (201, with a mail to them) or already there (200, no mail). */

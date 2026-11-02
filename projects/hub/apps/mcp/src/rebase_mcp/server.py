@@ -47,6 +47,8 @@ from rebase_core.config import Settings
 from rebase_core.contract_schemas import FiscalData, MatchCreate
 from rebase_core.contracts.fields import signer_data
 from rebase_core.contracts.render import Renderer
+from rebase_core.crm_link import NOT_CONFIGURED as CRM_NOT_CONFIGURED
+from rebase_core.crm_link import CrmLeadService
 from rebase_core.duplicates import duplicate_list
 from rebase_core.engagements import EngagementService
 from rebase_core.errors import DomainError, NotFound, ValidationFailed
@@ -106,6 +108,8 @@ AdminProvider = Callable[[], AdminRead]
 # the way `SigningFactory` builds the signing one: real from settings in production, a
 # recorded `HttpCall` in a test.
 EngagementsFactory = Callable[[Session], EngagementService]
+# The same for `link_company_to_pigro` (REB-869): the service that files a request in the CRM.
+CrmLeadsFactory = Callable[[Session], CrmLeadService]
 
 INSTRUCTIONS = (
     "rebase, la community di freelance di letsrebase.com. Gli strumenti leggono chi "
@@ -117,10 +121,12 @@ INSTRUCTIONS = (
     "un'azienda, i loro contratti e la firma, come dall'area admin. Si leggono anche le "
     "campagne di mail della sezione «Campagne» e, per ogni persona, cosa ha fatto dopo la "
     "mail. Per cercare persone adatte a una richiesta si usano `list_talenti`, "
-    "`get_talento` e `get_freelancer_card`; da qui non parte nessuna mail di "
-    "disponibilità ai talenti: chi va contattato lo contatta una persona, a mano. Sono "
-    "dati di altre persone: da usare solo per decidere quando e cosa scrivere loro, mai "
-    "da riportare altrove."
+    "`get_talento` e `get_freelancer_card`, e una ricerca fatta da qui non scrive a "
+    "nessuno: chi va contattato lo contatta una persona, a mano. L'unica mail di "
+    "disponibilità che parte da qui è `contact_team_talents`, ai talenti di una "
+    "richiesta team arrivata dal sito o dal talent cloud, e solo quando lo chiede "
+    "l'admin. Sono dati di altre persone: da usare solo per decidere quando e cosa "
+    "scrivere loro, mai da riportare altrove."
 )
 
 PIGRO_NOT_CONFIGURED = "Il registro di Pigro non è configurato: manca REBASE_PIGRO_REGISTRY_TOKEN."
@@ -278,6 +284,7 @@ def build_server(
     card_llm: LlmSource | None = None,
     sender: EmailSender | None = None,
     engagements: EngagementsFactory | None = None,
+    crm_leads: CrmLeadsFactory | None = None,
 ) -> MCPServer:
     """`admin` answers the admin behind the current call; `settings` and `http` are what
     reaches the CRM, for `list_pigro_spaces` and for the `pigro_slug` of `get_talento`,
@@ -295,17 +302,21 @@ def build_server(
     `regenerate_freelancer_card`, asked on each call because an admin can configure a
     model in «Modelli AI» while this server runs; `None` (no model configured for the
     card task) -- then, as the admin area already does, the tool refuses with the team
-    builder's own sentence rather than a silent no-op; `sender` is the talent cloud's
-    (`sender_from_settings`), `None` without a mail key. A test hands `RecordingCall`
-    and `RecordingSender`, the same way `mail.py`'s own tests do. There is no team
-    proposal and no availability mail here (REB-876): a search is the talent tools, and
-    a person writes to the candidates.
+    builder's own sentence rather than a silent no-op; `sender` is the availability
+    mails' and the talent cloud's (`sender_from_settings`), `None` without a mail key. A
+    test hands `RecordingCall` and `RecordingSender`, the same way `mail.py`'s own tests
+    do. There is no team proposal here (REB-876): a search is the talent tools, and the
+    only availability mail is `contact_team_talents`, on a request filed from the site
+    or the cloud.
 
     `engagements` builds the `EngagementService` behind `get_match_report` and
     `link_match_to_pigro` (REB-501), with `urllib_engagements_call` in production, the
     way `__main__.py` and `http.py` build `signing` too. Without it, or without
     `settings.pigro_engagements_token`, both tools answer that Pigro is not configured
-    here, the same sentence an empty token answers from inside the service."""
+    here, the same sentence an empty token answers from inside the service.
+
+    `crm_leads` builds the `CrmLeadService` behind `link_company_to_pigro` (REB-869), over
+    the same seam; without it or without the token the tool answers `CRM_NOT_CONFIGURED`."""
     mcp = MCPServer("rebase", instructions=INSTRUCTIONS, middleware=middleware)
     signer_json = settings.signer_json if settings is not None else ""
     # Whether the CRM's engagements door has a token here: without one an active match's
@@ -834,7 +845,8 @@ def build_server(
         `creato_a` sulla data di creazione (ISO 8601, anche solo `AAAA-MM-GG`).
         `next_cursor` è il cursore opaco della pagina successiva, `None` all'ultima:
         ripassalo in `cursor` insieme agli stessi parametri, un cursore nato con
-        un'altra `q` è rifiutato. Solo lettura."""
+        un'altra `q` è rifiutato. Ogni riga porta lo stato del collegamento al CRM
+        (`crm_stato`, `crm_situazione`, `crm_deal_url`). Solo lettura."""
         term = _search_term(q)
         budget_from = _number(budget_min, "budget_min")
         budget_to = _number(budget_max, "budget_max")
@@ -861,7 +873,10 @@ def build_server(
         """Una richiesta di un'azienda, per id, con `note`: il thread di chi l'ha
         seguita, dal più recente, ognuna con `id`, autore, data, `fonte` (`web`, `mcp`,
         `persona`, `sistema`), l'ultima modifica e `modificabile`. Le note cancellate non
-        ci sono."""
+        ci sono. Porta anche dove sta il collegamento al CRM di rebase: `crm_stato`
+        (`da_collegare`, `collegato`, `errore`, `rifiutato`; vuoto per una richiesta nata
+        prima del collegamento), `crm_situazione` con la frase del CRM quando non è
+        collegata, `crm_deal_url` con l'indirizzo del deal e `crm_attempted_at`."""
         return _run(lambda s: CompanyService(s).get(UUID(company_id)))
 
     @mcp.tool()
@@ -1065,14 +1080,31 @@ def build_server(
     @mcp.tool()
     def set_team_request_summary(request_id: str, riassunto: str) -> dict[str, Any]:
         """«Salva il riassunto» (spec § 3.5): il testo che i talenti leggeranno nella
-        mail di disponibilità, riscritto qui dall'admin prima che qualcuno li contatti da
-        «Contatta i talenti» nell'area admin: da qui la mail non parte. Rifiutato se
-        nomina ancora l'azienda: il riassunto va corretto dove è scritto."""
+        mail di disponibilità, riscritto qui dall'admin prima di scrivere loro.
+        Rifiutato con la stessa frase di `contact_team_talents` se nomina ancora
+        l'azienda: il riassunto va corretto dove è scritto."""
         change = TeamRequestSummary(riassunto=riassunto)
         return _run(
             lambda s: TeamRequestService(s, settings=team_settings()).set_summary(
                 UUID(request_id), change.riassunto, admin().id
             )
+        )
+
+    @mcp.tool()
+    def contact_team_talents(request_id: str, only_silent: bool = False) -> dict[str, Any]:
+        """«Contatta i talenti» (`only_silent` falso, la prima volta) o «Rimanda a chi
+        non ha risposto» (vero, spec § 3.6), per una richiesta team arrivata dal sito o
+        dal talent cloud: una mail a ciascun talento del team con il riassunto, il ruolo
+        proposto e la propria tariffa, e due link, «Sono disponibile» e «Non sono
+        disponibile», buoni per trenta giorni. Scrive davvero alle persone: da usare
+        solo quando lo chiede l'admin, mai come passo di una ricerca. Rifiutato, con la
+        sua frase, per una richiesta chiusa, un riassunto che nomina ancora l'azienda,
+        una seconda prima volta, o nessun talento rimasto da scrivere; senza una chiave
+        di invio configurata risponde che l'invio non è attivo qui."""
+        return _run(
+            lambda s: TeamRequestService(
+                s, settings=team_settings(), sender=sender
+            ).contact_talents(UUID(request_id), admin().id, only_silent=only_silent)
         )
 
     @mcp.tool()
@@ -1503,6 +1535,30 @@ def build_server(
             )
         except PigroUnavailable as exc:
             raise ToolError(str(exc)) from exc
+
+    @mcp.tool()
+    def link_company_to_pigro(company_id: str, deal_id: str | None = None) -> dict[str, Any]:
+        """«Riprova» sulla richiesta di un'azienda: la registra ora nel CRM di rebase (cliente,
+        contatto e deal con la bozza AI), a nome dell'admin dietro il token, e risponde la
+        richiesta com'è: `crm_stato` (`collegato`, o `errore`/`rifiutato` con la frase del
+        CRM in `crm_situazione`) e `crm_deal_url`. Registra anche una richiesta nata prima del
+        collegamento. Con `deal_id` (l'id di un deal che il CRM ha già) è «Collega a un altro
+        deal»: il CRM collega quel deal e non crea nulla, e un rifiuto lascia il collegamento
+        com'era. Rifiutato per una richiesta non trovata o cancellata e quando il CRM non è
+        configurato su questo ambiente."""
+        if crm_leads is None or settings is None or not settings.pigro_engagements_token:
+            raise ToolError(CRM_NOT_CONFIGURED)
+        build = crm_leads
+        key = UUID(company_id)
+        deal = UUID(deal_id) if deal_id is not None else None
+
+        def call(session: Session) -> dict[str, Any]:
+            service = CompanyService(session)
+            service.get(key)
+            build(session).link(key, admin().id, deal)
+            return service.get(key).model_dump(mode="json")
+
+        return _call(call)
 
     @mcp.tool()
     def get_match_report(

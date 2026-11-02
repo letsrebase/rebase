@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from rebase_core.audit import utcnow
 from rebase_core.cloud import TalentCloudService
+from rebase_core.crm_words import DA_COLLEGARE
 from rebase_core.errors import NotFound
 from rebase_core.freelancers import check_cv, cv_of
 from rebase_core.models import Company, Freelancer, User
@@ -282,7 +283,9 @@ class MemberService:
             )
         return self.me_read(user_id)
 
-    def create_additional_request(self, user_id: UUID, payload: CompanyFields) -> MeRead:
+    def create_additional_request(
+        self, user_id: UUID, payload: CompanyFields
+    ) -> tuple[MeRead, UUID]:
         """A signed-in referente files a genuinely new request instead of correcting
         one of theirs (REB-381): a fresh `Company` row, not an edit, so every request
         already on file stands exactly as it was -- admin-editable, like any other. The
@@ -292,7 +295,10 @@ class MemberService:
         a request filed from inside the member area is not attributable to whatever ad
         brought the referente in the first time, so it goes in blank, the same as
         anything an admin creates. A person with no live request has nothing to add to,
-        so this is a 404 named "azienda" for them too, the same as `update_company`."""
+        so this is a 404 named "azienda" for them too, the same as `update_company`.
+
+        The row is written `da_collegare` (REB-868), in the same transaction, and its id is
+        answered beside the member's view so the route can start the CRM filing."""
         existing = self.require_company(user_id)
         row = Company(
             user_id=user_id,
@@ -305,10 +311,11 @@ class MemberService:
             remoto=payload.remoto,
             giorni_presenza=payload.giorni_presenza,
             numero_risorse=payload.numero_risorse,
+            crm_stato=DA_COLLEGARE,
         )
         self.session.add(row)
         self.session.commit()
-        return self.me_read(user_id)
+        return self.me_read(user_id), row.id
 
     def replace_cv(
         self, freelancer_id: UUID, content: bytes, filename: str, mime: str

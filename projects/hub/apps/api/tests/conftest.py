@@ -1,6 +1,7 @@
 from collections.abc import Iterator
 from contextlib import nullcontext
 from typing import Any
+from uuid import UUID
 
 import pytest
 from fakes_cards import card_response
@@ -11,6 +12,8 @@ from sqlalchemy.orm import Session
 from rebase_api.deps import (
     get_card_batches,
     get_card_llm,
+    get_crm_filing,
+    get_crm_llm,
     get_cv_llm,
     get_sender,
     get_session,
@@ -58,11 +61,24 @@ def client(api_session: Session) -> Iterator[TestClient]:
     app.dependency_overrides[get_card_batches] = lambda: None
     app.dependency_overrides[get_team_llm] = lambda: None
     app.dependency_overrides[get_cv_llm] = lambda: None
+    # The first attempt at the CRM (REB-868) is a background job: nothing runs it unless a
+    # test asks to see it (`crm_filings`).
+    app.dependency_overrides[get_crm_filing] = lambda: lambda company_id: None
+    app.dependency_overrides[get_crm_llm] = lambda: lambda: None
     # The limiter counts requests per process, so one test's posts would otherwise be
     # spent out of the next test's budget.
     reset_rate_limit()
     with TestClient(app, base_url="https://testserver") as test_client:
         yield test_client
+
+
+@pytest.fixture
+def crm_filings(client: TestClient) -> list[UUID]:
+    """The ids of the requests the API asked the CRM filing for, in order: what
+    `BackgroundTasks` was handed after each response (REB-868)."""
+    seen: list[UUID] = []
+    client.app.dependency_overrides[get_crm_filing] = lambda: seen.append  # type: ignore[attr-defined]
+    return seen
 
 
 @pytest.fixture

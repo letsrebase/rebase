@@ -21,12 +21,13 @@ from decimal import Decimal
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Query, Response, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Response, status
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from rebase_api.deps import (
     AdminDep,
     CardLlmDep,
+    CrmLeadsDep,
     CvLlmDep,
     CvRendererDep,
     HttpCallDep,
@@ -42,6 +43,7 @@ from rebase_core.audit import AdminActionRead, AdminActionService
 from rebase_core.cards import CardWriter, Regeneration
 from rebase_core.cloud import TalentCloudService
 from rebase_core.companies import CompanyService
+from rebase_core.crm_link import NOT_CONFIGURED as CRM_NOT_CONFIGURED
 from rebase_core.duplicates import DuplicateListRead, duplicate_list
 from rebase_core.errors import TeamBuilderOff
 from rebase_core.freelancers import ENTITY as FREELANCER
@@ -66,6 +68,7 @@ from rebase_core.schemas import (
     CompanyList,
     CompanyOverride,
     CompanyRead,
+    CrmLinkBody,
     FreelancerDetail,
     FreelancerDraft,
     FreelancerList,
@@ -412,6 +415,29 @@ def move_company(
     """Moves the request to another state; recorded on `GET .../audit` as
     `status_changed` with the admin and the door (`web`)."""
     return CompanyService(session).set_status(company_id, change, admin_id=admin.id, fonte=SOURCE)
+
+
+@router.post("/companies/{company_id}/crm/link", response_model=CompanyRead)
+def link_company_to_crm(
+    admin: AdminDep,
+    session: SessionDep,
+    settings: SettingsDep,
+    crm: CrmLeadsDep,
+    company_id: UUID,
+    body: CrmLinkBody | None = None,
+) -> CompanyRead:
+    """«Riprova» (REB-868): the request is filed in rebase's CRM now, as the admin, and
+    comes back as it stands, `collegato` or with the CRM's sentence (`errore`, `rifiutato`).
+    It also files a request from before the link existed. With `deal_id`, «Collega a un
+    altro deal»: the CRM links that deal and creates nothing; a refusal is a 409 with its
+    sentence and the stored link stays as it was. 404 for a request that does not exist or
+    is deleted, 503 without the CRM's token."""
+    service = CompanyService(session)
+    service.get(company_id)
+    if not settings.pigro_engagements_token:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, CRM_NOT_CONFIGURED)
+    crm.link(company_id, admin.id, body.deal_id if body is not None else None)
+    return service.get(company_id)
 
 
 @router.patch("/companies/{company_id}/override", response_model=CompanyRead)

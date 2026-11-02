@@ -40,7 +40,10 @@ def _checks(tasks: str) -> None:
 
 
 def upgrade() -> None:
-    _checks("'card', 'team_proposal', 'cv_anonimo'")
+    # `crm_lead` (0045) is listed too, so that this revision run again over a database that
+    # already has that task's row (a retried deploy, the migration tests' stamp-and-rerun)
+    # does not fail on it: 0045 widens the same two CHECKs to the same list.
+    _checks("'card', 'team_proposal', 'cv_anonimo', 'crm_lead'")
     op.execute(
         """
         INSERT INTO ai_tasks (task, provider, model, effort, max_output_tokens, enabled)

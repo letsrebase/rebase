@@ -54,6 +54,7 @@ import {
 } from '@/lib/format'
 import { cn } from '@rebase/ui/cn'
 import { AuditTrail } from './AuditTrail'
+import { CrmLink } from './CrmLink'
 import { Notes } from './Notes'
 import { DuplicateOf, DuplicatePill, DuplicatesLink } from './DuplicateMarks'
 import { CompanyOverrideDialog, FreelancerOverrideDialog, RecordLifecycle } from './Override'
@@ -1628,6 +1629,12 @@ export function AdminCompanyDetail() {
       void client.invalidateQueries({ queryKey: ['company', id] })
     },
   })
+  // «Riprova» and «Collega a un altro deal» (REB-869): the answer is the request as it
+  // stands, merged like every other write here so the notes and the talent cloud stay.
+  const linkCrm = useMutation({
+    mutationFn: (dealId?: string) => admin.linkCompanyToCrm(id, dealId),
+    onSuccess: mergeAndRefresh,
+  })
   const onNotesChange = (update: (previous: Note[]) => Note[]) => {
     client.setQueryData<Company>(['company', id], (current) => current && { ...current, note: update(current.note) })
     void client.invalidateQueries({ queryKey: auditKey })
@@ -1705,6 +1712,14 @@ export function AdminCompanyDetail() {
           <Notes kind="companies" id={c.id} notes={c.note} onChange={onNotesChange} />
         </div>
       </div>
+      {c.deleted_at === null && (
+        <CrmLink
+          company={c}
+          pending={linkCrm.isPending}
+          onLink={(dealId) => linkCrm.mutate(dealId)}
+          error={linkCrm.error}
+        />
+      )}
       {c.deleted_at === null && (
         <TalentCloudDoor
           grant={c.talent_cloud_grant ?? null}
