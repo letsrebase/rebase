@@ -26,7 +26,7 @@ from sqlalchemy.orm import Session
 
 from rebase_api import deps
 from rebase_api.main import create_app
-from rebase_api.ratelimit import RETRY_AFTER_SECONDS, SIGNUPS_PER_MINUTE, reset_rate_limit
+from rebase_api.ratelimit import RETRY_AFTER_SECONDS, SIGNUPS_PER_MINUTE
 from rebase_core.mail import RecordingSender
 from rebase_core.models import User
 
@@ -154,7 +154,6 @@ def _login(client: TestClient, sender: RecordingSender, email: str) -> None:
     assert match
     assert client.post("/api/hub/auth/enter", json={"token": match.group(1)}).status_code == 200
     # Signing in spent two of the five a minute the public writes share.
-    reset_rate_limit()
 
 
 def test_admin_routes_are_401_for_nobody_and_403_for_a_member(
@@ -197,10 +196,14 @@ DOORS = {
 
 @pytest.mark.parametrize(("door", "twin"), [(LINK, ENTER), (ENTER, LINK)])
 def test_the_sign_in_doors_are_429_past_the_speed_bump(
-    client: TestClient, guarded: Session, sender: RecordingSender, door: str, twin: str
+    client: TestClient,
+    guarded: Session,
+    sender: RecordingSender,
+    door: str,
+    twin: str,
+    strict_rate_limit: None,
 ) -> None:
     body, answer = DOORS[door]
-    reset_rate_limit()
     for _ in range(SIGNUPS_PER_MINUTE):
         assert client.post(door, json=body).status_code == answer
 

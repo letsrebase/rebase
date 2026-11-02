@@ -6,6 +6,7 @@ import re
 from collections.abc import Iterator
 
 import pytest
+from api_responses import ok
 from fastapi.testclient import TestClient
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
@@ -170,7 +171,11 @@ def test_an_admin_reverts_a_freelancer_override_from_its_audit_entry(
 ) -> None:
     _login(client, sender)
     freelancer_id = _apply(client)
-    client.patch(f"/api/hub/freelancers/{freelancer_id}/override", json={"posizione": "Tech lead"})
+    ok(
+        client.patch(
+            f"/api/hub/freelancers/{freelancer_id}/override", json={"posizione": "Tech lead"}
+        )
+    )
     action_id = client.get(f"/api/hub/freelancers/{freelancer_id}/audit").json()[0]["id"]
 
     reverted = client.post(f"/api/hub/freelancers/{freelancer_id}/audit/{action_id}/revert")
@@ -183,8 +188,8 @@ def test_reverting_a_delete_entry_is_refused(
 ) -> None:
     _login(client, sender)
     freelancer_id = _apply(client)
-    client.delete(f"/api/hub/freelancers/{freelancer_id}")
-    client.post(f"/api/hub/freelancers/{freelancer_id}/restore")
+    ok(client.delete(f"/api/hub/freelancers/{freelancer_id}"))
+    ok(client.post(f"/api/hub/freelancers/{freelancer_id}/restore"))
     delete_entry = next(
         e
         for e in client.get(f"/api/hub/freelancers/{freelancer_id}/audit").json()

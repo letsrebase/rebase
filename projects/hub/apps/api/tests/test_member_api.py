@@ -14,7 +14,6 @@ from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from rebase_api.deps import get_sender
-from rebase_api.ratelimit import reset_rate_limit
 from rebase_core.config import Settings, get_settings
 from rebase_core.llm import RecordingCall
 from rebase_core.mail import Mail, RecordingSender
@@ -619,7 +618,6 @@ def test_a_member_changes_their_answers_and_the_admin_sees_the_comment(
     # `PUT /me/cv` now spends from the same public bucket as the wizard's routes
     # (the fix for the unbounded, unmetered upload); a fresh minute here keeps this
     # test about the admin's view of the thread, not about the rate limit's budget.
-    reset_rate_limit()
 
     # The admin reads the thread the member wrote into.
     api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", cognome="", role="admin"))
@@ -749,7 +747,6 @@ def test_a_company_contact_edits_their_most_recent_request(
     # `POST /auth/link` and `POST /auth/enter` both spend from the public bucket this
     # test's two `_request_company` calls already drew on; a fresh minute here keeps
     # the test about the thread, not about the rate limit's budget.
-    reset_rate_limit()
     api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", cognome="", role="admin"))
     api_session.commit()
     assert client.post("/api/hub/me/logout").status_code == 204
@@ -789,7 +786,6 @@ def test_a_company_contact_edits_an_older_request_by_its_id(
         (older["id"], "8 mesi"),
     ]
 
-    reset_rate_limit()
     api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", cognome="", role="admin"))
     api_session.commit()
     assert client.post("/api/hub/me/logout").status_code == 204
@@ -889,7 +885,6 @@ def test_a_company_contact_files_an_additional_request(
     assert body["richieste"][0]["figura_richiesta"] == "Data engineer"
 
     # An admin sees two rows, the same company's name on both, the older untouched.
-    reset_rate_limit()
     api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", cognome="", role="admin"))
     api_session.commit()
     assert client.post("/api/hub/me/logout").status_code == 204

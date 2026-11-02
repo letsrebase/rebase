@@ -11,11 +11,12 @@ import json
 from collections.abc import Iterator
 
 import pytest
+from api_responses import ok
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from rebase_api.ratelimit import SIGNUPS_PER_MINUTE
+from rebase_api.ratelimit import RETRY_AFTER_SECONDS, SIGNUPS_PER_MINUTE
 from rebase_api.routers import signups as signups_router
 from rebase_core.config import Settings, get_settings
 from rebase_core.conversions import hashed_email
@@ -108,13 +109,14 @@ def test_the_422_names_the_field_it_refused_so_the_form_can_point_at_it(
 
 def test_too_many_signups_from_one_client_are_refused_in_italian(
     client: TestClient,
+    strict_rate_limit: None,
 ) -> None:
     for index in range(SIGNUPS_PER_MINUTE):
         accepted = client.post("/api/community/signups", json=_body(f"ada{index}@studio.it"))
         assert accepted.status_code == 201, accepted.text
     refused = client.post("/api/community/signups", json=_body("ancora@studio.it"))
     assert refused.status_code == 429
-    assert refused.headers["Retry-After"] == "60"
+    assert refused.headers["Retry-After"] == str(RETRY_AFTER_SECONDS)
     assert "Troppe richieste" in refused.json()["detail"]
 
 
@@ -335,9 +337,12 @@ def test_an_address_the_proxy_could_not_name_is_left_out_rather_than_invented(
 def test_the_subscribers_address_does_not_travel(client: TestClient, pixel: RecordingHttp) -> None:
     """Not raw, not hashed. The installation has not asked for it -- and pasting a pixel
     id must not be what starts sending an ad platform the mailing list."""
-    client.post(
-        "/api/community/signups",
-        json=_body("ada@studio.it", pixel_event_id=EVENT_ID, pixel_consent=True),
+    ok(
+        client.post(
+            "/api/community/signups",
+            json=_body("ada@studio.it", pixel_event_id=EVENT_ID, pixel_consent=True),
+        ),
+        201,
     )
 
     body = pixel.calls[-1][3].decode()

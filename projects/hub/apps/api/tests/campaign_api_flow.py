@@ -5,35 +5,19 @@ from collections.abc import Iterator
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import text
+from hub_tables import wipe_hub
 from sqlalchemy.orm import Session
 
 from rebase_core.models import Campaign, CampaignRecipient, User
 
 ADMIN_EMAIL = "ivan@rebase.it"
-CLEAN = (
-    "campaign_optouts",
-    "campaign_recipients",
-    "campaigns",
-    "sessions",
-    "magic_link_tokens",
-    "logins",
-    "admin_actions",
-    "notes",
-    "freelancers",
-    "companies",
-    "users",
-    "signups",
-)
 
 
 @pytest.fixture
 def tidy(api_session: Session) -> Iterator[Session]:
     yield api_session
     api_session.rollback()
-    for table in CLEAN:
-        api_session.execute(text(f"DELETE FROM {table}"))
-    api_session.commit()
+    wipe_hub(api_session)
 
 
 def admin_user(session: Session) -> User:

@@ -22,7 +22,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from rebase_api.deps import get_clock, get_sender, get_session_opener, get_team_llm
-from rebase_api.ratelimit import SIGNUPS_PER_MINUTE, reset_rate_limit
+from rebase_api.ratelimit import RETRY_AFTER_SECONDS, SIGNUPS_PER_MINUTE
 from rebase_core import team_slots
 from rebase_core.audit import utcnow
 from rebase_core.config import Settings, get_settings
@@ -200,7 +200,6 @@ def _login(client: TestClient, sender: RecordingSender, email: str = ADMIN_EMAIL
     assert match
     assert client.post("/api/hub/auth/enter", json={"token": match.group(1)}).status_code == 200
     # Signing in spends two of the five a minute the public writes share.
-    reset_rate_limit()
 
 
 # ---- the public proposal -------------------------------------------------------------------
@@ -311,7 +310,7 @@ def test_public_proposal_is_503_when_the_cap_is_full(client: TestClient, team: S
 
     assert second.status_code == 503
     assert second.json() == {"detail": BUSY}
-    assert second.headers["Retry-After"] == "60"
+    assert second.headers["Retry-After"] == str(RETRY_AFTER_SECONDS)
     assert answers["first"].status_code == 200, answers["first"].text
     assert len(blocking.requests) == 1
     # The ask that found no slot is kept too (0028), beside the proposal that answered.
@@ -527,7 +526,9 @@ def test_public_proposal_is_502_when_claude_is_down(client: TestClient, team: Se
     assert _propose(client).status_code == 200
 
 
-def test_public_proposal_is_throttled(client: TestClient, team: Session) -> None:
+def test_public_proposal_is_throttled(
+    client: TestClient, team: Session, strict_rate_limit: None
+) -> None:
     _talent(team)
     _llm(client, RecordingCall([proposal_response() for _ in range(SIGNUPS_PER_MINUTE)]))
     for _ in range(SIGNUPS_PER_MINUTE):
@@ -536,11 +537,13 @@ def test_public_proposal_is_throttled(client: TestClient, team: Session) -> None
     refused = _propose(client)
 
     assert refused.status_code == 429
-    assert refused.headers["Retry-After"] == "60"
+    assert refused.headers["Retry-After"] == str(RETRY_AFTER_SECONDS)
 
 
 def test_public_read_by_id_answers_a_fresh_public_proposal_and_404_for_the_rest(
-    client: TestClient, team: Session
+    client: TestClient,
+    team: Session,
+    strict_rate_limit: None,
 ) -> None:
     """REB-675: `/hub/team?proposta=<id>` opens on this read, so the window is the one
     «Rigenera» and «Assumi team» already give a proposal, and every refusal is the same
@@ -705,7 +708,6 @@ def test_public_request_refuses_an_old_a_cloud_or_an_empty_proposal(
         [detail] = refused.json()["detail"]
         assert detail["loc"] == ["body", "proposal_id"]
         assert detail["msg"] == reason
-        reset_rate_limit()
 
     bad = client.post(
         "/api/hub/team/requests",
@@ -718,7 +720,10 @@ def test_public_request_refuses_an_old_a_cloud_or_an_empty_proposal(
 
 
 def test_public_request_is_throttled(
-    client: TestClient, team: Session, sender: RecordingSender
+    client: TestClient,
+    team: Session,
+    sender: RecordingSender,
+    strict_rate_limit: None,
 ) -> None:
     proposal_id = _proposal_row(team, [_talent(team)])
     body = {"proposal_id": str(proposal_id), **CONTACTS}
@@ -877,7 +882,6 @@ def _admin_request(
         json={"proposal_id": str(_proposal_row(team, talents)), **CONTACTS},
     )
     assert created.status_code == 201, created.text
-    reset_rate_limit()
     return created.json()["id"], talents
 
 
@@ -933,7 +937,6 @@ def test_an_admin_contacts_the_talents_and_each_answers_once(
         select(TeamRequestTalent).where(TeamRequestTalent.freelancer_id == talents[0])
     )
     assert row is not None and row.risposta == "si" and row.risposta_at is not None
-    reset_rate_limit()
 
     # «Contatta i talenti» is a first time only; «Rimanda» writes to the silent one.
     refused = client.post(f"/api/hub/team/requests/{request_id}/contact")
@@ -1033,7 +1036,9 @@ def test_a_refused_availability_mail_is_logged_by_id_alone(
     assert detail["stato"] == "nuova" and detail["contacted_at"] is None
 
 
-def test_the_answer_post_is_throttled(client: TestClient, team: Session) -> None:
+def test_the_answer_post_is_throttled(
+    client: TestClient, team: Session, strict_rate_limit: None
+) -> None:
     for _ in range(SIGNUPS_PER_MINUTE):
         answered = client.post("/api/hub/team/availability", json={"t": "x", "risposta": "si"})
         assert answered.json() == {"esito": "invalid"}
@@ -1041,4 +1046,4 @@ def test_the_answer_post_is_throttled(client: TestClient, team: Session) -> None
     refused = client.post("/api/hub/team/availability", json={"t": "x", "risposta": "si"})
 
     assert refused.status_code == 429
-    assert refused.headers["Retry-After"] == "60"
+    assert refused.headers["Retry-After"] == str(RETRY_AFTER_SECONDS)

@@ -6,7 +6,8 @@ from uuid import UUID
 import pytest
 from fakes_cards import card_response
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine, text
+from hub_tables import wipe_hub
+from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
 from rebase_api.deps import (
@@ -21,6 +22,7 @@ from rebase_api.deps import (
     get_team_llm,
 )
 from rebase_api.main import create_app
+from rebase_api.ratelimit import _limiter as _public_limiter
 from rebase_api.ratelimit import reset_rate_limit
 from rebase_core.config import Settings, get_settings
 from rebase_core.db import create_engine_from_settings, session_factory
@@ -45,9 +47,32 @@ def api_session(api_engine: Engine) -> Iterator[Session]:
         yield session
     finally:
         session.rollback()
-        session.execute(text("DELETE FROM signups"))
-        session.commit()
+        wipe_hub(session)
         session.close()
+
+
+# Far above any test's number of public requests: the limiter is the floor under nginx, and
+# most tests are not about it.
+ROOMY_LIMIT = 10_000
+
+
+@pytest.fixture
+def strict_rate_limit() -> None:
+    """Asked for by name by the test of a 429: it runs against the real limit
+    (`SIGNUPS_PER_MINUTE` a minute) instead of the roomy one every other test gets."""
+
+
+@pytest.fixture(autouse=True)
+def fresh_process_state(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The limiters count requests per process, so one test's posts would otherwise be spent
+    out of the next test's budget, and a test would pass or fail by its place in the run.
+    Every test starts with the public limiter and the team builder's per-client share empty,
+    and a test of a 429 asks for `strict_rate_limit`; the others get a roomy limit, so a
+    test that signs in four times beside a wizard's request is not about the speed bump."""
+    reset_rate_limit()
+    reset_proposal_slots()
+    if "strict_rate_limit" not in request.fixturenames:
+        monkeypatch.setattr(_public_limiter, "limit", ROOMY_LIMIT)
 
 
 @pytest.fixture
@@ -55,15 +80,7 @@ def client(api_session: Session) -> Iterator[TestClient]:
     app = create_app()
     app.dependency_overrides[get_session] = lambda: api_session
     # Declared, never inherited from a developer's `.env`: no pixel unless a test says so.
-    # The public mail budget is counted on the day's `magic_link_tokens` rows, which this
-    # suite's shared database keeps across tests: a roomy one here, and the tests of the
-    # breaker itself set their own.
-    app.dependency_overrides[get_settings] = lambda: Settings(  # type: ignore[call-arg]
-        _env_file=None,
-        resend_daily_quota=100_000,
-        campaign_daily_reserve=50_000,
-        public_mail_daily_budget=50_000,
-    )
+    app.dependency_overrides[get_settings] = lambda: Settings(_env_file=None)  # type: ignore[call-arg]
     # No model configured unless a test hands one (`llm` here, `_llm` in the team tests):
     # the real dependencies read «Modelli AI» through the default database URL.
     app.dependency_overrides[get_card_llm] = lambda: None
@@ -74,11 +91,6 @@ def client(api_session: Session) -> Iterator[TestClient]:
     # test asks to see it (`crm_filings`).
     app.dependency_overrides[get_crm_filing] = lambda: lambda company_id: None
     app.dependency_overrides[get_crm_llm] = lambda: lambda: None
-    # The limiter counts requests per process, so one test's posts would otherwise be
-    # spent out of the next test's budget.
-    reset_rate_limit()
-    # The same for the team builder's per-client daily share (`team_slots`).
-    reset_proposal_slots()
     with TestClient(app, base_url="https://testserver") as test_client:
         yield test_client
 

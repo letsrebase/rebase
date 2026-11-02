@@ -10,7 +10,6 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from rebase_api.deps import get_sender
-from rebase_api.ratelimit import reset_rate_limit
 from rebase_core.mail import RecordingSender
 from rebase_core.models import Referral, User
 
@@ -195,7 +194,6 @@ def test_a_squatted_address_is_pending_until_its_owner_logs_in_and_the_route_nev
     _enter(client, sender, "accomplice@community.it")
     code = client.get("/api/hub/me/referral").json()["code"]
     client.cookies.clear()
-    reset_rate_limit()  # the four public posts below are one stranger's, not the member's
 
     fresh = _apply(client, "prospect@acme.it", code)
     attributed_again = _apply(client, "prospect@acme.it", code)
@@ -225,7 +223,6 @@ def test_a_company_request_answers_the_same_whether_or_not_its_address_is_attrib
     _enter(client, sender, "accomplice@community.it")
     code = client.get("/api/hub/me/referral").json()["code"]
     client.cookies.clear()
-    reset_rate_limit()
     body = {
         "nome_azienda": "ACME Srl",
         "referente_nome": "Wile",
@@ -309,7 +306,6 @@ def test_a_cold_signup_with_rif_ends_in_a_pending_ledger_row_once_an_admin_draft
     _enter(client, sender, "mario@community.it")
     code = client.get("/api/hub/me/referral").json()["code"]
     client.cookies.clear()
-    reset_rate_limit()
 
     posted = client.post(
         "/api/community/signups",

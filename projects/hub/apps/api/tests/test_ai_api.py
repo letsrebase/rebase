@@ -12,6 +12,7 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
+from api_responses import ok
 from fakes_cards import card_response, text_pdf
 from fastapi.testclient import TestClient
 from pydantic_ai.messages import ModelResponse, TextPart
@@ -233,7 +234,7 @@ def test_get_never_contains_the_key(client: TestClient, admin: User) -> None:
 def test_the_audit_says_replaced_never_the_key(
     client: TestClient, admin: User, api_session: Session
 ) -> None:
-    client.put(f"{BASE}/providers/anthropic/key", json={"key": SECRET})
+    ok(client.put(f"{BASE}/providers/anthropic/key", json={"key": SECRET}))
     payloads = [json.dumps(a.payload) for a in api_session.scalars(select(AdminAction))]
     assert any("chiave sostituita" in p for p in payloads)
     assert not any(SECRET in p for p in payloads)

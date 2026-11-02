@@ -9,12 +9,13 @@ from collections.abc import Iterator
 
 import pytest
 from campaign_api_flow import tidy  # noqa: F401  (fixture)
+from campaign_fixtures import RESEND_TEST_SECRET
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from rebase_core.config import Settings, get_settings
 
-SECRET = "whsec_" + base64.b64encode(b"s" * 24).decode()
+SECRET = RESEND_TEST_SECRET
 
 
 @pytest.fixture

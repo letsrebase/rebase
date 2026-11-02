@@ -8,6 +8,7 @@ from typing import Any
 from uuid import UUID
 
 import pytest
+from api_responses import ok
 from fakes_cards import CARD, PERSONA, card_response, text_pdf
 from fastapi.testclient import TestClient
 from sqlalchemy import select, text
@@ -375,9 +376,11 @@ def test_admins_list_stays_oldest_first_with_no_term(
 ) -> None:
     """ORB-123: REB-313's cursor keeps the admins list reading as a history."""
     _login(client, sender)
-    client.post(
-        "/api/hub/admins/promote",
-        json={"email": "grace@rebase.it", "nome": "Grace", "cognome": "Hopper"},
+    ok(
+        client.post(
+            "/api/hub/admins/promote",
+            json={"email": "grace@rebase.it", "nome": "Grace", "cognome": "Hopper"},
+        )
     )
     listed = client.get("/api/hub/admins").json()["items"]
     assert [row["email"] for row in listed] == [ADMIN_EMAIL, "grace@rebase.it"]

@@ -12,7 +12,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from rebase_api.deps import get_card_llm, get_sender, get_session_opener, get_tracker
-from rebase_api.ratelimit import SIGNUPS_PER_MINUTE
+from rebase_api.ratelimit import RETRY_AFTER_SECONDS, SIGNUPS_PER_MINUTE
 from rebase_core.analytics import APPLICATION_COMPLETED, Tracker
 from rebase_core.config import Settings, get_settings
 from rebase_core.llm import LlmRequest, LlmResponse, RecordingCall
@@ -331,7 +331,9 @@ def test_a_company_request_is_accepted_and_the_answer_says_nothing_else(
 
 
 def test_the_three_public_writes_share_one_budget_per_client(
-    client: TestClient, api_session: Session
+    client: TestClient,
+    api_session: Session,
+    strict_rate_limit: None,
 ) -> None:
     _clean(api_session)
     body = {
@@ -358,11 +360,13 @@ def test_the_three_public_writes_share_one_budget_per_client(
     )
     refused = client.post("/api/hub/companies", json=body)
     assert refused.status_code == 429
-    assert refused.headers["Retry-After"] == "60"
+    assert refused.headers["Retry-After"] == str(RETRY_AFTER_SECONDS)
 
 
 def test_one_ipv6_range_shares_one_budget_however_many_addresses_it_owns(
-    client: TestClient, api_session: Session
+    client: TestClient,
+    api_session: Session,
+    strict_rate_limit: None,
 ) -> None:
     """A /64 is one subscriber's whole allocation: keyed on the full address it would hand a
     script a fresh budget per request."""

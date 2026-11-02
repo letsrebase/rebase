@@ -19,7 +19,6 @@ from sqlalchemy import select, text, update
 from sqlalchemy.orm import Session
 
 from rebase_api.deps import get_clock, get_team_llm
-from rebase_api.ratelimit import reset_rate_limit
 from rebase_core.cloud import TalentCloudService
 from rebase_core.companies import CompanyService
 from rebase_core.company_schemas import CompanyCreate
@@ -91,12 +90,10 @@ def _clock(client: TestClient, now: datetime) -> None:
 
 
 def _login(client: TestClient, sender: RecordingSender, email: str = REFERENTE) -> None:
-    reset_rate_limit()
     assert client.post("/api/hub/auth/link", json={"email": email}).status_code == 202
     match = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
     assert match
     assert client.post("/api/hub/auth/enter", json={"token": match.group(1)}).status_code == 200
-    reset_rate_limit()
     sender.sent.clear()
 
 
@@ -462,7 +459,6 @@ def _while_one_holds_the_slot(
     finally:
         blocking.release.set()
         thread.join(10)
-    reset_rate_limit()
     return answers["first"], refused, blocking
 
 
