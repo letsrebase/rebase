@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLegalEntityScope } from '@/lib/legalEntity'
 import { api, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
+import { asBody } from '@/lib/formValues'
 import { queryKeys } from '@/lib/query'
 import { downloadDocument } from '@/features/documents/queries'
 
@@ -103,7 +104,7 @@ export function useLogTime() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (body: Record<string, unknown>) =>
-      unwrap(api.POST('/api/time-entries', { body: body as unknown as TimeEntryCreateBody })),
+      unwrap(api.POST('/api/time-entries', { body: asBody<TimeEntryCreateBody>(body) })),
     onSuccess: (entry) => invalidateAfterWrite(queryClient, entry.deal_id),
   })
 }
@@ -115,7 +116,7 @@ export function useUpdateTimeEntry(entryId: string) {
       unwrap(
         api.PATCH('/api/time-entries/{entry_id}', {
           params: { path: { entry_id: entryId } },
-          body: body as unknown as TimeEntryUpdateBody,
+          body: asBody<TimeEntryUpdateBody>(body),
         }),
       ),
     onSuccess: (entry) => invalidateAfterWrite(queryClient, entry.deal_id),
@@ -140,7 +141,7 @@ export function useUpdateHours() {
       unwrap(
         api.PATCH('/api/time-entries/{entry_id}', {
           params: { path: { entry_id: entryId } },
-          body: { ore } as unknown as TimeEntryUpdateBody,
+          body: asBody<TimeEntryUpdateBody>({ ore }),
         }),
       ),
     onSuccess: (entry) => invalidateAfterWrite(queryClient, entry.deal_id),
@@ -161,13 +162,12 @@ export function useDeleteTimeEntry() {
 }
 
 /**
- * The XLSX only. A plain URL, not a fetch: the browser downloads the file itself, so
- * the bytes never pass through JavaScript. Same-origin, so the session cookie travels
- * with it and no token has to be put in a query string.
+ * The API path of the XLSX only, to download through `DownloadButton` (the space's prefix
+ * and the session refresh come with `fetchWithRefresh`).
  *
- * The PDF deliberately has no URL of its own here -- see `useRenderTimeReportPdf`.
+ * The PDF deliberately has no path of its own here -- see `useRenderTimeReportPdf`.
  */
-export function timeReportXlsxUrl(dealId: string, mese: string): string {
+export function timeReportXlsxPath(dealId: string, mese: string): string {
   const query = new URLSearchParams({ mese })
   return `/api/deals/${dealId}/time-report?${query.toString()}`
 }

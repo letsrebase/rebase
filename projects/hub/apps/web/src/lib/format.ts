@@ -1,6 +1,5 @@
 import type { Action, PigroStato } from './api'
 
-const euro = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', useGrouping: 'always' })
 const day = new Intl.DateTimeFormat('it-IT', { day: 'numeric', month: 'short', year: 'numeric' })
 const moment = new Intl.DateTimeFormat('it-IT', {
   day: 'numeric',
@@ -9,11 +8,6 @@ const moment = new Intl.DateTimeFormat('it-IT', {
   hour: '2-digit',
   minute: '2-digit',
 })
-
-/** `"450.00"` from the API, as `450,00 €`. Parsed for display only; nothing here is summed. */
-export function formatEuro(value: string): string {
-  return euro.format(Number(value))
-}
 
 export function formatDate(value: string): string {
   return day.format(new Date(value))
@@ -271,7 +265,7 @@ export function memberDocumentStateLabel(kind: 'quadro' | 'lettera', stato: stri
   return labels[stato] ?? stato
 }
 
-// A model call costs a fraction of a cent: `formatEuro`'s two places would show it as 0,00 €.
+// A model call costs a fraction of a cent: `formatMoney`'s two places would show it as 0,00 €.
 const smallEuro = new Intl.NumberFormat('it-IT', {
   style: 'currency',
   currency: 'EUR',
@@ -281,5 +275,5 @@ const smallEuro = new Intl.NumberFormat('it-IT', {
 
 /** `"0.012300"` from the API as `0,0123 €`: what a call or a regeneration cost. */
 export function formatSmallEuro(value: string): string {
-  return smallEuro.format(Number(value))
+  return smallEuro.format(value as `${number}`)
 }

@@ -29,6 +29,12 @@ const FREELANCER: Freelancer = {
   ultimo_accesso: null,
   deleted_at: null,
   vetted_at: null,
+  cv_mime: 'application/pdf',
+  updated_at: '2026-09-10T10:00:00Z',
+  iscrizione_utm: null,
+  ultimi_accessi: [],
+  ultimi_download_guida: [],
+  pigro_slug: null,
 }
 
 const COMPANY: Company = {
@@ -53,6 +59,7 @@ const COMPANY: Company = {
   origine: null,
   utm_source: null,
   created_at: '2026-09-10T10:00:00Z',
+  updated_at: '2026-09-10T10:00:00Z',
   note: [],
   deleted_at: null,
   talent_cloud_grant: null,

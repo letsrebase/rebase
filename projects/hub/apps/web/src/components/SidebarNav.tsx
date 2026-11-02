@@ -17,7 +17,7 @@ import {
   UserRound,
   Users,
 } from 'lucide-react'
-import { BrandMark } from '@/components/BrandMark'
+import { BrandMark } from '@rebase/ui/brand-mark'
 import { Button } from '@rebase/ui/button'
 import { cn } from '@rebase/ui/cn'
 import type { Me } from '@/lib/api'

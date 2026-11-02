@@ -30,7 +30,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@reba
 import { useCanWrite } from '@/lib/auth'
 import { DashboardPage } from '@/features/dashboard/DashboardPage'
 import { ConsentOutcome } from '@/components/ConsentOutcome'
-import { messaggioEsito, riprovaEsito } from '@/features/gmail/esito'
+import { consentOutcome } from '@/features/consent/outcome'
 import type { DashboardSearch, HomeSearch } from '@/features/dashboard/search'
 import { RecordDayShortcut } from '@/features/days/RecordDayShortcut'
 import { PendingProposalsNotice } from '@/features/proposals/PendingProposalsNotice'
@@ -63,11 +63,7 @@ export function HomePage({
           {/* The consent flow comes back here only if the API read the space as empty
               and this page did not (a read that failed counts as work): the outcome is
               still the person's to read. */}
-          <ConsentOutcome
-            messaggio={messaggioEsito(search.esito)}
-            riprova={riprovaEsito(search.esito)}
-            className="mb-6"
-          />
+          <ConsentOutcome {...consentOutcome('gmail', search.esito)} className="mb-6" />
           <RecordDayShortcut />
           <PendingProposalsNotice />
           {state.loading ? null : <CompleteSpaceCard state={state} canWrite={canWrite} />}

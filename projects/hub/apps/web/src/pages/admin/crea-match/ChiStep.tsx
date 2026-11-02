@@ -1,9 +1,9 @@
-import { useInfiniteQuery } from '@tanstack/react-query'
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { Button } from '@rebase/ui/button'
 import { cn } from '@rebase/ui/cn'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
+import { SEARCH_DEBOUNCE_MS, pageItems, useCursorList, useDebounce } from '@/lib/adminList'
 import { admin, type Company, type FiscalData, type Regime } from '@/lib/api'
 import {
   REGIME_OPTIONS,
@@ -15,20 +15,11 @@ import {
   type FiscalDraft,
 } from '@/lib/contracts'
 import { formatDate } from '@/lib/format'
+import { keys } from '@/lib/query-keys'
 import { FiscalFields } from '../contratti/Fiscal'
 import { StepFooter } from './StepFooter'
 
-const SEARCH_DEBOUNCE_MS = 300
 const COMPANIES_PAGE = 50
-
-function useDebounce<T>(value: T, delayMs: number): T {
-  const [debounced, setDebounced] = useState(value)
-  useEffect(() => {
-    const timer = setTimeout(() => setDebounced(value), delayMs)
-    return () => clearTimeout(timer)
-  }, [value, delayMs])
-  return debounced
-}
 
 /** «Modifica» and «Cambia richiesta» take themselves off the page when clicked: the
  *  focus goes to what replaced them, never back to the top of the page. */
@@ -61,14 +52,11 @@ function CompanyList({
   const term = useDebounce(q.trim(), SEARCH_DEBOUNCE_MS)
   // A page at a time, through the same cursor «Aziende» walks: an older request past the
   // first page stays one «Mostra altre» away (Greptile 4092036042).
-  const companies = useInfiniteQuery({
-    queryKey: ['companies', 'match', term],
-    queryFn: ({ pageParam }: { pageParam: string | undefined }) =>
-      admin.companies({ q: term || undefined, limit: COMPANIES_PAGE, cursor: pageParam }),
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
+  const { list: companies, items } = useCursorList({
+    queryKey: keys.companiesForMatch(term),
+    fetchPage: (cursor) => admin.companies({ q: term || undefined, limit: COMPANIES_PAGE, cursor }),
+    itemsOf: pageItems,
   })
-  const items = companies.data?.pages.flatMap((page) => page.items) ?? []
   let list: ReactNode
   if (companies.isError) list = <p className="text-sm text-destructive">Non riesco a leggere le richieste.</p>
   else if (companies.isPending) list = <p className="text-sm text-muted-foreground">Caricamento…</p>

@@ -4,9 +4,8 @@ import { useCanWrite } from '@/lib/auth'
  * The sentence a Google consent flow came back with (`?esito=`), on whichever page the
  * callback landed: Impostazioni → Gmail or → Drive (which a collaboratore opens too since
  * REB-457; a readonly person reads the Drive one above the settings gate), the Home,
- * «Primi passi». The sentence
- * is looked up by the caller in its product's fixed table (`features/gmail/esito.ts`,
- * `features/drive/esito.ts`), never rendered from the address bar.
+ * «Primi passi». The sentence is looked up by the caller in the one fixed table
+ * (`consentOutcome`, `features/consent/outcome.ts`), never rendered from the address bar.
  *
  * `riprova` is where «Riprova» leads when the outcome asks for one: today only
  * `sessione`, a consent that came back after the session had run out (REB-446), where

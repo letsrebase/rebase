@@ -1,4 +1,5 @@
 import { Checkbox } from '@rebase/ui/checkbox'
+import { formatMoney as formatEuro } from '@rebase/ui/format'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import {
@@ -21,6 +22,10 @@ interface Props {
 }
 
 const EMPTY = '—'
+
+// Hoisted: `renderFieldValue` runs once per cell, and building a formatter per call is the
+// expensive part of `Intl`.
+const groupedNumber = new Intl.NumberFormat('it-IT', { useGrouping: 'always' })
 
 /** The value carried by the `select` control's "back to empty" entry.
  *
@@ -230,13 +235,9 @@ export function renderFieldValue(field: FieldDefinition, value: unknown): string
     // cutover sits). Every Italian reader still expects "1.234,56 €" starting at four
     // digits, so grouping is forced on rather than left to that cutover.
     case 'currency':
-      return new Intl.NumberFormat('it-IT', {
-        style: 'currency',
-        currency: 'EUR',
-        useGrouping: 'always',
-      }).format(Number(value))
+      return formatEuro(String(value))
     case 'number':
-      return new Intl.NumberFormat('it-IT', { useGrouping: 'always' }).format(Number(value))
+      return groupedNumber.format(Number(value))
     case 'date':
       return formatIsoDateItalian(String(value))
     case 'multiselect':

@@ -30,11 +30,10 @@ test('a dead API reads as a failure, not an empty list, and the app recovers onc
   await killApi()
 
   try {
-    // A brand-new query, not a reload: reloading the document would also re-run
-    // `GET /api/auth/me`, and `AuthProvider`'s own try/catch (lib/auth.tsx)
-    // treats *any* failure there -- including the network error this test just
-    // caused -- as "not authenticated", bouncing to /login and masking the
-    // thing actually under test. Typing into the search box changes
+    // A brand-new query, not a reload: reloading the document would re-run
+    // `GET /api/auth/me` against the dead API and replace the page with the
+    // session-unknown screen, masking the thing actually under test. Typing into the
+    // search box changes
     // `useCustomers`' own query key instead, which has never been fetched
     // before and so has no stale-but-cached data to fall back on.
     await page.getByPlaceholder(/cerca per ragione sociale/i).fill('la richiesta deve fallire')

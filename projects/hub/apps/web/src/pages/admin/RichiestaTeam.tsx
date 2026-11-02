@@ -24,9 +24,10 @@ import {
   formatDate,
   formatDateTime,
   formatDaysPerWeek,
-  formatEuro,
 } from '@/lib/format'
-import { Empty, Header, Row } from './lists'
+import { formatMoney } from '@rebase/ui/format'
+import { keys } from '@/lib/query-keys'
+import { Empty, Header, Row } from './list-kit'
 
 /** Core's `RIASSUNTO_MAX_LENGTH` and `PROGETTO_MAX_LENGTH` (the note's ceiling). */
 const RIASSUNTO_MAX = 1500
@@ -93,7 +94,7 @@ function moves(request: TeamRequest): Move[] {
  */
 export function AdminRichiestaTeam() {
   const { id } = useParams({ from: '/signedIn/admin/team/$id' })
-  const row = useQuery({ queryKey: ['team-request', id], queryFn: () => admin.teamRequest(id) })
+  const row = useQuery({ queryKey: keys.teamRequest(id), queryFn: () => admin.teamRequest(id) })
   if (row.isError) {
     return (
       <Empty>
@@ -112,7 +113,7 @@ function RequestPage({ request }: { request: TeamRequest }) {
   const key = ['team-request', request.id] as const
   function apply(updated: TeamRequest) {
     client.setQueryData<TeamRequest>(key, updated)
-    void client.invalidateQueries({ queryKey: ['team-requests'] })
+    void client.invalidateQueries({ queryKey: keys.teamRequests() })
   }
   const members = new Map<string, AdminTeamMember>(
     (request.proposal?.team ?? []).map((member) => [member.freelancer_id, member]),
@@ -216,7 +217,7 @@ function TalentRow({ talent, member }: { talent: TeamRequestTalent; member: Admi
           <p className="text-xs text-muted-foreground">{formatDaysPerWeek(member.giorni_settimana)}</p>
         ) : null}
       </TableCell>
-      <TableCell>{talent.tariffa_giornaliera === null ? '—' : formatEuro(talent.tariffa_giornaliera)}</TableCell>
+      <TableCell>{talent.tariffa_giornaliera === null ? '—' : formatMoney(talent.tariffa_giornaliera)}</TableCell>
       <TableCell>{talent.fascia ? bandLabel(talent.fascia) : '—'}</TableCell>
       <TableCell>{answer(talent)}</TableCell>
     </TableRow>

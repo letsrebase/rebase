@@ -1,8 +1,9 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, fetchWithRefresh, toProblem, unwrap } from '@/lib/api'
+import { api, unwrap } from '@/lib/api'
+import { downloadFromApi } from '@/lib/download'
+import { fetchAllPages } from '@/lib/fetchAllPages'
 import { useLegalEntity } from '@/lib/legalEntity'
 import { queryKeys } from '@/lib/query'
-import type { Contract } from '@/features/contracts/queries'
 import type { WorkUnitCreateBody, WorkUnitRow, WorkUnitStato } from './labels'
 
 export interface DaysListParams {
@@ -70,19 +71,15 @@ export function useDayContracts() {
   return useQuery({
     queryKey: queryKeys.contracts({ for: 'days', azienda: selected }),
     queryFn: async () => {
-      const items: Contract[] = []
-      let cursor: string | undefined
-      do {
-        const page = await unwrap(
+      const { items } = await fetchAllPages((cursor) =>
+        unwrap(
           api.GET('/api/contracts', {
             params: {
               query: { azienda_id: selected ?? undefined, limit: 200, sort: 'titolo', cursor },
             },
           }),
-        )
-        items.push(...page.items)
-        cursor = page.next_cursor ?? undefined
-      } while (cursor !== undefined)
+        ),
+      )
       return items.filter((contract) => contract.stato !== 'terminato' && contract.stato !== 'scaduto')
     },
   })
@@ -177,11 +174,11 @@ export function useApprovalCandidates(contractId: string, openedFor: readonly st
 function useInvalidateDays() {
   const queryClient = useQueryClient()
   return () => {
-    void queryClient.invalidateQueries({ queryKey: ['work-units'] })
-    void queryClient.invalidateQueries({ queryKey: ['work-unit'] })
-    void queryClient.invalidateQueries({ queryKey: ['calendario'] })
+    void queryClient.invalidateQueries({ queryKey: queryKeys.workUnitsAll })
+    void queryClient.invalidateQueries({ queryKey: queryKeys.workUnitAll })
+    void queryClient.invalidateQueries({ queryKey: queryKeys.calendarAll })
     // The dashboard's «Giornate» tab reads the same ledger (REB-756).
-    void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    void queryClient.invalidateQueries({ queryKey: queryKeys.dashboardAll })
   }
 }
 
@@ -213,33 +210,8 @@ export function useMoveDay(workUnitId: string) {
   })
 }
 
-/**
- * Downloads the dispute bundle of a day (REB-759) through `fetchWithRefresh`, as a document is:
- * a bare link would fail with «Autenticazione richiesta» once the access cookie has expired
- * while a valid refresh cookie sits in the jar. The server's own `Content-Disposition` names
- * the file; this hands the blob to the browser and releases the object URL.
- */
-export async function downloadDisputeBundle(workUnitId: string): Promise<void> {
-  const response = await fetchWithRefresh(
-    `/api/work-units/${encodeURIComponent(workUnitId)}/dispute-bundle`,
-  )
-  if (!response.ok) {
-    const payload: unknown = await response.json().catch(() => null)
-    throw toProblem(payload, response.status)
-  }
-  const url = URL.createObjectURL(await response.blob())
-  const anchor = document.createElement('a')
-  anchor.href = url
-  // A blob: URL carries no Content-Disposition, so the server's own file name is read from the
-  // header (RFC 5987 `filename*`, percent-encoded) and set here.
-  const encodedName = /filename\*=UTF-8''([^;]+)/.exec(
-    response.headers.get('Content-Disposition') ?? '',
-  )?.[1]
-  anchor.download = encodedName === undefined ? '' : decodeURIComponent(encodedName)
-  // Snyk Code javascript/DOMXSS here is a false positive: the href is a blob: URL made just
-  // above, never a script URL.
-  document.body.appendChild(anchor)
-  anchor.click()
-  anchor.remove()
-  URL.revokeObjectURL(url)
+/** Downloads the dispute bundle of a day (REB-759); the server's own `Content-Disposition`
+ *  names the file. */
+export function downloadDisputeBundle(workUnitId: string): Promise<void> {
+  return downloadFromApi(`/api/work-units/${encodeURIComponent(workUnitId)}/dispute-bundle`)
 }

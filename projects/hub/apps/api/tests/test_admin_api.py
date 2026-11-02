@@ -73,6 +73,7 @@ def test_without_the_cookie_every_admin_route_is_a_401(client: TestClient, admin
         "/api/hub/freelancers",
         "/api/hub/companies",
         "/api/hub/signups",
+        f"/api/hub/signups/{MISSING}",
         "/api/hub/talent",
         "/api/hub/admins",
         "/api/hub/pigro/instances",
@@ -898,6 +899,33 @@ def test_without_the_cookie_the_card_from_a_signup_is_a_401(
 ) -> None:
     response = client.post(f"/api/hub/signups/{MISSING}/card", json=DRAFT)
     assert response.status_code == 401
+
+
+def test_an_admin_reads_one_signup_as_the_row_the_talent_list_shows(
+    client: TestClient, admin: None, sender: RecordingSender
+) -> None:
+    signup_id = _signup(client, sender)
+
+    found = client.get(f"/api/hub/signups/{signup_id}")
+
+    assert found.status_code == 200, found.text
+    body = found.json()
+    assert body["id"] == signup_id
+    assert (body["nome"], body["cognome"], body["email"]) == ("Ada", "Lovelace", "ada@studio.it")
+    assert (body["stato"], body["origine"]) == ("lead", "form")
+    assert client.get(f"/api/hub/signups/{MISSING}").status_code == 404
+
+
+def test_a_signup_that_already_has_a_card_is_no_lead_any_more(
+    client: TestClient, admin: None, sender: RecordingSender
+) -> None:
+    signup_id = _signup(client, sender)
+    assert client.get(f"/api/hub/signups/{signup_id}").status_code == 200
+    created = client.post(f"/api/hub/signups/{signup_id}/card", json=DRAFT)
+    assert created.status_code == 201, created.text
+
+    # The list shows this person as the card, so the lead's page has nothing to open.
+    assert client.get(f"/api/hub/signups/{signup_id}").status_code == 404
 
 
 def test_an_admin_writes_an_incomplete_card_from_a_signup_and_the_list_points_at_it(

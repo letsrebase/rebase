@@ -66,6 +66,12 @@ describe('«Contratti» in the member area (REB-392)', () => {
     expect(within(letter).queryByRole('link')).toBeNull()
   })
 
+  it('offers no signing link for an address that is not a web address', async () => {
+    mount({ quadro: { ...QUADRO, signing_url: 'javascript:alert(1)' }, quadri_precedenti: [], lettere: [] })
+    await screen.findByText('Da firmare')
+    expect(screen.queryByRole('link', { name: /Firma/ })).toBeNull()
+  })
+
   it('agrees in gender with the document: a letter is «Firmata», the framework agreement «Firmato»', async () => {
     mount({
       quadro: { ...QUADRO, stato: 'firmato', signing_url: null, ha_pdf_firmato: true },

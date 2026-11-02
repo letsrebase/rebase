@@ -9,41 +9,54 @@ vi.mock('posthog-js', () => ({
     get_distinct_id: vi.fn(() => 'anon-1'),
     reset: vi.fn(),
     setInternalOrTestUser: vi.fn(),
+    opt_in_capturing: vi.fn(),
+    opt_out_capturing: vi.fn(),
+    has_opted_out_capturing: vi.fn(() => false),
   },
 }))
 
-import posthog, { type CaptureResult, type CapturedNetworkRequest } from 'posthog-js'
-import {
-  __resetAnalyticsForTests,
-  analyticsActive,
-  capture,
-  distinctId,
-  identifyGroup,
-  identifyUser,
-  initAnalytics,
-  resetUser,
-} from './browser'
+import type posthogModule from 'posthog-js'
+import type { CaptureResult, CapturedNetworkRequest } from 'posthog-js'
 import { POSTHOG_HOST, POSTHOG_KEY } from './posthog'
 
-const init = vi.mocked(posthog.init)
+// A fresh copy of the module (and of its mocked SDK) per test: the module keeps its
+// decision in module state, and the SDK arrives through a dynamic import.
+let a: typeof import('./browser')
+let posthog: typeof posthogModule
+let init: ReturnType<typeof vi.mocked<typeof posthogModule.init>>
 
-beforeEach(() => {
-  vi.clearAllMocks()
-  __resetAnalyticsForTests()
+/** The SDK chunk has landed and the queued calls have been replayed. */
+const settled = () => vi.dynamicImportSettled()
+
+function stubBrowser(consent: string | null, legacy: string | null = null) {
+  vi.stubGlobal('window', {
+    location: { hostname: 'letsrebase.com' },
+    localStorage: {
+      getItem: (key: string) =>
+        key === 'rebase.consent' ? consent : key === 'orbiters.consent' ? legacy : null,
+    },
+  })
+}
+
+beforeEach(async () => {
+  vi.resetModules()
+  a = await import('./browser')
+  posthog = (await import('posthog-js')).default
+  init = vi.mocked(posthog.init)
 })
 
 afterEach(() => {
-  __resetAnalyticsForTests()
+  vi.unstubAllGlobals()
 })
 
 describe('on a developer machine', () => {
-  it('initialises nothing and every call is a no-op', () => {
-    expect(initAnalytics({ hostname: 'localhost' })).toBe(false)
-    expect(analyticsActive()).toBe(false)
-    identifyUser('u1', { email: 'a@b.it' })
-    identifyGroup('spazio', 'root')
-    capture('cliente_creato')
-    resetUser()
+  it('initialises nothing and every call is a no-op', async () => {
+    expect(a.initAnalytics({ hostname: 'localhost' })).toBe(false)
+    await settled()
+    a.identifyUser('u1', { email: 'a@b.it' })
+    a.identifyGroup('spazio', 'root')
+    a.capture('cliente_creato')
+    a.resetUser()
     expect(init).not.toHaveBeenCalled()
     expect(posthog.identify).not.toHaveBeenCalled()
     expect(posthog.group).not.toHaveBeenCalled()
@@ -53,19 +66,20 @@ describe('on a developer machine', () => {
 })
 
 describe('the distinct id', () => {
-  it('is nothing where nothing is measured, and the SDK\'s own id everywhere else', () => {
-    expect(initAnalytics({ hostname: 'localhost' })).toBe(false)
-    expect(distinctId()).toBeNull()
-    __resetAnalyticsForTests()
-    initAnalytics({ hostname: 'letsrebase.com' })
-    expect(distinctId()).toBe('anon-1')
+  it('is nothing where nothing is measured, and the SDK\'s own id everywhere else', async () => {
+    expect(a.initAnalytics({ hostname: 'localhost' })).toBe(false)
+    await settled()
+    expect(a.distinctId()).toBeNull()
+    a.initAnalytics({ hostname: 'letsrebase.com' })
+    await settled()
+    expect(a.distinctId()).toBe('anon-1')
   })
 })
 
 describe('on a real host', () => {
-  it('initialises the shared project with the shared policy', () => {
-    expect(initAnalytics({ hostname: 'pigro.letsrebase.com' })).toBe(true)
-    expect(analyticsActive()).toBe(true)
+  it('initialises the shared project with the shared policy', async () => {
+    expect(a.initAnalytics({ hostname: 'pigro.letsrebase.com' })).toBe(true)
+    await settled()
     expect(init).toHaveBeenCalledTimes(1)
     const [key, config] = init.mock.calls[0] ?? []
     expect(key).toBe(POSTHOG_KEY)
@@ -83,24 +97,28 @@ describe('on a real host', () => {
     expect(posthog.setInternalOrTestUser).not.toHaveBeenCalled()
   })
 
-  it('marks the preview stacks as internal, so their events exist and can be filtered out', () => {
+  it('marks the preview stacks as internal, so their events exist and can be filtered out', async () => {
     // As a call, not as the `internal_or_test_user_hostname` option: the SDK's defaults
     // overwrote that option live (browser.ts says where and when).
-    expect(initAnalytics({ hostname: 'preview.pigro.letsrebase.com' })).toBe(true)
+    expect(a.initAnalytics({ hostname: 'preview.pigro.letsrebase.com' })).toBe(true)
+    await settled()
     expect(posthog.setInternalOrTestUser).toHaveBeenCalledTimes(1)
     expect(init.mock.calls[0]?.[1]).not.toHaveProperty('internal_or_test_user_hostname')
   })
 
-  it('masks every text node, every replay attribute and every autocapture property only when asked (REB-274)', () => {
-    initAnalytics({ hostname: 'pigro.letsrebase.com', maskText: true })
+  it('masks every text node, every replay attribute and every autocapture property only when asked (REB-274)', async () => {
+    a.initAnalytics({ hostname: 'pigro.letsrebase.com', maskText: true })
+    await settled()
     const config = init.mock.calls[0]?.[1]
     expect(config?.session_recording?.maskTextSelector).toBe('*')
     expect(config?.session_recording?.maskAllElementAttributes).toBe(true)
     expect(config?.mask_all_text).toBe(true)
     expect(config?.mask_all_element_attributes).toBe(true)
-    vi.clearAllMocks()
-    __resetAnalyticsForTests()
-    initAnalytics({ hostname: 'letsrebase.com' })
+  })
+
+  it('leaves the text readable when not asked', async () => {
+    a.initAnalytics({ hostname: 'letsrebase.com' })
+    await settled()
     const withoutMaskText = init.mock.calls[0]?.[1]
     expect(withoutMaskText?.session_recording).not.toHaveProperty('maskTextSelector')
     expect(withoutMaskText?.session_recording).not.toHaveProperty('maskAllElementAttributes')
@@ -108,22 +126,46 @@ describe('on a real host', () => {
     expect(withoutMaskText).not.toHaveProperty('mask_all_element_attributes')
   })
 
-  it('stays silent, and lets the page render, when the SDK throws on init', () => {
+  it('stays silent, and lets the page render, when the SDK throws on init', async () => {
     init.mockImplementationOnce(() => {
       throw new Error('storage is not available')
     })
-    expect(initAnalytics({ hostname: 'pigro.letsrebase.com' })).toBe(false)
-    expect(analyticsActive()).toBe(false)
-    capture('cliente_creato')
+    a.initAnalytics({ hostname: 'pigro.letsrebase.com' })
+    a.capture('cliente_creato')
+    await settled()
+    expect(posthog.capture).not.toHaveBeenCalled()
+    a.capture('cliente_creato')
     expect(posthog.capture).not.toHaveBeenCalled()
   })
 
-  it('passes identify, group, capture and reset through', () => {
-    initAnalytics({ hostname: 'pigro.letsrebase.com' })
-    identifyUser('u1', { email: 'a@b.it', nome: 'Ada' })
-    identifyGroup('spazio', 'studio', { nome: 'Studio' })
-    capture('cliente_creato', { via: 'ui' })
-    resetUser()
+  it('queues what is said before the SDK arrives and replays it in order', async () => {
+    expect(a.initAnalytics({ hostname: 'pigro.letsrebase.com' })).toBe(true)
+    a.identifyUser('u1')
+    a.capture('cliente_creato')
+    expect(posthog.capture).not.toHaveBeenCalled()
+    await settled()
+    expect(init).toHaveBeenCalledTimes(1)
+    const order = [
+      vi.mocked(posthog.identify).mock.invocationCallOrder[0],
+      vi.mocked(posthog.capture).mock.invocationCallOrder[0],
+    ]
+    expect(order[0]).toBeLessThan(order[1] as number)
+  })
+
+  it('starts once however often it is called', async () => {
+    a.initAnalytics({ hostname: 'pigro.letsrebase.com' })
+    a.initAnalytics({ hostname: 'pigro.letsrebase.com' })
+    await settled()
+    expect(init).toHaveBeenCalledTimes(1)
+  })
+
+  it('passes identify, group, capture and reset through', async () => {
+    a.initAnalytics({ hostname: 'pigro.letsrebase.com' })
+    await settled()
+    a.identifyUser('u1', { email: 'a@b.it', nome: 'Ada' })
+    a.identifyGroup('spazio', 'studio', { nome: 'Studio' })
+    a.capture('cliente_creato', { via: 'ui' })
+    a.resetUser()
     expect(posthog.identify).toHaveBeenCalledWith('u1', { email: 'a@b.it', nome: 'Ada' })
     expect(posthog.group).toHaveBeenCalledWith('spazio', 'studio', { nome: 'Studio' })
     expect(posthog.capture).toHaveBeenCalledWith('cliente_creato', { via: 'ui' })
@@ -131,9 +173,91 @@ describe('on a real host', () => {
   })
 })
 
+describe('on a page with public routes (requireConsent)', () => {
+  it('measures nothing until the visitor said yes on the website', async () => {
+    stubBrowser(null)
+    expect(a.initAnalytics({ hostname: 'letsrebase.com', requireConsent: true })).toBe(false)
+    a.capture('wizard_iniziato')
+    await settled()
+    expect(init).not.toHaveBeenCalled()
+    expect(posthog.capture).not.toHaveBeenCalled()
+  })
+
+  it('stays silent after a no, and after a browser that refuses storage', async () => {
+    stubBrowser('denied')
+    expect(a.initAnalytics({ hostname: 'letsrebase.com', requireConsent: true })).toBe(false)
+    vi.stubGlobal('window', {
+      localStorage: {
+        getItem: () => {
+          throw new Error('blocked')
+        },
+      },
+    })
+    expect(a.initAnalytics({ hostname: 'letsrebase.com', requireConsent: true })).toBe(false)
+    await settled()
+    expect(init).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['rebase.consent', 'granted', null],
+    ['orbiters.consent', null, 'granted'],
+  ])('measures after a yes (%s)', async (_key, current, legacy) => {
+    stubBrowser(current, legacy)
+    expect(a.initAnalytics({ hostname: 'letsrebase.com', requireConsent: true })).toBe(true)
+    await settled()
+    expect(init).toHaveBeenCalledTimes(1)
+  })
+
+  it('starts for a person who signs in, and stops again at logout', async () => {
+    stubBrowser(null)
+    a.initAnalytics({ hostname: 'letsrebase.com', requireConsent: true })
+    a.identifyUser('u1', { ruolo: 'admin' })
+    await settled()
+    expect(init).toHaveBeenCalledTimes(1)
+    expect(posthog.identify).toHaveBeenCalledWith('u1', { ruolo: 'admin' })
+    a.resetUser()
+    expect(posthog.reset).toHaveBeenCalledTimes(1)
+    expect(posthog.opt_out_capturing).toHaveBeenCalledTimes(1)
+    a.capture('wizard_iniziato')
+    expect(posthog.capture).not.toHaveBeenCalled()
+    a.identifyUser('u2')
+    expect(posthog.opt_in_capturing).toHaveBeenCalledTimes(1)
+    expect(init).toHaveBeenCalledTimes(1)
+    expect(posthog.identify).toHaveBeenLastCalledWith('u2', undefined)
+  })
+
+  it('keeps measuring after logout when the visitor had said yes', async () => {
+    stubBrowser('granted')
+    a.initAnalytics({ hostname: 'letsrebase.com', requireConsent: true })
+    await settled()
+    a.resetUser()
+    expect(posthog.opt_out_capturing).not.toHaveBeenCalled()
+    a.capture('wizard_iniziato')
+    expect(posthog.capture).toHaveBeenCalledWith('wizard_iniziato', undefined)
+  })
+})
+
+describe('an opt-out the SDK persisted from an earlier logout', () => {
+  it('is lifted when a fresh load is let in, so the person is measured', async () => {
+    vi.mocked(posthog.has_opted_out_capturing).mockReturnValueOnce(true)
+    stubBrowser('granted')
+    a.initAnalytics({ hostname: 'letsrebase.com', requireConsent: true })
+    await settled()
+    expect(posthog.opt_in_capturing).toHaveBeenCalledWith({ captureEventName: false })
+  })
+
+  it('is left alone when there is none', async () => {
+    stubBrowser('granted')
+    a.initAnalytics({ hostname: 'letsrebase.com', requireConsent: true })
+    await settled()
+    expect(posthog.opt_in_capturing).not.toHaveBeenCalled()
+  })
+})
+
 describe('the magic-link token scrubber', () => {
-  it('removes t from $current_url and $referrer in properties, and keeps every other value', () => {
-    initAnalytics({ hostname: 'letsrebase.com' })
+  it('removes t from $current_url and $referrer in properties, and keeps every other value', async () => {
+    a.initAnalytics({ hostname: 'letsrebase.com' })
+    await settled()
     const beforeSend = init.mock.calls[0]?.[1]?.before_send as (
       result: CaptureResult | null,
     ) => CaptureResult | null
@@ -151,8 +275,9 @@ describe('the magic-link token scrubber', () => {
     expect(scrubbed?.properties.x).toBe(1)
   })
 
-  it('removes the team page\'s proposta and descrizione too, and keeps the rest (REB-675)', () => {
-    initAnalytics({ hostname: 'letsrebase.com' })
+  it('removes the team page\'s proposta and descrizione too, and keeps the rest (REB-675)', async () => {
+    a.initAnalytics({ hostname: 'letsrebase.com' })
+    await settled()
     const beforeSend = init.mock.calls[0]?.[1]?.before_send as (
       result: CaptureResult | null,
     ) => CaptureResult | null
@@ -170,8 +295,9 @@ describe('the magic-link token scrubber', () => {
     expect(scrubbed?.$set_once?.$initial_current_url).toBe('https://letsrebase.com/hub/team?da=home')
   })
 
-  it('scrubs the same parameters from what a recording keeps of a URL (REB-675)', () => {
-    initAnalytics({ hostname: 'letsrebase.com' })
+  it('scrubs the same parameters from what a recording keeps of a URL (REB-675)', async () => {
+    a.initAnalytics({ hostname: 'letsrebase.com' })
+    await settled()
     const mask = init.mock.calls[0]?.[1]?.session_recording?.maskCapturedNetworkRequestFn as (
       request: CapturedNetworkRequest,
     ) => CapturedNetworkRequest
@@ -185,11 +311,12 @@ describe('the magic-link token scrubber', () => {
     expect(mask(clean)).toBe(clean)
   })
 
-  it('removes t from $initial_current_url in $set_once, where posthog-js actually puts it', () => {
+  it('removes t from $initial_current_url in $set_once, where posthog-js actually puts it', async () => {
     // Not a `properties` member: posthog-js computes it once, from the first pageview
     // this browser ever sent, and carries it as a person `$set_once` value, a sibling
     // of `properties` on the capture result.
-    initAnalytics({ hostname: 'letsrebase.com' })
+    a.initAnalytics({ hostname: 'letsrebase.com' })
+    await settled()
     const beforeSend = init.mock.calls[0]?.[1]?.before_send as (
       result: CaptureResult | null,
     ) => CaptureResult | null
@@ -202,8 +329,9 @@ describe('the magic-link token scrubber', () => {
     expect(scrubbed?.$set_once?.$initial_current_url).toBe('https://letsrebase.com/hub/entra?x=1')
   })
 
-  it('is a no-op on an event with none of those properties, on an event with no $set_once, and on a null result', () => {
-    initAnalytics({ hostname: 'letsrebase.com' })
+  it('is a no-op on an event with none of those properties, on an event with no $set_once, and on a null result', async () => {
+    a.initAnalytics({ hostname: 'letsrebase.com' })
+    await settled()
     const beforeSend = init.mock.calls[0]?.[1]?.before_send as (
       result: CaptureResult | null,
     ) => CaptureResult | null

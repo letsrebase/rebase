@@ -13,15 +13,24 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    setupFiles: ['./test-setup.ts'],
     projects: [
       {
         extends: true,
-        test: { name: 'tokens', include: ['tokens.test.ts'], environment: 'node', setupFiles: [] },
+        test: { name: 'tokens', include: ['tokens.test.ts'], environment: 'node' },
       },
       {
         extends: true,
-        test: { name: 'primitives', include: ['*.test.tsx'], environment: 'jsdom' },
+        test: {
+          name: 'primitives',
+          include: ['*.test.tsx'],
+          environment: 'jsdom',
+          setupFiles: ['./test-setup.ts'],
+        },
+      },
+      // Plain functions: a DOM the test stubs by hand, not one jsdom has to build.
+      {
+        extends: true,
+        test: { name: 'format', include: ['format.test.ts'], environment: 'node' },
       },
       // `e2e/` is Playwright's, driven by `pnpm test:e2e` against the built gallery:
       // neither project globs it, and neither `include` above would match it anyway.

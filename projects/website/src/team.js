@@ -37,6 +37,9 @@
   var PENDING = 'Sto leggendo i profili…'
   var TOO_SHORT = 'Raccontaci qualcosa in più: servono almeno ' + DESCRIZIONE_MIN + ' caratteri.'
   var FAILED = 'Non siamo riusciti a proporre un team. Riprova.'
+  // The model call takes up to about 90 s (the host vhost's proxy_read_timeout); a few
+  // seconds past it the request is given up as a failure rather than left spinning.
+  var TIMEOUT_MS = 95000
   // The hub's own sentence for a 429 (`api.ts`): the speed bump answers no JSON.
   var THROTTLED = 'Troppe richieste da qui. Riprova tra un minuto.'
   var NO_BAND = 'Tariffa da definire'
@@ -213,7 +216,11 @@
       })
     })
 
+    var timer = null
+
     function settle() {
+      if (timer !== null) clearTimeout(timer)
+      timer = null
       busy = false
       hold(false)
       button.textContent = label
@@ -241,9 +248,14 @@
       button.appendChild(document.createTextNode(PENDING))
       form.setAttribute('aria-busy', 'true')
       var call = fetchImpl || window.fetch.bind(window)
+      var controller = new AbortController()
+      timer = setTimeout(function () {
+        controller.abort()
+      }, TIMEOUT_MS)
       call(API, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify(persone >= 1 ? { descrizione: text, persone: persone } : { descrizione: text }),
       })
         .then(function (response) {

@@ -13,15 +13,11 @@ import {
 const BYTES_PER_KILOBYTE = 1024
 
 /**
- * Bytes as the browser's own locale would write them. `Intl.NumberFormat` with a
- * byte unit does the rounding, so nothing here does arithmetic on a size that could
- * drift from what the server reported.
- *
- * Divides by 1024, not 1000, even though the unit it asks `Intl` to label is the
- * (decimal) "kilobyte": confirmed live -- `12345` bytes has to read "12,1 kB", the
- * conventional binary-kilobyte figure this product's own file browsers (Finder,
- * Explorer) already show, and `12345 / 1000` rounds to "12,3 kB" instead, which is
- * simply the wrong number for the same bytes.
+ * Bytes as the browser's own locale would write them: `Intl.NumberFormat` with a byte
+ * unit does the rounding, so nothing here does arithmetic that could drift from what the
+ * server reported. Divides by 1024 while labelling the decimal "kilobyte": `12345` bytes
+ * reads "12,1 kB", the figure Finder and Explorer show. Kilobytes at most, so 5 MiB is
+ * "5.120 kB" (never "5,0 MB"): that is what the screen has always said.
  */
 function formatSize(bytes: number): string {
   return new Intl.NumberFormat('it-IT', {
@@ -31,14 +27,16 @@ function formatSize(bytes: number): string {
   }).format(bytes >= BYTES_PER_KILOBYTE ? bytes / BYTES_PER_KILOBYTE : bytes)
 }
 
+const dateTimeFormatter = new Intl.DateTimeFormat('it-IT', {
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+})
+
 function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString('it-IT', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+  return dateTimeFormatter.format(new Date(iso))
 }
 
 /**

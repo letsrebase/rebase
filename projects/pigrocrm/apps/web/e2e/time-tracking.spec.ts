@@ -200,7 +200,7 @@ test.describe('time tracking', () => {
     await page.getByLabel(/rapporto ore del mese/i).fill(mese)
 
     const scaricamento = page.waitForEvent('download')
-    await page.getByRole('link', { name: 'XLSX' }).click()
+    await page.getByRole('button', { name: 'XLSX' }).click()
     const foglio = await scaricamento
     expect(await foglio.suggestedFilename()).toBe(`rapporto-ore-${mese}.xlsx`)
     // A name is not a file. The first four bytes of every .xlsx are a ZIP local file
@@ -210,15 +210,13 @@ test.describe('time tracking', () => {
     expect(bytes.length).toBeGreaterThan(0)
     expect(bytes.subarray(0, 4).toString('latin1')).toBe('PK')
 
-    // The PDF, driven by its own button. It is not an anchor and cannot be one:
-    // `GET .../time-report?formato=pdf` archives the report through the slice 2 document
+    // The PDF, driven by its own button, which works in two steps:
+    // `POST .../time-report/pdf` archives the report through the slice 2 document
     // pipeline and answers **201 with the document's JSON**, so the button renders,
     // reads that answer, and downloads the archived document through
     // `/api/documents/{id}/download` -- the one path that carries authorisation on
     // either storage backend. Clicking it therefore has to produce a real file *and*
-    // leave a document behind, and both halves are asserted here: while the button was
-    // still a plain anchor pointed at that JSON, the archived half passed on its own
-    // and the file half was the one nobody was making.
+    // leave a document behind, and both halves are asserted here.
     const scaricamentoPdf = page.waitForEvent('download')
     await page.getByRole('button', { name: 'PDF' }).click()
     const rapporto = await scaricamentoPdf

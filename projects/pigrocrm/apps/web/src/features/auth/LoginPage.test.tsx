@@ -1,0 +1,289 @@
+/**
+ * The login card, email-first (spec 2026-09-12 §6.2): a link by mail is the way in, and
+ * the password form is the second door for whoever has one. `useAuth` and the API client
+ * are stubbed at the same seams every other route test uses.
+ */
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { render as renderBare, screen, waitFor } from '@testing-library/react'
+import type { ReactElement } from 'react'
+import userEvent from '@testing-library/user-event'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const navigate = vi.fn()
+let search: { redirect?: string } = {}
+vi.mock('@tanstack/react-router', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@tanstack/react-router')>()
+  return {
+    ...actual,
+    useNavigate: () => navigate,
+    useSearch: () => search,
+  }
+})
+
+vi.mock('@rebase/ui/sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
+
+const login = vi.fn()
+const user: { value: unknown } = { value: null }
+vi.mock('@/lib/auth', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/auth')>()
+  return { ...actual, useAuth: () => ({ user: user.value, login }) }
+})
+
+vi.mock('@/lib/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/api')>()
+  return { ...actual, api: { GET: vi.fn(), POST: vi.fn() } }
+})
+
+import { api } from '@/lib/api'
+import { toast } from '@rebase/ui/sonner'
+import { LoginPage } from './LoginPage'
+
+const GET = api.GET as unknown as ReturnType<typeof vi.fn>
+const POST = api.POST as unknown as ReturnType<typeof vi.fn>
+
+/** A fresh cache per render: the page reads the spaces and the root's name through it. */
+function render(ui: ReactElement) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return renderBare(<QueryClientProvider client={client}>{ui}</QueryClientProvider>)
+}
+
+beforeEach(() => {
+  GET.mockReset()
+  POST.mockReset()
+  login.mockReset()
+  navigate.mockReset()
+  search = {}
+  user.value = null
+  // `/api/tenants/root`: this installation has no name.
+  GET.mockResolvedValue({ data: { slug: null }, response: { status: 200 } })
+})
+
+describe('the post-session redirect', () => {
+  beforeEach(() => {
+    user.value = { id: 'u1', email: 'ada@studio.it', nome: 'Ada', ruolo: 'admin' }
+  })
+
+  it('sends an already-authenticated visitor to the deep link the guard recorded', async () => {
+    search = { redirect: '/app/invoices/42' }
+    render(<LoginPage />)
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith({ href: '/app/invoices/42' }))
+  })
+
+  it('ignores a redirect that does not point under this app, falling back to the dashboard', async () => {
+    search = { redirect: 'https://evil.example/steal' }
+    render(<LoginPage />)
+    await waitFor(() => expect(navigate).toHaveBeenCalled())
+    expect(navigate).not.toHaveBeenCalledWith({ href: 'https://evil.example/steal' })
+    expect(navigate).toHaveBeenCalledWith(expect.objectContaining({ to: '/app' }))
+  })
+})
+
+describe('the login page', () => {
+  it('asks only for the email and sends the link', async () => {
+    POST.mockResolvedValue({ data: { ok: true }, response: { status: 202 } })
+    render(<LoginPage />)
+    expect(screen.queryByLabelText('Password')).toBeNull()
+    await userEvent.type(screen.getByLabelText('Email'), 'ada@studio.it')
+    await userEvent.click(screen.getByRole('button', { name: 'Mandami il link' }))
+    await waitFor(() =>
+      expect(POST).toHaveBeenCalledWith('/api/auth/link', { body: { email: 'ada@studio.it' } }),
+    )
+    expect(await screen.findByRole('status')).toHaveTextContent(/Controlla la posta/)
+    expect(login).not.toHaveBeenCalled()
+  })
+
+  it('shows the sentence when this installation cannot mail', async () => {
+    POST.mockResolvedValue({
+      error: { detail: "L'accesso via email non è ancora attivo su questa installazione." },
+      response: { status: 503 },
+    })
+    render(<LoginPage />)
+    await userEvent.type(screen.getByLabelText('Email'), 'ada@studio.it')
+    await userEvent.click(screen.getByRole('button', { name: 'Mandami il link' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/non è ancora attivo/)
+  })
+
+  it('still lets whoever has a password use it', async () => {
+    login.mockResolvedValue(undefined)
+    render(<LoginPage />)
+    await userEvent.click(screen.getByRole('button', { name: /Accedi con la password/ }))
+    await userEvent.type(screen.getByLabelText('Email'), 'ada@studio.it')
+    await userEvent.type(screen.getByLabelText('Password'), 'lunghissima1')
+    await userEvent.click(screen.getByRole('button', { name: 'Accedi' }))
+    await waitFor(() => expect(login).toHaveBeenCalledWith('ada@studio.it', 'lunghissima1'))
+    expect(POST).not.toHaveBeenCalled()
+  })
+
+  it('offers to create a space only on the root', async () => {
+    render(<LoginPage />)
+    expect(await screen.findByRole('button', { name: 'Crea il tuo spazio' })).toBeInTheDocument()
+  })
+})
+
+describe('the chooser (REB-377)', () => {
+  type Row = { slug: string; ruolo: string; invito?: true; invitato_da?: string; nome?: string }
+  function mockSpaces(spaces: Row[] | null, status = 200) {
+    GET.mockImplementation((path: string) => {
+      if (path === '/api/identity/spaces') {
+        return Promise.resolve(
+          status === 200
+            ? { data: spaces, response: { status } }
+            : { error: { detail: 'nessuna identità provata' }, response: { status } },
+        )
+      }
+      return Promise.resolve({ data: { slug: null }, response: { status: 200 } })
+    })
+  }
+
+  it('shows one row per space instead of the email form once at least one resolves', async () => {
+    mockSpaces([
+      { slug: 'studio', ruolo: 'admin' },
+      { slug: 'altro', ruolo: 'collaboratore' },
+    ])
+    render(<LoginPage />)
+    expect(await screen.findByRole('button', { name: /studio/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /altro/ })).toBeInTheDocument()
+    expect(screen.getByText('amministratore')).toBeInTheDocument()
+    expect(screen.getByText('collaboratore')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Email')).toBeNull()
+  })
+
+  it('falls back to the email form on a 200 with zero spaces', async () => {
+    mockSpaces([])
+    render(<LoginPage />)
+    expect(await screen.findByLabelText('Email')).toBeInTheDocument()
+  })
+
+  it('falls back to the email form on a 401 with no identity cookie', async () => {
+    mockSpaces(null, 401)
+    render(<LoginPage />)
+    expect(await screen.findByLabelText('Email')).toBeInTheDocument()
+  })
+
+  it('enters the chosen space and navigates to its own basepath', async () => {
+    mockSpaces([{ slug: 'studio', ruolo: 'admin' }])
+    POST.mockResolvedValue({
+      data: { id: 'u1', email: 'ada@studio.it', nome: 'Ada', ruolo: 'admin' },
+      response: { status: 200 },
+    })
+    const go = vi.fn()
+    render(<LoginPage go={go} />)
+    await userEvent.click(await screen.findByRole('button', { name: /studio/ }))
+    await waitFor(() =>
+      expect(POST).toHaveBeenCalledWith('/api/identity/enter/{slug}', {
+        params: { path: { slug: 'studio' } },
+      }),
+    )
+    await waitFor(() => expect(go).toHaveBeenCalledWith('/studio/app/'))
+  })
+
+  it('reports the API sentence and leaves the row usable when entering fails', async () => {
+    mockSpaces([{ slug: 'studio', ruolo: 'admin' }])
+    POST.mockResolvedValue({
+      error: { detail: 'Questo spazio non esiste, o non lo hai mai raggiunto.' },
+      response: { status: 404 },
+    })
+    render(<LoginPage />)
+    await userEvent.click(await screen.findByRole('button', { name: /studio/ }))
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        'Questo spazio non esiste, o non lo hai mai raggiunto.',
+      ),
+    )
+    expect(screen.getByRole('button', { name: /studio/ })).toBeInTheDocument()
+  })
+
+  it('also offers to create a new space, not gated behind the empty-state root check', async () => {
+    mockSpaces([{ slug: 'studio', ruolo: 'admin' }])
+    render(<LoginPage />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Crea un nuovo spazio' }))
+    expect(navigate).toHaveBeenCalledWith({ to: '/app/register' })
+  })
+
+  it('disables the create-space button and the other rows while a space is being entered', async () => {
+    mockSpaces([
+      { slug: 'studio', ruolo: 'admin' },
+      { slug: 'altro', ruolo: 'collaboratore' },
+    ])
+    let resolveEntering: (value: unknown) => void = () => {}
+    POST.mockReturnValue(new Promise((resolve) => (resolveEntering = resolve)))
+    const go = vi.fn()
+    render(<LoginPage go={go} />)
+    const create = await screen.findByRole('button', { name: 'Crea un nuovo spazio' })
+    expect(create).toBeEnabled()
+    await userEvent.click(screen.getByRole('button', { name: /studio/ }))
+    await waitFor(() => expect(create).toBeDisabled())
+    expect(screen.getByRole('button', { name: /altro/ })).toBeDisabled()
+    resolveEntering({ data: {}, response: { status: 200 } })
+    // A successful entry navigates away and keeps the guard; only a failure re-enables.
+    await waitFor(() => expect(go).toHaveBeenCalledWith('/studio/app/'))
+    expect(create).toBeDisabled()
+    expect(screen.getByRole('button', { name: /altro/ })).toBeDisabled()
+  })
+
+  it('re-enables the create-space button when entering fails', async () => {
+    mockSpaces([{ slug: 'studio', ruolo: 'admin' }])
+    let resolveEntering: (value: unknown) => void = () => {}
+    POST.mockReturnValue(new Promise((resolve) => (resolveEntering = resolve)))
+    render(<LoginPage go={vi.fn()} />)
+    const create = await screen.findByRole('button', { name: 'Crea un nuovo spazio' })
+    await userEvent.click(screen.getByRole('button', { name: /studio/ }))
+    await waitFor(() => expect(create).toBeDisabled())
+    resolveEntering({ error: { detail: 'No.' }, response: { status: 404 } })
+    await waitFor(() => expect(create).toBeEnabled())
+    expect(screen.getByRole('button', { name: /studio/ })).toBeEnabled()
+  })
+
+  // REB-678: the invitation whose mail never came is a row of its own, and choosing it
+  // goes to the acceptance page instead of entering a space this address has no seat in.
+  it('lists an invitation as a row that says who sent it', async () => {
+    mockSpaces([
+      { slug: 'studio', ruolo: 'admin' },
+      { slug: 'rebase', ruolo: 'collaboratore', invito: true, invitato_da: 'Ivan', nome: 'Ada' },
+    ])
+    render(<LoginPage />)
+    const invitation = await screen.findByRole('button', { name: /rebase/ })
+    expect(invitation).toHaveTextContent('Invito da Ivan, da accettare')
+    expect(screen.getByRole('button', { name: /studio/ })).not.toHaveTextContent(/Invito/)
+  })
+
+  it('says an invitation is waiting even when the sender has no name to give', async () => {
+    mockSpaces([{ slug: 'rebase', ruolo: 'readonly', invito: true }])
+    render(<LoginPage />)
+    expect(await screen.findByRole('button', { name: /rebase/ })).toHaveTextContent(
+      'Invito da accettare',
+    )
+  })
+
+  it('opens an invitation on the space’s own acceptance page, entering nothing', async () => {
+    mockSpaces([{ slug: 'rebase', ruolo: 'collaboratore', invito: true, invitato_da: 'Ivan' }])
+    POST.mockResolvedValue({
+      data: { url: '/rebase/app/invite?t=abc' },
+      response: { status: 200 },
+    })
+    const go = vi.fn()
+    render(<LoginPage go={go} />)
+    await userEvent.click(await screen.findByRole('button', { name: /rebase/ }))
+    await waitFor(() =>
+      expect(POST).toHaveBeenCalledWith('/api/identity/invite/{slug}', {
+        params: { path: { slug: 'rebase' } },
+      }),
+    )
+    await waitFor(() => expect(go).toHaveBeenCalledWith('/rebase/app/invite?t=abc'))
+    expect(POST).not.toHaveBeenCalledWith('/api/identity/enter/{slug}', expect.anything())
+  })
+
+  it('reports the sentence and keeps the invitation usable when it has run out', async () => {
+    mockSpaces([{ slug: 'rebase', ruolo: 'collaboratore', invito: true }])
+    const sentence =
+      "Questo invito non c'è più: è scaduto, è stato revocato o lo hai già accettato. " +
+      'Chiedi a chi ti ha invitato di rimandarlo.'
+    POST.mockResolvedValue({ error: { detail: sentence }, response: { status: 404 } })
+    const go = vi.fn()
+    render(<LoginPage go={go} />)
+    await userEvent.click(await screen.findByRole('button', { name: /rebase/ }))
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(sentence))
+    expect(go).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: /rebase/ })).toBeEnabled()
+  })
+})

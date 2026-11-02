@@ -19,6 +19,10 @@ export const queryClient = new QueryClient({
 
 export const queryKeys = {
   me: ['me'] as const,
+  // The other spaces this identity may reach, and the installation's own root name
+  // (`tenants/root`): one read each, shared by the shell's space switcher and the login page.
+  identitySpaces: ['identity', 'spaces'] as const,
+  rootTenant: ['tenants', 'root'] as const,
   customers: (params?: unknown) => ['customers', params ?? {}] as const,
   customer: (id: string) => ['customer', id] as const,
   people: (params?: unknown) => ['people', params ?? {}] as const,
@@ -94,14 +98,18 @@ export const queryKeys = {
   // and writes it, and the get-started invoice door reads the same entry.
   spaceSettings: ['settings', 'space'] as const,
   timeEntries: (params?: unknown) => ['time-entries', params ?? {}] as const,
-  // One key per month, and the prefix `['calendario']` on purpose: a commitment whose
+  // One key per month, and the prefix `['calendar']` on purpose: a commitment whose
   // date moved is stale in two months at once, so every write invalidates the prefix
   // rather than the month the page happens to be showing.
   // The sidebar's azienda is part of the key since REB-625: the hours and the invoices
   // of a month differ by it, and a switch is a new key rather than an invalidation.
   calendarMonth: (mese: string, aziendaId: string | null = null) =>
-    ['calendario', mese, aziendaId] as const,
-  attivita: (params?: unknown) => ['attivita', params ?? {}] as const,
+    ['calendar', mese, aziendaId] as const,
+  /** The prefix of every month: a write that moves a date invalidates all of them. */
+  calendarAll: ['calendar'] as const,
+  activities: (params?: unknown) => ['activities', params ?? {}] as const,
+  /** The prefix of every activities read (lists, pages, today, one). */
+  activitiesAll: ['activities'] as const,
   /** The caller's own running timer -- one row or null, so one key with no argument. */
   timer: ['timer'] as const,
   timeEntry: (id: string) => ['time-entry', id] as const,
@@ -129,6 +137,7 @@ export const queryKeys = {
   ceilingSimulation: (params: Record<string, string>) => ['ceiling-simulation', params] as const,
   yearOverview: (anno: number, aziendaId: string | null = null) =>
     ['year-overview', anno, aziendaId] as const,
+  yearOverviewAll: ['year-overview'] as const,
   // The term is part of the key so an in-flight response for "ross" cannot overwrite the
   // rendering of "rossi": TanStack Query discards the stale entry rather than the
   // component having to compare what came back with what was typed.
@@ -137,6 +146,8 @@ export const queryKeys = {
   // than a refetch that briefly shows March's numbers under April's heading. Every
   // dashboard key starts with the literal 'dashboard' so a mutation that cannot know which
   // period is on screen can invalidate all of them by prefix.
+  /** Every dashboard read, whatever the period: for a write that cannot know which is on screen. */
+  dashboardAll: ['dashboard'] as const,
   dashboard: (
     kind: 'commerciale' | 'economica' | 'panoramica' | 'scadenziario' | 'giornate',
     params: Record<string, string>,
@@ -154,14 +165,23 @@ export const queryKeys = {
   contractExpenses: (id: string) => ['contract', id, 'expenses'] as const,
   contractAssumption: (id: string) => ['contract', id, 'assumption'] as const,
   contractClauseNotes: (id: string) => ['contract', id, 'clause-notes'] as const,
+  contractEmailTemplates: (id: string) => ['contract', id, 'email-templates'] as const,
+  contractEmailVariables: (id: string) => ['contract', id, 'email-template-variables'] as const,
+  /** The prefix of every cached preview of a contract's mail. */
+  contractEmailPreviews: (id: string) => ['contract', id, 'email-preview'] as const,
+  contractEmailPreview: (id: string, templateId?: string, invoiceId?: string) =>
+    ['contract', id, 'email-preview', templateId, invoiceId] as const,
   contractProjection: (id: string, params?: unknown) =>
     ['contract', id, 'projection', params ?? {}] as const,
   contractConcentration: (id: string) => ['contract', id, 'concentration'] as const,
   // The contract days (REB-745): `workUnits` is the prefix every day write invalidates, and
-  // the calendar's month is under its own `['calendario']` prefix because it carries the
+  // the calendar's month is under its own `['calendar']` prefix because it carries the
   // days' states as well.
   workUnits: (params?: unknown) => ['work-units', params ?? {}] as const,
   workUnit: (id: string) => ['work-unit', id] as const,
+  /** Every day read: the list prefix and the single-day prefix. */
+  workUnitsAll: ['work-units'] as const,
+  workUnitAll: ['work-unit'] as const,
   // The caller's own reminders (REB-734): the Avvisi page and the sidebar's unread count
   // read this one entry, so a snooze updates both at once. It is the caller's list, and
   // `logout()` clears the whole cache, so no user id is needed to keep two people apart.

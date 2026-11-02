@@ -69,12 +69,6 @@ export function slugProblem(slug: string): string | null {
 export const tenantPrefix: string =
   typeof window === 'undefined' ? '' : tenantPrefixFrom(window.location.pathname)
 
-/** Where a space logs in, as a full-page destination: a different basepath is a
- *  different application instance, so it is a navigation, not a router push. */
-export function spaceLoginUrl(slug: string): string {
-  return `/${slug}/app/login`
-}
-
 /** The four pages a visitor reaches under `/app` without a session (routes/app.tsx's
  *  guard never bounces them): the login, the signup that makes a space (spec
  *  2026-09-08), the page that spends a link by mail (spec 2026-09-12 §6.2) and the page

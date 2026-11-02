@@ -208,4 +208,14 @@ export default defineConfig([
       ],
     },
   },
+  {
+    // A route file that exports anything but `Route` opts out of the router's automatic
+    // code splitting (`autoCodeSplitting`, vite.config.ts) and drags its page into the
+    // entry chunk. Pages live in `features/`; the route only wires them.
+    files: ['src/routes/**/*.{ts,tsx}'],
+    ignores: ['**/*.test.{ts,tsx}', 'src/routeTree.gen.ts'],
+    rules: {
+      'no-restricted-exports': ['error', { restrictedNamedExportsPattern: '^(?!Route$).*' }],
+    },
+  },
 ])

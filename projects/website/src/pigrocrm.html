@@ -40,10 +40,7 @@
     <link rel="stylesheet" href="./pigrocrm.css" />
     <!-- The reveal gate, the landing's (ORB-145): landing.css hides `[data-reveal]` only
       under `html.js`, and after three seconds nothing is hidden whatever the script did. -->
-    <script>
-      document.documentElement.classList.add('js')
-      setTimeout(function () { document.documentElement.classList.add('reveal-all') }, 3000)
-    </script>
+    <script src="/assets/reveal-gate.js"></script>
     <!-- The cookie notice and the measurement pixel, as on the landing: this is the
       second page an ad can land on (ORB-159), so it asks the same
       question and loads the SDK only on a yes. privacy.html names both. -->

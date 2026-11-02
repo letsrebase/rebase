@@ -2,6 +2,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, unwrap } from '@/lib/api'
 import { draftKeys } from '@/features/gmail/draftQueries'
 import type { components } from '@/lib/api-types'
+import { queryKeys } from '@/lib/query'
+import { gmailKeys } from '@/features/gmail/queries'
 
 export type ApprovalRequestDay = components['schemas']['ApprovalRequestDay']
 export type ApprovalRequestMessage = components['schemas']['ApprovalRequestMessage']
@@ -34,9 +36,9 @@ export function usePrepareRequest(contractId: string) {
         }),
       ),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['work-units'] })
-      void queryClient.invalidateQueries({ queryKey: ['calendario'] })
-      void queryClient.invalidateQueries({ queryKey: ['gmail'] })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.workUnitsAll })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.calendarAll })
+      void queryClient.invalidateQueries({ queryKey: gmailKeys.all })
       // The draft is a new row of the customer's Email tab, which keeps its own cache root.
       void queryClient.invalidateQueries({ queryKey: draftKeys.all })
     },

@@ -34,7 +34,11 @@ export const GMAIL_OAUTH_START = `${tenantPrefix}/api/gmail/oauth/start`
  * two keys share a root nobody else writes under.
  */
 export const gmailKeys = {
+  /** Everything Gmail: the prefix a space-wide change invalidates. */
+  all: ['gmail'] as const,
   health: ['gmail', 'health'] as const,
+  /** Every entity's messages, for a sync that cannot know which tab is open. */
+  allMessages: ['gmail', 'messages'] as const,
   messages: (entityType: string, entityId: string) =>
     ['gmail', 'messages', entityType, entityId] as const,
 }
@@ -96,7 +100,7 @@ export function useGmailSyncing(): boolean {
  */
 function invalidateAfterSync(queryClient: ReturnType<typeof useQueryClient>) {
   void queryClient.invalidateQueries({ queryKey: gmailKeys.health })
-  void queryClient.invalidateQueries({ queryKey: ['gmail', 'messages'] })
+  void queryClient.invalidateQueries({ queryKey: gmailKeys.allMessages })
 }
 
 export function useSyncGmail() {

@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { api, toProblem, unwrap } from '@/lib/api'
+import { fetchAllPages } from '@/lib/fetchAllPages'
 import type { components } from '@/lib/api-types'
 import { queryKeys } from '@/lib/query'
 
@@ -26,22 +27,17 @@ export function useCustomerContracts(customerId: string) {
     queryKey: queryKeys.contracts({ customer_id: customerId }),
     // Every page, newest first: a customer has a handful of contracts over its life, and
     // a tab that stopped at the first page would hide the older ones with no way to ask.
-    queryFn: async () => {
-      const items: Contract[] = []
-      let cursor: string | undefined
-      do {
-        const page = await unwrap(
+    // `truncated` is there for a tab that wants to say the walk was cut short.
+    queryFn: () =>
+      fetchAllPages((cursor) =>
+        unwrap(
           api.GET('/api/contracts', {
             params: {
               query: { customer_id: customerId, limit: 200, sort: 'created_at', dir: 'desc', cursor },
             },
           }),
-        )
-        items.push(...page.items)
-        cursor = page.next_cursor ?? undefined
-      } while (cursor !== undefined)
-      return { items }
-    },
+        ),
+      ),
   })
 }
 
@@ -124,9 +120,9 @@ export function useRateCards(contractId: string) {
 /** A rate card moves what the projection programs, so both go stale together. */
 function invalidateRates(client: QueryClient, contractId: string) {
   void client.invalidateQueries({ queryKey: queryKeys.contractRateCards(contractId) })
-  void client.invalidateQueries({ queryKey: ['contract', contractId, 'projection'] })
+  void client.invalidateQueries({ queryKey: queryKeys.contractProjection(contractId) })
   // The days analysis sets the realised rate against the card in force (REB-756).
-  void client.invalidateQueries({ queryKey: ['dashboard'] })
+  void client.invalidateQueries({ queryKey: queryKeys.dashboardAll })
   void client.invalidateQueries({ queryKey: queryKeys.timeline('contract', contractId) })
 }
 
@@ -251,7 +247,7 @@ export function useSetRenewalAssumption(contractId: string) {
       ),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.contractAssumption(contractId) })
-      void queryClient.invalidateQueries({ queryKey: ['contract', contractId, 'projection'] })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.contractProjection(contractId) })
       void queryClient.invalidateQueries({ queryKey: queryKeys.timeline('contract', contractId) })
     },
   })
@@ -378,10 +374,8 @@ export function useCappedContracts(aziendaId: string | null | undefined) {
   return useQuery({
     queryKey: queryKeys.contracts({ azienda_id: aziendaId ?? null, stato: 'attivo', capped: true }),
     queryFn: async () => {
-      const items: Contract[] = []
-      let cursor: string | undefined
-      do {
-        const page = await unwrap(
+      const { items } = await fetchAllPages((cursor) =>
+        unwrap(
           api.GET('/api/contracts', {
             params: {
               query: {
@@ -394,10 +388,8 @@ export function useCappedContracts(aziendaId: string | null | undefined) {
               },
             },
           }),
-        )
-        items.push(...page.items)
-        cursor = page.next_cursor ?? undefined
-      } while (cursor !== undefined)
+        ),
+      )
       // In euros only: the simulated amount is a deal estimate, which carries no currency.
       return items.filter(
         (contract) => contract.tetto_quota_cliente !== null && contract.divisa === 'EUR',

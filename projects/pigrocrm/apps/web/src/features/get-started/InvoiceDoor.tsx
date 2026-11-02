@@ -27,12 +27,15 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { FileText } from 'lucide-react'
-import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
+import { useId, useRef, useState, type FormEvent } from 'react'
 import { Button } from '@rebase/ui/button'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { api, toProblem, unwrap } from '@/lib/api'
 import { useAuth, useCan } from '@/lib/auth'
+import { fetchAllPages } from '@/lib/fetchAllPages'
+import { useDebounced } from '@/hooks/useDebounced'
+import { SEARCH_DEBOUNCE_MS } from '@/features/search/queries'
 import { queryKeys } from '@/lib/query'
 import { useCreateCustomer } from '@/features/customers/queries'
 import { useDocument, useUploadVersion } from '@/features/documents/queries'
@@ -105,31 +108,15 @@ function Upload({ onUploaded }: { onUploaded: (handoff: InvoiceHandoff) => void 
   )
 }
 
-/** The typed name, once it has stopped changing for a quarter of a second. */
-function useSettled(value: string, delay = 250): string {
-  const [settled, setSettled] = useState(value)
-  useEffect(() => {
-    const timer = window.setTimeout(() => setSettled(value), delay)
-    return () => window.clearTimeout(timer)
-  }, [value, delay])
-  return settled
-}
-
 /** Every customer whose name is exactly `nome`, read through the whole search rather
  *  than its first page: the search is a substring match over several fields, oldest
  *  first, so an exact name can sit behind any number of partial ones. */
 async function customerNamed(nome: string): Promise<{ id: string; ragione_sociale: string } | null> {
   const wanted = nome.toLowerCase()
-  let cursor: string | undefined
-  do {
-    const page = await unwrap(
-      api.GET('/api/customers', { params: { query: { search: nome, limit: 200, cursor } } }),
-    )
-    const hit = page.items.find((item) => item.ragione_sociale.trim().toLowerCase() === wanted)
-    if (hit) return hit
-    cursor = page.next_cursor ?? undefined
-  } while (cursor)
-  return null
+  const { items } = await fetchAllPages((cursor) =>
+    unwrap(api.GET('/api/customers', { params: { query: { search: nome, limit: 200, cursor } } })),
+  )
+  return items.find((item) => item.ragione_sociale.trim().toLowerCase() === wanted) ?? null
 }
 
 /**
@@ -143,7 +130,7 @@ async function customerNamed(nome: string): Promise<{ id: string; ragione_social
 function ChooseCustomer({ onChosen }: { onChosen: (customer: { id: string; name: string }) => void }) {
   const [nome, setNome] = useState('')
   const typed = nome.trim()
-  const query = useSettled(typed)
+  const query = useDebounced(typed, SEARCH_DEBOUNCE_MS)
   const searchable = query.length >= 2
   const matches = useQuery({
     queryKey: queryKeys.customers({ search: query, limit: 8, scope: 'invoice-door' }),

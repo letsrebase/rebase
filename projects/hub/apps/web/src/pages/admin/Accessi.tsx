@@ -1,26 +1,15 @@
-import { useInfiniteQuery } from '@tanstack/react-query'
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Button } from '@rebase/ui/button'
+import { useState } from 'react'
 import { Input } from '@rebase/ui/input'
 import { Loader } from '@rebase/ui/loader'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@rebase/ui/table'
-import { admin } from '@/lib/api'
+import { SEARCH_DEBOUNCE_MS, useCursorList, useDebounce } from '@/lib/adminList'
+import { admin, type LoginStats } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
-import { Empty, Figure, Header } from './lists'
+import { keys } from '@/lib/query-keys'
+import { Empty, Figure, Header, LoadMore } from './list-kit'
 
-const LOGINS_KEY = ['login-stats'] as const
-const SEARCH_DEBOUNCE_MS = 300
-
-/** The value it settles to `delayMs` after the caller stops changing it -- the search
- *  box's own text, so a query is not sent on every keystroke (REB-313). */
-function useDebounce<T>(value: T, delayMs: number): T {
-  const [debounced, setDebounced] = useState(value)
-  useEffect(() => {
-    const timer = setTimeout(() => setDebounced(value), delayMs)
-    return () => clearTimeout(timer)
-  }, [value, delayMs])
-  return debounced
-}
+/** A login's own rows, `recenti`, are what the page pages through. */
+const recentLogins = (page: LoginStats) => page.recenti
 
 /**
  * Who comes back in (ORB-158): every login the magic link wrote down, the distinct
@@ -38,28 +27,12 @@ function useDebounce<T>(value: T, delayMs: number): T {
 export function AdminAccessi() {
   const [query, setQuery] = useState('')
   const debouncedQuery = useDebounce(query, SEARCH_DEBOUNCE_MS)
-  const stats = useInfiniteQuery({
-    queryKey: [...LOGINS_KEY, debouncedQuery] as const,
-    queryFn: ({ pageParam }: { pageParam: string | undefined }) =>
-      admin.loginStats({ q: debouncedQuery || undefined, cursor: pageParam }),
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (last) => last.next_cursor ?? undefined,
+  const { list: stats, items: recenti } = useCursorList({
+    queryKey: keys.loginStats(debouncedQuery),
+    fetchPage: (cursor) => admin.loginStats({ q: debouncedQuery || undefined, cursor }),
+    itemsOf: recentLogins,
   })
   const totals = stats.data?.pages[0]
-  const recenti = useMemo(() => stats.data?.pages.flatMap((page) => page.recenti) ?? [], [stats.data])
-  const { hasNextPage, fetchNextPage } = stats
-
-  const sentinelRef = useRef<HTMLDivElement | null>(null)
-  useEffect(() => {
-    if (!hasNextPage || typeof IntersectionObserver === 'undefined') return
-    const node = sentinelRef.current
-    if (!node) return
-    const observer = new IntersectionObserver((entries) => {
-      if (entries[0]?.isIntersecting) void fetchNextPage()
-    })
-    observer.observe(node)
-    return () => observer.disconnect()
-  }, [hasNextPage, fetchNextPage])
 
   return (
     <>
@@ -120,20 +93,12 @@ export function AdminAccessi() {
                   </Table>
                 </div>
               </div>
-              <div ref={sentinelRef} />
               {stats.hasNextPage && (
-                <div className="flex flex-col items-center gap-2 px-6 py-5">
-                  <p className="text-sm text-muted-foreground">Mostrati {recenti.length} accessi, ce ne sono altri.</p>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={stats.isFetchingNextPage}
-                    onClick={() => void stats.fetchNextPage()}
-                  >
-                    {stats.isFetchingNextPage ? 'Carico…' : 'Mostra altri'}
-                  </Button>
-                </div>
+                <LoadMore
+                  label={`Mostrati ${recenti.length} accessi, ce ne sono altri.`}
+                  isFetchingMore={stats.isFetchingNextPage}
+                  onLoadMore={() => void stats.fetchNextPage()}
+                />
               )}
             </>
           )}

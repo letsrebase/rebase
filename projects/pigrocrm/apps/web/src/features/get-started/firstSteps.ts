@@ -10,6 +10,7 @@
  * out `staleTime`.
  */
 import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
 import { api, toProblem } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { queryKeys } from '@/lib/query'
@@ -129,16 +130,20 @@ const OPTIONS = { retry: false, staleTime: 30_000 } as const
  *  policy (`lib/query.ts`: two retries, none on 401/403) instead of `retry: false`: one
  *  dropped request must not send an empty space's Home to the dashboard. */
 const WORK_OPTIONS = { staleTime: 30_000 } as const
+/** The sidebar asks the same four reads for one boolean it never needs fresher than the
+ *  data it already has: no refetch on a window focus, and no stale-time expiry. A write
+ *  that invalidates the keys still refreshes them while they are watched. */
+const PASSIVE_WORK_OPTIONS = { staleTime: Infinity, refetchOnWindowFocus: false } as const
 
 /** What a step's read says: a read that failed counts as done (see `settled`). */
 const value = (q: { data?: boolean; isError: boolean }) => (q.isError ? true : (q.data ?? false))
 
 /** The four reads that say whether the space has any work, and the verdict they give. */
-function useWork() {
-  const cliente = useQuery({ queryKey: queryKeys.customers(SCOPE), queryFn: customersPage, select: hasItems, ...WORK_OPTIONS })
-  const deal = useQuery({ queryKey: queryKeys.deals(SCOPE), queryFn: dealsPage, select: hasItems, ...WORK_OPTIONS })
-  const ore = useQuery({ queryKey: queryKeys.timeEntries(SCOPE), queryFn: timeEntriesPage, select: hasItems, ...WORK_OPTIONS })
-  const documento = useQuery({ queryKey: queryKeys.documents(SCOPE), queryFn: documentsPage, select: hasItems, ...WORK_OPTIONS })
+function useWork(options: { staleTime: number; refetchOnWindowFocus?: boolean; enabled?: boolean } = WORK_OPTIONS) {
+  const cliente = useQuery({ queryKey: queryKeys.customers(SCOPE), queryFn: customersPage, select: hasItems, ...options })
+  const deal = useQuery({ queryKey: queryKeys.deals(SCOPE), queryFn: dealsPage, select: hasItems, ...options })
+  const ore = useQuery({ queryKey: queryKeys.timeEntries(SCOPE), queryFn: timeEntriesPage, select: hasItems, ...options })
+  const documento = useQuery({ queryKey: queryKeys.documents(SCOPE), queryFn: documentsPage, select: hasItems, ...options })
   const reads = [cliente, deal, ore, documento]
   return {
     cliente,
@@ -155,13 +160,30 @@ function useWork() {
 
 /**
  * Whether the space has any work yet, `null` while that is not known: the question the Home
- * asks to choose between the start page and the dashboard, and the sidebar asks to decide
- * whether «Primi passi» goes into the profile menu (REB-873). The same four reads under the
- * same keys, so the two share one answer and the second asker costs no request.
+ * asks to choose between the start page and the dashboard. The same four reads under the
+ * same keys as `useSpaceHasData`, so the two share one answer.
  */
 export function useSpaceEmpty(): { spaceEmpty: boolean | null; workFailed: boolean } {
   const { spaceEmpty, workFailed } = useWork()
   return { spaceEmpty, workFailed }
+}
+
+/**
+ * Whether the space has data, for the sidebar's «Primi passi» entry (REB-873): the same
+ * predicate as the Home's, so the two cannot disagree about when a space stops being new.
+ * `false` while it is unknown or for a space that answered «empty».
+ *
+ * Held once it is known, as the Home holds its own choice: `spaceEmpty` goes back to
+ * `null` while any of the four reads refetches (a write), and the entry must not blink out
+ * of the menu for that. A space does not lose its work -- so once it is known the reads
+ * are switched off here, and the sidebar costs nothing more for the rest of the session.
+ * Until then it watches them passively (`PASSIVE_WORK_OPTIONS`), sharing the Home's cache.
+ */
+export function useSpaceHasData(): boolean {
+  const [known, setKnown] = useState(false)
+  const { spaceEmpty } = useWork({ ...PASSIVE_WORK_OPTIONS, enabled: !known })
+  if (spaceEmpty === false && !known) setKnown(true)
+  return known
 }
 
 export function useFirstSteps(): FirstStepsState {

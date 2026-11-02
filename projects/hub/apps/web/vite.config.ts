@@ -1,14 +1,37 @@
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import path from 'node:path'
-import { defineConfig } from 'vitest/config'
+import { defineConfig, type Plugin } from 'vitest/config'
+
+/** The brand typeface is found late otherwise: the browser reads the stylesheet, then
+ *  the `@font-face`, then asks for the file. A preload in the head starts that fetch
+ *  with the page. The file name is hashed, so the link is written from the bundle. */
+function preloadBrandFont(): Plugin {
+  return {
+    name: 'preload-brand-font',
+    transformIndexHtml: {
+      order: 'post',
+      handler(_html, ctx) {
+        const font = Object.keys(ctx.bundle ?? {}).find((name) => /outfit-variable.*\.woff2$/.test(name))
+        if (!font) return []
+        return [
+          {
+            tag: 'link',
+            attrs: { rel: 'preload', as: 'font', type: 'font/woff2', crossorigin: '', href: `/hub/${font}` },
+            injectTo: 'head',
+          },
+        ]
+      },
+    },
+  }
+}
 
 export default defineConfig({
   // Served at letsrebase.com/hub/ by its own nginx (deploy/nginx.conf), so every
   // emitted asset URL carries the prefix. The API client uses absolute `/api/...`
   // paths and does not inherit it.
   base: '/hub/',
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), preloadBrandFont()],
   build: {
     rolldownOptions: {
       output: {

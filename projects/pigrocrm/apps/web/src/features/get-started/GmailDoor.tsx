@@ -28,7 +28,7 @@ import { Mail } from 'lucide-react'
 import { Button } from '@rebase/ui/button'
 import { useAuth, useCanWrite } from '@/lib/auth'
 import { ConsentOutcome } from '@/components/ConsentOutcome'
-import { messaggioEsito, riprovaEsito } from '@/features/gmail/esito'
+import { consentOutcome } from '@/features/consent/outcome'
 import { GMAIL_OAUTH_START, useGmailHealth } from '@/features/gmail/queries'
 import { SuggestedCustomers } from '@/features/gmail/SuggestedCustomers'
 
@@ -47,7 +47,7 @@ export function GmailDoor({ esito }: { esito?: string }) {
           </p>
         </div>
       </header>
-      <ConsentOutcome messaggio={messaggioEsito(esito)} riprova={riprovaEsito(esito)} />
+      <ConsentOutcome {...consentOutcome('gmail', esito)} />
       <DoorState />
     </section>
   )

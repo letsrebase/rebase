@@ -2,7 +2,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { SlackNotice } from './SlackNotice'
-import { messaggioEsito, riprovaEsito } from './esito'
 import { api } from '@/lib/api'
 
 vi.mock('@/lib/api', async (importOriginal) => {
@@ -66,30 +65,5 @@ describe('SlackNotice', () => {
     expect(note).toHaveTextContent('su Slack non ricevi nulla')
     expect(note).toHaveTextContent('Chiedi a un amministratore')
     expect(note).toHaveAttribute('data-slack-state', 'unmatched')
-  })
-})
-
-describe('the outcome of an install', () => {
-  it('renders four fixed sentences and nothing a link carries', () => {
-    expect(messaggioEsito('collegato')).toBe('Slack collegato.')
-    expect(messaggioEsito('negato')).toMatch(/negata/)
-    expect(messaggioEsito('errore')).toMatch(/non è andato a buon fine/)
-    expect(messaggioEsito('sessione')).toMatch(/sessione è scaduta/)
-    expect(messaggioEsito('<b>ciao</b>')).toBeNull()
-    expect(messaggioEsito(undefined)).toBeNull()
-  })
-
-  it('offers «Riprova» only after a session that ran out', () => {
-    expect(riprovaEsito('sessione')).toBe('/api/slack/oauth/start')
-    expect(riprovaEsito('errore')).toBeNull()
-    expect(riprovaEsito(undefined)).toBeNull()
-  })
-})
-
-describe('an address bar that carries a crafted outcome', () => {
-  it('reads inherited property names as no outcome at all', () => {
-    for (const crafted of ['__proto__', 'constructor', 'toString', 'hasOwnProperty']) {
-      expect(messaggioEsito(crafted)).toBeNull()
-    }
   })
 })

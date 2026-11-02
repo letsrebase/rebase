@@ -3,7 +3,10 @@ import { correspondentKeys } from '@/features/gmail/correspondents'
 import { useLegalEntityScope } from '@/lib/legalEntity'
 import { api, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
+import { asBody } from '@/lib/formValues'
+import { keepWhileTyping } from '@/lib/keepWhileTyping'
 import { queryKeys } from '@/lib/query'
+import { useCursorPages } from '@/lib/useCursorPages'
 
 /**
  * Wire shape of one customer, taken directly from the generated OpenAPI schema
@@ -31,20 +34,55 @@ interface CustomersListParams {
  * shared client (lib/api.ts) is built with `baseUrl: ''` to match -- confirmed live,
  * the bare path 404s.
  */
-export function useCustomers(params: CustomersListParams = {}) {
-  // The sidebar's azienda, when one is selected (REB-625): on the list page and on
-  // every picker that offers the space's customers, which under azienda A are A's.
-  const scoped = useLegalEntityScope(params)
+function fetchCustomersPage(params: CustomersListParams, cursor?: string) {
+  return unwrap(
+    api.GET('/api/customers', {
+      params: {
+        query: {
+          search: params.search,
+          limit: params.limit,
+          azienda_id: params.azienda_id,
+          cursor,
+        },
+      },
+    }),
+  )
+}
+
+/**
+ * One page of customers, for a picker that asks the server for the few that match what
+ * was typed (`CustomerPicker`). The Clienti list itself walks the pages: `useCustomerPages`.
+ */
+export function useCustomers(
+  params: CustomersListParams = {},
+  options: { enabled?: boolean } = {},
+) {
+  // The sidebar's azienda, when one is selected (REB-625): on every picker that offers
+  // the space's customers, which under azienda A are A's. An azienda the caller names is
+  // its own scope and wins over the sidebar's.
+  const sidebarScoped = useLegalEntityScope(params)
+  const scoped = params.azienda_id === undefined ? sidebarScoped : params
   return useQuery({
     queryKey: queryKeys.customers(scoped),
-    queryFn: () =>
-      unwrap(
-        api.GET('/api/customers', {
-          params: {
-            query: { search: scoped.search, limit: scoped.limit, azienda_id: scoped.azienda_id },
-          },
-        }),
-      ),
+    enabled: options.enabled ?? true,
+    queryFn: () => fetchCustomersPage(scoped),
+    // The picker's term is typed: keep the previous matches up until the next ones land.
+    placeholderData: keepWhileTyping(queryKeys.customers(scoped)),
+  })
+}
+
+/**
+ * The Clienti list, every page reachable: the first on arrival and one more per
+ * `loadMore()`, so a space with more customers than a page holds is not cut at the first
+ * page with only the search to reach the rest. Under the `['customers']` prefix every
+ * customer write invalidates; `pages` in the key keeps its infinite-query data apart from
+ * `useCustomers`' single pages.
+ */
+export function useCustomerPages(params: Pick<CustomersListParams, 'search'> = {}) {
+  const scoped = useLegalEntityScope(params)
+  return useCursorPages({
+    queryKey: queryKeys.customers({ ...scoped, pages: true }),
+    fetchPage: (cursor) => fetchCustomersPage(scoped, cursor),
   })
 }
 
@@ -67,16 +105,13 @@ export function useCustomer(customerId: string, options: { enabled?: boolean } =
  * `body` arrives as the loosely-typed `Record<string, unknown>` that
  * `CustomerForm.submit` builds from whatever `DynamicForm` collected -- a dynamic
  * mix of native columns and tenant-defined custom fields that no fixed interface can
- * describe. `as unknown as CustomerCreateBody` says so honestly, the same idiom
- * `lib/schema.ts` already uses for the same reason (`schema as unknown as
- * EntitySchema`), rather than a bare `as never` that hides the target type
- * entirely.
+ * describe. `asBody` is where that is said, once.
  */
 export function useCreateCustomer() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (body: Record<string, unknown>) =>
-      unwrap(api.POST('/api/customers', { body: body as unknown as CustomerCreateBody })),
+      unwrap(api.POST('/api/customers', { body: asBody<CustomerCreateBody>(body) })),
     onSuccess: () => {
       // `queryKeys.customers()` (params defaulting to `{}`) is a deliberate
       // wildcard here, not merely "the no-filter case": TanStack Query matches an
@@ -96,7 +131,7 @@ export function useUpdateCustomer(customerId: string) {
       unwrap(
         api.PATCH('/api/customers/{customer_id}', {
           params: { path: { customer_id: customerId } },
-          body: body as unknown as CustomerUpdateBody,
+          body: asBody<CustomerUpdateBody>(body),
         }),
       ),
     onSuccess: (_updated, body) => {
@@ -134,7 +169,7 @@ export function useDeleteCustomer() {
 
 // -- Collegamenti: the customer detail page's own "linked records" tab -------------
 //
-// Deliberately not `usePeople`/`useDeals` from `features/people`/`features/deals`
+// Deliberately not `usePeoplePages`/`useDeals` from `features/people`/`features/deals`
 // (which exist now, with their own, more general list hooks): these two are
 // narrower on purpose, exactly enough to render this one tab's short preview list,
 // not a general-purpose people/deals data layer. Both list endpoints already

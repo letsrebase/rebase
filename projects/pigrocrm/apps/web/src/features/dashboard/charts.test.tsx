@@ -7,7 +7,7 @@
  */
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import { BarRows, BigNumber, Sparkline } from './charts'
+import { BarRows, BigNumber } from './charts'
 
 describe('BigNumber', () => {
   it('renders the value exactly as given, never reformatted', () => {
@@ -113,43 +113,3 @@ describe('BarRows', () => {
   })
 })
 
-describe('Sparkline', () => {
-  const points = [
-    { label: 'lun', value: '8,00', ratio: 1 },
-    { label: 'mar', value: '0,00', ratio: 0 },
-    { label: 'mer', value: '4,00', ratio: 0.5 },
-  ]
-
-  it('renders an SVG marked decorative and a table that carries the data', () => {
-    render(<Sparkline caption="Ore per giorno" points={points} />)
-    expect(screen.getByTestId('sparkline-svg')).toHaveAttribute('aria-hidden', 'true')
-    expect(screen.getByRole('table', { name: 'Ore per giorno' })).toBeInTheDocument()
-    expect(screen.getByText('mar')).toBeInTheDocument()
-    expect(screen.getByText('0,00')).toBeInTheDocument()
-  })
-
-  it('plots each ratio at its own height, spanning the full width', () => {
-    // The path is the only place the ratios are used at all, so an assertion on the
-    // rendered `d` is what separates a real plot from three points drawn on one line.
-    render(<Sparkline caption="Ore per giorno" points={points} />)
-    const path = screen.getByTestId('sparkline-svg').querySelector('path')
-    // viewBox is 240x48: y=0 is ratio 1 and y=48 is ratio 0, so the middle point sits on
-    // the baseline and the last one halfway up.
-    expect(path).toHaveAttribute('d', 'M0.0,0.0 L120.0,48.0 L240.0,24.0')
-  })
-
-  it('handles a single point without dividing by zero', () => {
-    render(<Sparkline caption="c" points={[{ label: 'lun', value: '8', ratio: 1 }]} />)
-    const svg = screen.getByTestId('sparkline-svg')
-    expect(svg).toBeInTheDocument()
-    // `width / (points.length - 1)` is a division by zero here; NaN coordinates render as
-    // an invisible line rather than as an error, so the guard needs its own assertion.
-    expect(svg.querySelector('path')?.getAttribute('d')).not.toMatch(/NaN/)
-  })
-
-  it('renders an empty state rather than a path with no points', () => {
-    render(<Sparkline caption="Ore per giorno" points={[]} />)
-    expect(screen.getByText(/nessun dato/i)).toBeInTheDocument()
-    expect(screen.queryByTestId('sparkline-svg')).not.toBeInTheDocument()
-  })
-})

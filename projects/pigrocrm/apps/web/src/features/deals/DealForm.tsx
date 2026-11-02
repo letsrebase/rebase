@@ -16,9 +16,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@rebase/ui/select'
-import { useCustomers } from '@/features/customers/queries'
+import { CustomerPicker } from '@/features/customers/CustomerPicker'
 import type { ProblemDetail } from '@/lib/api'
-import { clearedNativeValue, type FieldDefinition } from '@/lib/schema'
+import { toFormValues, toRequestBody, type FormValues } from '@/lib/formValues'
+import type { FieldDefinition } from '@/lib/schema'
 import type { Deal } from './queries'
 
 const NATIVE_FIELDS: FieldDefinition[] = [
@@ -70,121 +71,36 @@ export interface OwnerOption {
 const NATIVE_FIELD_KEYS = NATIVE_FIELDS.map((field) => field.key)
 
 /**
- * The form's state, kept in the two namespaces the API itself uses -- copies
- * `features/customers/CustomerForm.tsx`'s `CustomerFormValues` exactly, for the
- * exact same reason (see that file's own docstring for the full reproduction of
- * the bug a flattened bag caused on Customers, closed the same way on Persons):
- * provenance has to be structural, decided once when the form is seeded, never
- * re-derived from whatever the active schema currently renders.
+ * The form's state in the API's two namespaces -- see `FormValues`.
  *
  * `customer_id` is deliberately **not** one of `NATIVE_FIELD_KEYS`, unlike
- * Person's identically-shaped `PersonFormValues`. `DealUpdate` has no
- * `customer_id` field at all -- deals/schemas.py's own comment: reassigning it
- * "would bypass the validation ... logic that create exists to enforce", and
- * unlike `pipeline_stage_id` (which has `move_stage` as its dedicated, supported
- * way to change), there is no re-assign endpoint for a deal's customer at all. A
- * deal's customer is fixed at creation and never shown as editable again. The
- * "Cliente" picker below still writes into `native.customer_id` through the same
- * generic `change()` every other field uses -- it is simply never seeded by
+ * Person's identically-shaped values. `DealUpdate` has no `customer_id` field at
+ * all -- deals/schemas.py's own comment: reassigning it "would bypass the
+ * validation ... logic that create exists to enforce", and unlike
+ * `pipeline_stage_id` (which has `move_stage` as its dedicated, supported way to
+ * change), there is no re-assign endpoint for a deal's customer at all. A deal's
+ * customer is fixed at creation and never shown as editable again. The "Cliente"
+ * picker below still writes into `native.customer_id` through the same generic
+ * `change()` every other field uses -- it is simply never seeded by
  * `dealToFormValues` (there is nothing to show; the picker itself is only
  * rendered on create) and never part of an edit payload (`submit` below only
  * ever reads it back out when `initial` is `undefined`).
  */
-export interface DealFormValues {
-  /** Editable native columns, exactly `NATIVE_FIELD_KEYS`, plus `customer_id`
-   *  while a create dialog is open (see this interface's own docstring). */
-  native: Record<string, unknown>
-  /** Everything stored under `custom_fields`, including keys whose definition
-   *  has since been archived and which therefore render nowhere. */
-  custom: Record<string, unknown>
-}
+export type DealFormValues = FormValues
 
 const DEFAULT_CREATE_VALUES: DealFormValues = { native: {}, custom: {} }
 
 /**
  * Builds the form's starting state from a real, already-saved deal.
  *
- * Deliberately not `{ ...deal, ...deal.custom_fields }`: `deal` also carries
- * `id`, `customer_id`, `pipeline_stage_id`, `owner_id`, `created_at` and
- * `updated_at`, none of which `DealUpdate` accepts (`model_config =
- * ConfigDict(extra="forbid")`, deals/schemas.py) -- sending any of them straight
- * back would 422 with "extra fields not permitted" on every single edit.
- * Listing exactly the editable native keys keeps the round trip to only what the
- * form is actually allowed to send; `custom_fields` is copied whole into its own
- * namespace, archived keys included -- see `DealFormValues` for why they must
- * not be dropped and must not be merged in with the native ones.
+ * A `DealRead` also carries `id`, `customer_id`, `pipeline_stage_id`, `created_at` and
+ * `updated_at`, none of which `DealUpdate` accepts (`extra="forbid"`), so only
+ * `NATIVE_FIELD_KEYS` and the owner are seeded -- see `toFormValues`.
  */
 export function dealToFormValues(deal: Deal): DealFormValues {
-  const native: Record<string, unknown> = {}
-  for (const key of NATIVE_FIELD_KEYS) {
-    native[key] = (deal as unknown as Record<string, unknown>)[key]
-  }
-  native.owner_id = deal.owner_id
-  return { native, custom: { ...deal.custom_fields } }
-}
-
-/** Mirrors `is_blank` in packages/core/src/pigrocrm/core/fields/validator.py, and
- *  `CustomerForm`/`PersonForm`'s identical helper: `null`/`undefined`, a
- *  whitespace-only string, or an empty array all mean "no value" -- `false` and
- *  `0` do not, they are real values. */
-function isBlank(value: unknown): boolean {
-  if (value === null || value === undefined) return true
-  if (typeof value === 'string') return value.trim() === ''
-  if (Array.isArray(value)) return value.length === 0
-  return false
-}
-
-/**
- * Split out of `DealForm` so `useCustomers` is only ever mounted -- and
- * therefore only ever called -- while this picker is actually rendered, i.e.
- * only on create. `DealForm` stays mounted across every dialog open/close
- * (see the `wasOpen` reset pattern below) and, on the detail route, sits
- * behind `open={false}` for as long as the page is simply being *viewed* --
- * before this split, `isCreate` gated only the JSX, so `useCustomers({limit:
- * 200})` still ran unconditionally and fired a `GET /api/customers?limit=200`
- * on every single deal detail page view, for a dropdown nobody could see or
- * use there. Conditionally *rendering* this component, rather than
- * conditionally *calling* the hook inside the parent, is the same fix
- * `features/people/$personId.tsx`'s `LinkedCustomerRow` applies for a
- * different reason (an unsafe empty id there; a wasted request here) --
- * `DealForm` itself needs no change beyond mounting this only inside
- * `{isCreate && ...}`.
- */
-function CustomerPicker({
-  value,
-  onChange,
-}: {
-  value: string
-  onChange: (value: string) => void
-}) {
-  // `limit: 200` mirrors `PersonForm`'s identical picker -- a one-shot cap for
-  // a dropdown, not a paginated list of its own; see that file's own comment.
-  const customers = useCustomers({ limit: 200 })
-
-  return (
-    <div className="space-y-2">
-      <Label htmlFor="deal-customer">
-        Cliente
-        {/* The semantic `destructive` token, matching DynamicFieldRenderer.
-            tsx's own `RequiredMark` -- never the raw brand `--color-
-            watermelon`, which that component's docstring reserves for
-            logos/decorative accents, not small body text like this. */}
-        <span className="ml-1 text-destructive">*</span>
-      </Label>
-      <Select value={value} onValueChange={onChange}>
-        <SelectTrigger id="deal-customer" className="w-full">
-          <SelectValue placeholder="Seleziona un cliente…" />
-        </SelectTrigger>
-        <SelectContent>
-          {customers.data?.items.map((customer) => (
-            <SelectItem key={customer.id} value={customer.id}>
-              {customer.ragione_sociale}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  )
+  const values = toFormValues(deal, NATIVE_FIELD_KEYS)
+  values.native.owner_id = deal.owner_id
+  return values
 }
 
 interface Props {
@@ -254,27 +170,16 @@ export function DealForm({
   }
 
   function submit() {
-    const native: Record<string, unknown> = {}
-    for (const [key, value] of Object.entries(values.native)) {
-      // `customer_id` cannot follow the plain-native-column rule below -- see the
-      // dedicated handling just after this loop for why.
-      if (key === 'customer_id' || key === 'owner_id') continue
-      if (!isBlank(value)) {
-        native[key] = value
-      } else if (!isBlank(initial?.native[key])) {
-        // The user cleared a native column that used to hold a value -- say so
-        // explicitly instead of dropping the key, or the old value survives
-        // untouched. Which spelling says it depends on the column's type, and this
-        // form is the one that has both: `nome` clears on `""`, while
-        // `valore_previsto`, `ore_preventivate`, `valore_preventivato` and
-        // `data_chiusura_prevista` clear on `null`. Sending `""` for those four was
-        // a 422 from Pydantic before it was anything else -- an estimate typed once
-        // could not be taken back, which is residual A14 seen from this side of the
-        // wire. See `clearedNativeValue`.
-        native[key] = clearedNativeValue(NATIVE_FIELDS, key)
-      }
-      // else: blank now, blank (or never set) before -- nothing changed.
-    }
+    // `nome` clears on `""`, while `valore_previsto`, `ore_preventivate`,
+    // `valore_preventivato` and `data_chiusura_prevista` clear on `null` -- sending `""`
+    // for those four was a 422 from Pydantic: an estimate typed once could not be taken
+    // back. `customer_id` and `owner_id` are handled below instead.
+    const body = toRequestBody(values, {
+      fields: NATIVE_FIELDS,
+      initial,
+      isRenderedCustomKey,
+      skipNative: (key) => key === 'customer_id' || key === 'owner_id',
+    })
 
     // Create-only: see `DealFormValues`'s own docstring for why `customer_id`
     // never appears in an edit payload at all -- the picker is not even rendered
@@ -287,34 +192,16 @@ export function DealForm({
     // duplicates that check here.
     if (isCreate) {
       const customerId = values.native.customer_id as string | null | undefined
-      if (customerId) native.customer_id = customerId
+      if (customerId) body.customer_id = customerId
     }
 
     // Only what was changed: re-sending an unchanged owner would be refused the day that
     // person is deactivated. `null` takes the owner away.
     if (owners !== undefined && chosenOwner !== undefined && chosenOwner !== initial?.native.owner_id) {
-      native.owner_id = chosenOwner
+      body.owner_id = chosenOwner
     }
 
-    const custom: Record<string, unknown> = {}
-    for (const [key, value] of Object.entries(values.custom)) {
-      if (!isRenderedCustomKey(key)) {
-        // A stored value whose definition is archived: omit the key and
-        // `_update_custom_fields` carries the stored value over untouched -- see
-        // `CustomerForm.submit`'s docstring for the four spellings this was
-        // verified against on Customers; `DealService._update_custom_fields`
-        // copies that same contract exactly.
-        continue
-      }
-      if (!isBlank(value)) {
-        custom[key] = value
-      } else if (!isBlank(initial?.custom[key])) {
-        // A custom field clears only on an explicit `null`.
-        custom[key] = null
-      }
-    }
-
-    onSubmit({ ...native, custom_fields: custom })
+    onSubmit(body)
   }
 
   return (
@@ -325,10 +212,21 @@ export function DealForm({
         </DialogHeader>
 
         {isCreate && (
-          <CustomerPicker
-            value={(values.native.customer_id as string) ?? ''}
-            onChange={(value) => change('customer_id', value)}
-          />
+          <div className="space-y-2">
+            <Label htmlFor="deal-customer">
+              Cliente
+              {/* The semantic `destructive` token, matching DynamicFieldRenderer.
+                  tsx's own `RequiredMark` -- never the raw brand `--color-
+                  watermelon`, which that component's docstring reserves for
+                  logos/decorative accents, not small body text like this. */}
+              <span className="ml-1 text-destructive">*</span>
+            </Label>
+            <CustomerPicker
+              id="deal-customer"
+              value={(values.native.customer_id as string | null | undefined) ?? null}
+              onChange={(customer) => change('customer_id', customer?.id ?? null)}
+            />
+          </div>
         )}
 
         <DynamicForm

@@ -46,7 +46,7 @@ from rebase_core.cloud import TalentCloudService
 from rebase_core.companies import CompanyService
 from rebase_core.crm_link import NOT_CONFIGURED as CRM_NOT_CONFIGURED
 from rebase_core.duplicates import DuplicateListRead, duplicate_list
-from rebase_core.errors import TeamBuilderOff
+from rebase_core.errors import NotFound, TeamBuilderOff
 from rebase_core.freelancers import ENTITY as FREELANCER
 from rebase_core.freelancers import FreelancerService
 from rebase_core.logins import LoginService
@@ -85,11 +85,12 @@ from rebase_core.schemas import (
     StatusChange,
     TalentCloudGrantRead,
     TalentoList,
+    TalentoRead,
     VettedChange,
 )
 from rebase_core.search import SEARCH_MAX_LENGTH
 from rebase_core.service import SignupService
-from rebase_core.talenti import TalentiService
+from rebase_core.talenti import TalentiService, lead_by_id
 from rebase_core.team_schemas import FreelancerCardAdminRead
 from rebase_core.users import UserService
 from rebase_core.validation import SafeStr
@@ -645,6 +646,17 @@ def draft_card_from_signup(
     resolves to. 404 for an unknown signup; 422 naming `email` when the person has
     already filled their card, which research never overwrites."""
     return FreelancerService(session).draft_from_signup(signup_id, payload, admin.id, SOURCE)
+
+
+@router.get("/signups/{signup_id}", response_model=TalentoRead)
+def get_signup(_: AdminDep, session: SessionDep, signup_id: UUID) -> TalentoRead:
+    """One bare sign-up as the row the Talenti list shows for it (`stato` «lead», `origine`
+    «form»): the page of a person who has no card yet. 404 for an unknown id, and for a
+    person who already has a card, whom the list shows as that card."""
+    lead = lead_by_id(session, signup_id)
+    if lead is None:
+        raise NotFound("talento", signup_id)
+    return lead
 
 
 # ---- notes -----------------------------------------------------------------------------

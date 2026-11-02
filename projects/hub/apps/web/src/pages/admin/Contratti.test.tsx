@@ -17,7 +17,7 @@ function answer(status: number, body: unknown) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 }
 
-/** `lists.test.tsx`'s router of fetches, plus a handler that may be a function of the
+/** `list-test-kit.tsx`'s router of fetches, plus a handler that may be a function of the
  *  request, so one test can answer a GET differently after a POST, and may itself
  *  answer a promise the test resolves later (`deferred`), to catch a button mid-request. */
 function routeFetch(handlers: Record<string, unknown>) {
