@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { createContext, use, useEffect, useRef, type ReactNode } from 'react'
+import { createContext, use, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { forgetSession, identifySession } from './analytics'
-import { api, unwrap } from './api'
+import { api, toProblem, unwrap } from './api'
 import type { components } from './api-types'
 import { can, canWrite, isAdmin, type Action } from './permissions'
 import { queryKeys } from './query'
@@ -32,11 +32,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     queryFn: async () => {
       try {
         return await unwrap(api.GET('/api/auth/me'))
-      } catch {
-        return null // not authenticated is a normal state, not an error
+      } catch (caught) {
+        // Only a 401 means "no session": a normal state, not an error. Anything else
+        // (a 5xx, a proxy 502 while the API restarts, a lost connection) says nothing
+        // about the session, and mapping it to `null` bounced a signed-in person to the
+        // login page and threw their open forms away. Rethrown, React Query keeps the
+        // previous `data` of a failed refetch, so `user` survives the blip.
+        if (toProblem(caught).status === 401) return null
+        throw caught
       }
     },
-    retry: false,
+    retry: 2,
     // Without this, a role change or deactivation made from another session
     // only reaches an already-open tab on its next full reload: `useIsAdmin`/
     // `useCanWrite` read this same cached value, so a demoted admin kept
@@ -106,10 +112,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // first `null` is not a reset: that would break the merge of their login pageview
   // into the person they are about to become.
   const identified = useRef<string | undefined>(undefined)
-  const forget = () => {
+  const forget = useCallback(() => {
     identified.current = undefined
     forgetSession()
-  }
+  }, [])
   const userId = user?.id
   const email = user?.email
   const nome = user?.nome
@@ -123,54 +129,66 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     identifySession({ id: userId, email, nome, ruolo })
   }, [userId, email, nome, ruolo])
 
-  const value: AuthValue = {
-    user,
-    isLoading,
-    login: async (email, password) => {
-      await loginMutation.mutateAsync({ email, password })
-    },
-    enterWithLink: async (t) => {
-      await enterMutation.mutateAsync({ t })
-    },
-    enterWithInvite: async (t, nome) => {
-      await inviteMutation.mutateAsync({ t, nome: nome ?? null })
-    },
-    /**
-     * Ends the session and then leaves the page, whatever the server answered.
-     *
-     * The `POST` is what kills the session server-side and clears the cookies; the
-     * navigation after it is a full page load of the login screen, not a router push.
-     * A push would leave this tab's whole in-memory state alive -- the query cache, the
-     * cross-tab refresh lock, every component that read `user` a moment ago -- and it
-     * used to leave the person on the login form with `me` refetching behind it, which
-     * is how a session the server had not fully dropped bounced them back in. A load
-     * starts from nothing: the login page asks `me`, gets a 401, shows the form.
-     *
-     * `finally`, not `onSuccess`: a logout the network lost is still a logout the
-     * person asked for, and the worst case of leaving anyway is the login page finding
-     * the session alive and sending them back to the home.
-     */
-    logout: async () => {
-      try {
-        // Push on this browser goes with the session it was for (REB-738), while the
-        // session still authorises the call. Bounded, and it never throws.
-        await leavePush()
-        await logoutMutation.mutateAsync()
-      } finally {
-        // Before the page leaves, and in the `finally` for the same reason the
-        // navigation is: the person asked to be forgotten here too, and the next login
-        // on this browser must not be stitched onto them. Leaving matters more than
-        // forgetting, so a third-party call that throws cannot keep the page here.
+  const value = useMemo<AuthValue>(
+    () => ({
+      user,
+      isLoading,
+      login: async (email, password) => {
+        await loginMutation.mutateAsync({ email, password })
+      },
+      enterWithLink: async (t) => {
+        await enterMutation.mutateAsync({ t })
+      },
+      enterWithInvite: async (t, nome) => {
+        await inviteMutation.mutateAsync({ t, nome: nome ?? null })
+      },
+      /**
+       * Ends the session and then leaves the page, whatever the server answered.
+       *
+       * The `POST` is what kills the session server-side and clears the cookies; the
+       * navigation after it is a full page load of the login screen, not a router push.
+       * A push would leave this tab's whole in-memory state alive -- the query cache, the
+       * cross-tab refresh lock, every component that read `user` a moment ago -- and it
+       * used to leave the person on the login form with `me` refetching behind it, which
+       * is how a session the server had not fully dropped bounced them back in. A load
+       * starts from nothing: the login page asks `me`, gets a 401, shows the form.
+       *
+       * `finally`, not `onSuccess`: a logout the network lost is still a logout the
+       * person asked for, and the worst case of leaving anyway is the login page finding
+       * the session alive and sending them back to the home.
+       */
+      logout: async () => {
         try {
-          forget()
-        } catch {
-          // deliberately ignored
+          // Push on this browser goes with the session it was for (REB-738), while the
+          // session still authorises the call. Bounded, and it never throws.
+          await leavePush()
+          await logoutMutation.mutateAsync()
+        } finally {
+          // Before the page leaves, and in the `finally` for the same reason the
+          // navigation is: the person asked to be forgotten here too, and the next login
+          // on this browser must not be stitched onto them. Leaving matters more than
+          // forgetting, so a third-party call that throws cannot keep the page here.
+          try {
+            forget()
+          } catch {
+            // deliberately ignored
+          }
+          queryClient.clear()
+          window.location.assign(`${tenantPrefix}/app/login`)
         }
-        queryClient.clear()
-        window.location.assign(`${tenantPrefix}/app/login`)
-      }
-    },
-  }
+      },
+    }),
+    [
+      user,
+      isLoading,
+      loginMutation.mutateAsync,
+      enterMutation.mutateAsync,
+      inviteMutation.mutateAsync,
+      logoutMutation.mutateAsync,
+      queryClient,
+      forget,
+    ],
+  )
 
   return <AuthContext value={value}>{children}</AuthContext>
 }

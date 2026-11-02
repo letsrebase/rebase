@@ -88,6 +88,21 @@ describe('AuthProvider — session freshness', () => {
     expect(await screen.findByText('not-admin')).toBeInTheDocument()
   })
 
+  it('keeps the person signed in when a poll fails for a reason that is not a 401', async () => {
+    vi.mocked(api.GET).mockReturnValueOnce(Promise.resolve(ok(ADMIN)))
+    renderProbe()
+    expect(await screen.findByText('admin')).toBeInTheDocument()
+
+    // The API restarting behind the proxy: a 502 says nothing about the session.
+    vi.mocked(api.GET).mockReturnValue(
+      Promise.resolve({ error: { detail: 'Bad gateway' }, response: new Response(null, { status: 502 }) } as never),
+    )
+    await vi.advanceTimersByTimeAsync(40_000)
+
+    expect(screen.getByText('admin')).toBeInTheDocument()
+    expect(resetUser).not.toHaveBeenCalled()
+  })
+
   it('does not poll before a session exists, so the login page does not hammer the endpoint pre-auth', async () => {
     vi.mocked(api.GET).mockReturnValue(
       Promise.resolve({ error: { detail: 'Autenticazione richiesta' }, response: new Response(null, { status: 401 }) } as never),
