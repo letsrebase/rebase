@@ -66,35 +66,48 @@ function settled<T>(
   return result.data
 }
 
-async function hasCustomers(): Promise<boolean> {
-  const page = settled(await api.GET('/api/customers', { params: { query: { limit: 1 } } }))
-  return (page?.items.length ?? 0) > 0
+/**
+ * The five «is there anything» reads keep the **page** the API sent and answer the boolean
+ * in `select`, instead of caching a boolean. Their keys sit under the prefixes the rest of
+ * the app invalidates (`['deals', …]`, `['customers', …]`), and that is also the prefix
+ * the Kanban's optimistic move walks with `getQueriesData` expecting `{ items }`: a boolean
+ * under `['deals', { scope: 'first-steps' }]` made `useMoveDeal` throw on `data.items.map`
+ * and drop every card move, once the shell kept the read mounted on every page (REB-873).
+ * The cache entry has the shape of a list page, as any other entry under the prefix does.
+ */
+interface Page {
+  items?: unknown[]
 }
 
-async function hasDeals(): Promise<boolean> {
-  const page = settled(await api.GET('/api/deals', { params: { query: { limit: 1 } } }))
-  return (page?.items.length ?? 0) > 0
+const NO_ITEMS = { items: [], next_cursor: null }
+
+const hasItems = (page: Page) => (page.items?.length ?? 0) > 0
+
+async function customersPage() {
+  return settled(await api.GET('/api/customers', { params: { query: { limit: 1 } } })) ?? NO_ITEMS
 }
 
-async function hasTimeEntries(): Promise<boolean> {
-  const page = settled(await api.GET('/api/time-entries', { params: { query: { limit: 1 } } }))
-  return (page?.items.length ?? 0) > 0
+async function dealsPage() {
+  return settled(await api.GET('/api/deals', { params: { query: { limit: 1 } } })) ?? NO_ITEMS
 }
 
-async function hasDocuments(): Promise<boolean> {
-  const page = settled(await api.GET('/api/documents', { params: { query: { limit: 1 } } }))
-  return (page?.items.length ?? 0) > 0
+async function timeEntriesPage() {
+  return settled(await api.GET('/api/time-entries', { params: { query: { limit: 1 } } })) ?? NO_ITEMS
+}
+
+async function documentsPage() {
+  return settled(await api.GET('/api/documents', { params: { query: { limit: 1 } } })) ?? NO_ITEMS
 }
 
 /** «La prima offerta» is an offer, not any document: since the invoice door (REB-224)
  *  files an issued invoice's PDF as a `fattura` document, «any document» would tick the
  *  step for a file that is not an offer. Any document still counts as work
- *  (`hasDocuments`, `spaceEmpty`). */
-async function hasOffers(): Promise<boolean> {
-  const page = settled(
-    await api.GET('/api/documents', { params: { query: { tipo: 'offerta', limit: 1 } } }),
+ *  (`documentsPage`, `spaceEmpty`). */
+async function offersPage() {
+  return (
+    settled(await api.GET('/api/documents', { params: { query: { tipo: 'offerta', limit: 1 } } })) ??
+    NO_ITEMS
   )
-  return (page?.items.length ?? 0) > 0
 }
 
 async function fiscalDataSaved(): Promise<boolean> {
@@ -122,10 +135,10 @@ const value = (q: { data?: boolean; isError: boolean }) => (q.isError ? true : (
 
 /** The four reads that say whether the space has any work, and the verdict they give. */
 function useWork() {
-  const cliente = useQuery({ queryKey: queryKeys.customers(SCOPE), queryFn: hasCustomers, ...WORK_OPTIONS })
-  const deal = useQuery({ queryKey: queryKeys.deals(SCOPE), queryFn: hasDeals, ...WORK_OPTIONS })
-  const ore = useQuery({ queryKey: queryKeys.timeEntries(SCOPE), queryFn: hasTimeEntries, ...WORK_OPTIONS })
-  const documento = useQuery({ queryKey: queryKeys.documents(SCOPE), queryFn: hasDocuments, ...WORK_OPTIONS })
+  const cliente = useQuery({ queryKey: queryKeys.customers(SCOPE), queryFn: customersPage, select: hasItems, ...WORK_OPTIONS })
+  const deal = useQuery({ queryKey: queryKeys.deals(SCOPE), queryFn: dealsPage, select: hasItems, ...WORK_OPTIONS })
+  const ore = useQuery({ queryKey: queryKeys.timeEntries(SCOPE), queryFn: timeEntriesPage, select: hasItems, ...WORK_OPTIONS })
+  const documento = useQuery({ queryKey: queryKeys.documents(SCOPE), queryFn: documentsPage, select: hasItems, ...WORK_OPTIONS })
   const reads = [cliente, deal, ore, documento]
   return {
     cliente,
@@ -164,7 +177,8 @@ export function useFirstSteps(): FirstStepsState {
   const { cliente, deal, ore, reads, spaceEmpty, workFailed } = useWork()
   const offerta = useQuery({
     queryKey: queryKeys.documents({ ...SCOPE, tipo: 'offerta' }),
-    queryFn: hasOffers,
+    queryFn: offersPage,
+    select: hasItems,
     ...OPTIONS,
   })
 
