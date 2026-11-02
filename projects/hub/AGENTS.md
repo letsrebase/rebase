@@ -503,6 +503,23 @@ registry (`pigro`), the engagements link (`engagements`, its report maths in
 column names, and the rule that **no database lock is held across the CRM's call** is written out in
 its docstring.
 
+## The `rebase` command (REB-892)
+
+`rebase_core.cli` is a package, one module per group of commands (`members`, `cards`, `campaigns`,
+`signing`, `ai`, `loops`) and a `REGISTRY` of names and help in `cli/__init__.py`; `main` imports a
+group's module only when one of its commands is chosen, and a command imports what its own work needs
+inside its handler, so `rebase campaigns-tick` does not load the model providers' libraries. A command
+is a `Command` (`cli/common.py`) in its module's `COMMANDS`. **The three compose loops are
+`rebase loop campaigns|sweep|cards`** (`cli/loops.py`): one process each, sleep first (60, 600 and 300
+seconds), then the same functions the commands call, a failing step logged (class only, plus the
+sentence of a `DomainError`) and the loop going on, SIGTERM and SIGINT ending it (a sleep at once, a
+pass after it finishes, a second signal immediately). The `cards` loop polls the Message Batch on every
+pass and, on the 12th, runs `sources-refetch --limit 50` and, only with `REBASE_CARDS_LOOP=on`
+(`Settings.cards_loop`), `cards-refresh --limit 50`. `rebase createtoken` prints the token once on
+stdout, or with `--token-file PATH` writes it there alone (mode 0600, never over an existing file),
+and `--expires-in-days N` sets its expiry; `createtoken` and `setrole` prompt only at a terminal and
+otherwise refuse with exit code 2.
+
 ## Campaigns
 
 Since P-REB-41 «Invia una campagna» the `campaigns` service in `docker-compose.yml` runs
@@ -582,7 +599,7 @@ checkout, was wiped this way on 24/09. A wave's own scripts belong in the reposi
 they are worth keeping) or outside `/opt/hub` entirely, the same rule `REBASE_DATA_DIR`
 follows for Postgres's own files.
 
-**Six rules keep an address out of a campaign, and only one of them is an opt-out.**
+**Five rules keep an address out of a campaign, and only one of them is an opt-out.**
 `exclusions()` (`rebase_core.campaigns.audience`) runs when the list is shown, when it
 is frozen and again right before each mail, and leaves out, with the reason on screen:
 an admin, by `User.role == "admin"` (`REASON_ADMIN`, no row needed); a person whose card
@@ -591,15 +608,12 @@ row in `campaign_optouts` -- `fonte='link'` for the recipient's own unsubscribe,
 `'reclamo'` for a spam complaint Resend reports, `'admin'` for «Non scrivere mai»,
 which is how the team goes in rather than relying on the role check; an address that
 hard-bounced on any earlier campaign (`campaign_recipients.rimbalzata_at`, no optout
-row); an address nobody has shown to be its owner's (`REASON_UNVERIFIED`, REB-889: a card
-the person made in the wizard, `compilata_da = 'persona'`, whose address has no `logins` row,
-since anyone can type any address into the wizard; the first magic-link login lifts it;
-an admin's own draft, `compilata_da = 'admin'`, is vouched for by the admin and is not held
-back, nor is a sign-up lead, whose form is the list itself, nor a company's referente, whose
-request an admin works); and an address another campaign reached in the last `REBASE_CAMPAIGN_GAP_DAYS`
+row); and an address another campaign reached in the last `REBASE_CAMPAIGN_GAP_DAYS`
 (3), the gap rule that also turns several campaigns scheduled for the same minute into
-one mail per person. A wizard card nobody has entered through is therefore never in
-«Scheda vuota, mai entrati» as anything but greyed out; that journey reaches the admin's drafts. Before each mail the tick also checks whether the action is
+one mail per person. There is no rule for an address nobody has confirmed (a stranger can
+type any address into the wizard): excluding every card with no `logins` row would also drop
+the people who gave their own address and never opened the area, so it is Lorenzo's call
+(REB-889, deferred). Before each mail the tick also checks whether the action is
 already done (`done_at`) and, for a list built from a state or from filters, whether
 the person is still on it. That list is rebuilt once per pass, since it is a query over
 every card (the state is filtered in SQL, `states._journey_state`, held to `card_state` by a
@@ -729,7 +743,7 @@ cards go on being written and requests already filed stay in «Richieste team».
 **The backlog is `rebase cards-refresh`.** A card is written after the wizard or a CV
 upload, so the CVs already on file need it too: since REB-552 the `cards` service runs
 it once an hour, up to 50 cards. The loop itself is gated by `REBASE_CARDS_LOOP`
-(`.env`, default `off`), no Python setting: production keeps it `off` until the talents'
+(`.env`, default `off`; `Settings.cards_loop`, read by `rebase loop cards`): production keeps it `off` until the talents'
 mail of spec § 4.4 has gone out, so a deploy that already has a model configured never sends a
 CV to a provider before that mail, then sets it `on` and runs `docker compose up -d
 cards` to recreate the service. The first run after the key lands is still by hand,

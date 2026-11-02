@@ -1,0 +1,204 @@
+"""The CV and the card tools: the CV's text, the card, and a regeneration that asks the model."""
+
+from uuid import UUID
+
+from fakes_cards import CARD, MODEL, card_response
+from mcp import Client
+from mcp_tool_support import (
+    IVAN,
+    _payload,
+    _seed,
+    _seed_admin,
+    _seed_freelancer_with_text_cv,
+    _wipe,
+)
+from sqlalchemy import select, text
+from sqlalchemy.orm import Session, sessionmaker
+
+from rebase_core.llm import RecordingCall
+from rebase_core.models import AdminAction, User
+from rebase_core.perks import guide_bytes
+from rebase_mcp.server import build_server
+
+
+def _ensure_admin(session: Session) -> UUID:
+    """IVAN as a `users` row: a note and a trail entry name who wrote them, by foreign key."""
+    if session.get(User, IVAN.id) is None:
+        session.add(
+            User(id=IVAN.id, email=IVAN.email, nome=IVAN.nome, cognome="Sala", role="admin")
+        )
+        session.commit()
+    return IVAN.id
+
+
+async def test_the_cv_is_read_as_text_and_a_card_without_one_answers_a_sentence(
+    factory: sessionmaker[Session],
+) -> None:
+    from decimal import Decimal
+
+    from rebase_core.freelancer_schemas import FreelancerCreate, FreelancerDraft
+    from rebase_core.freelancers import FreelancerService
+
+    session = factory()
+    try:
+        with_cv, _ = FreelancerService(session).apply(
+            FreelancerCreate(
+                nome="Ada",
+                cognome="Lovelace",
+                email="ada@studio.it",
+                tariffa_giornaliera=Decimal("450"),
+                posizione="Backend developer",
+                remoto="remoto",
+            ),
+            guide_bytes(),
+            "cv.pdf",
+            "application/pdf",
+        )
+    finally:
+        session.close()
+    _seed(factory, ["grace@studio.it"])
+    session = factory()
+    try:
+        signup_id = session.execute(text("SELECT id FROM signups")).scalar_one()
+        without_cv = FreelancerService(session).draft_from_signup(
+            signup_id,
+            FreelancerDraft(
+                nome="Grace",
+                cognome="Hopper",
+                posizione="Compiler engineer",
+                fonti=["https://example.com/grace"],
+            ),
+            _ensure_admin(session),
+            "mcp",
+        )
+    finally:
+        session.close()
+
+    async with Client(build_server(factory, lambda: IVAN)) as client:
+        read = _payload(
+            await client.call_tool("read_freelancer_cv", {"freelancer_id": str(with_cv.id)})
+        )
+        assert read["filename"] == "cv.pdf"
+        assert read["pagine"] == 6
+        assert "prima fattura" in read["testo"]
+        assert read["troncato"] is False
+
+        refused = await client.call_tool(
+            "read_freelancer_cv", {"freelancer_id": str(without_cv.id)}
+        )
+        assert refused.is_error
+        assert "cv" in refused.content[0].text.lower()
+
+        listed = _payload(await client.call_tool("list_talenti", {}))
+        assert all("testo" not in item and "cv_bytes" not in item for item in listed["items"])
+    _wipe(factory)
+
+
+async def test_the_model_is_asked_on_each_call_not_when_the_server_is_built(
+    factory: sessionmaker[Session],
+) -> None:
+    """REB-831: an admin can configure a model in «Modelli AI» while the MCP server
+    runs, so the tool asks for the seam on each call: off first, a card after."""
+    freelancer_id = _seed_freelancer_with_text_cv(
+        factory, "Ada Lovelace, backend developer a Torino da nove anni: Python, FastAPI, AWS."
+    )
+    _seed_admin(factory)
+    configured: list[RecordingCall] = []
+    source = lambda: configured[0] if configured else None  # noqa: E731
+    async with Client(build_server(factory, lambda: IVAN, card_llm=source)) as client:
+        off = await client.call_tool("regenerate_freelancer_card", {"freelancer_id": freelancer_id})
+        assert off.is_error and "Il team builder è spento." in off.content[0].text
+
+        configured.append(RecordingCall([card_response()]))
+        written = _payload(
+            await client.call_tool("regenerate_freelancer_card", {"freelancer_id": freelancer_id})
+        )
+        assert written["card"]["ruolo"] == CARD["ruolo"]
+    # REB-861: signed in the talent's trail, as the admin behind the token, by the MCP door.
+    with factory() as session:
+        [action] = session.scalars(
+            select(AdminAction).where(AdminAction.kind == "card_regenerated")
+        ).all()
+    assert (action.entity_type, str(action.entity_id), action.admin_id) == (
+        "freelancer",
+        freelancer_id,
+        IVAN.id,
+    )
+    assert action.payload["fonte"] == "mcp" and action.payload["bulk"] is False
+    assert (action.payload["esito"], action.payload["model"]) == ("scritta", MODEL)
+    assert "start_action_id" not in action.payload
+    _wipe(factory)
+
+
+async def test_freelancer_card_tools_read_write_and_off_is_the_sentence(
+    factory: sessionmaker[Session],
+) -> None:
+    freelancer_id = _seed_freelancer_with_text_cv(
+        factory, "Ada Lovelace, backend developer a Torino da nove anni: Python, FastAPI, AWS."
+    )
+    async with Client(build_server(factory, lambda: IVAN)) as client:
+        empty = _payload(
+            await client.call_tool("get_freelancer_card", {"freelancer_id": freelancer_id})
+        )
+        assert empty["card"] is None and empty["error"] is None
+        assert empty["modalita"] == "remoto"
+
+        off = await client.call_tool("regenerate_freelancer_card", {"freelancer_id": freelancer_id})
+        assert off.is_error
+        assert "Il team builder è spento." in off.content[0].text
+
+    _seed_admin(factory)
+    llm = RecordingCall([card_response(), card_response()])
+    async with Client(build_server(factory, lambda: IVAN, card_llm=lambda: llm)) as client:
+        written = _payload(
+            await client.call_tool("regenerate_freelancer_card", {"freelancer_id": freelancer_id})
+        )
+        assert written["card"]["ruolo"] == CARD["ruolo"]
+        assert written["model"] == MODEL
+        assert len(llm.requests) == 1
+
+        read_back = _payload(
+            await client.call_tool("get_freelancer_card", {"freelancer_id": freelancer_id})
+        )
+        assert read_back["card"] == written["card"]
+        assert (written["card"]["seniority"], written["card"]["anni"]) == ("senior", 9)
+        assert (written["seniority_admin"], written["anni_admin"]) == (None, None)
+
+        # REB-799: the admin's level beats Claude's in the card read and survives a
+        # regenerate; an empty string takes it off again.
+        await client.call_tool(
+            "override_freelancer",
+            {"freelancer_id": freelancer_id, "seniority": "junior", "anni": "2"},
+        )
+        corrected = _payload(
+            await client.call_tool("get_freelancer_card", {"freelancer_id": freelancer_id})
+        )
+        assert (corrected["card"]["seniority"], corrected["card"]["anni"]) == ("junior", 2)
+        assert (corrected["seniority_admin"], corrected["anni_admin"]) == ("junior", 2)
+        again = _payload(
+            await client.call_tool("regenerate_freelancer_card", {"freelancer_id": freelancer_id})
+        )
+        assert (again["card"]["seniority"], again["card"]["anni"]) == ("junior", 2)
+        await client.call_tool(
+            "override_freelancer",
+            {"freelancer_id": freelancer_id, "seniority": "", "anni": ""},
+        )
+        cleared = _payload(
+            await client.call_tool("get_freelancer_card", {"freelancer_id": freelancer_id})
+        )
+        assert (cleared["card"]["seniority"], cleared["card"]["anni"]) == ("senior", 9)
+        refused = await client.call_tool(
+            "override_freelancer", {"freelancer_id": freelancer_id, "anni": "molti"}
+        )
+        assert refused.is_error
+
+        listed = _payload(await client.call_tool("list_talenti", {"campi": ["tutti"]}))
+        assert listed["items"][0]["ha_scheda_anonima"] is True
+        detail = _payload(await client.call_tool("get_talento", {"talento_id": freelancer_id}))
+        assert detail["ha_scheda_anonima"] is True
+
+        missing = await client.call_tool(
+            "get_freelancer_card", {"freelancer_id": "01a00000-0000-7000-8000-0000000000fe"}
+        )
+        assert missing.is_error
+    _wipe(factory)

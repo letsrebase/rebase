@@ -5,9 +5,9 @@ from decimal import Decimal
 from typing import Any
 
 from mcp import Client
+from mcp_tool_support import IVAN, PDF, _payload
 from sqlalchemy import text
 from sqlalchemy.orm import Session, sessionmaker
-from test_tools import IVAN, PDF, _payload
 
 from rebase_core.companies import CompanyService
 from rebase_core.company_schemas import CompanyCreate
@@ -26,7 +26,7 @@ def _wipe(factory: sessionmaker[Session]) -> None:
 
 
 def _seed_admin(factory: sessionmaker[Session]) -> None:
-    """`IVAN` (`test_tools.py`) is a stand-in `AdminRead`, never a `users` row: every
+    """`IVAN` (`mcp_tool_support.py`) is a stand-in `AdminRead`, never a `users` row: every
     other tool only reads its `nome`. `record` writes `admin_id` for real, so this
     file alone needs the row the id names, with the same id."""
     session = factory()

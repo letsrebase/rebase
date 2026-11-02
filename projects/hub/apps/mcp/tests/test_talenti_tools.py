@@ -11,11 +11,11 @@ from uuid import UUID
 
 import pytest
 from mcp import Client
+from mcp_tool_support import IVAN, PDF, _payload, _seed, _seed_admin, _seed_freelancer, _wipe
 from sqlalchemy import text
 from sqlalchemy.orm import Session, sessionmaker
-from test_tools import IVAN, PDF, _payload
 
-import rebase_mcp.server as server_module
+import rebase_mcp.tools_talenti as tools_talenti
 from rebase_core.errors import ValidationFailed
 from rebase_core.freelancer_schemas import FreelancerCreate, FreelancerDraft
 from rebase_core.freelancers import FreelancerService
@@ -327,12 +327,32 @@ async def test_the_card_filters_and_the_sort_answer_one_request_in_one_call(
     assert bad_sort.is_error and "ordina" in bad_sort.content[0].text
 
 
+async def test_a_corrected_seniority_is_the_one_every_read_shows(
+    clean: sessionmaker[Session],
+) -> None:
+    """REB-799, REB-805: an admin's `seniority` and `anni` beat Claude's in the list row,
+    in `get_talento` and in the `seniority` filter, so the three agree on one person."""
+    ada = _card(clean, "ada@studio.it", card=FULL_CARD)
+    _seed_admin(clean)
+    async with _server(clean) as client:
+        await client.call_tool(
+            "override_freelancer", {"freelancer_id": ada, "seniority": "junior", "anni": "2"}
+        )
+        row = _payload(await client.call_tool("list_talenti", {"campi": ["tutti"]}))["items"][0]
+        detail = _payload(await client.call_tool("get_talento", {"talento_id": ada}))
+        junior = _payload(await client.call_tool("list_talenti", {"seniority": ["junior"]}))
+        senior = _payload(await client.call_tool("list_talenti", {"seniority": ["senior"]}))
+    assert (row["seniority"], row["anni"]) == ("junior", 2)
+    assert (detail["seniority"], detail["anni"]) == ("junior", 2)
+    assert junior["totale"] == 1 and senior["totale"] == 0
+
+
 async def test_limit_has_a_ceiling_and_a_smaller_default(
     clean: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     for n in range(4):
         _lead(clean, f"lead{n}@studio.it")
-    monkeypatch.setattr(server_module, "TALENTI_LIMIT_MAX", 2)
+    monkeypatch.setattr(tools_talenti, "TALENTI_LIMIT_MAX", 2)
     async with _server(clean) as client:
         capped = _payload(await client.call_tool("list_talenti", {"limit": 500}))
         floor = _payload(await client.call_tool("list_talenti", {"limit": 0}))
@@ -394,3 +414,54 @@ async def test_the_tool_text_names_the_new_surface(clean: sessionmaker[Session])
     assert {"pagina_origine", "seniority", "anni_min", "anni_max", "settori", "lingue"} <= set(
         properties
     )
+
+
+async def test_the_talent_list_is_newest_first_and_the_total_counts_everything(
+    factory: sessionmaker[Session],
+) -> None:
+    _seed(factory, ["uno@studio.it", "due@studio.it"])
+    async with Client(build_server(factory, lambda: IVAN)) as client:
+        result = await client.call_tool(
+            "list_talenti",
+            {"limit": 1, "campi": ["nome", "cognome", "stato", "email", "linkedin_url"]},
+        )
+    body = _payload(result)
+    assert body["totale"] == 2
+    assert [item["email"] for item in body["items"]] == ["due@studio.it"]
+    item = body["items"][0]
+    assert (item["nome"], item["cognome"]) == ("Ada", "Lovelace")
+    assert item["linkedin_url"] == "https://www.linkedin.com/in/due"
+    assert item["stato"] == "lead"
+
+
+async def test_get_talento_answers_a_card_with_the_detail_and_a_lead_with_the_row(
+    factory: sessionmaker[Session],
+) -> None:
+    """`get_talento` is the detail screen one id away: a card gets the full
+    `FreelancerDetail` the admin page reads (REB-284), a bare sign-up gets its
+    `list_talenti` row back, and an id in neither table is a sentence."""
+    freelancer_id = _seed_freelancer(factory)
+    _seed(factory, ["grace@studio.it"])
+    async with Client(build_server(factory, lambda: IVAN)) as client:
+        lead_id = _payload(await client.call_tool("list_talenti", {"stato": "lead"}))["items"][0][
+            "id"
+        ]
+
+        card = _payload(await client.call_tool("get_talento", {"talento_id": freelancer_id}))
+        assert card["id"] == freelancer_id
+        assert card["email"] == "ada@studio.it"
+        # The detail's own fields, the ones the list row does not carry. Without a
+        # `settings`/`http` on this server the Pigro lookup is off, not an error.
+        assert "note" in card and "iscrizione_utm" in card and "ultimi_accessi" in card
+        assert card["pigro_slug"] is None
+
+        lead = _payload(await client.call_tool("get_talento", {"talento_id": lead_id}))
+        assert (lead["id"], lead["stato"], lead["origine"]) == (lead_id, "lead", "form")
+        assert lead["email"] == "grace@studio.it"
+
+        missing = await client.call_tool(
+            "get_talento", {"talento_id": "01a00000-0000-7000-8000-0000000000fe"}
+        )
+        assert missing.is_error
+        assert "talento" in missing.content[0].text and "non trovato" in missing.content[0].text
+    _wipe(factory)
