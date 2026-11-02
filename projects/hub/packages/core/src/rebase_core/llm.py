@@ -9,10 +9,13 @@ Which provider, model, effort and ceiling answer a task, and the provider's key,
 from the database at call time (`AiConfigService`, «Modelli AI»), never from the
 environment: a change an admin saves applies to the next call, and a call is refused
 before any network when the task's daily euro cap is spent, its model has no price, or
-its provider is off or has no key. Every call the provider answers writes its usage (a
-refusal too, which is paid for); one that fails, an outage or a body that is not a
-response, leaves none, as there are no tokens to read, and a usage row that cannot be
-written is logged and does not lose the answer already paid for.
+its provider is off or has no key. A call **reserves its estimated cost before the network**
+(`AiConfigService.reserve`, a hold under a lock on the task, so concurrent calls cannot all
+pass the cap, REB-889), and settles it to the real numbers after: every call the provider
+answers writes its usage (a refusal too, which is paid for); one that fails, an outage or a
+body that is not a response, releases the hold and leaves none, as there are no tokens to
+read, and a usage row that cannot be written is logged and does not lose the answer already
+paid for.
 There is no fallback from one provider to another: an outage is a `LlmUnavailable`.
 
 `AiCall` never raises past `complete` anything but a `LlmUnavailable` (or one of its two
@@ -29,12 +32,12 @@ the HTTP status, nothing else.
 """
 
 import asyncio
+import json
 import logging
-from collections.abc import Callable, Coroutine, Mapping
+import math
+from collections.abc import Callable, Coroutine
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict, dataclass
-from datetime import UTC, datetime
-from decimal import Decimal
+from dataclasses import dataclass
 from typing import Any, Literal, Protocol, cast
 from uuid import UUID
 
@@ -50,10 +53,8 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 from pydantic_ai.models import Model, ModelRequestParameters
-from pydantic_ai.models.batch import Batch, BatchRequest, BatchResult
 from pydantic_ai.output import OutputObjectDefinition
 from pydantic_ai.settings import ModelSettings
-from sqlalchemy.orm import Session
 
 from rebase_core.ai_config import (
     CAP_REACHED,
@@ -71,12 +72,14 @@ from rebase_core.errors import (
     LlmNotConfigured,
     LlmUnavailable,
 )
+from rebase_core.llm_sentences import unavailable_sentence
 from rebase_core.models import AiPrice, AiProvider, AiTask
 
 logger = logging.getLogger(__name__)
 
-# The one sentence a provider outage shows on a page (global-constraints.md).
-UNAVAILABLE_SENTENCE = "Non riesco a proporre un team adesso: riprova tra poco."
+# The sentence a provider outage shows on the team builder's page (global-constraints.md);
+# every other task has its own in `llm_sentences.py`.
+UNAVAILABLE_SENTENCE = unavailable_sentence("team_proposal")
 
 # The server-side fallback opt-in, exactly as the spec's § 5 and the global constraints
 # name it: never the older array form, never a client-side fallback list.
@@ -106,12 +109,12 @@ _TASK_HTTP_LIMITS: dict[str, dict[str, Any]] = {
 # ("must be one of ['global', 'us']", proven on the preview 2026-09-28). Keeping
 # inference inside the European Union would need Vertex AI or Bedrock in an EU
 # region instead of this SDK, which is a separate decision, not made here.
-_INFERENCE_GEO = "global"
+INFERENCE_GEO = "global"
 
 # What Anthropic does with a system block marked for caching when the request has one the
 # caller flagged (`LlmRequest.system_cached`); every other provider reads only its own
 # keys and ignores this one.
-_CACHE_SYSTEM = {"anthropic_cache_instructions": True}
+CACHE_SYSTEM = {"anthropic_cache_instructions": True}
 
 
 class LlmMessage(BaseModel):
@@ -210,7 +213,7 @@ def build_model(
             **common,
             "anthropic_thinking": {"type": "adaptive"},
             "anthropic_betas": [FALLBACK_BETA],
-            "extra_body": {"fallbacks": "default", "inference_geo": _INFERENCE_GEO},
+            "extra_body": {"fallbacks": "default", "inference_geo": INFERENCE_GEO},
         }
         if effort is not None:
             anthropic_settings["anthropic_effort"] = effort
@@ -241,34 +244,6 @@ def build_model(
             cast(ModelSettings, google_settings),
         )
     raise LlmNotConfigured(f"Fornitore sconosciuto: {provider}")
-
-
-def build_batch_model(
-    provider: str, model: str, api_key: str, effort: str | None
-) -> tuple[Model, ModelSettings]:
-    """The Anthropic model and settings a Message Batch is encoded with (REB-853): what
-    `build_model` sends, less the three things a batch refuses or cannot take per request.
-    The server-side fallback (the beta and `fallbacks`: "Server-side fallback doesn't apply to
-    batches", a batch item that carries it comes back errored) and the per-request `timeout`
-    and `max_retries` (the provider runs the batched requests). The adaptive thinking, the
-    effort and `inference_geo` are the same, and so is every other parameter, since the
-    request is built by the same Pydantic AI code. Anthropic only: the other providers answer
-    the way `build_model` does, one call at a time."""
-    if provider != "anthropic":
-        raise LlmNotConfigured(f"Il Batch API non c'è per il fornitore: {provider}")
-    from pydantic_ai.models.anthropic import AnthropicModel
-    from pydantic_ai.providers.anthropic import AnthropicProvider
-
-    settings: dict[str, Any] = {
-        "anthropic_thinking": {"type": "adaptive"},
-        "extra_body": {"inference_geo": _INFERENCE_GEO},
-    }
-    if effort is not None:
-        settings["anthropic_effort"] = effort
-    return (
-        AnthropicModel(model, provider=AnthropicProvider(api_key=api_key)),
-        cast(ModelSettings, settings),
-    )
 
 
 def _history(request: LlmRequest) -> list[ModelMessage]:
@@ -325,11 +300,32 @@ def _stop_reason(response: ModelResponse) -> str:
     return str(raw) if raw else "end_turn"
 
 
+# What a hold assumes about the input, in characters per token. English prose runs near 4,
+# Italian a little under, and JSON, code and non-Latin text denser: 3 over-estimates the
+# usual text on purpose, since a hold that is too small lets a call past the cap and one
+# that is a little big only holds the cap a little longer, until the call settles.
+CHARS_PER_TOKEN = 3
+
+
+def estimated_input_tokens(request: LlmRequest) -> int:
+    """The input a request will cost, from its characters: the rules, the cached block, every
+    message and the schema the provider is given, at `CHARS_PER_TOKEN`."""
+    chars = (
+        len(request.system)
+        + len(request.system_cached or "")
+        + sum(len(message.text) for message in request.messages)
+        + len(json.dumps(request.output_model.model_json_schema()))
+    )
+    return math.ceil(chars / CHARS_PER_TOKEN)
+
+
 class AiCall:
     """The seam on Pydantic AI. Built once per request by `call_for_task`; every
     `complete` reads the task row, the price and the provider's key again, so a change an
     admin just saved applies at once, refuses before any network (`LlmCapReached`,
-    `LlmNotConfigured`) and, after an answer, writes the call's usage.
+    `LlmNotConfigured`), holds its estimated cost against the cap while the provider
+    answers (released if it does not) and, after an answer, settles the hold into the
+    call's usage.
 
     `purpose` is why the call runs (`run`, `prova`, `eval`: `AI_USAGE_PURPOSES`);
     `freelancer_id` is the person a card call is about. `model_factory` is the test's
@@ -356,15 +352,32 @@ class AiCall:
         self._model_factory = model_factory
 
     def complete(self, request: LlmRequest) -> LlmResponse:
-        provider, model, effort, ceiling, key = self._resolve()
-        model_instance, model_settings = self._model_factory(provider, model, key, effort)
+        provider, model, effort, ceiling, key = self.resolve()
         max_tokens = ceiling if request.max_tokens is None else min(request.max_tokens, ceiling)
+        hold_id = self._reserve(request, provider, model, max_tokens)
+        try:
+            answer = self._ask(request, provider, model, effort, key, max_tokens)
+        except BaseException:
+            self._release(hold_id, provider)
+            raise
+        return self._response(request, provider, model, answer, hold_id)
+
+    def _ask(
+        self,
+        request: LlmRequest,
+        provider: str,
+        model: str,
+        effort: str | None,
+        key: str,
+        max_tokens: int,
+    ) -> ModelResponse:
+        model_instance, model_settings = self._model_factory(provider, model, key, effort)
         settings = {**model_settings, **_TASK_HTTP_LIMITS.get(self._task, {})}
         settings["max_tokens"] = max_tokens
         if request.system_cached is not None:
-            settings.update(_CACHE_SYSTEM)
+            settings.update(CACHE_SYSTEM)
         try:
-            answer = _run(
+            return _run(
                 model_request(
                     model_instance,
                     _history(request),
@@ -375,10 +388,9 @@ class AiCall:
         except (ModelAPIError, UnexpectedModelBehavior, UserError) as error:
             status = error.status_code if isinstance(error, ModelHTTPError) else None
             logger.warning("%s %s: status %s", provider, type(error).__name__, status)
-            raise LlmUnavailable(UNAVAILABLE_SENTENCE) from None
-        return self._response(request, provider, model, answer)
+            raise LlmUnavailable(unavailable_sentence(self._task)) from None
 
-    def _resolve(self) -> tuple[str, str, str | None, int, str]:
+    def resolve(self) -> tuple[str, str, str | None, int, str]:
         """The provider, model, effort, output ceiling and key this call goes out with, or
         the refusal."""
         with self._session_factory() as session:
@@ -435,7 +447,12 @@ class AiCall:
         return True, None
 
     def _response(
-        self, request: LlmRequest, provider: str, configured: str, answer: ModelResponse
+        self,
+        request: LlmRequest,
+        provider: str,
+        configured: str,
+        answer: ModelResponse,
+        hold_id: UUID,
     ) -> LlmResponse:
         response = response_of(request, provider, answer)
         record_response(
@@ -446,8 +463,28 @@ class AiCall:
             configured=configured,
             response=response,
             freelancer_id=request.freelancer_id or self._freelancer_id,
+            hold_id=hold_id,
         )
         return response
+
+    def _reserve(self, request: LlmRequest, provider: str, model: str, max_tokens: int) -> UUID:
+        """The hold for this call: what it can cost at most, against the task's cap
+        (`LlmCapReached` when it does not fit)."""
+        with self._session_factory() as session:
+            service = AiConfigService(session, self._settings)
+            estimate = service.estimate_call(
+                provider, model, estimated_input_tokens(request), max_tokens
+            )
+            return service.reserve(self._task, self._purpose, provider, model, estimate)
+
+    def _release(self, hold_id: UUID, provider: str) -> None:
+        """Gives the hold of a call that did not answer back. A hold that cannot be given
+        back is logged and left to its TTL: the error that matters is the call's own."""
+        try:
+            with self._session_factory() as session:
+                AiConfigService(session, self._settings).release(hold_id)
+        except Exception as error:
+            logger.error("%s spend hold not released: %s", provider, type(error).__name__)
 
 
 def response_of(request: LlmRequest, provider: str, answer: ModelResponse) -> LlmResponse:
@@ -490,11 +527,13 @@ def record_response(
     configured: str,
     response: LlmResponse,
     freelancer_id: UUID | None,
+    hold_id: UUID | None = None,
 ) -> None:
-    """The answer's usage row. The model that answered may
-    be a fallback or a dated alias with no price row: the call is then priced as the one
-    asked for (`configured`), so it spends the cap. A lost row never loses the answer: it is
-    paid for, so the failure is logged and the answer still handed over."""
+    """The answer's usage row: the call's hold settled into it (`hold_id`), or a new row
+    without one. The model that answered may be a fallback or a dated alias with no price
+    row: the call is then priced as the one asked for (`configured`), so it spends the cap.
+    A lost row never loses the answer: it is paid for, so the failure is logged and the
+    answer still handed over (the hold then counts until its TTL, which is the safe side)."""
     try:
         with session_factory() as session:
             AiConfigService(session, settings).record_usage(
@@ -508,6 +547,7 @@ def record_response(
                 cache_read_tokens=response.cache_read_tokens,
                 freelancer_id=freelancer_id,
                 priced_as=configured,
+                hold_id=hold_id,
             )
     except Exception as error:  # the answer is paid for: a lost row must not lose it
         logger.error("%s usage not recorded: %s", response.provider, type(error).__name__)
@@ -547,322 +587,3 @@ def call_for_task(
         if provider is None or not provider.enabled or provider.key_ciphertext is None:
             return None
     return AiCall(session_factory, settings, task, model_factory=model_factory)
-
-
-# ---- the Message Batches API (REB-853) ----------------------------------------------------
-
-
-@dataclass(frozen=True)
-class BatchHandle:
-    """What finds a submitted batch again from another process, after a restart: the
-    provider's id, the model it was sent to, and the two things Pydantic AI checks a later
-    call against (`group`, which carries hashes and no secret, and the creation time). Plain
-    data, stored as JSON in `card_batches.handle`."""
-
-    id: str
-    provider: str
-    model: str
-    group: str
-    created_at: datetime
-    request_count: int
-
-    def to_json(self) -> dict[str, Any]:
-        return {**asdict(self), "created_at": self.created_at.isoformat()}
-
-    @classmethod
-    def from_json(cls, data: Mapping[str, Any]) -> "BatchHandle":
-        return cls(**{**data, "created_at": datetime.fromisoformat(data["created_at"])})
-
-    def _batch(self, status: Literal["in_progress", "ended"]) -> Batch:
-        return Batch(
-            id=self.id,
-            model_name=self.model,
-            provider_name=self.provider,
-            group=self.group,
-            status=status,
-            created_at=self.created_at,
-            request_count=self.request_count,
-        )
-
-
-@dataclass(frozen=True)
-class BatchOutcome:
-    """How one request of an ended batch finished: `succeeded` with its `response`, or the
-    provider's word for one that did not answer (`errored`, `expired`, `canceled`)."""
-
-    status: Literal["succeeded", "errored", "expired", "canceled"]
-    response: LlmResponse | None = None
-
-
-class BatchCall(Protocol):
-    """A provider's batch API as the card writer uses it, in no provider's shape: submit
-    the requests under their ids (refused before any network when `estimate_eur`, what the
-    batch is expected to cost, would take the task past its daily cap), ask whether the batch
-    ended, collect each answer, and record an answer's usage at the batch price on the
-    caller's session, left uncommitted for the caller to commit with what it marks as done.
-    `provider` names who runs it."""
-
-    provider: str
-
-    def submit(
-        self, requests: Mapping[str, LlmRequest], estimate_eur: Decimal | None = None
-    ) -> BatchHandle: ...
-
-    def ended(self, handle: BatchHandle) -> bool: ...
-
-    def collect(
-        self, handle: BatchHandle, output_model: type[BaseModel]
-    ) -> dict[str, BatchOutcome]: ...
-
-    def record(
-        self, session: Session, handle: BatchHandle, response: LlmResponse, freelancer_id: UUID
-    ) -> None: ...
-
-
-def _unavailable(provider: str, error: Exception) -> LlmUnavailable:
-    status = error.status_code if isinstance(error, ModelHTTPError) else None
-    logger.warning("%s batch %s: status %s", provider, type(error).__name__, status)
-    return LlmUnavailable(UNAVAILABLE_SENTENCE)
-
-
-class AiBatch:
-    """The seam's batch path, on Pydantic AI's own Message Batches primitives (`batch_encode`,
-    `batch_create`, `batch_status`, `batch_results`, `batch_decode`): each request is encoded
-    by the code that encodes a synchronous one, so it carries the same prompt, schema,
-    model, effort and output ceiling, less the fallback and the per-request timeout and
-    retries a batch refuses (`build_batch_model`). The provider, model, effort, ceiling and
-    key are the task's, read again on every call.
-
-    Only `submit` is refused by the task's cap, the key or the provider's switch, before any
-    network, as a call is: an ended batch is already paid for, and its answers are collected
-    whatever the cap says. `record` writes the usage at half the price row's. `model_factory`
-    is the test's way to hand another model."""
-
-    def __init__(
-        self,
-        session_factory: SessionOpener,
-        settings: Settings,
-        task: str,
-        *,
-        purpose: str = "run",
-        model_factory: ModelFactory = build_batch_model,
-    ) -> None:
-        self._session_factory = session_factory
-        self._settings = settings
-        self._task = task
-        self._purpose = purpose
-        self._model_factory = model_factory
-        self._call = AiCall(session_factory, settings, task, purpose=purpose)
-        self.provider = "anthropic"
-
-    def submit(
-        self, requests: Mapping[str, LlmRequest], estimate_eur: Decimal | None = None
-    ) -> BatchHandle:
-        provider, model, effort, ceiling, key = self._call._resolve()
-        self._require_room(estimate_eur)
-        built, base = self._model_factory(provider, model, key, effort)
-        encoded = [
-            BatchRequest(
-                custom_id=custom_id,
-                messages=_history(request),
-                model_settings=cast(ModelSettings, self._settings_of(base, request, ceiling)),
-                model_request_parameters=_parameters(request),
-            )
-            for custom_id, request in requests.items()
-        ]
-
-        async def send() -> Batch:
-            return await built.batch_create([await built.batch_encode(item) for item in encoded])
-
-        try:
-            batch = _run(send())
-        except (ModelAPIError, UnexpectedModelBehavior, UserError) as error:
-            raise _unavailable(provider, error) from None
-        return BatchHandle(
-            id=batch.id,
-            provider=provider,
-            model=model,
-            group=batch.group,
-            created_at=batch.created_at,
-            request_count=batch.request_count,
-        )
-
-    def ended(self, handle: BatchHandle) -> bool:
-        built, _ = self._built(handle)
-        try:
-            return _run(built.batch_status(handle._batch("in_progress"))).status == "ended"
-        except (ModelAPIError, UnexpectedModelBehavior, UserError) as error:
-            raise _unavailable(handle.provider, error) from None
-
-    def collect(
-        self, handle: BatchHandle, output_model: type[BaseModel]
-    ) -> dict[str, BatchOutcome]:
-        built, base = self._built(handle)
-        shape = LlmRequest(system="", messages=[], output_model=output_model)
-        ended = handle._batch("ended")
-        try:
-            results = _run(built.batch_results(ended))
-        except (ModelAPIError, UnexpectedModelBehavior, UserError) as error:
-            raise _unavailable(handle.provider, error) from None
-        outcomes: dict[str, BatchOutcome] = {}
-        for result in results:
-            outcomes[result.custom_id] = self._outcome(built, base, shape, handle, result)
-        return outcomes
-
-    def record(
-        self, session: Session, handle: BatchHandle, response: LlmResponse, freelancer_id: UUID
-    ) -> None:
-        """The answer's usage row at the batch price, on `session` and not committed: the
-        caller commits it with its own mark that it was recorded, so it is in the books
-        once. A model with no price row (a dated alias) is priced as the one the batch was
-        sent to. A failure is raised, not logged: nothing is marked recorded."""
-        AiConfigService(session, self._settings).record_usage(
-            task=self._task,
-            purpose=self._purpose,
-            provider=response.provider,
-            model=response.model,
-            input_tokens=response.input_tokens,
-            output_tokens=response.output_tokens,
-            thinking_tokens=response.thinking_tokens,
-            cache_read_tokens=response.cache_read_tokens,
-            freelancer_id=freelancer_id,
-            priced_as=handle.model,
-            batch=True,
-            commit=False,
-        )
-
-    def _require_room(self, estimate_eur: Decimal | None) -> None:
-        """What the batch is expected to cost fits in what is left of the task's daily cap
-        (the call's own check only says the cap is not spent yet): the spend lands when the
-        results are read, and one batch could otherwise overshoot it by its whole cost."""
-        if estimate_eur is None:
-            return
-        with self._session_factory() as session:
-            row = session.get(AiTask, self._task)
-            if row is None or row.daily_cap_eur is None:
-                return
-            spent = AiConfigService(session, self._settings).spent_today(self._task)
-            if spent + estimate_eur > row.daily_cap_eur:
-                raise LlmCapReached(CAP_REACHED)
-
-    def _outcome(
-        self,
-        built: Model,
-        base: ModelSettings,
-        shape: LlmRequest,
-        handle: BatchHandle,
-        result: BatchResult,
-    ) -> BatchOutcome:
-        if result.status != "succeeded":
-            return BatchOutcome(result.status)
-        decode = BatchRequest(
-            custom_id=result.custom_id,
-            messages=[],
-            model_settings=base,
-            model_request_parameters=_parameters(shape),
-        )
-        try:
-            answer = built.batch_decode(result, decode)
-        except (ModelAPIError, UnexpectedModelBehavior, UserError) as error:
-            logger.warning("%s batch result %s", handle.provider, type(error).__name__)
-            return BatchOutcome("errored")
-        return BatchOutcome("succeeded", response_of(shape, handle.provider, answer))
-
-    def _built(self, handle: BatchHandle) -> tuple[Model, ModelSettings]:
-        """The model and settings of an ended or running batch: the task's effort and the key
-        saved now, with no cap or switch in the way."""
-        with self._session_factory() as session:
-            row = session.get(AiTask, self._task)
-            if row is None:
-                raise LlmNotConfigured(TASK_OFF)
-            try:
-                key = AiConfigService(session, self._settings).resolve_key(handle.provider)
-            except DomainError as error:
-                raise LlmNotConfigured(error.message) from None
-            if key is None:
-                raise LlmNotConfigured(NO_KEY)
-            effort = row.effort
-        return self._model_factory(handle.provider, handle.model, key, effort)
-
-    @staticmethod
-    def _settings_of(base: ModelSettings, request: LlmRequest, ceiling: int) -> dict[str, Any]:
-        max_tokens = ceiling if request.max_tokens is None else min(request.max_tokens, ceiling)
-        settings = {**base, "max_tokens": max_tokens}
-        if request.system_cached is not None:
-            settings.update(_CACHE_SYSTEM)
-        return settings
-
-
-class RecordingBatch:
-    """A batch API that keeps what it was asked, as `RecordingCall` keeps the requests: every
-    submitted request by id in `.submitted`, answers scripted by id in `.outcomes`, and the
-    usage it was asked to record in `.recorded`. `ended_after` is how many `ended` checks say
-    «not yet» first. A test's seam; no network."""
-
-    provider = "anthropic"
-
-    def __init__(
-        self,
-        outcomes: Mapping[str, BatchOutcome] | None = None,
-        *,
-        ended_after: int = 0,
-        refuse: Exception | None = None,
-    ) -> None:
-        self.outcomes = dict(outcomes or {})
-        self.submitted: dict[str, LlmRequest] = {}
-        self.recorded: list[tuple[UUID, LlmResponse]] = []
-        self.estimates: list[Decimal | None] = []
-        self._waits = ended_after
-        self._refuse = refuse
-        self.submissions = 0
-
-    def submit(
-        self, requests: Mapping[str, LlmRequest], estimate_eur: Decimal | None = None
-    ) -> BatchHandle:
-        if self._refuse is not None:
-            raise self._refuse
-        self.estimates.append(estimate_eur)
-        self.submissions += 1
-        self.submitted.update(requests)
-        return BatchHandle(
-            id=f"msgbatch_{self.submissions:04d}",
-            provider="anthropic",
-            model="claude-test",
-            group="{}",
-            created_at=datetime(2026, 10, 28, 9, 0, tzinfo=UTC),
-            request_count=len(requests),
-        )
-
-    def ended(self, handle: BatchHandle) -> bool:
-        if self._waits > 0:
-            self._waits -= 1
-            return False
-        return True
-
-    def collect(
-        self, handle: BatchHandle, output_model: type[BaseModel]
-    ) -> dict[str, BatchOutcome]:
-        return dict(self.outcomes)
-
-    def record(
-        self, session: Session, handle: BatchHandle, response: LlmResponse, freelancer_id: UUID
-    ) -> None:
-        self.recorded.append((freelancer_id, response))
-
-
-def batch_for_task(
-    session_factory: SessionOpener,
-    settings: Settings,
-    task: str,
-    *,
-    model_factory: ModelFactory = build_batch_model,
-) -> BatchCall | None:
-    """The batch path for `task`, or `None` when it has none: the task off, or answered by a
-    provider other than Anthropic (the only one whose batch API this speaks). A caller then
-    writes the cards one call at a time, with the workers. A cap reached or a key missing
-    still gives a batch, which refuses when it is submitted."""
-    with session_factory() as session:
-        row = session.get(AiTask, task)
-        if row is None or not row.enabled or row.provider != "anthropic":
-            return None
-    return AiBatch(session_factory, settings, task, model_factory=model_factory)
