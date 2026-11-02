@@ -56,19 +56,20 @@ _PNG_SIGNATURE: Final = b"\x89PNG\r\n\x1a\n"
 # How much of the inflated image stream is held at a time while checking it, and how
 # much of it a single upload may produce in all: a 1 MiB file can inflate to a gigabyte,
 # and this check runs on a request worker. 32 MiB is a 2900-pixel square in RGBA, far
-# past anything a 60pt logo or a signature needs (Greptile and CodeRabbit, PR #510).
+# past anything a 60pt logo or a signature needs.
 _INFLATE_PIECE: Final = 1 << 16
 _INFLATE_BUDGET: Final = 32 << 20
 # What an SVG served back to a browser must not carry: a script, an event handler, a
-# `javascript:` link or an embedded HTML document. Typst ignores all of them, but the
-# API serves the file to the admin's own browser. Refused at upload rather than
-# sanitised: an admin can save the file again without the offending part, and nothing
-# here rewrites what a person made. This text match is a courtesy to the admin, not the
-# guarantee: an entity-encoded `javascript:` passes it. What holds the line is the
-# serving route's `Content-Security-Policy: default-src 'none'` (`routers/legal_entities.py`),
-# which blocks inline script, handlers and `javascript:` navigation when the file is
-# opened in a tab, while the panel's preview goes through a blob `<img>`, which never
-# scripts. Nobody relaxes those headers on the strength of this check.
+# `javascript:` link, an embedded HTML document or a link to an external file. Typst
+# ignores all of them, but the API serves the file to the admin's own browser. Refused
+# at upload rather than sanitised: an admin can save the file again without the
+# offending part, and nothing here rewrites what a person made. This text match is a
+# courtesy to the admin, not the guarantee: an entity-encoded `javascript:` passes it.
+# What holds the line is the serving route's `Content-Security-Policy: default-src
+# 'none'` (`routers/legal_entities.py`), which blocks inline script, handlers and
+# `javascript:` navigation when the file is opened in a tab, while the panel's preview
+# goes through a blob `<img>`, which never scripts. Nobody relaxes those headers on the
+# strength of this check.
 _SVG_FORBIDDEN: Final = ("<script", "javascript:", "<foreignobject", "<iframe", "<embed")
 
 
@@ -80,7 +81,7 @@ def sniff_image(data: bytes) -> ImageKind | None:
         return "png" if _png_is_well_formed(data) else None
     head = data[:4096].decode("utf-8", "ignore").lstrip("\ufeff").lstrip().lower()
     if head.startswith(("<?xml", "<svg", "<!doctype svg", "<!--")) and "<svg" in head:
-        return "svg" if _parses_as_svg(data) else None
+        return "svg" if _svg_root(data) is not None else None
     return None
 
 
@@ -103,7 +104,7 @@ def _png_rows(
     """The scanlines a PNG's inflated stream must hold, as `(rows, bytes per row)` runs:
     one run for a plain image, up to seven for an interlaced one, each row one filter
     byte plus its pixels. From this the exact inflated size follows, which is what
-    tells a complete image from framing around missing pixels (CodeRabbit, PR #510)."""
+    tells a complete image from framing around missing pixels."""
     bits = depth * _CHANNELS[colour]
     if not interlace:
         return [(height, 1 + (width * bits + 7) // 8)]
@@ -158,10 +159,9 @@ def _png_is_well_formed(data: bytes) -> bool:
     `IDAT` whose stream inflates to exactly the scanlines that header announces, each
     opening with a legal filter byte, an empty `IEND` last and nothing after it. A file
     that only wears the framing around missing or malformed pixels would be stored
-    under the size limit and fail every later render instead of this upload
-    (CodeRabbit and Greptile, PR #510). The inflated bytes are discarded as they are
-    checked, in bounded pieces, within a budget: a small file can inflate to a very
-    large image, and this is a check, not a decode."""
+    under the size limit and fail every later render instead of this upload.
+    The inflated bytes are discarded as they are checked, in bounded pieces, within a
+    budget: a small file can inflate to a very large image, and this is a check, not a decode."""
     offset, first, idat, ended = len(_PNG_SIGNATURE), True, False, False
     stream = zlib.decompressobj()
     scanlines: _Scanlines | None = None
@@ -199,8 +199,7 @@ def _png_is_well_formed(data: bytes) -> bool:
             first = False
         elif kind == b"IDAT":
             idat = True
-            assert scanlines is not None
-            if not _inflates(stream, data[body_start:body_end], scanlines):
+            if scanlines is None or not _inflates(stream, data[body_start:body_end], scanlines):
                 return False
         elif kind == b"IEND":
             ended = length == 0 and body_end + 4 == len(data)
@@ -225,7 +224,8 @@ def _inflates(stream: Any, piece: bytes, scanlines: _Scanlines) -> bool:
     return scanlines.ok
 
 
-def _parses_as_svg(data: bytes) -> bool:
+def _svg_root(data: bytes) -> etree._Element | None:
+    """The root element when `data` parses as XML rooted in `svg`, else `None`."""
     # No entities resolved, no DTD loaded, no network, no huge tree: the parser reads
     # the bytes it was given and nothing they point at.
     parser = etree.XMLParser(
@@ -234,8 +234,25 @@ def _parses_as_svg(data: bytes) -> bool:
     try:
         root = etree.fromstring(data, parser=parser)
     except etree.XMLSyntaxError:
-        return False
-    return isinstance(root.tag, str) and etree.QName(root).localname == "svg"
+        return None
+    if isinstance(root.tag, str) and etree.QName(root).localname == "svg":
+        return root
+    return None
+
+
+def _references_external_file(root: etree._Element) -> bool:
+    """Whether any element's `href` or `xlink:href` points anywhere but into the
+    document itself (`#id`) or at inline data (`data:`). Gradients and `<use>` from an
+    editor's export reference `#id`, which is not external content."""
+    for element in root.iter():
+        if not isinstance(element.tag, str):
+            continue  # a comment or a processing instruction
+        for name, value in element.attrib.items():
+            if etree.QName(name).localname != "href":
+                continue
+            if not value.strip().lower().startswith(("#", "data:")):
+                return True
+    return False
 
 
 _EVENT_HANDLER: Final = re.compile(r"\son[a-z]+\s*=")
@@ -243,7 +260,12 @@ _EVENT_HANDLER: Final = re.compile(r"\son[a-z]+\s*=")
 
 def _check_svg(data: bytes) -> None:
     text = data.decode("utf-8", "ignore").lower()
-    if any(marker in text for marker in _SVG_FORBIDDEN) or _EVENT_HANDLER.search(text):
+    root = _svg_root(data)
+    if (
+        any(marker in text for marker in _SVG_FORBIDDEN)
+        or _EVENT_HANDLER.search(text)
+        or (root is not None and _references_external_file(root))
+    ):
         raise ValidationFailed(
             ENTITY,
             "file",
@@ -361,7 +383,7 @@ class LegalEntityAssets:
         # leave the row pointing at a file that still exists. Every upload writes a
         # fresh key, so two admins replacing the same image at once each delete only
         # the file they found, never the one the other just committed; the loser's own
-        # file is an orphan, which costs nothing (CodeRabbit and Greptile, PR #510).
+        # file is an orphan, which costs nothing.
         if previous:
             self._forget(previous)
         return LegalEntityRead.model_validate(row)
