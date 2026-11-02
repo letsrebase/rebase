@@ -23,7 +23,7 @@ from typing import Literal
 from pigrocrm.core.emitter.models import LegalEntity
 from pigrocrm.core.errors import ValidationFailed
 from pigrocrm.core.invoices.fatturapa.normalise import normalise_fiscal_id
-from pigrocrm.core.invoices.import_schemas import ParsedInvoice, ParsedInvoiceParty
+from pigrocrm.core.invoices.import_schemas import ParsedInvoiceParty
 
 InvoiceDirection = Literal["outgoing", "incoming"]
 """`"outgoing"` -- the account holder issued this invoice: revenue, exactly what
@@ -109,12 +109,3 @@ def classify_direction(
     """`"outgoing"` when `fornitore` is one of the space's aziende (`match_azienda`),
     `"incoming"` otherwise."""
     return "outgoing" if match_azienda(fornitore, aziende) is not None else "incoming"
-
-
-def classify_invoice_direction(
-    invoice: ParsedInvoice, aziende: Sequence[LegalEntity]
-) -> InvoiceDirection:
-    """`classify_direction` against a full `ParsedInvoice`'s own `fornitore` --
-    never `invoice.trasmissione` (module docstring above). Mirrors mastro's own
-    wrapper (`direction.ts:63-71`)."""
-    return classify_direction(invoice.fornitore, aziende)
