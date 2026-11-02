@@ -18,8 +18,16 @@ The hub review of 2026-11-02 (REB-889, REB-891, REB-892):
   old behaviour, no expiry.
 * `CHECK`s for the closed value sets that only `schemas.py` guarded (HCORE-16):
   `freelancers.stato`, `compilata_da`, `remoto`, `companies.stato`, `remoto`, `notes.fonte`.
-  Each is added `NOT VALID` and then validated; a legacy row that breaks one is reported as
-  a warning and leaves the constraint enforcing every new write instead of failing the deploy.
+  Each is added `NOT VALID` and then validated. A legacy row that breaks one does not fail
+  the deploy: the migration raises a WARNING with the count and leaves that constraint
+  unvalidated. An unvalidated constraint still checks every row an UPDATE touches, so such a
+  row can no longer be changed (a status change, an override, a CV upload) until it is
+  repaired. Production held none when this was written (2026-11-02), but for a database that
+  does, find them with
+  `SELECT id, stato, compilata_da, remoto FROM freelancers WHERE NOT (<the CHECK's predicate>)`
+  (`_CHECKS` below has each), repair them (`UPDATE freelancers SET remoto = NULL WHERE remoto
+  NOT IN ('remoto', 'ibrido', 'in_sede')`, and the like), then
+  `ALTER TABLE <table> VALIDATE CONSTRAINT <name>`.
 
 Conditional like every migration of this package: `IF NOT EXISTS`, and each `CHECK` behind a
 `pg_constraint` guard.
@@ -65,19 +73,23 @@ def upgrade() -> None:
     )
     for table, name, predicate in _CHECKS:
         op.execute(
-            "DO $$ BEGIN "
+            "DO $$ DECLARE broken bigint; BEGIN "
             f"IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '{name}') THEN "
             f"ALTER TABLE {table} ADD CONSTRAINT {name} CHECK ({predicate}) NOT VALID; "
             "BEGIN "
             f"ALTER TABLE {table} VALIDATE CONSTRAINT {name}; "
             "EXCEPTION WHEN check_violation THEN "
-            f"RAISE WARNING '{name}: rows break it; it enforces new writes only'; "
+            f"SELECT count(*) INTO broken FROM {table} WHERE ({predicate}) IS FALSE; "
+            f"RAISE WARNING '% rows of {table} break {name}: repair them, then VALIDATE "
+            "CONSTRAINT it; until then those rows cannot be updated', broken; "
             "END; "
             "END IF; END $$"
         )
 
 
 def downgrade() -> None:
+    # A hold is a reservation, not a call: left as a row it would read as real spend.
+    op.execute("DELETE FROM ai_usage WHERE reserved_until IS NOT NULL")
     for table, name, _ in reversed(_CHECKS):
         op.execute(f"ALTER TABLE {table} DROP CONSTRAINT IF EXISTS {name}")
     op.execute("ALTER TABLE freelancers DROP COLUMN IF EXISTS cv_sha256")

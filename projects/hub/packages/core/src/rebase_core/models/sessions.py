@@ -2,6 +2,7 @@ from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import (
+    CheckConstraint,
     DateTime,
     ForeignKey,
     String,
@@ -42,6 +43,18 @@ class MagicLinkToken(Base, PrimaryKeyMixin, UtmMixin):
     )
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    # Which public door asked for the link (migration 0048): `login` the login page,
+    # `wizard` the «you already have a card» mail of an application, `NULL` an admin's
+    # promotion or the command line. Only the first two count against a person's daily
+    # cap, and only the wizard's against the public mail budget.
+    asked_via: Mapped[str | None] = mapped_column(String(10), default=None)
+
+    __table_args__ = (
+        CheckConstraint(
+            "asked_via IS NULL OR asked_via IN ('login', 'wizard')",
+            name="ck_magic_link_tokens_asked_via",
+        ),
+    )
 
 
 class Login(Base, PrimaryKeyMixin, UtmMixin):

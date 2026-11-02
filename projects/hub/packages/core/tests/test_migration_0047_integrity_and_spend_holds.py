@@ -144,3 +144,28 @@ def test_downgrade_takes_the_additions_away(hub_postgres: Any) -> None:
         assert columns == set()
         assert constraints == 0
         engine.dispose()
+
+
+def test_downgrade_does_not_turn_a_spend_hold_into_spend(hub_postgres: Any) -> None:
+    """A hold is a reservation: the older code would count the surviving row as a real call
+    for the rest of the day."""
+    with hub_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        upgrade_to_head(url)
+        engine = create_engine(url, future=True)
+        with engine.begin() as connection:
+            for held in ("now() + interval '5 minutes'", "NULL"):
+                connection.execute(
+                    text(
+                        "INSERT INTO ai_usage (id, task, purpose, provider, model, priced, "
+                        f"cost_eur, reserved_until) VALUES (:id, 'card', 'run', 'anthropic', "
+                        f"'m', true, 5, {held})"
+                    ),
+                    {"id": uuid4()},
+                )
+        config = Config(str(INI_PATH))
+        config.set_main_option("sqlalchemy.url", url)
+        command.downgrade(config, _parent(config))
+        with engine.connect() as connection:
+            assert connection.execute(text("SELECT count(*) FROM ai_usage")).scalar_one() == 1
+        engine.dispose()
