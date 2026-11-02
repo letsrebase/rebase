@@ -515,16 +515,14 @@ its docstring.
 ## The `rebase` command (REB-892)
 
 `rebase_core.cli` is a package, one module per group of commands (`members`, `cards`, `campaigns`,
-`signing`, `ai`, `loops`) and a `REGISTRY` of names and help in `cli/__init__.py`; `main` imports a
+`signing`, `ai`) and a `REGISTRY` of names and help in `cli/__init__.py`; `main` imports a
 group's module only when one of its commands is chosen, and a command imports what its own work needs
 inside its handler, so `rebase campaigns-tick` does not load the model providers' libraries. A command
-is a `Command` (`cli/common.py`) in its module's `COMMANDS`. **The three compose loops are
-`rebase loop campaigns|sweep|cards`** (`cli/loops.py`): one process each, sleep first (60, 600 and 300
-seconds), then the same functions the commands call, a failing step logged (class only, plus the
-sentence of a `DomainError`) and the loop going on, SIGTERM and SIGINT ending it (a sleep at once, a
-pass after it finishes, a second signal immediately). The `cards` loop polls the Message Batch on every
-pass and, on the 12th, runs `sources-refetch --limit 50` and, only with `REBASE_CARDS_LOOP=on`
-(`Settings.cards_loop`), `cards-refresh --limit 50`. `rebase createtoken` prints the token once on
+is a `Command` (`cli/common.py`) in its module's `COMMANDS`. **The three compose loops stay shell
+loops that start `uv run rebase <command>` each tick** (REB-892, HMCP-10): a long-lived Python process
+per loop would hold about 100 MB each on both stacks, on an origin with little memory to spare
+(measured 2026-11-02, the idle loop containers are about 6 MB), so the cost per tick is cut by the lazy
+imports instead. `rebase createtoken` prints the token once on
 stdout, or with `--token-file PATH` writes it there alone (mode 0600, never over an existing file),
 and `--expires-in-days N` sets its expiry; `createtoken` and `setrole` prompt only at a terminal and
 otherwise refuse with exit code 2.
@@ -752,7 +750,7 @@ cards go on being written and requests already filed stay in «Richieste team».
 **The backlog is `rebase cards-refresh`.** A card is written after the wizard or a CV
 upload, so the CVs already on file need it too: since REB-552 the `cards` service runs
 it once an hour, up to 50 cards. The loop itself is gated by `REBASE_CARDS_LOOP`
-(`.env`, default `off`; `Settings.cards_loop`, read by `rebase loop cards`): production keeps it `off` until the talents'
+(`.env`, default `off`, read by the `cards` service's shell loop): production keeps it `off` until the talents'
 mail of spec § 4.4 has gone out, so a deploy that already has a model configured never sends a
 CV to a provider before that mail, then sets it `on` and runs `docker compose up -d
 cards` to recreate the service. The first run after the key lands is still by hand,

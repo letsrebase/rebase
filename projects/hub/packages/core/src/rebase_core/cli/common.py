@@ -10,7 +10,6 @@ import argparse
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from sqlalchemy import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from rebase_core.config import Settings
@@ -27,21 +26,7 @@ def no_arguments(parser: argparse.ArgumentParser) -> None:
     """For a command that takes none."""
 
 
-# The engines `open_session` made since the last `dispose_engines`. A command that runs once
-# leaves them to the process exit; `rebase loop` runs a pass every few minutes in one
-# process, and disposes of them after each so a pass leaves no pool behind.
-_engines: list[Engine] = []
-
-
 def open_session(settings: Settings) -> sessionmaker[Session]:
-    """A session factory on a new engine for `settings`' database."""
-    engine = create_engine_from_settings(settings)
-    _engines.append(engine)
-    return session_factory(engine)
-
-
-def dispose_engines() -> None:
-    while _engines:
-        engine = _engines.pop()
-        if engine is not None:  # a test hands none
-            engine.dispose()
+    """A session factory on a new engine for `settings`' database. A command runs once, so the
+    engine goes with the process."""
+    return session_factory(create_engine_from_settings(settings))

@@ -167,9 +167,7 @@ def test_a_refused_submission_marks_the_batch_failed_and_leaves_every_card(
     [batch] = clean_hub.scalars(select(CardBatch)).all()
     assert batch.status == "failed"
     assert _writer(clean_hub, call).regeneration_running() is False
-    assert {c.freelancer_id for c in CardWriter(clean_hub, None).stale_cards()} == set(
-        people
-    )
+    assert {c.freelancer_id for c in CardWriter(clean_hub, None).stale_cards()} == set(people)
 
 
 def test_the_poll_waits_for_the_provider_then_applies_every_result(clean_hub: Session) -> None:
@@ -347,9 +345,7 @@ def test_a_batch_never_sent_is_given_up_after_a_while(clean_hub: Session) -> Non
     assert gone.state == "failed"
     clean_hub.refresh(batch)
     assert batch.status == "failed"
-    assert {c.freelancer_id for c in CardWriter(clean_hub, None).stale_cards()} == set(
-        people
-    )
+    assert {c.freelancer_id for c in CardWriter(clean_hub, None).stale_cards()} == set(people)
 
 
 def test_a_batch_that_cannot_be_applied_for_two_days_is_given_up(clean_hub: Session) -> None:
@@ -370,9 +366,7 @@ def test_a_batch_that_cannot_be_applied_for_two_days_is_given_up(clean_hub: Sess
     assert {i.status for i in clean_hub.scalars(select(CardBatchItem))} == {"errored"}
     assert _writer(clean_hub, call).regeneration_running() is False
     # The cards are still the old ones, still stale: the next start takes them.
-    assert {c.freelancer_id for c in CardWriter(clean_hub, None).stale_cards()} == set(
-        people
-    )
+    assert {c.freelancer_id for c in CardWriter(clean_hub, None).stale_cards()} == set(people)
 
 
 def test_without_a_batch_nothing_is_polled(clean_hub: Session) -> None:

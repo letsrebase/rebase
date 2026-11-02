@@ -2,7 +2,7 @@
 
 One module per group of commands: `members` (tokens, roles, the welcome mail, duplicate
 talents), `cards`, `campaigns`, `signing` (contracts and Documenso), `ai` (the model
-providers) and `loops` (`rebase loop ...`, the long-lived passes of `docker-compose.yml`).
+providers).
 `main` knows only the names and the help of the commands, and imports a group's module when
 one of its commands is chosen, which then imports what its own work needs inside its
 handler (REB-892): `rebase campaigns-tick` does not load the model providers' libraries.
@@ -84,10 +84,6 @@ REGISTRY: dict[str, tuple[str, str]] = {
     "welcome": (
         "members",
         "Manda la mail «la tua area è aperta» a un indirizzo o a tutti quelli noti",
-    ),
-    "loop": (
-        "loops",
-        "Un ciclo di docker-compose in un solo processo: campaigns, sweep o cards",
     ),
 }
 

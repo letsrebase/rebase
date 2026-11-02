@@ -168,11 +168,6 @@ class Settings(BaseSettings):
     # (half price, asynchronous) instead of the workers. A single «Rigenera scheda» and
     # `cards-refresh` never do; a provider other than Anthropic never does either.
     cards_batch_threshold: int = Field(default=10, ge=1)
-    # Whether the `cards` loop (`rebase loop cards`) also writes the backlog of cards for a new
-    # CV (`cards-refresh`). Off by default: a deploy on a host whose `.env` says nothing writes
-    # no card until somebody turns it on. `REBASE_CARDS_LOOP=on` or `off` (pydantic reads both).
-    # The Message Batch poll and the sources' refetch run whatever it says.
-    cards_loop: bool = False
 
     # --- the model providers' keys at rest, and GitHub (REB-829) -----------------------
     # `secrets_key`: 32 bytes in base64, the AES-256-GCM key (`secrets.py`) under which

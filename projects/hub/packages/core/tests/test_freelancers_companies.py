@@ -310,7 +310,7 @@ def test_a_card_from_a_signup_is_incomplete_and_carries_the_signup_attribution(
     assert read.stato == "nuovo"
     assert len(read.note) == 1
     comment = read.note[0]
-    assert (comment.autore, comment.fonte, comment.modificabile) == ("Claude", "web", True)
+    assert (comment.autore, comment.fonte, comment.modificabile) == ("Ivan", "web", True)
     assert comment.testo.startswith("Scheda creata dall'iscrizione del ")
     assert "https://www.linkedin.com/in/ada" in comment.testo and "https://ada.dev" in comment.testo
     # «Iscrizioni» can now point at it.
