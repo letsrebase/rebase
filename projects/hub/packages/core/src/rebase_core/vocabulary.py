@@ -41,6 +41,7 @@ from rebase_core.models import (
     REMOTE_OPTIONS,
     REWARD_STATES,
     TALENT_ANSWERS,
+    TALENTO_STATES,
     TEAM_PROPOSAL_ERRORS,
     TEAM_PROPOSAL_ORIGINS,
     TEAM_REQUEST_ORIGINS,
@@ -60,8 +61,7 @@ def enum_of(values: Sequence[str]) -> Callable[[dict[str, Any]], None]:
 
 RemoteOption = Annotated[str, Field(json_schema_extra=enum_of(REMOTE_OPTIONS))]
 FreelancerStatus = Annotated[str, Field(json_schema_extra=enum_of(FREELANCER_STATES))]
-# A row of the Talenti list: a card's own state, or `lead` for a bare sign-up.
-TalentoStatus = Annotated[str, Field(json_schema_extra=enum_of((*FREELANCER_STATES, "lead")))]
+TalentoStatus = Annotated[str, Field(json_schema_extra=enum_of(TALENTO_STATES))]
 CompanyStatus = Annotated[str, Field(json_schema_extra=enum_of(COMPANY_STATES))]
 # What a person or a company a member referred has reached: a freelancer's or a company's.
 ReferredStatus = Annotated[

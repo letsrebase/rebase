@@ -25,6 +25,8 @@ from rebase_core.models.identity import UTM_COLUMNS, UTM_MAX_LENGTH
 # ---- the hub proper: who wants to work, and who needs people --------------------------
 
 FREELANCER_STATES = ("nuovo", "contattato", "attivo", "scartato")
+# A row of the Talenti list: a card's own state, or `lead` for a bare sign-up with no card.
+TALENTO_STATES = (*FREELANCER_STATES, "lead")
 # Who wrote the seven answers last (ORB-155): the person, through the wizard or the
 # member area, or an admin, from what the public web says about a signup. Research never
 # overwrites `persona`; the person's own words win.
