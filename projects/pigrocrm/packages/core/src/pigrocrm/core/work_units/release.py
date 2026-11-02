@@ -46,7 +46,11 @@ def release_days_of_invoice(session: Session, invoice_id: UUID, actor: Actor, mo
     has the edge and nothing clears the link): both are on the invoice and billable again
     once it is gone. A day `pagato` or still `contestato` stays where it is: money moved, or
     somebody is disputing it, and neither is this step's to undo.
-    Flushes; the caller commits with the rest of its own change."""
+    Flushes; the caller commits with the rest of its own change.
+
+    The days are selected `FOR UPDATE` with `populate_existing`: a day a concurrent
+    request is moving (binding it to another draft, a dispute) is waited for and read
+    as it is after that, not as an earlier load in this session left it."""
     days = list(
         session.scalars(
             select(WorkUnit)
@@ -56,6 +60,8 @@ def release_days_of_invoice(session: Session, invoice_id: UUID, actor: Actor, mo
                 WorkUnit.stato.in_(("fatturato", "lavorato")),
             )
             .order_by(WorkUnit.data, WorkUnit.id)
+            .with_for_update(of=WorkUnit)
+            .execution_options(populate_existing=True)
         )
     )
     if not days:
