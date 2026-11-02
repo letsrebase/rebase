@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { PeoplePage, parsePeopleSearch } from '@/features/people/PeoplePage'
+import { PeoplePage } from '@/features/people/PeoplePage'
+import { parsePeopleSearch } from '@/features/people/search'
 
 /**
  * The `?search=` term is an entry point, not a live mirror of the box. The palette's

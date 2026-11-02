@@ -103,6 +103,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   })
 
   const user = data ?? null
+  const { mutateAsync: loginAsync } = loginMutation
+  const { mutateAsync: enterAsync } = enterMutation
+  const { mutateAsync: inviteAsync } = inviteMutation
+  const { mutateAsync: logoutAsync } = logoutMutation
 
   // The effect keys are the properties PostHog receives: a role change re-identifies,
   // a new object from the thirty-second poll does not. `identified` remembers who, so a
@@ -127,20 +131,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     identified.current = userId
     identifySession({ id: userId, email, nome, ruolo })
-  }, [userId, email, nome, ruolo])
+  }, [userId, email, nome, ruolo, forget])
 
   const value = useMemo<AuthValue>(
     () => ({
       user,
       isLoading,
       login: async (email, password) => {
-        await loginMutation.mutateAsync({ email, password })
+        await loginAsync({ email, password })
       },
       enterWithLink: async (t) => {
-        await enterMutation.mutateAsync({ t })
+        await enterAsync({ t })
       },
       enterWithInvite: async (t, nome) => {
-        await inviteMutation.mutateAsync({ t, nome: nome ?? null })
+        await inviteAsync({ t, nome: nome ?? null })
       },
       /**
        * Ends the session and then leaves the page, whatever the server answered.
@@ -162,7 +166,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // Push on this browser goes with the session it was for (REB-738), while the
           // session still authorises the call. Bounded, and it never throws.
           await leavePush()
-          await logoutMutation.mutateAsync()
+          await logoutAsync()
         } finally {
           // Before the page leaves, and in the `finally` for the same reason the
           // navigation is: the person asked to be forgotten here too, and the next login
@@ -181,10 +185,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [
       user,
       isLoading,
-      loginMutation.mutateAsync,
-      enterMutation.mutateAsync,
-      inviteMutation.mutateAsync,
-      logoutMutation.mutateAsync,
+      loginAsync,
+      enterAsync,
+      inviteAsync,
+      logoutAsync,
       queryClient,
       forget,
     ],

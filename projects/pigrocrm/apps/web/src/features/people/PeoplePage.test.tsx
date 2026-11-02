@@ -12,7 +12,8 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
-import { PeoplePage, parsePeopleSearch } from './PeoplePage'
+import { PeoplePage } from './PeoplePage'
+import { parsePeopleSearch } from './search'
 
 const navigate = vi.fn()
 
