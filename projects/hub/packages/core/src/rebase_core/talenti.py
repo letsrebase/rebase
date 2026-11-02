@@ -485,14 +485,26 @@ def _card_stmt(f: _Filters) -> Select[Freelancer, User]:
     return stmt
 
 
-def _lead_stmt(f: _Filters) -> Select[Signup]:
+def _bare_signups() -> Select[Signup]:
     """Every bare sign-up (no card), the same anti-join `_card_emails` describes."""
     card_emails = _card_emails()
-    stmt = (
+    return (
         select(Signup)
         .outerjoin(card_emails, card_emails.c.email == func.lower(Signup.email))
         .where(card_emails.c.email.is_(None), ~card_by_linkedin())
     )
+
+
+def lead_by_id(session: Session, signup_id: UUID) -> TalentoRead | None:
+    """One bare sign-up as its list row, or None when there is no such sign-up or the
+    person already has a card: the list shows that person as a card, never as a lead."""
+    signup = session.scalar(_bare_signups().where(Signup.id == signup_id))
+    return None if signup is None else signup_read(signup)
+
+
+def _lead_stmt(f: _Filters) -> Select[Signup]:
+    """Every bare sign-up (no card) the filters keep."""
+    stmt = _bare_signups()
     if f.q:
         stmt = stmt.where(matches_any((Signup.nome, Signup.cognome, Signup.email), f.q))
     if f.utm_source is not None:

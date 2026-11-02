@@ -916,6 +916,18 @@ def test_an_admin_reads_one_signup_as_the_row_the_talent_list_shows(
     assert client.get(f"/api/hub/signups/{MISSING}").status_code == 404
 
 
+def test_a_signup_that_already_has_a_card_is_no_lead_any_more(
+    client: TestClient, admin: None, sender: RecordingSender
+) -> None:
+    signup_id = _signup(client, sender)
+    assert client.get(f"/api/hub/signups/{signup_id}").status_code == 200
+    created = client.post(f"/api/hub/signups/{signup_id}/card", json=DRAFT)
+    assert created.status_code == 201, created.text
+
+    # The list shows this person as the card, so the lead's page has nothing to open.
+    assert client.get(f"/api/hub/signups/{signup_id}").status_code == 404
+
+
 def test_an_admin_writes_an_incomplete_card_from_a_signup_and_the_list_points_at_it(
     client: TestClient, admin: None, sender: RecordingSender
 ) -> None:

@@ -732,7 +732,8 @@ export interface paths {
         /**
          * Get Signup
          * @description One bare sign-up as the row the Talenti list shows for it (`stato` «lead», `origine`
-         *     «form»): the page of a person who has no card yet. 404 for an unknown id.
+         *     «form»): the page of a person who has no card yet. 404 for an unknown id, and for a
+         *     person who already has a card, whom the list shows as that card.
          */
         get: operations["get_signup_api_hub_signups__signup_id__get"];
         put?: never;
