@@ -9,8 +9,8 @@ import { formatDate } from '@/lib/format'
 const STATE_WORDS: Record<string, string> = {
   da_collegare: 'In attesa di essere registrata nel CRM',
   collegato: 'Registrata nel CRM',
-  errore: 'Il CRM non ha risposto',
-  rifiutato: 'Il CRM ha rifiutato la richiesta',
+  errore: 'Non ancora registrata nel CRM',
+  rifiutato: 'Rifiutata dal CRM',
 }
 
 /** Where a request stands in rebase's CRM (REB-869): its state, the CRM's sentence when it

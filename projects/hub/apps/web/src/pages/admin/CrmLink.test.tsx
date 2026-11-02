@@ -39,7 +39,7 @@ describe('CrmLink', () => {
     const onLink = mount('errore', {
       crm_situazione: 'Il CRM non ha risposto: Spazio dei lead non configurato.',
     })
-    expect(screen.getByText('Il CRM non ha risposto.')).toBeInTheDocument()
+    expect(screen.getByText('Non ancora registrata nel CRM.')).toBeInTheDocument()
     expect(screen.getByText('Il CRM non ha risposto: Spazio dei lead non configurato.')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Riprova' }))
     expect(onLink).toHaveBeenCalledWith()
