@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
-import { BrandMark } from '@/components/BrandMark'
+import { BrandMark } from '@rebase/ui/brand-mark'
 
 /** The public frame: the mark and the name up top, the two legal links and the
  *  attribution at the foot, one boxed panel in between -- the site's own visual
