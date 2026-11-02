@@ -1,4 +1,3 @@
-import logging
 from typing import Annotated, Any
 from urllib.parse import quote
 from uuid import UUID
@@ -47,8 +46,6 @@ from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, StorageDep
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 
 router = APIRouter(prefix="/api/invoices", tags=["invoices"], responses=PROBLEM_RESPONSES)
-
-logger = logging.getLogger(__name__)
 
 ANNO_MIN = 2000
 ANNO_MAX = 2999
@@ -423,26 +420,7 @@ def issue(
     second transaction: `produce_artifacts` is called here, right after, so a caller
     of this endpoint never has to make a separate call to see the PDF/XML.
     """
-    service = _service(session, storage, settings)
-    result = service.issue(invoice_id, data, actor)
-    # Once `issue` has committed, the answer is the issued row whatever the render does
-    # (REB-143). The number is consumed and the invoice is a fiscal fact; a render that
-    # raised used to turn that into an error, and the person saw a failure for an
-    # invoice that was really issued. The failure is logged and the row is read back as
-    # it stands, so `pdf_document_id`/`xml_document_id` say which file exists and
-    # «Rigenera documenti» (`POST /artifacts`, below) is the retry. A comment and not
-    # the docstring, which is this route's OpenAPI description.
-    try:
-        service.produce_artifacts(result.id, actor)
-    except Exception:
-        # Anything, not only a `DomainError`: a Typst crash or a storage backend that
-        # refused the bytes is exactly the case, and none of them undoes the commit
-        # above. Logged first, so a rollback that fails too (a dead connection) cannot
-        # hide the render's own error. The rollback clears whatever the render left
-        # half-flushed or aborted, so the read below starts on a clean session.
-        logger.exception("invoice %s issued, its PDF/XML were not produced", result.id)
-        session.rollback()
-    return service.get(result.id, actor)
+    return _service(session, storage, settings).issue_and_render(invoice_id, data, actor)
 
 
 @router.post("/{invoice_id}/annul", response_model=InvoiceRead)

@@ -41,7 +41,6 @@ Every docstring below says what the operation does that cannot be undone. That i
 decoration: it is the only warning an agent reads.
 """
 
-import logging
 from collections.abc import Callable
 from dataclasses import asdict
 from datetime import date
@@ -83,8 +82,6 @@ from pigrocrm_mcp.annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
 from pigrocrm_mcp.context import McpContext
 from pigrocrm_mcp.tools.changes import refuse_nothing_given
 from pigrocrm_mcp.tools.invoices import parse_legal_entity_id
-
-logger = logging.getLogger(__name__)
 
 
 def _day(value: str | None) -> date | None:
@@ -136,23 +133,16 @@ def register(
         fattura resta emessa e **non va emessa di nuovo**. L'XML si rigenera con
         `export_invoice_xml`, entrambi i file con «Rigenera documenti» nell'applicazione.
         """
-        service = InvoiceService(context.session, context.storage)
-        invoice = service.issue(
-            UUID(invoice_id), InvoiceIssue(data_emissione=_day(data_emissione)), context.actor
+        # A render failure after the number is consumed still answers the issued row
+        # (REB-143): an error here would tell the agent the emission failed, and an agent
+        # that believes that issues the invoice again.
+        return (
+            InvoiceService(context.session, context.storage)
+            .issue_and_render(
+                UUID(invoice_id), InvoiceIssue(data_emissione=_day(data_emissione)), context.actor
+            )
+            .model_dump(mode="json")
         )
-        # The artefacts are the caller's second transaction by design (slice 3 §3): a
-        # Typst compile inside the numbering lock would serialise every emission on it.
-        # Once `issue` has committed the number is consumed, so a render that raises is
-        # logged and the issued row is still the answer (REB-143), with the document
-        # ids saying which file exists; `export_invoice_xml` below or the web's
-        # «Rigenera documenti» is the retry. Answering an error here would tell the agent
-        # the emission failed, and an agent that believes that issues the invoice again.
-        try:
-            service.produce_artifacts(invoice.id, context.actor)
-        except Exception:
-            logger.exception("invoice %s issued, its PDF/XML were not produced", invoice.id)
-            service.session.rollback()
-        return service.get(invoice.id, context.actor).model_dump(mode="json")
 
     @mcp.tool(annotations=DESTRUCTIVE)
     @guard
