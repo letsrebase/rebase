@@ -167,14 +167,12 @@ describe('timeReportXlsxUrl', () => {
    * exactly right -- the bytes never pass through JavaScript and the session cookie
    * travels without a token in the query string.
    *
-   * There is deliberately no `timeReportUrl(..., 'pdf')` any more. The PDF branch of
-   * that endpoint archives a document and answers `201 application/json`, so an anchor
-   * pointed at it navigated the browser to a page of JSON -- a URL builder that can
-   * produce that URL is a builder somebody will point an anchor at again.
+   * There is deliberately no PDF URL builder: the PDF is a `POST` that archives a document
+   * and answers `201 application/json`, so no anchor can reach it.
    */
   it('builds a same-origin download URL the browser can follow itself', () => {
     expect(timeReportXlsxUrl('d-1', '2026-08')).toBe(
-      '/api/deals/d-1/time-report?mese=2026-08&formato=xlsx',
+      '/api/deals/d-1/time-report?mese=2026-08',
     )
   })
 })

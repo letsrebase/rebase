@@ -126,10 +126,10 @@ verificare con il rapporto ore *reale* di un deal, generato con le sue ore effet
 via corretta è l'endpoint dedicato:
 
 ```
-GET /api/deals/{deal_id}/time-report?mese=AAAA-MM&formato=pdf
+POST /api/deals/{deal_id}/time-report/pdf?mese=AAAA-MM
 ```
 
-(`apps/api/src/pigrocrm_api/routers/deals.py`, `time_report` → `TimeReportService.render_pdf`),
+(`apps/api/src/pigrocrm_api/routers/deals.py`, `render_time_report_pdf` → `TimeReportService.render_pdf`),
 scegliendo un deal e un mese con almeno una voce di ore registrata. Entrambe le vie
 passano dallo stesso `DocumentService.create_from_template`, quindi entrambe esercitano
 lo stesso storage; la prima è più rapida da chiamare a mano, la seconda produce il

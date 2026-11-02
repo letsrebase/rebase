@@ -536,18 +536,37 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Time Report
-         * @description Two recipients, two needs (§2.1): the PDF gets attached to the invoice, the XLSX
-         *     gets filtered by whoever checks it. `formato` is a `Literal`, so an unsupported
-         *     value is a 422 rather than a branch nobody wrote.
-         *
-         *     The PDF is archived as a `document` and this returns its id, matching the slice 2
-         *     rule that the bytes are fetched from the document download endpoint; the XLSX is
-         *     streamed, because it is a working copy and not an artefact.
+         * Time Report Xlsx
+         * @description The XLSX of the month's hours, streamed: it is a working copy that whoever checks
+         *     it filters, not an artefact, so nothing is archived and a GET is safe. The PDF is
+         *     `POST /time-report/pdf`, which archives a document (§2.1).
          */
-        get: operations["time_report_api_deals__deal_id__time_report_get"];
+        get: operations["time_report_xlsx_api_deals__deal_id__time_report_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/deals/{deal_id}/time-report/pdf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Render Time Report Pdf
+         * @description The month's hours as a PDF, archived as a `document` of the deal, which this
+         *     returns: the bytes are fetched from the document download endpoint, like every other
+         *     archived file, and the PDF gets attached to the invoice. A POST because it creates a
+         *     document -- every call archives a new version, never overwriting an earlier one.
+         */
+        post: operations["render_time_report_pdf_api_deals__deal_id__time_report_pdf_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -17604,12 +17623,11 @@ export interface operations {
             };
         };
     };
-    time_report_api_deals__deal_id__time_report_get: {
+    time_report_xlsx_api_deals__deal_id__time_report_get: {
         parameters: {
             query: {
                 /** @description Periodo nella forma AAAA-MM */
                 mese: string;
-                formato?: "pdf" | "xlsx";
             };
             header?: never;
             path: {
@@ -17626,6 +17644,128 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    render_time_report_pdf_api_deals__deal_id__time_report_pdf_post: {
+        parameters: {
+            query: {
+                /** @description Periodo nella forma AAAA-MM */
+                mese: string;
+            };
+            header?: never;
+            path: {
+                deal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentRead"];
                 };
             };
             /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
