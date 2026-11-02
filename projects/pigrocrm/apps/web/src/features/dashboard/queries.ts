@@ -55,15 +55,6 @@ export function useCommercialDashboard(periodo: Periodo) {
   })
 }
 
-export function useEconomicDashboard(periodo: Periodo) {
-  const params = { ...periodo, ...useLegalEntityParam() }
-  return useQuery({
-    queryKey: queryKeys.dashboard('economica', params),
-    queryFn: () => unwrap(api.GET('/api/dashboard/economic', { params: { query: params } })),
-    staleTime: DASHBOARD_STALE_MS,
-  })
-}
-
 /** The days of the period (REB-756): by month and state, the realised rate and the trend of
  *  days worked without approval. Every figure comes computed; the period is both dates. */
 export function useDaysAnalysis(periodo: Periodo) {

@@ -111,8 +111,8 @@ async function open(props: ButtonProps = {}) {
 }
 
 async function chooseCustomer(name: string) {
-  await userEvent.click(screen.getByLabelText(/^Cliente/))
-  await userEvent.click(await screen.findByRole('option', { name }))
+  // The customer picker is a search: its matches are buttons under the box.
+  await userEvent.click(await screen.findByRole('button', { name }))
 }
 
 function body(): Record<string, unknown> {

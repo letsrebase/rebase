@@ -4,15 +4,18 @@ import { useState } from 'react'
 import { toast } from '@rebase/ui/sonner'
 import { DataTable } from '@/components/DataTable'
 import { FilterRow } from '@/components/FilterRow'
+import { LoadMore } from '@/components/LoadMore'
 import { PageHeader } from '@/components/PageHeader'
 import { Button } from '@rebase/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@rebase/ui/dialog'
 import { Input } from '@rebase/ui/input'
 import { CustomerForm } from '@/features/customers/CustomerForm'
 import { buildCustomerColumns } from '@/features/customers/columns'
-import { useCreateCustomer, useCustomers } from '@/features/customers/queries'
+import { useCreateCustomer, useCustomerPages } from '@/features/customers/queries'
 import { useGmailHealth } from '@/features/gmail/queries'
 import { SuggestedCustomers } from '@/features/gmail/SuggestedCustomers'
+import { SEARCH_DEBOUNCE_MS } from '@/features/search/queries'
+import { useDebounced } from '@/hooks/useDebounced'
 import { useLegalEntitiesToName } from '@/lib/legalEntity'
 import { toProblem, type ProblemDetail } from '@/lib/api'
 import { useCanWrite } from '@/lib/auth'
@@ -33,7 +36,9 @@ export function CustomersPage({ initialSearch }: { initialSearch: string }) {
   const mailbox = useGmailHealth().data?.account?.status === 'active'
 
   const schema = useEntitySchema('customer')
-  const customers = useCustomers({ search: search || undefined })
+  // The request follows the settled term, not every keystroke.
+  const settled = useDebounced(search, SEARCH_DEBOUNCE_MS)
+  const customers = useCustomerPages({ search: settled || undefined })
   const create = useCreateCustomer()
 
   // Recomputed every render, not memoised: `schema.data?.custom_fields` only
@@ -92,7 +97,7 @@ export function CustomersPage({ initialSearch }: { initialSearch: string }) {
         <DataTable
           label="Clienti"
           columns={columns}
-          data={customers.data?.items ?? []}
+          data={customers.items}
           isLoading={customers.isLoading}
           isError={customers.isError}
           error={customers.error}
@@ -101,6 +106,16 @@ export function CustomersPage({ initialSearch }: { initialSearch: string }) {
           }
           emptyMessage="Nessun cliente. Creane uno per iniziare."
         />
+        {customers.hasMore && (
+          <LoadMore
+            label="Carica altri"
+            message={`Mostrati ${customers.items.length} clienti, ce ne sono altri.`}
+            isFetchingMore={customers.isFetchingMore}
+            hasError={customers.isError}
+            error={customers.error}
+            onLoadMore={customers.loadMore}
+          />
+        )}
       </div>
 
       {/* The Gmail proposals (REB-223), for whoever connects the mailbox after the space

@@ -13,10 +13,8 @@ import { timeReportXlsxPath, useRenderTimeReportPdf } from './queries'
  * Two formats, two recipients (§2.1): the PDF is attached to the invoice, the XLSX gets
  * filtered by whoever has to check it.
  *
- * They are not two variants of one control, and the first version of this component
- * treated them as though they were -- two anchors at the same endpoint with a different
- * `formato`. The XLSX is a working copy and the endpoint streams its bytes with a
- * `Content-Disposition`, so an anchor is exactly right there. The PDF is an *artefact*:
+ * They are not two variants of one control. The XLSX is a working copy and the endpoint
+ * streams its bytes with a `Content-Disposition`, so a download button is right there. The PDF is an *artefact*:
  * `render_pdf` archives it as a `document`, and the endpoint answers `201` with that
  * document's JSON, because slice 2's rule is that archived bytes are fetched from the
  * document download endpoint and nowhere else. Clicking «PDF» therefore navigated the

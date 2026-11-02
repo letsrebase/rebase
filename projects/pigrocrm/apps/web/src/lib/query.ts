@@ -19,6 +19,10 @@ export const queryClient = new QueryClient({
 
 export const queryKeys = {
   me: ['me'] as const,
+  // The other spaces this identity may reach, and the installation's own root name
+  // (`tenants/root`): one read each, shared by the shell's space switcher and the login page.
+  identitySpaces: ['identity', 'spaces'] as const,
+  rootTenant: ['tenants', 'root'] as const,
   customers: (params?: unknown) => ['customers', params ?? {}] as const,
   customer: (id: string) => ['customer', id] as const,
   people: (params?: unknown) => ['people', params ?? {}] as const,

@@ -1,9 +1,11 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from '@rebase/ui/sonner'
 import { useLegalEntityScope } from '@/lib/legalEntity'
 import { api, toProblem, unwrap } from '@/lib/api'
 import type { StatusTone } from '@/components/StatusPill'
 import type { components } from '@/lib/api-types'
+import { fetchAllPages } from '@/lib/fetchAllPages'
+import { asBody } from '@/lib/formValues'
 import { queryKeys } from '@/lib/query'
 
 /**
@@ -69,21 +71,16 @@ export interface DealsListParams {
  */
 export interface DealsResult {
   items: Deal[]
-  /** True only if `MAX_PAGES` was exhausted while the server still reported more
-   *  (`next_cursor` still non-null) -- see `fetchAllDeals`'s own docstring. Never
-   *  true for any tenant this product is actually sized for; it exists so a
-   *  pathological one is told, not silently shown a partial board. */
+  /** True only if `fetchAllPages`' page cap was exhausted while the server still
+   *  reported more (`next_cursor` still non-null) -- see `fetchAllDeals`'s own
+   *  docstring. Never true for any tenant this product is actually sized for; it
+   *  exists so a pathological one is told, not silently shown a partial board. */
   truncated: boolean
 }
 
 // `DealListQuery.limit` (deals/schemas.py) is bounded `ge=1, le=200`; 200 is
 // therefore the fewest possible requests to drain a real result set.
 const MAX_PAGE_SIZE = 200
-// A hard stop against a runaway loop, not a bound this product's own target user
-// (a solo/small-team Italian freelancer) is expected to ever approach: 100 pages
-// of 200 is 20,000 deals. If a tenant ever does cross it, `truncated: true` says
-// so explicitly instead of either looping indefinitely or silently stopping.
-const MAX_PAGES = 100
 
 /**
  * `GET /api/deals` is cursor-paginated and bounded (`limit` defaults to 50, capped
@@ -97,32 +94,33 @@ const MAX_PAGES = 100
  * This walks the cursor at the maximum page size until the server reports no
  * `next_cursor`, aggregating every page into one flat list -- "every deal
  * matching the filter" is the actual contract the Kanban and the list view both
- * need, not "the first 50". `MAX_PAGES` is the one safety valve: see its own
- * comment for why crossing it is surfaced rather than silent.
+ * need, not "the first 50". `fetchAllPages`' page cap is the one safety valve: see
+ * its own comment for why crossing it is surfaced rather than silent.
  */
-export async function fetchAllDeals(params: DealsListParams): Promise<DealsResult> {
-  const items: Deal[] = []
-  let cursor: string | undefined
-  for (let page = 0; page < MAX_PAGES; page += 1) {
-    const data = await unwrap(
+export function fetchAllDeals(params: DealsListParams): Promise<DealsResult> {
+  return fetchAllPages((cursor) =>
+    unwrap(
       api.GET('/api/deals', {
         params: { query: { ...params, limit: MAX_PAGE_SIZE, cursor } },
       }),
-    )
-    items.push(...data.items)
-    if (!data.next_cursor) return { items, truncated: false }
-    cursor = data.next_cursor
-  }
-  return { items, truncated: true }
+    ),
+  )
 }
 
-export function useDeals(params: DealsListParams = {}) {
+/**
+ * `keepPrevious` is for a list the user filters by typing: a new term is a new key, and
+ * without it the table drops back to its loading state on every settled keystroke. It is
+ * opt-in because the previous rows belong to the previous params -- fine for a search
+ * term, wrong for a consumer whose params are another azienda's.
+ */
+export function useDeals(params: DealsListParams = {}, options: { keepPrevious?: boolean } = {}) {
   // The sidebar's azienda when one is selected and the list has no customer of its own
   // (REB-625): a customer's deals are that customer's whatever the sidebar says.
   const scoped = useLegalEntityScope(params)
   return useQuery({
     queryKey: queryKeys.deals(scoped),
     queryFn: () => fetchAllDeals(scoped),
+    placeholderData: options.keepPrevious ? keepPreviousData : undefined,
   })
 }
 
@@ -145,17 +143,14 @@ export function useDeal(dealId: string, options: { enabled?: boolean } = {}) {
 
 /**
  * `body` arrives as the loosely-typed `Record<string, unknown>` that
- * `DealForm.submit` builds -- the same idiom `customers/queries.ts`/`people/
- * queries.ts` use for the identical reason: a dynamic mix of native columns and
- * tenant-defined custom fields no fixed interface can describe. `as unknown as
- * DealCreateBody` says so honestly rather than a bare `as never` that hides the
- * target type entirely.
+ * `DealForm.submit` builds: a dynamic mix of native columns and tenant-defined
+ * custom fields no fixed interface can describe. `asBody` is where that is said, once.
  */
 export function useCreateDeal() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (body: Record<string, unknown>) =>
-      unwrap(api.POST('/api/deals', { body: body as unknown as DealCreateBody })),
+      unwrap(api.POST('/api/deals', { body: asBody<DealCreateBody>(body) })),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.deals() }),
   })
 }
@@ -167,7 +162,7 @@ export function useUpdateDeal(dealId: string) {
       unwrap(
         api.PATCH('/api/deals/{deal_id}', {
           params: { path: { deal_id: dealId } },
-          body: body as unknown as DealUpdateBody,
+          body: asBody<DealUpdateBody>(body),
         }),
       ),
     onSuccess: () => {

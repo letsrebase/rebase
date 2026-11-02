@@ -1,6 +1,6 @@
-import { BrandMark } from '@/components/BrandMark'
+import { BrandMark } from '@rebase/ui/brand-mark'
 import { useNavigate, useSearch } from '@tanstack/react-router'
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { toast } from '@rebase/ui/sonner'
 import { defaultDashboardSearch } from '@/features/dashboard/search'
 import { Button } from '@rebase/ui/button'
@@ -8,12 +8,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@reba
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { api, toProblem, unwrap } from '@/lib/api'
-import type { components } from '@/lib/api-types'
 import { useAuth } from '@/lib/auth'
 import { roleLabel } from '@/lib/roles'
 import { safeAppRedirect, tenantPrefix } from '@/lib/tenant'
-
-type IdentitySpace = components['schemas']['IdentitySpace']
+import { useSpaceSwitcher } from '@/features/spaces/useSpaceSwitcher'
 
 export function LoginPage({
   go = (url) => window.location.assign(url),
@@ -21,10 +19,9 @@ export function LoginPage({
   const { user, login } = useAuth()
   const navigate = useNavigate()
   const { redirect } = useSearch({ from: '/app/login' })
-  // Read once, for the one-time root-detection effect below: that effect intentionally
-  // never re-runs, so it closes over the `redirect` this page was mounted with rather
-  // than depending on a value it would otherwise have to re-fire on.
-  const initialRedirect = useRef(redirect).current
+  // Read once: the root-detection effect below closes over the `redirect` this page was
+  // mounted with, and re-fires only when the root's name arrives.
+  const [initialRedirect] = useState(redirect)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
@@ -35,49 +32,31 @@ export function LoginPage({
   const [mode, setMode] = useState<'link' | 'password'>('link')
   const [sent, setSent] = useState(false)
   const [linkError, setLinkError] = useState<string | null>(null)
-  // Signup is offered by the root only. The root is the unprefixed page -- or the page
-  // under the root's own space name (PIGROCRM_ROOT_SLUG), which only the API knows.
-  const [isRoot, setIsRoot] = useState(tenantPrefix === '')
-  // The root's own name, when it has one: where a login on the bare page sends the
-  // person afterwards. `null` until the API has answered, `''` when there is none.
-  const [rootSlug, setRootSlug] = useState<string | null>(null)
+  // Signup is offered by the root only: the unprefixed page. The page under the root's own
+  // space name (PIGROCRM_ROOT_SLUG), which only the API knows, leaves for it below.
+  const isRoot = tenantPrefix === ''
   // REB-377 (design §3): the chooser this page shows instead of the form once the
   // identity cookie resolves to at least one space. A 401 (no cookie) or a 200 with
   // none leaves this empty, which is exactly the fallback to the form below -- no
   // separate error branch needed for either.
-  const [spaces, setSpaces] = useState<IdentitySpace[]>([])
-  const [enteringSlug, setEnteringSlug] = useState<string | null>(null)
+  const { spaces, enteringSlug, enter, root } = useSpaceSwitcher(go)
+  // The root's own name, when it has one: where a login on the bare page sends the
+  // person afterwards. `null` until the API has answered, `''` when there is none --
+  // and when the read gave nothing, so a login is never left waiting on it.
+  const rootSlug = root.slug ?? (root.failed ? '' : null)
   useEffect(() => {
-    void api
-      .GET('/api/identity/spaces')
-      .then(({ data }) => {
-        if (Array.isArray(data) && data.length > 0) setSpaces(data)
-      })
-      .catch(() => {})
-  }, [])
-  useEffect(() => {
-    void api.GET('/api/tenants/root').then(({ data }) => {
-      const slug = data?.slug ?? ''
-      setRootSlug(slug)
-      if (slug === '') return
-      if (tenantPrefix === '') {
-        setIsRoot(true)
-        return
-      }
-      if (`/${slug}` !== tenantPrefix) return
-      // The login is nobody's page (decision 2026-09-09): a person who has just logged
-      // out, or whose session ran out, must not read a space's name in the address. The
-      // root's login lives at the bare `/app/login`, which nginx leaves alone and which
-      // sets the root's cookies at `/`, the one jar this page and `/<slug>/app` both
-      // read. A replace, not a push: the aliased address is not worth a history entry.
-      // A `redirect` this page arrived with names a deep link, still meant for the
-      // root's login once it gets there, so it rides along on the query string.
-      window.location.replace(
-        initialRedirect ? `/app/login?redirect=${encodeURIComponent(initialRedirect)}` : '/app/login',
-      )
-    }).catch(() => setRootSlug(''))
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- initialRedirect is a ref read once by design
-  }, [])
+    if (!rootSlug || tenantPrefix === '' || `/${rootSlug}` !== tenantPrefix) return
+    // The login is nobody's page (decision 2026-09-09): a person who has just logged
+    // out, or whose session ran out, must not read a space's name in the address. The
+    // root's login lives at the bare `/app/login`, which nginx leaves alone and which
+    // sets the root's cookies at `/`, the one jar this page and `/<slug>/app` both
+    // read. A replace, not a push: the aliased address is not worth a history entry.
+    // A `redirect` this page arrived with names a deep link, still meant for the
+    // root's login once it gets there, so it rides along on the query string.
+    window.location.replace(
+      initialRedirect ? `/app/login?redirect=${encodeURIComponent(initialRedirect)}` : '/app/login',
+    )
+  }, [rootSlug, initialRedirect])
 
   /**
    * The redirect is driven by the *session*, never by "the login call returned".
@@ -162,32 +141,6 @@ export function LoginPage({
     }
   }
 
-  /** Opens the chosen space with no second proof (design §3): the identity cookie
-   *  already is one. A different basepath is a different application instance, so
-   *  landing there is a full navigation, the same shape every other cross-space move
-   *  on this page already uses. An invitation (REB-678) is not a space yet: the API
-   *  answers the acceptance page, with a token for the address this browser proved,
-   *  and the page takes it from there (it asks for the name when the invitation has
-   *  none). */
-  async function onEnter(space: IdentitySpace) {
-    const slug = space.slug
-    setEnteringSlug(slug)
-    try {
-      if (space.invito) {
-        const door = await unwrap(
-          api.POST('/api/identity/invite/{slug}', { params: { path: { slug } } }),
-        )
-        go(door.url)
-        return
-      }
-      await unwrap(api.POST('/api/identity/enter/{slug}', { params: { path: { slug } } }))
-      go(`/${slug}/app/`)
-    } catch (error) {
-      toast.error(toProblem(error).detail)
-      setEnteringSlug(null)
-    }
-  }
-
   /** Where "Crea un nuovo spazio"/"Crea il tuo spazio" lands, whether this identity
    *  already has spaces or not: the signup page lives at the unprefixed root, so a
    *  visitor on any other basepath gets a full navigation, the same shape every
@@ -223,7 +176,7 @@ export function LoginPage({
                   variant="outline"
                   className="h-auto min-h-9 w-full justify-between py-1.5"
                   disabled={enteringSlug !== null}
-                  onClick={() => void onEnter(space)}
+                  onClick={() => void enter(space)}
                 >
                   <span className="text-left">
                     {space.slug}

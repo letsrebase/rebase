@@ -9,8 +9,8 @@ import { api } from '@/lib/api'
 import type { FieldDefinition } from '@/lib/schema'
 
 // `api.GET` is spied on directly (not `vi.mock('@/lib/api', ...)`), mirroring
-// `Timeline.test.tsx`: `PersonForm` calls `useCustomers` (for the "Azienda (cliente)"
-// picker), a real query through the real `unwrap`, so what is under test is this
+// `Timeline.test.tsx`: `PersonForm` mounts `CustomerPicker` (for the "Azienda (cliente)"
+// picker), which runs a real query through the real `unwrap`, so what is under test is this
 // form's own handling of what that hook returns, not a reimplementation of it.
 const mockGet = vi.spyOn(api, 'GET')
 
@@ -24,7 +24,7 @@ function customerPage(items: { id: string; ragione_sociale: string }[]) {
 beforeEach(() => {
   mockGet.mockReset()
   // Every test that renders PersonForm with the dialog open reaches
-  // `CustomerPicker`, which calls `useCustomers` for the "Azienda (cliente)" picker -- an
+  // `CustomerPicker`, which searches customers for the "Azienda (cliente)" picker -- an
   // empty page is enough for every one of those that does not care about its
   // contents; the ones that do override this before rendering. The one test
   // below that renders with the dialog closed never calls `api.GET` at all, so
@@ -234,10 +234,7 @@ describe('PersonForm', () => {
     )
 
     await userEvent.clear(screen.getByLabelText('Telefono'))
-    // Two comboboxes exist in this render: index 0 is the "Azienda (cliente)" picker every
-    // PersonForm renders unconditionally, index 1 is the Seniority custom field.
-    const [, seniorityCombobox] = screen.getAllByRole('combobox')
-    await userEvent.click(seniorityCombobox!)
+    await userEvent.click(screen.getByRole('combobox'))
     await userEvent.click(screen.getByRole('option', { name: 'Nessuna selezione' }))
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
 
@@ -251,15 +248,15 @@ describe('PersonForm', () => {
 
   describe('customer association', () => {
     /**
-     * A fix-round defect, back-ported from `DealForm.tsx`'s identical fix:
-     * `useCustomers({limit: 200})` used to run at `PersonForm`'s own top level,
+     * A fix-round defect, back-ported from `DealForm.tsx`'s identical fix: the
+     * customer request used to run at `PersonForm`'s own top level,
      * unconditionally -- and this form is mounted by both the Persone list and
      * every person detail page regardless of `open` (only the dialog's own
      * visibility toggles on it), so every view of either screen fired a
-     * `GET /api/customers?limit=200` for a dropdown nobody had opened. The
-     * picker is now its own component (`CustomerPicker`), mounted -- and
-     * therefore only ever calling `useCustomers` -- inside `DialogContent`,
-     * which Radix does not render at all while `open` is false.
+     * `GET /api/customers` for a picker nobody had opened. The picker is its own
+     * component (`CustomerPicker`), mounted -- and therefore only ever
+     * searching customers -- inside `DialogContent`, which Radix does not render
+     * at all while `open` is false.
      */
     it('does not fetch the customer list while the dialog is closed', () => {
       renderWithClient(
@@ -309,8 +306,7 @@ describe('PersonForm', () => {
       )
 
       await userEvent.type(screen.getByLabelText(/^Nome/), 'Luigi')
-      await userEvent.click(screen.getByRole('combobox'))
-      await userEvent.click(await screen.findByRole('option', { name: 'ACME Srl' }))
+      await userEvent.click(await screen.findByRole('button', { name: 'ACME Srl' }))
       await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
 
       expect(submitted(onSubmit)).toEqual({
@@ -327,7 +323,7 @@ describe('PersonForm', () => {
      * way to clear `customer_id` with `null` (`model_dump(exclude_none=True)`
      * drops it before the service ever sees it) or `""` (fails UUID parsing,
      * 422). Only an explicit `detach: true` removes an existing association.
-     * Selecting "Nessun cliente" on a person who had one must send that flag --
+     * Removing the customer of a person who had one must send that flag --
      * omitting the key, or sending a value the server silently ignores or
      * rejects, both leave the stale association in place.
      */
@@ -345,8 +341,7 @@ describe('PersonForm', () => {
         />,
       )
 
-      await userEvent.click(await screen.findByRole('combobox'))
-      await userEvent.click(await screen.findByRole('option', { name: 'Nessun cliente' }))
+      await userEvent.click(await screen.findByRole('button', { name: 'Rimuovi il cliente' }))
       await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
 
       const payload = submitted(onSubmit)

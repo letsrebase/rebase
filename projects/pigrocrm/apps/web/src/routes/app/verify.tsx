@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
 import { EnterPage } from '@/features/auth/EnterPage'
-import { takeEntraToken } from '@/lib/entra-token'
+import { takeEntraToken } from '@rebase/analytics/entra-token'
 
 function EnterRoute() {
   const { t } = Route.useSearch()

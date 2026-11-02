@@ -163,7 +163,7 @@ describe('useDeleteTimeEntry', () => {
 describe('timeReportXlsxPath', () => {
   it('builds the API path of the XLSX, to download through the refreshing fetch', () => {
     expect(timeReportXlsxPath('d-1', '2026-08')).toBe(
-      '/api/deals/d-1/time-report?mese=2026-08&formato=xlsx',
+      '/api/deals/d-1/time-report?mese=2026-08',
     )
   })
 })

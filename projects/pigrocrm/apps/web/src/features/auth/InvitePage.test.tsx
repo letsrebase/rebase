@@ -13,7 +13,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
 
 import { api } from '@/lib/api'
 import { InvitePage } from './InvitePage'
-import { stripEntraToken, takeEntraToken } from '@/lib/entra-token'
+import { stripEntraToken, takeEntraToken } from '@rebase/analytics/entra-token'
 
 const GET = api.GET as unknown as ReturnType<typeof vi.fn>
 const POST = api.POST as unknown as ReturnType<typeof vi.fn>
@@ -183,7 +183,7 @@ describe('the invitation page', () => {
 describe('the invitation token stays out of what PostHog can see', () => {
   it('the URL carries no token once the scrub has run, and the page never re-adds it', async () => {
     window.history.replaceState(null, '', '/studio/app/invite?t=secret-token')
-    stripEntraToken()
+    stripEntraToken(/\/app\/(verify|invite)$/)
     expect(window.location.href).not.toContain('secret-token')
 
     peeking(PEEK)

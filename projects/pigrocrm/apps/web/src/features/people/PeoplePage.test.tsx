@@ -2,7 +2,7 @@
  * The people list's header and filter row (design spec §4). Same three assertions as
  * `customers/index.test.tsx`, on the page next to it: the title and «Nuova persona» come
  * from `PageHeader`, and the search box lives in the filter row above the table. The
- * «Azienda» select is new: it navigates rather than filtering locally (same reasoning
+ * «Azienda» filter is new: it navigates rather than filtering locally (same reasoning
  * as `deal/list.test.tsx`'s chips) because `customer_id` is a real API filter
  * (`GET /api/people?customer_id=`), and its value has to survive a remount the same way
  * the URL's own `?search=` term does.
@@ -42,6 +42,12 @@ beforeEach(() => {
         { id: 'cust-zeta', ragione_sociale: 'Zeta Srl' },
         { id: 'cust-acme', ragione_sociale: 'ACME Srl' },
       ])
+    }
+    if (path === '/api/customers/{customer_id}') {
+      return Promise.resolve({
+        data: { id: 'cust-acme', ragione_sociale: 'ACME Srl' },
+        response: new Response(null, { status: 200 }),
+      }) as never
     }
     return Promise.resolve({
       data: { items: [], next_cursor: null, custom_fields: [] },
@@ -97,7 +103,7 @@ describe('the people list', () => {
     expect(within(filters).getByPlaceholderText(/cerca per nome/i)).toBeInTheDocument()
   })
 
-  it('offers an «Azienda» select in the filter row, «Tutte le aziende» to begin with', async () => {
+  it('offers an «Azienda» filter in the filter row, «Tutte le aziende» to begin with', async () => {
     renderPage()
     const filters = await screen.findByRole('search')
     expect(within(filters).getByLabelText('Filtra per azienda')).toHaveTextContent(
@@ -106,16 +112,17 @@ describe('the people list', () => {
     expect(lastRequestedCustomerId()).toBeUndefined()
   })
 
-  it('lists the companies sorted by ragione sociale, not by API order', async () => {
+  it('searches the companies on the server instead of loading them all', async () => {
     renderPage()
     const filters = await screen.findByRole('search')
-    await userEvent.click(within(filters).getByRole('combobox', { name: 'Filtra per azienda' }))
-    const options = await screen.findAllByRole('option')
-    expect(options.map((option) => option.textContent)).toEqual([
-      'Tutte le aziende',
-      'ACME Srl',
-      'Zeta Srl',
-    ])
+    await userEvent.click(within(filters).getByLabelText('Filtra per azienda'))
+
+    expect(await screen.findByRole('button', { name: 'ACME Srl' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Zeta Srl' })).toBeInTheDocument()
+    const asked = mockGet.mock.calls.find((call) => call[0] === '/api/customers')?.[1] as unknown as {
+      params: { query: Record<string, unknown> }
+    }
+    expect(asked.params.query.limit).toBeLessThan(200)
   })
 
   it('reads its initial company from the URL', async () => {
@@ -128,8 +135,8 @@ describe('the people list', () => {
   it('navigates with the chosen company rather than filtering locally', async () => {
     renderPage()
     const filters = await screen.findByRole('search')
-    await userEvent.click(within(filters).getByRole('combobox', { name: 'Filtra per azienda' }))
-    await userEvent.click(await screen.findByRole('option', { name: 'ACME Srl' }))
+    await userEvent.click(within(filters).getByLabelText('Filtra per azienda'))
+    await userEvent.click(await screen.findByRole('button', { name: 'ACME Srl' }))
 
     expect(nextSearch({ search: 'mario' })).toEqual({
       search: 'mario',
@@ -137,43 +144,25 @@ describe('the people list', () => {
     })
   })
 
-  it('clears the company filter with «Tutte le aziende»', async () => {
+  it('clears the company filter by removing the chosen company', async () => {
     renderPage('cust-acme')
     const filters = await screen.findByRole('search')
-    await userEvent.click(within(filters).getByRole('combobox', { name: 'Filtra per azienda' }))
-    await userEvent.click(await screen.findByRole('option', { name: 'Tutte le aziende' }))
+    await userEvent.click(within(filters).getByLabelText('Filtra per azienda'))
+    await userEvent.click(await screen.findByRole('button', { name: 'Rimuovi il cliente' }))
 
     expect(nextSearch({ customer_id: 'cust-acme' })).toEqual({})
   })
 })
 
-it('disables the «Azienda» select while the company list is still loading', async () => {
-  // Never resolves: the select must show as disabled *before* `/api/customers`
-  // answers, not only after an error.
-  mockGet.mockImplementation(((path: string) =>
-    path === '/api/customers'
-      ? new Promise(() => {})
-      : Promise.resolve({
-          data: { items: [], next_cursor: null, custom_fields: [] },
-          response: new Response(null, { status: 200 }),
-        })) as never)
-
-  renderPage()
-  const filters = await screen.findByRole('search')
-  expect(within(filters).getByLabelText('Filtra per azienda')).toBeDisabled()
-})
-
 /**
- * The gap the re-review found in `feddc6a`: a `customerId` already in the URL has no
- * `SelectItem` to match yet while `sortedCustomers` is still empty (loading, or
- * permanently if the request errors), and Radix's own fallback for an unmatched value
- * is blank -- not the `placeholder`, which only covers a genuinely empty value. A real,
- * valid company id from the URL must never render as nothing.
+ * A `customerId` already in the URL is named by reading that one customer, not by finding
+ * it in a list: while the read is in flight, or if it fails for good, the trigger must say
+ * so rather than render blank.
  */
-describe('the trigger label with a customer_id in the URL, before the company list arrives', () => {
-  it('shows a loading label rather than blank while /api/customers is in flight', async () => {
+describe('the trigger label with a customer_id in the URL', () => {
+  it('shows a loading label rather than blank while the customer is being read', async () => {
     mockGet.mockImplementation(((path: string) =>
-      path === '/api/customers'
+      path === '/api/customers/{customer_id}'
         ? new Promise(() => {})
         : Promise.resolve({
             data: { items: [], next_cursor: null, custom_fields: [] },
@@ -182,14 +171,12 @@ describe('the trigger label with a customer_id in the URL, before the company li
 
     renderPage('cust-acme')
     const filters = await screen.findByRole('search')
-    expect(within(filters).getByLabelText('Filtra per azienda')).toHaveTextContent(
-      'Caricamento aziende…',
-    )
+    expect(within(filters).getByLabelText('Filtra per azienda')).toHaveTextContent('Caricamento…')
   })
 
-  it('shows an error label rather than blank when /api/customers fails, permanently', async () => {
+  it('shows an error label rather than blank when the customer cannot be read, permanently', async () => {
     mockGet.mockImplementation(((path: string) =>
-      path === '/api/customers'
+      path === '/api/customers/{customer_id}'
         ? Promise.resolve({
             error: { detail: 'boom' },
             response: new Response(null, { status: 500 }),
@@ -233,12 +220,11 @@ describe('validateSearch', () => {
  * `PeopleRoute` reads `Route.useSearch()` -- already filtered through `validateSearch`
  * above -- and passes its result straight into `PeoplePage` as `customerId`. Feeding
  * `parsePeopleSearch`'s own output into `renderPage` is what proves a garbage URL
- * value never reaches the API and never leaves the select looking like nothing is
- * chosen (blank, per the review that raised this: `SelectValue` shows nothing when its
- * `value` matches no `SelectItem`) rather than «Tutte le aziende».
+ * value never reaches the API and never leaves the filter looking like nothing is
+ * chosen (blank, per the review that raised this) rather than «Tutte le aziende».
  */
 describe('a garbage customer_id in the URL', () => {
-  it('turns into no filter at all, «Tutte le aziende» selected', async () => {
+  it('turns into no filter at all, «Tutte le aziende» shown', async () => {
     const { customer_id } = parsePeopleSearch({
       customer_id: 'cust-acme;DROP TABLE customers',
     })

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { BrandMark } from '@/components/BrandMark'
+import { BrandMark } from '@rebase/ui/brand-mark'
 import { Button } from '@rebase/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@rebase/ui/card'
 import { toProblem } from '@/lib/api'
@@ -16,7 +16,7 @@ import { tenantPrefix } from '@/lib/tenant'
  *
  * The token itself never comes from this component's own search params (REB-229):
  * `main.tsx` already took it out of the URL, before analytics or this route ever ran,
- * with `lib/entra-token.ts`'s `stripEntraToken`. `EnterRoute` below reads it back with
+ * with `stripEntraToken` from `@rebase/analytics/entra-token`. `EnterRoute` below reads it back with
  * `takeEntraToken` and falls back to the search param only for whatever reaches this
  * component without that having happened first (a unit test rendering `EnterPage`
  * directly, as this file's own tests do).

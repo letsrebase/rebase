@@ -3,7 +3,9 @@
  * the password form is the second door for whoever has one. `useAuth` and the API client
  * are stubbed at the same seams every other route test uses.
  */
-import { render, screen, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { render as renderBare, screen, waitFor } from '@testing-library/react'
+import type { ReactElement } from 'react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -38,6 +40,12 @@ import { LoginPage } from './LoginPage'
 
 const GET = api.GET as unknown as ReturnType<typeof vi.fn>
 const POST = api.POST as unknown as ReturnType<typeof vi.fn>
+
+/** A fresh cache per render: the page reads the spaces and the root's name through it. */
+function render(ui: ReactElement) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return renderBare(<QueryClientProvider client={client}>{ui}</QueryClientProvider>)
+}
 
 beforeEach(() => {
   GET.mockReset()

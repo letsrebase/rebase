@@ -36,10 +36,6 @@ export function formatQuantity(value: string | null): string {
   return value === null ? EMPTY : quantity.format(Number(value))
 }
 
-export function formatRate(value: string | null): string {
-  return value === null ? EMPTY : `${quantity.format(Number(value))}%`
-}
-
 /**
  * An ISO date, parsed field by field.
  *

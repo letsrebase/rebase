@@ -1,7 +1,8 @@
-import { Link, type ErrorComponentProps } from '@tanstack/react-router'
+import type { ErrorComponentProps } from '@tanstack/react-router'
 import { Button } from '@rebase/ui/button'
 import { Loader } from '@rebase/ui/loader'
 import { isChunkLoadError } from '@/lib/chunkReload'
+import { tenantPrefix } from '@/lib/tenant'
 
 function Fallback({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -43,7 +44,7 @@ export function RouteNotFound() {
     <Fallback title="Pagina non trovata">
       <p className="text-sm text-muted-foreground">Questo indirizzo non esiste.</p>
       <Button asChild>
-        <Link to="/app">Vai alla home</Link>
+        <a href={`${tenantPrefix}/app`}>Vai alla home</a>
       </Button>
     </Fallback>
   )

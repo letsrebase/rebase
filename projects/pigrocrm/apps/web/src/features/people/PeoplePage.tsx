@@ -1,39 +1,79 @@
 import { useNavigate } from '@tanstack/react-router'
 import { Plus, Search, Users } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { toast } from '@rebase/ui/sonner'
 import { DataTable } from '@/components/DataTable'
 import { FilterRow } from '@/components/FilterRow'
+import { LoadMore } from '@/components/LoadMore'
 import { PageHeader } from '@/components/PageHeader'
 import { Button } from '@rebase/ui/button'
 import { Input } from '@rebase/ui/input'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@rebase/ui/select'
-import { useCustomers } from '@/features/customers/queries'
+import { Popover, PopoverContent, PopoverTrigger } from '@rebase/ui/popover'
+import { CustomerPicker } from '@/features/customers/CustomerPicker'
+import { useCustomer } from '@/features/customers/queries'
 import { buildPersonColumns } from '@/features/people/columns'
 import { PersonForm } from '@/features/people/PersonForm'
-import { useCreatePerson, usePeople } from '@/features/people/queries'
+import { useCreatePerson, usePeoplePages } from '@/features/people/queries'
+import { SEARCH_DEBOUNCE_MS } from '@/features/search/queries'
+import { useDebounced } from '@/hooks/useDebounced'
 import { toProblem, type ProblemDetail } from '@/lib/api'
 import { useCanWrite } from '@/lib/auth'
 import { useEntitySchema } from '@/lib/schema'
 
-/** `tutte` is a UI-only value, the same idiom `invoices/index.tsx`'s `ANY` uses for its
- *  type select: the API filter is simply absent when nothing is chosen, and a `Select`
- *  needs a non-empty string to represent "no filter". A customer id is always a UUID
- *  minted by the database, so no real id can ever collide with this literal. */
-const ALL_COMPANIES = 'tutte'
+/**
+ * The «Azienda» filter: a button that says which company the list is narrowed to, and
+ * opens the customer search to choose another one or to take the filter off.
+ *
+ * A search and not a dropdown of every customer: the list of companies is as long as the
+ * space's customer list, and a `Select` of the first 200 silently stopped at the 200th.
+ * The label is read from the chosen id (`useCustomer`) rather than from a list, so a
+ * company from the URL is named whether or not it is among any page of matches. A
+ * company that cannot be read says so instead of leaving the trigger blank.
+ */
+function CompanyFilter({
+  customerId,
+  onChange,
+}: {
+  customerId: string | undefined
+  onChange: (customerId: string | undefined) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const company = useCustomer(customerId ?? '')
+  const label =
+    customerId === undefined
+      ? 'Tutte le aziende'
+      : company.isError
+        ? 'Azienda non disponibile'
+        : (company.data?.ragione_sociale ?? 'Caricamento…')
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button variant="outline" aria-label="Filtra per azienda" className="w-56 justify-start">
+          <span className="truncate">{label}</span>
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-96">
+        <CustomerPicker
+          id="filtro-azienda"
+          value={customerId ?? null}
+          ariaLabel="Cerca un'azienda"
+          placeholder="Tutte le aziende: cerca per filtrare…"
+          onChange={(customer) => {
+            setOpen(false)
+            onChange(customer?.id)
+          }}
+        />
+      </PopoverContent>
+    </Popover>
+  )
+}
 
 /**
  * Exported so `index.test.tsx` can render the list without a router -- the same split
  * `CustomersPage` makes next door.
  *
  * `customerId` is a controlled prop, not local state: unlike the search box, the
- * «Azienda» select has to navigate (see the `Select` below), because `customer_id` is
+ * «Azienda» filter has to navigate (see `CompanyFilter` above), because `customer_id` is
  * a real server-side filter (`GET /api/people?customer_id=`) and the URL is what
  * survives a bookmark, a reload or the `key`-driven remount `PeopleRoute` does for
  * `search`.
@@ -52,51 +92,10 @@ export function PeoplePage({
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
 
   const schema = useEntitySchema('person')
-  const people = usePeople({ search: search || undefined, customer_id: customerId })
+  // The request follows the settled term, not every keystroke.
+  const settled = useDebounced(search, SEARCH_DEBOUNCE_MS)
+  const people = usePeoplePages({ search: settled || undefined, customer_id: customerId })
   const create = useCreatePerson()
-
-  // `limit: 200` mirrors `PersonForm`'s own `CustomerPicker` -- a one-shot cap for a
-  // dropdown, not this screen's own list.
-  const customers = useCustomers({ limit: 200 })
-
-  // Sorted here, client-side, rather than asked of the API: `useCustomers` has no
-  // `sort` parameter of its own (its default order is `created_at`, see
-  // `CustomersListParams`), and this dropdown is a handful of rows, not a page that
-  // needs the server's keyset pagination to sort correctly.
-  const sortedCustomers = useMemo(
-    () =>
-      [...(customers.data?.items ?? [])].sort((a, b) =>
-        a.ragione_sociale.localeCompare(b.ragione_sociale, 'it'),
-      ),
-    [customers.data],
-  )
-
-  /**
-   * What the trigger shows, computed rather than left to Radix's automatic
-   * "match the selected `SelectItem`'s text" behaviour: that lookup only ever finds
-   * a match once the matching item has actually rendered, and while `customers` is
-   * loading -- or has failed -- `sortedCustomers` is empty, so a `customerId` from
-   * the URL has no `SelectItem` yet. Radix's own fallback for that case is blank,
-   * not the `placeholder`, which is reserved for a genuinely empty value -- so a
-   * real, valid company id in the URL rendered a blank trigger while its name was in
-   * flight, permanently if the request errored. Passing this as `SelectValue`'s
-   * children overrides its automatic lookup entirely (Radix's own escape hatch for
-   * "I decide what is shown"), and it never depends on `sortedCustomers` having
-   * rendered anything.
-   *
-   * `customerId === undefined` is checked first and unconditionally: "no company
-   * chosen" is a static fact about the URL, never something `/api/customers`
-   * loading or failing should override.
-   */
-  const companyLabel = (): string => {
-    if (customerId === undefined) return 'Tutte le aziende'
-    if (customers.isLoading) return 'Caricamento aziende…'
-    if (customers.isError) return 'Azienda non disponibile'
-    return (
-      sortedCustomers.find((customer) => customer.id === customerId)?.ragione_sociale ??
-      'Azienda non disponibile'
-    )
-  }
 
   // Recomputed every render, not memoised -- same call as `CustomersPage`'s
   // identical line: `schema.data?.custom_fields` only changes when the schema
@@ -139,40 +138,15 @@ export function PeoplePage({
               `customer_id` is a real `GET /api/people` query parameter, and `search` is
               an *updater*, not a literal object, so the box's own `?search=` term
               survives a company chosen here. */}
-          <Select
-            value={customerId ?? ALL_COMPANIES}
-            onValueChange={(next) =>
+          <CompanyFilter
+            customerId={customerId}
+            onChange={(next) =>
               void navigate({
                 to: '/app/people',
-                search: (previous) => ({
-                  search: previous.search,
-                  customer_id: next === ALL_COMPANIES ? undefined : next,
-                }),
+                search: (previous) => ({ search: previous.search, customer_id: next }),
               })
             }
-          >
-            {/* Disabled, not hidden, while the company list is loading or failed to
-                load: «Tutte le aziende» is still a real choice either way, and a
-                disabled trigger (the existing `disabled:opacity-50` on
-                `SelectTrigger`, no new colour) is the cue that the list behind it may
-                be incomplete -- distinct from a tenant that genuinely has no
-                customers. */}
-            <SelectTrigger
-              className="w-56"
-              aria-label="Filtra per azienda"
-              disabled={customers.isLoading || customers.isError}
-            >
-              <SelectValue>{companyLabel()}</SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL_COMPANIES}>Tutte le aziende</SelectItem>
-              {sortedCustomers.map((customer) => (
-                <SelectItem key={customer.id} value={customer.id}>
-                  {customer.ragione_sociale}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          />
         </FilterRow>
       </PageHeader>
 
@@ -180,7 +154,7 @@ export function PeoplePage({
         <DataTable
           label="Persone"
           columns={columns}
-          data={people.data?.items ?? []}
+          data={people.items}
           isLoading={people.isLoading}
           isError={people.isError}
           error={people.error}
@@ -189,6 +163,16 @@ export function PeoplePage({
           }
           emptyMessage="Nessuna persona. Creane una per iniziare."
         />
+        {people.hasMore && (
+          <LoadMore
+            label="Carica altre"
+            message={`Mostrate ${people.items.length} persone, ce ne sono altre.`}
+            isFetchingMore={people.isFetchingMore}
+            hasError={people.isError}
+            error={people.error}
+            onLoadMore={people.loadMore}
+          />
+        )}
       </div>
 
       <PersonForm

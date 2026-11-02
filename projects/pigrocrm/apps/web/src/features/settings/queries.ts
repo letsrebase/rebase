@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tansta
 import { api, fetchWithRefresh, toProblem, unwrap, type ProblemDetail } from '@/lib/api'
 import type { components } from '@/lib/api-types'
 import type { EntityType } from '@/lib/schema'
+import { asBody } from '@/lib/formValues'
 import { queryKeys } from '@/lib/query'
 import { isWatched } from './inviteMail'
 
@@ -43,7 +44,7 @@ export function useCreateFieldDefinition() {
   return useMutation({
     mutationFn: (body: Record<string, unknown>) =>
       unwrap(
-        api.POST('/api/field-definitions', { body: body as unknown as FieldDefinitionCreateBody }),
+        api.POST('/api/field-definitions', { body: asBody<FieldDefinitionCreateBody>(body) }),
       ),
     onSuccess: (field) => invalidateFieldQueries(queryClient, field.entity_type),
   })
@@ -60,7 +61,7 @@ export function useUpdateFieldDefinition() {
       unwrap(
         api.PATCH('/api/field-definitions/{field_id}', {
           params: { path: { field_id: fieldId } },
-          body: body as unknown as FieldDefinitionUpdateBody,
+          body: asBody<FieldDefinitionUpdateBody>(body),
         }),
       ),
     onSuccess: (field) => invalidateFieldQueries(queryClient, field.entity_type),
@@ -109,7 +110,7 @@ export function useCreateStage() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (body: Record<string, unknown>) =>
-      unwrap(api.POST('/api/pipeline-stages', { body: body as unknown as StageCreateBody })),
+      unwrap(api.POST('/api/pipeline-stages', { body: asBody<StageCreateBody>(body) })),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.stages }),
   })
 }
@@ -173,7 +174,7 @@ export function useInviteUser() {
     }) =>
       unwrap(
         api.POST('/api/users/invites', {
-          body: body as unknown as InvitationCreateBody,
+          body: asBody<InvitationCreateBody>(body),
         }),
       ),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.invites }),
@@ -254,7 +255,7 @@ export function useUpdateUser() {
       unwrap(
         api.PATCH('/api/users/{user_id}', {
           params: { path: { user_id: userId } },
-          body: body as unknown as UserUpdateBody,
+          body: asBody<UserUpdateBody>(body),
         }),
       ),
     onSuccess: (updated) => {
@@ -306,7 +307,7 @@ export function useCreateTemplate() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (body: Record<string, unknown>) =>
-      unwrap(api.POST('/api/templates', { body: body as unknown as TemplateCreateBody })),
+      unwrap(api.POST('/api/templates', { body: asBody<TemplateCreateBody>(body) })),
     onSuccess: () => invalidateTemplates(queryClient),
   })
 }
@@ -318,7 +319,7 @@ export function useUpdateTemplate(templateId: string) {
       unwrap(
         api.PATCH('/api/templates/{template_id}', {
           params: { path: { template_id: templateId } },
-          body: body as unknown as TemplateUpdateBody,
+          body: asBody<TemplateUpdateBody>(body),
         }),
       ),
     onSuccess: () => invalidateTemplates(queryClient),
@@ -388,7 +389,7 @@ export function useSaveLegalEntity(aziendaId: string) {
       unwrap(
         api.PUT('/api/aziende/{azienda_id}', {
           params: { path: { azienda_id: aziendaId } },
-          body: body as unknown as LegalEntityUpsertBody,
+          body: asBody<LegalEntityUpsertBody>(body),
         }),
       ),
     onSuccess: (saved) => {
@@ -412,7 +413,7 @@ export function useCreateLegalEntity() {
     // The same cast `useSaveLegalEntity` makes: the form sends the keys it asks for and the
     // server defaults the rest, while the generated type lists them all as present.
     mutationFn: (body: Record<string, unknown>) =>
-      unwrap(api.POST('/api/aziende', { body: body as unknown as LegalEntityCreateBody })),
+      unwrap(api.POST('/api/aziende', { body: asBody<LegalEntityCreateBody>(body) })),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.aziende })
       // The Home's «tutte» is a different answer from the second azienda on (no

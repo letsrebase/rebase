@@ -1,7 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
+import { asBody } from '@/lib/formValues'
 import { queryKeys } from '@/lib/query'
+import { useCursorPages } from '@/lib/useCursorPages'
 
 /**
  * Wire shape of one person, taken directly from the generated OpenAPI schema
@@ -27,11 +29,15 @@ interface PeopleListParams {
  * apps/api/src/pigrocrm_api/routers/*.py declares its own "/api" prefix, and the
  * shared client (lib/api.ts) is built with `baseUrl: ''` to match -- confirmed
  * live for the identical case on `/api/customers` (see that file's own comment).
+ *
+ * The Persone list walks the pages: the first on arrival and one more per `loadMore()`,
+ * so a space with more people than a page holds is not cut at the first page. Under the
+ * `['people']` prefix every person write invalidates.
  */
-export function usePeople(params: PeopleListParams = {}) {
-  return useQuery({
-    queryKey: queryKeys.people(params),
-    queryFn: () =>
+export function usePeoplePages(params: PeopleListParams = {}) {
+  return useCursorPages({
+    queryKey: queryKeys.people({ ...params, pages: true }),
+    fetchPage: (cursor) =>
       unwrap(
         api.GET('/api/people', {
           params: {
@@ -39,10 +45,13 @@ export function usePeople(params: PeopleListParams = {}) {
               search: params.search,
               customer_id: params.customer_id,
               limit: params.limit,
+              cursor,
             },
           },
         }),
       ),
+    // The search term is typed: keep the previous rows up until the next ones land.
+    keepPrevious: true,
   })
 }
 
@@ -62,15 +71,14 @@ export function usePerson(personId: string, options: { enabled?: boolean } = {})
  * `PersonForm.submit` builds from whatever `DynamicForm` (plus the dedicated
  * customer picker) collected -- the same idiom `customers/queries.ts` uses for
  * the identical reason: a dynamic mix of native columns and tenant-defined
- * custom fields that no fixed interface can describe. `as unknown as
- * PersonCreateBody` says so honestly rather than a bare `as never` that hides
- * the target type entirely.
+ * custom fields that no fixed interface can describe. `asBody` is where that is
+ * said, once.
  */
 export function useCreatePerson() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (body: Record<string, unknown>) =>
-      unwrap(api.POST('/api/people', { body: body as unknown as PersonCreateBody })),
+      unwrap(api.POST('/api/people', { body: asBody<PersonCreateBody>(body) })),
     onSuccess: () => {
       // `queryKeys.people()` (params defaulting to `{}`) partially matches every
       // cached people query, search/customer_id/limit combination alike -- same
@@ -90,7 +98,7 @@ export function useUpdatePerson(personId: string) {
       unwrap(
         api.PATCH('/api/people/{person_id}', {
           params: { path: { person_id: personId } },
-          body: body as unknown as PersonUpdateBody,
+          body: asBody<PersonUpdateBody>(body),
         }),
       ),
     onSuccess: () => {

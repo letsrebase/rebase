@@ -104,10 +104,10 @@ describe('fetchAllDeals', () => {
 
   /**
    * The one safety valve: a tenant so large it never runs out of `next_cursor`
-   * within `MAX_PAGES` gets `truncated: true` instead of looping forever, or
-   * worse, silently stopping with no way for the caller to know. Not a state
-   * this product's own target user is expected to reach -- see the constant's
-   * own comment in queries.ts -- but if it ever happens, this is what the UI's
+   * within `fetchAllPages`' page cap gets `truncated: true` instead of looping
+   * forever, or worse, silently stopping with no way for the caller to know. Not
+   * a state this product's own target user is expected to reach -- see
+   * `DEFAULT_MAX_PAGES` in lib/fetchAllPages.ts -- but if it ever happens, this is what the UI's
    * truncation banner (routes/app/deal/index.tsx, routes/app/deal/list.tsx)
    * keys off.
    */

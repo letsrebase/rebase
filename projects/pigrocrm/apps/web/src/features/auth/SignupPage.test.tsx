@@ -32,10 +32,10 @@ import { SignupPage } from './SignupPage'
 const GET = api.GET as unknown as ReturnType<typeof vi.fn>
 const POST = api.POST as unknown as ReturnType<typeof vi.fn>
 
-const NOBODY = { membro: false, nome: null, cognome: null, spazi: 0 }
-const MEMBER = { membro: true, nome: 'Ada', cognome: 'Lovelace', spazi: 0 }
-const OWNER = { membro: true, nome: 'Ada', cognome: 'Lovelace', spazi: 1 }
-const OTHER = { membro: true, nome: 'Zoe', cognome: 'Nkosi', spazi: 1 }
+const NOBODY = { membro: false, has_spaces: false }
+const MEMBER = { membro: true, has_spaces: false }
+const OWNER = { membro: true, has_spaces: true }
+const OTHER = { membro: false, has_spaces: false }
 
 /** `POST` answers by path: the member question, the link, the signup. */
 function answers(by: Record<string, unknown>) {
@@ -70,15 +70,16 @@ beforeEach(() => {
 })
 
 describe('the signup wizard', () => {
-  it('asks the email first and greets a member with the name already written', async () => {
+  it('asks the email first and greets a member', async () => {
     answers({ '/api/tenants/member': MEMBER })
     const user = userEvent.setup()
     render(<SignupPage />)
     expect(screen.getByText(/1 di 2/)).toBeInTheDocument()
     await throughStepOne(user)
     expect(POST).toHaveBeenCalledWith('/api/tenants/member', { body: { email: 'ada@studio.it' } })
-    expect(await screen.findByText(/Sei dei nostri: ciao Ada/)).toBeInTheDocument()
-    expect(screen.getByLabelText('Come si chiama il tuo spazio?')).toHaveValue('Ada Lovelace')
+    expect(await screen.findByText(/Sei dei nostri/)).toBeInTheDocument()
+    expect(screen.getByLabelText('Come si chiama il tuo spazio?')).toHaveValue('')
+    await user.type(screen.getByLabelText('Come si chiama il tuo spazio?'), 'Ada Lovelace')
     await waitFor(
       () => expect(screen.getByRole('status')).toHaveTextContent(/\/ada-lovelace è libero/),
       PROBE_TIMEOUT,
@@ -139,7 +140,7 @@ describe('the signup wizard', () => {
     const user = userEvent.setup()
     render(<SignupPage go={go} />)
     await throughStepOne(user)
-    await screen.findByLabelText('Come si chiama il tuo spazio?')
+    await user.type(await screen.findByLabelText('Come si chiama il tuo spazio?'), 'Ada Lovelace')
     await waitFor(
       () => expect(screen.getByRole('button', { name: 'Crea lo spazio' })).toBeEnabled(),
       PROBE_TIMEOUT,
@@ -176,14 +177,14 @@ describe('the signup wizard', () => {
     expect(screen.getByLabelText('Come si chiama il tuo spazio?')).toBeInTheDocument()
   })
 
-  it('proposes the name to an owner who wants a second space, and lets everyone change the email', async () => {
+  it('lets an owner who wants a second space name it, and everyone change the email', async () => {
     answers({ '/api/tenants/member': OWNER })
     const user = userEvent.setup()
     render(<SignupPage />)
     await throughStepOne(user)
     await screen.findByText('Hai già uno spazio')
     await user.click(screen.getByRole('button', { name: 'Vuoi crearne un altro?' }))
-    expect(screen.getByLabelText('Come si chiama il tuo spazio?')).toHaveValue('Ada Lovelace')
+    await user.type(screen.getByLabelText('Come si chiama il tuo spazio?'), 'Ada Lovelace')
     // «Indietro» goes to the email, never back to the owner card, and forgets the name.
     await user.click(screen.getByRole('button', { name: 'Indietro' }))
     expect(screen.getByLabelText('Con quale email ti conosciamo?')).toHaveValue('ada@studio.it')
@@ -339,8 +340,7 @@ describe('the fast path (REB-488)', () => {
     expect(screen.getByLabelText('Come si chiama il tuo spazio?')).toBeInTheDocument()
     expect(screen.queryByLabelText('Con quale email ti conosciamo?')).toBeNull()
     expect(screen.queryByText('Hai già uno spazio')).toBeNull()
-    expect(await screen.findByText(/Sei dei nostri: ciao Ada/)).toBeInTheDocument()
-    expect(screen.getByLabelText('Come si chiama il tuo spazio?')).toHaveValue('Ada Lovelace')
+    expect(await screen.findByText(/Sei dei nostri/)).toBeInTheDocument()
   })
 
   it('clears the handoff from sessionStorage once read, so a reload of this page never re-arms it', () => {
@@ -372,6 +372,7 @@ describe('the fast path (REB-488)', () => {
     answers({ '/api/tenants/member': OWNER, '/api/tenants/': { slug: 'ada-lovelace' } })
     const go = vi.fn()
     render(<SignupPage go={go} />)
+    await userEvent.type(screen.getByLabelText('Come si chiama il tuo spazio?'), 'Ada Lovelace')
     await waitFor(
       () => expect(screen.getByRole('button', { name: 'Crea lo spazio' })).toBeEnabled(),
       PROBE_TIMEOUT,
@@ -383,21 +384,6 @@ describe('the fast path (REB-488)', () => {
       }),
     )
     await waitFor(() => expect(go).toHaveBeenCalledWith('/ada-lovelace/app/'))
-  })
-
-  it('never overwrites a name the person already started typing while the background lookup is still in flight', async () => {
-    writeRegisterHandoffEmail('ada@studio.it')
-    let resolveMember: (value: { data: unknown; response: { status: number } }) => void = () => {}
-    POST.mockImplementation(((path: string) =>
-      path === '/api/tenants/member'
-        ? new Promise((resolve) => (resolveMember = resolve))
-        : Promise.resolve({ data: {}, response: { status: 200 } })) as never)
-    const user = userEvent.setup()
-    render(<SignupPage />)
-    await user.type(screen.getByLabelText('Come si chiama il tuo spazio?'), 'Studio Bob')
-    resolveMember({ data: OWNER, response: { status: 200 } })
-    expect(await screen.findByText(/Sei dei nostri/)).toBeInTheDocument()
-    expect(screen.getByLabelText('Come si chiama il tuo spazio?')).toHaveValue('Studio Bob')
   })
 
   it('drops a fast-path answer that lands after the person went back to a different email', async () => {
@@ -417,13 +403,13 @@ describe('the fast path (REB-488)', () => {
     render(<SignupPage />)
     await user.click(screen.getByRole('button', { name: 'Indietro' }))
     await throughStepOne(user, 'bob@studio.it')
-    expect(await screen.findByText(/Sei dei nostri: ciao Ada/)).toBeInTheDocument()
+    expect(await screen.findByText(/Sei dei nostri/)).toBeInTheDocument()
     // The abandoned fast-path lookup (still tied to ada@studio.it) answers late, for
     // an email nobody is looking at anymore -- it must not land over bob's answer.
     resolveOriginal({ data: OTHER, response: { status: 200 } })
     await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(screen.getByText(/Sei dei nostri: ciao Ada/)).toBeInTheDocument()
-    expect(screen.queryByText(/ciao Zoe/)).toBeNull()
+    expect(screen.getByText(/Sei dei nostri/)).toBeInTheDocument()
+    expect(screen.queryByText(/Non sei ancora nella community/)).toBeNull()
   })
 
   it('keeps the copy in step with the form after backing out of the fast path', async () => {

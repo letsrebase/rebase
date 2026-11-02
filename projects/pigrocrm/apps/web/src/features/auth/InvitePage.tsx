@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { BrandMark } from '@/components/BrandMark'
+import { BrandMark } from '@rebase/ui/brand-mark'
 import { Button } from '@rebase/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@rebase/ui/card'
 import { Input } from '@rebase/ui/input'
@@ -9,7 +9,7 @@ import { api, toProblem, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
 import { useAuth } from '@/lib/auth'
 import { homeAfterEntry } from '@/lib/entry-home'
-import { takeEntraToken } from '@/lib/entra-token'
+import { takeEntraToken } from '@rebase/analytics/entra-token'
 import { tenantPrefix } from '@/lib/tenant'
 
 type InvitationPeek = components['schemas']['InvitationPeek']

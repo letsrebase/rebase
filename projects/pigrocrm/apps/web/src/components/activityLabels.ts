@@ -71,25 +71,6 @@ const KIND_LABELS: Record<string, string> = {
 }
 
 /**
- * The entity an activity is about, in the words the rest of the interface uses.
- *
- * Only the dashboard needs this: the timeline is already inside the entity it belongs to,
- * so there is nothing there for it to say. Unknown values fall through to `humanize` for
- * the reason given below -- `activities/models.py` promises new `entity_type` values will
- * arrive without a migration.
- */
-const ENTITY_LABELS: Record<string, string> = {
-  customer: 'Cliente',
-  person: 'Persona',
-  deal: 'Deal',
-  document: 'Documento',
-  invoice: 'Fattura',
-  time_entry: 'Ore',
-  cost: 'Costo',
-  email_draft: 'Email',
-}
-
-/**
  * Turns a snake_case value this build has no specific label for into a sentence-case
  * phrase -- e.g. a future `email_received` reads as "Email received" instead of `undefined`
  * or a blank cell. Only the first word is capitalised, matching Italian convention (and
@@ -107,10 +88,6 @@ export function humanize(value: string): string {
 
 export function labelForKind(kind: string): string {
   return KIND_LABELS[kind] ?? humanize(kind)
-}
-
-export function labelForEntityType(entityType: string): string {
-  return ENTITY_LABELS[entityType] ?? humanize(entityType)
 }
 
 const dateTimeFormatter = new Intl.DateTimeFormat('it-IT', {

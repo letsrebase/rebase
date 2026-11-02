@@ -7,7 +7,9 @@ import { PageHeader } from '@/components/PageHeader'
 import { Button } from '@rebase/ui/button'
 import { Input } from '@rebase/ui/input'
 import { buildDealColumns } from '@/features/deals/columns'
+import { SEARCH_DEBOUNCE_MS } from '@/features/search/queries'
 import { useDeals, type DealsListParams } from '@/features/deals/queries'
+import { useDebounced } from '@/hooks/useDebounced'
 import { useEntitySchema } from '@/lib/schema'
 
 /**
@@ -57,7 +59,10 @@ export function DealsList({
   const navigate = useNavigate()
   const [search, setSearch] = useState(initialSearch)
   const schema = useEntitySchema('deal')
-  const deals = useDeals({ search: search || undefined, ...filters })
+  // The request follows the settled term, not every keystroke: each new key would
+  // otherwise start a fresh walk of the whole cursor.
+  const settled = useDebounced(search, SEARCH_DEBOUNCE_MS)
+  const deals = useDeals({ search: settled || undefined, ...filters }, { keepPrevious: true })
   const active = DRILL_THROUGHS.filter((candidate) => filters[candidate.key] === true)
 
   // Recomputed every render, not memoised -- same call as `CustomersPage`/

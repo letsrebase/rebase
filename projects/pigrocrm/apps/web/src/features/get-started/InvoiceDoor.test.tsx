@@ -122,7 +122,7 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-/** `ChooseCustomer`'s own `useSettled` (`InvoiceDoor.tsx`) debounces the typed name
+/** `ChooseCustomer`'s `useDebounced` (`InvoiceDoor.tsx`) debounces the typed name
  *  250ms, on a real timer, before the search it gates even fires -- so every wait below
  *  for that search's suggestions, its failure, or the button it un-disables is already
  *  waiting out that debounce before the fetch that answers it has even started. The

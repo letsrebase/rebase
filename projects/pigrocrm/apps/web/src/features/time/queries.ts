@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLegalEntityScope } from '@/lib/legalEntity'
 import { api, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
+import { asBody } from '@/lib/formValues'
 import { queryKeys } from '@/lib/query'
 import { downloadDocument } from '@/features/documents/queries'
 
@@ -103,7 +104,7 @@ export function useLogTime() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (body: Record<string, unknown>) =>
-      unwrap(api.POST('/api/time-entries', { body: body as unknown as TimeEntryCreateBody })),
+      unwrap(api.POST('/api/time-entries', { body: asBody<TimeEntryCreateBody>(body) })),
     onSuccess: (entry) => invalidateAfterWrite(queryClient, entry.deal_id),
   })
 }
@@ -115,7 +116,7 @@ export function useUpdateTimeEntry(entryId: string) {
       unwrap(
         api.PATCH('/api/time-entries/{entry_id}', {
           params: { path: { entry_id: entryId } },
-          body: body as unknown as TimeEntryUpdateBody,
+          body: asBody<TimeEntryUpdateBody>(body),
         }),
       ),
     onSuccess: (entry) => invalidateAfterWrite(queryClient, entry.deal_id),
@@ -140,7 +141,7 @@ export function useUpdateHours() {
       unwrap(
         api.PATCH('/api/time-entries/{entry_id}', {
           params: { path: { entry_id: entryId } },
-          body: { ore } as unknown as TimeEntryUpdateBody,
+          body: asBody<TimeEntryUpdateBody>({ ore }),
         }),
       ),
     onSuccess: (entry) => invalidateAfterWrite(queryClient, entry.deal_id),
@@ -167,7 +168,7 @@ export function useDeleteTimeEntry() {
  * The PDF deliberately has no path of its own here -- see `useRenderTimeReportPdf`.
  */
 export function timeReportXlsxPath(dealId: string, mese: string): string {
-  const query = new URLSearchParams({ mese, formato: 'xlsx' })
+  const query = new URLSearchParams({ mese })
   return `/api/deals/${dealId}/time-report?${query.toString()}`
 }
 
@@ -189,14 +190,14 @@ export function useRenderTimeReportPdf() {
   return useMutation({
     mutationFn: async (variables: { dealId: string; mese: string }) => {
       const document = await unwrap(
-        api.GET('/api/deals/{deal_id}/time-report', {
+        api.POST('/api/deals/{deal_id}/time-report/pdf', {
           params: {
             path: { deal_id: variables.dealId },
-            query: { mese: variables.mese, formato: 'pdf' },
+            query: { mese: variables.mese },
           },
         }),
       )
-      await downloadDocument((document as { id: string }).id)
+      await downloadDocument(document.id)
       return document
     },
     // The render archived a new document version, so the deal's Documenti tab is stale

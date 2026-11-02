@@ -84,8 +84,8 @@ export const PAYMENT_STATE_LABELS: Record<StatoPagamento, string> = {
  * labels, and a total `Record`, so a state added to `InvoiceStato` fails to compile here
  * rather than rendering as a default nobody chose. Note what that does and does not buy:
  * `InvoiceStato` is a union written by hand a few lines above, not a generated type, so
- * the compile breaks when somebody widens *it* -- adding a state to `STATO_TRANSITIONS`
- * on the server does not by itself reach this file.
+ * the compile breaks when somebody widens *it* -- adding a state on the server does not
+ * by itself reach this file.
  *
  * `emessa` and `confermata` are settled: a number is assigned, or a proforma is ready to
  * become one, and neither is a problem to be looked at. `bozza` and `consumata` are
@@ -112,22 +112,6 @@ export const INVOICE_STATE_TONE: Record<InvoiceStato, StatusTone> = {
 export const PAYMENT_STATE_TONE: Record<StatoPagamento, StatusTone> = {
   da_incassare: 'gold',
   incassato: 'ink',
-}
-
-/**
- * Which buttons a row can offer, mirroring `STATO_TRANSITIONS` in
- * `packages/core/src/pigrocrm/core/invoices/schemas.py`.
- *
- * A mirror for rendering only: the server validates every transition and its 409
- * message is what gets shown. Same convention as `OFFER_TRANSITIONS` in
- * `features/documents/queries.ts`.
- */
-export const INVOICE_TRANSITIONS: Record<InvoiceStato, InvoiceStato[]> = {
-  bozza: ['emessa', 'confermata'],
-  confermata: ['consumata'],
-  emessa: ['annullata'],
-  annullata: [],
-  consumata: [],
 }
 
 function ownerQuery(owner: InvoiceOwner): { customer_id?: string; deal_id?: string } {
@@ -244,19 +228,6 @@ export function useInvoiceLines(invoiceId: string) {
     queryFn: () =>
       unwrap(
         api.GET('/api/invoices/{invoice_id}/lines', {
-          params: { path: { invoice_id: invoiceId } },
-        }),
-      ),
-  })
-}
-
-export function useInvoiceTimeline(invoiceId: string) {
-  return useQuery({
-    enabled: invoiceId !== '',
-    queryKey: queryKeys.timeline('invoice', invoiceId),
-    queryFn: () =>
-      unwrap(
-        api.GET('/api/invoices/{invoice_id}/timeline', {
           params: { path: { invoice_id: invoiceId } },
         }),
       ),

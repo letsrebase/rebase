@@ -1,9 +1,9 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, unwrap } from '@/lib/api'
 import { downloadFromApi } from '@/lib/download'
+import { fetchAllPages } from '@/lib/fetchAllPages'
 import { useLegalEntity } from '@/lib/legalEntity'
 import { queryKeys } from '@/lib/query'
-import type { Contract } from '@/features/contracts/queries'
 import type { WorkUnitCreateBody, WorkUnitRow, WorkUnitStato } from './labels'
 
 export interface DaysListParams {
@@ -71,19 +71,15 @@ export function useDayContracts() {
   return useQuery({
     queryKey: queryKeys.contracts({ for: 'days', azienda: selected }),
     queryFn: async () => {
-      const items: Contract[] = []
-      let cursor: string | undefined
-      do {
-        const page = await unwrap(
+      const { items } = await fetchAllPages((cursor) =>
+        unwrap(
           api.GET('/api/contracts', {
             params: {
               query: { azienda_id: selected ?? undefined, limit: 200, sort: 'titolo', cursor },
             },
           }),
-        )
-        items.push(...page.items)
-        cursor = page.next_cursor ?? undefined
-      } while (cursor !== undefined)
+        ),
+      )
       return items.filter((contract) => contract.stato !== 'terminato' && contract.stato !== 'scaduto')
     },
   })
