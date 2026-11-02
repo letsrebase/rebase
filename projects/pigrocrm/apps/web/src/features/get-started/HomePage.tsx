@@ -2,7 +2,7 @@
  * The Home, `/app/` (spec 2026-09-16 §4.1, REB-222).
  *
  * While the space is empty (no customer, deal, time entry or document) the Home is the
- * start page, the same one the sidebar's «Primi passi» opens: a new space has no numbers
+ * start page, the same one the profile menu's «Primi passi» opens: a new space has no numbers
  * to chart, and the first screen should bring the person's own work in rather than show
  * them zeros. From the first piece of work on it is the dashboard, with a «Completa lo
  * spazio» card above it while a step is still open that this person could do, then the

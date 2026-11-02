@@ -243,7 +243,7 @@ names: compose interpolates the required `PIGROCRM_*` and `POSTGRES_*` values ev
 an `exec`. Do not rely on a `.env` symlink beside the compose file. The
 server resolves the token once, at start-up (`apps/mcp/src/pigrocrm_mcp/__main__.py`).
 To rotate it:
-1. Mint the new token. Use Impostazioni → Token, or run `PatService.create` inside the
+1. Mint the new token. Use the Agenti page of the sidebar, or run `PatService.create` inside the
    api container with its stdout redirected into the file *on the host*, so the value
    never crosses the ssh connection.
 2. Restart the client's MCP server.

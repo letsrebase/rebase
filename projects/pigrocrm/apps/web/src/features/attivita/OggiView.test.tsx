@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
+import { useState } from 'react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
@@ -85,12 +86,18 @@ function Count() {
   return <span data-testid="count">{useOverdueCount() ?? 'nessuno'}</span>
 }
 
-function renderPage(initialAssignee?: string) {
+/** The page owns the choice of person; this holds it the way `AttivitaPage` does. */
+function Held({ initial }: { initial: string }) {
+  const [assignee, setAssignee] = useState(initial)
+  return <OggiView tabs={null} assignee={assignee} onAssigneeChange={setAssignee} />
+}
+
+function renderPage(initialAssignee = 'io') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={client}>
       <Count />
-      <OggiView tabs={null} initialAssignee={initialAssignee} />
+      <Held initial={initialAssignee} />
     </QueryClientProvider>,
   )
 }
@@ -186,7 +193,7 @@ describe('OggiView', () => {
     expect(await screen.findByText(/Ne sono mostrate 1 su 120/)).toBeInTheDocument()
     // The rows left out are listed for the person this page is showing, not for the
     // Attività page's own default.
-    expect(screen.getByRole('link', { name: 'pagina Attività' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'scheda Tutte' })).toHaveAttribute(
       'data-search',
       JSON.stringify({ vista: 'tutte', assegnata: 'io' }),
     )
@@ -194,7 +201,7 @@ describe('OggiView', () => {
     await userEvent.click(screen.getByRole('combobox', { name: 'Filtra per assegnatario' }))
     await userEvent.click(await screen.findByRole('option', { name: 'Di chiunque' }))
     await waitFor(() =>
-      expect(screen.getByRole('link', { name: 'pagina Attività' })).toHaveAttribute(
+      expect(screen.getByRole('link', { name: 'scheda Tutte' })).toHaveAttribute(
         'data-search',
         JSON.stringify({ vista: 'tutte', assegnata: 'tutte' }),
       ),

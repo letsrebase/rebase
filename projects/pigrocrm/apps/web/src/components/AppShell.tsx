@@ -352,14 +352,21 @@ export function AppShell({
   // `canSeeSettingsTab` the settings page filters its own tabs with, so sidebar and
   // page read one table and cannot drift. The group itself is shown to every role.
   const settingsItems = user === null ? [] : settingsSubItems(user.ruolo, location.pathname)
-  // «Impostazioni» is the one entry that opens onto sub-items. `null` follows the route:
-  // the page holding the current route is open by itself, since the alternative is a page
-  // whose own entry is not on screen, and the alternative to *that* -- nailing it open --
-  // is a chevron that does nothing. A press settles it for the rest of the visit and no
-  // longer; what one route did on your behalf is not a preference worth storing.
-  const [settingsToggled, setSettingsToggled] = useState<boolean | null>(null)
+  // «Impostazioni» is the one entry that opens onto sub-items. It follows the route: the
+  // page holding the current route is open by itself, since the alternative is a page whose
+  // own entry is not on screen, and the alternative to *that* -- nailing it open -- is a
+  // chevron that does nothing. A press settles it only while the route stays on the same
+  // side of the settings: it is remembered with the side it was made on, so leaving or
+  // entering the settings hands the choice back to the route. What one route did on your
+  // behalf is not a preference worth storing, and neither is this.
   const onSettings = isUnder(location.pathname, SETTINGS.base)
-  const settingsOpen = settingsToggled ?? onSettings
+  const [settingsToggled, setSettingsToggled] = useState<{ open: boolean; onSettings: boolean } | null>(
+    null,
+  )
+  const settingsOpen =
+    settingsToggled !== null && settingsToggled.onSettings === onSettings
+      ? settingsToggled.open
+      : onSettings
 
   // What the sidebar is showing right now, and what the one toggle does to it.
   const overlay = !isDesktop && openedAt === location.pathname
@@ -418,6 +425,11 @@ export function AppShell({
   // two cannot disagree about when a space stops being new. `false` only for a space that
   // answered «has work»: while it is unknown the entry is not offered.
   const { spaceEmpty } = useSpaceEmpty()
+  // Held once it is known, as the Home holds its own choice: `spaceEmpty` goes back to
+  // `null` while any of the four reads refetches (a window focus, a write), and the entry
+  // must not blink out of the menu for that. A space does not lose its work.
+  const [hasData, setHasData] = useState(false)
+  if (spaceEmpty === false && !hasData) setHasData(true)
 
   /** A leaf entry: an icon and a label expanded, an icon alone in the rail. A `count`
    *  above zero is drawn as a badge after the label, and on the icon's corner in the rail,
@@ -670,7 +682,7 @@ export function AppShell({
                 label={SETTINGS.label}
                 icon={SETTINGS.icon}
                 open={settingsOpen}
-                onToggle={() => setSettingsToggled(!settingsOpen)}
+                onToggle={() => setSettingsToggled({ open: !settingsOpen, onSettings })}
               >
                 {settingsItems.map((item) => subItem(item))}
               </NavGroup>
@@ -738,7 +750,7 @@ export function AppShell({
                   page while the space is empty, so the entry is only wanted from the first
                   piece of work on: this is where it goes then, for every role, one click
                   from the profile. `/app/get-started` itself answers as before. */}
-              {spaceEmpty === false && (
+              {hasData && (
                 <DropdownMenuItem asChild>
                   <Link to="/app/get-started">
                     <Rocket className="size-4" />

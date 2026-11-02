@@ -13,6 +13,7 @@ const validate = ActivitiesRoute.options.validateSearch as (search: Record<strin
   apri?: string
   assegnata?: string
   vista?: string
+  da?: string
 }
 
 describe('the /app/activities route', () => {
@@ -21,6 +22,7 @@ describe('the /app/activities route', () => {
       apri: ID,
       assegnata: 'tutte',
       vista: undefined,
+      da: undefined,
     })
     expect(validate({ assegnata: ID }).assegnata).toBe(ID)
     expect(validate({ assegnata: 'io' }).assegnata).toBe('io')
@@ -31,6 +33,7 @@ describe('the /app/activities route', () => {
       apri: undefined,
       assegnata: undefined,
       vista: undefined,
+      da: undefined,
     })
   })
 
@@ -42,18 +45,31 @@ describe('the /app/activities route', () => {
 })
 
 describe('the /app/oggi route', () => {
-  it('redirects to the Attività page on its Oggi view, so the digest and old links keep working', () => {
-    const beforeLoad = OggiRoute.options.beforeLoad as () => void
-    let thrown: unknown
+  const beforeLoad = OggiRoute.options.beforeLoad as (context: { search: { da?: string } }) => void
+
+  function redirected(search: { da?: string }) {
     try {
-      beforeLoad()
-    } catch (error) {
-      thrown = error
+      beforeLoad({ search })
+    } catch (thrown) {
+      return isRedirect(thrown) ? thrown.options : thrown
     }
-    expect(isRedirect(thrown)).toBe(true)
-    expect((thrown as { options: unknown }).options).toMatchObject({
+    return null
+  }
+
+  it('redirects to the Attività page on its Oggi view, so old links keep working', () => {
+    expect(redirected({})).toMatchObject({ to: '/app/activities', search: { vista: 'oggi' } })
+  })
+
+  it('takes the digest mail\'s `?da=digest` along, which is how PostHog sees the return', () => {
+    expect(redirected({ da: 'digest' })).toMatchObject({
       to: '/app/activities',
-      search: { vista: 'oggi' },
+      search: { vista: 'oggi', da: 'digest' },
     })
+  })
+
+  it('reads `da` as a string and nothing else', () => {
+    const validate = OggiRoute.options.validateSearch as (search: Record<string, unknown>) => { da?: string }
+    expect(validate({ da: 'digest' })).toEqual({ da: 'digest' })
+    expect(validate({ da: ['digest'] })).toEqual({ da: undefined })
   })
 })

@@ -167,7 +167,7 @@ export function useAttivitaOggi(
 }
 
 /** How many open attività assigned to the signed-in user are past their deadline: the
- *  number the sidebar shows next to «Oggi». `undefined` until it is known or when there
+ *  number the sidebar shows next to «Attività». `undefined` until it is known or when there
  *  is nothing to count, so the badge is drawn only for a real figure. */
 export function useOverdueCount(): number | undefined {
   const { user } = useAuth()

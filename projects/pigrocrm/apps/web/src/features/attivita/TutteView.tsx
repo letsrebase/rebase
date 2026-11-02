@@ -23,7 +23,7 @@ import { formatIsoDateItalian } from '@/lib/dates'
 import { AssigneeSelect } from './AssigneeSelect'
 import { AttivitaDialog } from './AttivitaDialog'
 import { RecordLink } from './AttivitaMeta'
-import { ME, toFilters, type Scadenza, type Stato } from './filters'
+import { toFilters, type Scadenza, type Stato } from './filters'
 import { LINK_KIND_LABELS, linkOf, type LinkValue } from './links'
 import { useAssignees, useAttivitaPages, useRecordLabel } from './queries'
 import { RecordPicker } from './RecordPicker'
@@ -103,24 +103,26 @@ function LinkFilter({
  * so working through a list is not a dialog per item; the archived ones are one chip
  * away, with «Ripristina» as the way back.
  *
- * The page's tab strip, any notice above the table and the dialog `?apri=` opens come from
- * `AttivitaPage`, which owns the two views (REB-873).
+ * The page's tab strip, any notice above the table, the choice of person and the dialog
+ * `?apri=` opens come from `AttivitaPage`, which owns the two views (REB-873).
  */
 export function TutteView({
   tabs,
   notice,
-  initialAssignee = ME,
+  assignee,
+  onAssigneeChange,
 }: {
   tabs: ReactNode
   notice?: ReactNode
-  /** Whose attività the view opens on: `ME`, `EVERYONE` or a user id. */
-  initialAssignee?: string
+  /** Whose attività the view shows: `ME`, `EVERYONE` or a user id. Held by the page, so
+   *  the choice survives a switch between its two views. */
+  assignee: string
+  onAssigneeChange: (next: string) => void
 }) {
   const canWrite = useCanWrite()
   const assignees = useAssignees()
   const [stato, setStato] = useState<Stato | null>('aperta')
   const [scadenza, setScadenza] = useState<Scadenza | null>(null)
-  const [assignee, setAssignee] = useState(initialAssignee)
   const [link, setLink] = useState<LinkValue | null>(null)
   const [archiviate, setArchiviate] = useState(false)
   const [creating, setCreating] = useState(false)
@@ -275,7 +277,7 @@ export function TutteView({
               if (next === 'scadute') setStato('aperta')
             }}
           />
-          <AssigneeSelect value={assignee} onChange={setAssignee} />
+          <AssigneeSelect value={assignee} onChange={onAssigneeChange} />
           <LinkFilter value={link} onChange={setLink} />
           <Button
             variant="outline"

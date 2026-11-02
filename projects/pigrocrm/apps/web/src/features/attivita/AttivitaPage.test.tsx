@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { useState } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
 import { AttivitaPage } from './AttivitaPage'
@@ -16,7 +17,7 @@ const ME = '33333333-3333-7333-8333-333333333333'
 vi.mock('@/lib/auth', () => ({
   useCanWrite: () => true,
   useIsAdmin: () => true,
-  useAuth: () => ({ user: { id: ME, nome: 'Lorenzo', ruolo: 'admin' }, isLoading: false }),
+  useAuth: () => ({ user: { id: ME, nome: 'Giulia Demo', ruolo: 'admin' }, isLoading: false }),
 }))
 
 vi.mock('@rebase/ui/sonner', () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.fn() } }))
@@ -71,7 +72,7 @@ function serve() {
       return ok({ items: [row({ id: 'listed', titolo: 'Preparare le proposte' })], next_cursor: null })
     }
     if (path === '/api/activities/{attivita_id}') return ok(FOUND)
-    if (path === '/api/users') return ok([{ id: ME, nome: 'Lorenzo', attivo: true }])
+    if (path === '/api/users') return ok([{ id: ME, nome: 'Giulia Demo', attivo: true }])
     throw new Error(`unexpected GET ${path}`)
   }) as never)
 }
@@ -113,6 +114,29 @@ describe('AttivitaPage', () => {
     expect(await screen.findByText('Preparare le proposte')).toBeInTheDocument()
     expect(screen.getByRole('table')).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: /In ritardo/ })).not.toBeInTheDocument()
+  })
+
+  it('keeps the person chosen on one view when the other is opened', async () => {
+    const onVistaChange = vi.fn()
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    function Page() {
+      const [vista, setVista] = useState<Vista>('oggi')
+      return <AttivitaPage vista={vista} onVistaChange={(next) => { onVistaChange(next); setVista(next) }} />
+    }
+    render(
+      <QueryClientProvider client={client}>
+        <Page />
+      </QueryClientProvider>,
+    )
+    await screen.findByText('Sollecitare Rossi')
+    await userEvent.click(screen.getByRole('combobox', { name: 'Filtra per assegnatario' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'Di chiunque' }))
+
+    await userEvent.click(screen.getByRole('tab', { name: 'Tutte' }))
+    expect(await screen.findByRole('table')).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Filtra per assegnatario' })).toHaveTextContent(
+      'Di chiunque',
+    )
   })
 
   it('hands the chosen tab back for the route to put in the URL', async () => {

@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Tabs, TabsList, TabsTrigger } from '@rebase/ui/tabs'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { AttivitaDialog } from './AttivitaDialog'
@@ -38,6 +39,9 @@ export function AttivitaPage({
   onDismissOpen?: () => void
 }) {
   const fromSearch = useAttivita(openId)
+  // Whose attività both views show. Held here and not in each view, which is mounted one at
+  // a time: «Di chiunque» chosen on «Oggi» is still chosen on «Tutte».
+  const [assignee, setAssignee] = useState(initialAssignee)
 
   const tabs = (
     <TabsList variant="line">
@@ -59,9 +63,19 @@ export function AttivitaPage({
       {/* One view is mounted at a time, as on the dashboard: the other would issue its own
           requests to draw nothing. */}
       {vista === 'oggi' ? (
-        <OggiView tabs={tabs} notice={notice} initialAssignee={initialAssignee} />
+        <OggiView
+          tabs={tabs}
+          notice={notice}
+          assignee={assignee}
+          onAssigneeChange={setAssignee}
+        />
       ) : (
-        <TutteView tabs={tabs} notice={notice} initialAssignee={initialAssignee} />
+        <TutteView
+          tabs={tabs}
+          notice={notice}
+          assignee={assignee}
+          onAssigneeChange={setAssignee}
+        />
       )}
       {openId !== undefined && fromSearch.data && (
         <AttivitaDialog

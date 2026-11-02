@@ -16,7 +16,7 @@ def main() -> int:
     token = os.environ.get(PAT_ENV_VAR)
     if not token:
         print(
-            f"{PAT_ENV_VAR} non impostato. Genera un token dalla UI in Impostazioni → Token.",
+            f"{PAT_ENV_VAR} non impostato. Genera un token dalla UI, nella pagina Agenti.",
             file=sys.stderr,
         )
         return 1

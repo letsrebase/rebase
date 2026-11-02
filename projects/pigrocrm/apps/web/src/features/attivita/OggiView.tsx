@@ -76,7 +76,7 @@ function Sezione({
               search={{ vista: 'tutte', assegnata: assignee }}
               className="underline underline-offset-4"
             >
-              pagina Attività
+              scheda Tutte
             </Link>
             .
           </p>
@@ -116,22 +116,24 @@ function Sezione({
  * is one press away. The day is the server's `oggi` and is printed in the header, so
  * the page reads the same for somebody working in another time zone.
  *
- * The page's tab strip and any notice above the sections come from `AttivitaPage`, which
- * owns the two views; `initialAssignee` is the `?assegnata=` the address carries.
+ * The page's tab strip, any notice above the sections and the choice of person come from
+ * `AttivitaPage`, which owns the two views.
  */
 export function OggiView({
   tabs,
   notice,
-  initialAssignee = ME,
+  assignee,
+  onAssigneeChange,
 }: {
   tabs: ReactNode
   notice?: ReactNode
-  /** Whose attività the view opens on: `ME`, `EVERYONE` or a user id. */
-  initialAssignee?: string
+  /** Whose attività the view shows: `ME`, `EVERYONE` or a user id. Held by the page, so
+   *  the choice survives a switch between its two views. */
+  assignee: string
+  onAssigneeChange: (next: string) => void
 }) {
   const canWrite = useCanWrite()
   const assignees = useAssignees()
-  const [assignee, setAssignee] = useState(initialAssignee)
   const [creating, setCreating] = useState(false)
 
   // Waits for the session's user id when the choice is «mine»: asking before it is known
@@ -165,7 +167,7 @@ export function OggiView({
       >
         {/* Under the tab strip's rule now, so it gets the air the title row has above it. */}
         <FilterRow className="pt-4">
-          <AssigneeSelect value={assignee} onChange={setAssignee} />
+          <AssigneeSelect value={assignee} onChange={onAssigneeChange} />
         </FilterRow>
       </PageHeader>
 

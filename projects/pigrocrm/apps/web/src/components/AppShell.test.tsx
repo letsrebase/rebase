@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { SETTINGS_GROUPS } from '@/features/settings/tabs'
@@ -58,13 +58,9 @@ vi.mock('@tanstack/react-router', () => ({
   useRouterState: () => ({ location: { pathname: mockRoute.pathname } }),
   // The command palette the shell mounts navigates; nothing here asserts on where.
   useNavigate: () => vi.fn(),
-  // The connect-agent dialog the shell now mounts guards against navigating away with an
-  // unsaved token; nothing here exercises the guard itself.
-  useBlocker: vi.fn(),
 }))
 
-// The connect-agent dialog copies text via `sonner`'s toast; nothing here asserts on the
-// toast copy, only that clicking a copy button does not throw for want of a mock.
+// The shell toasts a refusal to enter another space, which is what the switcher's tests read.
 vi.mock('@rebase/ui/sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 
 const mockAuth = vi.hoisted(() => ({ ruolo: 'admin' as string, id: undefined as string | undefined }))
@@ -134,6 +130,13 @@ function setViewport(desktop: boolean) {
     removeListener: () => {},
     dispatchEvent: () => false,
   })) as unknown as typeof window.matchMedia
+}
+
+/** Lets the promises a mocked request resolved with be turned into rendered state. */
+async function settle() {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
 }
 
 function sidebar() {
@@ -277,6 +280,8 @@ describe('AppShell', () => {
     await waitFor(() =>
       expect(GET).toHaveBeenCalledWith('/api/activities/oggi', expect.anything()),
     )
+    // The answer has to have been rendered, not only asked for, before an absence means anything.
+    await settle()
     expect(sidebar().getByRole('link', { name: 'Attività' })).toHaveAccessibleName('Attività')
   })
 
@@ -812,17 +817,18 @@ describe('AppShell', () => {
   it('offers no «Primi passi» while the space is empty: the Home is that page', async () => {
     answerWork(null)
     renderShell()
-    // Let the four reads be asked before asserting an absence.
+    // Let the four reads be asked and answered before asserting an absence: while they are
+    // pending the verdict is unknown, which also keeps the entry out of the menu.
     for (const path of WORK_PATHS) {
       await waitFor(() => expect(GET).toHaveBeenCalledWith(path, expect.anything()))
     }
+    await settle()
 
     await userEvent.click(screen.getByRole('button', { name: 'Menu del profilo' }))
     const menu = within(await screen.findByRole('menu'))
     expect(menu.getByRole('link', { name: 'Profilo' })).toBeInTheDocument()
     expect(menu.queryByRole('link', { name: 'Primi passi' })).not.toBeInTheDocument()
   })
-
 })
 
 /**

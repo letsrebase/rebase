@@ -45,7 +45,7 @@ export const Route = createFileRoute('/app/activities')({
   // `?vista=` is the tab: «oggi» or «tutte» (`vistaOf` says what an address without it means).
   validateSearch: (
     search: Record<string, unknown>,
-  ): { apri?: string; assegnata?: string; vista?: Vista } => ({
+  ): { apri?: string; assegnata?: string; vista?: Vista; da?: string } => ({
     apri: typeof search.apri === 'string' && UUID_RE.test(search.apri) ? search.apri : undefined,
     assegnata:
       typeof search.assegnata === 'string' &&
@@ -53,5 +53,7 @@ export const Route = createFileRoute('/app/activities')({
         ? search.assegnata
         : undefined,
     vista: isVista(search.vista) ? search.vista : undefined,
+    // `?da=digest` rides along from `/app/oggi`, where the digest mail's link lands.
+    da: typeof search.da === 'string' ? search.da : undefined,
   }),
 })
