@@ -13,9 +13,7 @@ the fake rather than changing it: the fake records `(method, url)` only, and the
 is explicit that the fake does not change.
 """
 
-import io
 import json
-import urllib.error
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any
@@ -26,15 +24,11 @@ from fakes.fake_drive import FakeDrive, _File
 from fakes.fake_gmail import FakeGmail
 
 from pigrocrm.core.drive.errors import DriveCredentialRevoked
-from pigrocrm.core.drive.transport import (
-    DriveTransport,
-    ServiceAccountTokens,
-    UserTokens,
-    _urllib_call,
-)
+from pigrocrm.core.drive.transport import DriveTransport, ServiceAccountTokens, UserTokens
 from pigrocrm.core.errors import Conflict, NotFound
 from pigrocrm.core.gmail.tokens import GoogleTokenClient
-from pigrocrm.core.gmail.transport import MAX_HTTP_ATTEMPTS, GmailTransport
+from pigrocrm.core.gmail.transport import GmailTransport
+from pigrocrm.core.http import MAX_ATTEMPTS
 from pigrocrm.core.storage import GDriveStorage
 from pigrocrm.core.storage.gdrive import APP_PROPERTY_KEY
 
@@ -88,10 +82,16 @@ class RecordingHttp:
     headers: list[dict[str, str]] = field(default_factory=list)
 
     def __call__(
-        self, method: str, url: str, headers: dict[str, str], body: bytes | None
-    ) -> tuple[int, bytes]:
+        self,
+        method: str,
+        url: str,
+        headers: dict[str, str],
+        body: bytes | None,
+        *,
+        max_bytes: int | None = None,
+    ) -> tuple[int, bytes, dict[str, str]]:
         self.headers.append(dict(headers))
-        return self.inner(method, url, headers, body)
+        return self.inner(method, url, headers, body, max_bytes=max_bytes)
 
 
 @dataclass
@@ -102,13 +102,19 @@ class ScriptedHttp:
     seen: list[dict[str, str]] = field(default_factory=list)
 
     def __call__(
-        self, method: str, url: str, headers: dict[str, str], body: bytes | None
-    ) -> tuple[int, bytes]:
+        self,
+        method: str,
+        url: str,
+        headers: dict[str, str],
+        body: bytes | None,
+        *,
+        max_bytes: int | None = None,
+    ) -> tuple[int, bytes, dict[str, str]]:
         self.seen.append(dict(headers))
         status = self.statuses.pop(0) if self.statuses else 200
         if status >= 400:
-            return status, json.dumps({"error": {"message": "boom"}}).encode()
-        return 200, json.dumps({"id": "ok"}).encode()
+            return status, json.dumps({"error": {"message": "boom"}}).encode(), {}
+        return 200, json.dumps({"id": "ok"}).encode(), {}
 
 
 def _token_client(fake: FakeGmail) -> GoogleTokenClient:
@@ -157,6 +163,23 @@ def test_a_download_returns_raw_bytes_rather_than_a_parsed_body() -> None:
     )
 
     assert payload == PDF
+
+
+def test_a_download_reads_at_most_one_byte_past_the_callers_ceiling() -> None:
+    """The caller that refuses anything over `max_bytes` needs to tell "too big" from
+    "fits", and nothing more: the seam is asked for `max_bytes + 1` bytes so that the
+    rest of a huge file is never buffered, and the caller's own length check is what
+    refuses it."""
+    drive = FakeDrive()
+    file_id = drive.add_file("grande.bin", parent=drive.root_id, content=b"x" * 1000)
+    transport = DriveTransport(tokens=StubTokens(), http=drive)
+    url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
+
+    capped = transport.bytes("GET", url, what="download", max_bytes=100)
+    whole = transport.bytes("GET", url, what="download")
+
+    assert len(capped) == 101
+    assert len(whole) == 1000
 
 
 # --- Retry, unchanged from the class this was extracted from --------------------------
@@ -335,7 +358,7 @@ def test_a_drive_outage_is_not_reported_as_a_gmail_outage() -> None:
     Gmail to recover is not what fixes Drive. The distinction the failure carries --
     terminal and cured by re-consenting, versus transient and cured by waiting -- is
     preserved exactly; only the credential it names changes."""
-    fake = FakeGmail(fail_with=[(503, b"{}", {})] * MAX_HTTP_ATTEMPTS)
+    fake = FakeGmail(fail_with=[(503, b"{}", {})] * MAX_ATTEMPTS)
     provider = UserTokens(
         account_id=uuid4(),
         email_address=EMAIL,
@@ -530,61 +553,3 @@ def test_a_refused_credential_during_the_root_check_is_not_reported_as_an_unshar
         storage.verify_root_accessible()
 
     assert "autenticazione Google" in excinfo.value.details["reason"]
-
-
-# --- The real transport: a failure that never produced an HTTP response at all -------
-# Moved here with `_urllib_call` itself, from test_storage_conformance.py: these three
-# exercise the urllib adapter directly (every other test injects a fake and never
-# reaches it), and they belong beside the function rather than beside the storage class
-# that no longer owns it.
-
-
-def test_urllib_call_turns_a_connection_failure_into_a_synthetic_status(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    def _raise_connection_refused(request: object, timeout: float) -> None:
-        raise urllib.error.URLError(ConnectionRefusedError("connection refused"))
-
-    monkeypatch.setattr("urllib.request.urlopen", _raise_connection_refused)
-
-    status, payload = _urllib_call("GET", "https://www.googleapis.com/drive/v3/files", {}, None)
-
-    assert status == 599
-    assert b"refused" in payload
-
-
-def test_urllib_call_turns_a_timeout_into_a_synthetic_status(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    def _raise_timeout(request: object, timeout: float) -> None:
-        raise TimeoutError("timed out")
-
-    monkeypatch.setattr("urllib.request.urlopen", _raise_timeout)
-
-    status, payload = _urllib_call("GET", "https://www.googleapis.com/drive/v3/files", {}, None)
-
-    assert status == 599
-    assert b"timed out" in payload
-
-
-def test_urllib_call_still_reports_a_real_http_error_status(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Not a new behaviour, but never directly covered before: a real HTTP error
-    response (as opposed to no response at all) must still surface its own status,
-    not the synthetic network-failure one."""
-
-    def _raise_http_error(request: object, timeout: float) -> None:
-        raise urllib.error.HTTPError(
-            "https://www.googleapis.com/drive/v3/files",
-            403,
-            "Forbidden",
-            None,  # type: ignore[arg-type]
-            io.BytesIO(b'{"error": {"message": "Forbidden"}}'),
-        )
-
-    monkeypatch.setattr("urllib.request.urlopen", _raise_http_error)
-
-    status, _ = _urllib_call("GET", "https://www.googleapis.com/drive/v3/files", {}, None)
-
-    assert status == 403

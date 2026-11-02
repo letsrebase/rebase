@@ -31,6 +31,8 @@ from pigrocrm.core.gmail.drafts import EmailDraftService
 from pigrocrm.core.gmail.models import EmailDraft
 from pigrocrm.core.gmail.query import rfc822msgid_query
 from pigrocrm.core.gmail.schemas import (
+    MAX_ATTACHMENTS,
+    MAX_RECIPIENTS,
     EmailDraftCreate,
     EmailDraftListQuery,
     EmailDraftUpdate,
@@ -315,6 +317,48 @@ def test_an_update_may_not_empty_the_recipients_either(db_session: Session) -> N
     created = service.create(_payload(customer), actor_for(account))
     with pytest.raises(ValidationFailed):
         service.update(created.id, EmailDraftUpdate(to_addresses=[]), actor_for(account))
+
+
+def test_the_recipient_lists_are_capped_by_the_schema() -> None:
+    """One person, agent or token must not be able to address an unbounded list through
+    the titolare's Gmail: each list, and the attachments, have a ceiling."""
+    many = [f"p{i}@acme.it" for i in range(MAX_RECIPIENTS + 1)]
+    for field, value in (
+        ("to_addresses", many),
+        ("cc_addresses", many),
+        ("attachment_version_ids", [uuid4() for _ in range(MAX_ATTACHMENTS + 1)]),
+    ):
+        with pytest.raises(ValidationError):
+            EmailDraftCreate(
+                entity_type="customer",
+                entity_id=uuid4(),
+                **{"to_addresses": ["a@b.it"], "subject": "x", "body_markdown": "y", field: value},
+            )
+        if field != "attachment_version_ids":
+            with pytest.raises(ValidationError):
+                EmailDraftUpdate(**{field: value})
+
+
+def test_to_and_cc_together_may_not_pass_the_cap(db_session: Session) -> None:
+    """Each list fits under the schema's cap and the two together do not: no single field
+    can express that, so the service re-enforces it -- on creation, and on an update that
+    touches only one of the lists, against what the draft already holds."""
+    account = connected_account(db_session)
+    customer = _customer(db_session)
+    service = _service(db_session)
+    half = MAX_RECIPIENTS // 2
+    to = [f"to{i}@acme.it" for i in range(half + 1)]
+    cc = [f"cc{i}@acme.it" for i in range(half + 1)]
+
+    with pytest.raises(ValidationFailed):
+        service.create(_payload(customer, to_addresses=to, cc_addresses=cc), actor_for(account))
+
+    created = service.create(_payload(customer, to_addresses=to), actor_for(account))
+    with pytest.raises(ValidationFailed):
+        service.update(created.id, EmailDraftUpdate(cc_addresses=cc), actor_for(account))
+    room = MAX_RECIPIENTS - len(to)
+    kept = service.update(created.id, EmailDraftUpdate(cc_addresses=cc[:room]), actor_for(account))
+    assert len(kept.cc_addresses) == room
 
 
 # --- the schema, not Postgres --------------------------------------------------------

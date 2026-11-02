@@ -299,7 +299,10 @@ class DriveReader:
         defaults to `settings.drive_text_max_bytes`. See `DOWNLOAD_MAX_BYTES`.
         """
         checked = checked_outside_id(file_id, field="file_id")
-        limit = self._text_max_bytes if max_bytes is None else max_bytes
+        # A caller's `max_bytes` may raise the text limit above the configured default
+        # (that is what it is for) but, like `read_bytes`', only up to the download
+        # ceiling: `_ceiling` is the one bound on what a caller may ask this reader for.
+        limit = self._text_max_bytes if max_bytes is None else self._ceiling(max_bytes)
 
         def work() -> FileText:
             content, mime = self._read_bytes(checked, self._ceiling(None))
@@ -415,25 +418,26 @@ class DriveReader:
 
         if mime == GOOGLE_DOC_MIME:
             content = self._transport.bytes(
-                "GET", file_export_url(file_id, PLAIN_TEXT_MIME), what=_WHAT_EXPORT
+                "GET",
+                file_export_url(file_id, PLAIN_TEXT_MIME),
+                what=_WHAT_EXPORT,
+                max_bytes=max_bytes,
             )
             mime = PLAIN_TEXT_MIME
         elif mime.startswith(_GOOGLE_NATIVE_PREFIX):
             raise Conflict(ENTITY, _NO_BYTES.format(mime=mime), file_id=file_id, mime=mime)
         else:
-            content = self._transport.bytes("GET", file_media_url(file_id), what=_WHAT_DOWNLOAD)
-
-        # Not a memory bound, and it would be dishonest to describe it as one: by the
-        # time this runs, `DriveTransport` has already buffered the whole response in
-        # memory (`urllib` reads it in one `response.read()`), so what this refuses is
-        # *returning* an oversized answer, not allocating it. The bound that actually
-        # limits allocation is the declared-size check above, and above that Google's
-        # own per-file limits. Kept regardless: an export declares no size at all, so
-        # without this a Google Doc of any length would come back whole.
-        if len(content) > max_bytes:
-            raise Conflict(
-                ENTITY, _TOO_BIG.format(max_bytes=max_bytes), file_id=file_id, size=len(content)
+            content = self._transport.bytes(
+                "GET", file_media_url(file_id), what=_WHAT_DOWNLOAD, max_bytes=max_bytes
             )
+
+        # The transport reads at most `max_bytes + 1` bytes off the socket, so an answer
+        # longer than the ceiling is told apart from one that fits without ever being
+        # buffered whole. The declared-size check above is the cheap refusal; this is the
+        # one that holds for an export, which declares no size at all. The size of an
+        # oversized answer is not reported: the read stopped one byte past the ceiling.
+        if len(content) > max_bytes:
+            raise Conflict(ENTITY, _TOO_BIG.format(max_bytes=max_bytes), file_id=file_id)
         return content, mime
 
     def _within_roots(self, file_id: str, cache: dict[str, list[str]]) -> bool:

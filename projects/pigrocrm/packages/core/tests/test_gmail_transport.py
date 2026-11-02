@@ -1,16 +1,16 @@
 import json
-from collections.abc import Callable
 from urllib.parse import parse_qs
 
 import pytest
 from fakes.fake_gmail import FakeGmail, FakeMessage
 
 from pigrocrm.core.gmail.errors import GoogleCallFailed
-from pigrocrm.core.gmail.transport import (
+from pigrocrm.core.gmail.transport import GmailTransport
+from pigrocrm.core.http import (
+    MAX_ATTEMPTS,
     MAX_HONOURED_RETRY_AFTER_SECONDS,
-    MAX_HTTP_ATTEMPTS,
     NETWORK_ERROR_STATUS,
-    GmailTransport,
+    HttpCall,
 )
 
 TOKEN = "ya29.a0-ACCESS-TOKEN-VALUE"
@@ -21,13 +21,18 @@ Response = tuple[int, bytes, dict[str, str]]
 Call = tuple[str, str, dict[str, str], bytes | None]
 
 
-def _responder(
-    *responses: Response,
-) -> tuple[Callable[[str, str, dict[str, str], bytes | None], Response], list[Call]]:
+def _responder(*responses: Response) -> tuple[HttpCall, list[Call]]:
     queue = list(responses)
     calls: list[Call] = []
 
-    def http(method: str, url: str, headers: dict[str, str], body: bytes | None) -> Response:
+    def http(
+        method: str,
+        url: str,
+        headers: dict[str, str],
+        body: bytes | None,
+        *,
+        max_bytes: int | None = None,
+    ) -> Response:
         calls.append((method, url, headers, body))
         return queue.pop(0) if queue else (200, b"{}", {})
 
@@ -145,12 +150,12 @@ def test_a_body_that_is_not_json_leaves_the_code_empty_rather_than_crashing() ->
     """A 502 from a load balancer in front of Google is an HTML page. Failing to parse
     it must not replace the upstream failure with a `JSONDecodeError` from our own
     code -- the operator would then be debugging the wrong program."""
-    http, calls = _responder(*[(502, b"<html>Bad Gateway</html>", {})] * MAX_HTTP_ATTEMPTS)
+    http, calls = _responder(*[(502, b"<html>Bad Gateway</html>", {})] * MAX_ATTEMPTS)
     with pytest.raises(GoogleCallFailed) as caught:
         GmailTransport(http=http, sleep=lambda _: None).json("GET", URL, token=TOKEN, what="elenco")
     assert caught.value.failure.status == 502
     assert caught.value.failure.error_code == ""
-    assert len(calls) == MAX_HTTP_ATTEMPTS
+    assert len(calls) == MAX_ATTEMPTS
 
 
 def test_a_network_failure_becomes_a_synthetic_status_and_is_retried() -> None:
@@ -250,7 +255,7 @@ def test_a_malformed_retry_after_does_not_crash_the_backoff() -> None:
 #
 # The fake is a test double the whole rest of the slice depends on, so it is exercised
 # here rather than trusted. Driving it *through* `GmailTransport` rather than calling
-# it directly is the point: it proves the fake satisfies `GmailCall` exactly, which is
+# it directly is the point: it proves the fake satisfies `HttpCall` exactly, which is
 # the only thing that makes B1-7's request assertions mean anything.
 
 
@@ -405,7 +410,7 @@ def test_the_fakes_queued_failure_is_consumed_once_and_then_the_call_succeeds() 
 
 def test_the_fakes_send_timeout_is_the_unknown_outcome_and_not_a_failure() -> None:
     """Spec 6.3(b): a send whose response never arrived may or may not have been
-    delivered. The fake reproduces it as the same synthetic status `_urllib_call`
+    delivered. The fake reproduces it as the same synthetic status `urllib_call`
     produces, so the code under test cannot tell it apart from a real one."""
     fake = FakeGmail(timeout_on_send=True)
     with pytest.raises(GoogleCallFailed) as caught:
@@ -417,4 +422,4 @@ def test_the_fakes_send_timeout_is_the_unknown_outcome_and_not_a_failure() -> No
             what="invio",
         )
     assert caught.value.failure.status == NETWORK_ERROR_STATUS
-    assert len(fake.requests) == MAX_HTTP_ATTEMPTS
+    assert len(fake.requests) == MAX_ATTEMPTS

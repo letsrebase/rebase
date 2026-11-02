@@ -38,16 +38,16 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.config import Settings, decode_google_token_key, require_gmail_configured
+from pigrocrm.core.config import Settings, require_gmail_configured
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.gmail.account import GoogleAccountService
-from pigrocrm.core.gmail.crypto import unseal
 from pigrocrm.core.gmail.models import GoogleAccount
 from pigrocrm.core.gmail.query import attachment_get_url, message_get_url
 from pigrocrm.core.gmail.repository import GmailRepository
 from pigrocrm.core.gmail.schemas import SCOPE_READONLY
 from pigrocrm.core.gmail.tokens import GoogleTokenClient
 from pigrocrm.core.gmail.transport import GmailTransport
+from pigrocrm.core.google.credential import open_refresh_token
 from pigrocrm.core.text import file_text
 
 ENTITY = "gmail_attachment"
@@ -233,10 +233,8 @@ class GmailAttachmentService:
         """Identical to `GmailSyncService._access_token`, and identical on purpose: the
         refresh token is sealed at rest with a key that lives outside the database, so
         unseal-then-exchange is the one shape every Gmail caller has."""
-        refresh_token = unseal(
-            account.refresh_token_ciphertext,
-            account.refresh_token_nonce,
-            decode_google_token_key(self.settings),
+        refresh_token = open_refresh_token(
+            account.refresh_token_ciphertext, account.refresh_token_nonce, self.settings
         )
         return self.tokens.access_token(
             account_id=account.id,

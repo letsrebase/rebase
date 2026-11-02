@@ -47,9 +47,9 @@ from pigrocrm.core.analytics.schemas import BindTimeRequest
 from pigrocrm.core.analytics.service import AnalyticsService
 from pigrocrm.core.auth.schemas import UserCreate
 from pigrocrm.core.auth.service import UserService
-from pigrocrm.core.clock import oggi_in_italia
 from pigrocrm.core.customers.schemas import CustomerCreate
 from pigrocrm.core.customers.service import CustomerService
+from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.deals.schemas import DealCreate
 from pigrocrm.core.deals.service import DealService
 from pigrocrm.core.emitter.schemas import LegalEntityUpsert
@@ -72,7 +72,7 @@ AGENTE = Actor(id=None, type="mcp", role="admin")
 # outside the current one, so a hard-coded date would be a test that starts failing on the
 # first of January -- the same reason `apps/api/tests/test_analytics_api.py` derives its
 # own window at runtime.
-OGGI = oggi_in_italia()
+OGGI = today_local()
 
 TARIFFA = Decimal("100.000000")
 COSTO = Decimal("30.000000")

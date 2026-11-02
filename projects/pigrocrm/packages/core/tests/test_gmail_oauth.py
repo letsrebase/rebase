@@ -32,10 +32,11 @@ from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings, decode_google_token_key
+from pigrocrm.core.crypto import seal, unseal
 from pigrocrm.core.drive.models import GoogleDriveAccount
 from pigrocrm.core.errors import Conflict, DomainError, PermissionDenied
-from pigrocrm.core.gmail.crypto import seal, unseal
 from pigrocrm.core.gmail.models import (
+    GmailKnownAddress,
     GmailMessage,
     GmailMessageLink,
     GoogleAccount,
@@ -46,6 +47,7 @@ from pigrocrm.core.gmail.repository import GmailRepository
 from pigrocrm.core.gmail.schemas import REQUESTED_SCOPES, SCOPE_EMAIL, SCOPE_READONLY, SCOPE_SEND
 from pigrocrm.core.gmail.tokens import GOOGLE_AUTH_URL, GoogleTokenClient
 from pigrocrm.core.gmail.transport import GmailTransport
+from pigrocrm.core.google.states import OAuthStateRepository
 from pigrocrm.core.tenants import space_base_settings
 
 KEY = b"k" * 32
@@ -726,14 +728,10 @@ def test_disconnecting_nothing_is_a_refusal_and_not_a_silent_success(
 # --- the state table's own housekeeping ----------------------------------------------
 
 
-def test_prune_states_removes_the_expired_rows_and_only_those(db_session: Session) -> None:
-    """`refresh_tokens` has this same problem and, per residuo R8, no pruning at all --
-    this table does not repeat it."""
-    user = _user(db_session)
+def _states_expiring(session: Session, user: User, *offsets: timedelta) -> None:
     now = datetime.now(UTC)
-    repo = GmailRepository(db_session)
-    for offset in (-timedelta(minutes=10), -timedelta(seconds=1), timedelta(minutes=5)):
-        repo.add_state(
+    for offset in offsets:
+        session.add(
             GoogleOAuthState(
                 jti=f"jti-{offset.total_seconds()}",
                 code_verifier="v" * 43,
@@ -741,10 +739,88 @@ def test_prune_states_removes_the_expired_rows_and_only_those(db_session: Sessio
                 expires_at=now + offset,
             )
         )
+    session.flush()
 
-    assert repo.prune_states(now) == 2
-    survivors = db_session.execute(select(GoogleOAuthState.jti)).scalars().all()
-    assert survivors == ["jti-300.0"]
+
+def test_prune_expired_removes_the_expired_rows_and_only_those(db_session: Session) -> None:
+    """`refresh_tokens` has this same problem and, per residuo R8, no pruning at all --
+    this table does not repeat it."""
+    user = _user(db_session)
+    _states_expiring(
+        db_session, user, -timedelta(minutes=10), -timedelta(seconds=1), timedelta(minutes=5)
+    )
+
+    assert OAuthStateRepository(db_session).prune_expired(datetime.now(UTC)) == 2
+
+    assert db_session.execute(select(GoogleOAuthState.jti)).scalars().all() == ["jti-300.0"]
+
+
+def test_starting_a_consent_prunes_the_expired_states(db_session: Session) -> None:
+    """The table is tidied by whoever starts a consent next, since that is the only
+    thing that grows it -- not by the Gmail sync, which a space with no mailbox (a Drive
+    or a Slack connection only) never runs."""
+    user = _user(db_session)
+    _states_expiring(db_session, user, -timedelta(minutes=10), timedelta(minutes=5))
+
+    _, query = _start(_service(db_session, _fake()), _actor(user))
+
+    survivors = set(db_session.execute(select(GoogleOAuthState.jti)).scalars().all())
+    assert survivors == {"jti-300.0", query["state"][0]}
+
+
+# --- a mailbox that changes identity starts clean --------------------------------------
+
+
+def _connected_with_history(db_session: Session, user: User, fake: FakeGmail) -> GoogleAccount:
+    """A connected mailbox that has synced: a watermark, a last sync, a searched address."""
+    service = _service(db_session, fake)
+    service.complete(code="c1", state=_state_of(service, _actor(user)), actor=_actor(user))
+    account = _accounts(db_session)[0]
+    account.sync_watermark = datetime.now(UTC) - timedelta(hours=1)
+    account.last_sync_at = datetime.now(UTC) - timedelta(hours=1)
+    db_session.add(GmailKnownAddress(google_account_id=account.id, address="cliente@acme.it"))
+    db_session.flush()
+    return account
+
+
+def test_a_different_mailbox_does_not_inherit_the_previous_ones_sync_state(
+    db_session: Session,
+) -> None:
+    """The watermark and the register of searched addresses describe the mailbox that
+    left. Kept, the new mailbox's first cycle would read from where the other stopped
+    and its backfill would skip every address the other had been searched for: its
+    history would silently never arrive."""
+    user = _user(db_session)
+    fake = _fake()
+    account = _connected_with_history(db_session, user, fake)
+    service = _service(db_session, fake)
+    service.disconnect(delete_messages=False, actor=_actor(user))
+
+    fake.id_token = _id_token("999999", "someone.else@gmail.com")
+    service.complete(code="c2", state=_state_of(service, _actor(user)), actor=_actor(user))
+
+    db_session.refresh(account)
+    assert account.email_address == "someone.else@gmail.com"
+    assert account.sync_watermark is None
+    assert account.last_sync_at is None
+    assert GmailRepository(db_session).seen_addresses(account.id) == set()
+
+
+def test_the_same_mailbox_reconnected_keeps_its_sync_state(db_session: Session) -> None:
+    """Disconnecting and reconnecting the same mailbox is a new consent for the same
+    history, so the watermark and the searched addresses stay."""
+    user = _user(db_session)
+    fake = _fake()
+    account = _connected_with_history(db_session, user, fake)
+    watermark = account.sync_watermark
+    service = _service(db_session, fake)
+    service.disconnect(delete_messages=False, actor=_actor(user))
+
+    service.complete(code="c2", state=_state_of(service, _actor(user)), actor=_actor(user))
+
+    db_session.refresh(account)
+    assert account.sync_watermark == watermark
+    assert GmailRepository(db_session).seen_addresses(account.id) == {"cliente@acme.it"}
 
 
 # --- a space on the root's client (REB-394) -------------------------------------------

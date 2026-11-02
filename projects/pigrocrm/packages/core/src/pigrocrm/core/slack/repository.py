@@ -1,10 +1,9 @@
 """Queries only. Never commits -- the service owns the transaction.
 
 The in-flight authorisation is not here: `google_oauth_states` serves the Gmail, the Drive
-and the Slack flow (`GoogleOAuthState.purpose`), and `GmailRepository.add_state` and
-`consume_state` already implement the one-statement, race-safe redemption that a fourth
-copy could only get wrong by drifting from it. This repository owns the tables that are
-Slack's alone.
+and the Slack flow (`GoogleOAuthState.purpose`), and `google/states.py` implements the
+one-statement, race-safe redemption that another copy could only get wrong by drifting
+from it. This repository owns the tables that are Slack's alone.
 """
 
 from collections.abc import Iterable

@@ -22,9 +22,9 @@ from sqlalchemy.orm import Session, sessionmaker  # noqa: E402
 import pigrocrm_api.deps as deps  # noqa: E402
 from pigrocrm.core.auth.models import User  # noqa: E402
 from pigrocrm.core.config import Settings, get_settings  # noqa: E402
+from pigrocrm.core.crypto import seal  # noqa: E402
 from pigrocrm.core.drive.models import GoogleDriveAccount  # noqa: E402
 from pigrocrm.core.drive.schemas import DRIVE_SCOPE_FILE, DRIVE_SCOPE_READONLY  # noqa: E402
-from pigrocrm.core.gmail.crypto import seal  # noqa: E402
 from pigrocrm.core.gmail.tokens import GoogleTokenClient  # noqa: E402
 from pigrocrm.core.gmail.transport import GmailTransport  # noqa: E402
 from pigrocrm.core.storage import lazy_drive  # noqa: E402

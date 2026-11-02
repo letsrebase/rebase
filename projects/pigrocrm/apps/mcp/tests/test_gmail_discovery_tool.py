@@ -32,9 +32,9 @@ from test_text import minimal_pdf  # noqa: E402
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings
+from pigrocrm.core.crypto import seal
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.models import Document
-from pigrocrm.core.gmail.crypto import seal
 from pigrocrm.core.gmail.models import GmailMessage, GoogleAccount
 from pigrocrm.core.gmail.schemas import REQUESTED_SCOPES
 from pigrocrm.core.gmail.transport import GmailTransport

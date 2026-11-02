@@ -43,9 +43,9 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
-from pigrocrm.core.clock import oggi_in_italia
 from pigrocrm.core.config import Settings
 from pigrocrm.core.customers.models import Customer
+from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.gmail.models import EmailDraft, GmailMessage, GmailMessageLink, GoogleAccount
 from pigrocrm.core.gmail.schemas import REQUESTED_SCOPES
 from pigrocrm.core.invoices.models import Invoice
@@ -528,7 +528,7 @@ async def test_list_payment_reminder_candidates_reads_the_register_and_calls_nob
     `importo` travels as the invoice's own frozen decimal, as a string. A float here
     would be a demand for payment naming a figure the client's copy does not carry.
     """
-    scadenza = oggi_in_italia() - timedelta(days=40)
+    scadenza = today_local() - timedelta(days=40)
     invoice = Invoice(
         customer_id=customer.id,
         tipo="fattura",

@@ -54,6 +54,7 @@ from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings
+from pigrocrm.core.crypto import seal
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.models import Document, DocumentVersion
 from pigrocrm.core.documents.schemas import TITOLO_MAX_LENGTH
@@ -64,7 +65,6 @@ from pigrocrm.core.drive.reader import drive_reader_for
 from pigrocrm.core.drive.schemas import DRIVE_SCOPE_FILE, DRIVE_SCOPE_READONLY
 from pigrocrm.core.drive.transport import DriveTransport
 from pigrocrm.core.errors import AgentForbidden, ValidationFailed
-from pigrocrm.core.gmail.crypto import seal
 from pigrocrm.core.storage import LocalFileStorage
 from pigrocrm.core.text import PROVENIENZA
 from pigrocrm_mcp.server import build_server

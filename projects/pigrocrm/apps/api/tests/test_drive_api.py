@@ -467,11 +467,15 @@ def _stub_writable_folder(monkeypatch: pytest.MonkeyPatch, folder_id: str) -> No
             pass
 
     def stub_http(
-        method: str, url: str, headers: dict[str, str], body: bytes | None
-    ) -> tuple[int, bytes]:
-        return 200, json.dumps(
-            {"id": folder_id, "mimeType": "application/vnd.google-apps.folder"}
-        ).encode()
+        method: str,
+        url: str,
+        headers: dict[str, str],
+        body: bytes | None,
+        *,
+        max_bytes: int | None = None,
+    ) -> tuple[int, bytes, dict[str, str]]:
+        payload = {"id": folder_id, "mimeType": "application/vnd.google-apps.folder"}
+        return 200, json.dumps(payload).encode(), {}
 
     def factory(_account: GoogleDriveAccount, _settings: Settings) -> DriveTransport:
         return DriveTransport(tokens=_StubTokens(), http=stub_http, sleep=lambda _: None)

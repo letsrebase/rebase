@@ -33,9 +33,9 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.clock import oggi_in_italia
 from pigrocrm.core.config import Settings
 from pigrocrm.core.customers.models import Customer
+from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import Conflict, NotFound
 from pigrocrm.core.fiscal.repository import FiscalProfileRepository
@@ -128,7 +128,7 @@ class SollecitiService:
         late, and that is a plain read of their own register. What is gated is preparing
         the reminder and sending it.
         """
-        today = oggi_in_italia()
+        today = today_local()
         grace_cutoff = today - timedelta(days=self.settings.solleciti_grace_days)
         interval_cutoff = datetime.now(UTC) - timedelta(
             days=self.settings.solleciti_min_interval_days

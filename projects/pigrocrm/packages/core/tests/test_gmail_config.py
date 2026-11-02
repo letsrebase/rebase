@@ -4,15 +4,15 @@ from pathlib import Path
 import pytest
 
 from pigrocrm.core.config import (
-    GOOGLE_TOKEN_KEY_BYTES,
     Settings,
     decode_google_token_key,
     gmail_configured,
     require_gmail_configured,
 )
+from pigrocrm.core.crypto import KEY_BYTES
 from pigrocrm.core.errors import Conflict
 
-VALID_KEY = base64.b64encode(b"k" * GOOGLE_TOKEN_KEY_BYTES).decode()
+VALID_KEY = base64.b64encode(b"k" * KEY_BYTES).decode()
 
 
 def _settings(**overrides: object) -> Settings:
@@ -85,9 +85,7 @@ def test_the_token_key_must_be_thirty_two_bytes_of_base64() -> None:
 
 
 def test_a_valid_token_key_decodes_to_exactly_thirty_two_bytes() -> None:
-    assert decode_google_token_key(_settings(google_token_key=VALID_KEY)) == (
-        b"k" * GOOGLE_TOKEN_KEY_BYTES
-    )
+    assert decode_google_token_key(_settings(google_token_key=VALID_KEY)) == (b"k" * KEY_BYTES)
 
 
 def test_the_settings_repr_never_carries_the_secrets() -> None:

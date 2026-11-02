@@ -24,8 +24,8 @@ from fakes.fake_gmail import FakeGmail, FakeMessage  # noqa: E402
 
 import pigrocrm_api.routers.gmail as gmail_router  # noqa: E402
 from pigrocrm.core.config import Settings, get_settings  # noqa: E402
+from pigrocrm.core.crypto import seal  # noqa: E402
 from pigrocrm.core.customers.models import Customer  # noqa: E402
-from pigrocrm.core.gmail.crypto import seal  # noqa: E402
 from pigrocrm.core.gmail.models import GoogleAccount  # noqa: E402
 from pigrocrm.core.gmail.schemas import REQUESTED_SCOPES  # noqa: E402
 from pigrocrm.core.gmail.transport import GmailTransport  # noqa: E402

@@ -4,9 +4,8 @@ Slack's OAuth v2 authorization-code flow, server-side, in the shape of `drive/oa
 the `state` is a fresh, unguessable jti registered in `google_oauth_states` against the
 admin who started the flow with `purpose = 'slack'`, redeemed by one conditional UPDATE and
 committed **before** anything that can fail, so a refusal never hands the state back for a
-second attempt (`gmail/oauth.py` argues the rest at length). It is the one in-flight
-registry of the three flows, so `GmailRepository.add_state` and `consume_state` are reused
-and not copied.
+second attempt (`google/oauth_flow.py` argues the rest at length). It is the one in-flight
+registry of the three flows, so `google/states.py` serves all of them.
 
 **No PKCE, on purpose.** Slack supports it, but turning it on marks the app a public client
 and cannot be turned off again without Slack's support (docs.slack.dev, «Using PKCE»), and
@@ -28,9 +27,7 @@ looked up by email. A Slack outage during that lookup does not undo the installa
 has succeeded: the users stay unmatched and «Cerca di nuovo» asks again.
 """
 
-import base64
-import os
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from urllib.parse import urlencode
 from uuid import UUID
 
@@ -40,10 +37,10 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings, decode_slack_token_key, require_slack_configured
+from pigrocrm.core.crypto import seal
 from pigrocrm.core.errors import Conflict
-from pigrocrm.core.gmail.crypto import seal
-from pigrocrm.core.gmail.models import GoogleOAuthState
-from pigrocrm.core.gmail.repository import GmailRepository
+from pigrocrm.core.google.oauth_flow import jti_of, published_state
+from pigrocrm.core.google.states import OAuthStateRepository
 from pigrocrm.core.slack.client import SlackClient, SlackInstall
 from pigrocrm.core.slack.errors import SLACK_ENTITY, SlackRefused
 from pigrocrm.core.slack.matching import SlackMatcher
@@ -51,18 +48,10 @@ from pigrocrm.core.slack.models import SlackWorkspace
 from pigrocrm.core.slack.repository import SlackRepository
 from pigrocrm.core.slack.schemas import SLACK_BOT_SCOPES, SlackWorkspaceRead
 
-STATE_TTL_MINUTES = 5
 PURPOSE = "slack"
-# 32 base64url characters: the state is the only thing between a forged callback and a
-# redeemable authorisation, so it is sized as a secret (`gmail/oauth.py`).
-_JTI_BYTES = 24
 
 _CONNECT_ACTION = "collegare Slack"
 _DISCONNECT_ACTION = "scollegare Slack"
-
-
-def _b64url(raw: bytes) -> str:
-    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
 
 
 class SlackOAuthService:
@@ -71,8 +60,7 @@ class SlackOAuthService:
         self.settings = settings
         self.client = client
         self.repo = SlackRepository(session)
-        # Gmail's repository, reused for the shared state table only.
-        self.states = GmailRepository(session)
+        self.states = OAuthStateRepository(session)
         self.activities = ActivityService(session)
 
     @property
@@ -87,15 +75,8 @@ class SlackOAuthService:
         actor.require_unscoped_admin(_CONNECT_ACTION)
         if actor.id is None:
             raise Conflict(SLACK_ENTITY, "solo un utente può collegare Slack")
-        jti = _b64url(os.urandom(_JTI_BYTES))
-        self.states.add_state(
-            GoogleOAuthState(
-                jti=jti,
-                code_verifier="",
-                user_id=actor.id,
-                expires_at=datetime.now(UTC) + timedelta(minutes=STATE_TTL_MINUTES),
-                purpose=PURPOSE,
-            )
+        jti = self.states.issue(
+            user_id=actor.id, purpose=PURPOSE, code_verifier="", now=datetime.now(UTC)
         )
         # Committed here: the person is about to leave for Slack, and a state that only
         # exists in an open transaction would be unredeemable by the callback.
@@ -105,7 +86,7 @@ class SlackOAuthService:
                 "client_id": self.settings.slack_client_id,
                 "scope": ",".join(SLACK_BOT_SCOPES),
                 "redirect_uri": self.redirect_uri,
-                "state": self._published(jti),
+                "state": published_state(self.settings.slack_oauth_state_prefix, jti),
             }
         )
 
@@ -115,8 +96,8 @@ class SlackOAuthService:
         now = datetime.now(UTC)
         if actor.id is None:
             raise self._invalid_authorisation()
-        jti = self._jti_of(state)
-        row = self.states.consume_state(jti, now, purpose=PURPOSE) if jti is not None else None
+        jti = jti_of(self.settings.slack_oauth_state_prefix, state)
+        row = self.states.consume(jti, now, PURPOSE) if jti is not None else None
         if row is None:
             raise self._invalid_authorisation()
         # The redemption stands whatever happens next.
@@ -190,24 +171,11 @@ class SlackOAuthService:
 
     # -- internals -------------------------------------------------------------
 
-    def _published(self, jti: str) -> str:
-        """The `state` sent to Slack: the jti behind the space's prefix when the root relays
-        the consent (empty for the root itself)."""
-        return f"{self.settings.slack_oauth_state_prefix}{jti}"
-
-    def _jti_of(self, state: str) -> str | None:
-        """The jti a returning state carries, or None when it does not carry this
-        installation's prefix, which is refused like an unknown jti."""
-        prefix = self.settings.slack_oauth_state_prefix
-        if not state.startswith(prefix):
-            return None
-        return state[len(prefix) :] or None
-
     @staticmethod
     def _invalid_authorisation() -> Conflict:
         """One sentence for every failure before ownership is proved, with no details: an
         unknown, expired, replayed and foreign state are indistinguishable from outside
-        (`gmail/oauth.py`)."""
+        (`google/oauth_flow.py`)."""
         return Conflict(
             SLACK_ENTITY,
             "questa autorizzazione non è più valida: ricomincia da Impostazioni → Slack",

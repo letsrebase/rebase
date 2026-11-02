@@ -10,8 +10,8 @@ import base64
 import pytest
 
 from pigrocrm.core.config import Settings, decode_google_token_key, gmail_configured
+from pigrocrm.core.crypto import seal, unseal
 from pigrocrm.core.errors import Conflict
-from pigrocrm.core.gmail.crypto import seal, unseal
 from pigrocrm.core.space_settings import apply_overrides
 from pigrocrm.core.tenants import space_base_settings
 from pigrocrm.core.tenants.google import oauth_state_prefix, relay_slug, space_token_key

@@ -34,11 +34,11 @@ from test_text import minimal_pdf  # noqa: E402
 from pigrocrm.core.actor import Actor  # noqa: E402
 from pigrocrm.core.analytics import service as analytics_service  # noqa: E402
 from pigrocrm.core.auth.models import User  # noqa: E402
+from pigrocrm.core.crypto import seal  # noqa: E402
 from pigrocrm.core.drive.models import GoogleDriveAccount  # noqa: E402
 from pigrocrm.core.drive.schemas import DRIVE_SCOPE_FILE, DRIVE_SCOPE_READONLY  # noqa: E402
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert  # noqa: E402
 from pigrocrm.core.fiscal.service import FiscalProfileService  # noqa: E402
-from pigrocrm.core.gmail.crypto import seal  # noqa: E402
 from pigrocrm.core.gmail.tokens import GoogleTokenClient  # noqa: E402
 from pigrocrm.core.gmail.transport import GmailTransport  # noqa: E402
 from pigrocrm.core.storage import lazy_drive  # noqa: E402

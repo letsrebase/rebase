@@ -29,9 +29,9 @@ import pigrocrm_api.routers.gmail as gmail_router  # noqa: E402
 from pigrocrm.core.auth.magic_link import MagicLinkService  # noqa: E402
 from pigrocrm.core.auth.tokens import issue_access_token, issue_refresh_token  # noqa: E402
 from pigrocrm.core.config import Settings, decode_google_token_key, get_settings  # noqa: E402
+from pigrocrm.core.crypto import unseal  # noqa: E402
 from pigrocrm.core.db import session_factory  # noqa: E402
 from pigrocrm.core.db.sidecar import drop_database  # noqa: E402
-from pigrocrm.core.gmail.crypto import unseal  # noqa: E402
 from pigrocrm.core.gmail.schemas import REQUESTED_SCOPES  # noqa: E402
 from pigrocrm.core.gmail.tokens import GoogleTokenClient  # noqa: E402
 from pigrocrm.core.gmail.transport import GmailTransport  # noqa: E402

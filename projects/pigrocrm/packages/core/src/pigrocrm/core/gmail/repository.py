@@ -3,10 +3,10 @@
 import hashlib
 from collections.abc import Mapping, Sequence
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import case, delete, func, null, select, text, update
+from sqlalchemy import Connection, case, delete, func, null, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.orm import Session
@@ -22,7 +22,6 @@ from pigrocrm.core.gmail.models import (
     GmailMessage,
     GmailMessageLink,
     GoogleAccount,
-    GoogleOAuthState,
     PaymentReminder,
 )
 from pigrocrm.core.gmail.roster import EntityRef
@@ -36,6 +35,7 @@ from pigrocrm.core.people.models import Person
 # namespaces: hashing a UUID into 64 bits alone risks colliding with anything else that
 # also hashes something into 64 bits.
 SYNC_LOCK_NAMESPACE = 0x7091
+_HELD_LOCKS_KEY = "gmail_sync_locks"
 
 
 def _lock_key(account_id: UUID) -> int:
@@ -68,6 +68,13 @@ def _lock_key(account_id: UUID) -> int:
 class GmailRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
+
+    @property
+    def _held_locks(self) -> dict[UUID, Connection]:
+        """The lock connections this session holds, keyed by account. On the session and
+        not on this object: the repository is built afresh wherever it is needed, and the
+        one that releases a lock is not always the one that took it."""
+        return cast("dict[UUID, Connection]", self.session.info.setdefault(_HELD_LOCKS_KEY, {}))
 
     def account_for_user(self, user_id: UUID) -> GoogleAccount | None:
         return self.session.execute(
@@ -115,66 +122,6 @@ class GmailRepository:
             ).scalars()
         )
 
-    def add_state(self, state: GoogleOAuthState) -> GoogleOAuthState:
-        self.session.add(state)
-        self.session.flush()
-        return state
-
-    def consume_state(
-        self, jti: str, now: datetime, purpose: str = "gmail"
-    ) -> GoogleOAuthState | None:
-        """Marks the row consumed and returns it, or returns `None` if it does not
-        exist, has expired, was already consumed, or was minted for a different flow.
-
-        One statement, deliberately: a conditional `UPDATE ... WHERE consumed_at IS
-        NULL ... RETURNING`. Postgres serialises two concurrent callbacks carrying the
-        same jti on the row lock, and the loser re-evaluates its `WHERE` against the
-        winner's committed row, finds `consumed_at` no longer NULL and updates nothing.
-        `test_gmail_models.py` proves that with two real connections and a barrier --
-        drop the predicate and it reports `[1, 1]` instead of `[0, 1]`.
-
-        A read-then-write pair over the same column would pass every single-threaded
-        test and hand two callbacks the same authorisation code.
-
-        `purpose` defaults to `"gmail"`, the value every row carried before Drive
-        existed (see `GoogleOAuthState.purpose`'s docstring), so `GmailOAuthService`
-        needs no change to keep filtering on it. It is part of the `WHERE` and not a
-        check on the row after the fact, so a state minted for the other flow simply
-        does not match this statement at all: it is left exactly as it was, still
-        single-use and still redeemable by its own flow's callback. Answering `None`
-        here must not spend it -- a Drive state is not this method's to consume.
-        """
-        return self.session.execute(
-            update(GoogleOAuthState)
-            .where(
-                GoogleOAuthState.jti == jti,
-                GoogleOAuthState.consumed_at.is_(None),
-                GoogleOAuthState.expires_at > now,
-                GoogleOAuthState.purpose == purpose,
-            )
-            .values(consumed_at=now)
-            .returning(GoogleOAuthState)
-        ).scalar_one_or_none()
-
-    def prune_states(self, now: datetime) -> int:
-        """Called at the start of every sync. `refresh_tokens` has this same problem
-        and, per residuo R8, no pruning at all -- this table does not repeat it.
-
-        Expiry, not consumption, is the criterion: a consumed row is still evidence
-        that a jti was used, and it has to outlive its own TTL or the single-use check
-        above would start answering "unknown" instead of "already redeemed" for a
-        replay that arrives seconds later.
-        """
-        deleted = self.session.execute(
-            delete(GoogleOAuthState)
-            .where(GoogleOAuthState.expires_at < now)
-            .returning(GoogleOAuthState.id)
-        )
-        # `RETURNING` rather than `rowcount`: the DBAPI's row count is typed as
-        # `Any`-free only on `CursorResult`, and this table is small and short-lived
-        # by construction, so counting the returned ids costs nothing worth naming.
-        return len(deleted.scalars().all())
-
     # --- the per-mailbox sync lock ---------------------------------------------------
 
     def try_sync_lock(self, account_id: UUID) -> bool:
@@ -184,43 +131,63 @@ class GmailRepository:
         Session-scoped and not `pg_try_advisory_xact_lock`, so the lock covers the whole
         cycle regardless of how the cycle chooses to commit. That is also why it has to
         be handed back explicitly: see `release_sync_lock`.
+
+        Taken on a connection of its own, kept until `release_sync_lock`, and not on the
+        `Session`'s. A session-level lock lives and dies with one *database connection*,
+        but a `Session` gives its connection back to the pool at every commit and checks
+        out whichever one is next in line for its following statement: the unlock would
+        then run on a different connection, answer `false`, and leave the lock on the
+        first one until the process restarts. (Measured: with three idle connections in
+        the pool, the statement after a commit ran on another backend.)
         """
-        return bool(
-            self.session.execute(
-                text("SELECT pg_try_advisory_lock(:ns, :key)"),
-                {"ns": SYNC_LOCK_NAMESPACE, "key": _lock_key(account_id)},
-            ).scalar_one()
-        )
+        connection = self.session.get_bind().engine.connect()
+        try:
+            # No transaction on it: nothing but the lock statements ever runs here, and a
+            # transaction left open would be one more thing to roll back.
+            connection.execution_options(isolation_level="AUTOCOMMIT")
+            acquired = bool(
+                connection.execute(
+                    text("SELECT pg_try_advisory_lock(:ns, :key)"),
+                    {"ns": SYNC_LOCK_NAMESPACE, "key": _lock_key(account_id)},
+                ).scalar_one()
+            )
+        except BaseException:
+            connection.invalidate()
+            connection.close()
+            raise
+        if not acquired:
+            connection.close()
+            return False
+        self._held_locks[account_id] = connection
+        return True
 
     def release_sync_lock(self, account_id: UUID) -> None:
-        """Hands the lock back on the connection that holds it.
+        """Hands the lock back on the connection that holds it, and never raises for it.
 
-        This must not be a statement that can fail. A session-level advisory lock
-        outlives its transaction *and* its SQLAlchemy `Session`: the connection returns
-        to the pool still holding it, and every later sync for that mailbox then answers
-        "already running" for the life of the process -- indistinguishable from a hung
-        job, and unfixable without a restart.
+        This must not be a statement that can fail the caller: it runs in a `finally`,
+        and raising from there would mask the failure that got us there. And a lock that
+        is not handed back outlives everything -- the connection returns to the pool
+        still holding it, and every later sync for that mailbox then answers "already
+        running" for the life of the process, indistinguishable from a hung job and
+        unfixable without a restart.
 
-        The one way the unlock can fail is on a transaction Postgres has already
-        aborted, which refuses every further statement until it is rolled back. Hence
-        the retry, and hence the `rollback` -- which is not the wide one it looks like:
-        the server threw that work away itself when it aborted, so there is nothing left
-        to discard. Deliberately *not* pre-emptive. `Session.is_active` stays `True`
-        after a failed raw `execute` (it only goes false on a failed flush), so a check
-        before the fact would not fire, and rolling back unconditionally would throw
-        away a healthy caller's uncommitted work for nothing.
+        The lock connection runs nothing else, so the unlock can only fail when the
+        connection itself is gone or broken. Then the connection is invalidated: that
+        closes it for good instead of returning it to the pool, and Postgres drops every
+        advisory lock a session holds when the session ends, so the lock goes with it.
         """
+        connection = self._held_locks.pop(account_id, None)
+        if connection is None:
+            return
         try:
-            self._advisory_unlock(account_id)
+            connection.execute(
+                text("SELECT pg_advisory_unlock(:ns, :key)"),
+                {"ns": SYNC_LOCK_NAMESPACE, "key": _lock_key(account_id)},
+            )
         except DBAPIError:
-            self.session.rollback()
-            self._advisory_unlock(account_id)
-
-    def _advisory_unlock(self, account_id: UUID) -> None:
-        self.session.execute(
-            text("SELECT pg_advisory_unlock(:ns, :key)"),
-            {"ns": SYNC_LOCK_NAMESPACE, "key": _lock_key(account_id)},
-        )
+            connection.invalidate()
+        finally:
+            connection.close()
 
     def sync_started_at(self, account_id: UUID) -> datetime | None:
         """When the last cycle that *committed* began, or `None` if none ever has.
@@ -279,6 +246,14 @@ class GmailRepository:
             .returning(GmailKnownAddress.id)
         )
         return len(inserted.scalars().all())
+
+    def delete_known_addresses(self, account_id: UUID) -> None:
+        """Forgets every address this mailbox was searched over, so the next backfill
+        treats the whole roster as new. For a mailbox that changed Google identity: the
+        register described the previous mailbox, not this one."""
+        self.session.execute(
+            delete(GmailKnownAddress).where(GmailKnownAddress.google_account_id == account_id)
+        )
 
     # --- messages --------------------------------------------------------------------
 
@@ -359,10 +334,10 @@ class GmailRepository:
         """Called only when the user explicitly chose to on disconnect. The
         `gmail_message_links` rows go with them by ON DELETE CASCADE.
 
-        `RETURNING` and not `rowcount`, for the reason `prune_states` states: the
-        DBAPI's row count is only typed on `CursorResult`. The count matters here --
-        it is what the timeline entry records about an irreversible deletion -- so it
-        has to come from somewhere the type system agrees exists.
+        `RETURNING` and not `rowcount`: the DBAPI's row count is only typed on
+        `CursorResult`. The count matters here -- it is what the timeline entry records
+        about an irreversible deletion -- so it has to come from somewhere the type system
+        agrees exists.
         """
         deleted = self.session.execute(
             delete(GmailMessage)
@@ -475,10 +450,9 @@ class GmailRepository:
         would be marked `in_invio` locally by an UPDATE that touched zero rows. The
         caller re-reads the committed state instead, which is the only honest source.
 
-        `RETURNING` and not `rowcount`, for the reason `prune_states` and
-        `delete_messages_for` both give: the DBAPI's row count is typed only on
-        `CursorResult`, and this answer decides whether an email is sent -- it has to come
-        from somewhere the type system agrees exists.
+        `RETURNING` and not `rowcount`, for the reason `delete_messages_for` gives: the
+        DBAPI's row count is typed only on `CursorResult`, and this answer decides whether
+        an email is sent -- it has to come from somewhere the type system agrees exists.
 
         `expected_updated_at` is the revision the person read (REB-419), and it joins the
         guard for the same reason `send_state` is in it: a check made before this

@@ -33,6 +33,7 @@ from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import TEXT_MAX_BYTES_DEFAULT, Settings
+from pigrocrm.core.crypto import seal
 from pigrocrm.core.drive import reader as reader_module
 from pigrocrm.core.drive.errors import DriveCredentialRevoked
 from pigrocrm.core.drive.models import GoogleDriveAccount
@@ -46,7 +47,6 @@ from pigrocrm.core.drive.reader import (
 from pigrocrm.core.drive.schemas import DRIVE_SCOPE_FILE, DRIVE_SCOPE_READONLY
 from pigrocrm.core.drive.transport import DriveTransport, UserTokens
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
-from pigrocrm.core.gmail.crypto import seal
 from pigrocrm.core.text import DOCX_MIME, PDF_MIME, PROVENIENZA, TEXT_TRUNCATION_MARKER
 
 FOLDER_MIME = "application/vnd.google-apps.folder"
@@ -243,10 +243,17 @@ def test_a_page_token_is_forwarded_and_the_next_one_comes_back() -> None:
     """
     drive = _tree()
 
-    def one_at_a_time(method: str, url: str, headers: dict[str, str], body: bytes | None) -> Any:
+    def one_at_a_time(
+        method: str,
+        url: str,
+        headers: dict[str, str],
+        body: bytes | None,
+        *,
+        max_bytes: int | None = None,
+    ) -> Any:
         if "q=" in url:
             url = f"{url}&pageSize=1"
-        return drive(method, url, headers, body)
+        return drive(method, url, headers, body, max_bytes=max_bytes)
 
     reader = _reader(drive, http=one_at_a_time)
     first = reader.list_children(ROOT_FOLDER)
@@ -368,11 +375,16 @@ def _refusing(drive: FakeDrive, file_id: str, status: int) -> Any:
     """
 
     def call(
-        method: str, url: str, headers: dict[str, str], body: bytes | None
-    ) -> tuple[int, bytes]:
+        method: str,
+        url: str,
+        headers: dict[str, str],
+        body: bytes | None,
+        *,
+        max_bytes: int | None = None,
+    ) -> tuple[int, bytes, dict[str, str]]:
         if f"/files/{file_id}" in url:
-            return status, b'{"error": {"message": "insufficientFilePermissions"}}'
-        return drive(method, url, headers, body)
+            return status, b'{"error": {"message": "insufficientFilePermissions"}}', {}
+        return drive(method, url, headers, body, max_bytes=max_bytes)
 
     return call
 
@@ -509,6 +521,28 @@ def test_read_bytes_refuses_bytes_that_arrive_over_the_ceiling_even_undeclared()
 
     with pytest.raises(Conflict):
         _reader(drive).read_bytes(DOC_FILE, max_bytes=4)
+
+
+def test_an_undeclared_oversized_answer_is_not_read_past_one_byte_over_the_ceiling() -> None:
+    """An export declares no size, so the ceiling is enforced on what arrives -- and what
+    arrives is cut by the transport at `max_bytes + 1`, so a Google Doc of any length is
+    never buffered whole. Asserted on the bytes the transport handed back."""
+    drive = _tree()
+    drive.files[DOC_FILE].data = b"x" * 10_000
+    reads: list[int] = []
+    real = DriveTransport.bytes
+
+    def spy(self: DriveTransport, *args: Any, **kwargs: Any) -> bytes:
+        payload = real(self, *args, **kwargs)
+        reads.append(len(payload))
+        return payload
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(DriveTransport, "bytes", spy)
+        with pytest.raises(Conflict):
+            _reader(drive).read_bytes(DOC_FILE, max_bytes=100)
+
+    assert reads == [101]
 
 
 # --- text ----------------------------------------------------------------------------

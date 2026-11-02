@@ -54,14 +54,9 @@ from pigrocrm.core.drive.query import (
     upload_create_url,
     upload_media_url,
 )
-from pigrocrm.core.drive.transport import (
-    DriveTransport,
-    HttpCall,
-    ServiceAccountTokens,
-    SignAssertion,
-    SleepFn,
-)
+from pigrocrm.core.drive.transport import DriveTransport, ServiceAccountTokens, SignAssertion
 from pigrocrm.core.errors import Conflict, NotFound
+from pigrocrm.core.http import HttpCall, SleepFn
 from pigrocrm.core.storage.base import validate_storage_key
 
 # Where a Drive URL comes from: `drive/query.py`, and nowhere else. This module used

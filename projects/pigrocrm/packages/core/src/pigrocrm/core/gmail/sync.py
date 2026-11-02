@@ -35,6 +35,7 @@ import re
 import time
 from collections.abc import Iterator
 from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -45,12 +46,11 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.config import Settings, decode_google_token_key, require_gmail_configured
+from pigrocrm.core.config import Settings, require_gmail_configured
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.customers.schemas import RAGIONE_SOCIALE_MAX_LENGTH
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.gmail.account import GoogleAccountService
-from pigrocrm.core.gmail.crypto import unseal
 from pigrocrm.core.gmail.errors import CredentialRevoked, GmailUnavailable, GoogleCallFailed
 from pigrocrm.core.gmail.models import GmailMessage, GoogleAccount
 from pigrocrm.core.gmail.parse import ParsedMessage, parse_message
@@ -65,7 +65,7 @@ from pigrocrm.core.gmail.query import (
     thread_metadata_url,
 )
 from pigrocrm.core.gmail.repository import GmailRepository
-from pigrocrm.core.gmail.roster import AddressRoster, EntityRef
+from pigrocrm.core.gmail.roster import AddressRoster, EntityRef, address_key
 from pigrocrm.core.gmail.schemas import (
     SCOPE_READONLY,
     DiscoveredCorrespondent,
@@ -77,7 +77,22 @@ from pigrocrm.core.gmail.schemas import (
 from pigrocrm.core.gmail.send import reconcile_only
 from pigrocrm.core.gmail.tokens import GoogleTokenClient
 from pigrocrm.core.gmail.transport import GmailTransport
+from pigrocrm.core.google.credential import open_refresh_token
 from pigrocrm.core.people.models import Person
+
+
+@contextmanager
+def _unavailable_on_failure(what: str) -> Iterator[None]:
+    """Gmail failing after every retry is the person's to retry, not a server error
+    (REB-766: a press on the customer's Email tab reaches this). `GoogleCallFailed` is
+    internal to this package and no caller outside it can be expected to know what an
+    `UpstreamFailure` is, so a public operation turns it into the `GmailUnavailable` a
+    failed token refresh answers, which the API renders as a 409 with a sentence."""
+    try:
+        yield
+    except GoogleCallFailed as failed:
+        raise GmailUnavailable(what, failed.failure.status) from failed
+
 
 # How far back the first cycle looks when there is no watermark yet.
 _FIRST_CYCLE_DAYS = 30
@@ -182,6 +197,8 @@ class GmailSyncService:
         self.repo = GmailRepository(session)
         self.roster = AddressRoster(session)
         self.activities = ActivityService(session)
+        # Per cycle: the entities each address resolved to (see `_thread_refs`).
+        self._refs: dict[str, tuple[EntityRef, ...]] = {}
         self.accounts = GoogleAccountService(session, settings=settings)
 
     def sync(self, actor: Actor) -> SyncReport:
@@ -206,7 +223,8 @@ class GmailSyncService:
                 running_since=self.repo.sync_started_at(account.id),
             )
         try:
-            return self._run_cycle(account, actor, started_at)
+            with _unavailable_on_failure("la sincronizzazione"):
+                return self._run_cycle(account, actor, started_at)
         finally:
             # `finally`, so a raised cycle does not leak the lock. A leaked advisory lock
             # travels back into the connection pool with its connection and makes every
@@ -218,8 +236,6 @@ class GmailSyncService:
         """One whole cycle, holding the mailbox's lock from the first statement to the
         commit. Never called except through `sync`, which owns that lock."""
         report = SyncReport(started_at=started_at)
-
-        report.states_pruned = self.repo.prune_states(started_at)
 
         # Before anything else: resolve any send whose outcome we do not know (spec 6.3
         # point 3, «la riconciliazione gira all'inizio di ogni sync»). First, and not
@@ -356,33 +372,34 @@ class GmailSyncService:
                 running_since=self.repo.sync_started_at(account.id),
             )
         try:
-            report = SyncReport(started_at=started_at)
-            queries = build_list_queries(
-                addresses,
-                after_epoch=self._backfill_epoch(full=full),
-                batch_size=self.settings.gmail_sync_address_batch_size,
-            )
-            report.queries_issued = len(queries)
-            token = self._access_token(account)
-            self._ingest(account, actor, queries, token, report)
-            # These addresses have now been searched at least as far back as the
-            # automatic backfill would have gone, so the next cycle must not do it
-            # again -- and on `full=True` it went further still.
-            self.repo.remember_addresses(account.id, addresses)
-            self.activities.record(
-                "google_account",
-                account.id,
-                "gmail.backfill_eseguito",
-                actor,
-                {
-                    "entity_type": entity_type,
-                    "entity_id": str(entity_id),
-                    "full": full,
-                    "messages_stored": report.messages_stored,
-                },
-            )
-            self.session.commit()
-            return report
+            with _unavailable_on_failure("la sincronizzazione"):
+                report = SyncReport(started_at=started_at)
+                queries = build_list_queries(
+                    addresses,
+                    after_epoch=self._backfill_epoch(full=full),
+                    batch_size=self.settings.gmail_sync_address_batch_size,
+                )
+                report.queries_issued = len(queries)
+                token = self._access_token(account)
+                self._ingest(account, actor, queries, token, report)
+                # These addresses have now been searched at least as far back as the
+                # automatic backfill would have gone, so the next cycle must not do it
+                # again -- and on `full=True` it went further still.
+                self.repo.remember_addresses(account.id, addresses)
+                self.activities.record(
+                    "google_account",
+                    account.id,
+                    "gmail.backfill_eseguito",
+                    actor,
+                    {
+                        "entity_type": entity_type,
+                        "entity_id": str(entity_id),
+                        "full": full,
+                        "messages_stored": report.messages_stored,
+                    },
+                )
+                self.session.commit()
+                return report
         finally:
             self.repo.release_sync_lock(account.id)
 
@@ -419,23 +436,16 @@ class GmailSyncService:
         mailbox = account.email_address.strip().lower()
         suffix = f"@{domain}"
         tally: dict[str, _Correspondent] = {}
-        try:
-            # Gmail lists the newest first, so stopping at the cap keeps the conversations
-            # that say who at the domain is writing now, and stops paging the listing once
-            # it holds enough. The headers are read the way the proposals read them, two
-            # at a time and within `SUGGEST_READ_BUDGET_SECONDS`: a long-standing customer
-            # answers with the conversations read in time, not with a 504.
+        # Gmail lists the newest first, so stopping at the cap keeps the conversations
+        # that say who at the domain is writing now, and stops paging the listing once
+        # it holds enough. The headers are read the way the proposals read them, two
+        # at a time and within `SUGGEST_READ_BUDGET_SECONDS`: a long-standing customer
+        # answers with the conversations read in time, not with a 504.
+        with _unavailable_on_failure("la ricerca dei corrispondenti"):
             thread_ids = self._relevant_threads(
                 (discovery_query(domain),), token, limit=DISCOVER_MAX_THREADS
             )
             payloads = self._read_headers(thread_ids, token)
-        except GoogleCallFailed as failed:
-            # Gmail failing after every retry is the person's to retry, not a server error
-            # (REB-766: a press on the customer's Email tab reaches this): the same
-            # `GmailUnavailable` the proposals answer.
-            raise GmailUnavailable(
-                "la ricerca dei corrispondenti", failed.failure.status
-            ) from failed
         for thread_id, payload in payloads:
             report.threads_scanned += 1
             for raw in payload.get("messages") or []:
@@ -460,7 +470,7 @@ class GmailSyncService:
                         entry.name = parsed.display_names.get(address, "")[
                             :RAGIONE_SOCIALE_MAX_LENGTH
                         ]
-        known = set(self.roster.known_addresses())
+        known = self.roster.known_among(tally)
         report.corrispondenti = [
             DiscoveredCorrespondent(
                 indirizzo=address,
@@ -483,7 +493,7 @@ class GmailSyncService:
         domain, with the number of conversations, the last message and the people seen.
         Left out: the mailbox's own domain, mail providers and PEC domains
         (`is_provider_domain`), addresses that answer for a system, and domains the CRM
-        already files under a customer (`AddressRoster.customer_domains`). The busiest
+        already files under a customer (`AddressRoster.domains_taken`). The busiest
         come first, at most `SUGGEST_MAX_CUSTOMERS`.
 
         Stores nothing and moves no watermark, like `discover`: a proposal becomes a
@@ -506,17 +516,11 @@ class GmailSyncService:
         since = datetime.now(UTC) - timedelta(days=round(mesi * 365 / 12))
         token = self._access_token(account)
 
-        try:
+        with _unavailable_on_failure("la lettura della posta inviata"):
             thread_ids = self._sent_threads(mailbox, since, token)
             payloads = self._read_headers(thread_ids, token)
-        except GoogleCallFailed as failed:
-            # Gmail failing after every retry is the person's to retry, not a server
-            # error: the same `GmailUnavailable` a failed token refresh answers.
-            raise GmailUnavailable(
-                "la lettura della posta inviata", failed.failure.status
-            ) from failed
 
-        skip = self.roster.customer_domains() | {own_domain}
+        skip = {own_domain}
         tally: dict[str, _ProposedDomain] = {}
         for thread_id, payload in payloads:
             for raw in payload.get("messages") or []:
@@ -541,7 +545,12 @@ class GmailSyncService:
                     if not entry.people.get(address):
                         entry.people[address] = name
 
-        known = set(self.roster.known_addresses())
+        taken = self.roster.domains_taken(tally)
+        for domain in taken:
+            del tally[domain]
+        known = self.roster.known_among(
+            address for entry in tally.values() for address in entry.people
+        )
         proposals = [
             SuggestedCustomer(
                 dominio=domain,
@@ -707,6 +716,9 @@ class GmailSyncService:
         `build_list_queries` with an address list. A second copy of this loop would be a
         second place for an unfiltered listing to appear.
         """
+        # What a person resolves to cannot change under a cycle that holds the mailbox's
+        # lock, so it is remembered for the length of this one and not any longer.
+        self._refs.clear()
         for thread_id in self._relevant_threads(queries, token):
             report.threads_fetched += 1
             self._store_thread(account, thread_id, token, report, actor)
@@ -720,10 +732,8 @@ class GmailSyncService:
         return account
 
     def _access_token(self, account: GoogleAccount) -> str:
-        refresh_token = unseal(
-            account.refresh_token_ciphertext,
-            account.refresh_token_nonce,
-            decode_google_token_key(self.settings),
+        refresh_token = open_refresh_token(
+            account.refresh_token_ciphertext, account.refresh_token_nonce, self.settings
         )
         try:
             return self.tokens.access_token(
@@ -848,16 +858,29 @@ class GmailSyncService:
         that exchange. A per-message resolution would file half the thread and leave the
         other half invisible, which is the conversation that lies.
 
-        Resolving does not widen relevance: `AddressRoster.resolve` only ever answers
-        with entities that already exist, and an address met inside a thread still does
-        not join `known_addresses`.
+        Resolving does not widen relevance: `AddressRoster.resolve_many` only ever
+        answers with entities that already exist, and an address met inside a thread
+        still does not join `known_addresses`.
+
+        The addresses of the whole thread are resolved in one batch, and only those the
+        cycle has not resolved before: the same few people write in most of a mailbox's
+        threads, so after the first ones a thread costs no query at all.
         """
+        addresses = [
+            address
+            for parsed in parsed_messages
+            for address in (parsed.from_address, *parsed.to_addresses, *parsed.cc_addresses)
+        ]
+        unseen = [address for address in dict.fromkeys(addresses) if address not in self._refs]
+        if unseen:
+            resolved = self.roster.resolve_many(unseen)
+            for address in unseen:
+                self._refs[address] = resolved.get(address_key(address), ())
         refs: list[EntityRef] = []
-        for parsed in parsed_messages:
-            for address in [parsed.from_address, *parsed.to_addresses, *parsed.cc_addresses]:
-                for ref in self.roster.resolve(address):
-                    if ref not in refs:
-                        refs.append(ref)
+        for address in addresses:
+            for ref in self._refs[address]:
+                if ref not in refs:
+                    refs.append(ref)
         return refs
 
     def _file(

@@ -137,6 +137,20 @@ class FakeDrive:
         return new_id
 
     def __call__(
+        self,
+        method: str,
+        url: str,
+        headers: dict[str, str],
+        body: bytes | None,
+        *,
+        max_bytes: int | None = None,
+    ) -> tuple[int, bytes, dict[str, str]]:
+        """The seam: what Drive answers, with the body cut at `max_bytes + 1` as the real
+        one reads it, and no response headers (Drive's `Retry-After` is not modelled)."""
+        status, payload = self._handle(method, url, headers, body)
+        return status, payload if max_bytes is None else payload[: max_bytes + 1], {}
+
+    def _handle(
         self, method: str, url: str, headers: dict[str, str], body: bytes | None
     ) -> tuple[int, bytes]:
         self.calls.append((method, url))
