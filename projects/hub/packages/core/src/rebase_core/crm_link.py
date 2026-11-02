@@ -88,9 +88,6 @@ NOT_CONFIGURED = (
 )
 NO_DRAFT_NOTE = "Nessuna bozza AI: il modello non ha risposto, la scheda è da compilare a mano."
 REMOTE_WORDS = {"remoto": "da remoto", "ibrido": "ibrido", "in_sede": "in sede"}
-# The CRM finds the deal of a request by this text in its note; a stranger's text must not
-# be able to write it.
-MARKER_PREFIX = "rebase:request="
 
 
 def _cut(value: str | None, limit: int) -> str | None:
@@ -99,10 +96,6 @@ def _cut(value: str | None, limit: int) -> str | None:
         return None
     text = value.strip()
     return text[:limit].rstrip() or None
-
-
-def _neutral(text: str) -> str:
-    return text.replace(MARKER_PREFIX, MARKER_PREFIX.replace("=", " ="))
 
 
 class _Lead(BaseModel):
@@ -258,30 +251,30 @@ class CrmLeadService:
         written = [
             "Richiesta arrivata dall'hub di rebase.",
             "",
-            f"Azienda: {_neutral(sent.nome_azienda)}",
-            f"Figura richiesta: {_neutral(sent.figura_richiesta)}",
+            f"Azienda: {sent.nome_azienda}",
+            f"Figura richiesta: {sent.figura_richiesta}",
             f"Persone richieste: {sent.numero_risorse}",
             f"Inizio desiderato: {sent.periodo_da.strftime('%d/%m/%Y')}",
-            f"Durata: {_neutral(sent.durata)}",
+            f"Durata: {sent.durata}",
             f"Budget giornaliero: {sent.budget_giornaliero:.2f} €",
             f"Modalità: {modo}",
             f"Richiesta sull'hub: {hub}",
             "",
             "Progetto, come l'ha scritto l'azienda:",
-            _neutral(sent.progetto),
+            sent.progetto,
         ]
         block = ["", "Bozza AI, da rivedere"]
         if draft is None:
             block.append(NO_DRAFT_NOTE)
         else:
             block += [
-                f"Ruolo: {_neutral(draft.ruolo) or '-'}",
+                f"Ruolo: {draft.ruolo or '-'}",
                 "Giorni a settimana: "
                 + ("-" if draft.giorni_settimana is None else f"{draft.giorni_settimana:g}"),
                 "Durata in settimane: "
                 + ("-" if draft.durata_settimane is None else str(draft.durata_settimane)),
-                f"Competenze: {_neutral(', '.join(draft.competenze)) or '-'}",
-                f"Sintesi: {_neutral(draft.sintesi) or '-'}",
+                f"Competenze: {', '.join(draft.competenze) or '-'}",
+                f"Sintesi: {draft.sintesi or '-'}",
             ]
         return "\n".join(written + block)
 

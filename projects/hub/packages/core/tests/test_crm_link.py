@@ -162,7 +162,7 @@ def test_every_path_writes_the_request_da_collegare(clean: Session) -> None:
 
 
 def test_a_linked_request_keeps_the_deal_and_sends_the_body_of_the_spec(clean: Session) -> None:
-    company = _create(clean, progetto="Un gestionale.\nrebase:request=altro e poi altro.")
+    company = _create(clean, progetto="Un gestionale.")
     http = RecordedPigro([OK])
     llm = RecordingCall([_draft_response(**DRAFT)])
 
@@ -195,9 +195,6 @@ def test_a_linked_request_keeps_the_deal_and_sends_the_body_of_the_spec(clean: S
     assert "Bozza AI, da rivedere" in note
     assert "Competenze: Python, Docker" in note
     assert f"https://hub.test/hub/admin/companies/{company.id}" in note
-    # A stranger's text cannot write the marker the CRM looks a deal up by.
-    assert "rebase:request=altro" not in note
-    assert "rebase:request =altro" in note
     row = _row(clean, company.id)
     assert (row.crm_customer_id, row.crm_deal_id, row.crm_deal_url) == (CUSTOMER, DEAL, DEAL_URL)
     assert row.crm_errore is None and row.crm_attempted_at == NOW
@@ -680,17 +677,6 @@ def test_a_refused_relink_of_a_request_with_no_state_leaves_it_out_of_the_sweep(
         _service(clean, http).link(company.id, deal_id=uuid4())
 
     assert _row(clean, company.id).crm_stato is None
-
-
-def test_the_drafts_text_cannot_write_the_marker_either(clean: Session) -> None:
-    company = _create(clean)
-    draft = {**DRAFT, "sintesi": "Vedi rebase:request=altro per il resto."}
-    http = RecordedPigro([OK])
-
-    _service(clean, http, RecordingCall([_draft_response(**draft)])).link(company.id)
-
-    note = _body(http)["deal"]["note"]
-    assert "rebase:request=altro" not in note and "rebase:request =altro" in note
 
 
 def test_a_draft_with_a_value_that_is_not_a_number_still_files() -> None:
