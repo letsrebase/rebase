@@ -7,11 +7,15 @@
   "exports": {
     ".": "./posthog.ts",
     "./browser": "./browser.ts",
+    "./consent": "./consent.ts",
+    "./entra-token": "./entra-token.ts",
     "./package.json": "./package.json"
   },
   "files": [
     "posthog.ts",
-    "browser.ts"
+    "browser.ts",
+    "consent.ts",
+    "entra-token.ts"
   ],
   "scripts": {
     "lint": "eslint .",

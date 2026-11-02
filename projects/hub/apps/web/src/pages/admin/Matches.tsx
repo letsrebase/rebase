@@ -14,10 +14,11 @@ import {
   REFERRAL_KIND_LABELS,
   REFERRAL_STATE_LABELS,
   formatDate,
-  formatEuro,
   formatRate,
 } from '@/lib/format'
-import { Empty, FilterField, Header, LoadMore, StateFilter } from './lists'
+import { formatMoney } from '@rebase/ui/format'
+import { keys } from '@/lib/query-keys'
+import { Empty, FilterField, Header, LoadMore, StateFilter } from './list-kit'
 
 // The server's own default page size (`LIST_LIMIT_DEFAULT`, `rebase_core.matches`):
 // the same mechanism «Talenti» and «Aziende» paginate with, a page at a time through
@@ -45,7 +46,7 @@ function PigroState({ item }: { item: MatchListItem }) {
 
 /** A referral's amount, projected or real, in euros; `-` where there is nothing to say. */
 function ReferralAmount({ amount }: { amount: string | null }) {
-  return <span className="tabular-nums">{amount === null ? '-' : formatEuro(amount)}</span>
+  return <span className="tabular-nums">{amount === null ? '-' : formatMoney(amount)}</span>
 }
 
 /** Who referred which side of a match, at which rate, and what it earns (REB-609):
@@ -108,7 +109,7 @@ function Compenso({ item }: { item: MatchListItem }) {
     .join(' · ')
   return (
     <>
-      <p className="font-medium tabular-nums">{formatEuro(item.lettera_compenso)}</p>
+      <p className="font-medium tabular-nums">{formatMoney(item.lettera_compenso)}</p>
       {detail && <p className="text-xs text-muted-foreground">{detail}</p>}
     </>
   )
@@ -187,7 +188,7 @@ function MatchRow({ item }: { item: MatchListItem }) {
 
 /** «Match» (REB-413): every match the admin area has, newest first -- the last
  *  addition to the milestone, over `MatchService.list_all` and the same filter/search/
- *  pagination mechanism «Talenti» and «Aziende» already use (`lists.tsx`), offset in
+ *  pagination mechanism «Talenti» and «Aziende» already use (`talent/TalentList.tsx`), offset in
  *  place of a cursor since the list needs no keyset merge of two sources. */
 export function AdminMatches() {
   const search = useSearch({ from: '/signedIn/admin/matches' })
@@ -227,7 +228,7 @@ export function AdminMatches() {
   // The URL drives the request: the box reaches it through the URL, debounced.
   const filters: MatchesFilters = search
   const list = useInfiniteQuery({
-    queryKey: ['matches', filters],
+    queryKey: keys.matches(filters),
     queryFn: ({ pageParam }: { pageParam: number }) =>
       admin.matches({ ...filters, limit: PAGE_SIZE, offset: pageParam }),
     initialPageParam: 0,

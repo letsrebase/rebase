@@ -65,7 +65,7 @@ starts putting a new key in a payload adds it to that `TypedDict`.
 **The UI comes from `@rebase/ui`, and this application writes no primitive at all.**
 The seven hand-written ones it used to carry were deleted when the package took over
 (REB-300), so `apps/web/src/components/` holds only what is genuinely the hub's
-(`BrandMark`, `Shell`) and everything else is imported from the package.
+(`Shell`, `SidebarNav`, `TeamBuilder`) and everything else is imported from the package.
 `src/styles/tokens.css` is the entry file that fixes the import order, plus the one
 thing that is really local: the `.site` scope, where the chooser, the two wizards and
 the thanks page keep the landing's own 2px line, 8px step and 7% grid, the step by

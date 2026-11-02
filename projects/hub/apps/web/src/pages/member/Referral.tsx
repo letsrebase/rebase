@@ -5,7 +5,9 @@ import { Button } from '@rebase/ui/button'
 import { Input } from '@rebase/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@rebase/ui/popover'
 import { member, type MemberReferral as MemberReferralData } from '@/lib/api'
-import { formatDate, formatEuro } from '@/lib/format'
+import { formatDate } from '@/lib/format'
+import { copyText, formatMoney } from '@rebase/ui/format'
+import { keys } from '@/lib/query-keys'
 import { EXAMPLE, formatRate, rateWithArticle, referralExample } from '@/lib/referral'
 
 const KIND_LABELS: Record<string, string> = { freelancer: 'Freelance', company: 'Azienda' }
@@ -14,19 +16,16 @@ const KIND_LABELS: Record<string, string> = { freelancer: 'Freelance', company: 
  *  detour through it into either wizard still carries the code -- the same persistence
  *  `da=`'s own UTM mechanism already gives a campaign (`resolveReferral`, `lib/utm.ts`). */
 function referralLink(code: string): string {
-  return `${window.location.origin}/hub/?rif=${code}`
+  return `${window.location.origin}/hub/?rif=${encodeURIComponent(code)}`
 }
 
 function CopyLinkButton({ link }: { link: string }) {
   const [copied, setCopied] = useState(false)
   async function copy() {
-    try {
-      await navigator.clipboard.writeText(link)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    } catch {
-      /* a clipboard a browser refused: the input beside it still holds the link */
-    }
+    // A clipboard a browser refused: the input beside it still holds the link.
+    if (!(await copyText(link))) return
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
   }
   return (
     <Button type="button" variant="outline" size="sm" onClick={() => void copy()}>
@@ -92,18 +91,18 @@ function Earnings({ rates }: { rates: Pick<MemberReferralData, 'rate_freelancer'
             </p>
             <p>
               Margine: ({EXAMPLE.budget} - {EXAMPLE.compenso}) × {EXAMPLE.giorni} ={' '}
-              <span className="font-medium tabular-nums">{formatEuro(example.margin)}</span>
+              <span className="font-medium tabular-nums">{formatMoney(example.margin)}</span>
             </p>
             {freelancer && example.freelancer && (
               <p>
-                Segnali un freelance: {freelancer} di {formatEuro(example.margin)} ={' '}
-                <span className="font-medium tabular-nums">{formatEuro(example.freelancer)}</span>
+                Segnali un freelance: {freelancer} di {formatMoney(example.margin)} ={' '}
+                <span className="font-medium tabular-nums">{formatMoney(example.freelancer)}</span>
               </p>
             )}
             {company && example.company && (
               <p>
-                Segnali un&apos;azienda: {company} di {formatEuro(example.margin)} ={' '}
-                <span className="font-medium tabular-nums">{formatEuro(example.company)}</span>
+                Segnali un&apos;azienda: {company} di {formatMoney(example.margin)} ={' '}
+                <span className="font-medium tabular-nums">{formatMoney(example.company)}</span>
               </p>
             )}
           </div>
@@ -120,7 +119,7 @@ function Earnings({ rates }: { rates: Pick<MemberReferralData, 'rate_freelancer'
  *  -- rebase's own margin on it is an admin-only number, computed and shown only on the
  *  admin's ledger. */
 export function MemberReferral() {
-  const referral = useQuery({ queryKey: ['me', 'referral'], queryFn: () => member.referral() })
+  const referral = useQuery({ queryKey: keys.memberReferral, queryFn: () => member.referral() })
   const data = referral.data
 
   return (

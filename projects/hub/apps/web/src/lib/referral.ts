@@ -59,7 +59,7 @@ export interface ReferralExample {
   company: string | null
 }
 
-/** Cents as the decimal string the API speaks (`"2000.00"`), for `formatEuro`. */
+/** Cents as the decimal string the API speaks (`"2000.00"`), for `formatMoney`. */
 function money(cents: number): string {
   return `${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, '0')}`
 }

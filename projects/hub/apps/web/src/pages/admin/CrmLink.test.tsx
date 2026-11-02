@@ -87,4 +87,9 @@ describe('CrmLink', () => {
     )
     expect(screen.getByRole('alert')).toHaveTextContent('deal_id: non valido')
   })
+
+  it('offers no link to a deal whose address is not a web address', () => {
+    mount('collegato', { crm_deal_url: 'javascript:alert(1)' })
+    expect(screen.queryByRole('link', { name: 'Apri il deal nel CRM' })).toBeNull()
+  })
 })

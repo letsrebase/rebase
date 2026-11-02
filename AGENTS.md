@@ -25,7 +25,7 @@ typeface, the brand mark and the contrast maths every surface measures its colou
 with, which the CRM and the website must agree on and neither can own.
 `shared/analytics` is the second: the one PostHog project every surface reports to, and
 the policy the SPAs initialise it with. `shared/ui` is the third and the largest: the
-token layer both SPAs render on and the eighteen primitives they share, with a gallery
+token layer both SPAs render on and the seventeen primitives they share, with a gallery
 that renders every one of them and the contract tests that hold them to the record. **A
 primitive is generated there and nowhere else**: the repository has exactly one
 `components.json`, in that package, so `shadcn add` cannot quietly grow another local

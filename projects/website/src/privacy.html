@@ -153,6 +153,13 @@
           condizioni descritte sopra: Anthropic tratta questi dati per conto nostro, secondo il
           suo DPA, e non li usa per addestrare i propri modelli.
         </p>
+        <p>
+          Mentre compili la richiesta per entrare come freelance o come azienda, le risposte che
+          hai già dato (nome, email, telefono, tariffa e il resto, escluso il CV) restano nella
+          memoria di questo browser per sette giorni, così se chiudi la pagina puoi riprendere da
+          dove eri. Non arrivano a noi finché non invii la richiesta, e spariscono dal browser
+          appena la invii o se scegli di ricominciare.
+        </p>
 
         <h2>Il tuo spazio PigroCRM</h2>
         <p>
@@ -219,8 +226,12 @@
           script di OpenAI o di PostHog, nessun cookie, nessuna richiesta: l'avviso non è una
           notifica di quello che sta già succedendo. Se dici no, non succede, e non te lo
           richiediamo più. Se cambi idea,
-          <a class="quiet-link" href="/privacy" data-consent-withdraw>ritira il consenso</a> e l'avviso
-          torna. In ogni caso non cambia niente né sull'iscrizione né sul CRM. Per i suoi dati
+          <a class="quiet-link" href="/privacy" data-consent-withdraw>ritira il consenso</a>: l'avviso
+          torna e togliamo anche i cookie e i dati che PostHog e il pixel avevano salvato nel tuo
+          browser. La tua scelta vale pure per le pagine pubbliche di rebase che si aprono dal
+          sito, come il percorso per cercare un team in <code>letsrebase.com/hub</code>: lì la
+          misurazione parte solo se hai detto sì qui, mentre dopo l'accesso resta quella descritta
+          sopra, senza avviso. In ogni caso non cambia niente né sull'iscrizione né sul CRM. Per i suoi dati
           OpenAI è titolare autonomo: la sua informativa è su
           <a class="quiet-link" href="https://openai.com/policies/privacy-policy"
             >openai.com/policies/privacy-policy</a
@@ -431,33 +442,10 @@
 
     <!-- The cookie-notice script never loads on this page, because it carries no
       tracker to gate (pixel.test.ts holds that, down to the string that names the
-      script, so it is spelled out here only in words). Withdrawing is the same two
-      steps that script's own `window.__consent.withdraw` performs -- clear a stored
-      yes, reload -- reimplemented here against the same key rather than the same
-      function, since that function lives in a script this page does not load. Only a
-      granted decision, never a denied one: a refusal has to stay final, the same rule
-      that script's own STORAGE_KEY comment states, or this link would put the notice
-      back in front of a visitor who already said no. The literals below have to stay in
-      lockstep with that script's own storage keys (the current one and the one it had
-      before REB-668); pixel.test.ts holds them equal. -->
-    <script type="module">
-      document.querySelectorAll('[data-consent-withdraw]').forEach(function (link) {
-        link.addEventListener('click', function (event) {
-          event.preventDefault()
-          try {
-            if (window.localStorage.getItem('rebase.consent') === 'granted') {
-              window.localStorage.removeItem('rebase.consent')
-            }
-            if (window.localStorage.getItem('orbiters.consent') === 'granted') {
-              window.localStorage.removeItem('orbiters.consent')
-            }
-          } catch {
-            /* Niente da fare: la scelta resta finché dura la sessione. */
-          }
-          window.location.reload()
-        })
-      })
-    </script>
+      script, so it is spelled out here only in words). The withdraw links are wired by
+      their own script, which clears a stored yes and what the trackers left after it;
+      consent.test.ts holds its keys equal to the notice's. -->
+    <script type="module" src="./consent-withdraw.js"></script>
     <!-- session.js loads last, after the whole page, so pixel.test.ts's own "no
       pixel script here" check -- reading the page for a script tag with the ads
       SDK's name anywhere after it -- has nothing preceding it to trip over: this

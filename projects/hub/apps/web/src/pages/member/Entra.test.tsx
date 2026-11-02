@@ -10,7 +10,7 @@ import {
 import { render, screen } from '@testing-library/react'
 import { StrictMode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { stripEntraToken, takeEntraToken } from '@/lib/entra-token'
+import { stripEntraToken, takeEntraToken } from '@rebase/analytics/entra-token'
 import { Entra } from './Entra'
 
 function answer(status: number, body: unknown) {
@@ -94,7 +94,7 @@ describe('/verify', () => {
   it('posts the token stripEntraToken already took out of the URL, not only the search-param fallback', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, PROFILE))
     window.history.replaceState(null, '', '/hub/verify?t=abc-123_XYZ')
-    stripEntraToken()
+    stripEntraToken(/^\/hub\/verify$/)
     // The router mounts at a clean path with no `t`: the only way the token reaches
     // `mutateAsync` is `takeEntraToken()`'s one-shot read, under StrictMode's double
     // invoke of the `useState` initialiser.

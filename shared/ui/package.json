@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "The squared system every rebase application renders on: the tokens, the nineteen primitives, and the gallery that shows them.",
+  "description": "The squared system every rebase application renders on: the tokens, the seventeen primitives, and the gallery that shows them.",
   "exports": {
     "./tokens.css": "./tokens.css",
     "./before-tailwind.css": "./before-tailwind.css",
@@ -20,14 +20,16 @@
     "./sheet": "./sheet.tsx",
     "./dropdown-menu": "./dropdown-menu.tsx",
     "./popover": "./popover.tsx",
-    "./tooltip": "./tooltip.tsx",
     "./tabs": "./tabs.tsx",
     "./table": "./table.tsx",
-    "./separator": "./separator.tsx",
     "./skeleton": "./skeleton.tsx",
     "./loader": "./loader.tsx",
     "./sonner": "./sonner.tsx",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./brand-mark": "./brand-mark.tsx",
+    "./use-media-query": "./use-media-query.ts",
+    "./test-setup": "./test-setup.ts",
+    "./format": "./format.ts"
   },
   "files": [
     "tokens.css",
@@ -45,13 +47,15 @@
     "sheet.tsx",
     "dropdown-menu.tsx",
     "popover.tsx",
-    "tooltip.tsx",
     "tabs.tsx",
     "table.tsx",
-    "separator.tsx",
     "skeleton.tsx",
     "loader.tsx",
-    "sonner.tsx"
+    "sonner.tsx",
+    "brand-mark.tsx",
+    "use-media-query.ts",
+    "test-setup.ts",
+    "format.ts"
   ],
   "scripts": {
     "dev": "vite",

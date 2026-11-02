@@ -1,21 +1,21 @@
-import { useInfiniteQuery } from '@tanstack/react-query'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import { ArrowLeft } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@rebase/ui/table'
 import { admin, type TeamProposalListItem, type TeamProposalListMember, type TeamProposalsFilters } from '@/lib/api'
-import { isFilterActive } from '@/lib/adminList'
+import { isFilterActive, pageItems, useCursorList } from '@/lib/adminList'
 import { TEAM_ORIGIN_LABELS, formatDateTime } from '@/lib/format'
-import { Empty, Header, LoadMore } from './lists'
+import { keys } from '@/lib/query-keys'
+import { Empty, Header, LoadMore } from './list-kit'
 
 /** The two outcomes the API filters by (`LIST_OUTCOMES` in core's `team_builder.py`),
  *  and the words the pills say. */
 const OUTCOMES = ['ok', 'errore'] as const
 const OUTCOME_LABELS: Record<string, string> = { ok: 'Riuscite', errore: 'Fallite' }
 
-/** `lists.tsx`'s `StateFilter`, over outcomes: «Tutte» rather than «Tutti», since the
+/** `list-kit.tsx`'s `StateFilter`, over outcomes: «Tutte» rather than «Tutti», since the
  *  rows are proposals, its own group label, and `aria-pressed` so the chosen pill is
  *  told apart by more than its colour. */
 function OutcomeFilter({ value, onChange }: { value: string | undefined; onChange: (value: string | undefined) => void }) {
@@ -159,14 +159,11 @@ export function AdminProposteTeam() {
   }
 
   const filters: TeamProposalsFilters = search
-  const list = useInfiniteQuery({
-    queryKey: ['team-proposals', filters],
-    queryFn: ({ pageParam }: { pageParam: string | undefined }) =>
-      admin.teamProposals({ ...filters, cursor: pageParam }),
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
+  const { list, items } = useCursorList({
+    queryKey: keys.teamProposals(filters),
+    fetchPage: (cursor) => admin.teamProposals({ ...filters, cursor }),
+    itemsOf: pageItems,
   })
-  const items = useMemo(() => list.data?.pages.flatMap((page) => page.items) ?? [], [list.data?.pages])
 
   return (
     <>

@@ -24,6 +24,15 @@ PostHog's key and hosts are literals there because the file runs without a bundl
 the same test compares them with `shared/analytics`, the source every other surface
 imports. Change the key there first, then here.
 
+No page carries an inline `<script>` (SITE-A-01): the host's CSP has no `'unsafe-inline'`
+in `script-src`, so an inline one simply does not run, and `pixel.test.ts` fails the page
+that tries. The reveal gate is `src/public/assets/reveal-gate.js`, a blocking script in
+the head that the build copies untouched to `/assets/` (a path `deploy/nginx.conf`
+already serves, and a new top-level file would need a new `location` there). The
+"Ritira il consenso" links on `/privacy` are wired by `src/consent-withdraw.js`, which
+also clears the `ph_*` and `__obref` cookies and the `ph_*` storage the trackers left.
+The hub reads the same decision (`shared/analytics/consent.ts`).
+
 ## Colour, typeface and the mark come from `shared/brand`
 
 Never restate them. `src/palette-plugin.ts` reads the shared tokens out of

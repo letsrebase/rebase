@@ -69,7 +69,7 @@ from rebase_core.login_schemas import GuideStats, LoginStats
 from rebase_core.logins import LoginService
 from rebase_core.mail import send_after_response
 from rebase_core.merge import MergeRead, MergeRequest, PersonMergeService
-from rebase_core.models import NAME_MAX_LENGTH, Signup, User
+from rebase_core.models import NAME_MAX_LENGTH, User
 from rebase_core.note_schemas import NoteCreate, NoteRead, NoteUpdate
 from rebase_core.notes import NoteService
 from rebase_core.perks import PerkService
@@ -86,7 +86,7 @@ from rebase_core.referral_settings import ReferralSettingsService
 from rebase_core.service import SignupService
 from rebase_core.signup_schemas import SignupList
 from rebase_core.talent_schemas import TalentoList, TalentoRead
-from rebase_core.talenti import TalentiService, signup_read
+from rebase_core.talenti import TalentiService, lead_by_id
 from rebase_core.team_schemas import FreelancerCardAdminRead
 from rebase_core.users import UserService
 from rebase_core.validation import SafeStr
@@ -632,11 +632,12 @@ def draft_card_from_signup(
 @router.get("/signups/{signup_id}", response_model=TalentoRead)
 def get_signup(_: AdminDep, session: SessionDep, signup_id: UUID) -> TalentoRead:
     """One bare sign-up as the row the Talenti list shows for it (`stato` «lead», `origine`
-    «form»): the page of a person who has no card yet. 404 for an unknown id."""
-    signup = session.get(Signup, signup_id)
-    if signup is None:
+    «form»): the page of a person who has no card yet. 404 for an unknown id, and for a
+    person who already has a card, whom the list shows as that card."""
+    lead = lead_by_id(session, signup_id)
+    if lead is None:
         raise NotFound("talento", signup_id)
-    return signup_read(signup)
+    return lead
 
 
 # ---- notes -----------------------------------------------------------------------------
