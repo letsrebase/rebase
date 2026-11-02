@@ -26,6 +26,7 @@ from rebase_mcp.http import McpHttpApp
 from rebase_mcp.settings import McpSettings
 
 URL = "http://localhost/mcp"
+LIFESPAN_TIMEOUT = 10.0
 INITIALIZE = {
     "jsonrpc": "2.0",
     "id": 1,
@@ -200,13 +201,16 @@ async def test_the_asgi_lifespan_protocol_starts_the_session_manager(
     async def receive() -> dict[str, Any]:
         return await inbox.get()
 
+    first_sent = asyncio.Event()
+
     async def send(message: dict[str, Any]) -> None:
         sent.append(message)
+        first_sent.set()
 
     await inbox.put({"type": "lifespan.startup"})
     runner = asyncio.create_task(app({"type": "lifespan"}, receive, send))
-    while not sent:
-        await asyncio.sleep(0.01)
+    # A server that never answers the startup message fails the test in seconds, not never.
+    await asyncio.wait_for(first_sent.wait(), timeout=LIFESPAN_TIMEOUT)
     assert sent[0]["type"] == "lifespan.startup.complete"
 
     async with _authed(app, ivan_token) as client:
@@ -214,7 +218,7 @@ async def test_the_asgi_lifespan_protocol_starts_the_session_manager(
     assert response.status_code == 200, response.text
 
     await inbox.put({"type": "lifespan.shutdown"})
-    await runner
+    await asyncio.wait_for(runner, timeout=LIFESPAN_TIMEOUT)
     assert sent[-1]["type"] == "lifespan.shutdown.complete"
 
 
