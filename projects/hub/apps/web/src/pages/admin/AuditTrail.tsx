@@ -16,6 +16,7 @@ const KIND_LABELS: Record<AdminAction['kind'], string> = {
   vetted: 'Verifica',
   pigro_link: 'Collegamento a Pigro',
   crm_link: 'Collegamento al CRM',
+  company_created: 'Richiesta aperta da un admin',
   merged: 'Unita a un’altra scheda',
   absorbed: 'Ha assorbito una scheda',
   unmerged: 'Unione annullata',

@@ -26,6 +26,7 @@ from rebase_core.notes import NoteService
 from rebase_core.pagination import SortSpec, decode_cursor, encode_cursor, keyset_predicate
 from rebase_core.referrals import ReferralService
 from rebase_core.schemas import (
+    CompanyAdminCreate,
     CompanyCreate,
     CompanyList,
     CompanyOverride,
@@ -125,7 +126,9 @@ class CompanyService:
     def __init__(self, session: Session) -> None:
         self.session = session
 
-    def request(self, data: CompanyCreate) -> tuple[CompanyRead, bool]:
+    def request(
+        self, data: CompanyCreate, *, deal_id: UUID | None = None
+    ) -> tuple[CompanyRead, bool]:
         """Every request is a row: a company has several projects, and two requests a
         week apart are two things to answer, not one to merge. The referente's `users`
         row is get-or-created by lowercased email (REB-278), from the two fields the
@@ -161,6 +164,8 @@ class CompanyService:
             # The same transaction as the row: a request is never committed without its
             # place in the CRM's queue (REB-868). The first attempt runs after the response.
             crm_stato=DA_COLLEGARE,
+            # A deal the admin named (REB-870), kept until the CRM links it.
+            crm_deal_id=deal_id,
             **utm,
         )
         self.session.add(row)
@@ -174,6 +179,21 @@ class CompanyService:
         ReferralService(self.session).link_team_request(row.id, user, own_code=data.rif)
         self.session.commit()
         return _to_read(row, user), richiedente_esistente
+
+    def create_by_admin(
+        self, data: CompanyAdminCreate, admin_id: UUID, *, fonte: str
+    ) -> CompanyRead:
+        """An admin opens the request on the referente's behalf (REB-870): the row the
+        wizard writes, `da_collegare`, with the CRM deal when one is named. No mail goes to
+        anybody; the trail records `company_created` with the admin, the door and the deal."""
+        read, _ = self.request(data, deal_id=data.deal_id)
+        payload: dict[str, str] = {"fonte": fonte}
+        if data.deal_id is not None:
+            payload["deal_id"] = str(data.deal_id)
+        AdminActionService(self.session).record(
+            ENTITY, read.id, "company_created", admin_id, payload
+        )
+        return read
 
     def list_recent(
         self,

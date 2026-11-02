@@ -1245,3 +1245,96 @@ def test_riprova_needs_the_token_a_live_request_and_an_admin(
     api_session.execute(text("UPDATE companies SET deleted_at = now()"))
     api_session.commit()
     assert client.post(f"/api/hub/companies/{company_id}/crm/link").status_code == 404
+
+
+# ---- REB-870: an admin opens a request for a company already in the CRM ---------------
+
+ADMIN_COMPANY = {
+    "nome_azienda": "Studio Rossi Srl",
+    "referente_nome": "Maria",
+    "referente_cognome": "Verdi",
+    "email": "maria@studiorossi.it",
+    "telefono": "+39 345 1234567",
+    "figura_richiesta": "Backend developer",
+    "progetto": "Un backend developer per tre mesi.",
+    "periodo_da": "2026-12-01",
+    "durata": "3 mesi",
+    "budget_giornaliero": "500",
+    "remoto": "remoto",
+    "numero_risorse": 1,
+}
+KNOWN_DEAL = "0192e0a0-0000-7000-8000-0000000000bb"
+
+
+def test_an_admin_opens_a_request_with_the_wizards_validation_and_no_mail(
+    client: TestClient, admin: None, sender: RecordingSender, crm_filings: list[UUID]
+) -> None:
+    assert client.post("/api/hub/admin/companies", json=ADMIN_COMPANY).status_code == 401
+    _login(client, sender)
+    mails = len(sender.sent)
+
+    bad = client.post(
+        "/api/hub/admin/companies", json={**ADMIN_COMPANY, "remoto": "ibrido"}
+    )  # hybrid needs the days in the office
+    assert bad.status_code == 422
+    assert (
+        client.post(
+            "/api/hub/admin/companies", json={**ADMIN_COMPANY, "email": "non-una-mail"}
+        ).status_code
+        == 422
+    )
+
+    response = client.post("/api/hub/admin/companies", json=ADMIN_COMPANY)
+
+    assert response.status_code == 201, response.text
+    made = response.json()
+    assert (made["nome_azienda"], made["email"], made["crm_stato"]) == (
+        "Studio Rossi Srl",
+        "maria@studiorossi.it",
+        "da_collegare",
+    )
+    assert len(sender.sent) == mails
+    assert crm_filings == [UUID(made["id"])]
+    audit = client.get(f"/api/hub/companies/{made['id']}/audit").json()
+    assert [e["kind"] for e in audit] == ["company_created"]
+
+
+def test_a_request_opened_for_a_deal_links_it_and_the_crm_creates_nothing(
+    client: TestClient, admin: None, sender: RecordingSender, crm: Any, crm_filings: list[UUID]
+) -> None:
+    crm.answers[:] = [(200, CRM_ANSWER)]
+    _login(client, sender)
+    mails = len(sender.sent)
+
+    response = client.post(
+        "/api/hub/admin/companies", json={**ADMIN_COMPANY, "deal_id": KNOWN_DEAL}
+    )
+
+    assert response.status_code == 201, response.text
+    made = response.json()
+    assert (made["crm_stato"], made["crm_situazione"]) == ("collegato", None)
+    assert made["crm_deal_url"].endswith(CRM_DEAL)
+    assert json.loads(crm.calls[0][3])["deal_id"] == KNOWN_DEAL
+    assert len(crm.calls) == 1
+    assert crm_filings == []
+    assert len(sender.sent) == mails
+
+
+def test_an_unknown_deal_ends_rifiutato_with_the_sentence_and_is_not_filed_by_address(
+    client: TestClient, admin: None, sender: RecordingSender, crm: Any, api_session: Session
+) -> None:
+    crm.answers[:] = [(422, b'{"detail": "deal_id: il deal non esiste"}'), (200, CRM_ANSWER)]
+    _login(client, sender)
+
+    made = client.post(
+        "/api/hub/admin/companies", json={**ADMIN_COMPANY, "deal_id": KNOWN_DEAL}
+    ).json()
+
+    assert made["crm_stato"] == "rifiutato"
+    assert (
+        made["crm_situazione"] == "Il CRM ha rifiutato la richiesta: deal_id: il deal non esiste."
+    )
+    # A later «Riprova» asks for the same deal, never for a new customer.
+    retried = client.post(f"/api/hub/companies/{made['id']}/crm/link").json()
+    assert retried["crm_stato"] == "collegato"
+    assert json.loads(crm.calls[1][3])["deal_id"] == KNOWN_DEAL

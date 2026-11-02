@@ -228,6 +228,7 @@ async def test_the_admin_tools_read_and_move_a_candidate_without_the_cv(
             "cancel_match",
             "close_match",
             "link_match_to_pigro",
+            "create_company",
             "link_company_to_pigro",
             "get_match_report",
             "set_freelancer_tax_data",
@@ -1673,5 +1674,86 @@ async def test_link_company_to_pigro_without_a_token_or_a_request_is_a_sentence(
                 "link_company_to_pigro", {"company_id": str(UUID(int=5))}
             )
         assert missing.is_error and "non trovato" in missing.content[0].text
+    finally:
+        _wipe(factory)
+
+
+_COMPANY_ARGS = {
+    "nome_azienda": "Studio Rossi Srl",
+    "referente_nome": "Maria",
+    "referente_cognome": "Verdi",
+    "email": "maria@studiorossi.it",
+    "telefono": "+39 345 1234567",
+    "figura_richiesta": "Backend developer",
+    "progetto": "Un backend developer per tre mesi.",
+    "periodo_da": "2026-12-01",
+    "durata": "3 mesi",
+    "budget_giornaliero": "500",
+    "remoto": "remoto",
+}
+
+
+async def test_create_company_opens_the_request_and_links_the_deal_the_crm_has(
+    factory: sessionmaker[Session],
+) -> None:
+    from fakes_pigro import DEAL, DEAL_URL, TOKEN, RecordedPigro
+
+    _wipe(factory)
+    _seed_admin(factory)
+    known = str(UUID(int=77))
+    fake = RecordedPigro(
+        [
+            (
+                200,
+                json.dumps(
+                    {
+                        "customer_id": str(UUID(int=7)),
+                        "person_id": None,
+                        "deal_id": str(DEAL),
+                        "deal_url": DEAL_URL,
+                        "creato": False,
+                    }
+                ).encode(),
+            )
+        ]
+    )
+    try:
+        async with Client(_crm_server(factory, fake, TOKEN)) as client:
+            bad = await client.call_tool("create_company", {**_COMPANY_ARGS, "remoto": "ibrido"})
+            assert bad.is_error
+            made = _payload(
+                await client.call_tool(
+                    "create_company",
+                    {**_COMPANY_ARGS, "deal_id": f"https://crm.test/rebase/app/deal/{known}"},
+                )
+            )
+        assert (made["nome_azienda"], made["crm_stato"], made["crm_deal_url"]) == (
+            "Studio Rossi Srl",
+            "collegato",
+            DEAL_URL,
+        )
+        assert json.loads(fake.calls[0][3])["deal_id"] == known
+        assert len(fake.calls) == 1
+        session = factory()
+        try:
+            from rebase_core.audit import AdminActionService
+
+            newest = AdminActionService(session).timeline("company", UUID(made["id"]))
+            assert {entry.kind for entry in newest} == {"company_created", "crm_link"}
+        finally:
+            session.close()
+    finally:
+        _wipe(factory)
+
+
+async def test_create_company_without_the_crm_waits_as_da_collegare(
+    factory: sessionmaker[Session],
+) -> None:
+    _wipe(factory)
+    _seed_admin(factory)
+    try:
+        async with Client(build_server(factory, lambda: IVAN)) as client:
+            made = _payload(await client.call_tool("create_company", _COMPANY_ARGS))
+        assert made["crm_stato"] == "da_collegare"
     finally:
         _wipe(factory)

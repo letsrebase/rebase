@@ -150,6 +150,9 @@ class _Sent(NamedTuple):
     linkedin_url: str | None
     bozza: dict[str, Any] | None
     stato: str | None
+    # The CRM deal an admin named when opening the request (REB-870), kept on the row so a
+    # retry or the sweep asks for that deal and never files the customer by its address.
+    deal_id: UUID | None
 
 
 @dataclass(frozen=True)
@@ -313,6 +316,12 @@ class CrmLeadService:
         if sent is None:
             return self._result(company_id, asked=False)
 
+        # A request opened for a deal the CRM has (REB-870) carries it on its own row until
+        # linked: the same ask whoever repeats it, and a refusal is written, not raised.
+        inherited = deal_id is None and sent.deal_id is not None
+        if inherited:
+            deal_id = sent.deal_id
+
         draft: LeadDraft | None = None
         body: dict[str, Any] = {}
         unasked: _Outcome | None = None
@@ -329,7 +338,7 @@ class CrmLeadService:
 
         try:
             row = self._lock(company_id)
-            if deal_id is not None and outcome.lead is None:
+            if deal_id is not None and not inherited and outcome.lead is None:
                 refusal = crm_state_sentence(outcome.stato, outcome.errore)
                 self.session.rollback()
                 self._record(admin_id, company_id, outcome, deal_id)
@@ -337,7 +346,7 @@ class CrmLeadService:
             # A request another caller linked meanwhile, or one that was linked before this
             # call, keeps its link: only a deal the admin named replaces it, and a failure
             # never takes a link away.
-            if deal_id is not None or row.crm_stato != COLLEGATO:
+            if (deal_id is not None and not inherited) or row.crm_stato != COLLEGATO:
                 self._write(row, outcome)
             self.session.commit()
         except InvalidState:
@@ -448,6 +457,7 @@ class CrmLeadService:
                 linkedin_url=user.linkedin_url,
                 bozza=row.crm_bozza,
                 stato=row.crm_stato,
+                deal_id=row.crm_deal_id if row.crm_stato != COLLEGATO else None,
             )
             row.crm_attempted_at = self.now()
             self.session.commit()
