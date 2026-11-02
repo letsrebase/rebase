@@ -156,7 +156,10 @@ def test_an_update_sees_the_emission_another_session_committed_after_it_loaded_t
     factory, invoice_id = committed_draft
     with factory() as stale, factory() as other:
         stale_service = _service(stale, tmp_path)
-        assert stale_service.get(invoice_id, ADMIN).stato == "bozza"
+        # Held in a variable: the identity map keeps its objects weakly, and the point is a
+        # session that still has this one.
+        held = stale.get(Invoice, invoice_id)
+        assert held is not None and held.stato == "bozza"
 
         _service(other, tmp_path).issue(invoice_id, InvoiceIssue(), ADMIN)
 
@@ -167,6 +170,7 @@ def test_an_update_sees_the_emission_another_session_committed_after_it_loaded_t
         stored = reader.get(Invoice, invoice_id)
         assert stored is not None
         assert stored.causale == "Prima"
+    assert held is not None
 
 
 def _waiting_on_row_locks(engine: Engine) -> int:
@@ -174,7 +178,7 @@ def _waiting_on_row_locks(engine: Engine) -> int:
         return connection.execute(
             text(
                 "SELECT count(*) FROM pg_stat_activity "
-                "WHERE wait_event_type = 'Lock' AND query ILIKE '%FROM invoices%'"
+                "WHERE wait_event_type = 'Lock' AND query ILIKE '%invoices%'"
             )
         ).scalar_one()
 
