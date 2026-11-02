@@ -20,7 +20,8 @@ from pigrocrm.core.config import Settings
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.models import DocumentVersion
 from pigrocrm.core.documents.schemas import DocumentCreate, DocumentRead
-from pigrocrm.core.documents.service import TEXT_SOURCE_MAX_BYTES, DocumentService
+from pigrocrm.core.documents.service import DocumentService
+from pigrocrm.core.documents.text import TEXT_SOURCE_MAX_BYTES
 from pigrocrm.core.errors import Conflict, NotFound
 from pigrocrm.core.storage import LocalFileStorage
 from pigrocrm.core.text import PROVENIENZA, TEXT_TRUNCATION_MARKER

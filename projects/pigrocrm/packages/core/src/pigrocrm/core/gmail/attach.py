@@ -25,8 +25,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.documents.models import Document, DocumentVersion
+from pigrocrm.core.documents.naming import slugify_folder
 from pigrocrm.core.documents.schemas import ALLOWED_CONTENT_TYPES
-from pigrocrm.core.documents.service import slugify_folder
 from pigrocrm.core.errors import NotFound, ValidationFailed
 from pigrocrm.core.gmail.rfc822 import OutgoingAttachment
 from pigrocrm.core.gmail.schemas import EmailDraftAttachment
