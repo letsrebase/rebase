@@ -34,6 +34,7 @@ import { AdminContratti } from '@/pages/admin/Contratti'
 import { AdminCampagna } from '@/pages/admin/Campagna'
 import { AdminCampagne } from '@/pages/admin/Campagne'
 import { AdminCreaCampagna } from '@/pages/admin/CreaCampagna'
+import { AdminCreaAzienda } from '@/pages/admin/CreaAzienda'
 import { AdminCreaMatch } from '@/pages/admin/CreaMatch'
 import { AdminDuplicati } from '@/pages/admin/Duplicati'
 import { AdminMatches } from '@/pages/admin/Matches'
@@ -472,6 +473,12 @@ const adminCompaniesRedirect = createRoute({
     throw redirect({ to: '/admin/companies', search: true })
   },
 })
+// REB-870: «Nuova richiesta». Static, so it ranks above `/companies/$id`.
+const adminCompaniesNew = createRoute({
+  getParentRoute: () => adminArea,
+  path: '/companies/nuova',
+  component: AdminCreaAzienda,
+})
 const adminCompaniesDetail = createRoute({
   getParentRoute: () => adminArea,
   path: '/companies/$id',
@@ -576,6 +583,7 @@ export const routeTree = root.addChildren([
       adminCampaignEdit,
       adminCompanies,
       adminCompaniesRedirect,
+      adminCompaniesNew,
       adminCompaniesDetail,
       adminCompaniesDetailRedirect,
       adminReferrals,

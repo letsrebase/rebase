@@ -1395,7 +1395,12 @@ export function AdminCompanies() {
   return (
     <>
       <Header title="Aziende" count={list.data?.pages[0]?.totale}>
-        <StateFilter states={COMPANY_STATES} value={search.stato} onChange={(value) => setFilter('stato', value)} />
+        <div className="flex flex-wrap items-center gap-3">
+          <StateFilter states={COMPANY_STATES} value={search.stato} onChange={(value) => setFilter('stato', value)} />
+          <Button asChild size="sm">
+            <Link to="/admin/companies/nuova">Nuova richiesta</Link>
+          </Button>
+        </div>
       </Header>
       <div className="grid gap-4 border-b px-6 py-4 sm:grid-cols-2 lg:grid-cols-4">
         <FilterField label="Cerca" htmlFor="aziende-q">

@@ -447,6 +447,14 @@ class CompanyCreate(CompanyFields):
         return clean_text(value, what="un valore")
 
 
+class CompanyAdminCreate(CompanyCreate):
+    """What an admin opens a request with, on the referente's behalf (REB-870): the
+    wizard's fields, validated the same way, plus the CRM deal the company already has,
+    when it has one. With it the CRM links that deal and creates nothing."""
+
+    deal_id: UUID | None = None
+
+
 class CompanyUpdate(CompanyFields):
     """What a company contact changes about one of their requests (REB-314, by id since
     REB-602): the eight project answers, never `stato`, `note`, `nome_azienda`,

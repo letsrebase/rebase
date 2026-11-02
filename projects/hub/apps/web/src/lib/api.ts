@@ -151,6 +151,11 @@ export interface CompanyRequest {
   numero_risorse: string
 }
 
+/** What «Nuova richiesta» collects: the wizard's answers, and the CRM deal when it has one. */
+export interface AdminCompanyRequest extends CompanyRequest {
+  deal_id?: string
+}
+
 export function requestPeople(
   data: CompanyRequest,
   utm: Utm,
@@ -1629,6 +1634,19 @@ export const admin = {
     return request<CompanyList>(`/api/hub/companies${qs ? `?${qs}` : ''}`)
   },
   company: (id: string) => request<Company>(`/api/hub/companies/${id}`),
+  /** «Nuova richiesta» (REB-870): opens a request for a company met directly. No mail goes
+   *  out. With `deal_id` (a deal the CRM already has) the CRM links it and creates nothing,
+   *  and the answer says so; without it the request is filed as a new deal. */
+  createCompany: (data: AdminCompanyRequest) =>
+    request<Company>(
+      '/api/hub/admin/companies',
+      json({
+        ...data,
+        giorni_presenza: data.giorni_presenza ? Number(data.giorni_presenza) : null,
+        numero_risorse: Number(data.numero_risorse),
+        deal_id: data.deal_id ?? null,
+      }),
+    ),
   moveCompany: (id: string, stato: string) =>
     request<Company>(`/api/hub/companies/${id}`, {
       method: 'PATCH',
