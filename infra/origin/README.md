@@ -8,7 +8,8 @@ host by hand, over SSH, and this directory is the record of what is installed.
 | File | Installed as | What it does |
 |---|---|---|
 | `nginx/000-default.conf` | `/etc/nginx/sites-available/000-default.conf`, linked from `sites-enabled` | The catch-all: any name no vhost carries gets 444 on port 80 and a refused TLS handshake on 443 (REB-714) |
-| `nginx/log-format.conf` | `/etc/nginx/conf.d/log-format.conf` | The access log in `combined` with the host appended, and the one `access_log` line; nginx.conf's own is commented out (REB-714) |
+| `nginx/log-format.conf` | `/etc/nginx/conf.d/log-format.conf` | The access log in `combined` with the host appended, the request line without its query string and a `/sign/<token>` without its token, and the one `access_log` line; nginx.conf's own is commented out (REB-714, INFRA-A-02) |
+| `nginx/rate-limits.conf` | `/etc/nginx/conf.d/rate-limits.conf` | The `limit_req_zone`s the vhosts' `limit_req` lines name (INFRA-A-14). Install it before any vhost that uses a zone, or `nginx -t` fails on an unknown zone |
 
 To install or change one, on the origin:
 
