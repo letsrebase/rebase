@@ -49,6 +49,7 @@ from fastapi import (
 
 from rebase_api.deps import (
     CardLlmDep,
+    CrmFilingDep,
     MeDep,
     SenderDep,
     SessionDep,
@@ -163,8 +164,17 @@ def update_my_company_request(
 
 
 @router.post("/me/company", response_model=MeRead, status_code=status.HTTP_201_CREATED)
-def create_my_company_request(me: MeDep, session: SessionDep, payload: CompanyFields) -> MeRead:
-    return MemberService(session).create_additional_request(me.id, payload)
+def create_my_company_request(
+    me: MeDep,
+    session: SessionDep,
+    background: BackgroundTasks,
+    crm_filing: CrmFilingDep,
+    payload: CompanyFields,
+) -> MeRead:
+    read, company_id = MemberService(session).create_additional_request(me.id, payload)
+    # Written `da_collegare` with the row; the first attempt at the CRM runs after the answer.
+    background.add_task(crm_filing, company_id)
+    return read
 
 
 @router.put("/me/cv", response_model=MeRead)

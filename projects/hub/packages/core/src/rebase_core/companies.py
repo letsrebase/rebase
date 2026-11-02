@@ -19,6 +19,7 @@ from rebase_core.audit import (
     utcnow,
 )
 from rebase_core.cloud import TalentCloudService
+from rebase_core.crm_words import DA_COLLEGARE, crm_state_sentence
 from rebase_core.errors import NotFound, ValidationFailed
 from rebase_core.models import COMPANY_STATES, Company, User
 from rebase_core.notes import NoteService
@@ -70,6 +71,11 @@ def _to_read(row: Company, user: User) -> CompanyRead:
         giorni_presenza=row.giorni_presenza,
         numero_risorse=row.numero_risorse,
         stato=row.stato,
+        crm_stato=row.crm_stato,
+        crm_errore=row.crm_errore,
+        crm_situazione=crm_state_sentence(row.crm_stato, row.crm_errore) or None,
+        crm_deal_url=row.crm_deal_url,
+        crm_attempted_at=row.crm_attempted_at,
         origine=row.origine,
         utm_source=row.utm_source,
         utm_medium=row.utm_medium,
@@ -152,6 +158,9 @@ class CompanyService:
             remoto=data.remoto,
             giorni_presenza=data.giorni_presenza,
             numero_risorse=data.numero_risorse,
+            # The same transaction as the row: a request is never committed without its
+            # place in the CRM's queue (REB-868). The first attempt runs after the response.
+            crm_stato=DA_COLLEGARE,
             **utm,
         )
         self.session.add(row)

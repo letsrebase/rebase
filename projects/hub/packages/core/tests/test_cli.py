@@ -28,6 +28,7 @@ from rebase_core.card_batch import BatchPolled, CardBatches
 from rebase_core.card_judge import JUDGE_MAX_OUTPUT_TOKENS
 from rebase_core.cli import main
 from rebase_core.config import Settings
+from rebase_core.crm_link import CrmLinkCount
 from rebase_core.db import session_factory
 from rebase_core.engagements import EngagementService
 from rebase_core.errors import LlmCapReached
@@ -56,10 +57,28 @@ class _FakeSigningService:
         return _FakeSigningService.result
 
 
+class _FakeCrmLeadService:
+    """What `contracts_sweep`'s CRM round (REB-868) is built with, and a canned count."""
+
+    instances: list["_FakeCrmLeadService"] = []
+    count = CrmLinkCount(linked=0, failed=0)
+
+    def __init__(self, session: object, settings: Settings, http: object, llm: object) -> None:
+        self.http = http
+        self.llm = llm
+        _FakeCrmLeadService.instances.append(self)
+
+    def link_pending(self) -> CrmLinkCount:
+        return _FakeCrmLeadService.count
+
+
 @pytest.fixture(autouse=True)
-def _reset() -> None:
+def _reset(monkeypatch: pytest.MonkeyPatch) -> None:
     _FakeSigningService.instances = []
     _FakeSigningService.result = SweepResult(touched=3, unconfirmed=0)
+    _FakeCrmLeadService.instances = []
+    _FakeCrmLeadService.count = CrmLinkCount(linked=0, failed=0)
+    monkeypatch.setattr(cli, "CrmLeadService", _FakeCrmLeadService)
 
 
 def test_the_contracts_sweep_command_builds_the_signing_service_and_prints_the_count(
@@ -78,7 +97,10 @@ def test_the_contracts_sweep_command_builds_the_signing_service_and_prints_the_c
     assert isinstance(kwargs["engagements"], EngagementService)
     assert kwargs["engagements"].http is urllib_engagements_call
     out = capsys.readouterr().out
-    assert out.strip() == "3 documenti ripresi, 0 match collegati a Pigro"
+    assert out.strip().splitlines() == [
+        "3 documenti ripresi, 0 match collegati a Pigro",
+        "0 richieste collegate al CRM",
+    ]
 
 
 def test_the_contracts_sweep_command_also_prints_the_unconfirmed_count_when_it_is_not_zero(
@@ -94,7 +116,9 @@ def test_the_contracts_sweep_command_also_prints_the_unconfirmed_count_when_it_i
     assert main(["contracts-sweep"]) == 0
 
     out = capsys.readouterr().out
-    assert out.strip() == "1 documenti ripresi, 2 non confermati, 0 match collegati a Pigro"
+    assert out.strip().splitlines()[0] == (
+        "1 documenti ripresi, 2 non confermati, 0 match collegati a Pigro"
+    )
 
 
 def test_contracts_sweep_prints_the_pigro_counts(
@@ -110,14 +134,36 @@ def test_contracts_sweep_prints_the_pigro_counts(
     assert main(["contracts-sweep"]) == 0
 
     out = capsys.readouterr().out
-    assert out.strip() == "2 documenti ripresi, 3 match collegati a Pigro, 1 non collegati"
+    assert out.strip().splitlines()[0] == (
+        "2 documenti ripresi, 3 match collegati a Pigro, 1 non collegati"
+    )
 
     _FakeSigningService.result = SweepResult(touched=0, unconfirmed=1, linked=1, link_failed=0)
 
     assert main(["contracts-sweep"]) == 0
 
     out = capsys.readouterr().out
-    assert out.strip() == "0 documenti ripresi, 1 non confermati, 1 match collegati a Pigro"
+    assert out.strip().splitlines()[0] == (
+        "0 documenti ripresi, 1 non confermati, 1 match collegati a Pigro"
+    )
+
+
+def test_contracts_sweep_files_the_requests_in_a_round_of_its_own(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """REB-868: the CRM round does not depend on the signing service (which has no
+    engagement service here), reads over the seam that waits for a slow CRM, and prints
+    its own line: the count it filed, and the ones it left only when there are any."""
+    monkeypatch.setattr(cli, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
+    monkeypatch.setattr(signing, "SigningService", _FakeSigningService)
+    _FakeCrmLeadService.count = CrmLinkCount(linked=4, failed=2)
+
+    assert main(["contracts-sweep"]) == 0
+
+    assert capsys.readouterr().out.strip().splitlines()[1] == (
+        "4 richieste collegate al CRM, 2 non collegate"
+    )
+    assert _FakeCrmLeadService.instances[0].http is urllib_engagements_call
 
 
 def test_the_documenso_check_command_dispatches_to_documenso_check(

@@ -1128,3 +1128,120 @@ def test_clearing_the_cv_drops_the_anonymous_card(
     body = client.get(f"/api/hub/freelancers/{freelancer_id}/card").json()
     assert (body["card"], body["cv_sha256"], body["error"]) == (None, None, None)
     assert api_session.execute(text("SELECT count(*) FROM freelancer_cards")).scalar() == 0
+
+
+# ---- REB-868: a request filed in rebase's CRM ------------------------------------------
+
+CRM_TOKEN = "un-token-per-la-porta"
+CRM_URL = "https://pigro.test"
+CRM_DEAL = "0192e0a0-0000-7000-8000-00000000d3a1"
+CRM_ANSWER = json.dumps(
+    {
+        "customer_id": "0192e0a0-0000-7000-8000-00000000c057",
+        "person_id": None,
+        "deal_id": CRM_DEAL,
+        "deal_url": f"{CRM_URL}/rebase/app/deal/{CRM_DEAL}",
+        "creato": True,
+    }
+).encode()
+
+
+@pytest.fixture
+def crm(client: TestClient) -> Any:
+    """The CRM's door behind the API's own seam, and the token that opens it."""
+    from fakes_pigro import RecordedPigro
+
+    fake = RecordedPigro([(201, CRM_ANSWER)])
+    settings = Settings(  # type: ignore[call-arg]
+        _env_file=None, pigro_api_url=CRM_URL, pigro_engagements_token=CRM_TOKEN
+    )
+    client.app.dependency_overrides[get_http_call] = lambda: fake  # type: ignore[attr-defined]
+    client.app.dependency_overrides[get_settings] = lambda: settings  # type: ignore[attr-defined]
+    return fake
+
+
+def test_a_new_request_is_queued_in_its_transaction_and_filed_after_the_response(
+    client: TestClient, admin: None, sender: RecordingSender, crm_filings: list[UUID]
+) -> None:
+    _login(client, sender)
+    _request_company(client)
+
+    company = client.get("/api/hub/companies").json()["items"][0]
+    assert crm_filings == [UUID(company["id"])]
+    assert company["crm_stato"] == "da_collegare"
+    assert (
+        company["crm_situazione"]
+        == "Il CRM non ha ancora la richiesta: riprova o aspetta lo sweep."
+    )
+
+
+def test_riprova_files_the_request_and_the_page_reads_the_deal(
+    client: TestClient, admin: None, sender: RecordingSender, crm: Any
+) -> None:
+    _login(client, sender)
+    _request_company(client)
+    company_id = client.get("/api/hub/companies").json()["items"][0]["id"]
+
+    response = client.post(f"/api/hub/companies/{company_id}/crm/link")
+
+    assert response.status_code == 200, response.text
+    read = response.json()
+    assert read["crm_stato"] == "collegato"
+    assert read["crm_deal_url"].endswith(CRM_DEAL)
+    assert read["crm_situazione"] is None
+    assert crm.calls[0][1] == f"{CRM_URL}/api/rebase/leads/{company_id}"
+    kinds = [e["kind"] for e in client.get(f"/api/hub/companies/{company_id}/audit").json()]
+    assert kinds == ["crm_link"]
+
+
+def test_riprova_shows_the_crms_sentence_and_a_later_one_takes_it_to_collegato(
+    client: TestClient, admin: None, sender: RecordingSender, crm: Any
+) -> None:
+    crm.answers[:] = [(503, b'{"detail": "Spazio dei lead non configurato"}'), (201, CRM_ANSWER)]
+    _login(client, sender)
+    _request_company(client)
+    company_id = client.get("/api/hub/companies").json()["items"][0]["id"]
+
+    failed = client.post(f"/api/hub/companies/{company_id}/crm/link").json()
+    assert failed["crm_stato"] == "errore"
+    assert failed["crm_situazione"] == "Il CRM non ha risposto: Spazio dei lead non configurato."
+
+    fixed = client.post(f"/api/hub/companies/{company_id}/crm/link").json()
+    assert (fixed["crm_stato"], fixed["crm_situazione"]) == ("collegato", None)
+
+
+def test_linking_to_another_deal_sends_its_id_and_a_refusal_is_a_409(
+    client: TestClient, admin: None, sender: RecordingSender, crm: Any
+) -> None:
+    crm.answers[:] = [(201, CRM_ANSWER), (422, b'{"detail": "deal_id: non valido"}')]
+    _login(client, sender)
+    _request_company(client)
+    company_id = client.get("/api/hub/companies").json()["items"][0]["id"]
+    other = "0192e0a0-0000-7000-8000-0000000000aa"
+
+    ok = client.post(f"/api/hub/companies/{company_id}/crm/link", json={"deal_id": other})
+    assert ok.status_code == 200 and json.loads(crm.calls[0][3])["deal_id"] == other
+
+    refused = client.post(f"/api/hub/companies/{company_id}/crm/link", json={"deal_id": other})
+    assert refused.status_code == 409
+    assert "Il CRM ha rifiutato la richiesta: deal_id: non valido." in refused.text
+    assert client.get(f"/api/hub/companies/{company_id}").json()["crm_stato"] == "collegato"
+
+
+def test_riprova_needs_the_token_a_live_request_and_an_admin(
+    client: TestClient, admin: None, sender: RecordingSender, api_session: Session
+) -> None:
+    missing = client.post(f"/api/hub/companies/{UUID(int=1)}/crm/link")
+    assert missing.status_code == 401
+    _login(client, sender)
+    _request_company(client)
+    company_id = client.get("/api/hub/companies").json()["items"][0]["id"]
+
+    no_token = client.post(f"/api/hub/companies/{company_id}/crm/link")
+    assert no_token.status_code == 503
+    assert "REBASE_PIGRO_ENGAGEMENTS_TOKEN" in no_token.text
+
+    assert client.post(f"/api/hub/companies/{UUID(int=1)}/crm/link").status_code == 404
+    api_session.execute(text("UPDATE companies SET deleted_at = now()"))
+    api_session.commit()
+    assert client.post(f"/api/hub/companies/{company_id}/crm/link").status_code == 404

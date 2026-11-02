@@ -199,6 +199,29 @@ characters, days 0.5 to 5, weeks 1 to 104 whole, ten skills of 40, sintesi 800):
 is dropped, never clamped. A call that cannot answer gives `None` and the filing goes ahead with
 no draft. Switch it on in «Modelli AI» only once `privacy.html` names what it sends.
 
+## A request filed in the CRM (REB-868)
+
+Every request written by `CompanyService.request` (the wizard) or
+`MemberService.create_additional_request` (a member's second one) is `crm_stato =
+da_collegare` in the transaction of its row; a row written before migration 0046 has `NULL`
+and the sweep never picks it up (no backfill: it reaches the CRM only by an admin's «Riprova»
+or «Collega a un altro deal»). `rebase_core.crm_link.CrmLeadService` is `EngagementService`'s
+twin: `link(company_id, admin_id, deal_id)` locks the row to read what is sent and stamp the
+attempt, **releases it before the AI call and the HTTP call**, and locks again to write the
+answer; the draft of `crm_lead` is made once and kept in `crm_bozza`, so a CRM that is down
+is retried without spending the cap again. The call is `PUT {pigro_api_url}/api/rebase/leads/
+{id}` under `REBASE_PIGRO_ENGAGEMENTS_TOKEN` (no token: the request waits as `da_collegare`);
+`201`/`200` is `collegato`, `422` is `rifiutato` (only a person asks again), anything else
+`errore` (the sweep retries). The deal is built in code and every value is cut to the CRM's
+limits; `tariffa_oraria` and `ore_preventivate` are never sent. The first attempt is a
+`BackgroundTasks` job (`deps.get_crm_filing`); the sweep is `crm_sweep` in `rebase
+contracts-sweep`, its own round and its own line, outside `SigningService`, and leaves a row
+alone for five minutes after it was written or attempted so it never races that job.
+`POST /api/hub/companies/{id}/crm/link` is «Riprova»; with `{"deal_id"}` it is «Collega a un
+altro deal»: no draft, and a refusal is a 409 that changes nothing stored (the sweep would
+otherwise file the request by its address and make the second customer being corrected).
+The trail entry is `crm_link`.
+
 ## One person, once (REB-800)
 
 A person is their address **or** their LinkedIn profile. `rebase_core.linkedin` is the one place a

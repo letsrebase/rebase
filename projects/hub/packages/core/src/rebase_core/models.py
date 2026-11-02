@@ -375,6 +375,17 @@ class Company(Base, PrimaryKeyMixin, TimestampMixin, UtmMixin):
     # Same soft-delete as `Freelancer.deleted_at`, same reason: several requests per
     # company, and a wrongly-deleted one is a click away from being live again.
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    # Where this request stands in rebase's own CRM (REB-868, spec 2026-10-30 § 4): the
+    # states are a match's `pigro_stato` (`PIGRO_STATES`), `NULL` for a row written before
+    # the link existed, which the sweep never picks up. `crm_bozza` is the AI's draft of the
+    # first successful call, kept so a retry never asks again.
+    crm_stato: Mapped[str | None] = mapped_column(String(20), default=None)
+    crm_customer_id: Mapped[UUID | None] = mapped_column(default=None)
+    crm_deal_id: Mapped[UUID | None] = mapped_column(default=None)
+    crm_deal_url: Mapped[str | None] = mapped_column(Text, default=None)
+    crm_errore: Mapped[str | None] = mapped_column(Text, default=None)
+    crm_attempted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    crm_bozza: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True), default=None)
 
     __table_args__ = (
         Index("ix_companies_created_at", "created_at"),
@@ -410,6 +421,11 @@ class Company(Base, PrimaryKeyMixin, TimestampMixin, UtmMixin):
             name="ck_companies_giorni_presenza_together",
         ),
         CheckConstraint("numero_risorse >= 1", name="ck_companies_numero_risorse_positive"),
+        CheckConstraint(
+            "crm_stato IS NULL OR crm_stato IN "
+            "('da_collegare', 'collegato', 'errore', 'rifiutato')",
+            name="ck_companies_crm_stato",
+        ),
     )
 
 
@@ -710,7 +726,9 @@ ADMIN_ACTION_ENTITY_TYPES = (
 # the entity is the configuration, not a row): `ai_key` (its payload says «chiave
 # sostituita» and the last four characters, never the key), `ai_task`, `ai_price` and
 # `ai_switch` (a provider turned on or off), the last three with the before and after.
-# REB-498 adds `pigro_link` on `match`: an admin's «Riprova su Pigro», its payload the
+# REB-868 adds `crm_link` on `company`: an admin's «Riprova» or «Collega a un altro deal»,
+# its payload the outcome (`esito`), the CRM's sentence (`errore`) and, for the second,
+# `deal_id`. REB-498 adds `pigro_link` on `match`: an admin's «Riprova su Pigro», its payload the
 # outcome (`esito`) and the CRM's sentence (`errore`). REB-517 adds `talents_contacted`,
 # on entity type `team_request`: «Contatta i talenti» and «Rimanda», with how many talents
 # were mailed. No `CHECK` holds this list: it is the record of what the code writes.
@@ -764,6 +782,7 @@ ADMIN_ACTION_KINDS = (
     "note_deleted",
     "status_changed",
     "anon_cv_downloaded",
+    "crm_link",
 )
 
 
