@@ -15,6 +15,7 @@ it as the fallback and as what every test reads.
 import base64
 import html as html_escape
 import json
+import logging
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Protocol
@@ -22,6 +23,8 @@ from typing import Protocol
 from rebase_core.config import Settings
 from rebase_core.http import HttpCall, urllib_call
 from rebase_core.regimes import OCCASIONALE, PARTITA_IVA
+
+_log = logging.getLogger(__name__)
 
 RESEND_URL = "https://api.resend.com/emails"
 
@@ -106,6 +109,15 @@ def sender_from_settings(settings: Settings) -> EmailSender | None:
     if not settings.resend_api_key:
         return None
     return ResendSender(settings.resend_api_key, settings.mail_from)
+
+
+def send_after_response(sender: EmailSender, mail: Mail, label: str) -> None:
+    """For a background task: sends `mail` once the response has gone out. A refusal is
+    logged under `label`, which names what the mail was for (a request's id, a grant's),
+    never the address, the body or the key: the operator needs to know the provider said
+    no, not to whom."""
+    if not sender.send(mail):
+        _log.warning("%s: the provider refused the mail", label)
 
 
 # ---- the landing's box, as a mail --------------------------------------------------------
