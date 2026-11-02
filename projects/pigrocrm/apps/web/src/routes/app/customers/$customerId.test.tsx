@@ -45,9 +45,18 @@ function failed(error: unknown, status: number) {
   return Promise.resolve({ error, response: new Response(null, { status }) }) as never
 }
 
+/** The notes thread is a bare array, like the timeline: handed a page envelope the
+ *  overview's «Note» section would render `{items: []}.map` and take the tree down. */
+const NOTES_PATH = '/api/{collection}/{entity_id}/notes'
+
 function mockCustomerFetch(result: ReturnType<typeof ok> | ReturnType<typeof failed>) {
   mockGet.mockImplementation(
-    ((path: string) => (path === '/api/customers/{customer_id}' ? result : ok({ items: [] }))) as never,
+    ((path: string) =>
+      path === '/api/customers/{customer_id}'
+        ? result
+        : path === NOTES_PATH
+          ? ok([])
+          : ok({ items: [] })) as never,
   )
 }
 
@@ -66,12 +75,47 @@ const CUSTOMER = {
   custom_fields: {},
 } as never
 
+const NOTE = {
+  id: 'n1',
+  entity_type: 'customer',
+  entity_id: 'c1',
+  testo: 'Richiamare a settembre.',
+  autore: 'Giulia Rossi',
+  autore_id: 'u1',
+  fonte: 'web',
+  created_at: '2026-10-01T09:00:00Z',
+  modificata_at: null,
+  modificata_da: null,
+  modificabile: true,
+} as never
+
 function renderWithClient(ui: ReactElement) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>)
 }
 
 describe('CustomerDetail', () => {
+  /** REB-879: the Note card of the overview is the customer's thread, read from the
+   *  notes endpoint and not from a field of the customer. */
+  it('shows the customer’s notes thread in the overview', async () => {
+    mockGet.mockImplementation(
+      ((path: string) =>
+        path === '/api/customers/{customer_id}'
+          ? ok(CUSTOMER)
+          : path === NOTES_PATH
+            ? ok([NOTE])
+            : ok({ items: [] })) as never,
+    )
+    renderWithClient(<CustomerDetail />)
+    // The first render of the page in this file also pays the cold load of its lazy parts:
+    // under a loaded machine that outlasts the default second, so this one waits for the
+    // thread's own query, not for a guess about the clock.
+    expect(await screen.findByText('Richiamare a settembre.', {}, { timeout: 10_000 })).toBeInTheDocument()
+    expect(mockGet).toHaveBeenCalledWith(NOTES_PATH, {
+      params: { path: { collection: 'customers', entity_id: 'c1' } },
+    })
+  })
+
   /** REB-326: the terms the due date of every invoice to this customer is computed
    *  from, stated on the card so a wrong one is seen before an emission prints it. */
   describe('the payment terms row', () => {
@@ -122,6 +166,7 @@ describe('CustomerDetail', () => {
           return ok({ ...(CUSTOMER as object), owner_id: 'u2' })
         }
         if (path === '/api/users') return ok([{ id: 'u2', nome: 'Marco', attivo: true }])
+        if (path === NOTES_PATH) return ok([])
         return ok({ items: [] })
       }) as never)
       renderWithClient(<CustomerDetail />)
@@ -173,6 +218,7 @@ describe('CustomerDetail', () => {
         ((path: string) => {
           if (path === '/api/customers/{customer_id}') return ok(CUSTOMER)
           if (path === '/api/gmail/account') return ok(health)
+          if (path === NOTES_PATH) return ok([])
           return ok({ items: [] })
         }) as never,
       )
@@ -204,7 +250,11 @@ describe('CustomerDetail', () => {
     async function openFatture() {
       mockGet.mockImplementation(
         ((path: string) =>
-          path === '/api/customers/{customer_id}' ? ok(CUSTOMER) : ok({ items: [] })) as never,
+          path === '/api/customers/{customer_id}'
+            ? ok(CUSTOMER)
+            : path === NOTES_PATH
+              ? ok([])
+              : ok({ items: [] })) as never,
       )
       renderWithClient(<CustomerDetail />)
       await userEvent.click(await screen.findByRole('tab', { name: 'Fatture' }))

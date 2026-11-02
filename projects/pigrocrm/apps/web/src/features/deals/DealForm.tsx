@@ -40,8 +40,20 @@ const NATIVE_FIELDS: FieldDefinition[] = [
     required: false,
     options: [],
   },
-  { key: 'note', label: 'Note', type: 'textarea', required: false, options: [] },
 ]
+
+/**
+ * Create-only: on a new deal `note` is its first note, signed and dated by whoever creates it
+ * (REB-879). Once it exists the notes are a thread of their own on the record's page, and
+ * the update schema refuses `note` outright, so an edit never draws this field.
+ */
+const FIRST_NOTE_FIELD: FieldDefinition = {
+  key: 'note',
+  label: 'Nota iniziale',
+  type: 'textarea',
+  required: false,
+  options: [],
+}
 // `owner_id` (REB-780) is the same kind of key as `customer_id`: an id drawn by its own
 // picker below `DynamicForm`, never a `FieldDefinition` (a `select` field would submit the
 // option's label). It is seeded by `dealToFormValues` apart from `NATIVE_FIELD_KEYS`.
@@ -253,7 +265,7 @@ export function DealForm({
         // The user cleared a native column that used to hold a value -- say so
         // explicitly instead of dropping the key, or the old value survives
         // untouched. Which spelling says it depends on the column's type, and this
-        // form is the one that has both: `nome` and `note` clear on `""`, while
+        // form is the one that has both: `nome` clears on `""`, while
         // `valore_previsto`, `ore_preventivate`, `valore_preventivato` and
         // `data_chiusura_prevista` clear on `null`. Sending `""` for those four was
         // a 422 from Pydantic before it was anything else -- an estimate typed once
@@ -320,7 +332,7 @@ export function DealForm({
         )}
 
         <DynamicForm
-          fields={[...NATIVE_FIELDS, ...customFields]}
+          fields={[...NATIVE_FIELDS, ...(isCreate ? [FIRST_NOTE_FIELD] : []), ...customFields]}
           // Flattened for rendering only -- one control per key is all a form can
           // draw. The state behind it stays split (`DealFormValues`), so what
           // reaches `submit` still knows which namespace each value came from.

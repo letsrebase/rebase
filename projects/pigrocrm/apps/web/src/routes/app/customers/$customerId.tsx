@@ -30,6 +30,7 @@ import { EmailTab } from '@/features/gmail/EmailTab'
 import { useGmailConfigured } from '@/features/gmail/queries'
 import { InvoicesTab } from '@/features/invoices/InvoicesTab'
 import { NewProformaButton } from '@/features/invoices/NewProformaDialog'
+import { NotesSection } from '@/features/notes/NotesSection'
 import { toProblem, type ProblemDetail } from '@/lib/api'
 import { useCanWrite } from '@/lib/auth'
 import { useEntitySchema } from '@/lib/schema'
@@ -282,14 +283,9 @@ export function CustomerDetail() {
               </Card>
             )}
 
-            {customer.note && (
-              <Card className="lg:col-span-2">
-                <CardContent className="pt-6">
-                  <h2 className="mb-3 font-semibold">Note</h2>
-                  <p className="whitespace-pre-wrap text-sm">{customer.note}</p>
-                </CardContent>
-              </Card>
-            )}
+            <div className="lg:col-span-2">
+              <NotesSection entityType="customer" entityId={customerId} />
+            </div>
           </div>
         }
         links={

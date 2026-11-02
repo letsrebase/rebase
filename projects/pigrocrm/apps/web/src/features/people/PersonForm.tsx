@@ -29,8 +29,20 @@ const NATIVE_FIELDS: FieldDefinition[] = [
   { key: 'email', label: 'Email', type: 'text', required: false, options: [] },
   { key: 'telefono', label: 'Telefono', type: 'text', required: false, options: [] },
   { key: 'linkedin', label: 'LinkedIn', type: 'url', required: false, options: [] },
-  { key: 'note', label: 'Note', type: 'textarea', required: false, options: [] },
 ]
+
+/**
+ * Create-only: on a new person `note` is its first note, signed and dated by whoever creates it
+ * (REB-879). Once it exists the notes are a thread of their own on the record's page, and
+ * the update schema refuses `note` outright, so an edit never draws this field.
+ */
+const FIRST_NOTE_FIELD: FieldDefinition = {
+  key: 'note',
+  label: 'Nota iniziale',
+  type: 'textarea',
+  required: false,
+  options: [],
+}
 
 /**
  * Every top-level key `PersonRead`/`PersonUpdate` carry outside `custom_fields`,
@@ -305,7 +317,7 @@ export function PersonForm({
         />
 
         <DynamicForm
-          fields={[...NATIVE_FIELDS, ...customFields]}
+          fields={[...NATIVE_FIELDS, ...(initial === undefined ? [FIRST_NOTE_FIELD] : []), ...customFields]}
           // Flattened for rendering only -- one control per key is all a form can
           // draw. The state behind it stays split (`PersonFormValues`), so what
           // reaches `submit` still knows which namespace each value came from.

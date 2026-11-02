@@ -31,6 +31,7 @@ import { EmailTab } from '@/features/gmail/EmailTab'
 import { useGmailConfigured } from '@/features/gmail/queries'
 import { InvoicesTab } from '@/features/invoices/InvoicesTab'
 import { NewProformaButton } from '@/features/invoices/NewProformaDialog'
+import { NotesSection } from '@/features/notes/NotesSection'
 import { TimeEntriesTab } from '@/features/time/TimeEntriesTab'
 import { toProblem, type ProblemDetail } from '@/lib/api'
 import { useCanWrite } from '@/lib/auth'
@@ -334,14 +335,7 @@ export function DealDetail() {
               </Card>
 
               <div className="space-y-6 lg:col-span-2">
-                {deal.note && (
-                  <Card>
-                    <CardContent className="pt-6">
-                      <h2 className="mb-3 font-semibold">Note</h2>
-                      <p className="text-sm whitespace-pre-wrap">{deal.note}</p>
-                    </CardContent>
-                  </Card>
-                )}
+                <NotesSection entityType="deal" entityId={dealId} />
 
                 {/* The latest ten, next to the deal rather than behind the Timeline tab:
                     a stage moved, a field changed, an hour logged -- on Pipedrive this

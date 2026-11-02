@@ -26,6 +26,9 @@ export const queryKeys = {
   deals: (params?: unknown) => ['deals', params ?? {}] as const,
   deal: (id: string) => ['deal', id] as const,
   timeline: (entity: string, id: string) => ['timeline', entity, id] as const,
+  // The notes thread of a deal, a customer or a person (REB-879), keyed like the timeline
+  // by entity type and id so one write can refresh both.
+  notes: (entity: string, id: string) => ['notes', entity, id] as const,
   fields: (entityType: string) => ['field-definitions', entityType] as const,
   schema: (entityType: string) => ['schema', entityType] as const,
   stages: ['pipeline-stages'] as const,

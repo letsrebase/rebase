@@ -44,8 +44,20 @@ const NATIVE_FIELDS: FieldDefinition[] = [
   // to this customer from. Days empty means the fiscal profile's apply.
   { key: 'giorni_pagamento', label: 'Giorni di pagamento', type: 'number', required: false, options: [] },
   { key: 'pagamento_fine_mese', label: 'Scadenza a fine mese', type: 'checkbox', required: false, options: [] },
-  { key: 'note', label: 'Note', type: 'textarea', required: false, options: [] },
 ]
+
+/**
+ * Create-only: on a new customer `note` is its first note, signed and dated by whoever creates it
+ * (REB-879). Once it exists the notes are a thread of their own on the record's page, and
+ * the update schema refuses `note` outright, so an edit never draws this field.
+ */
+const FIRST_NOTE_FIELD: FieldDefinition = {
+  key: 'note',
+  label: 'Nota iniziale',
+  type: 'textarea',
+  required: false,
+  options: [],
+}
 
 const NATIVE_FIELD_KEYS = NATIVE_FIELDS.map((field) => field.key)
 
@@ -319,7 +331,7 @@ export function CustomerForm({
         </DialogHeader>
 
         <DynamicForm
-          fields={[...NATIVE_FIELDS, ...customFields]}
+          fields={[...NATIVE_FIELDS, ...(isCreate ? [FIRST_NOTE_FIELD] : []), ...customFields]}
           // Flattened for rendering only -- one control per key is all a form can
           // draw. The state behind it stays split (see `CustomerFormValues`), so what
           // reaches `submit` still knows which namespace each value came from. Custom
