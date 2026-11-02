@@ -54,7 +54,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../select'
-import { Separator } from '../separator'
 import {
   Sheet,
   SheetContent,
@@ -78,7 +77,6 @@ import {
 } from '../table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../tabs'
 import { Textarea } from '../textarea'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../tooltip'
 
 import './gallery.css'
 
@@ -134,12 +132,12 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 
 export function Gallery() {
   return (
-    <TooltipProvider>
+    <>
       <main className="mx-auto flex max-w-5xl flex-col px-6 py-10">
         <header className="flex flex-col gap-2 pb-6">
           <h1 className="text-2xl font-medium">@rebase/ui</h1>
           <p className="max-w-prose text-sm text-muted-foreground">
-            The nineteen primitives the hub and the CRM share, on the tokens of the
+            The seventeen primitives the hub and the CRM share, on the tokens of the
             application-variant record: squared, 1px ink lines, one 4px step shadow on
             what floats and none on what rests. Every variant, every size and every
             state each one declares, so a review has one page instead of two products.
@@ -416,22 +414,9 @@ export function Gallery() {
           </Tabs>
         </Section>
 
-        <Section title="Separator" note="Both orientations.">
-          <div className="flex w-56 flex-col gap-2">
-            <span className="text-sm">Sopra</span>
-            <Separator />
-            <span className="text-sm">Sotto</span>
-          </div>
-          <div className="flex h-12 items-center gap-2">
-            <span className="text-sm">Sinistra</span>
-            <Separator orientation="vertical" />
-            <span className="text-sm">Destra</span>
-          </div>
-        </Section>
-
         <Section
           title="Floating surfaces"
-          note="Dialog, sheet on all four sides, dropdown, popover and tooltip: each on the 4px step shadow. Open one on load with ?open=dialog, sheet, sheet-left, sheet-top, sheet-bottom, menu, popover or select."
+          note="Dialog, sheet on all four sides, dropdown and popover: each on the 4px step shadow. Open one on load with ?open=dialog, sheet, sheet-left, sheet-top, sheet-bottom, menu, popover or select."
         >
           <Row label="dialog">
             <Dialog defaultOpen={open === 'dialog'}>
@@ -506,14 +491,6 @@ export function Gallery() {
               </PopoverContent>
             </Popover>
           </Row>
-          <Row label="tooltip">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="outline">Passaci sopra</Button>
-              </TooltipTrigger>
-              <TooltipContent>Il totale include l&apos;IVA</TooltipContent>
-            </Tooltip>
-          </Row>
           <Row label="toast">
             <Button variant="outline" onClick={() => toast.success('Fattura salvata')}>
               Mostra un toast
@@ -522,6 +499,6 @@ export function Gallery() {
         </Section>
         <Toaster />
       </main>
-    </TooltipProvider>
+    </>
   )
 }
