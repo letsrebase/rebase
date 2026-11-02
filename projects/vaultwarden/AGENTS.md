@@ -51,7 +51,7 @@ or say clearly that it cannot.
 
 ## Verifying a change
 
-From the repository root (Docker, node 22, openssl, shellcheck):
+From the repository root (Docker, node 24, openssl, shellcheck):
 
 ```
 shellcheck projects/vaultwarden/scripts/*.sh projects/vaultwarden/tests/*.sh

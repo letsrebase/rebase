@@ -253,4 +253,4 @@ loop once with the right key and once with a revoked one and checks the monitor 
 success and then a `/fail`; restores the backup into a new directory
 with `scripts/restore.sh` and reads the item back from a scratch server. CI runs it on every
 change to this directory and on every `vaultwarden-v*` tag. Locally, from the repository
-root: `projects/vaultwarden/tests/backup-restore.sh` (Docker, node 22 and openssl).
+root: `projects/vaultwarden/tests/backup-restore.sh` (Docker, node 24 and openssl).

@@ -36,8 +36,7 @@
       # The two renderer binaries below are the upstream Linux release tarballs, one
       # per architecture in `rendererReleases`, so these are the systems the shell,
       # the packages and the modules exist for. A Mac is not among them, and this
-      # repository has no Linux builder of its own any more (qasimodo.com is gone,
-      # 2026-09-25). `nix build .#packages.x86_64-linux.pigrocrm-api`, as
+      # repository has no Linux builder of its own. `nix build .#packages.x86_64-linux.pigrocrm-api`, as
       # preflight.json does, still needs one; `scripts/nix-pnpm-hash.sh` builds the
       # one value that changes by hand, the pnpm store hash below, in a `nixos/nix`
       # container instead.
@@ -67,7 +66,7 @@
           pythonVersion = readPin ./.python-version "([0-9]+\\.[0-9]+)[[:space:]]*";
           python = pkgs."python${lib.replaceStrings [ "." ] [ "" ] pythonVersion}";
 
-          # `engines.node` is ">=22.13"; the attribute is `nodejs_22`.
+          # `engines.node` is ">=22.13"; the attribute is `nodejs_24`.
           nodeMajor = lib.head (
             builtins.match ">=([0-9]+)(\\.[0-9]+)*" (builtins.fromJSON (builtins.readFile ./package.json)).engines.node
           );

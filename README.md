@@ -14,7 +14,7 @@ The monorepo for rebase's products.
 
 ## Getting started
 
-Requires Python 3.13, Node 22 and Docker. [uv](https://docs.astral.sh/uv/) and
+Requires Python 3.13, Node 24 and Docker. [uv](https://docs.astral.sh/uv/) and
 [pnpm](https://pnpm.io/) manage the two toolchains; pnpm's version is pinned in
 `package.json` and corepack will honour it.
 
@@ -24,7 +24,7 @@ pnpm install --frozen-lockfile
 ```
 
 On Nix, `nix develop` (or `direnv allow`, the `.envrc` is committed) gives a shell
-with all of that except Docker, which stays the host's: Python 3.13 and Node 22 as
+with all of that except Docker, which stays the host's: Python 3.13 and Node 24 as
 the repository declares them, and Pandoc and Typst at the exact versions
 `projects/pigrocrm/Dockerfile.api` pins, since the document renderer is verified
 against those and no other. Playwright's browsers are not in the shell, so the two

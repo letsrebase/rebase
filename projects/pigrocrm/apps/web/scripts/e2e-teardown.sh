@@ -7,7 +7,7 @@
 # the frontend preview server. Safe to run even if setup only got partway, or was
 # already torn down -- every step tolerates "already gone".
 #
-# Fix round 1: the frontend server step is not redundant with Playwright's
+# The frontend server step is not redundant with Playwright's
 # own end-of-run cleanup, even though that cleanup usually runs fine on its
 # own. Confirmed live: sending a real SIGINT to this whole process group (the
 # way a terminal's Ctrl-C actually behaves) correctly tore down the API and
@@ -24,9 +24,9 @@
 # started it or why, is what makes this guarantee hold regardless.
 set -uo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 # shellcheck source=./e2e-env.sh
-source "$REPO_ROOT/apps/web/scripts/e2e-env.sh"
+source "$PROJECT_ROOT/apps/web/scripts/e2e-env.sh"
 
 echo "== pigrocrm e2e: stopping the API =="
 if [ -f "$PIGROCRM_E2E_API_PIDFILE" ]; then

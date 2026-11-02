@@ -6,17 +6,16 @@
 # Deliberately independent of whatever else is running on this machine: the
 # container name, Postgres port (55433, not the default 5432) and database name
 # are all suffixed "-e2e" precisely so this can run next to a developer's own
-# Postgres, or next to the manual "Stack recipe" from the task brief, without
-# either one seeing the other.
+# Postgres, without either one seeing the other.
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-cd "$REPO_ROOT"
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+cd "$PROJECT_ROOT"
 
 # shellcheck source=./e2e-env.sh
-source "$REPO_ROOT/apps/web/scripts/e2e-env.sh"
+source "$PROJECT_ROOT/apps/web/scripts/e2e-env.sh"
 
-# Fix round 1: a Vite server orphaned by a previous, signal-interrupted run
+# A Vite server orphaned by a previous, signal-interrupted run
 # (e2e-teardown.sh's own comment has the full mechanism) would otherwise sit on
 # this port forever, and Playwright's `reuseExistingServer: !CI`
 # (playwright.config.ts) would then silently reuse that stale process for
@@ -44,7 +43,7 @@ echo "== pigrocrm e2e: bringing up Postgres on :$PIGROCRM_E2E_PG_PORT =="
 docker rm -f "$PIGROCRM_E2E_CONTAINER" >/dev/null 2>&1 || true
 docker run --rm -d --name "$PIGROCRM_E2E_CONTAINER" \
   -e POSTGRES_PASSWORD=pigrocrm -e POSTGRES_USER=pigrocrm -e POSTGRES_DB=pigrocrm_e2e \
-  -p "$PIGROCRM_E2E_PG_PORT":5432 postgres:17-alpine >/dev/null
+  -p "127.0.0.1:${PIGROCRM_E2E_PG_PORT}:5432" postgres:17-alpine >/dev/null
 
 echo "== pigrocrm e2e: waiting for Postgres to accept connections =="
 until docker exec "$PIGROCRM_E2E_CONTAINER" pg_isready -U pigrocrm >/dev/null 2>&1; do sleep 1; done
@@ -85,11 +84,9 @@ with session_factory(engine)() as session:
         UserCreate(email="e2e@pigro.it", password="supersegreta1", nome="E2E", ruolo="admin"),
         Actor.system(),
     )
-    # `seed_defaults` is admin-only as of this codebase's own Task 15 review (it now
-    # calls `actor.require_admin` itself, not just the REST router) -- the brief's own
-    # sample called this with no `actor` at all, which `PipelineService.seed_defaults`
-    # no longer accepts. `Actor.system()` is the same actor `createadmin` and this
-    # script's own user-seeding step above already use.
+    # `seed_defaults` is admin-only (it calls `actor.require_admin` itself, not just the REST
+    # router). `Actor.system()` is the same actor `createadmin` and the user-seeding step above
+    # already use.
     PipelineService(session).seed_defaults(Actor.system())
     # The timesheet's PDF path needs the «Rapporto ore» template row to exist; without
     # it `TimeReportService.render_pdf` raises a `ValidationFailed` naming `pigrocrm

@@ -6,12 +6,19 @@ locals {
   rebase_zone_id = "904a60b42314c819a66340ae8c1a0e88"
 }
 
+# The origin server's address, once. Every record that names it is un-proxied: there is no CDN
+# in front of the origin (INFRA-A-14), which is why the vhosts carry their own rate limits
+# (infra/origin/nginx/rate-limits.conf).
+locals {
+  origin_ip = "204.168.255.175"
+}
+
 resource "cloudflare_dns_record" "rebase_apex_a" {
   provider = cloudflare.rebase
   zone_id  = local.rebase_zone_id
   name     = "letsrebase.com"
   type     = "A"
-  content  = "204.168.255.175"
+  content  = local.origin_ip
   ttl      = 1
   proxied  = false
   comment  = "Hetzner origin (migration 2026-09-14)"
@@ -22,7 +29,7 @@ resource "cloudflare_dns_record" "rebase_pigro_a" {
   zone_id  = local.rebase_zone_id
   name     = "pigro.letsrebase.com"
   type     = "A"
-  content  = "204.168.255.175"
+  content  = local.origin_ip
   ttl      = 1
   proxied  = false
   comment  = "Hetzner origin (migration 2026-09-14)"
@@ -33,7 +40,7 @@ resource "cloudflare_dns_record" "rebase_preview_a" {
   zone_id  = local.rebase_zone_id
   name     = "preview.letsrebase.com"
   type     = "A"
-  content  = "204.168.255.175"
+  content  = local.origin_ip
   ttl      = 1
   proxied  = false
   comment  = "Hetzner origin (migration 2026-09-14)"
@@ -44,7 +51,7 @@ resource "cloudflare_dns_record" "rebase_preview_pigro_a" {
   zone_id  = local.rebase_zone_id
   name     = "preview.pigro.letsrebase.com"
   type     = "A"
-  content  = "204.168.255.175"
+  content  = local.origin_ip
   ttl      = 1
   proxied  = false
   comment  = "Hetzner origin (migration 2026-09-14)"
@@ -191,7 +198,7 @@ resource "cloudflare_dns_record" "rebase_firma_a" {
   zone_id  = local.rebase_zone_id
   name     = "firma.letsrebase.com"
   type     = "A"
-  content  = "204.168.255.175"
+  content  = local.origin_ip
   ttl      = 1
   proxied  = false
   comment  = "Documenso, the contracts' signing site (REB-393)"
@@ -205,7 +212,7 @@ resource "cloudflare_dns_record" "rebase_vault_a" {
   zone_id  = local.rebase_zone_id
   name     = "vault.letsrebase.com"
   type     = "A"
-  content  = "204.168.255.175"
+  content  = local.origin_ip
   ttl      = 1
   proxied  = false
   comment  = "Vaultwarden, the members' password manager (REB-648)"
