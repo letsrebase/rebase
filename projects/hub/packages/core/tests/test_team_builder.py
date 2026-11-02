@@ -56,7 +56,7 @@ from rebase_core.team_public import (
     PLACE_WITHHELD_RIASSUNTO,
     PLACE_WITHHELD_SUMMARY,
 )
-from rebase_core.team_schemas import CardRead, TeamProposalCreate
+from rebase_core.team_schemas import CardRead, TeamEconomics, TeamProposalCreate
 
 NOW = datetime(2026, 9, 26, 9, 30, tzinfo=UTC)
 DESCRIZIONE = (
@@ -402,7 +402,7 @@ def test_engine_maps_the_answer_to_freelancers(clean: Session) -> None:
     )
 
     assert read.riassunto == RIASSUNTO
-    assert read.luogo == {"locale": False, "dove": None}
+    assert read.luogo.model_dump() == {"locale": False, "dove": None}
     assert read.origine == "admin"
     assert read.previous_id is None
     assert read.created_at == NOW
@@ -419,11 +419,9 @@ def test_engine_maps_the_answer_to_freelancers(clean: Session) -> None:
     assert (first.modalita, first.fascia) == ("ibrido", Band(min=400, max=500))  # 420
     assert (second.posizione, second.freelancer_id, second.giorni_settimana) == (2, backend, None)
     assert (second.modalita, second.fascia) == ("remoto", Band(min=500, max=650))  # 630
-    assert read.economia == {
-        "giorno": Band(min=900, max=1150),
-        "mese": Band(min=900 * 22, max=1150 * 22),
-        "giorni_mese": 22,
-    }
+    assert read.economia == TeamEconomics(
+        giorno=Band(min=900, max=1150), mese=Band(min=900 * 22, max=1150 * 22), giorni_mese=22
+    )
     assert read.model_dump(mode="json")["economia"]["giorno"] == {"min": 900, "max": 1150}
 
     # One call, shaped for a proposal: the rules, then the catalogue as a cached block, and
@@ -575,7 +573,7 @@ def test_engine_keeps_remote_members_on_a_local_need(
         TeamProposalCreate(descrizione=DESCRIZIONE), origine="admin", user_id=None
     )
 
-    assert local.luogo == {"locale": True, "dove": "Torino"}
+    assert local.luogo.model_dump() == {"locale": True, "dove": "Torino"}
     assert local.riassunto == sentence
     assert [(m.posizione, m.freelancer_id, m.modalita) for m in local.team] == [
         (1, remote, "remoto"),
@@ -598,7 +596,7 @@ def test_a_team_dropped_whole_carries_the_hubs_sentence(clean: Session) -> None:
     )
 
     assert (read.riassunto, read.team) == (NO_FIT_SENTENCE, [])
-    assert read.economia == {"giorno": None, "mese": None, "giorni_mese": 22}
+    assert read.economia.model_dump() == {"giorno": None, "mese": None, "giorni_mese": 22}
     [row] = _rows(clean)
     assert (row.riassunto, row.team) == (NO_FIT_SENTENCE, [])
     assert row.luogo == {"locale": False, "dove": "Bari"}
@@ -615,8 +613,8 @@ def test_an_empty_catalogue_asks_nobody(clean: Session) -> None:
 
     assert llm.requests == []
     assert (read.riassunto, read.team) == (NO_FIT_SENTENCE, [])
-    assert read.luogo == {"locale": False, "dove": None}
-    assert read.economia == {"giorno": None, "mese": None, "giorni_mese": 22}
+    assert read.luogo.model_dump() == {"locale": False, "dove": None}
+    assert read.economia.model_dump() == {"giorno": None, "mese": None, "giorni_mese": 22}
     # The row is written all the same, so «Rigenera» and a later read find it; it cost
     # nothing, and says so.
     [row] = _rows(clean)
@@ -666,8 +664,8 @@ def test_an_empty_team_when_nobody_fits(clean: Session) -> None:
     )
 
     assert (read.riassunto, read.team) == (sentence, [])
-    assert read.luogo == {"locale": True, "dove": "Bari"}  # the visitor's own word
-    assert read.economia == {"giorno": None, "mese": None, "giorni_mese": 22}
+    assert read.luogo.model_dump() == {"locale": True, "dove": "Bari"}  # the visitor's own word
+    assert read.economia.model_dump() == {"giorno": None, "mese": None, "giorni_mese": 22}
 
 
 def test_a_member_without_a_rate_leaves_the_team_without_a_band(clean: Session) -> None:
@@ -681,7 +679,7 @@ def test_a_member_without_a_rate_leaves_the_team_without_a_band(clean: Session) 
     )
 
     assert [m.fascia for m in read.team] == [Band(min=500, max=650), None]
-    assert read.economia == {"giorno": None, "mese": None, "giorni_mese": 22}
+    assert read.economia.model_dump() == {"giorno": None, "mese": None, "giorni_mese": 22}
 
 
 @pytest.mark.parametrize(
@@ -1395,9 +1393,12 @@ def test_a_public_summary_that_names_a_members_place_is_withheld(clean: Session)
     assert withheld_copied.riassunto == PLACE_WITHHELD_RIASSUNTO
     assert withheld_short.riassunto == PLACE_WITHHELD_RIASSUNTO
     # The public `luogo` keeps a `dove` the visitor wrote and drops one the model made up.
-    assert named.luogo == {"locale": True, "dove": "Torino"}
-    assert withheld_copied.luogo == {"locale": True, "dove": None}
-    assert builder.get(withheld_copied.id, public=False).luogo == {"locale": True, "dove": "Alba"}
+    assert named.luogo.model_dump() == {"locale": True, "dove": "Torino"}
+    assert withheld_copied.luogo.model_dump() == {"locale": True, "dove": None}
+    assert builder.get(withheld_copied.id, public=False).luogo.model_dump() == {
+        "locale": True,
+        "dove": "Alba",
+    }
     assert PLACE_WITHHELD_RIASSUNTO == (
         "Il riassunto di questa proposta non è pubblico: la modalità di lavoro di ogni "
         "persona proposta è sulla sua scheda."
@@ -1465,7 +1466,7 @@ def test_a_read_leaves_out_who_left_the_catalogue(clean: Session, change: str) -
     read = builder.get(proposal.id, public=False)
 
     assert [(m.posizione, m.freelancer_id) for m in read.team] == [(1, staying)]
-    assert read.economia["giorno"] == Band(min=500, max=650)  # the one left, alone
+    assert read.economia.giorno == Band(min=500, max=650)  # the one left, alone
     [stored] = _rows(clean)
     assert len(stored.team) == 2  # the row keeps them
 

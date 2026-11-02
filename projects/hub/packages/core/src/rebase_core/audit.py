@@ -29,10 +29,10 @@ import math
 from collections.abc import Mapping
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from typing import Any, TypedDict
+from typing import Annotated, Any, TypedDict
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field, SkipValidation
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -190,6 +190,82 @@ def sanitize_payload(payload: Mapping[str, object]) -> dict[str, Any]:
 # ---- the trail itself ----------------------------------------------------------------
 
 
+class AdminActionFailure(TypedDict):
+    freelancer_id: str
+    reason: str
+
+
+def _never(value: object) -> bool:
+    return False
+
+
+# A key of a payload that may be absent: `exclude_if` is what keeps it out of `required` in
+# the response schema (`ResponseModel` lists every field as required otherwise), and it
+# never drops a key that is there.
+_MAY_BE_ABSENT = Field(exclude_if=_never)
+
+
+class AdminActionPayload(TypedDict, total=False):
+    """What an entry carries beyond its kind. Which keys are there depends on the kind, so
+    none is required; the keys listed are the ones the admin pages read, and any other
+    key a writer adds is kept and sent as it is (`extra="allow"`). Ids are strings,
+    amounts decimal strings: that is how `sanitize_payload` stores them.
+
+    * a field override or clear (`field_changes`): `changed`, `before`, `after`;
+    * `vetted`: `vetted`; a note or status entry: `fonte`, `testo`, `nota_id`;
+    * `pigro_link`: `esito`, `errore`; `anon_cv_downloaded`: `riusato`;
+    * a merge (REB-800): `into_freelancer_id`/`from_freelancer_id`, `moved`, `lasciati`,
+      `cv`, `scheda_da_rigenerare`, and `rimesse` on the undo;
+    * the AI audit (REB-861): `provider`, `model`, `source`, `azione`, `task`, and for a
+      card regeneration its start (`limit`, `queued`, `batch`, `batch_id`) and its end
+      (`start_action_id`, the counts, `cost_eur`, `failures`, `stop_reason`, ...)."""
+
+    __pydantic_config__ = ConfigDict(extra="allow")  # type: ignore[misc]
+
+    changed: Annotated[list[str], _MAY_BE_ABSENT]
+    before: Annotated[dict[str, Any] | str, _MAY_BE_ABSENT]
+    after: Annotated[dict[str, Any] | str, _MAY_BE_ABSENT]
+    vetted: Annotated[bool, _MAY_BE_ABSENT]
+    fonte: Annotated[str, _MAY_BE_ABSENT]
+    testo: Annotated[str, _MAY_BE_ABSENT]
+    nota_id: Annotated[str, _MAY_BE_ABSENT]
+    esito: Annotated[str, _MAY_BE_ABSENT]
+    errore: Annotated[str | None, _MAY_BE_ABSENT]
+    riusato: Annotated[bool, _MAY_BE_ABSENT]
+    reason: Annotated[str, _MAY_BE_ABSENT]
+    into_freelancer_id: Annotated[str, _MAY_BE_ABSENT]
+    from_freelancer_id: Annotated[str, _MAY_BE_ABSENT]
+    moved: Annotated[dict[str, int | list[str]], _MAY_BE_ABSENT]
+    lasciati: Annotated[dict[str, int], _MAY_BE_ABSENT]
+    rimesse: Annotated[dict[str, int], _MAY_BE_ABSENT]
+    cv: Annotated[str, _MAY_BE_ABSENT]
+    scheda_da_rigenerare: Annotated[bool, _MAY_BE_ABSENT]
+    action_id: Annotated[str, _MAY_BE_ABSENT]
+    provider: Annotated[str, _MAY_BE_ABSENT]
+    model: Annotated[str, _MAY_BE_ABSENT]
+    source: Annotated[str, _MAY_BE_ABSENT]
+    azione: Annotated[str, _MAY_BE_ABSENT]
+    task: Annotated[str, _MAY_BE_ABSENT]
+    limit: Annotated[int, _MAY_BE_ABSENT]
+    queued: Annotated[int, _MAY_BE_ABSENT]
+    batch: Annotated[bool, _MAY_BE_ABSENT]
+    batch_id: Annotated[str, _MAY_BE_ABSENT]
+    start_action_id: Annotated[str | None, _MAY_BE_ABSENT]
+    written: Annotated[int | None, _MAY_BE_ABSENT]
+    failed: Annotated[int | None, _MAY_BE_ABSENT]
+    superseded: Annotated[int | None, _MAY_BE_ABSENT]
+    skipped: Annotated[int | None, _MAY_BE_ABSENT]
+    errored: Annotated[int | None, _MAY_BE_ABSENT]
+    cost_eur: Annotated[str | None, _MAY_BE_ABSENT]
+    unpriced: Annotated[int, _MAY_BE_ABSENT]
+    failures: Annotated[list[AdminActionFailure] | None, _MAY_BE_ABSENT]
+    start_missing: Annotated[bool, _MAY_BE_ABSENT]
+    stopped: Annotated[bool, _MAY_BE_ABSENT]
+    stop_reason: Annotated[str, _MAY_BE_ABSENT]
+    left: Annotated[int, _MAY_BE_ABSENT]
+    batch_status: Annotated[str, _MAY_BE_ABSENT]
+
+
 class AdminActionRead(ResponseModel):
     """One entry of the trail, as an admin reads it: who, when, what kind, and the
     diff for an `overridden`/`cleared` entry (`payload["changed"/"before"/"after"]`,
@@ -201,7 +277,7 @@ class AdminActionRead(ResponseModel):
     kind: AdminActionKind
     admin_id: UUID
     admin_nome: str
-    payload: dict[str, Any]
+    payload: Annotated[AdminActionPayload, SkipValidation]
     created_at: datetime
 
 

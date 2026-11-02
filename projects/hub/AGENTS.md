@@ -53,6 +53,15 @@ reach the page, not turn into a 500 on the response. `test_openapi_contract.py` 
 alias to its constant. Left as plain `str` because no constant says what is allowed:
 `FreelancerRead.provenienza`, a document's `tipo`, the CRM invoice's `tipo`/`stato`.
 
+**A JSON field has a type, not `dict[str, Any]`.** `TeamProposalRead.luogo` and `.economia` are
+`TeamPlace` and `TeamEconomics`, a campaign's `filtri` is its `Filtri` union, and an
+`AdminActionRead.payload` is `AdminActionPayload` (`audit.py`), a `TypedDict` of the keys the admin
+pages read (the diff, the merge, the AI audit's counts and costs) that keeps any other key a writer
+adds (`extra="allow"`) and is not validated on the way out. Its keys are all optional because
+which ones are there depends on the kind: each is `Annotated[..., _MAY_BE_ABSENT]`
+(`exclude_if`, which is what keeps a key out of `required` under `ResponseModel`). A writer that
+starts putting a new key in a payload adds it to that `TypedDict`.
+
 **The UI comes from `@rebase/ui`, and this application writes no primitive at all.**
 The seven hand-written ones it used to carry were deleted when the package took over
 (REB-300), so `apps/web/src/components/` holds only what is genuinely the hub's

@@ -43,7 +43,7 @@ from rebase_core.vocabulary import (
 FilterAmount = Annotated[Decimal, Field(ge=0, decimal_places=2)]
 
 
-class TalentiFiltri(BaseModel):
+class TalentiFiltri(ResponseModel):
     """The Talenti list's own filters (`GET /api/hub/talent`, `talenti.py:191`), stored
     on the campaign and replayed through `TalentiService` when the list is shown and when
     a mail is about to leave. `origine` is the marketing page the person started from
@@ -65,7 +65,7 @@ class TalentiFiltri(BaseModel):
     creato_a: datetime | None = None
 
 
-class AziendeFiltri(BaseModel):
+class AziendeFiltri(ResponseModel):
     """The company list's own filters (`companies.py:160`)."""
 
     lista: Literal["aziende"]
@@ -215,7 +215,7 @@ class CampaignRead(ResponseModel):
     slug: str
     fonte: CampaignFonte
     stato_percorso: str | None
-    filtri: dict[str, object] | None
+    filtri: Filtri | None
     segue_id: UUID | None
     oggetto: str
     testo: str

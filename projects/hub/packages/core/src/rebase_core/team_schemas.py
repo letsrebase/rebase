@@ -13,7 +13,7 @@ gives for its own flow.
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Literal, NamedTuple
+from typing import Literal, NamedTuple
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
@@ -312,22 +312,39 @@ class TeamMemberRead(ResponseModel):
     fascia: Band | None
 
 
+class TeamPlace(ResponseModel):
+    """What the engine read about place in a proposal's description: whether the client
+    wants someone local, and where (`None` when no place was named, or on the public read
+    when the visitor did not write it)."""
+
+    locale: bool
+    dove: str | None
+
+
+class TeamEconomics(ResponseModel):
+    """The team's bands from its members', per day and per month at `giorni_mese` days;
+    `None` when any member has no rate."""
+
+    giorno: Band | None
+    mese: Band | None
+    giorni_mese: int
+
+
 class TeamProposalRead(ResponseModel):
     """A proposal as the page shows it (§ 3.3). `luogo` is what the engine read about
-    place in the description, `{"locale": bool, "dove": str | None}`, and stays on the
-    public read: it is the visitor's own words. `economia` is `{"giorno": Band | None,
-    "mese": Band | None, "giorni_mese": 22}`, the team's bands from its members',
-    `None` when any member has no rate. `descrizione` and `persone` are what the
-    proposal was asked with (REB-675): the public page opened on a proposal by its id
-    fills its box from them and sends them back on «Rigenera»."""
+    place in the description (`TeamPlace`), and stays on the public read: it is the
+    visitor's own words. `economia` is the team's bands from its members' (`TeamEconomics`).
+    `descrizione` and `persone` are what the proposal was asked with (REB-675): the public
+    page opened on a proposal by its id fills its box from them and sends them back on
+    «Rigenera»."""
 
     id: UUID
     descrizione: str
     persone: int | None
     riassunto: str
-    luogo: dict[str, Any]
+    luogo: TeamPlace
     team: list[TeamMemberRead]
-    economia: dict[str, Any]
+    economia: TeamEconomics
     previous_id: UUID | None
     origine: TeamProposalOrigin
     created_at: datetime
