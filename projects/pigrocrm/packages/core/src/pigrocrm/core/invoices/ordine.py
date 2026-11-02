@@ -17,9 +17,8 @@ from dataclasses import dataclass
 from datetime import date
 
 from pigrocrm.core.errors import ValidationFailed
+from pigrocrm.core.invoices.constants import ENTITY
 from pigrocrm.core.invoices.schemas import ORDINE_NUMERO_MAX_LENGTH
-
-ENTITY = "invoice"
 
 ORDINE_FIELDS: tuple[str, ...] = ("ordine_numero", "ordine_data", "ordine_cig", "ordine_cup")
 
