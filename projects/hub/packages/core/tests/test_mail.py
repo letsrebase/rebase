@@ -6,6 +6,7 @@ the JSON and the failure classification run for real.
 
 import base64
 import json
+import logging
 
 import pytest
 
@@ -13,19 +14,19 @@ from rebase_core.config import Settings
 from rebase_core.mail import (
     RESEND_URL,
     Attachment,
-    CardSummary,
     Mail,
     RecordingSender,
     ResendSender,
-    document_name,
-    magic_link_mail,
     sender_from_settings,
+)
+from rebase_core.mail_contracts import (
+    document_name,
     signed_copy_mail,
     signing_cancelled_mail,
     signing_request_mail,
-    talent_cloud_opened_mail,
-    welcome_mail,
 )
+from rebase_core.mail_member import CardSummary, magic_link_mail, welcome_mail
+from rebase_core.mail_team import talent_cloud_opened_mail
 
 KEY = "re_non_una_chiave_vera"
 FROM = "Rebase <ciao@letsrebase.com>"
@@ -76,6 +77,38 @@ def test_resend_answers_false_and_never_raises_on_any_failure() -> None:
     assert ResendSender(KEY, FROM, http=FakeHttp(status=422)).send(mail) is False
     assert ResendSender(KEY, FROM, http=FakeHttp(status=500)).send(mail) is False
     assert ResendSender(KEY, FROM, http=FakeHttp(raises=True)).send(mail) is False
+
+
+@pytest.mark.parametrize("status", [401, 429, 503])
+def test_a_refusal_logs_the_provider_status_and_never_the_address_or_the_key(
+    status: int, caplog: pytest.LogCaptureFixture
+) -> None:
+    mail = Mail(to="ada@studio.it", subject="x", text="y")
+    # Alembic's `fileConfig` (run by any test that built the database first) disables the
+    # loggers that already existed; this one is about what the logger says.
+    logging.getLogger("rebase_core.mail").disabled = False
+
+    with caplog.at_level("WARNING", logger="rebase_core.mail"):
+        assert ResendSender(KEY, FROM, http=FakeHttp(status=status)).send(mail) is False
+
+    assert f"status {status}" in caplog.text
+    assert "ada@studio.it" not in caplog.text
+    assert KEY not in caplog.text
+
+
+def test_an_unreachable_provider_is_logged_by_the_exception_class_only(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    mail = Mail(to="ada@studio.it", subject="x", text="y")
+    # Alembic's `fileConfig` (run by any test that built the database first) disables the
+    # loggers that already existed; this one is about what the logger says.
+    logging.getLogger("rebase_core.mail").disabled = False
+
+    with caplog.at_level("WARNING", logger="rebase_core.mail"):
+        ResendSender(KEY, FROM, http=FakeHttp(raises=True)).send(mail)
+
+    assert "OSError" in caplog.text
+    assert "la rete" not in caplog.text
 
 
 def test_the_recording_sender_keeps_what_was_sent() -> None:

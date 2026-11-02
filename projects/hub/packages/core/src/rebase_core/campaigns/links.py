@@ -11,7 +11,7 @@ the one thing the hub can see of a page it does not own, the click Resend report
 import re
 from urllib.parse import urlsplit
 
-from rebase_core.mail import SITE
+from rebase_core.mail_layout import SITE
 from rebase_core.models import CAMPAIGN_BUTTON_URL_MAX_LENGTH
 
 LINK = "link"
