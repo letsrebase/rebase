@@ -16,6 +16,7 @@ from collections.abc import Sequence
 from datetime import date, timedelta
 
 import pytest
+from fakes.customer_fixtures import make_customer_with_address
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from test_invoice_import_confirm import (
@@ -23,7 +24,6 @@ from test_invoice_import_confirm import (
     CLIENTE_PIVA,
     CONSULENZA,
     LOTTO,
-    _customer,
     _fixture,
     _invoice_count,
     _svc,
@@ -207,7 +207,7 @@ def test_a_review_reads_every_verdict_and_writes_nothing(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     service = _svc(db_session, local_storage)
-    known = _customer(db_session, partita_iva=CLIENTE_PIVA)
+    known = make_customer_with_address(db_session, partita_iva=CLIENTE_PIVA)
     invoices, documents, customers = (
         _invoice_count(db_session),
         _document_count(db_session),
@@ -275,7 +275,7 @@ def test_a_single_invoice_file_is_written_and_its_xml_filed_under_the_customer(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     service = _svc(db_session, local_storage)
-    customer = _customer(db_session, partita_iva=CLIENTE_PIVA)
+    customer = make_customer_with_address(db_session, partita_iva=CLIENTE_PIVA)
     content = _fixture(CONSULENZA)
     documents = _document_count(db_session)
 
@@ -302,7 +302,7 @@ def test_the_same_file_confirmed_twice_is_written_once_and_files_one_xml(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     service = _svc(db_session, local_storage)
-    _customer(db_session, partita_iva=CLIENTE_PIVA)
+    make_customer_with_address(db_session, partita_iva=CLIENTE_PIVA)
     content = _fixture(CONSULENZA)
 
     [first] = service.confirm_upload([("fattura.xml", content)], {}, ADMIN)
@@ -341,7 +341,7 @@ def test_a_decision_names_the_customer_to_attach_by_the_partys_tax_id(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     service = _svc(db_session, local_storage)
-    chosen = _customer(db_session)
+    chosen = make_customer_with_address(db_session)
     content = _fixture(CONSULENZA)
 
     [row] = service.confirm_upload(
@@ -359,7 +359,7 @@ def test_a_skip_decision_leaves_the_invoice_out_even_when_its_customer_matches_n
     """The customer was created by somebody else after the review: matching would write the
     invoice, and the person had unticked it."""
     service = _svc(db_session, local_storage)
-    _customer(db_session, partita_iva=CLIENTE_PIVA)
+    make_customer_with_address(db_session, partita_iva=CLIENTE_PIVA)
     invoices = _invoice_count(db_session)
 
     [row] = service.confirm_upload(

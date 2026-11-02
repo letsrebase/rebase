@@ -223,7 +223,7 @@ def test_the_reported_line_survives_an_if_inside_an_each_inside_a_fence() -> Non
 
 def test_a_package_import_cannot_reach_the_network() -> None:
     """Typst downloads `@preview` packages on import and has no flag to refuse. The
-    render's environment points every proxy variable at a closed port, so the import
+    render points every proxy variable of the child process at a closed port, so the import
     fails the compile instead of fetching: with network access on the host, an
     unblocked compile of this document would succeed."""
     markdown = '```{=typst}\n#import "@preview/cetz:0.3.0": canvas\n```\n'
