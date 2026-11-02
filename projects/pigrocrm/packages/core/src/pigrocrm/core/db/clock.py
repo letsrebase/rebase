@@ -17,7 +17,7 @@ problem. This module is about the other kind of column.
 
 `_now` is a module-level function rather than an inline call so a test can freeze it
 without patching the standard library. It is the single freeze point for the whole
-product: `pigrocrm.core.clock.oggi_in_italia()` -- which predates this module and has
+product: `pigrocrm.core.db.clock.today_local()` -- which predates this module and has
 eight fiscal callers -- is now a thin alias over `today_local()`, so freezing `_now`
 freezes both. That delegation is the point of the exercise. Two functions each doing
 their own `datetime.now(...).date()` would be two clocks, and two clocks in one product
@@ -31,6 +31,11 @@ from zoneinfo import ZoneInfo
 
 from pigrocrm.core.config import Settings, get_settings
 from pigrocrm.core.errors import ValidationFailed
+
+# The issuer's own calendar, pinned to Rome and not read from `Settings.timezone`: it
+# projects an instant that was already stored (`local_date`), and an invoice's civil date
+# must not move because somebody set `PIGROCRM_TIMEZONE`.
+ITALY_TZ = ZoneInfo("Europe/Rome")
 
 # Days per month, non-leap. February is corrected in `month_bounds`.
 _DAYS_IN_MONTH = (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
@@ -49,6 +54,12 @@ def today_local(settings: Settings | None = None) -> date:
     """
     resolved = settings if settings is not None else get_settings()
     return _now().astimezone(ZoneInfo(resolved.timezone)).date()
+
+
+def local_date(instant: datetime) -> date:
+    """The civil date, in Rome, of an instant already stored (an invoice's `created_at`).
+    A projection of a known instant, not a reading of the clock."""
+    return instant.astimezone(ITALY_TZ).date()
 
 
 def month_bounds(anno: int, mese: int) -> tuple[date, date]:

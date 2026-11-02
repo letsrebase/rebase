@@ -74,7 +74,7 @@ def check_issue_date(data_emissione: date, today: date) -> None:
     `data_emissione` is a `date` in the issuer's own calendar, never the UTC projection
     of an instant: `toISOString()` on 31 December at 23:30 CET yields 1 January, which
     puts an immutable document in the wrong fiscal year. `today` therefore comes from
-    `oggi_in_italia()` (see `clock.py`), never a bare `date.today()`.
+    `today_local()` (see `db/clock.py`), never a bare `date.today()`.
     """
     if data_emissione > today:
         raise ValidationFailed(

@@ -1,4 +1,3 @@
-import calendar
 from datetime import date
 from uuid import UUID
 
@@ -17,6 +16,7 @@ from pigrocrm.core.calendario.schemas import (
     DayWorkUnit,
     DueInvoice,
 )
+from pigrocrm.core.db import month_bounds as db_month_bounds
 from pigrocrm.core.db import today_local
 from pigrocrm.core.errors import ValidationFailed
 from pigrocrm.core.money import ZERO_HOURS, sum_hours
@@ -31,16 +31,13 @@ def month_bounds(mese: str) -> tuple[date, date]:
     February is -- and validated before it is parsed, so `2026-13` reads as «non è un
     mese» instead of arriving as a `ValueError` from the standard library.
 
-    `calendar.monthrange` and not `date(anno, mese + 1, 1) - timedelta(days=1)`: the
-    second is correct until December, where `mese + 1` is 13.
     """
     if not MESE_RE.fullmatch(mese):
         raise ValidationFailed(
             ENTITY, "mese", "non è un mese valido", expected="AAAA-MM, per esempio 2026-09"
         )
     anno, numero = (int(part) for part in mese.split("-"))
-    ultimo = calendar.monthrange(anno, numero)[1]
-    return date(anno, numero, 1), date(anno, numero, ultimo)
+    return db_month_bounds(anno, numero)
 
 
 class CalendarService:

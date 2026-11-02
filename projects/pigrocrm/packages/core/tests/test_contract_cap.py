@@ -12,9 +12,10 @@ from uuid import uuid4
 
 import pydantic
 import pytest
+from fakes.customer_fixtures import make_customer
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from test_contracts_service import _create_payload, _customer, _invoice
+from test_contracts_service import _create_payload, _invoice
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.analytics.schemas import CeilingSimulationQuery
@@ -35,7 +36,7 @@ def _world(db_session: Session, *, tetto: str | None = "50.00") -> tuple[Custome
     """A customer of 300 euros out of 1,000 invoiced over the contract's first year, which
     starts on 10 March: 30% of the azienda's revenue, a 9,000 invoice before the
     anniversary left out of the window."""
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     other = Customer(ragione_sociale="Altro Cliente")
     db_session.add(other)
     db_session.flush()
@@ -54,7 +55,7 @@ def _world(db_session: Session, *, tetto: str | None = "50.00") -> tuple[Custome
 
 
 def test_a_cap_is_stored_read_changed_and_cleared(db_session: Session) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     service = ContractService(db_session)
     created = service.create(_create_payload(customer.id, tetto_quota_cliente="50.00"), ADMIN)
     assert created.tetto_quota_cliente == Decimal("50.00")
@@ -70,7 +71,9 @@ def test_a_cap_is_stored_read_changed_and_cleared(db_session: Session) -> None:
 
 
 def test_a_contract_without_a_cap_has_none(db_session: Session) -> None:
-    created = ContractService(db_session).create(_create_payload(_customer(db_session).id), ADMIN)
+    created = ContractService(db_session).create(
+        _create_payload(make_customer(db_session).id), ADMIN
+    )
     assert created.tetto_quota_cliente is None
 
 
@@ -207,7 +210,7 @@ def test_the_simulator_reads_the_year_the_money_is_expected_in(db_session: Sessi
 
 
 def test_the_simulator_counts_only_the_contracts_own_currency(db_session: Session) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contract = ContractService(db_session).create(
         _create_payload(customer.id, inizio=date(2026, 3, 10), tetto_quota_cliente="50.00"),
         ADMIN,
@@ -334,7 +337,7 @@ def test_a_contract_of_another_azienda_is_not_simulated_against_this_one(
 def test_a_contract_in_another_currency_is_not_simulated_with_an_amount_in_euros(
     db_session: Session,
 ) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contract = ContractService(db_session).create(
         _create_payload(customer.id, divisa="USD", tetto_quota_cliente="50.00"), ADMIN
     )

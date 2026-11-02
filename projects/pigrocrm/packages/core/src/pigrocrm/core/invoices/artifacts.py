@@ -6,7 +6,7 @@ from typing import Literal
 from uuid import UUID
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.clock import ITALY_TZ
+from pigrocrm.core.db.clock import local_date
 from pigrocrm.core.documents.models import Document, DocumentVersion
 from pigrocrm.core.documents.schemas import DocumentCreate
 from pigrocrm.core.emitter.assets import LegalEntityAssets
@@ -91,7 +91,7 @@ class InvoiceArtifacts:
         sender may move while the document is a draft. The `created_at` fallback is
         for a row written before migration 0033 by a path that skipped its backfill:
         it is the civil date in Europe/Rome the PDF printed before the column was
-        filled, never `oggi_in_italia()`, so a re-render does not drift with the
+        filled, never `today_local()`, so a re-render does not drift with the
         clock.
 
         `anno`/`numero` are placeholders that satisfy the schema's non-nullable bounds
@@ -106,7 +106,7 @@ class InvoiceArtifacts:
             snapshot,
             invoice.created_at.year,
             1,
-            data_emissione=invoice.data_emissione or invoice.created_at.astimezone(ITALY_TZ).date(),
+            data_emissione=invoice.data_emissione or local_date(invoice.created_at),
             data_scadenza=None,
         )
 

@@ -125,7 +125,7 @@ class GoogleTokenClient:
         # Monotonic, not wall clock: an NTP step backwards must not extend a token's
         # apparent life, and a step forwards must not expire every cached token at
         # once. This is the one clock in this codebase that is deliberately not
-        # `clock.oggi_in_italia()` -- a token's remaining life is a duration, not a
+        # `clock.today_local()` -- a token's remaining life is a duration, not a
         # date, and no timezone or calendar is involved in measuring it.
         self._clock = clock
         self._cache: dict[UUID, _CachedToken] = {}

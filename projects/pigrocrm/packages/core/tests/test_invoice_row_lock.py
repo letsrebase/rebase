@@ -20,9 +20,9 @@ from sqlalchemy import Engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.clock import oggi_in_italia
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
+from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.emitter.schemas import LegalEntityUpsert
 from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import ImmutableField
@@ -210,7 +210,7 @@ def test_annul_and_mark_transmitted_racing_on_one_invoice_leave_exactly_one_winn
             try:
                 _service(session, tmp_path).mark_transmitted_externally(
                     invoice_id,
-                    InvoiceTransmitted(data=oggi_in_italia()),
+                    InvoiceTransmitted(data=today_local()),
                     ADMIN,
                 )
             except Exception:

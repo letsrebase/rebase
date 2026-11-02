@@ -832,10 +832,10 @@ def test_a_new_proforma_is_dated_today_in_the_issuer_s_calendar(
 ) -> None:
     """The PDF used to print the render day, so the same proforma re-rendered tomorrow
     said tomorrow. The date is the sender's and it is stored at creation."""
-    from pigrocrm.core.clock import oggi_in_italia
+    from pigrocrm.core.db.clock import today_local
 
     proforma = service.create(InvoiceCreate(customer_id=customer_id, tipo="proforma"), ADMIN)
-    assert proforma.data_emissione == oggi_in_italia()
+    assert proforma.data_emissione == today_local()
 
 
 def test_a_proforma_may_be_created_with_its_own_date(
@@ -1028,9 +1028,9 @@ def test_unpaid_for_customer_lists_the_issued_unpaid_rows_oldest_deadline_first(
 
     from fakes.invoice_fixtures import unpaid_invoice
 
-    from pigrocrm.core.clock import oggi_in_italia
+    from pigrocrm.core.db.clock import today_local
 
-    today = oggi_in_italia()
+    today = today_local()
     customer = Customer(ragione_sociale="Debitore S.r.l.")
     db_session.add(customer)
     db_session.flush()

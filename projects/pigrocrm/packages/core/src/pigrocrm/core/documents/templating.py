@@ -8,9 +8,9 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.clock import oggi_in_italia
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.customers.schemas import CustomerRead
+from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.documents.context import ENTITY, DocumentContext
 from pigrocrm.core.documents.models import Document, DocumentVersion
 from pigrocrm.core.documents.schemas import (
@@ -90,14 +90,14 @@ class DocumentTemplating:
         scope["cliente"] = (
             CustomerRead.model_validate(customer).model_dump(mode="json") if customer else {}
         )
-        # `oggi_in_italia()`, never a bare `date.today()`: see `clock.py`. `{{oggi}}` is
+        # `today_local()`, never a bare `date.today()`: see `db/clock.py`. `{{oggi}}` is
         # the date a template prints on the document itself. On a host that is not running
         # in Europe/Rome (the API image runs in UTC) every render between midnight and
         # 01:00 CET would date the document to the previous day, and on the night of
         # 31 December to the previous *year*; the date is frozen into an immutable
         # version and `regenerate` reproduces it from that snapshot, so nothing later
         # corrects it.
-        scope.setdefault("oggi", oggi_in_italia().isoformat())
+        scope.setdefault("oggi", today_local().isoformat())
         return scope
 
     def render_to_pdf(

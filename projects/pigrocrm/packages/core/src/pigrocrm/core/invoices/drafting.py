@@ -12,7 +12,7 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.clock import oggi_in_italia
+from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.db.transactions import savepoint
 from pigrocrm.core.documents.context import ENTITY as DOCUMENT_ENTITY
 from pigrocrm.core.errors import Conflict, ImmutableField, ValidationFailed
@@ -116,11 +116,11 @@ class InvoiceDrafting:
             custom_fields=self._validated_custom(data.custom_fields or {}),
         )
         if data.tipo == "proforma":
-            # `oggi_in_italia()`, not `date.today()`: see `clock.py`'s module docstring
+            # `today_local()`, not `date.today()`: see `db/clock.py`'s module docstring
             # (this project's `Dockerfile.api` pins no `TZ`, so a bare `date.today()` is
             # the UTC date). Low-stakes here -- `riferimento` is a non-fiscal, internal
             # identifier -- but there is no reason to let the wrong clock answer at all.
-            today = oggi_in_italia()
+            today = today_local()
             invoice.riferimento = proforma_riferimento(
                 today.year, ctx.repo.next_proforma_sequence()
             )

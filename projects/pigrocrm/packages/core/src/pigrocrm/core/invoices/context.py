@@ -14,10 +14,10 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.clock import oggi_in_italia
 from pigrocrm.core.config import Settings, get_settings
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.customers.service import CustomerService
+from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.service import DocumentService
 from pigrocrm.core.drive.reader import DriveReader
@@ -191,7 +191,7 @@ class InvoiceContext:
                 days = self.fiscal.snapshot().giorni_scadenza
             except NotFound:
                 return None
-        return scadenza_da_termini(oggi_in_italia(), days, fine_mese=month_end)
+        return scadenza_da_termini(today_local(), days, fine_mese=month_end)
 
     # ---- reads ----------------------------------------------------------------
 

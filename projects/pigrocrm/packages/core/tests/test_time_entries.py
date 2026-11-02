@@ -364,7 +364,7 @@ def test_the_future_limit_is_italys_own_day_not_the_processs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """§6.3's limit is a day in the issuer's calendar, so it must be read off Italy's
-    clock and not the host's -- see `clock.py` and `orologio.py`.
+    clock and not the host's -- see `db/clock.py` and `orologio.py`.
 
     Frozen at 00:30 on 1 January in Rome, which is still 23:30 on 31 December for a
     process running in UTC (the API image does). Against the host's day, an hour logged

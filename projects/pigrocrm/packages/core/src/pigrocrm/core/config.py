@@ -161,7 +161,7 @@ class Settings(BaseSettings):
     # depending on who looked at it.
     #
     # It is a setting rather than a constant because `db/clock.py` is now the *only*
-    # clock -- `clock.oggi_in_italia()` delegates to it -- so changing this changes the
+    # clock -- `clock.today_local()` delegates to it -- so changing this changes the
     # fiscal calendar too, deliberately and in one place. An operator who moves it off
     # Europe/Rome is telling the product where the invoices are issued from, which is
     # the only reading under which one clock and one answer stay true.

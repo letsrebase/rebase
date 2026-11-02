@@ -16,7 +16,7 @@ Every constraint on `invoices` is respected here rather than worked around, beca
 fixture that reached the database by relaxing a `CHECK` would be testing a shape
 production cannot hold: `anno` and `numero` travel together, `numero` implies an issued
 `fattura`, and `(anno, numero)` is unique. The year is derived from the caller's own
-`due` date -- which comes from `oggi_in_italia()` -- and never from a literal, so this
+`due` date -- which comes from `today_local()` -- and never from a literal, so this
 file does not expire.
 """
 

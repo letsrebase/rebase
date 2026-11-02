@@ -20,9 +20,9 @@ from aziende_helpers import azienda_url
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.clock import oggi_in_italia
 from pigrocrm.core.contracts.models import Contract
 from pigrocrm.core.customers.models import Customer
+from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.work_units.models import WorkUnit
 
@@ -30,7 +30,7 @@ from pigrocrm.core.work_units.models import WorkUnit
 # current year, so a hard-coded 2026 would be a suite that starts failing on the first
 # of January. The window below is the whole of the current year, which always contains
 # both today's hours and today's issued invoices.
-OGGI = oggi_in_italia()
+OGGI = today_local()
 ANNO = OGGI.year
 DA = OGGI.replace(month=1, day=1).isoformat()
 A = OGGI.replace(month=12, day=31).isoformat()

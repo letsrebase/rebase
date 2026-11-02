@@ -15,8 +15,8 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.analytics.service import AnalyticsService
-from pigrocrm.core.clock import oggi_in_italia
 from pigrocrm.core.customers.models import Customer
+from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.emitter.schemas import LegalEntityUpsert
 from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import ValidationFailed
@@ -28,7 +28,7 @@ from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm.core.storage.local import LocalFileStorage
 
 ADMIN = Actor(id=None, type="system", role="admin")
-ANNO = oggi_in_italia().year
+ANNO = today_local().year
 
 
 @pytest.fixture

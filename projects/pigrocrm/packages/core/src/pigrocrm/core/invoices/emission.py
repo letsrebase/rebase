@@ -7,7 +7,7 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.clock import oggi_in_italia
+from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.db.transactions import savepoint
 from pigrocrm.core.errors import Conflict, ImmutableField, ValidationFailed
 from pigrocrm.core.fiscal.regime import RegimeStrategy
@@ -106,7 +106,7 @@ class InvoiceEmission:
         """
         actor.require_admin("issue_invoice")
         ctx = self.ctx
-        today = oggi_in_italia()
+        today = today_local()
         source = ctx.require(invoice_id)
         ctx.writing_azienda(source.azienda_id)
         data_emissione = data.data_emissione or today
@@ -344,10 +344,10 @@ class InvoiceEmission:
                 trasmessa_esternamente_il=invoice.trasmessa_esternamente_il.isoformat(),
             )
         invoice.stato = "annullata"
-        # `oggi_in_italia()`, never a bare `date.today()`: the date printed on an
+        # `today_local()`, never a bare `date.today()`: the date printed on an
         # annulment record is subject to the same "issuer's own calendar" requirement as
-        # `data_emissione` (see `clock.py`).
-        invoice.annullata_il = oggi_in_italia()
+        # `data_emissione` (see `db/clock.py`).
+        invoice.annullata_il = today_local()
         invoice.motivo_annullamento = data.motivo
         ctx.activities.record(
             ENTITY,
@@ -389,7 +389,7 @@ class InvoiceEmission:
                 "la consegna si registra una volta sola: e' il fatto su cui si decide "
                 "se un annullamento e' ancora possibile",
             )
-        check_transmission_date(data.data, invoice.data_emissione, oggi_in_italia())
+        check_transmission_date(data.data, invoice.data_emissione, today_local())
         invoice.trasmessa_esternamente_il = data.data
         ctx.activities.record(
             ENTITY, invoice.id, "transmitted_externally", actor, {"data": data.data.isoformat()}

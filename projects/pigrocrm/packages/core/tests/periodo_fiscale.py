@@ -8,7 +8,7 @@ P&L test would have failed at once on 1 January 2027, with a message about a clo
 that reads like a product defect and is not one.
 
 Deriving the year is necessary but not sufficient, and that gap is why this lives in a
-module of its own instead of a bare `ANNO = oggi_in_italia().year` at the top of each
+module of its own instead of a bare `ANNO = today_local().year` at the top of each
 file. "This year, March" satisfies the closed-year limit and fails the other one from 1
 January to 28 February, when March has not happened yet and the same check refuses the
 date as `data futura`. Trading a failure every January for a failure every winter is not
@@ -26,7 +26,7 @@ a fix. The three days below are the only shape that holds on *every* possible ru
     the future on every run day, and a future day is refused for hours as firmly as for
     invoices.
 
-`oggi_in_italia()` and never `date.today()`, for the reason `clock.py` sets out at
+`today_local()` and never `date.today()`, for the reason `db/clock.py` sets out at
 length: these constants must be the same "today" that `issue()` will compare them
 against, and `date.today()` reads the process's own timezone -- UTC in the API image, and
 anything at all on a developer's machine.
@@ -34,9 +34,9 @@ anything at all on a developer's machine.
 
 from datetime import date, timedelta
 
-from pigrocrm.core.clock import oggi_in_italia
+from pigrocrm.core.db.clock import today_local
 
-OGGI: date = oggi_in_italia()
+OGGI: date = today_local()
 PRIMO_DEL_MESE: date = OGGI.replace(day=1)
 GIORNO_PRIMA: date = PRIMO_DEL_MESE - timedelta(days=1)
 

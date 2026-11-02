@@ -42,7 +42,6 @@ invoices» means the customer's: an issued fattura of the contract's customer.
 
 from __future__ import annotations
 
-import calendar
 from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
@@ -52,6 +51,7 @@ from sqlalchemy import ColumnElement, exists, func, or_, select
 
 from pigrocrm.core.contracts.models import Contract, RateCard
 from pigrocrm.core.contracts.projection import RECURRING_FEE_TIPO
+from pigrocrm.core.db.clock import month_bounds
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
 from pigrocrm.core.invoices.naming import numero_completo
 from pigrocrm.core.mail import giorno_breve
@@ -97,7 +97,7 @@ def period_start(months: int, day: date) -> date:
 def period_end(months: int, day: date) -> date:
     """The last day of the calendar month, quarter or year `day` falls in."""
     last = ((day.month - 1) // months) * months + months
-    return date(day.year, last, calendar.monthrange(day.year, last)[1])
+    return month_bounds(day.year, last)[1]
 
 
 def _periodic(contract: Contract) -> int | None:

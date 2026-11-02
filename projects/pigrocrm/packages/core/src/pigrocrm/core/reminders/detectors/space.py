@@ -24,9 +24,8 @@ The other two automations run inside the request that triggers them
 
 from __future__ import annotations
 
-from calendar import monthrange
 from collections.abc import Iterable
-from datetime import date, datetime, time, timedelta
+from datetime import datetime, time, timedelta
 from typing import Final
 from uuid import NAMESPACE_DNS, UUID, uuid5
 from zoneinfo import ZoneInfo
@@ -34,6 +33,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 
 from pigrocrm.core.contracts.models import Contract
+from pigrocrm.core.db.clock import month_bounds
 from pigrocrm.core.drive.models import GoogleDriveAccount
 from pigrocrm.core.gmail.models import GoogleAccount
 from pigrocrm.core.gmail.schemas import SCOPE_READONLY
@@ -107,7 +107,7 @@ def detect_not_closed(ctx: DetectorContext) -> list[Detection]:
     cutoff = ctx.today - timedelta(days=max(ctx.bound(NOT_CLOSED), 1))
     found: list[Detection] = []
     for anno, mese in _months_from(min(closed)):
-        last_day = date(anno, mese, monthrange(anno, mese)[1])
+        last_day = month_bounds(anno, mese)[1]
         if last_day > cutoff:
             break
         if (anno, mese) in closed or not recipients:

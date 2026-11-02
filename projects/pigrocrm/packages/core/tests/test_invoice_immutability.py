@@ -15,8 +15,8 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.clock import oggi_in_italia
 from pigrocrm.core.customers.models import Customer
+from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.emitter.schemas import LegalEntityUpsert
 from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import Conflict, ImmutableField, PermissionDenied, ValidationFailed
@@ -36,10 +36,10 @@ from pigrocrm.core.storage.local import LocalFileStorage
 
 ADMIN = Actor(id=None, type="system", role="admin")
 COLLABORATORE = Actor(id=None, type="user", role="collaboratore")
-# `oggi_in_italia()`, not `date.today()`: this test's own oracle must agree with the
-# service's (see `clock.py` and Task 10's report -- this host runs JST, not
+# `today_local()`, not `date.today()`: this test's own oracle must agree with the
+# service's (see `db/clock.py` and Task 10's report -- this host runs JST, not
 # Europe/Rome, so the two would silently diverge otherwise).
-TODAY = oggi_in_italia()
+TODAY = today_local()
 
 
 @pytest.fixture

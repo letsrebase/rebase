@@ -6,8 +6,8 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.clock import oggi_in_italia
 from pigrocrm.core.customers.models import Customer
+from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.db.transactions import savepoint
 from pigrocrm.core.emitter.models import LegalEntity
 from pigrocrm.core.errors import Conflict, ValidationFailed
@@ -133,7 +133,7 @@ class IssuedInvoiceImporter:
         actor.require_admin(IMPORT_ACTION)
         ctx = self.ctx
         customer = ctx.check_owner(data.customer_id, data.deal_id)
-        self._check_declared(data, today=oggi_in_italia())
+        self._check_declared(data, today=today_local())
         # Read-only, above the lock: the assignment happens after the row exists. The
         # Drive branch reads bytes over HTTP here too: a network read is not a database
         # write, and "the file is outside the configured roots" or "it is not a PDF" are
