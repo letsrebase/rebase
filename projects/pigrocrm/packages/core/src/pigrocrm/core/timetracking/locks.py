@@ -14,8 +14,7 @@ and do not want a second set: this table governs only `time_entries` and `costs`
 from datetime import UTC, date, datetime
 from uuid import UUID
 
-from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
@@ -33,6 +32,10 @@ ENTITY = "period_lock"
 # UUID from the year and month -- would make the timeline of "the closures" impossible
 # to read as one sequence, which is the only way anybody wants to read it.
 PERIOD_LOCK_TIMELINE_ID = UUID("00000000-0000-0000-0000-0000706c6f63")
+
+# The first key of the advisory locks taken per month (`PeriodLockRepository.lock_month`),
+# a namespace of this project's own next to `gmail/repository.py` and `customers/repository.py`.
+PERIOD_LOCK_NAMESPACE = 0x7093
 
 MESI_ITALIANI = (
     "gennaio",
@@ -61,8 +64,26 @@ class PeriodLockRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
 
+    def lock_month(self, anno: int, mese: int, *, exclusive: bool) -> None:
+        """Holds a transaction-scoped advisory lock on one month until the transaction ends.
+
+        Why an advisory lock and not `SELECT ... FOR SHARE` on the lock row: a month that
+        is open has no row, and a row lock cannot be taken on a row that does not exist yet,
+        so a write that checked an open month and a close that inserts its row would never
+        meet. The key is derived from the month itself, so it exists for every month. A
+        write holds it shared (`assert_writable`), a close or reopen holds it exclusive
+        (`close_period`, `reopen_period`): shared ones do not block each other, and the
+        locks one session holds never conflict with each other."""
+        function = "pg_advisory_xact_lock" if exclusive else "pg_advisory_xact_lock_shared"
+        self.session.execute(
+            text(f"SELECT {function}(:ns, :key)"),  # noqa: S608 - one of two fixed names
+            {"ns": PERIOD_LOCK_NAMESPACE, "key": anno * 100 + mese},
+        )
+
     def get(self, anno: int, mese: int) -> PeriodLock | None:
-        return self.session.get(PeriodLock, (anno, mese))
+        """The row as it is now: overwritten from the database, so a lock another
+        transaction closed or reopened is not read from a copy loaded earlier."""
+        return self.session.get(PeriodLock, (anno, mese), populate_existing=True)
 
     def add(self, lock: PeriodLock) -> PeriodLock:
         self.session.add(lock)
@@ -98,6 +119,11 @@ class PeriodLockService:
 
     def close_period(self, data: PeriodLockCreate, actor: Actor) -> PeriodLockRead:
         actor.require_unscoped_admin("close_period")
+        # Exclusive for the month, before the check: two closes of the same month queue and
+        # the second finds the first one's row, and the writes that already checked the month
+        # (they hold it shared) commit before this one inserts. The composite primary key
+        # stays the database's own guard.
+        self.repo.lock_month(data.anno, data.mese, exclusive=True)
         if self.repo.get(data.anno, data.mese) is not None:
             raise Conflict(
                 ENTITY,
@@ -105,33 +131,24 @@ class PeriodLockService:
                 anno=data.anno,
                 mese=data.mese,
             )
-        lock = PeriodLock(
-            anno=data.anno, mese=data.mese, chiuso_il=datetime.now(UTC), chiuso_da=actor.id
-        )
-        try:
-            self.repo.add(lock)
-            self.activities.record(
-                ENTITY,
-                PERIOD_LOCK_TIMELINE_ID,
-                "closed",
-                actor,
-                {"anno": data.anno, "mese": data.mese},
+        lock = self.repo.add(
+            PeriodLock(
+                anno=data.anno, mese=data.mese, chiuso_il=datetime.now(UTC), chiuso_da=actor.id
             )
-            self.session.commit()
-        except IntegrityError as exc:
-            # The pre-check cannot cover two concurrent closes of the same month:
-            # there the composite primary key is the only authority.
-            self.session.rollback()
-            raise Conflict(
-                ENTITY,
-                f"il periodo {period_label(data.anno, data.mese)} è già chiuso",
-                anno=data.anno,
-                mese=data.mese,
-            ) from exc
+        )
+        self.activities.record(
+            ENTITY,
+            PERIOD_LOCK_TIMELINE_ID,
+            "closed",
+            actor,
+            {"anno": data.anno, "mese": data.mese},
+        )
+        self.session.commit()
         return PeriodLockRead.model_validate(lock)
 
     def reopen_period(self, anno: int, mese: int, actor: Actor) -> None:
         actor.require_unscoped_admin("reopen_period")
+        self.repo.lock_month(anno, mese, exclusive=True)
         lock = self.repo.get(anno, mese)
         if lock is None:
             raise NotFound(ENTITY, f"{anno}-{mese:02d}")
@@ -157,10 +174,15 @@ class PeriodLockService:
         Takes `entity` and `field` rather than hard-coding them so the `Conflict` names
         the caller's own table (`time_entry` or `cost`), which is what makes the
         problem document actionable on the right screen.
+
+        Each month checked is held shared until the caller's transaction ends
+        (`PeriodLockRepository.lock_month`), so a close of that month waits for the write
+        that checked it instead of committing between the check and the write.
         """
         for giorno in giorni:
             if giorno is None:
                 continue
+            self.repo.lock_month(giorno.year, giorno.month, exclusive=False)
             lock = self.repo.get(giorno.year, giorno.month)
             if lock is None:
                 continue
