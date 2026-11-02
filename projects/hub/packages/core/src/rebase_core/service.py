@@ -59,7 +59,8 @@ class SignupService:
             # winner's row instead of reporting a conflict nobody caused.
             self.session.rollback()
             winner = self._find(email) or self._find_by_linkedin(data.linkedin_url)
-            assert winner is not None
+            if winner is None:  # the clash was on something else: not ours to hide
+                raise
             return _read(winner, nuova=False)
         return _read(row, nuova=True)
 
