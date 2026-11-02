@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 from rebase_core.errors import NotFound, ValidationFailed
 from rebase_core.models import NAME_MAX_LENGTH, AdminToken, User
 from rebase_core.pagination import SortSpec, decode_cursor, encode_cursor, keyset_predicate
+from rebase_core.schema_common import ResponseModel
 from rebase_core.search import matches_any, similarity_score
 
 ENTITY = "token"
@@ -38,7 +39,7 @@ TOKEN_LIST_LIMIT_MAX = 500
 _TOKEN_SEARCH_COLUMNS = (AdminToken.nome,)
 
 
-class AdminRead(BaseModel):
+class AdminRead(ResponseModel):
     """An admin as the API and the MCP server both read them: never the card, never a
     join. `attivo` and `created_at` are here for the list of admins (ORB-123)."""
 
@@ -51,7 +52,7 @@ class AdminRead(BaseModel):
     created_at: datetime
 
 
-class AdminTokenRead(BaseModel):
+class AdminTokenRead(ResponseModel):
     """A token as the admin area lists it: never the hash, never the value."""
 
     model_config = ConfigDict(from_attributes=True)
@@ -64,7 +65,7 @@ class AdminTokenRead(BaseModel):
     revoked_at: datetime | None
 
 
-class AdminList(BaseModel):
+class AdminList(ResponseModel):
     """Every admin (ORB-123), oldest first with no search term so the page still reads
     as a history, or best-match first once `q` narrows it (REB-313, the shape REB-285
     gives Talenti and Aziende). `next_cursor` is `None` on the last page."""
@@ -73,7 +74,7 @@ class AdminList(BaseModel):
     next_cursor: str | None = None
 
 
-class AdminTokenList(BaseModel):
+class AdminTokenList(ResponseModel):
     """The admin's own tokens (REB-313), the same search-and-cursor shape beside
     `AdminTokenService.list`'s full, unpaginated read. `next_cursor` is `None` on the
     last page."""

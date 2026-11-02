@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import Literal, Protocol
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from rebase_core.linkedin import reject_control_characters
 from rebase_core.models import REFERRAL_CODE_LENGTH
@@ -87,7 +87,16 @@ def clean_rif(value: object) -> str | None:
     return trimmed
 
 
-class Ack(BaseModel):
+class ResponseModel(BaseModel):
+    """Base of every model an API route returns. A field with a default is still always
+    present in the JSON (the services build every model whole), so the OpenAPI response
+    schema lists it as required: the generated web client then types `note`, `links` or
+    `next_cursor` as present-but-nullable, not as possibly missing."""
+
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
+
+
+class Ack(ResponseModel):
     """What every public POST of the hub answers, and all it answers: accepted."""
 
     ok: bool = True

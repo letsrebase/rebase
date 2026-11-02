@@ -25,6 +25,7 @@ from rebase_core.models import (
     CAMPAIGN_SUBJECT_MAX_LENGTH,
     CAMPAIGN_TEXT_MAX_LENGTH,
 )
+from rebase_core.schema_common import ResponseModel
 from rebase_core.search import SEARCH_MAX_LENGTH
 
 # A filter's amount is kept like every other amount the hub stores: euro with cents at
@@ -185,7 +186,7 @@ class NeverWriteRequest(BaseModel):
     email: EmailStr
 
 
-class CampaignCounts(BaseModel):
+class CampaignCounts(ResponseModel):
     destinatari: int = 0
     in_coda: int = 0
     inviate: int = 0
@@ -198,7 +199,7 @@ class CampaignCounts(BaseModel):
     azioni: int = 0
 
 
-class CampaignRead(BaseModel):
+class CampaignRead(ResponseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
@@ -236,11 +237,11 @@ class CampaignListItem(CampaignRead):
     conteggi: CampaignCounts
 
 
-class CampaignList(BaseModel):
+class CampaignList(ResponseModel):
     items: list[CampaignListItem]
 
 
-class RecipientRead(BaseModel):
+class RecipientRead(ResponseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
@@ -262,26 +263,26 @@ class RecipientRead(BaseModel):
     azione_dalla_mail: bool = False
 
 
-class CampaignDetail(BaseModel):
+class CampaignDetail(ResponseModel):
     campagna: CampaignRead
     conteggi: CampaignCounts
     destinatari: list[RecipientRead]
 
 
-class AudienceRowRead(BaseModel):
+class AudienceRowRead(ResponseModel):
     email: str
     nome: str | None
     tipo: str
     escluso: str | None
 
 
-class AudiencePreview(BaseModel):
+class AudiencePreview(ResponseModel):
     righe: list[AudienceRowRead]
     incluse: int
     escluse: int
 
 
-class TemplateRead(BaseModel):
+class TemplateRead(ResponseModel):
     model_config = ConfigDict(from_attributes=True)
 
     stato_percorso: str

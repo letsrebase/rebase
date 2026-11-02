@@ -61,6 +61,7 @@ from rebase_core.models import (
     TeamProposal,
     User,
 )
+from rebase_core.schema_common import ResponseModel
 from rebase_core.sources import delete_sources
 from rebase_core.users import UserService
 
@@ -70,7 +71,7 @@ _LIVE_FRAMEWORK = ("inviato", "in_attesa", "firmato")
 _LIVE_MATCH = ("in_firma", "attivo")
 
 
-class MergeRead(BaseModel):
+class MergeRead(ResponseModel):
     """What a merge did, for the admin who ran it. Counts, never the rows."""
 
     survivor_freelancer_id: UUID

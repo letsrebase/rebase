@@ -12,11 +12,12 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from rebase_core.models import RATE_DIGITS, RATE_PLACES, REFERRAL_CODE_LENGTH
+from rebase_core.schema_common import ResponseModel
 
 RATE_MAX = Decimal("1")
 
 
-class MemberReferralItem(BaseModel):
+class MemberReferralItem(ResponseModel):
     """One person or company the member's own code brought in: enough to recognise
     who it was and whether it has turned into anything yet. Never a euro figure of a
     real engagement: rebase's own margin on it is an admin-only number."""
@@ -29,7 +30,7 @@ class MemberReferralItem(BaseModel):
     stato: str | None
 
 
-class MemberReferral(BaseModel):
+class MemberReferral(ResponseModel):
     """`GET /api/hub/me/referral`: the member's own code, issued the first time this
     route is asked for one, who it has brought in so far, and the two rates a referral
     earns (REB-610). The rates are read from the admin's settings on every call, so the
@@ -43,7 +44,7 @@ class MemberReferral(BaseModel):
     referred: list[MemberReferralItem]
 
 
-class PublicReferralRates(BaseModel):
+class PublicReferralRates(ResponseModel):
     """`GET /api/hub/referral-rates`: the two percentages of rebase's margin a referral
     earns, as the admin's settings row holds them right now, and nothing else. This is
     the one referral shape a stranger reads, so it is closed on purpose: no code, no
@@ -55,7 +56,7 @@ class PublicReferralRates(BaseModel):
     rate_company: Decimal
 
 
-class MatchReferral(BaseModel):
+class MatchReferral(ResponseModel):
     """One referred side of a match, as the admin's «Match» list reads it (REB-609).
     `stato` is a reward's own state once one exists for this referral and its letter
     belongs to this match (`da_confermare`, `confermato`, `pagato`, with the real `rate`
@@ -78,7 +79,7 @@ class MatchReferral(BaseModel):
     reward_id: UUID | None
 
 
-class ReferralEvidence(BaseModel):
+class ReferralEvidence(ResponseModel):
     """What an admin needs to judge one attribution (REB-657), all read from rows that
     already exist (`rebase_core.referral_evidence`): `code` is the `rif` the signup was
     made with, `signed_up_at` when the referred card or request was made, `utm_source`
@@ -96,7 +97,7 @@ class ReferralEvidence(BaseModel):
     ever_logged_in: bool | None
 
 
-class ReferralLedgerItem(BaseModel):
+class ReferralLedgerItem(ResponseModel):
     """One row of the admin's referral ledger: the referrer, who was referred, and the
     reward as it was computed or as an admin priced it by hand. `reward_id` is `None`
     until the referred party's first letter is signed -- a referral is on this ledger
@@ -158,7 +159,7 @@ class ReferralLedgerItem(BaseModel):
     evidence: ReferralEvidence
 
 
-class ReferralLedgerList(BaseModel):
+class ReferralLedgerList(ResponseModel):
     items: list[ReferralLedgerItem]
     next_cursor: str | None
 
@@ -184,7 +185,7 @@ class ReferralRewardPrice(BaseModel):
     reward_amount: Decimal = Field(max_digits=10, decimal_places=2, ge=0)
 
 
-class ReferralSettingsRead(BaseModel):
+class ReferralSettingsRead(ResponseModel):
     model_config = ConfigDict(from_attributes=True)
 
     rate_freelancer: Decimal

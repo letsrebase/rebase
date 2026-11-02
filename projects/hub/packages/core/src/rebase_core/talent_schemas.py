@@ -5,14 +5,15 @@ from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
 
 from rebase_core.bands import Band
+from rebase_core.schema_common import ResponseModel
 
 TalentoOrigine = Literal["form", "wizard", "admin"]
 
 
-class TalentoRead(BaseModel):
+class TalentoRead(ResponseModel):
     """One row of `talenti` (REB-282): every freelancer card and every bare sign-up (a
     `signups` row with no card, ORB-163) as one row, `stato` `lead` for the bare ones
     and the freelancer's own state otherwise. `origine` names how the row came to be --
@@ -72,7 +73,7 @@ class TalentoRead(BaseModel):
     possibile_duplicato_di: list[UUID] = Field(default_factory=list)
 
 
-class TalentoList(BaseModel):
+class TalentoList(ResponseModel):
     """Newest-or-best-match first across both tables (REB-282; REB-285 adds search and
     the cursor), at most `limit` rows. `totale` counts every row every active filter
     selects, `stato` included, not only the page returned; `per_stato` is the same

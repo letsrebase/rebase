@@ -6,10 +6,11 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from rebase_core.models import NOTE_ADMIN_SOURCES, NOTE_MAX_LENGTH
+from rebase_core.schema_common import ResponseModel
 from rebase_core.validation import SafeStr
 
 
-class NoteRead(BaseModel):
+class NoteRead(ResponseModel):
     """One note of a row's thread (REB-856): who wrote it (`autore`, the name as it read
     then, and `autore_id`), by which door (`fonte`: `web`, `mcp`, `persona`, `sistema`, or
     `None` for a note that predates the tracking), when, and, once changed, who changed it

@@ -34,7 +34,13 @@ from rebase_core.models import (
     TEAM_REQUEST_STATES,
     TELEFONO_MAX_LENGTH,
 )
-from rebase_core.schema_common import PROGETTO_MAX_LENGTH, clean_multiline, clean_rif, clean_text
+from rebase_core.schema_common import (
+    PROGETTO_MAX_LENGTH,
+    ResponseModel,
+    clean_multiline,
+    clean_rif,
+    clean_text,
+)
 from rebase_core.validation import SafeStr
 
 __all__ = [
@@ -77,7 +83,7 @@ __all__ = [
 ]
 
 
-class Card(BaseModel):
+class Card(ResponseModel):
     """The anonymous card § 2.1 asks Claude for: a role, a seniority, years of
     experience, skills, sectors, languages, a place or none, and a two-sentence Italian
     summary that names no person, no company and no link. `extra="forbid"` the way
@@ -116,7 +122,7 @@ class CardRead(Card):
     seniority_incerta: bool = False
 
 
-class FreelancerCardRead(BaseModel):
+class FreelancerCardRead(ResponseModel):
     """A freelancer's anonymous card as the admin reads it (spec § 5.1): the last card
     written, the CV it came from, the model and when, and the last failure, which may
     sit beside an older card. `modalita` and `fascia` are not on the card: they are
@@ -141,7 +147,7 @@ class FreelancerCardRead(BaseModel):
     anni_admin: int | None = None
 
 
-class SourceProvenance(BaseModel):
+class SourceProvenance(ResponseModel):
     """One stored source of a card's person, as the admin reads it: its key (`github`,
     `link:<n>`), what it is, where it was read (the login or the link the person gave),
     the outcome of the last read and when it was made. Never the text."""
@@ -153,7 +159,7 @@ class SourceProvenance(BaseModel):
     fetched_at: datetime
 
 
-class ConflictRead(BaseModel):
+class ConflictRead(ResponseModel):
     """A disagreement the code found while writing a card (`card_draft.conflicts`):
     `anni_diversi`, the hub's completed engagements add up to more years than the card's
     `anni_scheda` (the CV's dates) by more than a year; `anni_scartata`, the model gave
@@ -166,7 +172,7 @@ class ConflictRead(BaseModel):
     anni_hub: int | None
 
 
-class CardProvenance(BaseModel):
+class CardProvenance(ResponseModel):
     """What a card was written from and by what, for the admin only (REB-839): never part
     of `Card`, of a public page, of the cloud or of the talent list.
 
@@ -187,7 +193,7 @@ class CardProvenance(BaseModel):
     stale: Literal["cv", "source", "prompt"] | None
 
 
-class CardPersonaRead(BaseModel):
+class CardPersonaRead(ResponseModel):
     """What the CV (and the sources beside it) says of who the person is, read out by the
     same call that writes the anonymous card (REB-855): for the admin only, stored on the
     card's row (`freelancer_cards.persona`) and never written into `users`. Everything is
@@ -208,7 +214,7 @@ class CardPersonaRead(BaseModel):
     aziende: list[str] = Field(default_factory=list)
 
 
-class PersonaDifference(BaseModel):
+class PersonaDifference(ResponseModel):
     """A field where the CV and the profile both say something and disagree
     (`card_draft.differenze`): `campo` is `nome`, `cognome`, `email`, `telefono` or
     `linkedin_url`, `cv` what the CV says and `profilo` what the account holds. A field one
@@ -275,7 +281,7 @@ class TeamProposalCreate(BaseModel):
     previous_id: UUID | None = None
 
 
-class TeamMemberRead(BaseModel):
+class TeamMemberRead(ResponseModel):
     """One person of a proposed team (§ 3.3): `posizione` is their index in this
     proposal (1, 2, 3), the only handle the public read gives; `freelancer_id` is
     `None` there, so a visitor cannot follow a talent across proposals, and so is the
@@ -297,7 +303,7 @@ class TeamMemberRead(BaseModel):
     fascia: Band | None
 
 
-class TeamProposalRead(BaseModel):
+class TeamProposalRead(ResponseModel):
     """A proposal as the page shows it (§ 3.3). `luogo` is what the engine read about
     place in the description, `{"locale": bool, "dove": str | None}`, and stays on the
     public read: it is the visitor's own words. `economia` is `{"giorno": Band | None,
@@ -318,7 +324,7 @@ class TeamProposalRead(BaseModel):
     created_at: datetime
 
 
-class TeamProposalListMember(BaseModel):
+class TeamProposalListMember(ResponseModel):
     """One person a listed proposal held (REB-607): their index in the proposal, the
     role it proposed them for, and who they are, so the admin can open their profile
     from the list. `nome` and `cognome` are read when the list is, and are `None` for
@@ -333,7 +339,7 @@ class TeamProposalListMember(BaseModel):
     cognome: str | None
 
 
-class TeamProposalListItem(BaseModel):
+class TeamProposalListItem(ResponseModel):
     """One «Proponi il team» as the admin's list reads it (0028, DECISIONS.md
     2026-09-29): what was asked (`descrizione`, `persone`, `nota`, `previous_id` on a
     «Rigenera»), who asked (`origine`, `user_id`), when, and what came of it. `errore`
@@ -359,7 +365,7 @@ class TeamProposalListItem(BaseModel):
     created_at: datetime
 
 
-class TeamProposalList(BaseModel):
+class TeamProposalList(ResponseModel):
     """A page of the list, newest first; `next_cursor` is `None` on the last page."""
 
     items: list[TeamProposalListItem]
@@ -400,13 +406,13 @@ class TeamRequestCreate(BaseModel):
         return clean_rif(value)
 
 
-class TeamRequestCreated(BaseModel):
+class TeamRequestCreated(ResponseModel):
     """What the public route answers, and all it answers: the request's id."""
 
     id: UUID
 
 
-class TeamRequestTalentRead(BaseModel):
+class TeamRequestTalentRead(ResponseModel):
     """One talent of a request, as the admin reads it: the name, the role proposed, the
     freelancer's own rate and the client's band from it, and the availability mail's
     progress (D1), all `None` until the first send. `contattabile` is false for a talent
@@ -424,7 +430,7 @@ class TeamRequestTalentRead(BaseModel):
     contattabile: bool
 
 
-class TeamRequestRead(BaseModel):
+class TeamRequestRead(ResponseModel):
     """A request's page in «Richieste team» (§ 3.5). `proposal` is the admin's read of
     the proposal (ids and the card's place kept), `None` for a single-talent request
     from the cloud; `riassunto` and `descrizione` are the proposal's, the summary being
@@ -448,7 +454,7 @@ class TeamRequestRead(BaseModel):
     created_at: datetime
 
 
-class TeamRequestListItem(BaseModel):
+class TeamRequestListItem(ResponseModel):
     """One row of «Richieste team»: who, from where, when, where it stands, and «N sì su
     M» from the talents' answers."""
 
@@ -462,7 +468,7 @@ class TeamRequestListItem(BaseModel):
     talenti_si: int
 
 
-class TeamRequestList(BaseModel):
+class TeamRequestList(ResponseModel):
     """A page of the list, newest first; `next_cursor` is `None` on the last page."""
 
     items: list[TeamRequestListItem]
@@ -518,7 +524,7 @@ class TeamAvailabilityAnswer(BaseModel):
     risposta: Literal["si", "no"]
 
 
-class TeamAvailabilityOutcome(BaseModel):
+class TeamAvailabilityOutcome(ResponseModel):
     """The answer recorded, or `invalid` for a token unknown, spent or expired alike."""
 
     esito: Literal["si", "no", "invalid"]
@@ -549,7 +555,7 @@ class CloudTalentQuery(BaseModel):
     fascia_max: int | None = Field(default=None, ge=0)
 
 
-class CloudTalentRead(BaseModel):
+class CloudTalentRead(ResponseModel):
     """A talent as an admitted company reads them in the cloud (spec § 4.2): who they
     are, the links they gave, whether rebase vetted them, the anonymous card (its
     `luogo` left out: the CV is one click away), the work mode, the client's band and
@@ -569,7 +575,7 @@ class CloudTalentRead(BaseModel):
     ha_cv: bool
 
 
-class CloudTalentList(BaseModel):
+class CloudTalentList(ResponseModel):
     """The cloud's page: the talents the filters leave, vetted first then by name, at
     most `cloud.CLOUD_LIST_CAP`, and `capped` when there were more (the page says so,
     since the list has no second page); `ruoli` is every role of the cloud's cards once,

@@ -3,10 +3,10 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel
+from rebase_core.schema_common import ResponseModel
 
 
-class GuideDownloadRead(BaseModel):
+class GuideDownloadRead(ResponseModel):
     """One download, with the member's name for the admin's list."""
 
     id: UUID
@@ -17,7 +17,7 @@ class GuideDownloadRead(BaseModel):
     downloaded_at: datetime
 
 
-class LoginRead(BaseModel):
+class LoginRead(ResponseModel):
     """One login, with the member's name for the admin's list (ORB-158), and since
     REB-426 the campaign the login page was opened from, `None` for a login that
     started anywhere else."""
@@ -37,7 +37,7 @@ class LoginRead(BaseModel):
     utm_id: str | None = None
 
 
-class LoginStats(BaseModel):
+class LoginStats(ResponseModel):
     """The logins as the admin area reads them (ORB-158), the shape of `GuideStats`:
     `totale` every login, `membri` the distinct people behind them, `membri_totali`
     everybody on file, `ultimi_7_giorni` the last week -- four counters unaffected by
@@ -54,7 +54,7 @@ class LoginStats(BaseModel):
     next_cursor: str | None = None
 
 
-class GuideStats(BaseModel):
+class GuideStats(ResponseModel):
     """The guide's numbers for the admin area (ORB-156). `totale` counts every download,
     `membri` the distinct people behind them, `membri_totali` everybody who could have
     (the freelancers on file), `ultimi_7_giorni` the downloads of the last week, and

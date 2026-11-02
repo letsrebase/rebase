@@ -26,6 +26,7 @@ from rebase_core.schema_common import (
     TARIFFA_MAX,
     TARIFFA_MIN,
     Remoto,
+    ResponseModel,
     clean_multiline,
     clean_rif,
     clean_text,
@@ -122,7 +123,7 @@ class CompanyUpdate(CompanyFields):
     keeps for the freelancer card."""
 
 
-class TalentCloudGrantRead(BaseModel):
+class TalentCloudGrantRead(ResponseModel):
     """One grant of the talent cloud (REB-518, spec § 4.1), as the admin reads it: the
     request it was opened from and its company's name, the referente by name and
     address (the admin sees names everywhere), who opened it and when, and who closed
@@ -142,7 +143,7 @@ class TalentCloudGrantRead(BaseModel):
     revoked_at: datetime | None = None
 
 
-class CompanyRead(BaseModel):
+class CompanyRead(ResponseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
@@ -185,7 +186,7 @@ class CompanyRead(BaseModel):
     talent_cloud_grant: TalentCloudGrantRead | None = None
 
 
-class CompanyList(BaseModel):
+class CompanyList(ResponseModel):
     """Newest-or-best-match first (REB-285 adds search, filters and the cursor beside
     `stato`). `totale` and `per_stato` follow `TalentoList`'s own reasoning; both are
     additive to the shape `GET /api/hub/companies` already answered, so an older caller

@@ -39,7 +39,13 @@ from rebase_core.models import (
 )
 from rebase_core.referral_schemas import MatchReferral
 from rebase_core.regimes import OCCASIONALE, PARTITA_IVA, Regime
-from rebase_core.schema_common import PROGETTO_MAX_LENGTH, TARIFFA_MAX, TARIFFA_MIN, clean_multiline
+from rebase_core.schema_common import (
+    PROGETTO_MAX_LENGTH,
+    TARIFFA_MAX,
+    TARIFFA_MIN,
+    ResponseModel,
+    clean_multiline,
+)
 from rebase_core.validation import SafeStr
 
 # A person's codice fiscale is sixteen letters and digits; a ditta's is its eleven digits.
@@ -172,7 +178,7 @@ class FiscalData(BaseModel):
         return _one_line(value, "il domicilio")
 
 
-class FiscalRead(BaseModel):
+class FiscalRead(ResponseModel):
     model_config = ConfigDict(from_attributes=True)
 
     freelancer_id: UUID
@@ -199,7 +205,7 @@ class ClienteData(BaseModel):
         return _one_line(value, "un valore")
 
 
-class ClienteDraft(BaseModel):
+class ClienteDraft(ResponseModel):
     """What the prefill suggests on «Chi e per chi»: any of the three may be unknown."""
 
     cliente_ragione_sociale: str | None = None
@@ -207,7 +213,7 @@ class ClienteDraft(BaseModel):
     cliente_sede: str | None = None
 
 
-class LetteraDraft(BaseModel):
+class LetteraDraft(ResponseModel):
     """Every field of `lettera-di-incarico.md` an admin writes on «Condizioni», all
     optional: the shape the prefill suggests. `LetteraFields` is the one a letter is
     written from."""
@@ -386,7 +392,7 @@ class MatchCreate(BaseModel):
         return value
 
 
-class ContractDocumentRead(BaseModel):
+class ContractDocumentRead(ResponseModel):
     """A document as the pages and the MCP tools read it: never the PDF bytes and never
     `data`, which carries rebase's signer and the freelancer's tax identifiers.
     `situazione`, `prossima_azione` and `altre_azioni` are `match_words`' (REB-477)."""
@@ -421,7 +427,7 @@ class ContractDocumentRead(BaseModel):
     altre_azioni: list[Action]
 
 
-class MatchRead(BaseModel):
+class MatchRead(ResponseModel):
     """`giorni_previsti`, the three `lettera_*` values and the eight `pigro_*` fields
     are `Match`'s own (REB-497): the `lettera_*` ones are what `create` copied off
     `data.lettera` at the time, not necessarily what the current `lettera` prints, were
@@ -459,7 +465,7 @@ class MatchRead(BaseModel):
     pigro_mail_sent_at: datetime | None
 
 
-class FreelancerContracts(BaseModel):
+class FreelancerContracts(ResponseModel):
     """«Match e contratti»: the framework agreements at the top, one per regime (REB-687):
     `quadro` the ordinary one and `quadro_occasionale` the occasional one, each the
     active one, else the newest that left; every framework agreement newest first, the
@@ -473,7 +479,7 @@ class FreelancerContracts(BaseModel):
     fiscale: FiscalRead | None
 
 
-class MatchPrefill(BaseModel):
+class MatchPrefill(ResponseModel):
     """What «Chi e per chi» and «Condizioni» start from. `regime` is the letter type the
     hub proposes (REB-687): `occasionale` when the saved tax data have no partita IVA,
     `partita_iva` otherwise, none saved included. `quadro_necessario`: this match writes a
@@ -489,7 +495,7 @@ class MatchPrefill(BaseModel):
     lettera_in_attesa: bool
 
 
-class MatchCheck(BaseModel):
+class MatchCheck(ResponseModel):
     """What saving a match would do, in sentences (REB-476), with nothing written:
     `riepilogo` is the letter in three or four sentences, `cosa_succede` which document
     leaves first. Missing tax data are reported here, not refused: `create` refuses
@@ -509,7 +515,7 @@ class ContractPdf(BaseModel):
     content: bytes
 
 
-class MatchListItem(BaseModel):
+class MatchListItem(ResponseModel):
     """One row of the admin's «Match» list (REB-413): everything the table shows and
     nothing else -- no tax field of the freelancer's and no `budget_giornaliero` of the
     request's. `lettera_data_inizio`/`lettera_data_fine` are the letter's own
@@ -552,7 +558,7 @@ class MatchListItem(BaseModel):
     referrals: list[MatchReferral]
 
 
-class MatchList(BaseModel):
+class MatchList(ResponseModel):
     """Newest first (REB-413). `totale` counts every match the filters select, the
     whole list, not just the page returned."""
 
@@ -560,7 +566,7 @@ class MatchList(BaseModel):
     items: list[MatchListItem]
 
 
-class ReportDayInvoice(BaseModel):
+class ReportDayInvoice(ResponseModel):
     """A day's hours on one invoice (REB-505): the invoice as `ReportInvoice` names it,
     by `numero` and `tipo`, and the day's entries on it summed."""
 
@@ -569,7 +575,7 @@ class ReportDayInvoice(BaseModel):
     ore: Decimal
 
 
-class ReportDay(BaseModel):
+class ReportDay(ResponseModel):
     """One day of hours on the match's deal (REB-498): the CRM answers one row per time
     entry, summed here. `fatture` names each invoice these hours sit on once, «12/2026»
     for an invoice and «proforma 3/2026» for anything else, empty when none does yet.
@@ -584,7 +590,7 @@ class ReportDay(BaseModel):
     ore_per_fattura: list[ReportDayInvoice]
 
 
-class ReportWeek(BaseModel):
+class ReportWeek(ResponseModel):
     """An ISO week, «2026-W40», from its Monday to its Sunday."""
 
     settimana: str
@@ -593,12 +599,12 @@ class ReportWeek(BaseModel):
     ore: Decimal
 
 
-class ReportMonth(BaseModel):
+class ReportMonth(ResponseModel):
     mese: str
     ore: Decimal
 
 
-class ReportInvoice(BaseModel):
+class ReportInvoice(ResponseModel):
     """An invoice these hours sit on, with how many of them: «12/2026», or «senza
     numero» for one not numbered yet."""
 
@@ -610,7 +616,7 @@ class ReportInvoice(BaseModel):
     ore: Decimal
 
 
-class MatchReport(BaseModel):
+class MatchReport(ResponseModel):
     """«Consuntivo» (REB-498): the hours logged on the match's deal on Pigro over a
     period, read from the CRM on every request and never stored. `ore_previste` is
     `giorni_previsti` times eight, `giorni_equivalenti` the hours over eight,
@@ -633,7 +639,7 @@ class MatchReport(BaseModel):
     fatture: list[ReportInvoice]
 
 
-class SendReport(BaseModel):
+class SendReport(ResponseModel):
     """What «Invia per la firma» did (REB-387 phase 3): the match as it is now, the kind
     of the document that left (`quadro`, `lettera`, or none when the letter waits for a
     framework agreement already out for signature), and whether its mail left too."""
@@ -643,7 +649,7 @@ class SendReport(BaseModel):
     mail_inviata: bool | None
 
 
-class MemberContract(BaseModel):
+class MemberContract(ResponseModel):
     """A contract as its freelancer reads it in «Contratti» (REB-392): never the PDF's
     bytes and never `data`. `cliente` and the two dates are a letter's, as the letter
     prints them; `signing_url` is there only while the document waits for the
@@ -671,7 +677,7 @@ class MemberContract(BaseModel):
     pigro_url: str | None
 
 
-class MemberContracts(BaseModel):
+class MemberContracts(ResponseModel):
     """«Contratti»: the framework agreements on top, one per regime (REB-687): `quadro`
     the ordinary one and `quadro_occasionale` the occasional one, each the active one,
     else the newest that reached the person; the letters newest first; and

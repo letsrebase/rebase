@@ -7,7 +7,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field
 
-from rebase_core.schema_common import is_complete
+from rebase_core.schema_common import ResponseModel, is_complete
 from rebase_core.signup_schemas import SignupUtm
 
 
@@ -41,7 +41,7 @@ class MemberProfile(BaseModel):
         return is_complete(self)
 
 
-class MemberRequest(BaseModel):
+class MemberRequest(ResponseModel):
     """One company request as the person who filed it reads it (REB-602): the eight
     answers they gave, plus its id, so the member area can open that very request for
     editing, and when it was filed. Never `stato`, `note` or the company's own name:
@@ -62,7 +62,7 @@ class MemberRequest(BaseModel):
     created_at: datetime
 
 
-class MeRead(BaseModel):
+class MeRead(ResponseModel):
     """Whoever `rebase_user` resolves to, member or admin, replacing `MemberProfile`
     on `GET /me` (REB-278): a `users` row is not necessarily an applicant with a card
     any more, so `ha_scheda` says whether one exists, and the seven card fields answer
@@ -122,7 +122,7 @@ class MemberLookupRequest(BaseModel):
     email: str = Field(min_length=1, max_length=320)
 
 
-class MemberLookup(BaseModel):
+class MemberLookup(ResponseModel):
     """What the hub tells PigroCRM about an address (ORB-173): whether a freelancer with
     it exists, and if so the two names the CRM's signup would otherwise ask for again.
     Never the id, never the rest of the card: the CRM learns that the person is a

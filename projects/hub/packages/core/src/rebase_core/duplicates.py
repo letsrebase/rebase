@@ -30,6 +30,7 @@ from sqlalchemy.orm import Session
 
 from rebase_core.linkedin import PROFILE_SQL_PREDICATE, linkedin_key
 from rebase_core.models import Freelancer, Signup, User
+from rebase_core.schema_common import ResponseModel
 
 LINKEDIN = "linkedin"
 NOME = "nome"
@@ -299,7 +300,7 @@ def duplicates_of(session: Session, freelancer_ids: list[UUID]) -> dict[UUID, li
     return answer
 
 
-class PersonRead(BaseModel):
+class PersonRead(ResponseModel):
     """A card of a pair as the admin reads it: who, and what decides the survivor."""
 
     freelancer_id: UUID
@@ -312,7 +313,7 @@ class PersonRead(BaseModel):
     ha_cv: bool
 
 
-class DuplicatePairRead(BaseModel):
+class DuplicatePairRead(ResponseModel):
     """`survivor` is the default of the merge (the newest CV); `segnali` says why the two
     look alike (`linkedin`, `nome`, `telefono`), and `unibile` that the profile is the same,
     the only signal that is a reason to merge rather than to look."""
@@ -323,7 +324,7 @@ class DuplicatePairRead(BaseModel):
     unibile: bool
 
 
-class DuplicateListRead(BaseModel):
+class DuplicateListRead(ResponseModel):
     unibili: list[DuplicatePairRead]
     da_rivedere: list[DuplicatePairRead]
     iscrizioni: int

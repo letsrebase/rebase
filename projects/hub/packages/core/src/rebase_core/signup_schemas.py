@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from rebase_core.linkedin import normalise_linkedin, reject_control_characters
 from rebase_core.models import NAME_MAX_LENGTH, ORIGINE_MAX_LENGTH, UTM_MAX_LENGTH
-from rebase_core.schema_common import LINKEDIN_INPUT_MAX_LENGTH, clean_rif
+from rebase_core.schema_common import LINKEDIN_INPUT_MAX_LENGTH, ResponseModel, clean_rif
 from rebase_core.validation import SafeStr
 
 # What the landing sends in `oppref`, bounded to the same 512 characters it bounds it to
@@ -16,7 +16,7 @@ from rebase_core.validation import SafeStr
 OPPREF_MAX_LENGTH = 512
 
 
-class SignupUtm(BaseModel):
+class SignupUtm(ResponseModel):
     """The attribution the landing read from its own URL, if any. Every key optional and
     bounded: an ad platform's macro left unexpanded (`{{AD_SET_ID}}`) is stored as the
     literal it arrived as, because that is what happened."""
@@ -109,7 +109,7 @@ class SignupCreate(BaseModel):
         return normalise_linkedin(value)
 
 
-class SignupListItem(BaseModel):
+class SignupListItem(ResponseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
@@ -130,7 +130,7 @@ class SignupListItem(BaseModel):
     utm_id: str | None = None
 
 
-class SignupList(BaseModel):
+class SignupList(ResponseModel):
     """Newest first. `totale` counts the whole list, not just the page returned."""
 
     totale: int
@@ -158,7 +158,7 @@ class SignupRead(BaseModel):
     nuova: bool = False
 
 
-class SignupAck(BaseModel):
+class SignupAck(ResponseModel):
     """What the public POST answers, and all it answers: the request was accepted.
 
     The same body and the same 201 for a first signup and for the hundredth, so the

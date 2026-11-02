@@ -19,6 +19,7 @@ from rebase_core.schema_common import (
     TARIFFA_MAX,
     TARIFFA_MIN,
     Remoto,
+    ResponseModel,
     clean_rif,
     clean_text,
     https_url,
@@ -134,7 +135,7 @@ class FreelancerDraft(BaseModel):
         return FreelancerFields._links(value)
 
 
-class FreelancerRead(BaseModel):
+class FreelancerRead(ResponseModel):
     """The row as an admin reads it. Never the CV bytes: those have their own download,
     so a list of two hundred people is not two hundred PDFs in one response.
 
@@ -197,7 +198,7 @@ class FreelancerRead(BaseModel):
         return is_complete(self)
 
 
-class FreelancerList(BaseModel):
+class FreelancerList(ResponseModel):
     """The cards, and since ORB-163 the leads beside them: signups whose address has no
     card yet, as «Developer e CTO» shows them with a «Lead» state. `totale` counts the
     cards the filter selects, `totale_lead` the leads; `lead` is empty when a `stato`

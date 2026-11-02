@@ -36,6 +36,13 @@ db-backup/       the nightly encrypted backups of the hub's and Documenso's data
 `packages/core` may import neither adapter, and neither adapter may import the other:
 each directory's `ruff.toml` says so.
 
+**Response models say exactly what the JSON holds.** Every model an API route returns derives
+from `schema_common.ResponseModel`, which makes the OpenAPI *response* schema list every field
+as required (`json_schema_serialization_defaults_required`): the services build each model
+whole, so `note`, `links` or `next_cursor` are always present, and the generated web client
+types them as nullable, never as possibly missing. A new response model that derives from
+plain `BaseModel` fails `test_openapi_contract.py`. Request bodies stay plain `BaseModel`.
+
 **The UI comes from `@rebase/ui`, and this application writes no primitive at all.**
 The seven hand-written ones it used to carry were deleted when the package took over
 (REB-300), so `apps/web/src/components/` holds only what is genuinely the hub's

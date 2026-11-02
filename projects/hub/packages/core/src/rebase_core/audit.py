@@ -36,6 +36,7 @@ from sqlalchemy.orm import Session
 
 from rebase_core.errors import NotFound, ValidationFailed
 from rebase_core.models import AdminAction, User
+from rebase_core.schema_common import ResponseModel
 
 _log = logging.getLogger(__name__)
 
@@ -177,7 +178,7 @@ def sanitize_payload(payload: dict[str, Any]) -> dict[str, Any]:
 # ---- the trail itself ----------------------------------------------------------------
 
 
-class AdminActionRead(BaseModel):
+class AdminActionRead(ResponseModel):
     """One entry of the trail, as an admin reads it: who, when, what kind, and the
     diff for an `overridden`/`cleared` entry (`payload["changed"/"before"/"after"]`,
     empty for `deleted`/`restored`, whose kind is the whole story)."""

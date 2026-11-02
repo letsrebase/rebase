@@ -24,6 +24,7 @@ from rebase_core.config import Settings
 from rebase_core.errors import ValidationFailed
 from rebase_core.http import MAX_BODY_BYTES, HttpCall
 from rebase_core.models import Freelancer, User
+from rebase_core.schema_common import ResponseModel
 
 REGISTRY_PATH = "/api/tenants/"
 LIST_LIMIT_DEFAULT = 100
@@ -55,7 +56,7 @@ class RegistryRow(BaseModel):
     created_at: datetime
 
 
-class PigroMember(BaseModel):
+class PigroMember(ResponseModel):
     """The hub member who owns a space, enough to name them and link their card."""
 
     id: UUID
@@ -63,7 +64,7 @@ class PigroMember(BaseModel):
     cognome: str
 
 
-class PigroSpace(BaseModel):
+class PigroSpace(ResponseModel):
     slug: str
     owner_email: str
     created_at: datetime
@@ -73,7 +74,7 @@ class PigroSpace(BaseModel):
     membro: PigroMember | None
 
 
-class PigroSpaceList(BaseModel):
+class PigroSpaceList(ResponseModel):
     totale: int
     items: list[PigroSpace]
     next_cursor: str | None = None

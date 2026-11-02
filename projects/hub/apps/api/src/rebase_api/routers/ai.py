@@ -51,6 +51,7 @@ from rebase_core.crm_lead import (
 from rebase_core.errors import LlmUnavailable, NotFound, TeamBuilderOff
 from rebase_core.llm import LlmMessage, LlmRequest
 from rebase_core.models import AI_TASKS, AiUsage
+from rebase_core.schema_common import ResponseModel
 from rebase_core.sources import default_source_service
 
 router = APIRouter(prefix="/api/hub/admin/ai", tags=["hub-admin"])
@@ -104,7 +105,7 @@ class RegenerateBody(BaseModel):
     limit: int = Field(ge=1, le=REGENERATE_MAX)
 
 
-class ProvaRead(BaseModel):
+class ProvaRead(ResponseModel):
     answer: str
     latency_ms: int
     cost_eur: str | None
