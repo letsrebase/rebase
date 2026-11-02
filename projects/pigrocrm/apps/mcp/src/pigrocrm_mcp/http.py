@@ -75,14 +75,15 @@ logger = logging.getLogger(__name__)
 @dataclass
 class _SpaceApp:
     app: ASGIApp
-    overrides: dict[str, str]
+    # The settings this server was built from: the registry hands out the very same object
+    # while the space's rows are unchanged, so `is` asks whether the tools are stale.
+    settings: Settings
     stop: anyio.Event
 
 
 @dataclass(frozen=True)
 class _Authenticated:
     actor: Actor
-    overrides: dict[str, str]
     settings: Settings
 
 
@@ -235,27 +236,26 @@ class McpHttpApp:
             # `PatService.resolve` raises, so the caller has one branch.
             raise ValidationFailed("token", "token", INVALID_TOKEN)
         with factory() as session:
-            overrides = self._registry.overrides(slug, session)
             settings = self._registry.effective_settings(slug, session)
             actor = PatService(session, settings=settings).resolve(raw_token)
-            session.commit()  # `resolve` stamps last_used_at
-        return _Authenticated(actor=actor, overrides=overrides, settings=settings)
+            session.commit()  # `resolve` may stamp last_used_at
+        return _Authenticated(actor=actor, settings=settings)
 
     async def _space_app(self, slug: str | None, auth: _Authenticated) -> _SpaceApp:
         key = slug or _ROOT
         current = self._spaces.get(key)
-        if current is not None and current.overrides == auth.overrides:
+        if current is not None and current.settings is auth.settings:
             return current
         async with self._build_lock:
             current = self._spaces.get(key)
-            if current is not None and current.overrides == auth.overrides:
+            if current is not None and current.settings is auth.settings:
                 return current
             if current is not None:
                 # Forgotten *before* it is stopped, and that order is the whole point:
                 # the settings changed, so this server's tool list is stale, but the
                 # build that replaces it can fail (a bad override is exactly what this
                 # path exists for). Left in the dictionary it would be handed to every
-                # later request with these overrides, each one a 500 from a session
+                # later request with these settings, each one a 500 from a session
                 # manager that has stopped. Forgotten, a failed rebuild costs one
                 # request and the next one builds again.
                 self._spaces.pop(key, None)
@@ -305,7 +305,7 @@ class McpHttpApp:
         # that hangs forever holding `_build_lock` -- every later build behind it. anyio
         # re-raises a pre-start failure here instead, and the caller answers with it.
         await self._task_group.start(serve)
-        return _SpaceApp(app=starlette, overrides=auth.overrides, stop=stop)
+        return _SpaceApp(app=starlette, settings=auth.settings, stop=stop)
 
 
 def _storage_for(

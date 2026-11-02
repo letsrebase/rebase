@@ -1,14 +1,26 @@
 """Settings a database decides for itself, laid over the environment's."""
 
 import base64
+import importlib.util
+import logging
+from pathlib import Path
 
 import pytest
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.config import Settings
+from pigrocrm.core.config import Settings, get_settings
 from pigrocrm.core.errors import PermissionDenied
-from pigrocrm.core.space_settings import SpaceSettingsService, SpaceSettingsUpdate, apply_overrides
+from pigrocrm.core.space_settings import (
+    SpaceSetting,
+    SpaceSettingsService,
+    SpaceSettingsUpdate,
+    apply_overrides,
+)
+from pigrocrm.core.space_settings.sealing import SEALED_PREFIX, unseal_value
 from pigrocrm.core.tenants import space_base_settings
 
 ADMIN = Actor(id=None, type="mcp", role="admin")
@@ -270,3 +282,86 @@ def test_the_version_is_the_newest_override_row_and_a_stale_save_is_refused(
         SpaceSettingsUpdate(updated_at=cleared.updated_at), ADMIN, spazio="studio"
     )
     assert same.updated_at == cleared.updated_at
+
+
+def _stored(session: Session, key: str) -> str:
+    return session.scalars(select(SpaceSetting.value).where(SpaceSetting.key == key)).one()
+
+
+def test_the_client_secret_and_the_token_key_are_sealed_at_rest_and_read_back_whole(
+    db_session: Session,
+) -> None:
+    """B-02: a dump of `space_settings` must not carry the key that opens the refresh
+    tokens of the same database."""
+    service = SpaceSettingsService(db_session, BASE)
+    service.update(
+        SpaceSettingsUpdate(google_client_id="abc.apps", google_client_secret="shh-secret"),
+        ADMIN,
+        spazio="studio",
+    )
+
+    secret_row = _stored(db_session, "google_client_secret")
+    key_row = _stored(db_session, "google_token_key")
+    assert secret_row.startswith(SEALED_PREFIX) and "shh-secret" not in secret_row
+    assert key_row.startswith(SEALED_PREFIX)
+    effective = service.effective()
+    assert effective.google_client_secret == "shh-secret"
+    assert len(base64.b64decode(effective.google_token_key)) == 32
+    # A row that is not a secret stays readable text.
+    assert _stored(db_session, "google_client_id") == "abc.apps"
+
+
+def test_a_secret_this_installation_cannot_open_reads_as_not_set_and_never_breaks_the_space(
+    db_session: Session, caplog: pytest.LogCaptureFixture
+) -> None:
+    other = Settings(_env_file=None, jwt_secret="another-installation-secret-32-chars-long")  # type: ignore[call-arg]
+    SpaceSettingsService(db_session, other).update(
+        SpaceSettingsUpdate(google_client_id="abc.apps", google_client_secret="shh"),
+        ADMIN,
+        spazio="studio",
+    )
+
+    with caplog.at_level(logging.WARNING):
+        effective = SpaceSettingsService(db_session, BASE).effective()
+
+    assert effective.google_client_id == "abc.apps"
+    assert effective.google_client_secret == ""
+    assert effective.google_token_key == ""
+    assert "shh" not in caplog.text
+
+
+def test_migration_0065_seals_the_rows_written_in_plain_text(
+    db_session: Session,
+) -> None:
+    path = (
+        Path(__file__).resolve().parents[1]
+        / "migrations"
+        / "versions"
+        / "0065_seal_space_settings_secrets.py"
+    )
+    spec = importlib.util.spec_from_file_location("migration_0065", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    db_session.execute(
+        update(SpaceSetting).where(SpaceSetting.key == "google_client_id").values(value="x")
+    )
+    db_session.add_all(
+        [
+            SpaceSetting(key="google_client_secret", value="plain-secret"),
+            SpaceSetting(key="google_token_key", value="plain-key"),
+        ]
+    )
+    db_session.flush()
+
+    connection = db_session.connection()
+    with Operations.context(MigrationContext.configure(connection)):
+        module.upgrade()
+        sealed_once = _stored(db_session, "google_client_secret")
+        module.upgrade()  # run twice: a sealed row is left alone
+
+    assert sealed_once.startswith(SEALED_PREFIX)
+    assert _stored(db_session, "google_client_secret") == sealed_once
+    secret = get_settings().jwt_secret
+    assert unseal_value(sealed_once, secret) == "plain-secret"
+    assert unseal_value(_stored(db_session, "google_token_key"), secret) == "plain-key"

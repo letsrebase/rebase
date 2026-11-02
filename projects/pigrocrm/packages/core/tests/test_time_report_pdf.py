@@ -202,7 +202,7 @@ def test_the_compilation_date_is_italys_own_day_not_the_processs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """`oggi` is the date printed at the head of the timesheet the client receives next
-    to the invoice, so it is a date in the issuer's calendar -- `clock.py`'s rule, and
+    to the invoice, so it is a date in the issuer's calendar -- `db/clock.py`'s rule, and
     the same rule `_italian_date` already states for every row.
 
     Frozen at 00:30 on 1 January in Rome, which a process running in UTC (the API image

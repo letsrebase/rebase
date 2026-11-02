@@ -20,10 +20,10 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.clock import ITALY_TZ, oggi_in_italia
 from pigrocrm.core.config import Settings, get_settings
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.customers.service import CustomerService
+from pigrocrm.core.db.clock import local_date, today_local
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.documents.schemas import DocumentCreate
@@ -573,7 +573,7 @@ class InvoiceService:
             custom_fields=self._validated_custom(data.custom_fields or {}),
         )
         if data.tipo == "proforma":
-            # `oggi_in_italia()`, not `date.today()`: see `clock.py`'s module docstring
+            # `today_local()`, not `date.today()`: see `db/clock.py`'s module docstring
             # for why a bare `date.today()` on a host that is not running in
             # Europe/Rome (this project's own `Dockerfile.api` pins no `TZ`, so its
             # base image defaults to UTC) reproduces the previous system's UTC-instant defect
@@ -582,13 +582,13 @@ class InvoiceService:
             # non-fiscal, internal-only identifier, not a register entry -- but there
             # is no reason to let the wrong clock answer the question at all.
             invoice.riferimento = proforma_riferimento(
-                oggi_in_italia().year, self.repo.next_proforma_sequence()
+                today_local().year, self.repo.next_proforma_sequence()
             )
             # A proforma's own document date (ORB-63): the sender's, stored here so the
             # PDF stops printing the render day. Not a register date -- none of
             # `_check_issue_date`'s limits apply, and the fattura born from this row
             # takes its own date at `issue` -- which is why any date is accepted.
-            invoice.data_emissione = data.data_emissione or oggi_in_italia()
+            invoice.data_emissione = data.data_emissione or today_local()
         computed = self._computed_lines(data.righe, profile, nazione_cliente=customer.nazione)
         self._apply_totals(invoice, computed, profile)
         self.repo.add(invoice)
@@ -904,11 +904,11 @@ class InvoiceService:
         `data_emissione` is a `date` in the issuer's own calendar, never the UTC
         projection of an instant: `toISOString()` on 31 December at 23:30 CET yields
         1 January, which puts an immutable document in the wrong fiscal year. That is
-        the defect this whole method exists around, and the fix is `oggi_in_italia()`
+        the defect this whole method exists around, and the fix is `today_local()`
         -- not a bare `date.today()`, which would only be safe if this process were
-        guaranteed to run with Italy's own timezone, and it is not (see `clock.py`).
+        guaranteed to run with Italy's own timezone, and it is not (see `db/clock.py`).
         """
-        oggi = oggi_in_italia()
+        oggi = today_local()
         if data_emissione > oggi:
             raise ValidationFailed(
                 ENTITY,
@@ -1007,9 +1007,9 @@ class InvoiceService:
         actor.require_admin("issue_invoice")
         source = self._require(invoice_id)
         self._writing_azienda(source.azienda_id)
-        data_emissione = data.data_emissione or oggi_in_italia()
+        data_emissione = data.data_emissione or today_local()
         anno = data_emissione.year
-        self._check_issue_date(data_emissione, oggi_in_italia().year)
+        self._check_issue_date(data_emissione, today_local().year)
 
         from_proforma = source.tipo == "proforma"
         self._check_issuable(source, from_proforma)
@@ -1967,7 +1967,7 @@ class InvoiceService:
     def _check_import_date(self, data_emissione: date) -> None:
         """Only "not in the future" (§3.2 rule 5). `_check_issue_date` also refuses a
         closed year, and a closed year is exactly what an import fills."""
-        oggi = oggi_in_italia()
+        oggi = today_local()
         if data_emissione > oggi:
             raise ValidationFailed(
                 ENTITY,
@@ -2410,10 +2410,10 @@ class InvoiceService:
                 trasmessa_esternamente_il=invoice.trasmessa_esternamente_il.isoformat(),
             )
         invoice.stato = "annullata"
-        # `oggi_in_italia()`, never a bare `date.today()`: see `clock.py`. The date
+        # `today_local()`, never a bare `date.today()`: see `db/clock.py`. The date
         # printed on an annulment record is subject to the same "issuer's own
         # calendar" requirement as `data_emissione`.
-        invoice.annullata_il = oggi_in_italia()
+        invoice.annullata_il = today_local()
         invoice.motivo_annullamento = data.motivo
         self.activities.record(
             ENTITY,
@@ -2440,7 +2440,7 @@ class InvoiceService:
         correction is still possible at all, so an import could permanently record a
         delivery dated tomorrow, or dated before the emission, with no way to correct it.
         """
-        oggi = oggi_in_italia()
+        oggi = today_local()
         if quando > oggi:
             raise ValidationFailed(
                 ENTITY,
@@ -2537,7 +2537,7 @@ class InvoiceService:
         sender may move while the document is a draft. The `created_at` fallback is
         for a row written before migration 0033 by a path that skipped its backfill:
         it is the civil date in Europe/Rome the PDF printed before the column was
-        filled, never `oggi_in_italia()`, so a re-render does not drift with the
+        filled, never `today_local()`, so a re-render does not drift with the
         clock. `anno`/`numero` are placeholders that satisfy the schema's
         non-nullable bounds; `build_scope` never reads them here because
         `riferimento is not None` skips the `numero_completo` branch entirely.
@@ -2547,7 +2547,7 @@ class InvoiceService:
         return InvoiceForExport(
             anno=invoice.created_at.year,
             numero=1,
-            data_emissione=invoice.data_emissione or invoice.created_at.astimezone(ITALY_TZ).date(),
+            data_emissione=invoice.data_emissione or local_date(invoice.created_at),
             data_scadenza=None,
             tipo_documento=invoice.tipo_documento,
             divisa=invoice.divisa,
@@ -3040,7 +3040,7 @@ class InvoiceService:
                 giorni = self.fiscal.snapshot().giorni_scadenza
             except NotFound:
                 return None
-        return scadenza_da_termini(oggi_in_italia(), giorni, fine_mese=fine_mese)
+        return scadenza_da_termini(today_local(), giorni, fine_mese=fine_mese)
 
     def lines(self, invoice_id: UUID, actor: Actor) -> list[InvoiceLineRead]:
         self._require(invoice_id)

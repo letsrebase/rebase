@@ -183,12 +183,9 @@ class TenantService:
                     ensure_defaults(space, nome=data.nome.strip() or data.slug)
             finally:
                 engine.dispose()
-        except ValidationFailed:
-            # A domain rule refused something about the admin: nothing about the space
-            # is wrong, only the input, and the person will retry. Leave nothing behind.
-            self._undo(tenant, url)
-            raise
         except Exception:
+            # Whatever failed after the row -- a refusal of the admin's input, which the
+            # person will retry, or the space itself -- leaves nothing behind.
             self._undo(tenant, url)
             raise
         return TenantRead.model_validate(tenant)

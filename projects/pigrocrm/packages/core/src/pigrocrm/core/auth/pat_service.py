@@ -1,6 +1,6 @@
 import hashlib
 import secrets
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
@@ -9,10 +9,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
-from pigrocrm.core.actor import Actor, Role
+from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.auth.pat_models import PersonalAccessToken
-from pigrocrm.core.auth.scope import scope_of
+from pigrocrm.core.auth.scope import as_role, scope_of
 from pigrocrm.core.auth.service import ENTITY as USER_ENTITY
 from pigrocrm.core.auth.service import require_verified_identity
 from pigrocrm.core.config import Settings, get_settings
@@ -20,6 +20,8 @@ from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 
 PAT_PREFIX = "pgc_"
 PREFIX_VISIBLE_CHARS = 8
+# How stale `last_used_at` may be before a request moves it (PAPI-10).
+LAST_USED_RESOLUTION = timedelta(minutes=1)
 # Used for every way `resolve()` can fail -- unknown token, revoked token, or a token
 # whose owning user was deactivated -- so the three are indistinguishable from the
 # outside. A leaked PAT must not double as an oracle for "is this still worth using":
@@ -265,10 +267,16 @@ class PatService:
         # Captured before the assignment below overwrites it: `None` here means this
         # token has never been presented before, which is the moment the credential
         # stopped being a string in a config file and became a live key to the CRM.
-        first_use = record.last_used_at is None
-        record.last_used_at = datetime.now(UTC)
+        now = datetime.now(UTC)
+        last_used = record.last_used_at
+        first_use = last_used is None
+        # At most once a minute (PAPI-10): this runs on every request an agent makes, and a
+        # write per read would take a row lock on the token for each of parallel calls.
+        # "When was this token last used" stays true to within `LAST_USED_RESOLUTION`.
+        if last_used is None or now - last_used >= LAST_USED_RESOLUTION:
+            record.last_used_at = now
 
-        role: Role = user.ruolo  # type: ignore[assignment]
+        role = as_role(user.ruolo)
         # type="mcp": a PAT identifies an agent, which is what makes the timeline honest.
         #
         # `full_access` is stamped here, and this is the only place it is decided. It
@@ -346,16 +354,7 @@ class PatService:
         )
         self.session.commit()
 
-    # `list` is the last method in this class on purpose, and must stay that way. A
-    # method named `list` rebinds that name in the *class* namespace, so any method
-    # defined below it whose return annotation is a bare `list[...]` would resolve
-    # `list` to this method instead of the builtin and fail at import time with
-    # `TypeError: 'function' object is not subscriptable`. It used to sit in the
-    # middle of this class, which was survivable only because nothing below it
-    # happened to be annotated that way; adding `_record_use_after_revocation` above
-    # is what made keeping the rule cheaper than remembering the exception.
-    # `test_module_imports.py` is the real guard.
-    def list(self, actor: Actor) -> list[PatRead]:
+    def list_own(self, actor: Actor) -> list[PatRead]:
         stmt = (
             select(PersonalAccessToken)
             .where(PersonalAccessToken.user_id == actor.id)

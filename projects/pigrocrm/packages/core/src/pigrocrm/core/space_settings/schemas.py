@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 # The keys a space may decide for itself. Deliberately not every field of `Settings`:
 # the database URL, the JWT secret and the cookie flag are the process's; the timezone
@@ -26,6 +26,8 @@ SECRET_KEYS: frozenset[str] = frozenset({"google_client_secret", "google_token_k
 class SpaceSettingsUpdate(BaseModel):
     """Every field optional: absent means "leave as it is", an empty string clears the
     override so the environment's value shows through again."""
+
+    model_config = ConfigDict(extra="forbid")
 
     google_client_id: str | None = Field(default=None, max_length=200)
     google_client_secret: str | None = Field(default=None, max_length=200)

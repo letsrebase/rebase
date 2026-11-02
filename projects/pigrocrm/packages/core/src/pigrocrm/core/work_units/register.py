@@ -35,9 +35,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.clock import oggi_in_italia
 from pigrocrm.core.contracts.models import Contract
 from pigrocrm.core.customers.models import Customer
+from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.documents.schemas import DocumentFromTemplate, DocumentRead
 from pigrocrm.core.documents.service import DocumentService
 from pigrocrm.core.errors import NotFound, ValidationFailed
@@ -209,7 +209,7 @@ class ContractRegisterService:
         """Everything the PDF needs, finished: no cell is computed by the template."""
         return {
             "periodo": f"{_italian_date(register.da)} - {_italian_date(register.a)}",
-            "oggi": _italian_date(oggi_in_italia()),
+            "oggi": _italian_date(today_local()),
             "contratto": {"titolo": register.titolo},
             "voci": [
                 {

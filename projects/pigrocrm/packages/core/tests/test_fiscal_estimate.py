@@ -36,7 +36,7 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.analytics.fiscal import estimate_income
 from pigrocrm.core.analytics.service import AnalyticsService
-from pigrocrm.core.clock import oggi_in_italia
+from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.errors import NotFound, PermissionDenied
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
@@ -49,7 +49,7 @@ WRITER = Actor(id=None, type="user", role="collaboratore")
 # The year `deal_with_mixed_invoices` lands in. `issue()` refuses a `data_emissione`
 # outside the current year, so a fixture cannot choose one and the test must not hard-code
 # a literal that stops being true on 1 January.
-ANNO = oggi_in_italia().year
+ANNO = today_local().year
 
 
 def _set_rates(

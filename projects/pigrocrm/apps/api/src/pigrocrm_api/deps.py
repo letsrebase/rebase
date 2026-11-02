@@ -15,7 +15,6 @@ from pigrocrm.core.auth.tokens import decode_token
 from pigrocrm.core.config import Settings, get_settings
 from pigrocrm.core.db.scope import bind_scope
 from pigrocrm.core.errors import DomainError
-from pigrocrm.core.space_settings import apply_overrides
 from pigrocrm.core.storage import DocumentStorage, LocalFileStorage, storage_from_settings
 from pigrocrm.core.tenants import SpaceRegistry, space_base_settings
 from pigrocrm_api.tenancy import first_cookie, tenant_slug
@@ -145,15 +144,16 @@ def invalidate_space_settings(slug: str | None, settings: Settings | None = None
 
 def get_request_settings(
     request: Request,
-    base: BaseSettingsDep,
     settings: Annotated[Settings, Depends(get_settings)],
     session: Annotated[Session, Depends(get_session)],
 ) -> Settings:
-    """The settings every route reads: the environment as this request may see it,
-    with the rows of this database's `space_settings` laid over it. The session is the
-    request's own (FastAPI caches the dependency), so a test's override of
-    `get_session` is where the rows come from too."""
-    return apply_overrides(base, _space_registry(settings).overrides(tenant_slug(request), session))
+    """The settings every route reads: the environment as this request may see it
+    (`request_base_settings`), with the rows of this database's `space_settings` laid over
+    it. Resolved once per TTL and cached by the registry (`SpaceRegistry.effective_settings`),
+    not rebuilt per request. The session is the request's own (FastAPI caches the
+    dependency), so a test's override of `get_session` is where the rows come from too, and
+    it is only touched when the cached answer has expired."""
+    return _space_registry(settings).effective_settings(tenant_slug(request), session, settings)
 
 
 SettingsDep = Annotated[Settings, Depends(get_request_settings)]

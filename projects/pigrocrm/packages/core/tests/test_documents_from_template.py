@@ -307,7 +307,7 @@ def test_oggi_defaults_to_italys_own_day_not_the_processs(
 ) -> None:
     """`{{oggi}}` is the date a template prints on the document itself. It is a date in
     the issuer's calendar, so it comes off Italy's clock and not the host's -- see
-    `clock.py`.
+    `db/clock.py`.
 
     Frozen at 00:30 on 1 January in Rome, which a process running in UTC (the API image
     does) still reads as 31 December: same hour, different day, different *year*, on a

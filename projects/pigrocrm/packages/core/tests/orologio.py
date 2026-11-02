@@ -1,8 +1,8 @@
 """One instant at which Italy and the process disagree about what day it is.
 
-`clock.py` exists because `date.today()` reads the *process's* system timezone and this
+`db/clock.py` exists because `date.today()` reads the *process's* system timezone and this
 project does not control that end to end -- `Dockerfile.api` pins no `TZ`, so the API
-runs in UTC. A test that only checks "the service called `oggi_in_italia`" proves
+runs in UTC. A test that only checks "the service called `today_local`" proves
 nothing about behaviour: it passes just as happily against an implementation that reads
 the right clock and then does the wrong thing with it. What proves the rule is holding
 is an assertion taken at a moment where the two clocks give *different answers*, so a
@@ -11,24 +11,21 @@ regression to `date.today()` changes the observable result and the test goes red
 Italy is ahead of UTC (CET is +01:00, CEST +02:00), so a UTC process is still on
 *yesterday* for the first hour of every Italian day. 00:30 in Rome on 1 January 2026 is
 23:30 UTC on 31 December 2025: the two clocks disagree about the day, the month and the
-year at once, which is the same shape as the previous system's defect `clock.py`'s docstring
+year at once, which is the same shape as the previous system's defect `db/clock.py`'s docstring
 describes -- an instant projected into the wrong zone landing a document in the wrong
 fiscal year.
 
 `congela` freezes that instant on both sides of the disagreement:
 
-  * `pigrocrm.core.db.clock._now` is frozen, so `today_local()` -- and `oggi_in_italia()`,
-    which is now a thin alias over it (slice 6 Task B1) -- answers `OGGI_IN_ITALIA`
+  * `pigrocrm.core.db.clock._now` is frozen, so `today_local()` answers `OGGI_IN_ITALIA`
     (1 January 2026): the real function, real `ZoneInfo` conversion, only the instant
     supplied.
   * each production module named by the caller gets a `date` whose `today()` answers
     `OGGI_DEL_PROCESSO` (31 December 2025), which is what the standard library would
     genuinely return for that instant on a host running in UTC.
 
-The freeze point moved from `pigrocrm.core.clock`'s own `datetime` to `db.clock._now`
-when Task B1 made `db/clock.py` the product's single clock and `oggi_in_italia()` a
-delegation to it. There is exactly one place to freeze because there is exactly one
-place that reads the wall clock; a helper that had to patch two would be evidence the
+There is exactly one place to freeze, `db.clock._now`, because there is exactly one place
+that reads the wall clock; a helper that had to patch two would be evidence the
 consolidation had not actually happened.
 
 Patching a module attribute rather than the whole interpreter is deliberate: it is the
@@ -43,8 +40,8 @@ from datetime import UTC, date, datetime
 
 import pytest
 
-from pigrocrm.core.clock import ITALY_TZ
 from pigrocrm.core.db import clock as db_clock
+from pigrocrm.core.db.clock import ITALY_TZ
 
 # 00:30 on 1 January in Rome. In UTC this instant is still 23:30 on 31 December.
 ISTANTE = datetime(2026, 1, 1, 0, 30, tzinfo=ITALY_TZ)

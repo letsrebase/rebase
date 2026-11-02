@@ -1,4 +1,4 @@
-"""One engine per space per process, and the settings each space sees.
+"""The engines a process holds, one per space in use, and the settings each space sees.
 
 Lifted out of `apps/api/deps.py` (ORB-170) because the MCP server over HTTP needs the
 same three answers the API needs on every request: which database a slug opens, what
@@ -10,14 +10,17 @@ the caching.
 
 import threading
 import time
+from collections import OrderedDict
+from dataclasses import dataclass
 
 from sqlalchemy import Engine, create_engine
+from sqlalchemy.engine import URL
 from sqlalchemy.orm import Session, sessionmaker
 
 from pigrocrm.core.config import Settings
 from pigrocrm.core.db import create_engine_from_settings, session_factory
 from pigrocrm.core.space_settings import SpaceSettingsService, apply_overrides
-from pigrocrm.core.tenants.database import ensure_tenants_database, tenant_database_url
+from pigrocrm.core.tenants.database import tenant_database_url, tenants_database_url
 from pigrocrm.core.tenants.google import (
     oauth_state_prefix,
     space_slack_token_key,
@@ -27,6 +30,17 @@ from pigrocrm.core.tenants.service import TenantService
 
 OVERRIDES_TTL_SECONDS = 10.0
 _ROOT = ""
+# What one space may hold open in one process, and for how long (B-17). A space has a
+# database of its own, so engines scale with the spaces in use, not with the traffic: a
+# small pool each, the least recently used engine disposed past `MAX_OPEN_SPACES` and any
+# that has gone `IDLE_SECONDS` unused. The API and the MCP server each hold a registry,
+# so the worst case against Postgres's default 100 connections is
+# `2 * MAX_OPEN_SPACES * (POOL_SIZE + POOL_OVERFLOW)` plus the root's and the registry's.
+MAX_OPEN_SPACES = 12
+IDLE_SECONDS = 600.0
+POOL_SIZE = 2
+POOL_OVERFLOW = 2
+POOL_RECYCLE_SECONDS = 1800
 
 
 def space_base_settings(settings: Settings, slug: str | None) -> Settings:
@@ -94,33 +108,66 @@ def space_base_settings(settings: Settings, slug: str | None) -> Settings:
     )
 
 
+@dataclass
+class _Effective:
+    """The settings one space last resolved: from which root `Settings`, when its rows were
+    read, the rows themselves and what they made."""
+
+    source: Settings
+    checked_at: float
+    overrides: dict[str, str]
+    settings: Settings
+
+
 class SpaceRegistry:
-    """Engines built on first use and kept; the tenants registry opened the same way.
+    """Engines built on first use, a bounded number kept; the tenants registry opened the
+    same way.
 
     The lock is re-entrant, and it has to be: building a space's engine holds it while
     it asks the registry, and the registry's own first build takes the same lock. A
     plain `Lock` deadlocks the first request a space ever receives (found the hard
     way in `deps.py`, with a test suite that never finished).
 
-    Overrides are cached for `overrides_ttl` seconds per slug: every request asks for
-    its settings, and a read of a one-row table on each of them is cheap but not free.
-    `invalidate` after a write, so the page that just saved sees what it saved.
+    **A space's effective settings are resolved once per `overrides_ttl`** (PAPI-04):
+    every request asks for them, and the rows of `space_settings` are a read of a one-row
+    table, but laying them over the environment re-validates a whole `Settings`
+    (about 4 ms of CPU). The answer is cached per slug, and while the rows read again are
+    the rows it was built from it stays the very same object, so a caller may compare two
+    answers with `is` to ask whether anything changed (the MCP server rebuilds a space's
+    tools on that). `invalidate` after a write, so the page that just saved sees what it
+    saved.
+
+    **Engines are bounded** (B-17): see `MAX_OPEN_SPACES`. The registry never creates a
+    database or a table: that is the boot's (`ensure_tenants_database`), and a request
+    path that ran DDL would need the owner's credentials in every process that serves.
     """
 
-    def __init__(self, settings: Settings, *, overrides_ttl: float = OVERRIDES_TTL_SECONDS) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        overrides_ttl: float = OVERRIDES_TTL_SECONDS,
+        max_open_spaces: int = MAX_OPEN_SPACES,
+        idle_seconds: float = IDLE_SECONDS,
+    ) -> None:
         self.settings = settings
         self._overrides_ttl = overrides_ttl
+        self._max_open_spaces = max_open_spaces
+        self._idle_seconds = idle_seconds
         self._lock = threading.RLock()
         self._root: sessionmaker[Session] | None = None
         self._registry: sessionmaker[Session] | None = None
-        self._spaces: dict[str, sessionmaker[Session]] = {}
-        self._overrides: dict[str, tuple[float, dict[str, str]]] = {}
+        # slug -> (factory, last used), least recently used first.
+        self._spaces: OrderedDict[str, tuple[sessionmaker[Session], float]] = OrderedDict()
+        self._effective: dict[str, _Effective] = {}
 
     def registry_factory(self) -> sessionmaker[Session]:
         if self._registry is None:
             with self._lock:
                 if self._registry is None:
-                    self._registry = session_factory(ensure_tenants_database(self.settings))
+                    self._registry = session_factory(
+                        _small_engine(tenants_database_url(self.settings))
+                    )
         return self._registry
 
     def session_factory(self, slug: str | None) -> sessionmaker[Session]:
@@ -130,54 +177,88 @@ class SpaceRegistry:
                     if self._root is None:
                         self._root = session_factory(create_engine_from_settings(self.settings))
             return self._root
-        factory = self._spaces.get(slug)
+        with self._lock:
+            now = time.monotonic()
+            self._evict_idle(now)
+            entry = self._spaces.get(slug)
+            if entry is not None:
+                self._spaces[slug] = (entry[0], now)
+                self._spaces.move_to_end(slug)
+                return entry[0]
+            registry = self.registry_factory()()
+            try:
+                # `NotFound` for a slug nobody registered: a wrong address, not a
+                # server fault. Callers turn it into their own 404.
+                tenant = TenantService(registry, self.settings).get(slug)
+            finally:
+                registry.close()
+            factory = session_factory(
+                _small_engine(tenant_database_url(self.settings, tenant.db_name))
+            )
+            self._spaces[slug] = (factory, now)
+            while len(self._spaces) > self._max_open_spaces:
+                self._dispose(self._spaces.popitem(last=False)[1][0])
+            return factory
+
+    def _evict_idle(self, now: float) -> None:
+        for slug in [s for s, (_, used) in self._spaces.items() if now - used > self._idle_seconds]:
+            self._dispose(self._spaces.pop(slug)[0])
+
+    @staticmethod
+    def _dispose(factory: sessionmaker[Session] | None) -> None:
+        """Closes the idle connections of an engine nobody holds on to any more. One a
+        request still uses goes on working (its pool is rebuilt) and is collected with it."""
         if factory is None:
-            with self._lock:
-                factory = self._spaces.get(slug)
-                if factory is None:
-                    registry = self.registry_factory()()
-                    try:
-                        # `NotFound` for a slug nobody registered: a wrong address, not a
-                        # server fault. Callers turn it into their own 404.
-                        tenant = TenantService(registry, self.settings).get(slug)
-                    finally:
-                        registry.close()
-                    engine = create_engine(
-                        tenant_database_url(self.settings, tenant.db_name),
-                        pool_pre_ping=True,
-                        future=True,
-                    )
-                    factory = session_factory(engine)
-                    self._spaces[slug] = factory
-        return factory
+            return
+        bind = factory.kw.get("bind")
+        if isinstance(bind, Engine):
+            bind.dispose()
 
-    def overrides(self, slug: str | None, session: Session) -> dict[str, str]:
+    def effective_settings(
+        self, slug: str | None, session: Session, root: Settings | None = None
+    ) -> Settings:
+        """What a request to `slug` reads: the environment as this space may see it
+        (`space_base_settings`) with the rows of its `space_settings` laid over it.
+
+        `root` is the process's settings as the caller holds them, the registry's own by
+        default: a test that overrides `get_settings` per request passes its own and never
+        reads another test's answer. `session` is on the space's database and is touched
+        only when the cached answer is older than the TTL."""
+        base = root or self.settings
         key = slug or _ROOT
-        cached = self._overrides.get(key)
         now = time.monotonic()
-        if cached is not None and now - cached[0] < self._overrides_ttl:
-            return cached[1]
-        rows = SpaceSettingsService(session, space_base_settings(self.settings, slug)).overrides()
-        self._overrides[key] = (now, rows)
-        return rows
-
-    def effective_settings(self, slug: str | None, session: Session) -> Settings:
-        return apply_overrides(
-            space_base_settings(self.settings, slug), self.overrides(slug, session)
-        )
+        entry = self._effective.get(key)
+        if entry is not None and entry.source is not base:
+            entry = None
+        if entry is not None and now - entry.checked_at < self._overrides_ttl:
+            return entry.settings
+        overrides = SpaceSettingsService(session, space_base_settings(base, slug)).overrides()
+        if entry is not None and entry.overrides == overrides:
+            entry.checked_at = now
+            return entry.settings
+        resolved = apply_overrides(space_base_settings(base, slug), overrides)
+        self._effective[key] = _Effective(base, now, overrides, resolved)
+        return resolved
 
     def invalidate(self, slug: str | None) -> None:
-        self._overrides.pop(slug or _ROOT, None)
+        self._effective.pop(slug or _ROOT, None)
 
     def dispose(self) -> None:
         with self._lock:
-            for factory in [self._root, self._registry, *self._spaces.values()]:
-                if factory is None:
-                    continue
-                bind = factory.kw.get("bind")
-                if isinstance(bind, Engine):
-                    bind.dispose()
+            for factory in [self._root, self._registry, *(f for f, _ in self._spaces.values())]:
+                self._dispose(factory)
             self._root = None
             self._registry = None
             self._spaces.clear()
-            self._overrides.clear()
+            self._effective.clear()
+
+
+def _small_engine(url: URL) -> Engine:
+    return create_engine(
+        url,
+        pool_size=POOL_SIZE,
+        max_overflow=POOL_OVERFLOW,
+        pool_recycle=POOL_RECYCLE_SECONDS,
+        pool_pre_ping=True,
+        future=True,
+    )

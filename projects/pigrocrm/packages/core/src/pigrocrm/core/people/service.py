@@ -10,6 +10,7 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.customers.repository import CustomerRepository
 from pigrocrm.core.db import encode_cursor
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
+from pigrocrm.core.fields.custom import merge_custom
 from pigrocrm.core.fields.schemas import EntityType
 from pigrocrm.core.fields.service import FieldDefinitionService
 from pigrocrm.core.fields.validator import validate_custom_fields
@@ -75,58 +76,6 @@ class PersonService:
         if customer_id is not None and self.customers.get(customer_id) is None:
             raise NotFound("customer", customer_id)
 
-    def _validated_custom(self, values: dict[str, Any]) -> dict[str, Any]:
-        """Used by `create` only: `values` is the *complete* desired set of custom
-        fields for a brand-new row, so it is validated against every active
-        definition -- a required-but-absent field is genuinely missing here, not
-        merely untouched, unlike on a partial `update` (see `_update_custom_fields`).
-        Mirrors `CustomerService._validated_custom` exactly."""
-        return validate_custom_fields(ENTITY, self.fields.specs_for(ENTITY), values)
-
-    def _update_custom_fields(self, person: Person, provided: dict[str, Any]) -> dict[str, Any]:
-        """Copies `CustomerService._update_custom_fields`'s contract exactly (see that
-        method's docstring in customers/service.py for the full reasoning): validates
-        only the keys the caller is touching, against active definitions -- never the
-        union with what is already stored on `person`. Validating the union would
-        contradict Task 7's contract for archiving a field ("hide it, keep the data
-        readable"): an archived key still present in storage would fail the "campo non
-        definito" check on every future update, even one that never mentions that key.
-
-        A key supplied with `None` removes that entry from the stored dict, unless the
-        key currently belongs to an active, `required=True` definition -- in which case
-        it raises the same "campo obbligatorio" `ValidationFailed` that
-        `validate_custom_fields` raises for `""`. `None` and `""` are two spellings of
-        "this field has no value"; on a *required*, currently active field the two must
-        be rejected identically, or a caller strips the value just by choosing the
-        other spelling. Archived, undefined, or non-required keys keep allowing removal
-        via `None` even if the definition was required back when it was active --
-        clearing an archived field's stored value must stay possible.
-
-        A key supplied with any other (non-blank) value must belong to a currently
-        active definition. Keys already stored that `provided` does not mention --
-        archived or not, required or not -- are carried over untouched.
-        """
-        active_by_key = {spec.key: spec for spec in self.fields.specs_for(ENTITY)}
-
-        to_remove: set[str] = set()
-        for key, value in provided.items():
-            if value is not None:
-                continue
-            spec = active_by_key.get(key)
-            if spec is not None and spec.required:
-                raise ValidationFailed(
-                    ENTITY, key, "campo obbligatorio", expected="un valore non vuoto"
-                )
-            to_remove.add(key)
-
-        to_set = {key: value for key, value in provided.items() if value is not None}
-        touched_specs = [spec for spec in active_by_key.values() if spec.key in to_set]
-        validated = validate_custom_fields(ENTITY, touched_specs, to_set)
-
-        merged = {k: v for k, v in person.custom_fields.items() if k not in to_remove}
-        merged.update(validated)
-        return merged
-
     def _read(self, person: Person) -> PersonRead:
         """One person's read shape, company name included.
 
@@ -171,7 +120,9 @@ class PersonService:
         first_note = payload.pop("note", None)
         _check_email(payload)
         self._check_customer(payload.get("customer_id"))
-        payload["custom_fields"] = self._validated_custom(payload.get("custom_fields") or {})
+        payload["custom_fields"] = validate_custom_fields(
+            ENTITY, self.fields.specs_for(ENTITY), payload.get("custom_fields") or {}
+        )
 
         person = self.repo.add(Person(**payload))
         self.activities.record(ENTITY, person.id, "created", actor, {"nome": person.nome})
@@ -193,7 +144,7 @@ class PersonService:
         # `data.custom_fields` directly rather than through `model_dump`: this method
         # must see a caller-supplied `None` *inside* the dict (e.g. {"seniority":
         # None}, meaning "remove this key") exactly as given, with no risk of it being
-        # confused with the field itself being absent -- see `_update_custom_fields`.
+        # confused with the field itself being absent -- see `merge_custom`.
         # `customer_id` is excluded here too and handled below, alongside `detach`:
         # the two interact in a way a blind `model_dump` cannot express.
         changes = supplied_changes(data, exclude={"custom_fields", "detach", "customer_id"})
@@ -228,7 +179,9 @@ class PersonService:
             changes["customer_id"] = data.customer_id
 
         if data.custom_fields is not None:
-            changes["custom_fields"] = self._update_custom_fields(person, data.custom_fields)
+            changes["custom_fields"] = merge_custom(
+                ENTITY, self.fields.specs_for(ENTITY), person.custom_fields, data.custom_fields
+            )
         for key, value in changes.items():
             setattr(person, key, value)
 

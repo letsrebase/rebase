@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.config import GOOGLE_TOKEN_KEY_BYTES, Settings, gmail_configured
+from pigrocrm.core.config import Settings, gmail_configured
+from pigrocrm.core.crypto import KEY_BYTES
 from pigrocrm.core.space_settings.models import SpaceSetting
 from pigrocrm.core.space_settings.schemas import (
     OVERRIDABLE_KEYS,
@@ -17,6 +18,7 @@ from pigrocrm.core.space_settings.schemas import (
     SpaceSettingsRead,
     SpaceSettingsUpdate,
 )
+from pigrocrm.core.space_settings.sealing import open_secret, seal_value
 from pigrocrm.core.versioning import require_unchanged
 
 ENTITY = "space_settings"
@@ -96,7 +98,7 @@ def apply_overrides(base: Settings, overrides: dict[str, str]) -> Settings:
 
 def new_token_key() -> str:
     """32 random bytes, base64: what `decode_google_token_key` expects."""
-    return base64.b64encode(secrets.token_bytes(GOOGLE_TOKEN_KEY_BYTES)).decode("ascii")
+    return base64.b64encode(secrets.token_bytes(KEY_BYTES)).decode("ascii")
 
 
 class SpaceSettingsService:
@@ -121,9 +123,21 @@ class SpaceSettingsService:
             self.session.scalars(select(SpaceSetting).execution_options(populate_existing=True))
         )
 
-    @staticmethod
-    def _overrides_of(rows: list[SpaceSetting]) -> dict[str, str]:
-        return {row.key: row.value for row in rows if row.key in OVERRIDABLE_KEYS}
+    def _overrides_of(self, rows: list[SpaceSetting]) -> dict[str, str]:
+        """The rows `Settings` may be given, the sealed ones opened (`sealing.py`); a
+        secret this installation cannot open is left out, as if it were not set."""
+        overrides: dict[str, str] = {}
+        for row in rows:
+            if row.key not in OVERRIDABLE_KEYS:
+                continue
+            if row.key in SECRET_KEYS:
+                opened = open_secret(row.key, row.value, self.base.jwt_secret)
+                if opened is None:
+                    continue
+                overrides[row.key] = opened
+            else:
+                overrides[row.key] = row.value
+        return overrides
 
     @staticmethod
     def _version_of(rows: list[SpaceSetting]) -> datetime | None:
@@ -192,6 +206,8 @@ class SpaceSettingsService:
         return self._read(spazio=spazio)
 
     def _set(self, key: str, value: str) -> None:
+        if key in SECRET_KEYS:
+            value = seal_value(value, self.base.jwt_secret)
         row = self.session.get(SpaceSetting, key)
         if row is None:
             self.session.add(SpaceSetting(key=key, value=value))

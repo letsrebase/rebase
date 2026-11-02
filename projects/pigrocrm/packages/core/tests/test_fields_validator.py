@@ -135,9 +135,17 @@ def test_checkbox_coerces_common_truthy_representations(raw: Any, expected: bool
     assert validate_custom_fields("c", [spec("ok", "checkbox")], {"ok": raw})["ok"] is expected
 
 
-def test_checkbox_rejects_ambiguous_values() -> None:
+@pytest.mark.parametrize("raw", ["forse", 1.0, 2, -1, 0.0])
+def test_checkbox_rejects_ambiguous_values(raw: Any) -> None:
     with pytest.raises(ValidationFailed):
-        validate_custom_fields("c", [spec("ok", "checkbox")], {"ok": "forse"})
+        validate_custom_fields("c", [spec("ok", "checkbox")], {"ok": raw})
+
+
+@pytest.mark.parametrize("raw", [True, False])
+def test_a_number_field_refuses_a_boolean(raw: bool) -> None:
+    """`float(True)` is 1.0: without the check a checkbox's answer is stored as a quantity."""
+    with pytest.raises(ValidationFailed):
+        validate_custom_fields("c", [spec("n", "number")], {"n": raw})
 
 
 @pytest.mark.parametrize("url", ["https://example.com", "http://localhost:5173/x?y=1"])
@@ -173,7 +181,7 @@ def test_all_errors_name_the_entity() -> None:
 
 def test_checkbox_rejects_unhashable_values_instead_of_raising_typeerror() -> None:
     """An MCP client sends arbitrary JSON, so a dict landing on a checkbox field is
-    entirely plausible. `value in TRUE_VALUES` must not leak a raw TypeError for an
+    entirely plausible. a membership test must not leak a raw TypeError for an
     unhashable value - it must fail the same way any other non-boolean value does."""
     with pytest.raises(ValidationFailed) as exc:
         validate_custom_fields("c", [spec("ok", "checkbox")], {"ok": {"a": 1}})

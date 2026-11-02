@@ -11,7 +11,6 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.automations.runner import AutomationRunner
-from pigrocrm.core.clock import oggi_in_italia
 from pigrocrm.core.config import Settings, get_settings
 from pigrocrm.core.contracts.models import Contract
 from pigrocrm.core.customers.models import Customer
@@ -781,7 +780,7 @@ class DocumentService:
         scope["cliente"] = (
             CustomerRead.model_validate(customer).model_dump(mode="json") if customer else {}
         )
-        # `oggi_in_italia()`, never a bare `date.today()`: see `clock.py`. `{{oggi}}` is
+        # `today_local()`, never a bare `date.today()`: see `db/clock.py`. `{{oggi}}` is
         # the date a template prints on the document itself -- the date on an offer or a
         # contract. On a host that is not running in Europe/Rome (the API image runs in
         # UTC) every render between midnight and 01:00 CET dates the document to the
@@ -789,7 +788,7 @@ class DocumentService:
         # error is not transient: the rendered PDF and the scope that produced it are
         # frozen into an immutable version, and `regenerate` faithfully reproduces the
         # wrong date from that snapshot, so nothing later corrects it.
-        scope.setdefault("oggi", oggi_in_italia().isoformat())
+        scope.setdefault("oggi", today_local().isoformat())
         return scope
 
     def _render_to_pdf(

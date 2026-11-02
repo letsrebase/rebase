@@ -181,11 +181,18 @@ def _decode_value(spec: SortSpec, raw: object) -> object | None:
         raise ValidationFailed(_ENTITY, "cursor", "cursore non valido", expected="stringa")
     if spec.kind == "datetime":
         try:
-            return datetime.fromisoformat(raw)
+            moment = datetime.fromisoformat(raw)
         except ValueError as exc:
             raise ValidationFailed(
                 _ENTITY, "cursor", "cursore non valido", expected="data ISO 8601"
             ) from exc
+        if moment.tzinfo is None:
+            # A cursor this module wrote always carries an offset; a naive one is forged,
+            # and compared with a `timestamptz` column it would use the session's zone.
+            raise ValidationFailed(
+                _ENTITY, "cursor", "cursore non valido", expected="data ISO 8601 con fuso"
+            )
+        return moment
     if spec.kind == "date":
         try:
             return date.fromisoformat(raw)

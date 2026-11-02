@@ -63,7 +63,7 @@ def create(
 
 @router.get("", response_model=list[PatRead])
 def list_tokens(session: SessionDep, actor: ActorDep) -> list[PatRead]:
-    return PatService(session).list(actor)
+    return PatService(session).list_own(actor)
 
 
 @router.get("/options", response_model=TokenOptions)

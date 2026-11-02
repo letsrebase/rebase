@@ -30,7 +30,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
-from pigrocrm.core.actor import Actor, Role
+from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.invitation_models import Invitation
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.auth.repository import UserRepository
@@ -42,7 +42,7 @@ from pigrocrm.core.auth.schemas import (
     UserCreate,
     UserRead,
 )
-from pigrocrm.core.auth.scope import active_only, check_scope
+from pigrocrm.core.auth.scope import active_only, as_role, check_scope
 from pigrocrm.core.auth.service import UserService, require_verified_identity
 from pigrocrm.core.db.scope import bind_scope
 from pigrocrm.core.errors import Conflict, DomainError, NotFound, ValidationFailed
@@ -347,11 +347,7 @@ class InvitationService:
             raise ValidationFailed(
                 "invitation", "nome", "obbligatorio quando l'invito non porta un nome"
             )
-        # `ruolo` is a plain `Mapped[str]` on the row (the column's type), and the same
-        # shape on `User`; the `Role` literal is what `create` stores into it, so the
-        # read-back narrows by construction, not by check. pat_service.py:148 carries the
-        # same ignore for the same reason.
-        ruolo: Role = row.ruolo  # type: ignore[assignment]
+        ruolo = as_role(row.ruolo)
         # The scope the invitation carried, kept to the aziende still active at the
         # click (spec §1.11): an invitation whose every azienda was deactivated
         # meanwhile opens an account that sees nothing, and the Team panel says so.
@@ -406,7 +402,7 @@ class InvitationService:
         if row is None:
             return None
         inviter = self.users.get(row.invited_by)
-        ruolo: Role = row.ruolo  # type: ignore[assignment]  # same narrowing as `accept`
+        ruolo = as_role(row.ruolo)
         return InvitationOffer(
             ruolo=ruolo,
             invitato_da=inviter.nome if inviter is not None else "",

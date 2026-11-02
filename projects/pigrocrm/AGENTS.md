@@ -171,6 +171,17 @@ door are not text any more: they are `deals.rebase_refs`, written only through
 `DealRepository.find_by_rebase_ref`; the door's human sentence is the deal's (or the customer's)
 first note, written by `Actor.rebase()`. The hub's lead payload still sends `deal.note`.
 
+**A space's own Google client secret and token key are sealed, with a key derived from
+`PIGROCRM_JWT_SECRET` (PCORE-B-02).** `space_settings` stores `google_client_secret` and
+`google_token_key` as `sealed:v1:...`, never plain (`space_settings/sealing.py`, migration 0065).
+Rotating the JWT secret therefore also unreads them: they read as not set until the space
+re-enters its client secret and reconnects Gmail and Drive. A process holds at most a dozen
+space engines with a pool of four each (`tenants/registry.py`), and its request path never
+creates a database or a table: `ensure-space-defaults` at boot is what creates the registry.
+The `pigrocrm` command is the package `core/cli/` (`python -m pigrocrm.core.cli` works as
+well): one module per family of commands and one walk over the root and the registry's spaces
+(`cli/spaces_walk.py`).
+
 **`--no-sync` on the container's `uv run` calls is load-bearing.** Without it, uv
 re-evaluates the environment against the default group selection — which includes
 `dev` — decides the image's venv is out of date, and downloads mypy and ruff into a

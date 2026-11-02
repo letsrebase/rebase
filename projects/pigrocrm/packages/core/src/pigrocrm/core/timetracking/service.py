@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.repository import UserRepository
-from pigrocrm.core.clock import oggi_in_italia
+from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.deals.repository import DealRepository
 from pigrocrm.core.errors import (
@@ -179,15 +179,15 @@ class TimeEntryService:
         remembered to write them -- an archive that lies about its only temporal
         field.
 
-        The comparison is against `oggi_in_italia()` and never a bare `date.today()`
-        (see `clock.py`): the day this refuses to go past is the day the person doing
+        The comparison is against `today_local()` and never a bare `date.today()`
+        (see `db/clock.py`): the day this refuses to go past is the day the person doing
         the work is living in, not the day the process's own timezone happens to be
         in. The API image runs in UTC, where `date.today()` is still yesterday between
         midnight and 01:00 CET (02:00 CEST), so logging this morning's hours would be
         refused as `data futura` -- a legal entry rejected with a message that reads as
         a product defect. Run the process east of Italy and the same check silently
         accepts tomorrow, which is the forecast this slice says it does not make."""
-        if giorno > oggi_in_italia():
+        if giorno > today_local():
             raise ValidationFailed(
                 ENTITY, "data", "data futura", expected="una data non successiva a oggi"
             )

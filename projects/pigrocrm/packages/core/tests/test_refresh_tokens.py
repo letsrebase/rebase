@@ -39,6 +39,27 @@ def test_issuing_twice_produces_two_different_tokens(db_session: Session) -> Non
     assert token_a != token_b
 
 
+def test_issuing_removes_the_persons_expired_rows_and_only_theirs(db_session: Session) -> None:
+    user = _make_user(db_session)
+    other = _make_user(db_session, "refresh-altro@test.it")
+    service = RefreshTokenService(db_session)
+    old = decode_token(service.issue(user.id, SETTINGS), SETTINGS, expected_type="refresh").jti
+    token = service.issue(other.id, SETTINGS)
+    theirs = decode_token(token, SETTINGS, expected_type="refresh").jti
+    for jti in (old, theirs):
+        record = db_session.execute(
+            select(RefreshToken).where(RefreshToken.jti == jti)
+        ).scalar_one()
+        record.expires_at = datetime.now(UTC) - timedelta(days=1)
+    db_session.commit()
+
+    service.issue(user.id, SETTINGS)
+
+    remaining = set(db_session.scalars(select(RefreshToken.jti)).all())
+    assert old not in remaining
+    assert theirs in remaining
+
+
 def test_consuming_marks_the_row_consumed(db_session: Session) -> None:
     user = _make_user(db_session)
     service = RefreshTokenService(db_session)
