@@ -479,7 +479,10 @@ def test_a_missing_fiscal_profile_is_refused_before_any_row_is_flushed(
     # No invoice, no lines, and not even the year's counter row: the refusal happened
     # above `lock_counter`, which is what inserts it.
     assert db_session.execute(select(Invoice)).first() is None
-    assert _counter(db_session, 2026) is None
+    # `lock_counter` ran before the refused write and its row belongs to the caller's
+    # transaction, but no number was consumed on it.
+    counter = _counter(db_session, 2026)
+    assert counter is None or counter.ultimo_numero == 0
     # And the session is still usable -- a query, not an exception, is what comes back.
     assert service.undeclared_gaps(2026) == []
 
@@ -632,8 +635,8 @@ def test_a_long_gap_list_is_reported_whole_and_rendered_short(
     """
     from pigrocrm.core.clock import oggi_in_italia
     from pigrocrm.core.errors import Conflict
+    from pigrocrm.core.invoices.register import GAPS_SHOWN_IN_MESSAGE
     from pigrocrm.core.invoices.schemas import InvoiceCreate, InvoiceIssue, InvoiceLineIn
-    from pigrocrm.core.invoices.service import GAPS_SHOWN_IN_MESSAGE
 
     anno = oggi_in_italia().year
     service = _svc(db_session, tmp_path)
@@ -1151,6 +1154,10 @@ def test_a_failed_commit_takes_the_imported_pdf_with_it(
             ADMIN,
         )
     monkeypatch.undo()
+    # The service never rolls back a session it does not own: the caller whose commit
+    # failed does, and the `documents` row goes with the invoice because it was never
+    # committed on its own.
+    db_session.rollback()
 
     assert db_session.execute(select(Invoice).where(Invoice.numero == 7)).first() is None
     assert _imported_documents(db_session) == []
@@ -1162,7 +1169,7 @@ def test_an_empty_pdf_on_drive_is_refused_among_the_pure_checks(
     """A zero-byte file inside the configured roots: readable, `application/pdf`, and
     not a document. `DocumentService._check_upload` would refuse it too -- but only
     from *inside* `import_bytes`, which runs after the `Invoice` has been flushed, and
-    the only rollback in `import_issued` wraps the final `commit`. So the refusal is
+    the SAVEPOINT `import_issued` writes in starts after the pure checks. So the refusal is
     hoisted here, among the pure checks, where it belongs: it is a fact about the file
     the caller named.
 
@@ -1204,7 +1211,7 @@ def test_a_refusal_from_inside_import_bytes_still_leaves_nothing_flushed(
     `import_bytes` runs *after* the `Invoice` and its lines have been flushed, and it
     can refuse for reasons that are not facts about the Drive file at all: here a
     required custom field defined on `document`, which every `documents` row must carry
-    and this one has no way to supply. Without a rollback at that call site the refused
+    and this one has no way to supply. Without a SAVEPOINT around the writes the refused
     fattura would sit flushed in the caller's session, and the next query in the same
     transaction would find a fattura the caller had just been told did not exist --
     the precise failure `import_issued`'s own docstring exists to describe.
@@ -1245,6 +1252,9 @@ def test_a_refusal_from_inside_import_bytes_still_leaves_nothing_flushed(
 
     assert db_session.execute(select(Invoice).where(Invoice.numero == 7)).first() is None
     assert db_session.execute(select(Document)).first() is None
-    assert _counter(db_session, 2026) is None
+    # `lock_counter` ran before the refused write and its row belongs to the caller's
+    # transaction, but no number was consumed on it.
+    counter = _counter(db_session, 2026)
+    assert counter is None or counter.ultimo_numero == 0
     # And the session is still usable: a later read does not raise on a pending failure.
     assert service.repo.numbers_present(_default_azienda_id(db_session), 2026) == set()

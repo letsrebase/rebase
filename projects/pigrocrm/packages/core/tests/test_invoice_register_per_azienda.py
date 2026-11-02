@@ -491,7 +491,7 @@ def test_a_foreign_azienda_issues_a_pdf_with_no_bollo_and_refuses_the_xml(
     assert row.snapshot["fiscale"]["pack_id"] == "non-it"
     assert row.snapshot["fiscale"]["codice_regime"] is None
     assert row.snapshot["emittente"]["ragione_sociale"] == "Rebase Ltd"
-    scope = invoice_pdf.build_scope(service._for_export(row), riferimento=None)
+    scope = invoice_pdf.build_scope(service.artifacts.for_export(row), riferimento=None)
     assert scope["fattura"]["dichiarazione_bollo"] == ""
     with pytest.raises(Conflict) as caught:
         service.export_xml(draft.id, ADMIN)

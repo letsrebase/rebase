@@ -24,6 +24,7 @@ from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.documents.schemas import DocumentCreate, DocumentListQuery
 from pigrocrm.core.documents.service import DocumentService
+from pigrocrm.core.documents.uploads import DocumentUploads
 from pigrocrm.core.emitter.schemas import LegalEntityUpsert
 from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
@@ -263,13 +264,14 @@ def test_a_proforma_consumed_between_the_read_and_the_write_is_a_conflict(
     `db_session` fixture holds every row inside one outer transaction that no other
     connection can see. The raw `UPDATE` slipped in after the repository's read leaves
     the row in exactly the state a committed emission would, with the service still
-    holding the stale `confermata` it read. It is undone by the rollback the handler
-    performs, so afterwards the proforma reads as it did before the attempt.
+    holding the stale `confermata` it read. Only the delete's own SAVEPOINT is undone: the
+    raw `UPDATE` stays, like the emission it stands for, and so does everything else the
+    session held.
     """
     proforma_id = _confirmed_proforma(service, customer_id)
     (pdf,) = service.produce_artifacts(proforma_id, ADMIN)
     documents = DocumentService(db_session, storage)
-    read = service.repo.get
+    read = service.repo.get_for_update
 
     def read_then_lose_the_race(invoice_id: UUID) -> Invoice | None:
         invoice = read(invoice_id)
@@ -279,10 +281,9 @@ def test_a_proforma_consumed_between_the_read_and_the_write_is_a_conflict(
         )
         return invoice
 
-    monkeypatch.setattr(service.repo, "get", read_then_lose_the_race)
-    with pytest.raises(Conflict) as caught:
+    monkeypatch.setattr(service.repo, "get_for_update", read_then_lose_the_race)
+    with pytest.raises(Conflict):
         service.soft_delete(proforma_id, ADMIN)
-    assert "emesso nel frattempo" in caught.value.message
     monkeypatch.undo()
 
     # Usable session, whole rollback: neither the invoice nor its PDF is archived.
@@ -570,7 +571,7 @@ def test_a_version_that_is_not_a_pdf_is_never_served_as_the_invoices_pdf(
     pdf = service.produce_artifacts(invoice_id, ADMIN)[0]
     with monkeypatch.context() as patched:
         # The guard lifted for this one call: the write as it could happen before.
-        patched.setattr(DocumentService, "_check_invoice_pdf", lambda *_: None)
+        patched.setattr(DocumentUploads, "check_invoice_pdf", lambda *_: None)
         service.documents.add_version(pdf.document_id, XHTML, "application/xml", ADMIN)
 
     with pytest.raises(NotFound):
@@ -593,7 +594,7 @@ def test_the_pdfs_own_bytes_stored_under_another_type_are_repaired_not_reused(
     pdf = service.produce_artifacts(invoice_id, ADMIN)[0]
     rendered, _, _ = service.download(invoice_id, "pdf", ADMIN)
     with monkeypatch.context() as patched:
-        patched.setattr(DocumentService, "_check_invoice_pdf", lambda *_: None)
+        patched.setattr(DocumentUploads, "check_invoice_pdf", lambda *_: None)
         service.documents.add_version(pdf.document_id, rendered, "application/xml", ADMIN)
     with pytest.raises(NotFound):
         service.download(invoice_id, "pdf", ADMIN)

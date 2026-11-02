@@ -19,6 +19,7 @@ from pigrocrm.core.invoices.import_upload import (
     UploadedInvoiceReviewResult,
     parse_decisions,
 )
+from pigrocrm.core.invoices.importing import CONFIRM_ACTION, REVIEW_ACTION
 from pigrocrm.core.invoices.schemas import (
     MAX_LINES,
     ArtifactKind,
@@ -41,7 +42,7 @@ from pigrocrm.core.invoices.schemas import (
     RegisterGapsDeclare,
     StatoPagamento,
 )
-from pigrocrm.core.invoices.service import CONFIRM_ACTION, REVIEW_ACTION, InvoiceService
+from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, StorageDep
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 

@@ -17,7 +17,7 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
@@ -612,7 +612,9 @@ def test_no_emitter_profile_configured_refuses_rather_than_guesses(
 ) -> None:
     # Since REB-615 every space has its azienda from the first boot, so «not configured»
     # is an azienda with neither fiscal id, and the refusal names that field rather
-    # than a missing row: the import never guesses which P.IVA is ours.
+    # than a missing row: the import never guesses which P.IVA is ours. Blanked here
+    # rather than assumed, since the race tests commit an identity on the default azienda.
+    db_session.execute(text("UPDATE emitter_profile SET partita_iva = NULL, codice_fiscale = NULL"))
     document_id = _document(db_session, local_storage, _fixture(CONSULENZA))
     with pytest.raises(ValidationFailed) as caught:
         InvoiceService(db_session, local_storage).confirm_import(document_id, ADMIN)
