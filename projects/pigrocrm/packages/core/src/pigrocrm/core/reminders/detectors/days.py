@@ -41,8 +41,8 @@ from pigrocrm.core.contracts.models import Contract
 from pigrocrm.core.mail import giorno_breve
 from pigrocrm.core.reminders.catalogue import REMINDER_TYPES
 from pigrocrm.core.reminders.detect import Detection, Detector, DetectorContext
-from pigrocrm.core.reminders.detectors.contracts import giorni
 from pigrocrm.core.reminders.detectors.links import LinkResolver
+from pigrocrm.core.reminders.detectors.text import ago
 from pigrocrm.core.work_units.models import Approval, WorkUnit
 
 WITHOUT_APPROVAL = REMINDER_TYPES["worked_without_approval"]
@@ -140,14 +140,10 @@ def detect_worked_without_approval(ctx: DetectorContext) -> list[Detection]:
         measure=lambda unit: _since_the_day(ctx, unit),
         title="Giornata senza approvazione",
         detail=lambda unit, contract: (
-            f"Lavorata {_ago(_since_the_day(ctx, unit))} su un contratto che richiede "
+            f"Lavorata {ago(_since_the_day(ctx, unit))} su un contratto che richiede "
             "l'approvazione preventiva e non ne ha una"
         ),
     )
-
-
-def _ago(days: int) -> str:
-    return "oggi" if days == 0 else "ieri" if days == 1 else f"{giorni(days)} fa"
 
 
 def _proposed_before(ctx: DetectorContext, bound: int) -> datetime:
@@ -179,7 +175,7 @@ def detect_approval_unanswered(ctx: DetectorContext) -> list[Detection]:
         measure=lambda unit: _proposed_days(ctx, unit),
         title="Approvazione senza risposta",
         detail=lambda unit, contract: (
-            f"Giornata proposta {_ago(_proposed_days(ctx, unit))}, ancora in attesa "
+            f"Giornata proposta {ago(_proposed_days(ctx, unit))}, ancora in attesa "
             "dell'approvazione del cliente"
         ),
     )

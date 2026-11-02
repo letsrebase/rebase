@@ -157,8 +157,6 @@ _PERSONALE: dict[Method, str] = {
 
 # 4. Machinery with no member behind it, whose outcome is recorded where it matters.
 _MACCHINERIA: dict[Method, str] = {
-    ("GmailOAuthService", "start"): "builds a consent URL; `complete` records the connection",
-    ("GoogleDriveOAuthService", "start"): "builds a consent URL; `complete` records",
     ("SlackOAuthService", "start"): "builds a consent URL; `complete` records",
     ("InvitationService", "record_mail"): "delivery status of a mail already recorded as sent",
     ("InvitationService", "refresh_mail_status"): "delivery status of a mail already recorded",

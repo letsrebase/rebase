@@ -316,6 +316,35 @@ def test_the_threshold_is_the_configured_one(db_session: Session) -> None:
     assert _report(_run(db_session), "deal_fermo") == (False, 1, 0)
 
 
+def test_the_day_a_deal_stalled_since_is_the_installations_not_utcs(db_session: Session) -> None:
+    """A stage change a little after local midnight is still the day before in UTC, and the
+    threshold is counted from the local day: at 29 local days a deal is under the default
+    30, at 30 it is on it, whichever way the query reads the instant."""
+    customer = _customer(db_session)
+    zone = ZoneInfo(get_settings().timezone)
+    just_after_midnight = {
+        "under": _deal(db_session, customer, _stage(db_session), nome="Sotto", created_days_ago=90),
+        "on": _deal(db_session, customer, _stage(db_session), nome="Sopra", created_days_ago=90),
+    }
+    for name, days in (("under", 29), ("on", 30)):
+        moved_at = datetime.combine(today_local() - timedelta(days=days), time(0, 30), tzinfo=zone)
+        db_session.add(
+            Activity(
+                entity_type="deal",
+                entity_id=just_after_midnight[name].id,
+                kind="stage_changed",
+                actor_type="user",
+                payload={},
+                occurred_at=moved_at,
+            )
+        )
+    db_session.flush()
+
+    assert _report(_run(db_session), "deal_fermo") == (False, 1, 0)
+    (row,) = _rows(db_session, "deal_fermo")
+    assert row.deal_id == just_after_midnight["on"].id
+
+
 # -- fattura_scaduta -------------------------------------------------------------------
 
 
@@ -570,8 +599,8 @@ def test_two_passes_at_the_same_instant_open_one_attivita(
     after_read = Barrier(2)
     original = AutomationPass._already_open
 
-    def read_then_wait(self: AutomationPass, rule: AttivitaRule) -> set[UUID]:
-        seen = original(self, rule)
+    def read_then_wait(self: AutomationPass, rule: AttivitaRule, subjects: set[UUID]) -> set[UUID]:
+        seen = original(self, rule, subjects)
         if rule == "fattura_scaduta":
             after_read.wait(timeout=30)
         return seen

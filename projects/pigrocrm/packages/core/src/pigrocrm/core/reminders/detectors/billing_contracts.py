@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import calendar
 from collections import defaultdict
+from collections.abc import Collection
 from datetime import date, timedelta
 from decimal import Decimal
 from uuid import UUID, uuid5
@@ -57,12 +58,8 @@ from pigrocrm.core.invoices.naming import numero_completo
 from pigrocrm.core.mail import giorno_breve
 from pigrocrm.core.reminders.catalogue import REMINDER_TYPES
 from pigrocrm.core.reminders.detect import Detection, Detector, DetectorContext
-from pigrocrm.core.reminders.detectors.billing_text import (
-    giornate,
-    giorni,
-    giorni_fa,
-)
 from pigrocrm.core.reminders.detectors.links import LinkResolver
+from pigrocrm.core.reminders.detectors.text import giornate, giorni, giorni_fa
 from pigrocrm.core.work_units.models import WorkUnit
 
 PERIOD_CLOSED = REMINDER_TYPES["billable_period_closed"]
@@ -172,7 +169,7 @@ def _recipients(
 ) -> tuple[frozenset[UUID], str]:
     links = resolver.resolve(customer_id=contract.customer_id)
     name = f" · {links.customer_name}" if links.customer_name else ""
-    return ctx.directory.recipients(links.owners, contract.azienda_id), name
+    return ctx.directory.recipients((links.customer_owner_id,), contract.azienda_id), name
 
 
 def detect_period_closed(ctx: DetectorContext) -> list[Detection]:
@@ -223,8 +220,12 @@ def _next_period_end(months: int, end: date) -> date:
     return period_end(months, end + timedelta(days=1))
 
 
-def _latest_invoice_by_customer(ctx: DetectorContext) -> dict[UUID, date]:
-    """The date of each customer's most recent issued fattura."""
+def _latest_invoice_by_customer(
+    ctx: DetectorContext, customers: Collection[UUID]
+) -> dict[UUID, date]:
+    """The date of the most recent issued fattura of each of these customers."""
+    if not customers:
+        return {}
     return {
         customer_id: issued
         for customer_id, issued in ctx.session.execute(
@@ -234,6 +235,7 @@ def _latest_invoice_by_customer(ctx: DetectorContext) -> dict[UUID, date]:
                 Invoice.tipo == "fattura",
                 Invoice.stato == "emessa",
                 Invoice.data_emissione.is_not(None),
+                Invoice.customer_id.in_(customers),
             )
             .group_by(Invoice.customer_id)
         )
@@ -283,7 +285,7 @@ def detect_fixed_fee(ctx: DetectorContext) -> list[Detection]:
             )
         ):
             cards[card.contract_id].append(card)
-    latest = _latest_invoice_by_customer(ctx)
+    latest = _latest_invoice_by_customer(ctx, {c.customer_id for c in contracts.values()})
     resolver = LinkResolver(ctx.session)
     resolver.preload(customers=(contract.customer_id for contract in contracts.values()))
     found: list[Detection] = []
@@ -341,7 +343,7 @@ def detect_on_completion(ctx: DetectorContext) -> list[Detection]:
             )
         ):
             cards[card.contract_id].append(card)
-    latest = _latest_invoice_by_customer(ctx)
+    latest = _latest_invoice_by_customer(ctx, {c.customer_id for c in contracts.values()})
     resolver = LinkResolver(ctx.session)
     resolver.preload(customers=(contract.customer_id for contract in contracts.values()))
     found: list[Detection] = []

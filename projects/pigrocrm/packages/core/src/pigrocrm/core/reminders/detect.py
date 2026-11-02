@@ -23,8 +23,9 @@ switched off, is not run and its reminders are neither raised nor cleaned (spec 
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -37,7 +38,10 @@ from pigrocrm.core.reminders.preferences import ReminderSettings
 @dataclass(frozen=True)
 class DetectorContext:
     """What a detector may read: the session, the day (and the instant, for the types
-    measured in hours), the zone `today` is a day in, the people, and the settings."""
+    measured in hours), the zone `today` is a day in, the people, and the settings.
+
+    One context is built per evaluation and handed to every detector, so it is also where
+    what several detectors need of the database is read once (`once`)."""
 
     session: Session
     today: date
@@ -45,11 +49,23 @@ class DetectorContext:
     timezone: str
     directory: Directory
     settings: ReminderSettings
+    _read: dict[Callable[..., Any], Any] = field(
+        default_factory=dict, init=False, repr=False, compare=False
+    )
 
     def bound(self, kind: ReminderType) -> int:
         """The loosest rung of any ladder of `kind` in this space (see
         `ReminderSettings.candidate_bound`): how far a detector must look."""
         return self.settings.candidate_bound(kind)
+
+    def once[T](self, load: Callable[[DetectorContext], T]) -> T:
+        """What `load(self)` reads, read once per evaluation however many detectors ask:
+        the answer is kept on the context, which lives as long as the evaluation does and
+        no longer, so a later evaluation can never be shown an earlier one's data."""
+        if load not in self._read:
+            self._read[load] = load(self)
+        found: T = self._read[load]
+        return found
 
 
 @dataclass(frozen=True)

@@ -23,9 +23,11 @@ subscription the push service reports gone (404 or 410) is deleted with the ledg
 and any other failure writes nothing, so the next pass tries again (§8.3).
 
 **The endpoint is a URL this server calls.** Only a browser vendor's push service is accepted
-when it is stored (`push_subscriptions.py`); the sender resolves its host before each send
-and refuses one that does not resolve to public addresses, never follows a redirect, sends
-nothing but the encrypted payload, and gives the whole phase `PHASE_SECONDS`.
+when it is stored (`push_subscriptions.py`); the sender resolves its host once, when it
+connects, refuses a host with any address that is not public, and connects to the addresses
+it checked, so a name that is re-pointed between the check and the connect cannot reach
+this network. It never follows a redirect, sends nothing but the encrypted payload, and gives
+the whole phase `PHASE_SECONDS`.
 """
 
 from __future__ import annotations
@@ -37,11 +39,10 @@ import logging
 import socket
 import time
 from collections import defaultdict
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Literal, Protocol
-from urllib.parse import urlsplit
+from typing import Any, Literal, Protocol
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
@@ -49,8 +50,13 @@ import requests
 from cryptography.hazmat.primitives import serialization
 from py_vapid import Vapid  # type: ignore[import-untyped]
 from pywebpush import WebPushException, webpush  # type: ignore[import-untyped]
+from requests.adapters import HTTPAdapter
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from urllib3.connection import HTTPConnection, HTTPSConnection
+from urllib3.connectionpool import HTTPConnectionPool, HTTPSConnectionPool
+from urllib3.exceptions import NewConnectionError
+from urllib3.util.connection import create_connection
 
 from pigrocrm.core.config import Settings
 from pigrocrm.core.reminders.dispatch import (
@@ -136,25 +142,87 @@ class PushSender(Protocol):
         ...
 
 
-def resolves_publicly(endpoint: str) -> bool:
-    """Whether the endpoint's host resolves, and only to public addresses. A name can be
-    pointed at an address inside this network after it was stored; this is the check made
-    at the moment of calling it."""
-    host = urlsplit(endpoint).hostname
-    if not host:
-        return False
-    try:
-        # An address literal is its own answer: nothing to resolve.
-        return ipaddress.ip_address(host).is_global
-    except ValueError:
-        pass
-    try:
-        found = socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)
-    except OSError:
-        return False
-    return bool(found) and all(
-        ipaddress.ip_address(str(info[4][0]).split("%")[0]).is_global for info in found
+class NotPublicAddress(OSError):
+    """A host that resolves to an address outside the public internet, or not at all."""
+
+
+Resolver = Callable[[str, int], Sequence[str]]
+
+
+def resolve_public(
+    host: str,
+    port: int,
+    *,
+    lookup: Callable[..., Iterable[tuple[Any, ...]]] = socket.getaddrinfo,
+) -> list[str]:
+    """The addresses `host` resolves to, in the resolver's order, provided every one of them
+    is public: a name can be pointed at an address inside this network after it was stored,
+    or answer differently from one lookup to the next. `NotPublicAddress` for a host with
+    no address, or with any address that is not."""
+    found = list(
+        dict.fromkeys(
+            str(info[4][0]).split("%")[0] for info in lookup(host, port, type=socket.SOCK_STREAM)
+        )
     )
+    if not found or not all(ipaddress.ip_address(address).is_global for address in found):
+        raise NotPublicAddress("the host resolves to no public address")
+    return found
+
+
+class _PublicOnlyAdapter(HTTPAdapter):
+    """Opens every connection to the addresses `resolve` answers, once per connection, and to
+    no others: urllib3 would look the name up again at the connect, and a lookup that answers
+    differently the second time is how a check is walked around. The URL, the `Host` header and
+    the TLS name stay the host's, so the certificate is still checked against it. One adapter
+    serves one send: `refused` says it was a non-public address that stopped it."""
+
+    def __init__(self, resolve: Resolver) -> None:
+        self.resolve = resolve
+        self.refused = False
+        super().__init__(max_retries=0)
+
+    def init_poolmanager(
+        self, connections: int, maxsize: int, block: bool = False, **pool_kwargs: Any
+    ) -> None:
+        super().init_poolmanager(connections, maxsize, block, **pool_kwargs)
+        adapter = self
+
+        class Plain(HTTPConnection):
+            def _new_conn(self) -> socket.socket:
+                return adapter.connect(self)
+
+        class Secure(HTTPSConnection):
+            def _new_conn(self) -> socket.socket:
+                return adapter.connect(self)
+
+        class PlainPool(HTTPConnectionPool):
+            ConnectionCls = Plain
+
+        class SecurePool(HTTPSConnectionPool):
+            ConnectionCls = Secure
+
+        self.poolmanager.pool_classes_by_scheme = {"http": PlainPool, "https": SecurePool}
+
+    def connect(self, conn: HTTPConnection) -> socket.socket:
+        try:
+            addresses = self.resolve(conn.host, conn.port)
+        except NotPublicAddress as exc:
+            self.refused = True
+            raise NewConnectionError(conn, "the host has no public address") from exc
+        except OSError as exc:
+            raise NewConnectionError(conn, f"the host did not resolve: {exc}") from exc
+        failure: OSError | None = None
+        for address in addresses:
+            try:
+                return create_connection(
+                    (address, conn.port),
+                    conn.timeout,
+                    source_address=conn.source_address,
+                    socket_options=conn.socket_options,
+                )
+            except OSError as exc:
+                failure = exc
+        raise NewConnectionError(conn, f"could not connect: {failure}") from failure
 
 
 class WebPushSender:
@@ -163,22 +231,23 @@ class WebPushSender:
         private_key: str,
         subject: str,
         *,
-        guard: Callable[[str], bool] = resolves_publicly,
+        resolve: Resolver = resolve_public,
         timeout: float = SEND_TIMEOUT_SECONDS,
     ) -> None:
         self.vapid = Vapid.from_string(private_key)
         self.subject = subject
-        self.guard = guard
+        self.resolve = resolve
         self.timeout = timeout
 
     def send(self, target: PushTarget, message: PushMessage) -> Outcome:
-        if not self.guard(target.endpoint):
-            logger.warning("push non inviato: l'indirizzo del servizio non è pubblico")
-            return "failed"
-        # A session of its own with redirects refused: a push service answers 201 and
-        # never sends the caller elsewhere, so a redirect is somebody else's doing.
+        # A session of its own, with redirects refused (a push service answers 201 and never
+        # sends the caller elsewhere, so a redirect is somebody else's doing) and with
+        # connections that only go to public addresses.
+        adapter = _PublicOnlyAdapter(self.resolve)
         session = requests.Session()
         session.max_redirects = 0
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
         try:
             webpush(
                 {
@@ -202,7 +271,10 @@ class WebPushSender:
             logger.warning("push non inviato: il servizio ha risposto %s", status)
             return "failed"
         except Exception:  # noqa: BLE001 - the seam's contract is "never raises"
-            logger.warning("push non inviato: il servizio non ha risposto")
+            if adapter.refused:
+                logger.warning("push non inviato: l'indirizzo del servizio non è pubblico")
+            else:
+                logger.warning("push non inviato: il servizio non ha risposto")
             return "failed"
         finally:
             session.close()

@@ -1,6 +1,7 @@
 """The reminders a person has, as they read them (spec 2026-10-26 §4, §8, REB-733).
 
-A live evaluation filtered to the person asking, joined with what they did about each
+A live evaluation made for the person asking (`ReminderEngine.reminders_of`: what only
+others could be told is not even run), joined with what they did about each
 (`state.py`) and when the pass last put it in their list (`ledger.py`). Nothing is read
 from a stored reminder, so the list is right the moment a cause is fixed and right before
 any pass has run; what the pass adds is `delivered_at` and the other channels.
@@ -41,8 +42,9 @@ class ReminderService:
         if actor.id is None:
             raise Conflict(ENTITY, "i promemoria sono di una persona")
         today = today if today is not None else today_local(self.settings)
-        evaluation = ReminderEngine(self.session, self.settings).evaluate(today=today, now=now)
-        mine = [reminder for reminder in evaluation.reminders if reminder.user_id == actor.id]
+        mine = ReminderEngine(self.session, self.settings).reminders_of(
+            actor.id, today=today, now=now
+        )
         states = states_for(self.session, [actor.id])
         delivered_at: dict[tuple[str, date | None], datetime] = {
             (row.key, row.period): row.delivered_at

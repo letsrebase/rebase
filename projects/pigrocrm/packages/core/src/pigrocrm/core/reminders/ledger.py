@@ -28,9 +28,10 @@ from __future__ import annotations
 from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
+from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import CursorResult, delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -142,9 +143,8 @@ class ReminderLedger:
                 statement = statement.where(model.key.not_in(list(raised)))
             if before is not None:
                 statement = statement.where(model.updated_at <= before)
-            # `RETURNING` and not `rowcount`, the way `gmail/repository.py` counts: the
-            # DBAPI's row count is not typed on a generic result.
-            deleted += len(self.session.execute(statement.returning(model.id)).all())
+            # A `DELETE` returns a `CursorResult`, which is where the row count is typed.
+            deleted += cast("CursorResult[Any]", self.session.execute(statement)).rowcount
         # The posts Slack's channel took end with the occurrence too (`SlackChannelPost`),
         # so a cause that clears and returns is posted again. Not counted: they are
         # not a person's rows.

@@ -1,4 +1,6 @@
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
+from enum import Enum
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -115,6 +117,40 @@ def test_record_truncates_long_strings(db_session: Session) -> None:
     saved = service.timeline("customer", entity_id)[0].payload["note"]
     assert len(saved) == 2001
     assert saved.endswith("…")
+
+
+def test_record_never_fails_on_a_value_json_has_no_encoder_for(db_session: Session) -> None:
+    """A `Decimal`, an `Enum` or `bytes` in a payload used to reach `json.dumps` raw and
+    fail the flush of the operation being audited."""
+
+    class Kind(Enum):
+        PLAIN = "plain"
+
+    service = ActivityService(db_session)
+    entity_id = uuid4()
+    service.record(
+        "customer",
+        entity_id,
+        "created",
+        USER,
+        {
+            "totale": Decimal("12.50"),
+            "tipo": Kind.PLAIN,
+            "raw": b"ab\xffc",
+            "pair": (1, float("nan")),
+            "when": datetime(2026, 11, 2, 9, 30, tzinfo=UTC),
+        },
+    )
+    db_session.commit()
+
+    entry = service.timeline("customer", entity_id)[0]
+    assert entry.payload == {
+        "totale": "12.50",
+        "tipo": "plain",
+        "raw": "ab\ufffdc",
+        "pair": [1, "NaN"],
+        "when": "2026-11-02T09:30:00+00:00",
+    }
 
 
 def test_record_caps_nesting_depth(db_session: Session) -> None:

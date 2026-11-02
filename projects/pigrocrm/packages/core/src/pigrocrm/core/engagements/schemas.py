@@ -31,12 +31,16 @@ REPORT_MAX_DAYS = 800
 
 
 class EngagementFreelancer(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     email: EmailStr
     nome: SafeStr = Field(min_length=1, max_length=NAME_MAX_LENGTH)
     cognome: SafeStr = Field(min_length=1, max_length=NAME_MAX_LENGTH)
 
 
 class EngagementLetter(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     numero: SafeStr = Field(min_length=1, max_length=20)
     ruolo: SafeStr = Field(min_length=1, max_length=200)
     azienda: SafeStr = Field(min_length=1, max_length=255)
@@ -49,6 +53,8 @@ class EngagementLetter(BaseModel):
 
 class EngagementRebase(BaseModel):
     """rebase's own fiscal data, as the customer «rebase» in the freelancer's space."""
+
+    model_config = ConfigDict(extra="forbid")
 
     ragione_sociale: SafeStr = Field(min_length=1, max_length=255)
     partita_iva: str | None = Field(default=None, pattern=r"^\d{11}$")
