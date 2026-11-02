@@ -1,3 +1,4 @@
+import { formatBytes } from '@rebase/ui/format'
 import { useState } from 'react'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { RowActions } from '@/components/RowActions'
@@ -10,35 +11,16 @@ import {
   useRegenerateVersion,
 } from './queries'
 
-const BYTES_PER_KILOBYTE = 1024
-
-/**
- * Bytes as the browser's own locale would write them. `Intl.NumberFormat` with a
- * byte unit does the rounding, so nothing here does arithmetic on a size that could
- * drift from what the server reported.
- *
- * Divides by 1024, not 1000, even though the unit it asks `Intl` to label is the
- * (decimal) "kilobyte": confirmed live -- `12345` bytes has to read "12,1 kB", the
- * conventional binary-kilobyte figure this product's own file browsers (Finder,
- * Explorer) already show, and `12345 / 1000` rounds to "12,3 kB" instead, which is
- * simply the wrong number for the same bytes.
- */
-function formatSize(bytes: number): string {
-  return new Intl.NumberFormat('it-IT', {
-    style: 'unit',
-    unit: bytes >= BYTES_PER_KILOBYTE ? 'kilobyte' : 'byte',
-    maximumFractionDigits: 1,
-  }).format(bytes >= BYTES_PER_KILOBYTE ? bytes / BYTES_PER_KILOBYTE : bytes)
-}
+const dateTimeFormatter = new Intl.DateTimeFormat('it-IT', {
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+})
 
 function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString('it-IT', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+  return dateTimeFormatter.format(new Date(iso))
 }
 
 /**
@@ -94,7 +76,7 @@ export function VersionHistory({
             <li key={version.id} className="flex items-center gap-3 px-4 py-3">
               <span className="w-10 font-medium">v{version.numero}</span>
               <span className="flex-1 text-sm text-muted-foreground">
-                {formatDateTime(version.created_at)} · {formatSize(version.dimensione)}
+                {formatDateTime(version.created_at)} · {formatBytes(version.dimensione)}
               </span>
               {/* Behind the «⋯» like every other row action (§4), where the two lone
                   icons at the end of the row used to be. Only a version generated from

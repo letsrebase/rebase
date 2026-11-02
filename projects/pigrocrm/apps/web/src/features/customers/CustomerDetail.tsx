@@ -8,6 +8,7 @@ import { EntityAttivita } from '@/features/attivita/EntityAttivita'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
+import { formatMoney as formatEuro } from '@rebase/ui/format'
 import { Card, CardContent } from '@rebase/ui/card'
 import { Skeleton } from '@rebase/ui/skeleton'
 import { EconomicsTab } from '@/features/analytics/EconomicsTab'
@@ -60,17 +61,8 @@ function Row({ label, value }: { label: string; value: string }) {
   )
 }
 
-const currencyFormatter = new Intl.NumberFormat('it-IT', {
-  style: 'currency',
-  currency: 'EUR',
-  // See DynamicFieldRenderer.tsx's `renderFieldValue` for why `'always'` and not the
-  // ICU default: it-IT's "auto" grouping withholds the thousands separator below
-  // five integer digits, and every Italian reader expects one starting at four.
-  useGrouping: 'always',
-})
-
 function formatCurrency(value: string | null): string {
-  return value === null ? EMPTY : currencyFormatter.format(Number(value))
+  return value === null ? EMPTY : formatEuro(value)
 }
 
 /** A short preview list, not a paginated table: this tab exists so a customer's

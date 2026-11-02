@@ -37,12 +37,12 @@ describe('useCursorPages', () => {
       ({ term }: { term: string }) =>
         useCursorPages({
           queryKey: ['t', term],
-          fetchPage: (cursor) =>
+          fetchPage: () =>
             term === 'b'
               ? new Promise<{ items: string[]; next_cursor: null }>((resolve) => {
                   release = () => resolve({ items: ['y'], next_cursor: null })
                 })
-              : fetchPage(cursor),
+              : fetchPage(),
           keepPrevious: true,
         }),
       { wrapper, initialProps: { term: 'a' } },

@@ -3,28 +3,17 @@ import { DateCell, EntityCell, MoneyCell, NumberCell } from '@/components/cells'
 import type { DataTableFeatures } from '@/components/DataTable'
 import { renderFieldValue } from '@/components/DynamicFieldRenderer'
 import { formatIsoDateItalian } from '@/lib/dates'
-import { MONEY_SCALE, scaledFromDecimalString } from '@/lib/decimal'
+import { formatMoney as formatEuro } from '@rebase/ui/format'
+import { decimalStringFromScaled, MONEY_SCALE, scaledFromDecimalString } from '@/lib/decimal'
 import type { FieldDefinition } from '@/lib/schema'
 import type { Deal } from './queries'
 
 const EMPTY = '—'
 
-// `useGrouping: 'always'` on every formatter below, not the ICU default: see
-// DynamicFieldRenderer.tsx's own `renderFieldValue` docstring for the verified
-// reason -- it-IT's default "auto"/"min2" grouping withholds the thousands
-// separator until the integer part has five digits or more (checked directly on
-// this stack's ICU: `Intl.NumberFormat('it-IT').format(2500.5)` renders "2500,50",
-// no separator). Every currency/number surface in this product already forces
-// grouping on for exactly that reason; a Deal-specific formatter that skipped it
-// would be the one screen where a four-figure deal silently lost its separator,
-// failing `KanbanBoard.test.tsx`'s own required assertion that a Kanban column's
-// total renders with one ("shows the total value per column in euros, with a
-// thousands separator", asserting `/2\.500,50/`).
-const euro = new Intl.NumberFormat('it-IT', {
-  style: 'currency',
-  currency: 'EUR',
-  useGrouping: 'always',
-})
+// `useGrouping: 'always'` on the number formatter, not the ICU default: it-IT withholds
+// the thousands separator until the integer part has five digits (checked directly on
+// this stack's ICU: `Intl.NumberFormat('it-IT').format(2500.5)` renders "2500,50"). The
+// shared `formatMoney` forces it for euros; `KanbanBoard.test.tsx` asserts the separator.
 const number = new Intl.NumberFormat('it-IT', { useGrouping: 'always' })
 
 /**
@@ -52,7 +41,7 @@ export function displayNative(value: string | null): string {
  * place this matters on this screen).
  */
 export function formatMoney(value: string | null): string {
-  return value === null ? EMPTY : euro.format(Number(value))
+  return value === null ? EMPTY : formatEuro(value)
 }
 
 /** Same reasoning as `formatMoney`, for the one native column that is a plain
@@ -92,7 +81,7 @@ export function sumValorePrevisto(deals: Deal[]): string {
         : scaledFromDecimalString(deal.valore_previsto, MONEY_SCALE)),
     0,
   )
-  return euro.format(totalCents / 100)
+  return formatEuro(decimalStringFromScaled(totalCents, MONEY_SCALE))
 }
 
 /**

@@ -38,12 +38,14 @@ const ACCEPTED_UPLOAD_TYPES = [
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 ].join(',')
 
+const dateFormatter = new Intl.DateTimeFormat('it-IT', {
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+})
+
 function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('it-IT', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  })
+  return dateFormatter.format(new Date(iso))
 }
 
 /**
