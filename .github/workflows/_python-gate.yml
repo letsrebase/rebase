@@ -297,5 +297,7 @@ jobs:
           fi
           # `pytest-args` is a caller-written shell fragment (it carries a quoted
           # `-m "not slow"`), split the way a shell would but never executed.
-          mapfile -t extra < <(python3 -c 'import shlex, sys; print("\n".join(shlex.split(sys.argv[1])))' "$PYTEST_ARGS")
+          # `print` of an empty join would still emit one empty line, which `mapfile` turns into
+          # an empty-string argument for pytest: an empty `pytest-args` yields no argument.
+          mapfile -t extra < <(python3 -c 'import shlex, sys; [print(a) for a in shlex.split(sys.argv[1])]' "$PYTEST_ARGS")
           uv run pytest -q "${extra[@]}" "${paths[@]}"

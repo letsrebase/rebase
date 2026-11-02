@@ -93,6 +93,17 @@ on:
         type: string
         required: false
         default: ''
+      optional-env-secrets:
+        description: >-
+          Like `env-secrets`, for a feature that is opt-in on the host: each name is written
+          into the host `.env` when the environment has a value for it, and skipped with a
+          notice when it has none, so a deploy never fails for a secret nobody has created
+          yet. The compose overlay the secret feeds is what the host's `COMPOSE_FILE` turns
+          on. Every name must still be in the `S_*` union of the secrets step. Empty by
+          default.
+        type: string
+        required: false
+        default: ''
       health-timeout-seconds:
         description: >-
           How long the health loop keeps asking before it gives up. A stack whose
@@ -293,7 +304,7 @@ jobs:
         # list, not every inherited secret (`SNYK_TOKEN`, the deploy key and the rest
         # stay out of it). A caller that lists a name outside the union fails the step;
         # adding a managed secret means adding its `S_<NAME>` line here.
-        if: inputs.env-secrets != ''
+        if: inputs.env-secrets != '' || inputs.optional-env-secrets != ''
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
@@ -312,8 +323,11 @@ jobs:
           S_VAULTWARDEN_BACKUP_SECRET_ACCESS_KEY: ${{ secrets.VAULTWARDEN_BACKUP_SECRET_ACCESS_KEY }}
           S_VAULTWARDEN_BACKUP_PING_URL: ${{ secrets.VAULTWARDEN_BACKUP_PING_URL }}
           WANT: ${{ inputs.env-secrets }}
+          OPTIONAL: ${{ inputs.optional-env-secrets }}
         run: |
           set -euo pipefail
+          # The optional names follow the required ones, each marked with a leading `?`.
+          WANT_ALL="${WANT}"$'\n'"$(printf '%s\n' "$OPTIONAL" | sed 's/^[[:space:]]*\(.\)/?\1/')"
           # Runs on the host with NAME and ENVFILE in its environment and the value's
           # base64 on stdin. No secret is in this string, so it is safe as an argument.
           # grep's exit 1 is "no line matched" (the first write of this key, or an empty
@@ -342,6 +356,11 @@ jobs:
             name="${name#"${name%%[![:space:]]*}"}"
             name="${name%"${name##*[![:space:]]}"}"
             [ -z "$name" ] && continue
+            optional=0
+            if [ "${name:0:1}" = '?' ]; then
+              optional=1
+              name="${name:1}"
+            fi
             # Only the names in the union above are in this step's environment, as
             # `S_<NAME>`. Read by indirect expansion, so an unlisted name is an error
             # here and not an empty value.
@@ -359,6 +378,10 @@ jobs:
             value=$(printf '%s' "${!var}"; printf x)
             value=${value%x}
             if [ -z "$value" ]; then
+              if [ "$optional" = 1 ]; then
+                echo "::notice::Environment ${ENVIRONMENT} has no value for ${name}: skipped (optional-env-secrets)."
+                continue
+              fi
               echo "::error::Environment ${ENVIRONMENT} has no value for ${name}, listed in env-secrets."
               exit 1
             fi
@@ -370,7 +393,7 @@ jobs:
               | ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o GlobalKnownHostsFile=/dev/null \
                   "${DEPLOY_USER}@${DEPLOY_HOST}" \
                   "NAME='${name}' ENVFILE='${DEPLOY_PATH}/.env' bash -c '${remote}'"
-          done <<< "$WANT"
+          done <<< "$WANT_ALL"
 
       - name: Build and start the stack
         env:
@@ -402,20 +425,20 @@ jobs:
             #
             # The host is one 3.8 GiB, single-core machine shared by every stack, so
             # the build and the restart run under one host-wide lock (a second deploy
-            # waits instead of competing for memory and CPU), the build at low
-            # priority and one image at a time (INFRA-A-12).
+            # waits instead of competing for memory and CPU), one image at a time
+            # (INFRA-A-12).
             #
             # `build --pull` first: without it the host builds on whatever copy of
             # each base image (the nginx, Node and Python bases) it cached the first
             # time, and the security fixes Docker Hub rebuilds under the same tag
             # never reach a deployed image (REB-462). If a registry does not answer,
             # `set -e` stops here and the running containers are left as they are.
-            # `pull --ignore-buildable` refreshes the floating registry images
-            # (postgres) that `build --pull` does not touch. `up -d` then recreates
+            # `pull --ignore-buildable` refreshes the registry images that `build --pull`
+            # does not touch; the databases are pinned by digest, so it moves none. `up -d` then recreates
             # only the services whose image changed.
             exec 9>/var/lock/rebase-deploy.lock
             flock 9
-            COMPOSE_PARALLEL_LIMIT=1 nice -n 10 $COMPOSE -p "${COMPOSE_PROJECT}" --env-file "${DEPLOY_PATH}/.env" build --pull
+            COMPOSE_PARALLEL_LIMIT=1 $COMPOSE -p "${COMPOSE_PROJECT}" --env-file "${DEPLOY_PATH}/.env" build --pull
             $COMPOSE -p "${COMPOSE_PROJECT}" --env-file "${DEPLOY_PATH}/.env" pull --ignore-buildable
             $COMPOSE -p "${COMPOSE_PROJECT}" --env-file "${DEPLOY_PATH}/.env" up -d
           SSH

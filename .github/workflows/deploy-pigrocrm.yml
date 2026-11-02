@@ -137,6 +137,10 @@ jobs:
       # (REB-650). Every name must be in the `S_*` union of `_deploy-compose.yml`.
       env-secrets: |
         PIGROCRM_APP_PASSWORD
+      # The nightly backup (docker-compose.backup.yml) is opt-in on the host: these three are
+      # written when the environment has them and skipped when it has not, so a tag deploys
+      # before they exist. Create all three before setting COMPOSE_FILE in the host `.env`.
+      optional-env-secrets: |
         PIGROCRM_BACKUP_ACCESS_KEY_ID
         PIGROCRM_BACKUP_SECRET_ACCESS_KEY
         PIGROCRM_BACKUP_PING_URL
