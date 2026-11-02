@@ -1,7 +1,6 @@
 """The hub's MCP tools over its own database: the reads, the status moves, the notes."""
 
 import json
-import re
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -14,13 +13,12 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from rebase_core.admin_tokens import AdminRead
 from rebase_core.config import Settings
-from rebase_core.llm import LlmResponse, RecordingCall
+from rebase_core.llm import RecordingCall
 from rebase_core.mail import RecordingSender
 from rebase_core.models import AdminAction, Freelancer, FreelancerCard, TeamProposal, User
 from rebase_core.perks import guide_bytes
 from rebase_core.schemas import SignupCreate
 from rebase_core.service import SignupService
-from rebase_core.team_builder import ProposalAnswer
 from rebase_core.team_requests import TeamRequestService
 from rebase_core.team_schemas import TeamRequestCreate
 from rebase_mcp.server import build_server
@@ -208,9 +206,7 @@ async def test_the_admin_tools_read_and_move_a_candidate_without_the_cv(
             "list_ai_config",
             "get_team_request",
             "set_team_request_summary",
-            "contact_team_talents",
             "set_team_request_status",
-            "propose_team",
             "grant_talent_cloud",
             "revoke_talent_cloud",
             "list_talent_cloud_grants",
@@ -797,31 +793,6 @@ def _team_request(
         session.close()
 
 
-def _proposal_response(position: str = "t1") -> LlmResponse:
-    body = {
-        "riassunto": "Un'azienda di logistica rifà il gestionale, backend in Python.",
-        "luogo": {"locale": False, "dove": None},
-        "team": [
-            {
-                "id": position,
-                "ruolo": "Backend developer",
-                "motivazione": "Nove anni di API in Python e FastAPI.",
-                "giorni_settimana": 5,
-            }
-        ],
-    }
-    return LlmResponse(
-        text=json.dumps(body),
-        parsed=ProposalAnswer.model_validate(body),
-        stop_reason="end_turn",
-        refusal_category=None,
-        model=MODEL,
-        input_tokens=5200,
-        output_tokens=640,
-        cache_read_tokens=4800,
-    )
-
-
 def _wipe_team(factory: sessionmaker[Session]) -> None:
     session = factory()
     for table in (
@@ -1189,65 +1160,6 @@ async def test_set_team_request_status_refuses_a_bad_note_before_moving_anything
     _wipe_team(factory)
 
 
-async def test_contact_team_talents_mails_once_then_rimanda_only_the_silent(
-    factory: sessionmaker[Session],
-) -> None:
-    session = factory()
-    members = [_talent_with_card(session, 1), _talent_with_card(session, 2)]
-    session.close()
-    request_id = _team_request(factory, members)
-    _seed_admin(factory)
-    sender = RecordingSender()
-
-    async with Client(
-        build_server(factory, lambda: IVAN, settings=_team_settings(), sender=sender)
-    ) as client:
-        contacted = _payload(
-            await client.call_tool("contact_team_talents", {"request_id": request_id})
-        )
-        assert contacted["stato"] == "contattata"
-        assert len(sender.sent) == 2
-        addresses = {mail.to for mail in sender.sent}
-        assert addresses == {"talento1@studio.it", "talento2@studio.it"}
-        assert all(mail.subject == "Un progetto per te: sei disponibile?" for mail in sender.sent)
-
-        again = await client.call_tool("contact_team_talents", {"request_id": request_id})
-        assert again.is_error
-        assert "già stati contattati" in again.content[0].text
-
-        first_mail = next(mail for mail in sender.sent if mail.to == "talento1@studio.it")
-        found = re.search(r"[?&]t=([A-Za-z0-9_-]+)&r=si", first_mail.text)
-        assert found
-        session2 = factory()
-        TeamRequestService(session2, settings=_team_settings()).answer(found.group(1), "si")
-        session2.close()
-
-        rimanda = _payload(
-            await client.call_tool(
-                "contact_team_talents", {"request_id": request_id, "only_silent": True}
-            )
-        )
-        assert rimanda["stato"] == "contattata"
-        assert len(sender.sent) == 3
-        assert sender.sent[2].to == "talento2@studio.it"
-    _wipe_team(factory)
-
-
-async def test_contact_team_talents_without_a_sender_is_the_no_sender_sentence(
-    factory: sessionmaker[Session],
-) -> None:
-    session = factory()
-    member = _talent_with_card(session)
-    session.close()
-    request_id = _team_request(factory, [member])
-
-    async with Client(build_server(factory, lambda: IVAN, settings=_team_settings())) as client:
-        refused = await client.call_tool("contact_team_talents", {"request_id": request_id})
-        assert refused.is_error
-        assert "L'invio delle email non è attivo" in refused.content[0].text
-    _wipe_team(factory)
-
-
 async def test_list_team_proposals_reads_every_ask_with_its_request(
     factory: sessionmaker[Session],
 ) -> None:
@@ -1320,33 +1232,6 @@ async def test_list_team_proposals_reads_every_ask_with_its_request(
         assert [item["id"] for item in only["items"]] == [attempt_id]
         bad = await client.call_tool("list_team_proposals", {"origine": "sito"})
         assert bad.is_error and "origine" in bad.content[0].text
-    _wipe_team(factory)
-
-
-async def test_propose_team_proposes_as_the_admin_and_off_is_the_sentence(
-    factory: sessionmaker[Session],
-) -> None:
-    session = factory()
-    member = _talent_with_card(session)
-    session.close()
-    _seed_admin(factory)
-    descrizione = (
-        "Rifacciamo il gestionale degli ordini: un backend in Python con FastAPI, "
-        "sei mesi, da remoto."
-    )
-    llm = RecordingCall([_proposal_response()])
-    async with Client(
-        build_server(factory, lambda: IVAN, settings=_team_settings(), team_llm=lambda: llm)
-    ) as client:
-        proposed = _payload(await client.call_tool("propose_team", {"descrizione": descrizione}))
-        assert proposed["origine"] == "admin"
-        assert proposed["team"][0]["freelancer_id"] == str(member)
-        assert len(llm.requests) == 1
-
-    async with Client(build_server(factory, lambda: IVAN, settings=_team_settings())) as client:
-        off = await client.call_tool("propose_team", {"descrizione": descrizione})
-        assert off.is_error
-        assert "Il team builder è spento." in off.content[0].text
     _wipe_team(factory)
 
 

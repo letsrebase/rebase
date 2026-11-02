@@ -84,12 +84,19 @@ running the core service the admin area runs, with the calling admin as the acto
 - `list_team_proposals`: «Proposte», every «Proponi il team» asked, filed or not.
 - `list_ai_config`: «Modelli AI», read only: providers (the hint, never a key), tasks, prices, the month's spend, and `registro`, the last 50 entries of the configuration's trail (keys, switches, prices and every regeneration of the cards, start and end). No tool writes a key.
 - `set_team_request_summary`: «Salva il riassunto», refused while it names the company.
-- `contact_team_talents`: «Contatta i talenti», or with `only_silent` «Rimanda a chi non ha risposto».
 - `set_team_request_status`: «Segna come contattata», «Chiudi», with an optional note.
-- `propose_team`: the engine as the admin (`origine` `admin`), outside the daily cap.
 - `get_freelancer_card`, `regenerate_freelancer_card`: the anonymous card, and «Rigenera scheda». The card's `seniority` and `anni` are the admin's when `override_freelancer` set them (`seniority`, `anni`), Claude's otherwise; `anni` is `null` and `seniority_incerta` true when the CV dates no role (REB-799).
 - `set_freelancer_vetted`: «Segna come verificato» and «Togli la verifica».
 - `grant_talent_cloud`, `revoke_talent_cloud`, `list_talent_cloud_grants`: the cloud's grants.
+
+**No team is proposed and no talent is mailed over MCP** (REB-876, Lorenzo 2026-11-02).
+`propose_team` and `contact_team_talents` were tools until then and are gone on purpose:
+an agent finds the people for a request with `list_talenti`, `get_talento` and the cards,
+which spends nothing on the team builder's model, and a person writes to the candidates
+by hand, from drafts the agent can prepare. «Contatta i talenti» stays in the admin area,
+«Proponi il team» on the public page and in the talent cloud (the admin area only reads
+«Proposte»), and the server's instructions say that no availability mail goes out from it.
+Rows with `origine` `admin` are older than this and stay readable.
 
 «Modelli AI» (`/hub/admin/modelli-ai`, REB-833, `routers/ai.py` under `/api/hub/admin/ai`) is
 where an admin replaces a provider's key (write-only: the answer is «configurata, finisce con
@@ -526,12 +533,11 @@ rebase» on their card. **On production the talents' mail of spec § 4.4 goes ou
 the first grant**: every freelancer with a card is told, by a campaign from «Campagne»,
 what their card says, that the public builder shows it without their name, and that the
 companies rebase admits see their profile by name with the CV. **The `mcp` service uses
-«Modelli AI» and the Resend key** as `api` does: `propose_team` and
-`regenerate_freelancer_card` call the configured model (asked on each call, so a model
-configured while it runs applies at once), `contact_team_talents` and
-`grant_talent_cloud` send mail. Recreate it beside `api` when the Resend key changes;
-without a model or a mail key those tools answer as the admin area does (the builder off,
-sending not active here, the cloud opened with no mail).
+«Modelli AI» and the Resend key** as `api` does: `regenerate_freelancer_card` calls the
+configured model (asked on each call, so a model configured while it runs applies at
+once), and `grant_talent_cloud` sends mail. Recreate it beside `api` when the Resend key
+changes; without a model or a mail key those tools answer as the admin area does (the
+card refused with the builder's sentence, the cloud opened with no mail).
 
 **The key** is saved in «Modelli AI», encrypted, never in the repository or the
 environment (see «Model provider keys» below); the old `REBASE_ANTHROPIC_API_KEY` and
@@ -903,9 +909,9 @@ riprova tra un minuto.» at once rather than wait on the threads the member area
 webhooks share. `REBASE_TEAM_BUILDER_DAILY_CAP` (300) is how many proposals a day, the
 public page and the cloud together, counted on `team_proposals` since midnight in Rome
 (`rebase_core.team_caps`); once reached, the same 503 until the next day. It counts
-proposals written: an admin's own and one with an empty catalogue (no call made) do
-not count, and a call that failed is bounded by `spend_one` and the concurrency cap,
-not by this one.
+proposals written: an admin's own (only older rows, from the MCP tool REB-876 removed)
+and one with an empty catalogue (no call made) do not count, and a call that failed is
+bounded by `spend_one` and the concurrency cap, not by this one.
 
 **`/api/hub/team/proposals` needs 90 seconds on the host vhost, and so does
 `/api/hub/me/cloud/proposals`**, the same builder inside the talent cloud (REB-519). A
@@ -916,9 +922,9 @@ on. The repository's copies of the host vhosts, `projects/website/deploy/letsreb
 and `preview.letsrebase.conf`, carry both locations beside `location ^~ /api/hub/`,
 which an exact match outranks; the installed vhost in `/etc/nginx/sites-available/`
 gets them by hand, as the MCP location did. That MCP location,
-`location ^~ /api/hub/mcp`, waits on the same seam for `propose_team` and
-`regenerate_freelancer_card` (REB-520); the `proxy_read_timeout 120s;` after its include,
-there since the hours report's Pigro link (REB-499), covers them too: in both copies here,
+`location ^~ /api/hub/mcp`, waits on the same seam for `regenerate_freelancer_card`
+(REB-520); the `proxy_read_timeout 120s;` after its include,
+there since the hours report's Pigro link (REB-499), covers it too: in both copies here,
 and by hand in the installed vhosts (8088 on production, 8089 on the preview, which has
 it since #428), with the same `nginx -t` and reload. Production's:
 
