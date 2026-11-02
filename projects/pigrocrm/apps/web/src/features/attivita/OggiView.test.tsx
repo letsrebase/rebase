@@ -1,9 +1,10 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
+import { useState } from 'react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
-import { OggiPage } from './OggiPage'
+import { OggiView } from './OggiView'
 import { useOverdueCount } from './queries'
 
 vi.mock('@/lib/api', async (importOriginal) => {
@@ -85,12 +86,18 @@ function Count() {
   return <span data-testid="count">{useOverdueCount() ?? 'nessuno'}</span>
 }
 
-function renderPage() {
+/** The page owns the choice of person; this holds it the way `AttivitaPage` does. */
+function Held({ initial }: { initial: string }) {
+  const [assignee, setAssignee] = useState(initial)
+  return <OggiView tabs={null} assignee={assignee} onAssigneeChange={setAssignee} />
+}
+
+function renderPage(initialAssignee = 'io') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={client}>
       <Count />
-      <OggiPage />
+      <Held initial={initialAssignee} />
     </QueryClientProvider>,
   )
 }
@@ -108,7 +115,7 @@ beforeEach(() => {
   serve()
 })
 
-describe('OggiPage', () => {
+describe('OggiView', () => {
   it('draws the four sections in the spec order, each with its row and its count', async () => {
     renderPage()
 
@@ -126,6 +133,20 @@ describe('OggiPage', () => {
     expect(screen.getByText('Telefonare a Bianchi')).toBeInTheDocument()
     expect(screen.getByText('Preventivo Acme')).toBeInTheDocument()
     expect(screen.getByText('Chiedere il codice SDI')).toBeInTheDocument()
+  })
+
+  it('is the Attività page under its own title, and opens on whoever the address names', async () => {
+    renderPage('tutte')
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Attività' })).toBeInTheDocument()
+    await screen.findByText('Sollecitare Rossi')
+    expect(screen.getByRole('combobox', { name: 'Filtra per assegnatario' })).toHaveTextContent(
+      'Di chiunque',
+    )
+    // «Di chiunque» is the whole space: no person, no «and nobody's».
+    expect(vi.mocked(api.GET)).toHaveBeenCalledWith('/api/activities/oggi', {
+      params: { query: { assegnata_a: undefined, anche_non_assegnate: undefined, limit: 100 } },
+    })
   })
 
   it('asks for the signed-in user\'s own attività, and for everybody\'s on request', async () => {
@@ -172,17 +193,17 @@ describe('OggiPage', () => {
     expect(await screen.findByText(/Ne sono mostrate 1 su 120/)).toBeInTheDocument()
     // The rows left out are listed for the person this page is showing, not for the
     // Attività page's own default.
-    expect(screen.getByRole('link', { name: 'pagina Attività' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'scheda Tutte' })).toHaveAttribute(
       'data-search',
-      JSON.stringify({ assegnata: 'io' }),
+      JSON.stringify({ vista: 'tutte', assegnata: 'io' }),
     )
 
     await userEvent.click(screen.getByRole('combobox', { name: 'Filtra per assegnatario' }))
     await userEvent.click(await screen.findByRole('option', { name: 'Di chiunque' }))
     await waitFor(() =>
-      expect(screen.getByRole('link', { name: 'pagina Attività' })).toHaveAttribute(
+      expect(screen.getByRole('link', { name: 'scheda Tutte' })).toHaveAttribute(
         'data-search',
-        JSON.stringify({ assegnata: 'tutte' }),
+        JSON.stringify({ vista: 'tutte', assegnata: 'tutte' }),
       ),
     )
   })

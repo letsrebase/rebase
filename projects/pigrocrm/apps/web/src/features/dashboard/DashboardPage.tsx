@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { PageHeader } from '@/components/PageHeader'
 import { Tabs, TabsList, TabsTrigger } from '@rebase/ui/tabs'
 import { CommercialTab } from './CommercialTab'
+import { DaFareBand } from './DaFareBand'
 import { DaysTab } from './DaysTab'
 import { EconomicTab } from './EconomicTab'
 import { PeriodPicker } from './PeriodPicker'
@@ -37,8 +38,8 @@ export function DashboardPage({
   const { tab, da, a, base } = search
 
   // The page owns its own intestazione since the 2026-09-08 revision: §4 draws the tabs
-  // as part of the header, closed by its rule, and the period picker is the one control
-  // this screen puts top right. The route above only supplies the search object and
+  // closed by their rule, and the period picker is the one control this screen puts top
+  // right. The route above only supplies the search object and
   // pushes the changed one into the URL, so there is exactly one `<h1>` on the home page.
   return (
     <Tabs value={tab} onValueChange={(next) => onSearchChange({ tab: next as typeof tab })}>
@@ -52,6 +53,9 @@ export function DashboardPage({
             <PeriodPicker periodo={{ da, a }} onChange={(next) => onSearchChange(next)} />
           )
         }
+        // The late and due-today attività (REB-874): the first thing under the title, with
+        // the analysis tabs starting under it.
+        aboveTabs={<DaFareBand />}
         tabs={
           <TabsList variant="line">
             {DASHBOARD_TABS.map((candidate) => (

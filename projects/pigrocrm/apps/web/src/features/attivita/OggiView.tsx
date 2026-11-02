@@ -1,5 +1,5 @@
-import { CalendarCheck, ChevronDown, Plus } from 'lucide-react'
-import { useState } from 'react'
+import { ChevronDown, ListChecks, Plus } from 'lucide-react'
+import { useState, type ReactNode } from 'react'
 import { Link } from '@tanstack/react-router'
 import { FilterRow } from '@/components/FilterRow'
 import { PageHeader } from '@/components/PageHeader'
@@ -73,10 +73,10 @@ function Sezione({
             Ne sono mostrate {gruppo.items.length} su {gruppo.totale}: le altre sono nella{' '}
             <Link
               to="/app/activities"
-              search={{ assegnata: assignee }}
+              search={{ vista: 'tutte', assegnata: assignee }}
               className="underline underline-offset-4"
             >
-              pagina Attività
+              scheda Tutte
             </Link>
             .
           </p>
@@ -107,17 +107,33 @@ function Sezione({
 }
 
 /**
- * `/app/oggi`: what is late, what falls today, what comes in the next seven days and
- * what has no date at all, in that order (spec 2026-09-03 §5; REB-725).
+ * The «Oggi» view of the Attività page, and the first one a person sees: what is late,
+ * what falls today, what comes in the next seven days and what has no date at all, in that
+ * order (spec 2026-09-03 §5; REB-725). It was the page at `/app/oggi`, which now redirects
+ * here (REB-873).
  *
  * Opens on the signed-in person's own attività and says so in the select; «Di chiunque»
  * is one press away. The day is the server's `oggi` and is printed in the header, so
  * the page reads the same for somebody working in another time zone.
+ *
+ * The page's tab strip, any notice above the sections and the choice of person come from
+ * `AttivitaPage`, which owns the two views.
  */
-export function OggiPage() {
+export function OggiView({
+  tabs,
+  notice,
+  assignee,
+  onAssigneeChange,
+}: {
+  tabs: ReactNode
+  notice?: ReactNode
+  /** Whose attività the view shows: `ME`, `EVERYONE` or a user id. Held by the page, so
+   *  the choice survives a switch between its two views. */
+  assignee: string
+  onAssigneeChange: (next: string) => void
+}) {
   const canWrite = useCanWrite()
   const assignees = useAssignees()
-  const [assignee, setAssignee] = useState(ME)
   const [creating, setCreating] = useState(false)
 
   // Waits for the session's user id when the choice is «mine»: asking before it is known
@@ -132,13 +148,14 @@ export function OggiPage() {
   return (
     <>
       <PageHeader
-        icon={CalendarCheck}
-        title="Oggi"
+        icon={ListChecks}
+        title="Attività"
         description={
           panel.data
             ? `Cosa è in ritardo e cosa scade: oggi è il ${formatIsoDateItalian(panel.data.oggi)}.`
             : 'Cosa è in ritardo e cosa scade.'
         }
+        tabs={tabs}
         actions={
           canWrite && (
             <Button onClick={() => setCreating(true)}>
@@ -148,12 +165,14 @@ export function OggiPage() {
           )
         }
       >
-        <FilterRow>
-          <AssigneeSelect value={assignee} onChange={setAssignee} />
+        {/* Under the tab strip's rule now, so it gets the air the title row has above it. */}
+        <FilterRow className="pt-4">
+          <AssigneeSelect value={assignee} onChange={onAssigneeChange} />
         </FilterRow>
       </PageHeader>
 
       <div className="space-y-8 px-8 pb-8">
+        {notice}
         {panel.isError ? (
           <QueryErrorBanner error={panel.error} />
         ) : !panel.data ? (

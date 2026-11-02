@@ -1,21 +1,30 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { AttivitaPage } from '@/features/attivita/AttivitaPage'
 import { EVERYONE, ME } from '@/features/attivita/filters'
+import { isVista, vistaOf, type Vista } from '@/features/attivita/vista'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 function AttivitaRoute() {
-  const { apri, assegnata } = Route.useSearch()
+  const search = Route.useSearch()
+  const { apri, assegnata } = search
+  const vista = vistaOf(search)
   const navigate = useNavigate()
   // `key`: arriving with another id while the page is open is a remount, so the dialog
   // opens for it instead of staying dismissed from the previous one.
   return (
     <AttivitaPage
       key={`${apri ?? ''}|${assegnata ?? ''}`}
+      vista={vista}
+      onVistaChange={(next) =>
+        void navigate({ to: '/app/activities', search: { assegnata, vista: next }, replace: true })
+      }
       openId={apri}
       initialAssignee={assegnata}
       onDismissOpen={() =>
-        void navigate({ to: '/app/activities', search: { assegnata }, replace: true })
+        // The view stays the one the address implied: taking `?apri=` off must not move
+        // the page from the table to «Oggi».
+        void navigate({ to: '/app/activities', search: { assegnata, vista }, replace: true })
       }
     />
   )
@@ -30,14 +39,21 @@ export const Route = createFileRoute('/app/activities')({
   // API refuses.
   //
   // `?assegnata=` is whose attività the page opens on: «io», «tutte» or a user id. The Oggi
-  // page's «le altre sono nella pagina Attività» carries the person it was showing, so the
+  // view's «le altre sono nella pagina Attività» carries the person it was showing, so the
   // rows it left out are the ones listed.
-  validateSearch: (search: Record<string, unknown>): { apri?: string; assegnata?: string } => ({
+  //
+  // `?vista=` is the tab: «oggi» or «tutte» (`vistaOf` says what an address without it means).
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { apri?: string; assegnata?: string; vista?: Vista; da?: string } => ({
     apri: typeof search.apri === 'string' && UUID_RE.test(search.apri) ? search.apri : undefined,
     assegnata:
       typeof search.assegnata === 'string' &&
       (search.assegnata === ME || search.assegnata === EVERYONE || UUID_RE.test(search.assegnata))
         ? search.assegnata
         : undefined,
+    vista: isVista(search.vista) ? search.vista : undefined,
+    // `?da=digest` rides along from `/app/oggi`, where the digest mail's link lands.
+    da: typeof search.da === 'string' ? search.da : undefined,
   }),
 })

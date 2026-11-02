@@ -98,27 +98,15 @@ export async function logout(page: Page): Promise<void> {
   await expect(page).toHaveURL(/\/app\/login$/)
 }
 
-/** The two collapsible groups of the sidebar, spelled as their headers spell them. */
-export type SidebarGroup = 'Vendite' | 'Amministrazione'
-
 /**
- * Navigates through the sidebar, opening the entry's group first when it is closed.
+ * Navigates through the sidebar by the entry's own name.
  *
- * The third thing the UI revision of 2026-09-08 changed under these specs: nine flat
- * entries became two groups, and a group is *closed* unless it holds the current route
- * or you opened it yourself (`AppShell.tsx`: `isOpen`). So from the dashboard the
- * «Deal» link is in the DOM's future rather than on the screen, and clicking it waits
- * until the test times out.
- *
- * The header is clicked only when the entry is not already visible: from a page inside
- * the group the entry is there, and clicking the header would *close* the group.
+ * Since REB-873 the sections are captions that are always open, so every entry is on the
+ * screen from any page and there is no group to open first. The match is `exact` so that a
+ * short name never also finds a longer link that contains it.
  */
-export async function navigate(page: Page, group: SidebarGroup, entry: string): Promise<void> {
-  const link = page.getByRole('link', { name: entry, exact: true })
-  if (!(await link.isVisible())) {
-    await page.getByRole('button', { name: group }).click()
-  }
-  await link.click()
+export async function navigate(page: Page, entry: string): Promise<void> {
+  await page.getByRole('link', { name: entry, exact: true }).click()
 }
 
 /**

@@ -20,7 +20,7 @@ import { useCreateToken, useTokenOptions, type CreatedToken } from './queries'
 /**
  * Everything a client needs to talk to this installation's MCP server over HTTP
  * (ORB-170): the endpoint, a token minted right here, and the two shapes a
- * configuration takes. Shared by the sidebar's «Collega un agente» dialog and the
+ * configuration takes. Shared by the «Collega un agente» dialog of the Agenti page and the
  * start page's «Fai lavorare l'assistente» block (spec 2026-09-16 §4.2, REB-222), so
  * the two cannot drift.
  *
@@ -50,9 +50,8 @@ export function ConnectAgentPanel({
   const [fullAccess, setFullAccess] = useState(fullAccessByDefault)
   const options = useTokenOptions()
   const fullAccessAvailable = options.data?.full_access_available === true
-  // The dialog and the start page can both be on screen (the sidebar's «Collega un
-  // agente» over an empty space's Home): fixed ids would appear twice and a label
-  // would name the input behind the dialog.
+  // Two of these can be mounted at once (the start page's and a dialog's): fixed ids
+  // would appear twice and a label would name the input behind the dialog.
   const ids = useId()
   const id = (name: string) => `${ids}-${name}`
 

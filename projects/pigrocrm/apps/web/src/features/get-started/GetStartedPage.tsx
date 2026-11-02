@@ -5,14 +5,14 @@
  *    it, the Gmail door (`GmailDoor`) and the invoice door of §6 (`InvoiceDoor`,
  *    REB-224).
  * 2. **Fai lavorare l’assistente**: the connection itself, inline (`ConnectAgentPanel`,
- *    the body of the sidebar's dialog), and the first prompt to say to it. Once this
+ *    the body of the Agenti page's «Collega un agente» dialog), and the first prompt to say to it. Once this
  *    person has a token the block is the prompt alone.
  * 3. **Oppure a mano**: the four first steps, each with its screen and its prompt side
  *    by side. The §6.7 rules of 2026-09-12 stand: a step is ticked because the thing
  *    exists, a person who cannot do it reads who can, nothing can be hidden.
  *
- * The same page is the Home while the space is empty (`HomePage`) and the sidebar's
- * «Primi passi» always, so whoever arrives from either sees the same thing. Nothing is
+ * The same page is the Home while the space is empty (`HomePage`) and the profile
+ * menu's «Primi passi» always, so whoever arrives from either sees the same thing. Nothing is
  * stored: every state is read from the data (`useFirstSteps`, `useGmailHealth`).
  */
 import { Link } from '@tanstack/react-router'

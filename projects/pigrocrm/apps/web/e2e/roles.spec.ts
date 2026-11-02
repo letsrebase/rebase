@@ -50,7 +50,7 @@ test('a collaboratore is offered only their own Settings groups and cannot reach
 
   // ...but *can* reach, and fully use, their own access tokens.
   await page.goto('/app/token')
-  await expect(page.getByRole('heading', { name: 'Token di accesso' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Agenti' })).toBeVisible()
   await page.getByRole('button', { name: /nuovo token/i }).click()
   const tokenDialog = page.getByRole('dialog')
   await tokenDialog.getByLabel('Nome').fill('Token E2E collaboratore')

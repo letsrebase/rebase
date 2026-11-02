@@ -46,11 +46,11 @@ const PRIMO = `01/${String(OGGI.getMonth() + 1).padStart(2, '0')}/${OGGI.getFull
 const CELLA_PRIMO = new RegExp(`^${PRIMO.replace(/\//g, '\\/')}: `)
 
 test.describe('il calendario', () => {
-  test('è nel menu sotto Home e apre sul mese corrente', async ({ page }) => {
+  test('è nel menu, tra le voci di «Da fare», e apre sul mese corrente', async ({ page }) => {
     await loginAsAdmin(page)
 
-    // The sidebar entry, which is where the request started: «lo voglio sotto alla home
-    // nel menu laterale».
+    // The sidebar entry, which is where the request started («lo voglio sotto alla home
+    // nel menu laterale», 2026-09-09); since REB-873 it sits in «Da fare», after Attività.
     const link = page.getByRole('link', { name: 'Calendario' })
     await expect(link).toBeVisible()
     await link.click()

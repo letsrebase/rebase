@@ -17,7 +17,7 @@ const session = vi.hoisted(() => ({ ruolo: 'admin' as 'admin' | 'collaboratore' 
 vi.mock('@/lib/auth', async () => {
   const { can } = await import('@/lib/permissions')
   return {
-    useAuth: () => ({ user: { ruolo: session.ruolo } }),
+    useAuth: () => ({ user: { id: 'u-1', ruolo: session.ruolo } }),
     useCan: (action: Parameters<typeof can>[1]) => can(session.ruolo, action),
   }
 })
@@ -121,6 +121,15 @@ const BY_PATH: Record<string, unknown> = {
   // No active contract caps a customer's share: nor does that panel have anything to show.
   '/api/contracts': { items: [], next_cursor: null },
   '/api/analytics/year': EMPTY_YEAR,
+  // Nothing late and nothing due today: the «Da fare» band is its one line (REB-874, and
+  // `DaFareBand.test.tsx` for the rest).
+  '/api/activities/oggi': {
+    oggi: '2026-03-15',
+    in_ritardo: { totale: 0, items: [] },
+    scadono_oggi: { totale: 0, items: [] },
+    prossimi_sette_giorni: { totale: 0, items: [] },
+    senza_scadenza: { totale: 0, items: [] },
+  },
 }
 
 const SEARCH: DashboardSearch = {
@@ -255,6 +264,17 @@ describe('DashboardPage, the page intestazione', () => {
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
     expect(screen.getByRole('tab', { name: 'Commerciale' })).toBeInTheDocument()
     expect(screen.getByLabelText('Dal')).toBeInTheDocument()
+  })
+
+  /** REB-874: the band sits between the title and the tab strip, so it is the first thing
+   *  under «Home» and the analysis tabs start below it. */
+  it('draws the «Da fare» band above the analysis tabs', async () => {
+    renderPage()
+    const line = await screen.findByText('Niente in ritardo né in scadenza oggi.')
+    const tab = screen.getByRole('tab', { name: 'Commerciale' })
+    expect(line.compareDocumentPosition(tab) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const title = screen.getByRole('heading', { level: 1, name: 'Home' })
+    expect(title.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 })
 

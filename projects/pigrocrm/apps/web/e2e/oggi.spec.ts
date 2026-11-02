@@ -3,8 +3,9 @@ import { loginAsAdmin } from './helpers'
 
 /**
  * REB-725's definition of done, driven the way a person drives it: an attività due
- * yesterday is under «In ritardo» and counted beside «Oggi» in the sidebar, and
- * completing it takes it out of both.
+ * yesterday is under «In ritardo» and counted beside «Attività» in the sidebar, and
+ * completing it takes it out of both. Since REB-873 «Oggi» is the first view of the
+ * Attività page, so `/app/oggi` has to land there.
  *
  * The count is compared before and after rather than against a literal, because the
  * other specs of this suite leave their own attività in the same space.
@@ -28,12 +29,14 @@ test.describe('Oggi', () => {
     expect(created.status(), await created.text()).toBe(201)
 
     await page.goto('/app/oggi')
+    await expect(page).toHaveURL(/\/app\/activities\?vista=oggi/)
+    await expect(page.getByRole('tab', { name: 'Oggi' })).toHaveAttribute('aria-selected', 'true')
     const inRitardo = page
       .getByRole('heading', { name: /In ritardo/ })
       .locator('xpath=ancestor::section')
     await expect(inRitardo.getByText(titolo)).toBeVisible()
 
-    const badge = page.getByRole('link', { name: /^Oggi\s*\d+ in ritardo$/ }).locator('span[aria-hidden]')
+    const badge = page.getByRole('link', { name: /^Attività\s*\d+ in ritardo$/ }).locator('span[aria-hidden]')
     await expect(badge).toBeVisible()
     const before = Number(((await badge.textContent()) ?? '').trim())
 
