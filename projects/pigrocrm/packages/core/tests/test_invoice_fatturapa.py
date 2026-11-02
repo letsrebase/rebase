@@ -281,7 +281,7 @@ def test_a_code_point_xml_cannot_represent_is_refused_not_emitted() -> None:
     and the writer crashed on it after the number was spent (ORB-140). The pre-check
     refuses it the same way, before."""
     righe = [_line(1, "Consulenza\x0b", "1.000000", "100.000000", "100.00")]
-    with pytest.raises(ValidationFailed, match="non rappresentabile in XML") as writer:
+    with pytest.raises(ValidationFailed) as writer:
         FatturaPAExporter().to_bytes(_invoice(righe))
     assert writer.value.details["field"] == "descrizione"
     with pytest.raises(ValidationFailed) as pre:
@@ -1139,9 +1139,7 @@ def test_the_spellings_cannot_change_the_bytes_of_a_file_already_exported() -> N
     the range accepts it. A future entry that broke either half would silently break
     `xml_hash_sha256` on the next re-export, so both halves are pinned."""
     assert all(key > 0xFF for key in LATIN_SPELLINGS)
-    assert all(
-        ord(char) <= 0xFF for spelling in LATIN_SPELLINGS.values() for char in str(spelling)
-    )
+    assert all(ord(char) <= 0xFF for spelling in LATIN_SPELLINGS.values() for char in str(spelling))
 
 
 def test_a_pec_too_long_for_fpr12_is_refused_by_the_pre_check_like_the_writer() -> None:

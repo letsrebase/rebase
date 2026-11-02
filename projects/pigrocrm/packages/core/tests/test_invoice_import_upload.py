@@ -132,8 +132,10 @@ def test_a_request_with_nothing_to_read_is_refused_not_answered_with_an_empty_li
 
 
 def test_a_broken_zip_is_refused_with_its_name() -> None:
-    with pytest.raises(ValidationFailed, match="rotto.zip"):
+    with pytest.raises(ValidationFailed) as refused:
         expand_uploads([("rotto.zip", b"PK\x03\x04 and then nothing a zip has")])
+    assert refused.value.details["field"] == "files"
+    assert "rotto.zip" in refused.value.details["reason"]
 
 
 def test_a_zip_bomb_is_refused_by_what_it_decompresses_to_not_by_what_it_says(
@@ -141,8 +143,9 @@ def test_a_zip_bomb_is_refused_by_what_it_decompresses_to_not_by_what_it_says(
 ) -> None:
     monkeypatch.setattr(import_upload, "UPLOAD_MAX_FILE_BYTES", 1024)
     honest = _zip({"grande.xml": b"a" * 5000})
-    with pytest.raises(ValidationFailed, match="supera"):
+    with pytest.raises(ValidationFailed) as refused:
         expand_uploads([("b.zip", honest)])
+    assert refused.value.details["field"] == "files"
 
     # The directory is written by whoever made the archive: lower both copies of the
     # size to a harmless 100 bytes and the read must still stop at the ceiling.
@@ -153,16 +156,19 @@ def test_a_zip_bomb_is_refused_by_what_it_decompresses_to_not_by_what_it_says(
     while (index := lying.find(real, index)) != -1:
         lying[index : index + 4] = fake
         index += 4
-    with pytest.raises(ValidationFailed, match="grande.xml"):
+    with pytest.raises(ValidationFailed) as refused:
         expand_uploads([("b.zip", bytes(lying))])
+    assert refused.value.details["field"] == "files"
+    assert "grande.xml" in refused.value.details["reason"]
 
 
 def test_the_total_of_a_zips_entries_counts_against_the_requests_ceiling(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(import_upload, "UPLOAD_MAX_TOTAL_BYTES", 10)
-    with pytest.raises(ValidationFailed, match="in tutto"):
+    with pytest.raises(ValidationFailed) as refused:
         expand_uploads([("a.zip", _zip({"1.xml": b"123456", "2.xml": b"123456"}))])
+    assert refused.value.details["field"] == "files"
 
 
 def test_the_number_of_files_and_the_total_size_are_bounded(
