@@ -106,9 +106,8 @@ def test_the_hub_compose_file_runs_the_sweep_on_a_loop_with_no_port() -> None:
     `running`, and no port, since nothing ever calls the sweep directly."""
     services = _compose().split("\nservices:", 1)[1]
     sweep = services.split("\n  sweep:", 1)[1].split("\n  cards:", 1)[0]
-    assert "while :; do sleep 600; uv run --no-sync rebase contracts-sweep; done" in sweep
-    assert "init: true" in sweep
-    assert "environment: *api-environment" in sweep
+    assert "while :; do sleep 600; rebase contracts-sweep; done" in sweep
+    assert "<<: *hardening" in sweep
     assert "ports:" not in sweep
 
 
@@ -124,15 +123,14 @@ def test_the_hub_compose_file_runs_the_cards_backlog_and_the_batch_poll() -> Non
     services = _compose().split("\nservices:", 1)[1]
     cards = services.split("\n  cards:", 1)[1].split("\n  web:", 1)[0]
     assert (
-        "n=0; while :; do sleep 300; uv run --no-sync rebase cards-batch-poll || true; "
+        "n=0; while :; do sleep 300; rebase cards-batch-poll || true; "
         'n=$$((n + 1)); if [ "$$n" -ge 12 ]; then n=0; '
-        "uv run --no-sync rebase sources-refetch --limit 50 || true; "
-        'if [ "${REBASE_CARDS_LOOP:-off}" = "on" ]; then uv run --no-sync rebase '
+        "rebase sources-refetch --limit 50 || true; "
+        'if [ "${REBASE_CARDS_LOOP:-off}" = "on" ]; then rebase '
         'cards-refresh --limit 50; else echo "cards: loop off (REBASE_CARDS_LOOP)"; fi; '
         "fi; done"
     ) in cards
-    assert "init: true" in cards
-    assert "environment: *api-environment" in cards
+    assert "<<: *hardening" in cards
     assert "ports:" not in cards
 
 
@@ -145,10 +143,28 @@ def test_the_hub_compose_file_runs_the_campaigns_loop_every_minute_with_no_port(
     «Invia adesso» promises the mail within one."""
     services = _compose().split("\nservices:", 1)[1]
     loop = services.split("\n  campaigns:", 1)[1].split("\n  sweep:", 1)[0]
-    assert "while :; do sleep 60; uv run --no-sync rebase campaigns-tick; done" in loop
-    assert "init: true" in loop
-    assert "environment: *api-environment" in loop
+    assert "while :; do sleep 60; rebase campaigns-tick; done" in loop
+    assert "<<: *hardening" in loop
     assert "ports:" not in loop
+
+
+def test_the_loops_hold_only_the_secrets_of_their_own_job() -> None:
+    """HMCP-09: `campaigns`, `sweep` and `cards` parse untrusted content from one image that
+    also runs the API, and none of them takes the API-only group (the webhooks' secrets, the
+    conversion and analytics keys); only `cards` takes the GitHub token, and only `sweep` the
+    Documenso token."""
+    services = _compose().split("\nservices:", 1)[1]
+    blocks = {
+        "campaigns": services.split("\n  campaigns:", 1)[1].split("\n  sweep:", 1)[0],
+        "sweep": services.split("\n  sweep:", 1)[1].split("\n  cards:", 1)[0],
+        "cards": services.split("\n  cards:", 1)[1].split("\n  web:", 1)[0],
+    }
+    for name, block in blocks.items():
+        assert "*hub-api-only" not in block, name
+    assert "*hub-github" in blocks["cards"]
+    assert "*hub-github" not in blocks["sweep"] + blocks["campaigns"]
+    assert "*hub-documenso" in blocks["sweep"]
+    assert "*hub-documenso" not in blocks["cards"] + blocks["campaigns"]
 
 
 def _backup_service(name: str) -> str:

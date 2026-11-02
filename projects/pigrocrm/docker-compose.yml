@@ -3,14 +3,67 @@
 # stdin/stdout for one session -- there is no service for that here, and an operator
 # who wants it runs it on demand inside the api image, with a personal access token
 # from Impostazioni -> Token in the UI, exported in the shell and passed by name only:
-#   docker compose run --rm -e PIGROCRM_TOKEN api uv run --no-sync python -m pigrocrm_mcp
+#   docker compose run --rm -e PIGROCRM_TOKEN api python -m pigrocrm_mcp
 # Never as `-e PIGROCRM_TOKEN=<token>`: the value would be in `ps` and the shell
 # history. On the production host the token comes from a root-only file, see AGENTS.md
 # § Deploying (REB-127).
 # Over Streamable HTTP (`pigrocrm_mcp.http`, ORB-170) it is the `mcp` service below:
-# the same image as `api`, the same environment and the same documents volume,
-# reached only through the `web` container's nginx at /<slug>/mcp and /mcp, with the
-# same tokens as bearers. It has no host port on purpose.
+# the same image as `api`, the same documents volume, an environment of its own (the
+# subset of the api's it reads, `x-mcp-environment`), reached only through the `web`
+# container's nginx at /<slug>/mcp and /mcp, with the same tokens as bearers. It has no
+# host port on purpose.
+#
+# Every long-running service is unprivileged and hardened the same way (`x-hardening`):
+# the images run as uid 10001 (nginx as `nginx`), without capabilities, without the right
+# to gain any, with their logs rotated and, for the stateless ones, a read-only root
+# filesystem. A schema change is the `migrate` service's, once, before `api` starts.
+
+# What the `mcp` service reads, and nothing else: it authenticates personal access tokens
+# and works through `pigrocrm_app`, so it holds no JWT secret, no registry or engagements
+# bearer, no mail key and no push key. Every line here is the same line as in the api's
+# block below (`test_compose_environment.py` fails when one drifts or names a variable the
+# api block does not). PIGROCRM_ADMIN_DATABASE_URL stays until the registry stops creating
+# databases in the request path: `SpaceRegistry.registry_factory` still opens the owner
+# role there, and an mcp without it cannot reach a space opened since its last start.
+x-mcp-environment: &mcp-environment
+  PIGROCRM_DATABASE_URL: postgresql+psycopg://pigrocrm_app:${PIGROCRM_APP_PASSWORD:?set it in .env, the password of the application role the boot creates}@db:5432/${POSTGRES_DB:-pigrocrm}
+  PIGROCRM_ADMIN_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-pigrocrm}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-pigrocrm}
+  PIGROCRM_TIMEZONE: ${PIGROCRM_TIMEZONE:-Europe/Rome}
+  PIGROCRM_MCP_FULL_ACCESS: ${PIGROCRM_MCP_FULL_ACCESS:-false}
+  PIGROCRM_STORAGE_BACKEND: ${PIGROCRM_STORAGE_BACKEND:-local}
+  PIGROCRM_GDRIVE_SERVICE_ACCOUNT_JSON: ${PIGROCRM_GDRIVE_SERVICE_ACCOUNT_JSON:-}
+  PIGROCRM_GDRIVE_ROOT_FOLDER_ID: ${PIGROCRM_GDRIVE_ROOT_FOLDER_ID:-}
+  PIGROCRM_GOOGLE_CLIENT_ID: ${PIGROCRM_GOOGLE_CLIENT_ID:-}
+  PIGROCRM_GOOGLE_CLIENT_SECRET: ${PIGROCRM_GOOGLE_CLIENT_SECRET:-}
+  PIGROCRM_GOOGLE_TOKEN_KEY: ${PIGROCRM_GOOGLE_TOKEN_KEY:-}
+  PIGROCRM_PUBLIC_URL: ${PIGROCRM_PUBLIC_URL:-}
+  PIGROCRM_GOOGLE_APP_UNVERIFIED: ${PIGROCRM_GOOGLE_APP_UNVERIFIED:-false}
+  PIGROCRM_GOOGLE_SHARED_CLIENT: ${PIGROCRM_GOOGLE_SHARED_CLIENT:-false}
+  PIGROCRM_SLACK_CLIENT_ID: ${PIGROCRM_SLACK_CLIENT_ID:-}
+  PIGROCRM_SLACK_CLIENT_SECRET: ${PIGROCRM_SLACK_CLIENT_SECRET:-}
+  PIGROCRM_SLACK_TOKEN_KEY: ${PIGROCRM_SLACK_TOKEN_KEY:-}
+  PIGROCRM_SLACK_URL: ${PIGROCRM_SLACK_URL:-https://slack.com}
+  PIGROCRM_ROOT_SLUG: ${PIGROCRM_ROOT_SLUG:-}
+  PIGROCRM_POSTHOG_KEY: ${PIGROCRM_POSTHOG_KEY:-}
+  PIGROCRM_POSTHOG_HOST: ${PIGROCRM_POSTHOG_HOST:-https://eu.i.posthog.com}
+
+# The hardening every long-running service takes, and what a service adds on top.
+# `no-new-privileges` and `cap_drop: ALL` are the part that costs nothing; the log
+# rotation is there because the default json-file driver never rotates and these
+# containers share a small disk with the databases. `init: true` reaps the subprocesses
+# Pandoc and Typst leave and forwards SIGTERM, so a deploy does not wait out the kill
+# timeout.
+x-hardening: &hardening
+  init: true
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: '3'
 
 x-api-environment: &api-environment
   # Two roles on the one database (REB-634, spec 2026-10-03 §4 «The role»). Requests run
@@ -21,7 +74,7 @@ x-api-environment: &api-environment
   # instead of booting an API that cannot log in.
   PIGROCRM_DATABASE_URL: postgresql+psycopg://pigrocrm_app:${PIGROCRM_APP_PASSWORD:?set it in .env, the password of the application role the boot creates}@db:5432/${POSTGRES_DB:-pigrocrm}
   PIGROCRM_ADMIN_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-pigrocrm}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-pigrocrm}
-  PIGROCRM_JWT_SECRET: ${PIGROCRM_JWT_SECRET:?serve un secret}
+  PIGROCRM_JWT_SECRET: ${PIGROCRM_JWT_SECRET:?set it in .env, openssl rand -hex 32}
   # The installation's own choices, forwarded by name with the code's own defaults
   # (packages/core/src/pigrocrm/core/config.py) so an `.env` that leaves them out
   # gets exactly what a bare `Settings()` would. Booleans and the enum default to a
@@ -72,6 +125,11 @@ x-api-environment: &api-environment
   PIGROCRM_VAPID_SUBJECT: ${PIGROCRM_VAPID_SUBJECT:-mailto:ciao@letsrebase.com}
   # Where the signup asks the rebase hub who is a member (ORB-173).
   PIGROCRM_HUB_URL: ${PIGROCRM_HUB_URL:-https://letsrebase.com}
+  # Browser origins allowed to call the API cross-origin, comma-separated. Empty: none,
+  # the SPA is served from the API's own origin.
+  PIGROCRM_CORS_ORIGINS: ${PIGROCRM_CORS_ORIGINS:-}
+  # The most spaces (databases) this installation will open: a global ceiling.
+  PIGROCRM_MAX_SPACES: ${PIGROCRM_MAX_SPACES:-1000}
   # The MCP server, on both transports (the `mcp` service and the on-demand stdio
   # run), reports its tool calls to PostHog when the key is set (ORB-186). Empty:
   # it measures nothing.
@@ -97,9 +155,29 @@ services:
   db:
     image: postgres:17-alpine
     restart: unless-stopped
+    # Postgres's own entrypoint starts as root to take the data directory over and then
+    # drops to `postgres`: the capabilities it needs for that, and no others.
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+    # A ceiling, not a reservation: the host holds five Postgres servers on 3.8 GiB.
+    mem_limit: 1g
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-pigrocrm}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?serve una password}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set it in .env, the password of the bootstrap superuser}
       POSTGRES_DB: ${POSTGRES_DB:-pigrocrm}
     # Data on the host, never in a Docker-managed volume: a `docker system prune`,
     # a Docker Desktop reset or a reinstall must not be able to take the register with
@@ -120,17 +198,67 @@ services:
       interval: 5s
       retries: 10
 
-  api:
+  # The schema, once per deploy and before `api` starts (INFRA-A-10): `alembic upgrade
+  # head` knows only the root database; every space's database is migrated by
+  # `ensure-space-defaults` right after, before it is furnished (ORB-189: 0.13.0 shipped a
+  # migration the login depends on to spaces that never received it). It also creates and
+  # grants `pigrocrm_app`, the role PIGROCRM_DATABASE_URL names and `api` connects as, on the
+  # root and on every space (REB-634). Both run as the owner, PIGROCRM_ADMIN_DATABASE_URL.
+  #
+  # The container starts as root for one reason: to hand the documents directory, a bind
+  # mount from the host, to uid 10001 (the image's `app`), which is what lets the
+  # unprivileged `api` write there with nothing to prepare on the host. Then it gives up
+  # root with `setpriv` before it touches the database. A one-shot: it ends `exited (0)`,
+  # which `_deploy-compose.yml` accepts for this service, and `api` waits for it with
+  # `service_completed_successfully`. While it runs, the previous `api` keeps serving.
+  migrate:
     build:
       # The repository root, because both the uv workspace (pyproject.toml, uv.lock)
       # and the pnpm workspace (package.json, pnpm-lock.yaml) live there and the
       # image needs the lockfile it is pinned by.
       context: ../..
       dockerfile: projects/pigrocrm/Dockerfile.api
-    restart: unless-stopped
+    restart: 'no'
+    user: '0:0'
+    <<: *hardening
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETUID
+      - SETGID
+    mem_limit: 768m
     depends_on:
       db:
         condition: service_healthy
+    environment: *api-environment
+    volumes:
+      - ${PIGROCRM_DOCUMENTS_DIR:-../../var/documents}:/app/var/documents
+    command:
+      - sh
+      - -c
+      - >-
+        chown -R 10001:10001 /app/var/documents &&
+        exec setpriv --reuid=10001 --regid=10001 --clear-groups sh -c
+        'cd projects/pigrocrm/packages/core && alembic upgrade head && cd /app &&
+        python -m pigrocrm.core.cli ensure-space-defaults'
+
+  api:
+    build:
+      context: ../..
+      dockerfile: projects/pigrocrm/Dockerfile.api
+    restart: unless-stopped
+    <<: *hardening
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    mem_limit: 1g
+    pids_limit: 512
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     environment: *api-environment
     # Where `PIGROCRM_STORAGE_BACKEND=local` writes documents (config.py's
     # `storage_local_root`, ./var/documents under the image's WORKDIR /app). On the
@@ -139,31 +267,45 @@ services:
     # this file, two levels below the repository root.
     volumes:
       - ${PIGROCRM_DOCUMENTS_DIR:-../../var/documents}:/app/var/documents
+    healthcheck:
+      # `GET /health` answers before any space is resolved, so this probe opens no
+      # database. Written with the image's own python rather than curl or wget, neither
+      # of which the api image carries. A hung uvicorn fails it, and `docker compose ps`
+      # (and the deploy's check) says so; the restart policy alone only reacts to an exit.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
   mcp:
     build:
       context: ../..
       dockerfile: projects/pigrocrm/Dockerfile.api
     restart: unless-stopped
-    # After `api` has *started*, which is all `service_started` says: it does not wait
-    # for the migrations `api` runs at start-up to be finished. That is enough here
-    # because nothing in this process opens a database before its first request, and by
-    # then a stack that came up together has long since migrated.
+    <<: *hardening
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    mem_limit: 512m
+    pids_limit: 512
+    # After `api` is healthy, which is after the migrations it waited for: nothing in this
+    # process opens a database before its first request, but a first request on an
+    # unmigrated space is the thing this ordering rules out.
     depends_on:
       db:
         condition: service_healthy
       api:
-        condition: service_started
-    environment: *api-environment
+        condition: service_healthy
+    environment: *mcp-environment
     # `uvicorn`, `starlette` and `anyio` are in this process through the `mcp` SDK's own
     # dependencies and the shared api image, which is why apps/mcp/pyproject.toml
     # declares none of the three.
-    command: ["uv", "run", "--no-sync", "uvicorn", "pigrocrm_mcp.http:app", "--host", "0.0.0.0", "--port", "8001"]
+    command: ["uvicorn", "pigrocrm_mcp.http:app", "--host", "0.0.0.0", "--port", "8001"]
     healthcheck:
       # `GET /health` (spec §3) answers before any space is resolved, so this probe
-      # opens no database. Written with the image's own python rather than curl or
-      # wget, neither of which the api image carries.
-      test: ["CMD", "uv", "run", "--no-sync", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3)"]
+      # opens no database.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3)"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -176,11 +318,25 @@ services:
       context: ../..
       dockerfile: projects/pigrocrm/Dockerfile.web
     restart: unless-stopped
-    depends_on: [api]
+    <<: *hardening
+    read_only: true
+    # nginx-unprivileged keeps its pid file, temp files and cache under /tmp.
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    mem_limit: 128m
+    pids_limit: 128
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '--spider', 'http://127.0.0.1:8080/app/']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     ports:
       # Overridable so a second environment (preview) can run the same stack on the
       # same host without fighting for the port. Bound to the loopback in both cases:
       # nginx on the host is what faces the internet, and publishing to 0.0.0.0 would
-      # walk straight past the firewall.
-      - '${PIGROCRM_WEB_PORT:-127.0.0.1:8080}:80'
-
+      # walk straight past the firewall. The container listens on 8080: it is not root.
+      - '${PIGROCRM_WEB_PORT:-127.0.0.1:8080}:8080'

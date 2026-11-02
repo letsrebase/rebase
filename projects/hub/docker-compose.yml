@@ -1,83 +1,157 @@
-# The rebase hub: its own Postgres, its own API, its own SPA. Run with `-p rebase`
-# so the project name never derives from the directory (docs/adding-a-project.md §7).
-# What the API and the MCP server read, once: the two processes come from the same
-# image and see the same database, the same mail key and the same CRM registry token.
-x-api-environment: &api-environment
+# The rebase hub: its own Postgres, its own API, its own SPA. Run with `-p rebase` so the
+# project name never derives from the directory (docs/adding-a-project.md §7).
+#
+# What a container reads, once, and only what it reads (HMCP-09, INFRA-A-04). The five Python
+# services come from one image but do not need one secret set: the long-running loops parse
+# untrusted content (CV text, remote pages, agent calls), so none of them holds the keys of a
+# job it does not do. The `x-hub-*` blocks below are the groups a service is composed from
+# (`environment: {<<: [*a, *b]}`); `api` takes them all, and each of the others lists its own.
+# A setting missing from a service gets the code's default, which for REBASE_HUB_URL is the
+# production URL, so every service that builds a link takes `x-hub-links`.
+# One image, five services. Each keeps its own `build:` (the same one, written once here) rather
+# than sharing a tag: compose names a built image after its project (`rebase-api`,
+# `rebase-preview-api`), and one fixed tag would let the preview's build replace what production
+# recreates its containers from. The layers are shared, so the four after the first build
+# nothing.
+x-api-build: &api-build
+  context: ../..
+  dockerfile: projects/hub/Dockerfile.api
+
+x-hub-database: &hub-database
   REBASE_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-rebase}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-rebase}
-  # ChatGPT Ads, the server half of the signup conversion. Empty defaults: a site
-  # that runs no campaigns is the ordinary case, not a start-up failure.
+
+# The member area's mail. Empty key is a hub with the area's door still closed.
+x-hub-mail: &hub-mail
+  REBASE_RESEND_API_KEY: ${REBASE_RESEND_API_KEY:-}
+  REBASE_MAIL_FROM: ${REBASE_MAIL_FROM:-Rebase <ciao@letsrebase.com>}
+
+x-hub-links: &hub-links
+  REBASE_HUB_URL: ${REBASE_HUB_URL:-https://letsrebase.com/hub}
+
+# PigroCRM's spaces in the admin area (ORB-142): the CRM's public URL, and the token its own
+# `.env` carries as PIGROCRM_REGISTRY_TOKEN. Empty token: 503. And the CRM's door for rebase's
+# engagements (REB-498), its own token: the link of an active match and its hours. Empty: the
+# link waits and the report answers 503.
+x-hub-pigro: &hub-pigro
+  REBASE_PIGRO_API_URL: ${REBASE_PIGRO_API_URL:-https://pigro.letsrebase.com}
+  REBASE_PIGRO_REGISTRY_TOKEN: ${REBASE_PIGRO_REGISTRY_TOKEN:-}
+  REBASE_PIGRO_ENGAGEMENTS_TOKEN: ${REBASE_PIGRO_ENGAGEMENTS_TOKEN:-}
+
+# The signing site (REB-387): Documenso's URL as this stack reaches it and this environment's
+# own token. Empty URL or token: signing is off and says so.
+x-hub-documenso: &hub-documenso
+  REBASE_DOCUMENSO_URL: ${REBASE_DOCUMENSO_URL:-}
+  REBASE_DOCUMENSO_API_TOKEN: ${REBASE_DOCUMENSO_API_TOKEN:-}
+
+# Who signs for rebase in the contracts (REB-387): one JSON object of `rebase-*` fields.
+# Empty: those fields print as blank lines. Where rebase's signed copies go. A draft text never
+# leaves for signature; only the preview sets the last one true. Not an empty default: a bool
+# field fails at start-up on an empty value.
+x-hub-signing: &hub-signing
+  REBASE_SIGNER_JSON: ${REBASE_SIGNER_JSON:-}
+  REBASE_CONTRACTS_MAIL: ${REBASE_CONTRACTS_MAIL:-ciao@letsrebase.com}
+  REBASE_CONTRACTS_ALLOW_DRAFT: ${REBASE_CONTRACTS_ALLOW_DRAFT:-false}
+
+# Campaigns (P-REB-41): who the mail is from and the minimum gap between two campaigns to one
+# person. Not an empty default for the gap: an int field fails at start-up on an empty value.
+x-hub-campaign: &hub-campaign
+  REBASE_CAMPAIGN_FROM: ${REBASE_CAMPAIGN_FROM:-Ivan di rebase <ciao@letsrebase.com>}
+  REBASE_CAMPAIGN_GAP_DAYS: ${REBASE_CAMPAIGN_GAP_DAYS:-3}
+
+# What a campaign pass may send in a day (Resend's quota, and the share kept back for other mail).
+x-hub-quota: &hub-quota
+  REBASE_RESEND_DAILY_QUOTA: ${REBASE_RESEND_DAILY_QUOTA:-100}
+  REBASE_CAMPAIGN_DAILY_RESERVE: ${REBASE_CAMPAIGN_DAILY_RESERVE:-20}
+
+# The card and the proposal go through the provider chosen in «Modelli AI» (llm.py, REB-831),
+# whose key is in the database, sealed with this AES-256-GCM key (secrets.py, REB-829). May be
+# empty. No model configured for a task: no card is written and the builder answers 503.
+x-hub-secrets-key: &hub-secrets-key
+  REBASE_SECRETS_KEY: ${REBASE_SECRETS_KEY:-}
+
+# A read-only GitHub token for the card's GitHub source. May be empty.
+x-hub-github: &hub-github
+  REBASE_GITHUB_TOKEN: ${REBASE_GITHUB_TOKEN:-}
+
+# Cards in bulk (REB-853): the workers `cards-refresh` and an admin's regeneration write with
+# at once, and the number of cards from which a regeneration is sent to Anthropic's Message
+# Batches API. Not empty defaults: an int field fails at start-up on an empty value.
+x-hub-cards: &hub-cards
+  REBASE_CARDS_WORKERS: ${REBASE_CARDS_WORKERS:-5}
+  REBASE_CARDS_BATCH_THRESHOLD: ${REBASE_CARDS_BATCH_THRESHOLD:-10}
+
+x-hub-team: &hub-team
+  REBASE_TEAM_BUILDER_ENABLED: ${REBASE_TEAM_BUILDER_ENABLED:-true}
+
+# Only the API reads these: the webhooks' secrets and the signup's conversion and analytics.
+x-hub-api-only: &hub-api-only
+  # ChatGPT Ads, the server half of the signup conversion. Empty defaults: a site that runs no
+  # campaigns is the ordinary case, not a start-up failure.
   REBASE_OPENAI_PIXEL_ID: ${REBASE_OPENAI_PIXEL_ID:-}
   REBASE_OPENAI_CONVERSIONS_API_KEY: ${REBASE_OPENAI_CONVERSIONS_API_KEY:-}
   REBASE_SIGNUP_URL: ${REBASE_SIGNUP_URL:-https://letsrebase.com/}
   REBASE_OPENAI_CONVERSIONS_SEND_HASHED_EMAIL: ${REBASE_OPENAI_CONVERSIONS_SEND_HASHED_EMAIL:-false}
-  # The member area's mail. Empty key is a hub with the area's door still closed.
-  REBASE_RESEND_API_KEY: ${REBASE_RESEND_API_KEY:-}
-  REBASE_MAIL_FROM: ${REBASE_MAIL_FROM:-Rebase <ciao@letsrebase.com>}
-  REBASE_HUB_URL: ${REBASE_HUB_URL:-https://letsrebase.com/hub}
-  # PigroCRM's spaces in the admin area (ORB-142): the CRM's public URL, and the
-  # token its own `.env` carries as PIGROCRM_REGISTRY_TOKEN. Empty token: 503.
-  REBASE_PIGRO_API_URL: ${REBASE_PIGRO_API_URL:-https://pigro.letsrebase.com}
-  REBASE_PIGRO_REGISTRY_TOKEN: ${REBASE_PIGRO_REGISTRY_TOKEN:-}
-  # The CRM's door for rebase's engagements (REB-498), its own token: the link of an
-  # active match and its hours. Empty: the link waits and the report answers 503.
-  REBASE_PIGRO_ENGAGEMENTS_TOKEN: ${REBASE_PIGRO_ENGAGEMENTS_TOKEN:-}
-  # PostHog, the completion event from the API (REB-215): the public project key.
-  # Empty: no client, no event. The list is explicit, so a variable the `.env` carries
-  # reaches the container only if it is named here.
+  # PostHog, the completion event from the API (REB-215): the public project key. Empty: no
+  # client, no event. The list is explicit, so a variable the `.env` carries reaches the
+  # container only if it is named here.
   REBASE_POSTHOG_KEY: ${REBASE_POSTHOG_KEY:-}
   REBASE_POSTHOG_HOST: ${REBASE_POSTHOG_HOST:-https://eu.i.posthog.com}
-  # Who signs for rebase in the contracts (REB-387): one JSON object of `rebase-*`
-  # fields. Empty: those fields print as blank lines.
-  REBASE_SIGNER_JSON: ${REBASE_SIGNER_JSON:-}
-  # The signing site (REB-387): Documenso's URL as this stack reaches it, this
-  # environment's own token and webhook secret, and where rebase's signed copies go.
-  # Empty URL or token: signing is off and says so.
-  REBASE_DOCUMENSO_URL: ${REBASE_DOCUMENSO_URL:-}
-  REBASE_DOCUMENSO_API_TOKEN: ${REBASE_DOCUMENSO_API_TOKEN:-}
+  # The secret typed into this environment's Documenso webhook, and the `whsec_` secret Resend
+  # shows for this environment's webhook (spec § 6.1). Empty: the route answers 503.
   REBASE_DOCUMENSO_WEBHOOK_SECRET: ${REBASE_DOCUMENSO_WEBHOOK_SECRET:-}
-  REBASE_CONTRACTS_MAIL: ${REBASE_CONTRACTS_MAIL:-ciao@letsrebase.com}
-  # A draft text never leaves for signature; only the preview sets this true. Not an
-  # empty default: a bool field fails at start-up on an empty value.
-  REBASE_CONTRACTS_ALLOW_DRAFT: ${REBASE_CONTRACTS_ALLOW_DRAFT:-false}
-  # Campaigns (P-REB-41): who the mail is from, the minimum gap between two campaigns
-  # to one person, and the secret of this environment's Resend webhook. Not an empty
-  # default for the gap: an int field fails at start-up on an empty value.
-  REBASE_CAMPAIGN_FROM: ${REBASE_CAMPAIGN_FROM:-Ivan di rebase <ciao@letsrebase.com>}
-  REBASE_CAMPAIGN_GAP_DAYS: ${REBASE_CAMPAIGN_GAP_DAYS:-3}
-  REBASE_RESEND_DAILY_QUOTA: ${REBASE_RESEND_DAILY_QUOTA:-100}
-  REBASE_CAMPAIGN_DAILY_RESERVE: ${REBASE_CAMPAIGN_DAILY_RESERVE:-20}
   REBASE_RESEND_WEBHOOK_SECRET: ${REBASE_RESEND_WEBHOOK_SECRET:-}
-  # The card and the proposal go through the provider chosen in «Modelli AI» (llm.py,
-  # REB-831), whose key is in the database. No model configured for a task: no card is
-  # written and the builder answers 503.
-  # The AES-256-GCM key «Modelli AI» seals each provider's API key with (secrets.py,
-  # REB-829), and a read-only GitHub token for the card's GitHub source. Both may be empty.
-  REBASE_SECRETS_KEY: ${REBASE_SECRETS_KEY:-}
-  REBASE_GITHUB_TOKEN: ${REBASE_GITHUB_TOKEN:-}
-  REBASE_TEAM_BUILDER_ENABLED: ${REBASE_TEAM_BUILDER_ENABLED:-true}
-  # Proposals at once in this process, and a day: past either, 503 «Troppe richieste».
-  # Not empty defaults: an int field fails at start-up on an empty value.
+  # Proposals at once in this process, and a day: past either, 503 «Troppe richieste». Not empty
+  # defaults: an int field fails at start-up on an empty value.
   REBASE_TEAM_BUILDER_CONCURRENCY: ${REBASE_TEAM_BUILDER_CONCURRENCY:-4}
   REBASE_TEAM_BUILDER_DAILY_CAP: ${REBASE_TEAM_BUILDER_DAILY_CAP:-300}
-  # Cards in bulk (REB-853): the workers `cards-refresh` and an admin's regeneration write
-  # with at once, and the number of cards from which a regeneration is sent to Anthropic's
-  # Message Batches API. Not empty defaults: an int field fails at start-up on an empty value.
-  REBASE_CARDS_WORKERS: ${REBASE_CARDS_WORKERS:-5}
-  REBASE_CARDS_BATCH_THRESHOLD: ${REBASE_CARDS_BATCH_THRESHOLD:-10}
-  # The `cards` service's hourly loop (REB-552), no Python setting: whether it actually
-  # calls `cards-refresh`, so a deploy that already has a model configured
-  # does not send CVs to a provider before the talents' mail (AGENTS.md, "The team
-  # builder") has gone out. Set `off` in production until then, `on` once it has, and
-  # `docker compose up -d cards` to recreate the service.
-  REBASE_CARDS_LOOP: ${REBASE_CARDS_LOOP:-off}
+
+# The hardening every long-running service takes: no capabilities and no way to gain any, the
+# logs rotated (the default json-file driver never does and these containers share a small disk
+# with the databases), and `init: true` so a SIGTERM reaches the process and zombies are reaped.
+# The three loops run `sh -c` and `uv`-free Python from the image's own virtualenv; none of them
+# writes outside /tmp.
+x-hardening: &hardening
+  init: true
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: '3'
+  read_only: true
+  tmpfs:
+    - /tmp:size=256m,mode=1777
 
 services:
   db:
     image: postgres:17-alpine
     restart: unless-stopped
+    # Postgres's own entrypoint starts as root to take the data directory over and then
+    # drops to `postgres`: the capabilities it needs for that, and no others.
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+    # A ceiling, not a reservation: the host holds five Postgres servers on 3.8 GiB.
+    mem_limit: 1g
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-rebase}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?serve una password}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set it in .env, the database's password}
       POSTGRES_DB: ${POSTGRES_DB:-rebase}
     # On the host, never in a Docker-managed volume: the same decision PigroCRM took
     # after a daemon reset scared everyone. Set REBASE_DATA_DIR outside the repository.
@@ -98,14 +172,25 @@ services:
       retries: 10
 
   api:
-    build:
-      context: ../..
-      dockerfile: projects/hub/Dockerfile.api
+    build: *api-build
     restart: unless-stopped
+    <<: *hardening
+    mem_limit: 1g
+    pids_limit: 512
     depends_on:
       db:
         condition: service_healthy
-    environment: *api-environment
+    environment:
+      <<: [*hub-database, *hub-mail, *hub-links, *hub-pigro, *hub-documenso, *hub-signing, *hub-campaign, *hub-quota, *hub-secrets-key, *hub-github, *hub-cards, *hub-team, *hub-api-only]
+    healthcheck:
+      # `GET /health` answers before any request touches the database. Written with the
+      # image's own python: the api image carries neither curl nor wget. The first start
+      # runs `alembic upgrade head` before uvicorn listens, hence the long start period.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
     ports:
       # Loopback only: the host's nginx is what faces the internet, and it proxies
       # `/api/community/signups` and `/api/hub/` here.
@@ -114,19 +199,28 @@ services:
   mcp:
     # The MCP server over Streamable HTTP for admins (REB-213): the same image as `api`,
     # a process of its own because `apps/api` may not import `apps/mcp`. The host's
-    # nginx proxies `/api/hub/mcp` here; nothing opens the database before the first
-    # request, so starting after `api` has *started* is enough for the migrations.
-    build:
-      context: ../..
-      dockerfile: projects/hub/Dockerfile.api
+    # nginx proxies `/api/hub/mcp` here. It starts after `api` is healthy, which is after
+    # the migrations. It is the admin's tool surface and so reads most of what `api`
+    # does, but not the webhooks' secrets, the conversion key or the analytics key.
+    build: *api-build
     restart: unless-stopped
-    command: ['uv', 'run', '--no-sync', 'uvicorn', 'rebase_mcp.http:app', '--host', '0.0.0.0', '--port', '8001']
+    <<: *hardening
+    mem_limit: 512m
+    pids_limit: 512
+    command: ['uvicorn', 'rebase_mcp.http:app', '--host', '0.0.0.0', '--port', '8001']
     depends_on:
       db:
         condition: service_healthy
       api:
-        condition: service_started
-    environment: *api-environment
+        condition: service_healthy
+    environment:
+      <<: [*hub-database, *hub-mail, *hub-links, *hub-pigro, *hub-documenso, *hub-signing, *hub-campaign, *hub-secrets-key, *hub-github, *hub-cards, *hub-team]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     ports:
       - '${REBASE_MCP_PORT:-127.0.0.1:8088}:8001'
 
@@ -135,42 +229,48 @@ services:
     # mail at a time, every minute, on both stacks. A loop, never a one-shot, for the
     # same reason as `sweep`: `_deploy-compose.yml` fails a deploy on any container not
     # `running`. Harmless without REBASE_RESEND_API_KEY: it prints why and sends nothing.
-    # Read with `docker logs rebase-campaigns-1` (production) or
-    # `rebase-preview-campaigns-1` (preview).
-    build:
-      context: ../..
-      dockerfile: projects/hub/Dockerfile.api
+    # Reads the database, the mail key and sender, the campaign gap and quota, and the
+    # hub's URL for the links: nothing else. Read with `docker logs rebase-campaigns-1`
+    # (production) or `rebase-preview-campaigns-1` (preview).
+    build: *api-build
     restart: unless-stopped
-    init: true
-    command: ['sh', '-c', 'while :; do sleep 60; uv run --no-sync rebase campaigns-tick; done']
+    <<: *hardening
+    mem_limit: 512m
+    pids_limit: 128
+    command: ['sh', '-c', 'while :; do sleep 60; rebase campaigns-tick; done']
     depends_on:
       db:
         condition: service_healthy
       api:
-        condition: service_started
-    environment: *api-environment
+        condition: service_healthy
+    environment:
+      <<: [*hub-database, *hub-mail, *hub-links, *hub-campaign, *hub-quota]
 
   sweep:
     # `rebase contracts-sweep` (REB-391), scheduled here rather than by the host, so both
     # stacks carry their own schedule (REB-393): a loop, never a one-shot, because
     # `_deploy-compose.yml` fails a deploy on any container that is not `running`. Sleeps
-    # first so the api's `alembic upgrade head` (Dockerfile.api) has already run.
-    # `init: true` so the loop stops on SIGTERM instead of costing every deploy's 10 s
-    # kill timeout. Harmless on an environment with no Documenso settings: `finish`
-    # swallows `SigningUnavailable`. Read with `docker logs rebase-sweep-1` (production)
-    # or `rebase-preview-sweep-1` (preview).
-    build:
-      context: ../..
-      dockerfile: projects/hub/Dockerfile.api
+    # first so the api's `alembic upgrade head` (Dockerfile.api) has already run. Harmless
+    # on an environment with no Documenso settings: `finish` swallows `SigningUnavailable`.
+    # Reads the database, Documenso, the signer and contracts settings, the mail key, the
+    # CRM's URL and engagements token, and the key «Modelli AI» is sealed with (the round
+    # that files company requests in the CRM opens a model through it). Read with
+    # `docker logs rebase-sweep-1` (production) or `rebase-preview-sweep-1` (preview).
+    build: *api-build
     restart: unless-stopped
-    init: true
-    command: ['sh', '-c', 'while :; do sleep 600; uv run --no-sync rebase contracts-sweep; done']
+    <<: *hardening
+    mem_limit: 512m
+    pids_limit: 128
+    command: ['sh', '-c', 'while :; do sleep 600; rebase contracts-sweep; done']
     depends_on:
       db:
         condition: service_healthy
       api:
-        condition: service_started
-    environment: *api-environment
+        condition: service_healthy
+    environment:
+      <<: [*hub-database, *hub-mail, *hub-links, *hub-documenso, *hub-signing, *hub-secrets-key]
+      REBASE_PIGRO_API_URL: ${REBASE_PIGRO_API_URL:-https://pigro.letsrebase.com}
+      REBASE_PIGRO_ENGAGEMENTS_TOKEN: ${REBASE_PIGRO_ENGAGEMENTS_TOKEN:-}
 
   cards:
     # `rebase cards-refresh --limit 50` (REB-552): the team builder's backlog, once an
@@ -178,48 +278,66 @@ services:
     # someone running the command by hand, and follows its CV within the hour rather
     # than a day. A loop, never a one-shot, for the same reason as `campaigns`:
     # `_deploy-compose.yml` fails a deploy on any container not `running`. Gated by
-    # `REBASE_CARDS_LOOP` (`.env`, default `off`: a deploy on a host whose `.env` says nothing writes no card), no Python setting: a deploy that
-    # already has a model configured must not start sending CVs to a provider
-    # before the talents' mail (AGENTS.md, "The team builder") has gone out, so
-    # production sets `REBASE_CARDS_LOOP=off` first and only turns it `on`
-    # (`docker compose up -d cards` to recreate the service) once the mail has. Off,
-    # the loop logs that it skipped and sleeps. Harmless too without
-    # a model configured for the card task: the command prints why and exits 1, and the loop just
-    # sleeps an hour before trying again. Harmless too with nothing stale to write: no
-    # call is made and the command prints «0 schede scritte, 0 non riuscite», so a
-    # quiet hour costs nothing. One run is at most 50 cards, so a bad hour (a key gone
-    # bad, a provider outage) costs at most 50 calls. Read what it did with `docker
-    # logs rebase-cards-1` (production) or `docker logs rebase-preview-cards-1`
-    # (preview): each run prints «N schede scritte, M non riuscite». Sleeps first, like
-    # `sweep`, so the api's `alembic upgrade head` (Dockerfile.api) has already run
-    # before the first pass.
+    # `REBASE_CARDS_LOOP` (`.env`, default `off`: a deploy on a host whose `.env` says nothing
+    # writes no card), no Python setting: a deploy that already has a model configured must
+    # not start sending CVs to a provider before the talents' mail (AGENTS.md, "The team
+    # builder") has gone out, so production sets `REBASE_CARDS_LOOP=off` first and only turns
+    # it `on` (`docker compose up -d cards` to recreate the service) once the mail has. Off,
+    # the loop logs that it skipped and sleeps. Harmless too without a model configured for
+    # the card task: the command prints why and exits 1, and the loop just sleeps an hour
+    # before trying again. Harmless too with nothing stale to write: no call is made and the
+    # command prints «0 schede scritte, 0 non riuscite», so a quiet hour costs nothing. One
+    # run is at most 50 cards, so a bad hour (a key gone bad, a provider outage) costs at most
+    # 50 calls. Read what it did with `docker logs rebase-cards-1` (production) or `docker
+    # logs rebase-preview-cards-1` (preview). Sleeps first, like `sweep`, so the api's
+    # `alembic upgrade head` (Dockerfile.api) has already run before the first pass.
     # Every five minutes it also runs `rebase cards-batch-poll` (REB-853), whatever the loop
     # says: an admin started the batch, and the poll sends no CV unless a result asks for the
     # one rewrite a guard demands. With no batch on it prints «nessun batch di schede in
-    # corso» and costs nothing; the hourly pass below is every twelfth tick.
+    # corso» and costs nothing; the hourly pass is every twelfth tick.
     # `rebase sources-refetch --limit 50` (REB-839) runs first, whatever the loop says: it
     # reads the GitHub accounts and links of people (never a model, never a CV sent
     # anywhere) when a source switch in «Modelli AI» is on, and deletes the text of a link
     # that was removed; with every switch off it reads nothing and says so. Its failure
     # does not stop the pass after it.
-    build:
-      context: ../..
-      dockerfile: projects/hub/Dockerfile.api
+    # Reads the database, the key «Modelli AI» is sealed with, the GitHub token and the
+    # card workers' settings: no mail key, no Documenso, no CRM token.
+    build: *api-build
     restart: unless-stopped
-    init: true
-    command: ['sh', '-c', 'n=0; while :; do sleep 300; uv run --no-sync rebase cards-batch-poll || true; n=$$((n + 1)); if [ "$$n" -ge 12 ]; then n=0; uv run --no-sync rebase sources-refetch --limit 50 || true; if [ "${REBASE_CARDS_LOOP:-off}" = "on" ]; then uv run --no-sync rebase cards-refresh --limit 50; else echo "cards: loop off (REBASE_CARDS_LOOP)"; fi; fi; done']
+    <<: *hardening
+    mem_limit: 768m
+    pids_limit: 128
+    command: ['sh', '-c', 'n=0; while :; do sleep 300; rebase cards-batch-poll || true; n=$$((n + 1)); if [ "$$n" -ge 12 ]; then n=0; rebase sources-refetch --limit 50 || true; if [ "${REBASE_CARDS_LOOP:-off}" = "on" ]; then rebase cards-refresh --limit 50; else echo "cards: loop off (REBASE_CARDS_LOOP)"; fi; fi; done']
     depends_on:
       db:
         condition: service_healthy
       api:
-        condition: service_started
-    environment: *api-environment
+        condition: service_healthy
+    environment:
+      <<: [*hub-database, *hub-secrets-key, *hub-github, *hub-cards]
+      REBASE_CARDS_LOOP: ${REBASE_CARDS_LOOP:-off}
 
   web:
     build:
       context: ../..
       dockerfile: projects/hub/Dockerfile.web
     restart: unless-stopped
+    <<: *hardening
+    # nginx-unprivileged keeps its pid file, temp files and cache under /tmp.
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    mem_limit: 128m
+    pids_limit: 128
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '--spider', 'http://127.0.0.1:8080/hub/']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     ports:
-      # The SPA, at /hub/. The host's nginx proxies `/hub/` here.
-      - '${REBASE_WEB_PORT:-127.0.0.1:8085}:80'
+      # The SPA, at /hub/. The host's nginx proxies `/hub/` here. The container listens on
+      # 8080: it is not root.
+      - '${REBASE_WEB_PORT:-127.0.0.1:8085}:8080'

@@ -12,8 +12,31 @@ services:
       context: ../..
       dockerfile: projects/website/Dockerfile
     restart: unless-stopped
+    # The container runs as an unprivileged user with no capabilities, on a read-only root
+    # filesystem: nginx-unprivileged keeps its pid file and temp files under /tmp.
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+    mem_limit: 128m
+    pids_limit: 128
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '--spider', 'http://127.0.0.1:8080/']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     ports:
       # Overridable so preview and production can run on the same host without
       # fighting for the port. Bound to the loopback in both cases: nginx on the host
-      # is what faces the internet, and publishing to 0.0.0.0 walks past the firewall.
-      - '${WEBSITE_WEB_PORT:-127.0.0.1:8082}:80'
+      # is what faces the internet, and publishing to 0.0.0.0 walks past the firewall. The container listens on 8080: it is not root.
+      - '${WEBSITE_WEB_PORT:-127.0.0.1:8082}:8080'

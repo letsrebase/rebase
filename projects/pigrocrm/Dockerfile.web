@@ -1,22 +1,22 @@
-FROM node:22-bookworm-slim AS build
-
-# Kept in step with `packageManager` in the repository root's package.json. Two places
-# name the version because corepack cannot read the field before the file it is in has
-# been copied, and installing with a different major than the one that wrote
-# pnpm-lock.yaml is how a lockfile silently stops being frozen.
-RUN corepack enable && corepack prepare pnpm@11.6.0 --activate
-WORKDIR /app
+FROM node:24-bookworm-slim AS build
 
 # The build context is the repository root, not this directory (see the `context:`
 # key in docker-compose.yml): the pnpm workspace root -- package.json,
 # pnpm-workspace.yaml and the one pnpm-lock.yaml shared by every Node project in the
 # monorepo -- lives two levels above this app.
+#
+# `package.json` is copied before `corepack enable`, so corepack reads `packageManager`
+# from it: the pnpm that wrote pnpm-lock.yaml is the one that installs from it, with the
+# version written in one place.
+WORKDIR /app
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+RUN corepack enable
 COPY projects/pigrocrm/apps/web/package.json projects/pigrocrm/apps/web/
 COPY shared/brand/package.json shared/brand/
 COPY shared/analytics/package.json shared/analytics/
 COPY shared/ui/package.json shared/ui/
-RUN pnpm install --frozen-lockfile --filter web...
+RUN --mount=type=cache,target=/pnpm/store \
+    pnpm install --frozen-lockfile --store-dir /pnpm/store --filter web...
 
 COPY shared/brand ./shared/brand
 COPY shared/analytics ./shared/analytics
@@ -24,12 +24,16 @@ COPY shared/ui ./shared/ui
 COPY projects/pigrocrm/apps/web ./projects/pigrocrm/apps/web
 RUN pnpm --filter web build
 
-FROM nginx:1.31-alpine
-# Docker Hub rebuilds this tag only when nginx or its Alpine base moves, so a package
-# Alpine fixes in between (libexpat 2.8.5, missing from the 2026-09-23 build) is
-# installed here. The layer is cached like any other: it runs again when the deploy's
-# `build --pull` brings a new digest of the tag, or on a cold build cache.
+FROM nginxinc/nginx-unprivileged:1.31-alpine
+# The unprivileged build of the same nginx (user `nginx`, port 8080, pid and temp files
+# under /tmp): the container has no root process. Docker Hub rebuilds this tag only when
+# nginx or its Alpine base moves, so a package Alpine fixes in between (libexpat 2.8.5,
+# missing from the 2026-09-23 build) is installed here, as root for that one layer. The
+# layer is cached like any other: it runs again when the deploy's `build --pull` brings a
+# new digest of the tag, or on a cold build cache.
+USER root
 RUN apk upgrade --no-cache
+USER nginx
 # The SPA and nothing else. Until 2026-09-09 this image also carried the public site
 # at the document root, because the two shared an origin; the site is its own project
 # and its own deployable now (`projects/website`), letsrebase.com points at that
@@ -37,4 +41,4 @@ RUN apk upgrade --no-cache
 # there (deploy/nginx/pigro.letsrebase.conf). One page, one place to change it.
 COPY --from=build /app/projects/pigrocrm/apps/web/dist /usr/share/nginx/html/app
 COPY projects/pigrocrm/deploy/nginx/spa.conf /etc/nginx/conf.d/default.conf
-EXPOSE 80
+EXPOSE 8080
