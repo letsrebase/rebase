@@ -19,6 +19,7 @@ request's text or the answer.
 """
 
 import logging
+import math
 from dataclasses import dataclass
 from datetime import date
 
@@ -114,7 +115,12 @@ class LeadDraft:
             giorni = None
         settimane: int | None = None
         weeks = out.durata_settimane
-        if weeks is not None and weeks == int(weeks) and SETTIMANE_MIN <= weeks <= SETTIMANE_MAX:
+        if (
+            weeks is not None
+            and math.isfinite(weeks)
+            and weeks == int(weeks)
+            and SETTIMANE_MIN <= weeks <= SETTIMANE_MAX
+        ):
             settimane = int(weeks)
         skills: list[str] = []
         for item in out.competenze:

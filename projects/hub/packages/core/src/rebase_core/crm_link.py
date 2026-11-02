@@ -159,6 +159,9 @@ class CrmLinkResult:
     stato: str | None
     errore: str | None
     deal_url: str | None
+    # False when nothing was asked of the CRM: a request deleted, waiting for a token, or one
+    # the sweep found already taken care of.
+    asked: bool = True
 
 
 class CrmLinkCount(NamedTuple):
@@ -269,20 +272,25 @@ class CrmLeadService:
             block.append(NO_DRAFT_NOTE)
         else:
             block += [
-                f"Ruolo: {draft.ruolo or '-'}",
+                f"Ruolo: {_neutral(draft.ruolo) or '-'}",
                 "Giorni a settimana: "
                 + ("-" if draft.giorni_settimana is None else f"{draft.giorni_settimana:g}"),
                 "Durata in settimane: "
                 + ("-" if draft.durata_settimane is None else str(draft.durata_settimane)),
-                f"Competenze: {', '.join(draft.competenze) or '-'}",
-                f"Sintesi: {draft.sintesi or '-'}",
+                f"Competenze: {_neutral(', '.join(draft.competenze)) or '-'}",
+                f"Sintesi: {_neutral(draft.sintesi) or '-'}",
             ]
         return "\n".join(written + block)
 
     # ---- the link ----------------------------------------------------------------------
 
     def link(
-        self, company_id: UUID, admin_id: UUID | None = None, deal_id: UUID | None = None
+        self,
+        company_id: UUID,
+        admin_id: UUID | None = None,
+        deal_id: UUID | None = None,
+        *,
+        sweep: bool = False,
     ) -> CrmLinkResult:
         """Files the request in the CRM, or records why not (spec § 4): `collegato` on a
         `201` or `200`; `rifiutato` with the CRM's sentence on a `422`, which only an
@@ -296,10 +304,14 @@ class CrmLeadService:
         deal»): no draft is asked for, and a failure changes nothing stored, since the
         sweep would otherwise file the request by its address and make the second customer
         the admin is correcting; the refusal comes back as an `InvalidState` with the
-        CRM's sentence. With `admin_id` the trail says who asked (`crm_link`)."""
-        sent = self._begin(company_id)
+        CRM's sentence. With `admin_id` the trail says who asked (`crm_link`).
+
+        With `sweep`, the row is looked at again under its lock and left alone unless it is
+        still waiting or failed and nothing attempted it within `GRACE`: the sweep chose its
+        rows a while ago, and another caller may have filed one since."""
+        sent = self._begin(company_id, deal_id, sweep)
         if sent is None:
-            return self._result(company_id)
+            return self._result(company_id, asked=False)
 
         draft: LeadDraft | None = None
         body: dict[str, Any] = {}
@@ -322,7 +334,10 @@ class CrmLeadService:
                 self.session.rollback()
                 self._record(admin_id, company_id, outcome, deal_id)
                 raise InvalidState(refusal, crm_stato=outcome.stato)
-            if deal_id is not None or sent.stato == COLLEGATO or row.crm_stato != COLLEGATO:
+            # A request another caller linked meanwhile, or one that was linked before this
+            # call, keeps its link: only a deal the admin named replaces it, and a failure
+            # never takes a link away.
+            if deal_id is not None or row.crm_stato != COLLEGATO:
                 self._write(row, outcome)
             self.session.commit()
         except InvalidState:
@@ -358,11 +373,13 @@ class CrmLeadService:
         linked = failed = 0
         for company_id in rows:
             try:
-                result = self.link(company_id)
+                result = self.link(company_id, sweep=True)
             except Exception:
                 self.session.rollback()
                 _log.warning("request %s could not be filed in the CRM", company_id, exc_info=True)
                 failed += 1
+                continue
+            if not result.asked:
                 continue
             if result.stato == COLLEGATO:
                 linked += 1
@@ -383,17 +400,24 @@ class CrmLeadService:
             raise NotFound(ENTITY, company_id)
         return row
 
-    def _begin(self, company_id: UUID) -> _Sent | None:
+    def _begin(self, company_id: UUID, deal_id: UUID | None, sweep: bool) -> _Sent | None:
         """Under the row's lock: what the request says, the attempt stamped, the state set
-        to `da_collegare` if it had none, then committed and released. `None` when nothing
-        is to be asked: a soft-deleted request, which is not linked, or no token (the
-        request waits)."""
+        to `da_collegare` if it had none (not for a deal the admin named: a refusal must
+        leave the row out of the sweep), then committed and released. `None` when nothing is
+        to be asked: a soft-deleted request, which is not linked, a sweep that finds the row
+        taken care of, or no token (the request waits)."""
         try:
             row = self._lock(company_id)
             if row.deleted_at is not None:
                 self.session.rollback()
                 return None
-            if row.crm_stato is None:
+            if sweep:
+                cutoff = self.now() - GRACE
+                busy = row.crm_attempted_at is not None and row.crm_attempted_at > cutoff
+                if row.crm_stato not in PENDING or busy or row.created_at > cutoff:
+                    self.session.rollback()
+                    return None
+            if row.crm_stato is None and deal_id is None:
                 row.crm_stato = DA_COLLEGARE
             if not self.configured:
                 self.session.commit()
@@ -510,13 +534,13 @@ class CrmLeadService:
             payload["deal_id"] = str(deal_id)
         AdminActionService(self.session).record(ENTITY, company_id, "crm_link", admin_id, payload)
 
-    def _result(self, company_id: UUID) -> CrmLinkResult:
+    def _result(self, company_id: UUID, *, asked: bool = True) -> CrmLinkResult:
         row = self.session.scalars(
             select(Company)
             .where(Company.id == company_id)
             .execution_options(populate_existing=True)
         ).one()
-        result = CrmLinkResult(row.crm_stato, row.crm_errore, row.crm_deal_url)
+        result = CrmLinkResult(row.crm_stato, row.crm_errore, row.crm_deal_url, asked)
         self.session.rollback()
         return result
 

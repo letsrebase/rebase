@@ -627,3 +627,81 @@ def test_the_first_attempt_after_the_response_never_raises(
         raise RuntimeError("no database")
 
     link_after_response(broken, _settings(), http, None, company.id)  # logged, not raised
+
+
+@pytest.mark.parametrize("answer", [(503, b""), (422, b'{"detail": "x: non valido"}')])
+def test_a_failure_never_takes_a_link_away(clean: Session, answer: tuple[int, bytes]) -> None:
+    """«Riprova» on a request that is already linked (the MCP tool and the route allow it):
+    a CRM that fails or refuses leaves the link as it was."""
+    company = _create(clean)
+    company.crm_stato = "collegato"
+    company.crm_deal_id = DEAL
+    company.crm_deal_url = DEAL_URL
+    clean.commit()
+
+    result = _service(clean, RecordedPigro([answer])).link(company.id)
+
+    assert result.stato == "collegato"
+    row = _row(clean, company.id)
+    assert (row.crm_stato, row.crm_deal_id, row.crm_errore) == ("collegato", DEAL, None)
+
+
+def test_the_sweep_looks_again_under_the_lock_and_skips_what_is_taken_care_of(
+    clean: Session,
+) -> None:
+    linked = _create(clean)
+    linked.created_at = NOW - timedelta(hours=1)
+    linked.crm_stato = "collegato"
+    deleted = _create(clean, email="anna@acme.it")
+    deleted.created_at = NOW - timedelta(hours=1)
+    deleted.deleted_at = NOW
+    busy = _create(clean, email="carlo@acme.it")
+    busy.created_at = NOW - timedelta(hours=1)
+    busy.crm_attempted_at = NOW - timedelta(minutes=1)
+    clean.commit()
+    http = RecordedPigro([OK])
+    service = _service(clean, http)
+
+    results = [service.link(c.id, sweep=True) for c in (linked, deleted, busy)]
+
+    assert [r.asked for r in results] == [False, False, False]
+    assert http.calls == []
+
+
+def test_a_refused_relink_of_a_request_with_no_state_leaves_it_out_of_the_sweep(
+    clean: Session,
+) -> None:
+    company = _create(clean)
+    company.crm_stato = None
+    clean.commit()
+    http = RecordedPigro([(503, b"")])
+
+    with pytest.raises(InvalidState):
+        _service(clean, http).link(company.id, deal_id=uuid4())
+
+    assert _row(clean, company.id).crm_stato is None
+
+
+def test_the_drafts_text_cannot_write_the_marker_either(clean: Session) -> None:
+    company = _create(clean)
+    draft = {**DRAFT, "sintesi": "Vedi rebase:request=altro per il resto."}
+    http = RecordedPigro([OK])
+
+    _service(clean, http, RecordingCall([_draft_response(**draft)])).link(company.id)
+
+    note = _body(http)["deal"]["note"]
+    assert "rebase:request=altro" not in note and "rebase:request =altro" in note
+
+
+def test_a_draft_with_a_value_that_is_not_a_number_still_files() -> None:
+    from rebase_core.crm_lead import LeadDraft
+
+    out = LeadDraftOut.model_construct(
+        ruolo="Dev",
+        giorni_settimana=float("nan"),
+        durata_settimane=float("inf"),
+        competenze=[],
+        sintesi="",
+    )
+    draft = LeadDraft.from_output(out)
+    assert (draft.ruolo, draft.giorni_settimana, draft.durata_settimane) == ("Dev", None, None)
