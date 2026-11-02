@@ -8,11 +8,11 @@ from pathlib import Path
 import pytest
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.config import Settings, get_settings
+from pigrocrm.core.config import DEFAULT_JWT_SECRET, Settings
 from pigrocrm.core.errors import PermissionDenied
 from pigrocrm.core.space_settings import (
     SpaceSetting,
@@ -330,9 +330,12 @@ def test_a_secret_this_installation_cannot_open_reads_as_not_set_and_never_break
     assert "shh" not in caplog.text
 
 
-def test_migration_0065_seals_the_rows_written_in_plain_text(
-    db_session: Session,
-) -> None:
+REAL = Settings(  # type: ignore[call-arg]
+    _env_file=None, jwt_secret="a-real-secret-for-the-sealing-migration-tests-only"
+)
+
+
+def _migration_0065(monkeypatch: pytest.MonkeyPatch, settings: Settings):
     path = (
         Path(__file__).resolve().parents[1]
         / "migrations"
@@ -343,9 +346,11 @@ def test_migration_0065_seals_the_rows_written_in_plain_text(
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    db_session.execute(
-        update(SpaceSetting).where(SpaceSetting.key == "google_client_id").values(value="x")
-    )
+    monkeypatch.setattr(module, "get_settings", lambda: settings)
+    return module
+
+
+def _plain_rows(db_session: Session) -> None:
     db_session.add_all(
         [
             SpaceSetting(key="google_client_secret", value="plain-secret"),
@@ -354,14 +359,51 @@ def test_migration_0065_seals_the_rows_written_in_plain_text(
     )
     db_session.flush()
 
-    connection = db_session.connection()
-    with Operations.context(MigrationContext.configure(connection)):
+
+def test_migration_0065_seals_the_rows_written_in_plain_text_and_downgrade_unseals_them(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _migration_0065(monkeypatch, REAL)
+    _plain_rows(db_session)
+
+    with Operations.context(MigrationContext.configure(db_session.connection())):
         module.upgrade()
         sealed_once = _stored(db_session, "google_client_secret")
         module.upgrade()  # run twice: a sealed row is left alone
+        assert _stored(db_session, "google_client_secret") == sealed_once
+        assert sealed_once.startswith(SEALED_PREFIX)
+        assert unseal_value(sealed_once, REAL.jwt_secret) == "plain-secret"
+        assert unseal_value(_stored(db_session, "google_token_key"), REAL.jwt_secret) == "plain-key"
 
-    assert sealed_once.startswith(SEALED_PREFIX)
-    assert _stored(db_session, "google_client_secret") == sealed_once
-    secret = get_settings().jwt_secret
-    assert unseal_value(sealed_once, secret) == "plain-secret"
-    assert unseal_value(_stored(db_session, "google_token_key"), secret) == "plain-key"
+        module.downgrade()
+        assert _stored(db_session, "google_client_secret") == "plain-secret"
+        assert _stored(db_session, "google_token_key") == "plain-key"
+
+
+def test_migration_0065_refuses_to_seal_under_a_placeholder_secret(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _migration_0065(
+        monkeypatch,
+        Settings(_env_file=None, jwt_secret=DEFAULT_JWT_SECRET),  # type: ignore[call-arg]
+    )
+    _plain_rows(db_session)
+
+    with (
+        Operations.context(MigrationContext.configure(db_session.connection())),
+        pytest.raises(RuntimeError, match="placeholder"),
+    ):
+        module.upgrade()
+    assert _stored(db_session, "google_client_secret") == "plain-secret"
+
+
+def test_a_secret_row_not_yet_sealed_is_read_as_it_is(db_session: Session) -> None:
+    """A space whose migration was refused or has not run yet keeps working until the next boot."""
+    _plain_rows(db_session)
+    db_session.add(SpaceSetting(key="google_client_id", value="abc.apps"))
+    db_session.flush()
+
+    effective = SpaceSettingsService(db_session, BASE).effective()
+
+    assert effective.google_client_secret == "plain-secret"
+    assert effective.google_token_key == "plain-key"

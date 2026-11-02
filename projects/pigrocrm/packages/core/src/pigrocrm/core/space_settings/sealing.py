@@ -57,6 +57,11 @@ def open_secret(key: str, stored: str, jwt_secret: str) -> str | None:
     """The plain value of a secret row, or `None` when this installation cannot open it:
     the row is then read as not set, so one unreadable secret costs the space its Google
     client and not every request it serves. Names the key in the log, never the value."""
+    if not stored.startswith(SEALED_PREFIX):
+        # Written before migration 0065 sealed it, and not migrated yet (the migration
+        # refuses a placeholder `PIGROCRM_JWT_SECRET`, or the boot has not reached this
+        # space): read as it is, so the space keeps working until the next boot seals it.
+        return stored
     try:
         return unseal_value(stored, jwt_secret)
     except Conflict:

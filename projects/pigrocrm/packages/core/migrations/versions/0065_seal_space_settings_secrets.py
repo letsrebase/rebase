@@ -15,9 +15,16 @@ result whatever the application code becomes. A row that is already sealed is le
 so the revision can run twice. The secret is read from the environment the way the
 application does (`get_settings()`), and a database with neither row needs none.
 
-There is no downgrade of the data: unsealing would put the secrets back in plain text, so
-`downgrade` is a no-op and the older code, which reads them as they are, will find the
-sealed text and treat the Google client as not configured until it is entered again.
+A database with plain rows and a placeholder `PIGROCRM_JWT_SECRET` (the published default)
+is refused: sealing under a key anyone can derive would only look like protection, and the
+boot reports the failure and leaves the space at the previous revision. The application then
+keeps reading those rows as they are (`open_secret` accepts a plain value), so such a space
+works until the secret is set and the next boot migrates it.
+
+`downgrade` unseals the rows back to plain text with the same key, so the code before this
+revision, which reads the two values as they are, works again. A row it cannot open (another
+`PIGROCRM_JWT_SECRET` than the one that sealed it) stops the downgrade instead of leaving
+text that older code would read as a secret.
 """
 
 import base64
@@ -26,11 +33,12 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
-from pigrocrm.core.config import get_settings
+from pigrocrm.core.config import KNOWN_PLACEHOLDER_JWT_SECRETS, get_settings
 
 revision: str = "0065"
 down_revision: str | Sequence[str] | None = "0064"
@@ -42,6 +50,18 @@ _INFO = b"pigrocrm/space-settings/v1"
 _KEYS = ("google_client_secret", "google_token_key")
 
 
+def _key() -> bytes:
+    secret = get_settings().jwt_secret
+    if secret in KNOWN_PLACEHOLDER_JWT_SECRETS:
+        raise RuntimeError(
+            "PIGROCRM_JWT_SECRET is a placeholder: set a real secret before the space's "
+            "Google secrets are sealed with it"
+        )
+    return HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=_INFO).derive(
+        secret.encode("utf-8")
+    )
+
+
 def upgrade() -> None:
     connection = op.get_bind()
     rows = connection.execute(
@@ -51,9 +71,7 @@ def upgrade() -> None:
     plain = [(key, value) for key, value in rows if not value.startswith(_PREFIX)]
     if not plain:
         return
-    key = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=_INFO).derive(
-        get_settings().jwt_secret.encode("utf-8")
-    )
+    key = _key()
     for name, value in plain:
         nonce = os.urandom(12)
         sealed = _PREFIX + base64.urlsafe_b64encode(
@@ -66,4 +84,24 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    pass
+    connection = op.get_bind()
+    rows = connection.execute(
+        sa.text("SELECT key, value FROM space_settings WHERE key = ANY(:keys)"),
+        {"keys": list(_KEYS)},
+    ).all()
+    sealed = [(key, value) for key, value in rows if value.startswith(_PREFIX)]
+    if not sealed:
+        return
+    key = _key()
+    for name, value in sealed:
+        raw = base64.urlsafe_b64decode(value.removeprefix(_PREFIX))
+        try:
+            plain = AESGCM(key).decrypt(raw[:12], raw[12:], None).decode("utf-8")
+        except InvalidTag as exc:
+            raise RuntimeError(
+                f"{name} was sealed with another PIGROCRM_JWT_SECRET: it cannot be unsealed"
+            ) from exc
+        connection.execute(
+            sa.text("UPDATE space_settings SET value = :value WHERE key = :key"),
+            {"value": plain, "key": name},
+        )

@@ -12,9 +12,11 @@ changes is how they are hardened:
 - `search_path = pg_catalog, public, pg_temp`: the system catalog first and the session's
   temporary schema last, so nothing a session creates can stand in for a catalog object
   the body names. It was `public` alone, which searches `pg_temp` first.
-- `EXECUTE` is taken away from PUBLIC. The application role gets it back from
-  `ensure_application_role` (`db/role.py`), which runs after every migration at boot and
-  names the role from the application's own URL, which a migration cannot know.
+- `EXECUTE` is taken away from PUBLIC, and given to the application role in the same
+  transaction: the role is the user of `PIGROCRM_DATABASE_URL`, read the way the application
+  reads it, so an API still serving from the previous image while this revision runs never
+  meets «permission denied for function». `ensure_application_role` (`db/role.py`) grants
+  the same at every boot, which covers a role created later.
 
 The SQL bodies are not touched. The downgrade restores the previous search_path and the
 default PUBLIC execute.
@@ -22,7 +24,11 @@ default PUBLIC execute.
 
 from collections.abc import Sequence
 
+import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.engine import make_url
+
+from pigrocrm.core.config import get_settings
 
 revision: str = "0066"
 down_revision: str | Sequence[str] | None = "0065"
@@ -50,6 +56,18 @@ def statements() -> list[str]:
 def upgrade() -> None:
     for statement in statements():
         op.execute(statement)
+    connection = op.get_bind()
+    role = make_url(get_settings().database_url).username
+    exists = (
+        role
+        and connection.execute(
+            sa.text("SELECT 1 FROM pg_roles WHERE rolname = :role"), {"role": role}
+        ).first()
+    )
+    if role and exists:
+        quoted = connection.dialect.identifier_preparer.quote(role)
+        for function in DEFINER_FUNCTIONS:
+            op.execute(f"GRANT EXECUTE ON FUNCTION {function} TO {quoted}")
 
 
 def downgrade() -> None:
