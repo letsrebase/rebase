@@ -6,7 +6,7 @@ from uuid import UUID
 
 from mcp.server import MCPServer
 
-from pigrocrm.core.proposals.schemas import ProposalListQuery
+from pigrocrm.core.proposals.schemas import ProposalListQuery, ProposalStato, ProposalTargetType
 from pigrocrm_mcp.annotations import ADDITIVE, READ_ONLY
 from pigrocrm_mcp.context import McpContext
 from pigrocrm_mcp.tools import (
@@ -19,6 +19,7 @@ from pigrocrm_mcp.tools.params import (
     MoneyArg,
     OptionalMoney,
     QuantitaArg,
+    literal_arg,
 )
 
 
@@ -188,8 +189,8 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         return proposals.search(
             context,
             ProposalListQuery(
-                stato=stato,  # type: ignore[arg-type]
-                target_type=target_type,  # type: ignore[arg-type]
+                stato=literal_arg("stato", stato, ProposalStato),
+                target_type=literal_arg("target_type", target_type, ProposalTargetType),
                 document_id=UUID(document_id) if document_id else None,
                 contract_id=UUID(contract_id) if contract_id else None,
                 limit=cast(int, limit),

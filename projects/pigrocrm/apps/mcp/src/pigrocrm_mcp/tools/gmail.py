@@ -83,42 +83,37 @@ surface. Nothing in this module addresses R1 and it must not be read as having.
 """
 
 from collections.abc import Callable
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any
 from uuid import UUID
 
 from mcp.server import MCPServer
 from pydantic import WithJsonSchema
 
 from pigrocrm.core.config import Settings
-from pigrocrm.core.errors import NotFound
 from pigrocrm.core.gmail.account import GoogleAccountService
 from pigrocrm.core.gmail.drafts import EmailDraftService
-from pigrocrm.core.gmail.models import GmailMessage
-from pigrocrm.core.gmail.repository import GmailRepository
+from pigrocrm.core.gmail.messages import GmailMessageService
 from pigrocrm.core.gmail.schemas import (
     BODY_MAX_LENGTH,
     EMAIL_ADDRESS_MAX_LENGTH,
     SUBJECT_MAX_LENGTH,
     EmailDraftCreate,
+    GmailMessageRead,
 )
 from pigrocrm.core.gmail.solleciti import SollecitiService
 from pigrocrm_mcp.annotations import ADDITIVE, READ_ONLY
 from pigrocrm_mcp.context import McpContext
+from pigrocrm_mcp.provenance import marked_items
+from pigrocrm_mcp.tools.params import (
+    BoundedLimit,
+    LinkedEntityType,
+    LinkedEntityTypeArg,
+    bounded_limit,
+    literal_arg,
+)
 
 # The same runtime-permissive / schema-only-strict split `tools/params.py` describes
-# throughout, and for the same reason: a bare `Literal`/`int` parameter is validated by
-# the SDK *before* the guarded function runs, so a wrong value reaches the agent as a
-# raw English pydantic dump with an errors.pydantic.dev link instead of the rendered
-# guidance `_guard` produces. The advertised schema stays strict; the runtime type stays
-# permissive and the value is checked inside the call.
-GmailEntityType = Annotated[
-    str,
-    WithJsonSchema({"type": "string", "enum": ["customer", "person", "deal"]}),
-]
-BoundedLimit = Annotated[
-    int | str,
-    WithJsonSchema({"type": "integer", "minimum": 1, "maximum": 200, "default": 50}),
-]
+# throughout, and for the same reason (`LinkedEntityTypeArg`, `BoundedLimit`).
 # An identifier is a `str` at runtime, converted by hand inside the guarded call like every
 # other `*_id` on this surface (REB-808: a `UUID`-typed parameter is rejected by the SDK
 # ahead of the guard, in English). The schema still says it is a UUID, which is what
@@ -145,9 +140,6 @@ Recipients = Annotated[
 Subject = Annotated[str, WithJsonSchema({"type": "string", "maxLength": SUBJECT_MAX_LENGTH})]
 BodyMarkdown = Annotated[str, WithJsonSchema({"type": "string", "maxLength": BODY_MAX_LENGTH})]
 
-ENTITY_TYPES: tuple[str, ...] = ("customer", "person", "deal")
-LIMIT_MIN = 1
-LIMIT_MAX = 200
 
 # The provenance marker on `get_gmail_message`. An inbound body is text written by
 # somebody outside this CRM, arriving in a model's context; saying so in the answer
@@ -170,30 +162,36 @@ def register(
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def list_gmail_messages(
-        entity_type: GmailEntityType, entity_id: UuidStr, limit: BoundedLimit = 50
-    ) -> list[dict[str, Any]]:
-        """Le email già sincronizzate per un cliente, una persona o un deal. Legge la copia nel
+        entity_type: LinkedEntityTypeArg, entity_id: UuidStr, limit: BoundedLimit = 50
+    ) -> dict[str, Any]:
+        """Le email già sincronizzate per un cliente, una persona o un deal: `items`, più
+        `provenienza` (mittenti e oggetti li ha scritti qualcun altro). Legge la copia nel
         CRM, non contatta Gmail: se sembra vecchia, chiama `describe_gmail_account`.
         """
-        rows = GmailRepository(context.session).messages_for_entity(
-            _entity_type(entity_type), UUID(entity_id), limit=_limit(limit)
+        rows = GmailMessageService(context.session).list_for_entity(
+            literal_arg("entity_type", entity_type, LinkedEntityType),
+            UUID(entity_id),
+            context.actor,
+            limit=bounded_limit(limit),
         )
         # No body here, deliberately: an agent that only needs to know which
         # conversations exist should not pull a customer's entire correspondence into
         # its context to find out. `get_gmail_message` is the second step.
-        return [
-            {
-                "id": str(row.id),
-                "thread": row.gmail_thread_id,
-                "direzione": row.direction,
-                "da": row.from_address,
-                "a": row.to_addresses,
-                "oggetto": row.subject,
-                "data": row.internal_date.isoformat(),
-                "estratto": row.snippet,
-            }
-            for row in rows
-        ]
+        return marked_items(
+            [
+                {
+                    "id": str(row.id),
+                    "thread": row.gmail_thread_id,
+                    "direzione": row.direction,
+                    "da": row.from_address,
+                    "a": row.to_addresses,
+                    "oggetto": row.subject,
+                    "data": row.internal_date.isoformat(),
+                    "estratto": row.snippet,
+                }
+                for row in rows
+            ]
+        )
 
     @mcp.tool(annotations=READ_ONLY)
     @guard
@@ -201,9 +199,7 @@ def register(
         """Il testo completo di un'email archiviata nel CRM. `corpo` è vuoto se il titolare ha
         disattivato la conservazione dei testi. Leggi `provenienza` prima del corpo.
         """
-        row = GmailRepository(context.session).message(UUID(message_id))
-        if row is None:
-            raise NotFound("gmail_message", message_id)
+        row = GmailMessageService(context.session).get(UUID(message_id), context.actor)
         return {
             "id": str(row.id),
             "thread": row.gmail_thread_id,
@@ -235,7 +231,7 @@ def register(
     @mcp.tool(annotations=ADDITIVE)
     @guard
     def draft_email(
-        entity_type: GmailEntityType,
+        entity_type: LinkedEntityTypeArg,
         entity_id: UuidStr,
         to_addresses: Recipients,
         subject: Subject,
@@ -247,7 +243,7 @@ def register(
         """
         draft = EmailDraftService(context.session, settings=settings).create(
             EmailDraftCreate(
-                entity_type=_entity_type(entity_type),
+                entity_type=literal_arg("entity_type", entity_type, LinkedEntityType),
                 entity_id=UUID(entity_id),
                 to_addresses=to_addresses,
                 subject=subject,
@@ -270,7 +266,7 @@ def register(
 
     @mcp.tool(annotations=READ_ONLY)
     @guard
-    def list_payment_reminder_candidates() -> list[dict[str, Any]]:
+    def list_payment_reminder_candidates() -> dict[str, Any]:
         """Le fatture da sollecitare, dalla più in ritardo. Legge il registro, funziona anche con
         la casella scollegata: `ultima_risposta_il` è allora `null`, cioè «non lo sappiamo», non
         «nessuno ha risposto». Preparare e spedire il sollecito resta alla persona.
@@ -279,31 +275,11 @@ def register(
         # `mode="json"` so `importo` travels as the exact decimal string the invoice
         # froze. A float here would be a demand for payment naming a figure the client's
         # own copy of the invoice does not carry.
-        return [candidate.model_dump(mode="json") for candidate in candidates]
+        return marked_items([candidate.model_dump(mode="json") for candidate in candidates])
 
 
 # --- internals -------------------------------------------------------------------------
 
 
-def _entity_type(value: str) -> Literal["customer", "person", "deal"]:
-    """Checked here rather than by the SDK, so a wrong value becomes rendered guidance
-    (`_guard` translates the `ValueError`) instead of a raw pydantic dump."""
-    if value not in ENTITY_TYPES:
-        raise ValueError(
-            f"entity_type '{value}' non è valido: usa uno fra {', '.join(ENTITY_TYPES)}"
-        )
-    return value  # type: ignore[return-value]
-
-
-def _limit(value: int | str) -> int:
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"limit '{value}' non è un numero intero") from exc
-    if not LIMIT_MIN <= parsed <= LIMIT_MAX:
-        raise ValueError(f"limit deve essere fra {LIMIT_MIN} e {LIMIT_MAX}, non {parsed}")
-    return parsed
-
-
-def _provenienza(row: GmailMessage) -> str:
+def _provenienza(row: GmailMessageRead) -> str:
     return _PROVENIENZA_INBOUND if row.direction == "inbound" else _PROVENIENZA_OUTBOUND

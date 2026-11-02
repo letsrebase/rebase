@@ -19,7 +19,8 @@ an unset value for an argument the core refuses to build without.
 """
 
 from datetime import date
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal, get_args
+from uuid import UUID
 
 from pydantic import WithJsonSchema
 
@@ -28,6 +29,7 @@ from pigrocrm.core.contract_expenses.schemas import ContractExpenseUpdate
 from pigrocrm.core.contracts.schemas import ClauseNoteUpdate, ContractUpdate, RateCardUpdate
 from pigrocrm.core.customers.schemas import CustomerUpdate
 from pigrocrm.core.deals.schemas import DealUpdate
+from pigrocrm.core.errors import ValidationFailed
 from pigrocrm.core.people.schemas import PersonUpdate
 from pigrocrm.core.search.schemas import PER_CLASS_LIMIT
 from pigrocrm.core.timetracking.schemas import ANNO_MAX, ANNO_MIN, CostUpdate, TimeEntryUpdate
@@ -58,17 +60,63 @@ IsoDateStr = Annotated[
 ]
 
 
-def iso_date(value: str | None) -> date | None:
+def iso_date(value: str | None, field: str = "data") -> date | None:
     """An `IsoDateStr` argument as the `date` a core schema takes, or `None` when the
-    agent left it out. Called *inside* the guarded tool body, so a malformed string is a
-    `ValueError` the guard renders as guidance rather than a raw SDK rejection."""
-    return date.fromisoformat(value) if value else None
+    agent left it out. Called *inside* the guarded tool body: a malformed string is a
+    sentence naming the format, not a raw SDK rejection."""
+    return required_iso_date(value, field) if value else None
+
+
+def required_iso_date(value: str, field: str = "data") -> date:
+    try:
+        return date.fromisoformat(value)
+    except ValueError as exc:
+        raise ValidationFailed(
+            "input", field, "non è una data valida", expected="una data ISO (YYYY-MM-DD)"
+        ) from exc
+
+
+def parse_legal_entity_id(value: str | None) -> UUID | None:
+    """Only an omitted id means the default azienda. A string that is given is an id
+    or a refusal in words: an empty one, or one that is not a UUID, must not fall back
+    to the default and write there in silence."""
+    if value is None:
+        return None
+    try:
+        return UUID(value)
+    except ValueError as exc:
+        raise ValidationFailed(
+            "emitter_profile", "azienda_id", "non e' l'id di un'azienda", expected="un UUID"
+        ) from exc
+
+
+def literal_arg(name: str, value: str | None, allowed: Any) -> Any:
+    """`value` when it is one of the strings of the `Literal` alias `allowed` (or `None`,
+    an omitted filter); a refusal in words otherwise, in the wording the guard gives a
+    pydantic `literal_error`. The one place a runtime `str` becomes the `Literal` a core
+    schema types a field with, so the call site needs no `type: ignore`."""
+    options: tuple[str, ...] = get_args(allowed)
+    if value is not None and value not in options:
+        raise ValidationFailed(
+            "input",
+            name,
+            "non è uno dei valori ammessi",
+            expected=f"uno fra {', '.join(f'`{option}`' for option in options)}",
+        )
+    return value
 
 
 # A closed set of values: a plain `str`, the enum in the listing.
 OfferStateArg = Annotated[
     str,
     WithJsonSchema({"type": "string", "enum": ["bozza", "inviata", "accettata", "rifiutata"]}),
+]
+
+# The three kinds of record a mail, a draft or a note is filed against.
+LinkedEntityType = Literal["customer", "person", "deal"]
+LinkedEntityTypeArg = Annotated[
+    str,
+    WithJsonSchema({"type": "string", "enum": list(get_args(LinkedEntityType))}),
 ]
 
 # Numbers. `int | str` / `float | str` accept a JSON number or a numeric string and let a
@@ -84,6 +132,24 @@ SearchLimite = Annotated[
     int | str,
     WithJsonSchema({"type": "integer", "minimum": 1, "maximum": 20, "default": PER_CLASS_LIMIT}),
 ]
+
+
+def bounded_limit(value: int | str) -> int:
+    """A `BoundedLimit` argument as the `int` of a call that has no `*ListQuery` to
+    enforce the 1..200 range (the paged lists get it from their schema)."""
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValidationFailed(
+            "input", "limit", f"'{value}' non è un numero intero", expected="un intero da 1 a 200"
+        ) from exc
+    if not 1 <= parsed <= 200:
+        raise ValidationFailed(
+            "input", "limit", f"{parsed} fuori intervallo", expected="un intero da 1 a 200"
+        )
+    return parsed
+
+
 # A percentage, with and without the "unset" reading: `Probabilita` is for a value with no
 # unset meaning (a renewal assumption without a probability is not one).
 OptionalProbabilita = Annotated[

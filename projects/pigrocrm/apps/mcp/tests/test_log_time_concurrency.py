@@ -33,7 +33,7 @@ from pigrocrm_mcp.tools import timetracking
 CONCURRENCY = 20
 
 
-def _seed_committed_deal_and_user(mcp_engine: Engine) -> tuple[UUID, UUID]:
+def _seed_committed_deal_and_user(mcp_engine: Engine) -> tuple[UUID, UUID, UUID, UUID]:
     session: Session = session_factory(mcp_engine)()
     try:
         stage = PipelineStage(
@@ -51,15 +51,42 @@ def _seed_committed_deal_and_user(mcp_engine: Engine) -> tuple[UUID, UUID]:
         )
         session.add(deal)
         session.commit()
-        return deal.id, user.id
+        return deal.id, user.id, customer.id, stage.id
     finally:
         session.close()
+
+
+def _remove_committed_rows(
+    mcp_engine: Engine, deal_id: UUID, user_id: UUID, customer_id: UUID, stage_id: UUID
+) -> None:
+    """The rows are committed on purpose (twenty connections must see them), so nothing
+    rolls them back: a user left behind shows up as a second person in every later test
+    that lists the space's users, and the unbilled hours as an extra reminder."""
+    with session_factory(mcp_engine)() as cleanup:
+        ids = {"deal": deal_id, "user": user_id, "customer": customer_id, "stage": stage_id}
+        for statement in (
+            "DELETE FROM activities WHERE actor_id = :user",
+            "DELETE FROM time_entries WHERE deal_id = :deal",
+            "DELETE FROM deals WHERE id = :deal",
+            "DELETE FROM customers WHERE id = :customer",
+            "DELETE FROM pipeline_stages WHERE id = :stage",
+            "DELETE FROM users WHERE id = :user",
+        ):
+            cleanup.execute(text(statement), ids)
+        cleanup.commit()
 
 
 def test_twenty_concurrent_log_time_calls_produce_twenty_rows(
     mcp_engine: Engine, mcp_storage
 ) -> None:
-    deal_id, user_id = _seed_committed_deal_and_user(mcp_engine)
+    deal_id, user_id, customer_id, stage_id = _seed_committed_deal_and_user(mcp_engine)
+    try:
+        _run_concurrent_log_time(mcp_engine, mcp_storage, deal_id, user_id)
+    finally:
+        _remove_committed_rows(mcp_engine, deal_id, user_id, customer_id, stage_id)
+
+
+def _run_concurrent_log_time(mcp_engine: Engine, mcp_storage, deal_id: UUID, user_id: UUID) -> None:
     provider = ScopedSessionProvider(session_factory(mcp_engine))
     actor = Actor(id=user_id, type="mcp", role="collaboratore")
     context = McpContext(provider, lambda: actor, mcp_storage)

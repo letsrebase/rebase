@@ -13,8 +13,7 @@ from pigrocrm.core.search.schemas import PER_CLASS_LIMIT, SearchQuery
 from pigrocrm_mcp.annotations import READ_ONLY
 from pigrocrm_mcp.context import McpContext
 from pigrocrm_mcp.tools import search as search_tools
-from pigrocrm_mcp.tools.invoices import parse_legal_entity_id
-from pigrocrm_mcp.tools.params import BoundedLimit, SearchLimite
+from pigrocrm_mcp.tools.params import BoundedLimit, SearchLimite, parse_legal_entity_id
 
 
 def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> None:

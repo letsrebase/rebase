@@ -2994,6 +2994,14 @@ class InvoiceService:
             update={"scadenza_prevista": self._scadenza_prevista(invoice)}
         )
 
+    def unpaid_for_customer(
+        self, customer_id: UUID, actor: Actor, *, limit: int
+    ) -> list[InvoiceRead]:
+        """One customer's issued, unpaid invoices, oldest deadline first: the rows behind
+        `sum_da_incassare` for one customer (`InvoiceRepository.unpaid_for_customer`)."""
+        del actor
+        return self._reads(self.repo.unpaid_for_customer(customer_id, limit))
+
     def _read(self, invoice: Invoice) -> InvoiceRead:
         """The one place an `Invoice` becomes an `InvoiceRead`, so every path -- a
         mutation's answer, `get`, `list` -- hands back the same shape, the customer's name

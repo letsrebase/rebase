@@ -18,7 +18,6 @@ from pigrocrm_mcp.tools import (
     contract_expenses,
     contracts,
 )
-from pigrocrm_mcp.tools.invoices import parse_legal_entity_id
 from pigrocrm_mcp.tools.params import (
     BoundedLimit,
     ClauseNoteChanges,
@@ -31,6 +30,7 @@ from pigrocrm_mcp.tools.params import (
     Probabilita,
     RateCardChanges,
     iso_date,
+    parse_legal_entity_id,
 )
 
 

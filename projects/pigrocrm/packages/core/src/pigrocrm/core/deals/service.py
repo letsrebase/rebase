@@ -1,3 +1,4 @@
+from collections.abc import Collection
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
@@ -397,6 +398,13 @@ class DealService:
         if deal is None:
             raise NotFound(ENTITY, deal_id)
         return self._read(deal)
+
+    def get_many(self, deal_ids: Collection[UUID], actor: Actor) -> dict[UUID, DealRead]:
+        """The live deals among `deal_ids` by id, two queries whatever their number. An id
+        with no live deal is absent from the answer, where `get` raises."""
+        del actor
+        deals = self.repo.get_many(deal_ids)
+        return {deal.id: read for deal, read in zip(deals, self._reads(deals), strict=True)}
 
     def soft_delete(self, deal_id: UUID, actor: Actor) -> None:
         """Sets deleted_at. No physical delete exists in this slice: a misread

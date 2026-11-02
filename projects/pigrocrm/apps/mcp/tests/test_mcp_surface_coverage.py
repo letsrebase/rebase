@@ -282,30 +282,28 @@ _INTERNE: dict[Method, str] = {
 #    which inherits its owner's full role and never expires (residuo R10), so a tool that
 #    minted or revoked one would let a token extend or destroy its own access. Creating
 #    users is the same hole with a longer fuse.
-#    Tutto Gmail, tranne le tre letture, sta qui -- e la decisione e' stata presa in
-#    B1-14, che possiede la superficie MCP di 5B. La riga che la divide non e'
-#    "lettura contro scrittura" ma *di chi e' la risorsa, e di chi la decisione*:
+#    All of Gmail, except the three reads, is here -- and the decision was taken in B1-14,
+#    which owns 5B's MCP surface. The line that divides it is not "read versus write" but
+#    *whose resource this is, and whose decision*:
 #
-#      * quello che l'agente puo' fare e' leggere lo specchio gia' archiviato in
-#        `gmail_messages` e lo stato della credenziale (`list_gmail_messages`,
-#        `get_gmail_message`, `describe_gmail_account`). Nessuna delle tre chiama
-#        Google, nessuna consuma la quota Gmail di qualcuno, nessuna esercita un
-#        consenso: leggono righe che questo CRM ha gia' deciso di tenere;
-#      * quello che non puo' fare e' *andare a prendere* la posta (`sync`,
-#        `backfill`), collegare o scollegare una casella, decidere cosa il CRM
-#        conserva, e inviare. In ognuno di questi casi la risorsa o la decisione
-#        appartengono alla persona, non all'agente.
+#      * what the agent may do is read the mirror already archived in `gmail_messages` and
+#        the state of the credential (`list_gmail_messages`, `get_gmail_message`,
+#        `describe_gmail_account`). None of the three calls Google, none spends anybody's
+#        Gmail quota, none exercises a consent: they read rows this CRM already decided
+#        to keep;
+#      * what it may not do is *fetch* the mail (`sync`, `backfill`), connect or
+#        disconnect a mailbox, decide what the CRM keeps, and send. In each case the
+#        resource or the decision belongs to the person, not to the agent.
 #
-#    `start` restituisce un URL di consenso che solo un browser umano puo' percorrere
-#    -- un agente che lo ricevesse non potrebbe fare altro che passarlo a qualcuno --
-#    e `complete` richiede un `code` che esiste solo dentro quel redirect, quindi
-#    nessuno dei due e' eseguibile da un canale strumentale. `disconnect` e' il verso
-#    opposto: distrugge una credenziale verso un servizio *terzo* e, con
-#    `delete_messages`, la corrispondenza archiviata.
+#    `start` returns a consent URL that only a human browser can walk -- an agent that
+#    received it could do nothing but hand it to somebody -- and `complete` needs a `code`
+#    that exists only inside that redirect, so neither can be run from a tool channel.
+#    `disconnect` is the opposite direction: it destroys a credential towards a *third*
+#    service and, with `delete_messages`, the archived correspondence.
 #
-#    L'assenza dell'invio non e' registrata qui perche' in 5B-1 non esiste ancora un
-#    servizio che invii: il divieto strutturale sui nomi degli strumenti vive in
-#    `test_mcp_invoice_ban.py`, che possiede i divieti per costruzione.
+#    The absence of sending is not recorded here because in 5B-1 there is no service that
+#    sends yet: the structural ban on tool names lives in `test_mcp_invoice_ban.py`, which
+#    owns the bans by construction.
 _CREDENZIALI: dict[Method, str] = {
     ("UserService", "reset_password"): (
         "cambia la credenziale di una persona: e' l'operatore al terminale del server "
@@ -700,6 +698,14 @@ _COPERTE_O_UMANE: dict[Method, str] = {
         "the text a note had before each edit is read on the page; an agent reads the thread's "
         "current text through the `get_*` tools, and the replaced one has no use for it"
     ),
+    ("DealService", "get_many"): (
+        "read by the `ore_da_registrare` prompt to name the deals of the recent feed; a prompt "
+        "is not a tool, and an agent already reads a deal through `get_deal` and `search_deals`"
+    ),
+    ("InvoiceService", "unpaid_for_customer"): (
+        "read by the `stato_cliente` prompt for the receivables of one customer; an agent "
+        "already reads them through `list_invoices` and `get_receivables_dashboard`"
+    ),
     ("ContractEmailService", "create"): "il testo che esce a nome del titolare lo salva la "
     "persona dalla pagina del contratto; l'agente scrive bozze con draft_email",
     ("ContractEmailService", "update"): "come create: il testo di un modello e' della persona",
@@ -785,6 +791,14 @@ _COPERTE_O_UMANE: dict[Method, str] = {
         "(`POST /api/tenants/member`, ORB-173) per dire a chi torna che ha gia' aperto degli "
         "spazi, prima che esista un actor; un agente dentro uno spazio non ha motivo di leggerlo"
     ),
+    ("TenantService", "count"): (
+        "the size of the registry of spaces, read by the public signup to enforce "
+        "`Settings.max_spaces`, before there is an actor: not a space's CRM data"
+    ),
+    ("TenantService", "slugs_for_owner"): (
+        "the spaces an address owns, read by the identity chooser and the magic link "
+        "before any space is open: the registry is not a space's surface"
+    ),
     ("DocumentService", "create"): "create_document_from_template e' l'unica creazione "
     "che non richieda di caricare byte",
     ("DocumentService", "update"): "titolo e campi custom: nessun agente ha motivo di "
@@ -862,7 +876,7 @@ _COPERTE_O_UMANE: dict[Method, str] = {
     ("WorkUnitService", "transition"): (
         "moving a day through the state graph directly is exactly what invariant 3 "
         "denies an agent; its only caller is the web app's day page, over "
-        "`POST /api/work-units/{id}/transitions`, and `AGENT_FORBIDDEN_ACTIONS` refuses "
+        "`POST /api/work-units/{id}/transitions`, and `FULL_ACCESS_ACTIONS` refuses "
         "it to any agent credential on that route too (REB-745)"
     ),
     ("WorkUnitService", "move"): (

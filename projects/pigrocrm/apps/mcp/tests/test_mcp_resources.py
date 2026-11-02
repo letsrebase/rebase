@@ -10,7 +10,7 @@ from pigrocrm.core.deals.schemas import DealCreate
 from pigrocrm.core.deals.service import DealService
 from pigrocrm.core.pipeline.service import PipelineService
 
-ADMIN = Actor(id=None, type="mcp", role="admin")
+ADMIN = Actor(id=None, type="system", role="admin")  # setup is not an agent's (agent_actions.py)
 
 
 def _line(text: str, prefix: str) -> str:

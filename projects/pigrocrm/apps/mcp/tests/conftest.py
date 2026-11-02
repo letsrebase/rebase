@@ -13,6 +13,9 @@ from pigrocrm.core.storage import LocalFileStorage
 from pigrocrm_mcp.server import build_server
 
 ADMIN = Actor(id=None, type="mcp", role="admin")
+# What fixtures seed with: defining a template is not something an agent credential may do
+# (`core/agent_actions.py`), and a fixture is not an agent.
+SETUP = Actor(id=None, type="system", role="admin")
 
 
 def _ensure_committed_default(engine: Engine) -> None:
@@ -155,7 +158,7 @@ def seeded_template_id(mcp_session: Session) -> str:
                 )
             ],
         ),
-        ADMIN,
+        SETUP,
     )
     return str(template.id)
 

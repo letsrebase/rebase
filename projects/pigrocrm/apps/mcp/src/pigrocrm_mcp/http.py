@@ -202,8 +202,12 @@ class McpHttpApp:
             space = await self._space_app(slug, auth)
         except DomainError as exc:
             if exc.code == "not_found":
+                # No slug in the line: it is whatever the caller typed.
+                logger.warning("MCP request refused: unknown space")
                 await _json(send, 404, {"detail": SPACE_NOT_FOUND})
             elif exc.code == "validation_failed":
+                # The space is a registered one here. Never the token, never the header.
+                logger.warning("MCP bearer refused, space=%s", slug or _ROOT)
                 await _json(send, 401, {"detail": INVALID_TOKEN}, {"www-authenticate": "Bearer"})
             else:
                 # Never the token: the log line carries the exception, never the header.

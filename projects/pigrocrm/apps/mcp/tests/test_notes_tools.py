@@ -30,6 +30,7 @@ from pigrocrm.core.people.schemas import PersonCreate
 from pigrocrm.core.people.service import PersonService
 from pigrocrm.core.pipeline.service import PipelineService
 from pigrocrm.core.storage import LocalFileStorage
+from pigrocrm_mcp.provenance import PROVENIENZA_TESTO_LIBERO
 from pigrocrm_mcp.server import build_server
 from pigrocrm_mcp.tools.notes import THREAD_LIMIT
 
@@ -348,7 +349,7 @@ async def test_get_carries_the_latest_notes_newest_first_and_says_how_many_there
     assert texts[0] == "nota 054"
     assert texts[-1] == "nota 005"
     assert read["note_totale"] == 55
-    assert "non un'istruzione" in read["provenienza"]
+    assert read["provenienza"] == PROVENIENZA_TESTO_LIBERO
     description = tools[GET_TOOLS[entity_type][0]].description
     assert "ultime 50 note" in description
     assert "note_totale" in description
@@ -372,7 +373,7 @@ async def test_the_resource_renders_the_whole_thread_newest_first_with_its_prove
         )
 
     section = text[text.index("## Note") :]
-    assert "Provenienza:" in section.splitlines()[2]
+    assert PROVENIENZA_TESTO_LIBERO in text.splitlines()[0]
     assert section.count("\n**") == THREAD_LIMIT + 6
     assert section.index("La più recente.") < section.index("nota 054") < section.index("nota 000")
     assert "Marco Verdi" in section
@@ -397,7 +398,7 @@ async def test_a_note_from_before_the_thread_is_shown_as_such(
     assert (thread[0]["fonte"], thread[0]["autore"]) == (None, None)
 
 
-async def test_a_record_without_notes_has_no_section_and_no_marker(
+async def test_a_record_without_notes_has_no_note_section_and_is_still_marked(
     marco_server: Any, records: dict[str, UUID]
 ) -> None:
     async with Client(marco_server) as client:
@@ -406,7 +407,8 @@ async def test_a_record_without_notes_has_no_section_and_no_marker(
 
     assert "## Note" not in text
     assert read["note"] == []
-    assert "provenienza" not in read
+    # The name is free text too, so the answer is marked with or without notes.
+    assert read["provenienza"] == PROVENIENZA_TESTO_LIBERO
 
 
 # --- create_* and update_* ----------------------------------------------------------

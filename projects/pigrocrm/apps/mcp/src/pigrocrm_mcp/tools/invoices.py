@@ -18,7 +18,7 @@ from pigrocrm.core.emitter.schemas import (
     LegalEntityUpsert,
 )
 from pigrocrm.core.emitter.service import LegalEntityService
-from pigrocrm.core.errors import Conflict, ValidationFailed
+from pigrocrm.core.errors import Conflict
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.invoices.schemas import (
@@ -28,10 +28,12 @@ from pigrocrm.core.invoices.schemas import (
     InvoiceRead,
     InvoiceUpdate,
     PaymentState,
+    StatoPagamento,
 )
 from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm_mcp.context import McpContext
 from pigrocrm_mcp.tools.changes import refuse_nothing_given, report
+from pigrocrm_mcp.tools.params import iso_date, literal_arg, parse_legal_entity_id
 
 # Three tables used to live here: which operations are forbidden, which public methods
 # are simply unexposed and why, and which method backs which tool name. They are gone,
@@ -271,27 +273,13 @@ def set_payment_state(
         .set_payment_state(
             UUID(invoice_id),
             PaymentState(
-                stato_pagamento=stato_pagamento,  # type: ignore[arg-type]
-                data_incasso=date.fromisoformat(data_incasso) if data_incasso else None,
+                stato_pagamento=literal_arg("stato_pagamento", stato_pagamento, StatoPagamento),
+                data_incasso=iso_date(data_incasso, "data_incasso"),
             ),
             context.actor,
         )
         .model_dump(mode="json")
     )
-
-
-def parse_legal_entity_id(value: str | None) -> UUID | None:
-    """Only an omitted id means the default azienda. A string that is given is an id
-    or a refusal in words: an empty one, or one that is not a UUID, must not fall back
-    to the default and write there in silence."""
-    if value is None:
-        return None
-    try:
-        return UUID(value)
-    except ValueError as exc:
-        raise ValidationFailed(
-            "emitter_profile", "azienda_id", "non e' l'id di un'azienda", expected="un UUID"
-        ) from exc
 
 
 def describe_fiscal_profile(context: McpContext, azienda_id: str | None = None) -> dict[str, Any]:

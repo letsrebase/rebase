@@ -690,7 +690,7 @@ def test_the_reader_refuses_an_agent_credential_that_was_not_opened(
     fake_drive: FakeDrive,
     tool: str,
 ) -> None:
-    """`AGENT_FORBIDDEN_ACTIONS` has to *bind*, not merely list.
+    """`FULL_ACCESS_ACTIONS` has to *bind*, not merely list.
 
     Until `drive_reader_for` took an `action`, the three names sat on that frozenset
     while nothing ever passed them to a check -- the list said the operations were
