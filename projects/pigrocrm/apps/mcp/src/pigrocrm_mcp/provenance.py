@@ -167,18 +167,19 @@ def _carries_free_text(value: Any) -> bool:
     return False
 
 
-def marked_items(items: list[dict[str, Any]]) -> dict[str, Any]:
-    """The answer of a tool that lists text somebody else wrote: `{"items": [...]}` with
-    the sentence beside it. A bare list has nowhere to carry a sentence, and a sentence
-    per item would cost the context window fifty times over."""
-    return {"items": items, "provenienza": PROVENIENZA_TESTO_LIBERO}
+def marked_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The answer of a tool that lists text somebody else wrote, as the bare list it always
+    was: each item carries the sentence under `provenienza`, an additive key, because a
+    list has nowhere else to put it and changing its shape would break an assistant that
+    already reads it."""
+    return [{**item, "provenienza": PROVENIENZA_TESTO_LIBERO} for item in items]
 
 
 def mark_free_text(result: Any, tool: str | None = None) -> Any:
     """`result` with a top-level `provenienza` when `tool` is one of `FREE_TEXT_TOOLS` or
     any field in it is free text; the same object otherwise. An answer that already says
     where it came from keeps its own sentence, and one that is not a dict has no place to
-    carry it (a bare-list tool wraps itself with `marked_items`)."""
+    carry it (a bare-list tool marks each item with `marked_items`)."""
     if not isinstance(result, dict) or "provenienza" in result or tool in OWN_IDENTITY_TOOLS:
         return result
     if (tool in FREE_TEXT_TOOLS and result) or _carries_free_text(result):

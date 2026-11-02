@@ -300,10 +300,10 @@ async def test_list_gmail_messages_reads_the_stored_mirror(
             {"entity_type": "customer", "entity_id": str(customer_id)},
         )
 
-    answer = _payload(result)
-    # Mail written by somebody else: the list carries the marker beside its items.
-    assert answer["provenienza"] == PROVENIENZA_TESTO_LIBERO
-    rows = answer["items"]
+    rows = _payload(result)
+    rows = rows["result"] if isinstance(rows, dict) and "result" in rows else rows
+    # Mail written by somebody else: each item carries the marker, the list stays a list.
+    assert all(row["provenienza"] == PROVENIENZA_TESTO_LIBERO for row in rows)
     assert [row["id"] for row in rows] == [str(message_id)]
     assert rows[0]["da"] == CLIENT
     assert rows[0]["oggetto"] == "Preventivo per il rifacimento del sito"
@@ -550,9 +550,9 @@ async def test_list_payment_reminder_candidates_reads_the_register_and_calls_nob
     async with Client(gmail_server) as client:
         result = await client.call_tool("list_payment_reminder_candidates", {})
 
-    answer = _payload(result)
-    assert answer["provenienza"] == PROVENIENZA_TESTO_LIBERO
-    rows = answer["items"]
+    rows = _payload(result)
+    rows = rows["result"] if isinstance(rows, dict) and "result" in rows else rows
+    assert all(row["provenienza"] == PROVENIENZA_TESTO_LIBERO for row in rows)
     mine = [row for row in rows if row["invoice_id"] == str(invoice.id)]
     assert len(mine) == 1
     assert mine[0]["importo"] == "1220.00"

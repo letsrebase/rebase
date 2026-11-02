@@ -163,8 +163,8 @@ def register(
     @guard
     def list_gmail_messages(
         entity_type: LinkedEntityTypeArg, entity_id: UuidStr, limit: BoundedLimit = 50
-    ) -> dict[str, Any]:
-        """Le email già sincronizzate per un cliente, una persona o un deal: `items`, più
+    ) -> list[dict[str, Any]]:
+        """Le email già sincronizzate per un cliente, una persona o un deal, ciascuna con
         `provenienza` (mittenti e oggetti li ha scritti qualcun altro). Legge la copia nel
         CRM, non contatta Gmail: se sembra vecchia, chiama `describe_gmail_account`.
         """
@@ -266,7 +266,7 @@ def register(
 
     @mcp.tool(annotations=READ_ONLY)
     @guard
-    def list_payment_reminder_candidates() -> dict[str, Any]:
+    def list_payment_reminder_candidates() -> list[dict[str, Any]]:
         """Le fatture da sollecitare, dalla più in ritardo. Legge il registro, funziona anche con
         la casella scollegata: `ultima_risposta_il` è allora `null`, cioè «non lo sappiamo», non
         «nessuno ha risposto». Preparare e spedire il sollecito resta alla persona.

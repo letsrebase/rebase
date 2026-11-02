@@ -15,7 +15,7 @@ from pigrocrm.core.pipeline.service import PipelineService
 
 # Test setup runs as the system, not as an agent: an agent credential may not seed a
 # pipeline or define a field (`core/agent_actions.py`).
-ADMIN = Actor(id=None, type="system", role="admin")
+SETUP = Actor(id=None, type="system", role="admin")  # setup is not an agent's (agent_actions.py)
 
 
 def _payload(result) -> dict:
@@ -73,9 +73,9 @@ async def test_the_full_journey_an_agent_would_take(server, mcp_session: Session
             field_type="select",
             options=["IT", "Retail"],
         ),
-        ADMIN,
+        SETUP,
     )
-    PipelineService(mcp_session).seed_defaults(ADMIN)
+    PipelineService(mcp_session).seed_defaults(SETUP)
 
     async with Client(server) as client:
         schema = _payload(await client.call_tool("describe_schema", {"entity_type": "customer"}))
@@ -134,7 +134,7 @@ async def test_an_invalid_custom_value_returns_guidance_naming_the_options(
             field_type="select",
             options=["IT", "Retail"],
         ),
-        ADMIN,
+        SETUP,
     )
     async with Client(server) as client:
         result = await client.call_tool(

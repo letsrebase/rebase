@@ -11,7 +11,7 @@ from pigrocrm.core.fields.schemas import FieldDefinitionCreate
 from pigrocrm.core.fields.service import FieldDefinitionService
 from pigrocrm.core.pipeline.service import PipelineService
 
-ADMIN = Actor(id=None, type="system", role="admin")  # setup is not an agent's (agent_actions.py)
+SETUP = Actor(id=None, type="system", role="admin")  # setup is not an agent's (agent_actions.py)
 
 
 def _payload(result) -> dict:
@@ -36,7 +36,7 @@ async def test_search_customers_filters_by_a_custom_field(server, mcp_session: S
         FieldDefinitionCreate(
             entity_type="customer", key="settore", label="Settore", field_type="text"
         ),
-        ADMIN,
+        SETUP,
     )
     async with Client(server) as client:
         await client.call_tool(
@@ -55,7 +55,7 @@ async def test_search_people_filters_by_a_custom_field(server, mcp_session: Sess
         FieldDefinitionCreate(
             entity_type="person", key="seniority", label="Seniority", field_type="text"
         ),
-        ADMIN,
+        SETUP,
     )
     async with Client(server) as client:
         await client.call_tool(
@@ -72,10 +72,10 @@ async def test_search_people_filters_by_a_custom_field(server, mcp_session: Sess
 
 
 async def test_search_deals_filters_by_a_custom_field(server, mcp_session: Session) -> None:
-    PipelineService(mcp_session).seed_defaults(ADMIN)
+    PipelineService(mcp_session).seed_defaults(SETUP)
     FieldDefinitionService(mcp_session).create(
         FieldDefinitionCreate(entity_type="deal", key="fonte", label="Fonte", field_type="text"),
-        ADMIN,
+        SETUP,
     )
     async with Client(server) as client:
         customer = _payload(await client.call_tool("create_customer", {"ragione_sociale": "ACME"}))
@@ -139,7 +139,7 @@ async def test_search_people_can_walk_a_second_page_via_cursor(server) -> None:
 
 
 async def test_search_deals_can_walk_a_second_page_via_cursor(server, mcp_session: Session) -> None:
-    PipelineService(mcp_session).seed_defaults(ADMIN)
+    PipelineService(mcp_session).seed_defaults(SETUP)
     async with Client(server) as client:
         customer = _payload(await client.call_tool("create_customer", {"ragione_sociale": "ACME"}))
         for index in range(3):

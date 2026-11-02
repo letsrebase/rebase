@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.pipeline.service import PipelineService
 
-ADMIN = Actor(id=None, type="system", role="admin")  # setup is not an agent's (agent_actions.py)
+SETUP = Actor(id=None, type="system", role="admin")  # setup is not an agent's (agent_actions.py)
 
 
 def _payload(result) -> dict:
@@ -82,7 +82,7 @@ async def test_a_wrong_typed_value_inside_changes_produces_guidance(
     """Fix 1 makes `changes` a real, typed schema; this proves the type-checking
     that now happens when building the update model still comes back through the
     guard's rendering, not as a raw pydantic dump with a errors.pydantic.dev link."""
-    PipelineService(mcp_session).seed_defaults(ADMIN)
+    PipelineService(mcp_session).seed_defaults(SETUP)
     async with Client(server) as client:
         customer = _payload(await client.call_tool("create_customer", {"ragione_sociale": "ACME"}))
         deal = _payload(
@@ -135,7 +135,7 @@ async def test_a_wrong_typed_limit_produces_guidance_not_a_raw_pydantic_dump(
 async def test_a_wrong_typed_probabilita_on_create_deal_produces_guidance(
     server, mcp_session: Session
 ) -> None:
-    PipelineService(mcp_session).seed_defaults(ADMIN)
+    PipelineService(mcp_session).seed_defaults(SETUP)
     async with Client(server) as client:
         customer = _payload(await client.call_tool("create_customer", {"ragione_sociale": "ACME"}))
         result = await client.call_tool(
@@ -152,7 +152,7 @@ async def test_a_wrong_typed_probabilita_on_create_deal_produces_guidance(
 async def test_a_wrong_typed_money_field_on_create_deal_produces_guidance(
     server, mcp_session: Session
 ) -> None:
-    PipelineService(mcp_session).seed_defaults(ADMIN)
+    PipelineService(mcp_session).seed_defaults(SETUP)
     async with Client(server) as client:
         customer = _payload(await client.call_tool("create_customer", {"ragione_sociale": "ACME"}))
         result = await client.call_tool(
@@ -170,7 +170,7 @@ async def test_create_deal_still_accepts_a_normal_numeric_probabilita(
     server, mcp_session: Session
 ) -> None:
     """The permissive `int | str` type must not regress the ordinary path."""
-    PipelineService(mcp_session).seed_defaults(ADMIN)
+    PipelineService(mcp_session).seed_defaults(SETUP)
     async with Client(server) as client:
         customer = _payload(await client.call_tool("create_customer", {"ragione_sociale": "ACME"}))
         deal = _payload(

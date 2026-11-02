@@ -501,7 +501,7 @@ def register(
 
         @mcp.tool(annotations=READ_ONLY)
         @guard
-        def suggest_customers_from_gmail(mesi: int = 12) -> dict[str, Any]:
+        def suggest_customers_from_gmail(mesi: int = 12) -> list[dict[str, Any]]:
             """Le aziende con cui la casella ha corrisposto negli ultimi `mesi` mesi (da 1 a 24),
             proposte come clienti: per dominio conversazioni, ultimo messaggio e persone viste.
             Il nome d'azienda è ricavato dal dominio: correggilo prima di crearlo.

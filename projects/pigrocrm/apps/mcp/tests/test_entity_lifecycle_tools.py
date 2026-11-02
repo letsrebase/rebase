@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.pipeline.service import PipelineService
 
-ADMIN = Actor(id=None, type="system", role="admin")  # setup is not an agent's (agent_actions.py)
+SETUP = Actor(id=None, type="system", role="admin")  # setup is not an agent's (agent_actions.py)
 
 
 def _payload(result) -> dict:
@@ -19,7 +19,7 @@ def _payload(result) -> dict:
 async def test_archive_customer_is_reversible_and_blocks_on_active_deals(
     server, mcp_session: Session
 ) -> None:
-    PipelineService(mcp_session).seed_defaults(ADMIN)
+    PipelineService(mcp_session).seed_defaults(SETUP)
     async with Client(server) as client:
         customer = _payload(await client.call_tool("create_customer", {"ragione_sociale": "ACME"}))
         deal = _payload(
@@ -79,7 +79,7 @@ async def test_move_deal_to_a_won_stage_settles_probability_through_the_tool(
     """`move_deal` must not re-decide probability itself -- it delegates to
     `DealService.move_stage`, which is the single authority on 'won at 60%' being
     unreachable. This proves that delegation survives the MCP boundary end to end."""
-    PipelineService(mcp_session).seed_defaults(ADMIN)
+    PipelineService(mcp_session).seed_defaults(SETUP)
     async with Client(server) as client:
         customer = _payload(await client.call_tool("create_customer", {"ragione_sociale": "ACME"}))
         deal = _payload(
@@ -135,7 +135,7 @@ async def test_update_person_can_still_detach_via_changes(server) -> None:
 async def test_update_deal_still_applies_a_valid_changes_payload(
     server, mcp_session: Session
 ) -> None:
-    PipelineService(mcp_session).seed_defaults(ADMIN)
+    PipelineService(mcp_session).seed_defaults(SETUP)
     async with Client(server) as client:
         customer = _payload(await client.call_tool("create_customer", {"ragione_sociale": "ACME"}))
         deal = _payload(
@@ -173,7 +173,7 @@ async def test_an_agent_sets_a_deals_owner_and_a_new_deal_defaults_to_its_creato
     )
     mcp_session.add_all([colleague, gone])
     mcp_session.flush()
-    PipelineService(mcp_session).seed_defaults(ADMIN)
+    PipelineService(mcp_session).seed_defaults(SETUP)
 
     async with Client(server) as client:
         members = _payload(await client.call_tool("list_members", {}))["result"]

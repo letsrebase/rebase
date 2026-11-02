@@ -82,10 +82,10 @@ def test_a_tool_that_returns_stored_text_is_marked_whatever_keys_it_carries() ->
     assert "provenienza" not in mark_free_text({"ragione_sociale": "Studio"}, "describe_azienda")
 
 
-def test_a_bare_list_is_wrapped_so_it_can_carry_the_marker() -> None:
-    answer = marked_items([{"oggetto": "x"}])
-    assert answer["items"] == [{"oggetto": "x"}]
-    assert answer["provenienza"] == PROVENIENZA_TESTO_LIBERO
+def test_a_bare_list_stays_a_list_and_each_item_carries_the_marker() -> None:
+    answer = marked_items([{"oggetto": "x"}, {"oggetto": "y"}])
+    assert [item["oggetto"] for item in answer] == ["x", "y"]
+    assert all(item["provenienza"] == PROVENIENZA_TESTO_LIBERO for item in answer)
 
 
 async def test_the_tools_named_as_free_text_are_registered_tools(tmp_path: Path) -> None:
