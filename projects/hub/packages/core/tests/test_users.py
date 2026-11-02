@@ -483,8 +483,10 @@ def test_a_request_inside_the_hour_writes_nothing_and_a_later_one_slides(
 
 
 def _age_the_tokens(session: Session) -> None:
-    """Past the per-address minute throttle, still today."""
-    session.execute(text("UPDATE magic_link_tokens SET created_at = created_at - interval '90 s'"))
+    """Past the per-address minute throttle (which only looks at unspent links), and never
+    across midnight in Rome, however close to it the test runs: the links are spent, not
+    moved back in time."""
+    session.execute(text("UPDATE magic_link_tokens SET used_at = now() WHERE used_at IS NULL"))
     session.commit()
 
 

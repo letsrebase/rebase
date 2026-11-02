@@ -252,9 +252,10 @@ def test_one_person_asking_again_and_again_stops_at_their_own_cap_in_silence(
                 client.post("/api/hub/auth/link", json={"email": "ada@studio.it"}).status_code
                 == 202
             )
-            # Past the per-address minute throttle, still today.
+            # Past the per-address minute throttle (unspent links only), still today: the
+            # links are spent, not moved back, so the test is the same near midnight.
             api_session.execute(
-                text("UPDATE magic_link_tokens SET created_at = created_at - interval '90 s'")
+                text("UPDATE magic_link_tokens SET used_at = now() WHERE used_at IS NULL")
             )
             api_session.commit()
         assert (
