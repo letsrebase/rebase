@@ -1,8 +1,9 @@
-import { Download, FileSpreadsheet, Loader2 } from 'lucide-react'
+import { Download, FileSpreadsheet } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from '@rebase/ui/sonner'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { Button } from '@rebase/ui/button'
+import { Loader } from '@rebase/ui/loader'
 import { DownloadButton } from '@/components/DownloadButton'
 import { Card, CardContent } from '@rebase/ui/card'
 import { Input } from '@rebase/ui/input'
@@ -90,7 +91,7 @@ export function RegisterSection({ contractId }: { contractId: string }) {
               }
             >
               {render.isPending ? (
-                <Loader2 className="mr-2 size-4 animate-spin" aria-hidden="true" />
+                <Loader className="mr-2 size-4" />
               ) : (
                 <Download className="mr-2 size-4" aria-hidden="true" />
               )}

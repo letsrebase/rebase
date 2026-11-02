@@ -5,6 +5,7 @@ import { toast } from '@rebase/ui/sonner'
 import { RowActions } from '@/components/RowActions'
 import { StatusPill } from '@/components/StatusPill'
 import { Button } from '@rebase/ui/button'
+import { Checkbox } from '@rebase/ui/checkbox'
 import { DataTable, type DataTableFeatures } from '@/components/DataTable'
 import {
   Dialog,
@@ -435,15 +436,14 @@ export function TemplatesPanel() {
                   </div>
                   <div className="flex items-center gap-2 sm:col-span-2">
                     <label className="flex items-center gap-2 text-xs">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         aria-label={`Obbligatoria ${variable.nome || index + 1}`}
                         checked={variable.obbligatoria}
-                        onChange={(event) =>
+                        onCheckedChange={(checked) =>
                           setVariabili((previous) =>
                             previous.map((entry, position) =>
                               position === index
-                                ? { ...entry, obbligatoria: event.target.checked }
+                                ? { ...entry, obbligatoria: checked === true }
                                 : entry,
                             ),
                           )

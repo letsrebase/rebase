@@ -1,8 +1,9 @@
-import { Download, FileSpreadsheet, Loader2 } from 'lucide-react'
+import { Download, FileSpreadsheet } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from '@rebase/ui/sonner'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { Button } from '@rebase/ui/button'
+import { Loader } from '@rebase/ui/loader'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { toIsoMonth } from '@/lib/dates'
@@ -50,7 +51,7 @@ export function TimeReportButtons({ dealId }: { dealId: string }) {
           }
         >
           {render.isPending ? (
-            <Loader2 className="mr-2 size-4 animate-spin" aria-hidden="true" />
+            <Loader className="mr-2 size-4" />
           ) : (
             <Download className="mr-2 size-4" aria-hidden="true" />
           )}

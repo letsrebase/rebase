@@ -2,6 +2,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { toast } from '@rebase/ui/sonner'
 import { Button } from '@rebase/ui/button'
+import { Checkbox } from '@rebase/ui/checkbox'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
@@ -263,11 +264,10 @@ export function FiscalForm({ aziendaId, profile }: { aziendaId: string; profile:
 
       {forfettario ? (
         <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
+          <Checkbox
             checked={values.applica_bollo}
             disabled={save.isPending}
-            onChange={(event) => change({ applica_bollo: event.target.checked })}
+            onCheckedChange={(checked) => change({ applica_bollo: checked === true })}
           />
           Applica il bollo virtuale sopra la soglia
         </label>
