@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { toast } from '@rebase/ui/sonner'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { Button } from '@rebase/ui/button'
+import { DownloadButton } from '@/components/DownloadButton'
 import { Card, CardContent } from '@rebase/ui/card'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
@@ -21,7 +22,7 @@ import { toIsoMonth } from '@/lib/dates'
 import { formatItalianQuantity } from '@/lib/decimal'
 import {
   monthBounds,
-  registerCsvUrl,
+  registerCsvPath,
   useContractRegister,
   useRenderRegisterPdf,
   type RegisterEntry,
@@ -96,16 +97,10 @@ export function RegisterSection({ contractId }: { contractId: string }) {
               PDF
             </Button>
           )}
-          <Button asChild variant="outline">
-            <a
-              // Snyk Code javascript/DOMXSS here is a false positive: always a same-origin
-              // path under /api/contracts/, with the period passed through URLSearchParams.
-              href={registerCsvUrl(contractId, period)}
-            >
-              <FileSpreadsheet className="mr-2 size-4" aria-hidden="true" />
-              CSV
-            </a>
-          </Button>
+          <DownloadButton variant="outline" path={registerCsvPath(contractId, period)}>
+            <FileSpreadsheet className="mr-2 size-4" aria-hidden="true" />
+            CSV
+          </DownloadButton>
         </div>
         {render.isError && <QueryErrorBanner error={render.error} />}
 

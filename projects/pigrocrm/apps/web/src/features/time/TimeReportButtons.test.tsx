@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
 import { downloadDocument } from '@/features/documents/queries'
+import { downloadFromApi } from '@/lib/download'
 import { TimeReportButtons } from './TimeReportButtons'
 
 vi.mock('@/lib/api', async (importOriginal) => {
@@ -12,6 +13,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
 })
 vi.mock('@rebase/ui/sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 vi.mock('@/features/documents/queries', () => ({ downloadDocument: vi.fn() }))
+vi.mock('@/lib/download', () => ({ downloadFromApi: vi.fn().mockResolvedValue(undefined) }))
 
 function ok(data: unknown, status = 200) {
   return Promise.resolve({ data, response: new Response(null, { status }) } as never)
@@ -39,19 +41,13 @@ beforeEach(() => {
 })
 
 describe('TimeReportButtons', () => {
-  /**
-   * The XLSX is the one of the two that really is a link. The endpoint streams those
-   * bytes with a `Content-Disposition`, so the browser fetches them itself and no
-   * JavaScript touches them.
-   */
-  it('offers the XLSX as a plain anchor', () => {
+  /** The XLSX goes through the refreshing, space-prefixed download, not a bare link. */
+  it('downloads the XLSX through the API', async () => {
     renderButtons()
-    const link = screen.getByRole('link', { name: /XLSX/ })
-    expect(link).toHaveAttribute(
-      'href',
-      expect.stringContaining('/api/deals/d-1/time-report?mese='),
+    await userEvent.click(screen.getByRole('button', { name: /XLSX/ }))
+    expect(downloadFromApi).toHaveBeenCalledWith(
+      expect.stringMatching(/^\/api\/deals\/d-1\/time-report\?mese=.*formato=xlsx/),
     )
-    expect(link.getAttribute('href')).toContain('formato=xlsx')
   })
 
   /**

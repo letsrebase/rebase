@@ -2,6 +2,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import { useMemo } from 'react'
 import { useLegalEntityScope } from '@/lib/legalEntity'
 import { api, fetchWithRefresh, toProblem, unwrap } from '@/lib/api'
+import { downloadFromApi } from '@/lib/download'
 import type { StatusTone } from '@/components/StatusPill'
 import type { components } from '@/lib/api-types'
 import { queryKeys } from '@/lib/query'
@@ -508,36 +509,8 @@ export function useSaveFiscalProfile(aziendaId: string) {
   })
 }
 
-/**
- * A blob download, the one documented exception to "no `fetch` inside components"
- * already established by `downloadDocument` in `features/documents/queries.ts`:
- * `openapi-fetch` cannot express a binary response, and the server's own
- * `Content-Disposition` is what names the file -- which for the XML is the SdI's
- * convention and matters to whoever receives it.
- *
- * Through `fetchWithRefresh`, not a bare `fetch`: being outside the typed client is a
- * statement about response *types*, and it used to silently also mean "and outside the
- * session handling", so a PDF asked for more than fifteen minutes after the last
- * request answered «Autenticazione richiesta». See `lib/api.ts`.
- */
-export async function downloadInvoiceArtifact(
-  invoiceId: string,
-  kind: 'pdf' | 'xml',
-): Promise<void> {
-  const response = await fetchWithRefresh(`/api/invoices/${invoiceId}/${kind}`)
-  if (!response.ok) {
-    const payload: unknown = await response.json().catch(() => null)
-    throw toProblem(payload, response.status)
-  }
-  const url = URL.createObjectURL(await response.blob())
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = ''
-  // Snyk Code javascript/DOMXSS here is a false positive: the href is a blob: URL made
-  // just above, never a script URL, and `download` makes the click save the file
-  // whatever its type, so nothing it holds is ever rendered.
-  document.body.appendChild(anchor)
-  anchor.click()
-  anchor.remove()
-  URL.revokeObjectURL(url)
+/** The invoice's PDF or FatturaPA XML as a file download; the server's own
+ *  `Content-Disposition` names it, which for the XML is the SdI's convention. */
+export function downloadInvoiceArtifact(invoiceId: string, kind: 'pdf' | 'xml'): Promise<void> {
+  return downloadFromApi(`/api/invoices/${invoiceId}/${kind}`)
 }

@@ -4,7 +4,6 @@ import { api, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
 import { useLegalEntity } from '@/lib/legalEntity'
 import { queryKeys } from '@/lib/query'
-import { tenantPrefix } from '@/lib/tenant'
 import type { Periodo } from './periodo'
 import type { CashBase } from './search'
 
@@ -209,16 +208,11 @@ export function useYearOverview(anno: number, aziendaId?: string | null) {
   })
 }
 
-/**
- * Where the year's CSV is downloaded from. A plain URL, not a fetch, like the timesheet's
- * XLSX: the browser saves the file itself and the bytes never pass through JavaScript.
- * Same-origin, so the session cookie travels with it, and the space's prefix is part of
- * the path.
- */
-export function yearCsvUrl(anno: number, aziendaId: string | null): string {
+/** The API path of the year's CSV, to download through `DownloadButton`. */
+export function yearCsvPath(anno: number, aziendaId: string | null): string {
   const query = new URLSearchParams({ anno: String(anno) })
   if (aziendaId !== null) query.set('azienda_id', aziendaId)
-  return `${tenantPrefix}/api/analytics/year/csv?${query.toString()}`
+  return `/api/analytics/year/csv?${query.toString()}`
 }
 
 export function useAutomations() {

@@ -6,7 +6,8 @@ import { Button } from '@rebase/ui/button'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { toIsoMonth } from '@/lib/dates'
-import { timeReportXlsxUrl, useRenderTimeReportPdf } from './queries'
+import { DownloadButton } from '@/components/DownloadButton'
+import { timeReportXlsxPath, useRenderTimeReportPdf } from './queries'
 
 /**
  * Two formats, two recipients (§2.1): the PDF is attached to the invoice, the XLSX gets
@@ -57,20 +58,13 @@ export function TimeReportButtons({ dealId }: { dealId: string }) {
           )}
           PDF
         </Button>
-        <Button asChild variant="outline">
-          <a
-            // Snyk Code javascript/DOMXSS here is a false positive: always a same-origin
-            // path under /api/deals/, with the month passed through URLSearchParams.
-            href={timeReportXlsxUrl(dealId, mese)}
-          >
-            <FileSpreadsheet className="mr-2 size-4" aria-hidden="true" />
-            XLSX
-          </a>
-        </Button>
+        <DownloadButton variant="outline" path={timeReportXlsxPath(dealId, mese)}>
+          <FileSpreadsheet className="mr-2 size-4" aria-hidden="true" />
+          XLSX
+        </DownloadButton>
       </div>
       {/* A refused render -- a month with no hours, a deal the actor cannot read -- has
-          to say so here. The anchor beside it can only ever fail as a browser error
-          page, which is the other half of why these two are not the same control. */}
+          to say so here. */}
       {render.isError ? <QueryErrorBanner error={render.error} /> : null}
     </div>
   )

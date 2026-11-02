@@ -161,13 +161,12 @@ export function useDeleteTimeEntry() {
 }
 
 /**
- * The XLSX only. A plain URL, not a fetch: the browser downloads the file itself, so
- * the bytes never pass through JavaScript. Same-origin, so the session cookie travels
- * with it and no token has to be put in a query string.
+ * The API path of the XLSX only, to download through `DownloadButton` (the space's prefix
+ * and the session refresh come with `fetchWithRefresh`).
  *
- * The PDF deliberately has no URL of its own here -- see `useRenderTimeReportPdf`.
+ * The PDF deliberately has no path of its own here -- see `useRenderTimeReportPdf`.
  */
-export function timeReportXlsxUrl(dealId: string, mese: string): string {
+export function timeReportXlsxPath(dealId: string, mese: string): string {
   const query = new URLSearchParams({ mese, formato: 'xlsx' })
   return `/api/deals/${dealId}/time-report?${query.toString()}`
 }

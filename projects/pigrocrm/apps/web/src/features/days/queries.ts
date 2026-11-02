@@ -1,5 +1,6 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, fetchWithRefresh, toProblem, unwrap } from '@/lib/api'
+import { api, unwrap } from '@/lib/api'
+import { downloadFromApi } from '@/lib/download'
 import { useLegalEntity } from '@/lib/legalEntity'
 import { queryKeys } from '@/lib/query'
 import type { Contract } from '@/features/contracts/queries'
@@ -213,31 +214,8 @@ export function useMoveDay(workUnitId: string) {
   })
 }
 
-/**
- * Downloads the dispute bundle of a day (REB-759) through `fetchWithRefresh`, as a document is:
- * a bare link would fail with «Autenticazione richiesta» once the access cookie has expired
- * while a valid refresh cookie sits in the jar. The server's own `Content-Disposition` names
- * the file; this hands the blob to the browser and releases the object URL.
- */
-export async function downloadDisputeBundle(workUnitId: string): Promise<void> {
-  const response = await fetchWithRefresh(
-    `/api/work-units/${encodeURIComponent(workUnitId)}/dispute-bundle`,
-  )
-  if (!response.ok) {
-    const payload: unknown = await response.json().catch(() => null)
-    throw toProblem(payload, response.status)
-  }
-  const url = URL.createObjectURL(await response.blob())
-  const anchor = document.createElement('a')
-  anchor.href = url
-  // A blob: URL carries no Content-Disposition, so the server's own file name is read from the
-  // header and set here; the server builds it from the date and an id prefix, ASCII only.
-  anchor.download =
-    /filename="([^"]+)"/.exec(response.headers.get('Content-Disposition') ?? '')?.[1] ?? ''
-  // Snyk Code javascript/DOMXSS here is a false positive: the href is a blob: URL made just
-  // above, never a script URL.
-  document.body.appendChild(anchor)
-  anchor.click()
-  anchor.remove()
-  URL.revokeObjectURL(url)
+/** Downloads the dispute bundle of a day (REB-759); the server's own `Content-Disposition`
+ *  names the file. */
+export function downloadDisputeBundle(workUnitId: string): Promise<void> {
+  return downloadFromApi(`/api/work-units/${encodeURIComponent(workUnitId)}/dispute-bundle`)
 }
