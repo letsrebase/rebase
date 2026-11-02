@@ -27,7 +27,14 @@ from rebase_core.models import (
 )
 from rebase_core.schema_common import ResponseModel
 from rebase_core.search import SEARCH_MAX_LENGTH
-from rebase_core.vocabulary import CampaignState, RecipientState
+from rebase_core.vocabulary import (
+    CampaignAction,
+    CampaignDestination,
+    CampaignFonte,
+    CampaignState,
+    RecipientKind,
+    RecipientState,
+)
 
 # A filter's amount is kept like every other amount the hub stores: euro with cents at
 # most and never below zero, with no ceiling the editor's own field lacks. The editor
@@ -206,16 +213,16 @@ class CampaignRead(ResponseModel):
     id: UUID
     nome: str
     slug: str
-    fonte: str
+    fonte: CampaignFonte
     stato_percorso: str | None
     filtri: dict[str, object] | None
     segue_id: UUID | None
     oggetto: str
     testo: str
     bottone_testo: str
-    bottone_meta: str
+    bottone_meta: CampaignDestination
     bottone_url: str | None = None
-    azione: str
+    azione: CampaignAction
     stato: CampaignState
     contenuto_at: datetime
     programmata_per: datetime | None
@@ -240,6 +247,9 @@ class CampaignListItem(CampaignRead):
 
 class CampaignList(ResponseModel):
     items: list[CampaignListItem]
+    # Set only when a caller asked for a page (the MCP tools, REB-804): the admin screen
+    # reads the whole list.
+    next_cursor: str | None = None
 
 
 class RecipientRead(ResponseModel):
@@ -248,7 +258,7 @@ class RecipientRead(ResponseModel):
     id: UUID
     email: str
     nome: str | None
-    tipo: str
+    tipo: RecipientKind
     stato: RecipientState
     motivo: str | None
     inviata_at: datetime | None
@@ -268,12 +278,14 @@ class CampaignDetail(ResponseModel):
     campagna: CampaignRead
     conteggi: CampaignCounts
     destinatari: list[RecipientRead]
+    # The cursor after the last recipient listed, when a page was asked for (REB-804).
+    next_cursor: str | None = None
 
 
 class AudienceRowRead(ResponseModel):
     email: str
     nome: str | None
-    tipo: str
+    tipo: RecipientKind
     escluso: str | None
 
 
@@ -291,5 +303,5 @@ class TemplateRead(ResponseModel):
     oggetto: str
     testo: str
     bottone_testo: str
-    bottone_meta: str
-    azione: str
+    bottone_meta: CampaignDestination
+    azione: CampaignAction

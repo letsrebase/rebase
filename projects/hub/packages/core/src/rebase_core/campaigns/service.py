@@ -2,6 +2,8 @@
 actually sends is `tick.py`; this module never calls Resend except for the admin's own
 test."""
 
+import base64
+import binascii
 import re
 import secrets
 import unicodedata
@@ -10,7 +12,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import case, delete, func, or_, select, update
+from sqlalchemy import case, delete, func, or_, select, tuple_, update
 from sqlalchemy.orm import Session
 
 from rebase_core.admin_tokens import AdminRead
@@ -45,7 +47,9 @@ from rebase_core.models import (
     Login,
     User,
 )
+from rebase_core.pagination import SortSpec, decode_cursor, encode_cursor, keyset_predicate
 
+BAD_CURSOR = "cursore non valido"
 NOT_A_DRAFT = "Si modifica solo una bozza: riportala in bozza prima."
 ONLY_A_DRAFT_IS_DELETED = (
     "Si elimina solo una bozza: una campagna programmata, inviata o annullata resta."
@@ -83,6 +87,12 @@ _CONTENT_FIELDS = (
 def _stripped(url: str | None) -> str | None:
     """A button's address as it is stored: trimmed, and `None` rather than blank."""
     return (url or "").strip() or None
+
+
+def _recipient_cursor(recipient_id: UUID) -> str:
+    """The opaque cursor after a recipient: its id, which `_recipient_after` turns back
+    into the `(email, id)` position (an address is too long to carry in a cursor)."""
+    return base64.urlsafe_b64encode(recipient_id.bytes).decode("ascii").rstrip("=")
 
 
 def _slugify(value: str) -> str:
@@ -206,10 +216,23 @@ class CampaignService:
         escluse = sum(1 for r in righe if r.escluso)
         return AudiencePreview(righe=righe, incluse=len(righe) - escluse, escluse=escluse)
 
-    def list_all(self) -> CampaignList:
-        campaigns = self.session.scalars(
-            select(Campaign).order_by(Campaign.created_at.desc())
-        ).all()
+    def list_all(self, limit: int | None = None, cursor: str | None = None) -> CampaignList:
+        """Every campaign, newest first. The admin screen reads them all; an agent passes
+        `limit` (REB-804) and gets `next_cursor` for the page after, `None` on the last."""
+        stmt = select(Campaign)
+        spec = SortSpec("created_at", "datetime")
+        if cursor:
+            value, row_id = decode_cursor(spec, cursor)
+            stmt = stmt.where(keyset_predicate(Campaign.created_at, Campaign.id, value, row_id))
+        stmt = stmt.order_by(Campaign.created_at.desc(), Campaign.id.desc())
+        if limit is not None:
+            stmt = stmt.limit(limit + 1)
+        campaigns = list(self.session.scalars(stmt).all())
+        next_cursor = None
+        if limit is not None and len(campaigns) > limit:
+            campaigns = campaigns[:limit]
+            last = campaigns[-1]
+            next_cursor = encode_cursor(spec, last.created_at, last.id)
         counts = self._counts([c.id for c in campaigns])
         return CampaignList(
             items=[
@@ -218,16 +241,32 @@ class CampaignService:
                     conteggi=counts.get(c.id, CampaignCounts()),
                 )
                 for c in campaigns
-            ]
+            ],
+            next_cursor=next_cursor,
         )
 
-    def detail(self, campaign_id: UUID) -> CampaignDetail:
+    def detail(
+        self, campaign_id: UUID, limit: int | None = None, cursor: str | None = None
+    ) -> CampaignDetail:
+        """A campaign with its recipients by address. The admin screen reads them all;
+        an agent passes `limit` (REB-804) and gets `next_cursor` for the next recipients,
+        `None` on the last page. `conteggi` always count the whole list."""
         campaign = self._require(campaign_id)
-        rows = self.session.scalars(
-            select(CampaignRecipient)
-            .where(CampaignRecipient.campaign_id == campaign_id)
-            .order_by(CampaignRecipient.email)
-        ).all()
+        stmt = select(CampaignRecipient).where(CampaignRecipient.campaign_id == campaign_id)
+        if cursor:
+            after = self._recipient_after(campaign_id, cursor)
+            stmt = stmt.where(
+                tuple_(CampaignRecipient.email, CampaignRecipient.id)
+                > tuple_(after.email, after.id)
+            )
+        stmt = stmt.order_by(CampaignRecipient.email, CampaignRecipient.id)
+        if limit is not None:
+            stmt = stmt.limit(limit + 1)
+        rows = list(self.session.scalars(stmt).all())
+        next_cursor = None
+        if limit is not None and len(rows) > limit:
+            rows = rows[:limit]
+            next_cursor = _recipient_cursor(rows[-1].id)
         entered, acted = self._from_mail(campaign, rows)
         return CampaignDetail(
             campagna=CampaignRead.model_validate(campaign),
@@ -241,7 +280,21 @@ class CampaignService:
                 )
                 for r in rows
             ],
+            next_cursor=next_cursor,
         )
+
+    def _recipient_after(self, campaign_id: UUID, cursor: str) -> CampaignRecipient:
+        """The recipient a page's cursor names, which must be one of this campaign's: a
+        cursor from another campaign, or one that is not ours at all, is refused rather
+        than read as «from the start»."""
+        try:
+            key = UUID(bytes=base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4)))
+        except (binascii.Error, ValueError):
+            raise ValidationFailed(ENTITY, "cursor", BAD_CURSOR) from None
+        row = self.session.get(CampaignRecipient, key)
+        if row is None or row.campaign_id != campaign_id:
+            raise ValidationFailed(ENTITY, "cursor", BAD_CURSOR)
+        return row
 
     def _from_mail(
         self, campaign: Campaign, rows: Sequence[CampaignRecipient]
