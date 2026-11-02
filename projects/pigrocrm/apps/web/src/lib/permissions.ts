@@ -40,9 +40,7 @@ const RANK: Record<Role, 0 | 1 | 2> = { readonly: 0, collaboratore: 1, admin: 2 
  * `readonly` never appears as a minimum: a readonly actor may press no control in here,
  * which is the card's own rule, not an omission.
  *
- * The Gmail and Drive strings are the Italian ones because those services build the
- * sentence themselves and surface the action inside it; every other key is the English
- * action string. The table mirrors the source exactly, in either language.
+ * Every key is the English action string the service passes to the guard.
  */
 export const MIN_ROLE = {
   // Vendite
@@ -135,22 +133,18 @@ export const MIN_ROLE = {
   update_clause_note: 'collaboratore',
   set_renewal_assumption: 'collaboratore',
   renew_contract: 'collaboratore',
-  // The Email tab: the three presses on a draft the assistant prepared (REB-415). The
-  // send and its verification are Italian strings, like the Gmail and Drive settings
-  // below, because `gmail/send.py` builds its sentence around them.
-  "inviare un'email": 'collaboratore',
-  "verificare l'esito di un'email": 'collaboratore',
+  // The Email tab: the three presses on a draft the assistant prepared (REB-415).
+  send_email: 'collaboratore',
+  reconcile_email: 'collaboratore',
   delete_email_draft: 'collaboratore',
   // «Cerca chi ha scritto» on a customer's Email tab (REB-766): the read spends the
   // owner's Gmail quota, so the service guards it like a write.
   discover_gmail_correspondents: 'collaboratore',
-  // Impostazioni: the write behind each tab. The Gmail and Drive strings are Italian
-  // because those services build the sentence themselves and surface the action
-  // inside it; they guard with `require_write`, and the table says so. What a
-  // readonly person never reaches there is decided by the tab's visibility, not by
-  // these rows -- see `SETTINGS_TAB_MIN_ROLE` below.
-  'modificare le impostazioni Gmail': 'collaboratore',
-  'impostare le cartelle Drive': 'collaboratore',
+  // Impostazioni: the write behind each tab. The Gmail and Drive rows guard with
+  // `require_write`, and the table says so. What a readonly person never reaches there
+  // is decided by the tab's visibility, not by these rows -- see `SETTINGS_TAB_MIN_ROLE` below.
+  update_gmail_settings: 'collaboratore',
+  set_drive_roots: 'collaboratore',
   update_automation_config: 'admin',
   create_field_definition: 'admin',
   update_field_definition: 'admin',
