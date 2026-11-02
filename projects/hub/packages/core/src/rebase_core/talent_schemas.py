@@ -9,7 +9,7 @@ from pydantic import ConfigDict, Field
 
 from rebase_core.bands import Band
 from rebase_core.schema_common import ResponseModel
-from rebase_core.vocabulary import FreelancerStatus, RemoteOption, Seniority
+from rebase_core.vocabulary import RemoteOption, Seniority, TalentoStatus
 
 TalentoOrigine = Literal["form", "wizard", "admin"]
 
@@ -44,7 +44,7 @@ class TalentoRead(ResponseModel):
     cognome: str | None = None
     email: str
     linkedin_url: str | None = None
-    stato: FreelancerStatus
+    stato: TalentoStatus
     origine: TalentoOrigine
     utm_source: str | None = None
     created_at: datetime
