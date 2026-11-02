@@ -32,10 +32,10 @@ active match with the same company on both.
 """
 
 import hashlib
-from typing import Any
+from typing import Annotated, Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
@@ -48,7 +48,15 @@ from rebase_core.merge_relations import (
     move_relations,
     put_back_relations,
 )
-from rebase_core.merge_steps import MergeSteps, audit_json, plain, restore
+from rebase_core.merge_steps import (
+    CV_KEPT,
+    CV_OUTCOMES,
+    CV_RESTORED,
+    MergeSteps,
+    audit_json,
+    plain,
+    restore,
+)
 from rebase_core.models import (
     AUTORE_MAX_LENGTH,
     AdminAction,
@@ -64,6 +72,7 @@ from rebase_core.models import (
 from rebase_core.schema_common import ResponseModel
 from rebase_core.sources import delete_sources
 from rebase_core.users import UserService
+from rebase_core.vocabulary import enum_of
 
 ENTITY = "freelancer"
 
@@ -79,7 +88,7 @@ class MergeRead(ResponseModel):
     action_id: UUID
     moved: dict[str, int]
     lasciati: dict[str, int]
-    cv: str
+    cv: Annotated[str, Field(json_schema_extra=enum_of(CV_OUTCOMES))]
     scheda_da_rigenerare: bool
 
 
@@ -335,7 +344,7 @@ class PersonMergeService:
             action_id=action.id,
             moved=put_back,
             lasciati=left,
-            cv="ripristinato" if payload["cv_swapped"] else "invariato",
+            cv=CV_RESTORED if payload["cv_swapped"] else CV_KEPT,
             scheda_da_rigenerare=False,
         )
 

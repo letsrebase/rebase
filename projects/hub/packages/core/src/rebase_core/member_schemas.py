@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field
 
 from rebase_core.schema_common import ResponseModel, is_complete
 from rebase_core.signup_schemas import SignupUtm
-from rebase_core.vocabulary import RemoteOption
+from rebase_core.vocabulary import RemoteOption, UserRole
 
 
 class MemberProfile(BaseModel):
@@ -87,7 +87,7 @@ class MeRead(ResponseModel):
     email: str
     linkedin_url: str | None
     telefono: str | None
-    role: str
+    role: UserRole
     created_at: datetime
     updated_at: datetime
     ha_scheda: bool

@@ -42,7 +42,15 @@ from rebase_core.schema_common import (
     clean_text,
 )
 from rebase_core.validation import SafeStr
-from rebase_core.vocabulary import RemoteOption, TeamRequestState
+from rebase_core.vocabulary import (
+    RemoteOption,
+    Seniority,
+    TalentAnswer,
+    TeamProposalError,
+    TeamProposalOrigin,
+    TeamRequestOrigin,
+    TeamRequestState,
+)
 
 __all__ = [
     "CARD_SENIORITIES",
@@ -144,7 +152,7 @@ class FreelancerCardRead(ResponseModel):
     model: str | None
     generated_at: datetime | None
     error: str | None
-    seniority_admin: str | None = None
+    seniority_admin: Seniority | None = None
     anni_admin: int | None = None
 
 
@@ -321,7 +329,7 @@ class TeamProposalRead(ResponseModel):
     team: list[TeamMemberRead]
     economia: dict[str, Any]
     previous_id: UUID | None
-    origine: str
+    origine: TeamProposalOrigin
     created_at: datetime
 
 
@@ -356,9 +364,9 @@ class TeamProposalListItem(ResponseModel):
     persone: int | None
     nota: str | None
     previous_id: UUID | None
-    origine: str
+    origine: TeamProposalOrigin
     user_id: UUID | None
-    errore: str | None
+    errore: TeamProposalError | None
     riassunto: str | None
     membri: int
     team: list[TeamProposalListMember]
@@ -426,7 +434,7 @@ class TeamRequestTalentRead(ResponseModel):
     tariffa_giornaliera: Decimal | None
     fascia: Band | None
     mail_sent_at: datetime | None
-    risposta: str | None
+    risposta: TalentAnswer | None
     risposta_at: datetime | None
     contattabile: bool
 
@@ -441,7 +449,7 @@ class TeamRequestRead(ResponseModel):
     proposal: TeamProposalRead | None
     riassunto: str | None
     descrizione: str | None
-    origine: str
+    origine: TeamRequestOrigin
     azienda: str
     email: str
     telefono: str | None
@@ -461,7 +469,7 @@ class TeamRequestListItem(ResponseModel):
 
     id: UUID
     azienda: str
-    origine: str
+    origine: TeamRequestOrigin
     stato: TeamRequestState
     created_at: datetime
     contacted_at: datetime | None

@@ -22,6 +22,10 @@ from rebase_core.models import (
     User,
 )
 
+# What the `cv` of a merge answers: the survivor ends with no CV, its own, the absorbed
+# card's, or (an undo) the older one put back.
+CV_NONE, CV_KEPT, CV_ABSORBED, CV_RESTORED = "nessuno", "invariato", "assorbita", "ripristinato"
+CV_OUTCOMES = (CV_NONE, CV_KEPT, CV_ABSORBED, CV_RESTORED)
 # Fields of the card the survivor takes from the absorbed one when it has none.
 _FILLED_FIELDS = (
     "posizione",
@@ -109,12 +113,12 @@ class MergeSteps:
         """The survivor ends with the newest CV and its card; the older stays on the
         absorbed card. Answers whether the two swapped, and which CV the survivor holds."""
         if absorbed.cv_bytes is None:
-            return False, "invariato" if survivor.cv_bytes is not None else "nessuno"
+            return False, CV_KEPT if survivor.cv_bytes is not None else CV_NONE
         newer = survivor.cv_bytes is None or _stamp(absorbed) > _stamp(survivor)
         if not newer:
-            return False, "invariato"
+            return False, CV_KEPT
         self.swap_cv_and_card(survivor, absorbed)
-        return True, "assorbita"
+        return True, CV_ABSORBED
 
     def swap_cv_and_card(self, first: Freelancer, second: Freelancer) -> None:
         for column in _CV_COLUMNS:

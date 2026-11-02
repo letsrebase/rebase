@@ -19,19 +19,33 @@ from typing import Annotated, Any
 from pydantic import Field
 
 from rebase_core.models import (
+    ADMIN_ACTION_ENTITY_TYPES,
+    ADMIN_ACTION_KINDS,
+    CAMPAIGN_ACTIONS,
+    CAMPAIGN_DESTINATIONS,
+    CAMPAIGN_FONTI,
     CAMPAIGN_STATES,
+    CARD_SENIORITIES,
     COMPANY_STATES,
+    COMPILATA_DA,
     CONTRACT_KINDS,
     CONTRACT_STATES,
     FREELANCER_STATES,
     MATCH_STATES,
+    NOTE_SOURCES,
     PIGRO_STATES,
+    RECIPIENT_KINDS,
     RECIPIENT_STATES,
     REFERRAL_KINDS,
     REFERRAL_STATES,
     REMOTE_OPTIONS,
     REWARD_STATES,
+    TALENT_ANSWERS,
+    TEAM_PROPOSAL_ERRORS,
+    TEAM_PROPOSAL_ORIGINS,
+    TEAM_REQUEST_ORIGINS,
     TEAM_REQUEST_STATES,
+    USER_ROLES,
 )
 
 
@@ -63,3 +77,17 @@ RewardState = Annotated[str, Field(json_schema_extra=enum_of(REWARD_STATES))]
 TeamRequestState = Annotated[str, Field(json_schema_extra=enum_of(TEAM_REQUEST_STATES))]
 CampaignState = Annotated[str, Field(json_schema_extra=enum_of(CAMPAIGN_STATES))]
 RecipientState = Annotated[str, Field(json_schema_extra=enum_of(RECIPIENT_STATES))]
+TeamRequestOrigin = Annotated[str, Field(json_schema_extra=enum_of(TEAM_REQUEST_ORIGINS))]
+TeamProposalOrigin = Annotated[str, Field(json_schema_extra=enum_of(TEAM_PROPOSAL_ORIGINS))]
+TeamProposalError = Annotated[str, Field(json_schema_extra=enum_of(TEAM_PROPOSAL_ERRORS))]
+TalentAnswer = Annotated[str, Field(json_schema_extra=enum_of(TALENT_ANSWERS))]
+Seniority = Annotated[str, Field(json_schema_extra=enum_of(CARD_SENIORITIES))]
+CompilataDa = Annotated[str, Field(json_schema_extra=enum_of(COMPILATA_DA))]
+UserRole = Annotated[str, Field(json_schema_extra=enum_of(USER_ROLES))]
+NoteSource = Annotated[str, Field(json_schema_extra=enum_of(NOTE_SOURCES))]
+AdminActionKind = Annotated[str, Field(json_schema_extra=enum_of(ADMIN_ACTION_KINDS))]
+AdminActionEntity = Annotated[str, Field(json_schema_extra=enum_of(ADMIN_ACTION_ENTITY_TYPES))]
+CampaignFonte = Annotated[str, Field(json_schema_extra=enum_of(CAMPAIGN_FONTI))]
+CampaignAction = Annotated[str, Field(json_schema_extra=enum_of(CAMPAIGN_ACTIONS))]
+CampaignDestination = Annotated[str, Field(json_schema_extra=enum_of(CAMPAIGN_DESTINATIONS))]
+RecipientKind = Annotated[str, Field(json_schema_extra=enum_of(RECIPIENT_KINDS))]

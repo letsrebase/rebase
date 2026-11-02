@@ -29,6 +29,9 @@ RATE_MAX = Decimal("1")
 # state. Written only by `ReferralService.for_matches`.
 PREVISTO = "previsto"
 GIA_MATURATO = "gia_maturato"
+# `verified_via` of a referral: the proof that made it `verificato` (`models.referrals`).
+VERIFIED_VIA = ("accesso", "lettera", "storico")
+VerifiedVia = Annotated[str, Field(json_schema_extra=enum_of(VERIFIED_VIA))]
 MatchReferralState = Annotated[
     str,
     Field(json_schema_extra=enum_of((REFERRAL_STATES[0], PREVISTO, GIA_MATURATO, *REWARD_STATES))),
@@ -169,7 +172,7 @@ class ReferralLedgerItem(ResponseModel):
     stato: RewardState | None
     referral_stato: ReferralState
     verified_at: datetime | None
-    verified_via: str | None
+    verified_via: VerifiedVia | None
     note: str | None
     created_at: datetime
     confirmed_at: datetime | None

@@ -9,7 +9,7 @@ from pydantic import ConfigDict, Field
 
 from rebase_core.bands import Band
 from rebase_core.schema_common import ResponseModel
-from rebase_core.vocabulary import FreelancerStatus, RemoteOption
+from rebase_core.vocabulary import FreelancerStatus, RemoteOption, Seniority
 
 TalentoOrigine = Literal["form", "wizard", "admin"]
 
@@ -57,7 +57,7 @@ class TalentoRead(ResponseModel):
     ha_scheda_anonima: bool = False
     posizione: str | None = None
     ruolo: str | None = None
-    seniority: str | None = None
+    seniority: Seniority | None = None
     anni: int | None = None
     # The seniority is a guess: the card has no dated years and no admin corrected it
     # (REB-799). `seniority` and `anni` are the admin's when one corrected them.

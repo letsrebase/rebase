@@ -27,7 +27,7 @@ from rebase_core.schema_common import (
 )
 from rebase_core.signup_schemas import SignupListItem, SignupUtm
 from rebase_core.validation import SafeStr
-from rebase_core.vocabulary import FreelancerStatus, RemoteOption
+from rebase_core.vocabulary import CompilataDa, FreelancerStatus, RemoteOption, Seniority
 
 FreelancerStato = Literal["nuovo", "contattato", "attivo", "scartato"]
 
@@ -164,7 +164,7 @@ class FreelancerRead(ResponseModel):
     links: list[str]
     stato: FreelancerStatus
     # Who wrote the seven answers last: `persona` or `admin` (`COMPILATA_DA`).
-    compilata_da: str
+    compilata_da: CompilataDa
     # How many times the person entered through a magic link, and the last time (ORB-158).
     # Filled by the service with one grouped join; `0` and `None` for a card never opened.
     accessi: int = 0
@@ -189,7 +189,7 @@ class FreelancerRead(ResponseModel):
     vetted_at: datetime | None = None
     # What an admin said of the person's level (REB-799), `None` while nobody has: it
     # beats the anonymous card's own seniority and years wherever the card is read.
-    seniority_admin: str | None = None
+    seniority_admin: Seniority | None = None
     anni_admin: int | None = None
     note: list[NoteRead] = Field(default_factory=list)
 

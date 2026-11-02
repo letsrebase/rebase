@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from rebase_core.models import NOTE_ADMIN_SOURCES, NOTE_MAX_LENGTH
 from rebase_core.schema_common import ResponseModel
 from rebase_core.validation import SafeStr
+from rebase_core.vocabulary import NoteSource
 
 
 class NoteRead(ResponseModel):
@@ -21,7 +22,7 @@ class NoteRead(ResponseModel):
     testo: str
     autore: str
     autore_id: UUID | None
-    fonte: str | None
+    fonte: NoteSource | None
     created_at: datetime
     modificata_at: datetime | None
     modificata_da: str | None
