@@ -7,10 +7,13 @@ from rebase_core.schema_common import ResponseModel
 
 
 class GuideDownloadRead(ResponseModel):
-    """One download, with the member's name for the admin's list."""
+    """One download, with the member's name for the admin's list. `freelancer_id` is the
+    live card of that person, for the link to it; `None` for a company contact, who has
+    none."""
 
     id: UUID
     user_id: UUID
+    freelancer_id: UUID | None
     nome: str
     cognome: str
     email: str
