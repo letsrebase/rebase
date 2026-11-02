@@ -427,6 +427,29 @@
         "tooling/workflow-kit/**"
       ],
       "why": "The kit job in ci runs the same check on every PR in seconds; here it catches a skill edited in .claude/skills instead of .agents/skills, or a kit change not synced, before the push rather than after (REB-814)."
+    },
+    {
+      "id": "secrets-scan",
+      "run": "docker run --rm -v \"$PWD\":/repo ghcr.io/gitleaks/gitleaks:v8.30.0@sha256:691af3c7c5a48b16f187ce3446d5f194838f91238f27270ed36eef6359a574d9 dir --no-banner --redact -c /repo/.github/gitleaks.toml /repo",
+      "when": [
+        "**"
+      ],
+      "unless": [
+        "docs/**"
+      ],
+      "serial": true,
+      "why": "INFRA-A-19. The working tree through gitleaks with the repository's allow-list, so a key is caught before the push; ci.yml's `secrets-scan` job reads the history. Needs only Docker and the image, no network key."
+    },
+    {
+      "id": "infra-nginx",
+      "run": "bash scripts/check-nginx.sh",
+      "when": [
+        "infra/origin/nginx/**",
+        "projects/*/deploy/**",
+        "scripts/check-nginx.sh"
+      ],
+      "serial": true,
+      "why": "CI-A-08. `nginx -t` over every nginx file the repository carries, in the pinned image with the snippet sources mounted; ci.yml's `infra` job runs the same script, beside terraform fmt, validate and the import count."
     }
   ]
 }

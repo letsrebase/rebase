@@ -50,7 +50,8 @@ set -euo pipefail
 FAKE_HASH='sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='
 DOCKER_VOLUME='rebase-nix-store'
 MIN_FREE_GB=5
-IMAGE='nixos/nix:latest'
+# Pinned by digest so the builder cannot change under a hash; bump deliberately.
+IMAGE='nixos/nix:latest@sha256:f159a58f390677f41e8e900a74b6e2f9c7f27b364122ae6acf7a652ce6c551c0'
 HASH_LINE_RE='^[[:space:]]*hash = "sha256-[^"]*";'
 
 write=0
