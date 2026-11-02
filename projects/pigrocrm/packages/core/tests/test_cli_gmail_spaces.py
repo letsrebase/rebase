@@ -505,7 +505,7 @@ def test_an_unmatched_email_says_the_match_may_be_incomplete(
     captured = capsys.readouterr()
     last = captured.err.strip().splitlines()[-1]
     assert "nobody@example.it" in last
-    assert MAILBOXES[TWO][0] in last
+    assert "1 collegate" in last
     assert "non è stato letto" in last
     assert "non è una casella collegata" not in last
     assert _watermark(settings, TWO) is None
