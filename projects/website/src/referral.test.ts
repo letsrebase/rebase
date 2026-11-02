@@ -5,11 +5,27 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 /**
  * referral.js turns the two rates `GET /api/hub/referral-rates` answers into the
  * landing band's figures (REB-711). The arithmetic is the member area's
- * (`projects/hub/apps/web/src/lib/referral.ts`), so these are the same cases its own
- * test holds, plus what the page does when a rate cannot be read.
+ * (`projects/hub/apps/web/src/lib/referral.ts`); the cases both suites hold are in
+ * `shared/format-cases/format-cases.json`, and what is here beyond them is what the
+ * page does when a rate cannot be read.
  */
 const source = readFileSync(join(__dirname, 'referral.js'), 'utf-8')
 const indexHtml = readFileSync(join(__dirname, 'index.html'), 'utf-8')
+const cases = JSON.parse(
+  readFileSync(join(__dirname, '../../../shared/format-cases/format-cases.json'), 'utf-8'),
+) as {
+  formatRate: { rate: string; text: string }[]
+  unreadableRates: (string | null)[]
+  rateWithArticle: { rate: string; text: string }[]
+  roundedShare: { cents: number; units: number; expected: number }[]
+  referralExample: {
+    rate_freelancer: string | null
+    rate_company: string | null
+    margin: number
+    freelancer: number | null
+    company: number | null
+  }[]
+}
 
 interface Rates {
   rate_freelancer: string | null
@@ -58,24 +74,15 @@ afterEach(() => {
 
 describe('formatRate and rateWithArticle', () => {
   it('writes a four-place fraction the Italian way', () => {
-    expect(referral.formatRate('0.1000')).toBe('10%')
-    expect(referral.formatRate('0.3000')).toBe('30%')
-    expect(referral.formatRate('0.1250')).toBe('12,5%')
-    expect(referral.formatRate('0.0005')).toBe('0,05%')
-    expect(referral.formatRate('1.0000')).toBe('100%')
+    for (const { rate, text } of cases.formatRate) expect(referral.formatRate(rate), rate).toBe(text)
   })
 
   it('takes the article its reading takes: il 10%, l\'8%, l\'11%, l\'80%, l\'1%, lo 0,5%', () => {
-    expect(referral.rateWithArticle('0.1000')).toBe('il 10%')
-    expect(referral.rateWithArticle('0.0800')).toBe("l'8%")
-    expect(referral.rateWithArticle('0.1100')).toBe("l'11%")
-    expect(referral.rateWithArticle('0.8000')).toBe("l'80%")
-    expect(referral.rateWithArticle('0.0100')).toBe("l'1%")
-    expect(referral.rateWithArticle('0.0050')).toBe('lo 0,5%')
+    for (const { rate, text } of cases.rateWithArticle) expect(referral.rateWithArticle(rate), rate).toBe(text)
   })
 
   it('says nothing for a value that is not a fraction of one', () => {
-    for (const bad of [null, undefined, '', 'abc', '-0.1000', '1.5000', '0,1', 0.1, {}]) {
+    for (const bad of [...cases.unreadableRates, undefined, 0.1, {}]) {
       expect(referral.formatRate(bad), String(bad)).toBeNull()
       expect(referral.rateWithArticle(bad), String(bad)).toBeNull()
     }
@@ -84,21 +91,20 @@ describe('formatRate and rateWithArticle', () => {
 
 describe('the worked example', () => {
   it('is 500 euro a day, 400 to the freelance, 20 days: a 2.000,00 margin, 200,00 and 600,00 today', () => {
-    const example = referral.referralExample({ rate_freelancer: '0.1000', rate_company: '0.3000' })
-    expect(example).toEqual({ margin: 200000, freelancer: 20000, company: 60000 })
     expect(plain(referral.exampleText({ rate_freelancer: '0.1000', rate_company: '0.3000' }))).toBe(
       "Un incarico da 500 € al giorno, 400 € al freelance, 20 giorni: il margine di rebase è 2.000,00 €. Se l'hai portato tu, ricevi 200,00 € per un talento, 600,00 € per un'azienda.",
     )
   })
 
   it('follows the rates, to the cent, rounding half to even', () => {
-    expect(referral.referralExample({ rate_freelancer: '0.1250', rate_company: '0.3333' })).toMatchObject({
-      freelancer: 25000,
-      company: 66660,
-    })
-    expect(referral.roundedShare(1, 5000)).toBe(0) // 0.5 cents goes to the even neighbour
-    expect(referral.roundedShare(3, 5000)).toBe(2) // 1.5 cents goes to 2
-    expect(referral.roundedShare(5, 5000)).toBe(2) // 2.5 cents goes to 2
+    for (const { rate_freelancer, rate_company, ...expected } of cases.referralExample) {
+      expect(referral.referralExample({ rate_freelancer, rate_company }), `${rate_freelancer}/${rate_company}`).toEqual(
+        expected,
+      )
+    }
+    for (const { cents, units, expected } of cases.roundedShare) {
+      expect(referral.roundedShare(cents, units), `${cents} x ${units}`).toBe(expected)
+    }
   })
 
   it('names only the reward whose rate reads, and nothing when neither does', () => {

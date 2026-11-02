@@ -154,6 +154,10 @@ function start(options: AnalyticsOptions, hostname: string): void {
       // 2026-09-12 (the running config still showed the SDK's own default for it, and the
       // events arrived unmarked). The explicit call is what the option ends up making.
       if (isInternalHost(hostname)) posthog.setInternalOrTestUser()
+      // A logout on a consent-gated page opts the browser out, and the SDK keeps that in
+      // storage: the next page load (a login, or a yes given on the website since) would
+      // start silenced. Whoever reaches this point has been let in, so lift it.
+      if (posthog.has_opted_out_capturing()) posthog.opt_in_capturing({ captureEventName: false })
       sdk = posthog
       const pending = queue
       queue = []

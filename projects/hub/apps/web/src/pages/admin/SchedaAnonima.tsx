@@ -51,7 +51,7 @@ function LevelEditor({ freelancerId, read }: { freelancerId: string; read: Freel
       void client.invalidateQueries({ queryKey: ['freelancer-card', freelancerId] })
       void client.invalidateQueries({ queryKey: ['freelancer', freelancerId] })
       void client.invalidateQueries({ queryKey: ['audit', 'freelancers', freelancerId] })
-      void client.invalidateQueries({ queryKey: ['freelancers'] })
+      void client.invalidateQueries({ queryKey: ['talenti'] })
     },
   })
   const years = anni.trim() === '' ? null : Number(anni)

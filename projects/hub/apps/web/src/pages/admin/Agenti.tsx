@@ -1,31 +1,21 @@
-import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Copy } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
+import { copyText } from '@rebase/ui/format'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { Textarea } from '@rebase/ui/textarea'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@rebase/ui/table'
-import { ApiError, admin, type AdminToken, type CreatedToken } from '@/lib/api'
+import { SEARCH_DEBOUNCE_MS, failureMessage, pageItems, useCursorList, useDebounce } from '@/lib/adminList'
+import { admin, type AdminToken, type CreatedToken } from '@/lib/api'
 import { TOKEN_PLACEHOLDER, claudeCodeCommand, mcpEndpoint, mcpServersJson } from '@/lib/connect'
 import { formatDate } from '@/lib/format'
-import { Empty, Header } from './lists'
+import { keys } from '@/lib/query-keys'
+import { Empty, Header, LoadMore } from './list-kit'
 
-const TOKENS_KEY = ['tokens'] as const
 const DEFAULT_NAME = 'Claude Code'
-const SEARCH_DEBOUNCE_MS = 300
-
-/** The value it settles to `delayMs` after the caller stops changing it -- the search
- *  box's own text, so a query is not sent on every keystroke (REB-313). */
-function useDebounce<T>(value: T, delayMs: number): T {
-  const [debounced, setDebounced] = useState(value)
-  useEffect(() => {
-    const timer = setTimeout(() => setDebounced(value), delayMs)
-    return () => clearTimeout(timer)
-  }, [value, delayMs])
-  return debounced
-}
 
 /**
  * Everything an agent needs to talk to the hub's MCP server as this admin (REB-213): the
@@ -42,27 +32,11 @@ export function AdminAgenti() {
   const client = useQueryClient()
   const [query, setQuery] = useState('')
   const debouncedQuery = useDebounce(query, SEARCH_DEBOUNCE_MS)
-  const list = useInfiniteQuery({
-    queryKey: [...TOKENS_KEY, debouncedQuery] as const,
-    queryFn: ({ pageParam }: { pageParam: string | undefined }) =>
-      admin.tokens({ q: debouncedQuery || undefined, cursor: pageParam }),
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (last) => last.next_cursor ?? undefined,
+  const { list, items } = useCursorList({
+    queryKey: keys.tokens(debouncedQuery),
+    fetchPage: (cursor) => admin.tokens({ q: debouncedQuery || undefined, cursor }),
+    itemsOf: pageItems,
   })
-  const items = useMemo(() => list.data?.pages.flatMap((page) => page.items) ?? [], [list.data])
-  const { hasNextPage, fetchNextPage } = list
-
-  const sentinelRef = useRef<HTMLDivElement | null>(null)
-  useEffect(() => {
-    if (!hasNextPage || typeof IntersectionObserver === 'undefined') return
-    const node = sentinelRef.current
-    if (!node) return
-    const observer = new IntersectionObserver((entries) => {
-      if (entries[0]?.isIntersecting) void fetchNextPage()
-    })
-    observer.observe(node)
-    return () => observer.disconnect()
-  }, [hasNextPage, fetchNextPage])
 
   const [nome, setNome] = useState(DEFAULT_NAME)
   const [issued, setIssued] = useState<CreatedToken | null>(null)
@@ -72,30 +46,28 @@ export function AdminAgenti() {
     onSuccess: (created) => {
       setIssued(created)
       setNome(DEFAULT_NAME)
-      void client.invalidateQueries({ queryKey: TOKENS_KEY })
+      void client.invalidateQueries({ queryKey: keys.tokens() })
     },
   })
   const revoke = useMutation({
     mutationFn: (id: string) => admin.revokeToken(id),
-    onSuccess: () => void client.invalidateQueries({ queryKey: TOKENS_KEY }),
+    onSuccess: () => void client.invalidateQueries({ queryKey: keys.tokens() }),
   })
 
   const url = mcpEndpoint(window.location.origin)
   const token = issued?.token ?? TOKEN_PLACEHOLDER
   const command = claudeCodeCommand(url, token)
   const json = mcpServersJson(url, token)
-  const failure = create.error instanceof ApiError ? create.error.message : create.error ? 'Non riesco a creare il token.' : null
+  const failure = failureMessage(create.error, 'Non riesco a creare il token.')
+  const revokeFailure = failureMessage(revoke.error, 'Non riesco a revocare il token.')
 
   function mint(event: FormEvent) {
     event.preventDefault()
     create.mutate(nome.trim() || DEFAULT_NAME)
   }
 
-  function copy(text: string, what: string) {
-    void navigator.clipboard
-      .writeText(text)
-      .then(() => setCopied(`${what} copiato negli appunti.`))
-      .catch(() => setCopied('Copia negli appunti non riuscita.'))
+  async function copy(text: string, what: string) {
+    setCopied((await copyText(text)) ? `${what} copiato negli appunti.` : 'Copia negli appunti non riuscita.')
   }
 
   return (
@@ -185,6 +157,11 @@ export function AdminAgenti() {
               className="w-56"
             />
           </div>
+          {revokeFailure && (
+            <p role="alert" className="mb-3 text-sm text-destructive">
+              {revokeFailure}
+            </p>
+          )}
           {list.isError ? (
             <Empty>Non riesco a leggere la lista.</Empty>
           ) : list.isPending ? (
@@ -239,20 +216,12 @@ export function AdminAgenti() {
                   </TableBody>
                 </Table>
               </div>
-              <div ref={sentinelRef} />
               {list.hasNextPage && (
-                <div className="flex flex-col items-center gap-2 py-5">
-                  <p className="text-sm text-muted-foreground">Mostrati {items.length} token, ce ne sono altri.</p>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={list.isFetchingNextPage}
-                    onClick={() => void list.fetchNextPage()}
-                  >
-                    {list.isFetchingNextPage ? 'Carico…' : 'Mostra altri'}
-                  </Button>
-                </div>
+                <LoadMore
+                  label={`Mostrati ${items.length} token, ce ne sono altri.`}
+                  isFetchingMore={list.isFetchingNextPage}
+                  onLoadMore={() => void list.fetchNextPage()}
+                />
               )}
             </>
           )}

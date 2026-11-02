@@ -1,6 +1,6 @@
 import type { Band } from './api'
 
-/** Between a figure and «€», as `formatEuro` (`Intl.NumberFormat('it-IT')`) writes it:
+/** Between a figure and «€», as `formatMoney` (`Intl.NumberFormat('it-IT')`) writes it:
  *  a line never breaks between the two. */
 const NBSP = '\u00a0'
 /** Between a band's two bounds, as core's `Band.bounds()` writes them. */

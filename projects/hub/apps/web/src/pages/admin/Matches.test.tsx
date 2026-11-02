@@ -21,7 +21,7 @@ function answer(status: number, body: unknown) {
 
 // The project's `lib` target is ES2022 and does not declare `Promise.withResolvers`
 // (Node 22 and Vitest's own runtime both support it regardless): same ambient
-// augmentation `lists.test.tsx` carries for this file alone.
+// augmentation `list-test-kit.tsx` carries for this file alone.
 declare global {
   interface PromiseConstructor {
     withResolvers<T>(): {
@@ -32,7 +32,7 @@ declare global {
   }
 }
 
-/** The 300ms debounce plus a margin, in real time (same reasoning as `lists.test.tsx`). */
+/** The 300ms debounce plus a margin, in real time (same reasoning as `list-test-kit.tsx`). */
 function settle(): Promise<void> {
   const { promise, resolve } = Promise.withResolvers<void>()
   setTimeout(resolve, 500)
@@ -82,7 +82,7 @@ const MATCH_B = {
   situazione: 'Lettera n. 2026-002 firmata il 12 settembre 2026, dal 1° ottobre 2026.',
 }
 
-/** Mirrors `lists.test.tsx`'s own `mount`: a pathless `signedIn` id, `/admin/matches`
+/** Mirrors `list-test-kit.tsx`'s own `mount`: a pathless `signedIn` id, `/admin/matches`
  *  with the same `validateSearch` shape `router.tsx` gives it, and stubs for the
  *  card's «Match e contratti» destination and the «Pigro» column's «Consuntivo». */
 function mount(path: string) {

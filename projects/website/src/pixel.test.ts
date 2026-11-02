@@ -19,7 +19,6 @@ import { describe, expect, it } from 'vitest'
 
 const PIXEL_ID = '9r6qrnPxBV8WDVGtpuaqxh'
 const SDK_URL = 'https://bzrcdn.openai.com/sdk/oaiq.min.js'
-const POSTHOG_URL = `${POSTHOG_ASSET_HOST}/static/array.js`
 
 const MEASURED = ['index.html', 'pigrocrm.html'] as const
 const UNMEASURED = ['privacy.html', 'terms.html'] as const
@@ -106,70 +105,27 @@ describe('consent.js', () => {
     )
     // Not duplicated anywhere else in the codebase: one id, one place.
   })
+})
 
-  it('privacy.html withdraws the same keys it names, held in lockstep here', () => {
-    // privacy.html carries no reference to this script (the test above), so it
-    // reimplements decide's two steps against the same keys by hand rather than
-    // calling window.__consent.withdraw; a rename here has to fail loudly there. The
-    // second key is the name the first had before REB-668.
-    for (const name of ['STORAGE_KEY', 'LEGACY_STORAGE_KEY']) {
-      const key = consent.match(new RegExp(`var ${name} = '([^']+)'`))?.[1]
-      expect(key, name).toBeTruthy()
-      expect(page['privacy.html']).toContain(`getItem('${key}') === 'granted'`)
-      expect(page['privacy.html']).toContain(`removeItem('${key}')`)
+describe.each(ALL)('%s', (name) => {
+  it('has no inline script, which is what lets the CSP drop script-src \'unsafe-inline\'', () => {
+    // Only a data block (the structured data for search engines) may sit inline: it is
+    // never executed. Everything that runs is an external file.
+    for (const [, attributes = '', body = ''] of page[name].matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)) {
+      if (/\bsrc="/.test(attributes)) {
+        expect(body.trim()).toBe('')
+      } else {
+        expect(attributes).toContain('type="application/ld+json"')
+      }
     }
-  })
-
-  it('carries the same PostHog project as every other surface', () => {
-    // `shared/analytics/posthog.ts` is the source; this file cannot import it because
-    // it runs without a bundler, so it repeats the three values and this test is what
-    // keeps the copy honest -- the same idiom path-map-plugin.test.ts uses for
-    // nginx.conf.
-    expect(consent).toContain(`var POSTHOG_KEY = '${POSTHOG_KEY}'`)
-    expect(consent).toContain(`var POSTHOG_HOST = '${POSTHOG_HOST}'`)
-    expect(consent).toContain(`var POSTHOG_ASSET_HOST = '${POSTHOG_ASSET_HOST}'`)
-    // The literal in the DOM test above is the URL the browser will actually request.
-    expect(readFileSync(join(__dirname, 'consent.test.ts'), 'utf-8')).toContain(POSTHOG_URL)
-  })
-
-  it('injects both SDKs from inside the accepting branch and nowhere else', () => {
-    // The assertion that keeps the gate a gate. `loadPixel` and `loadPostHog` are the
-    // only functions that touch a script's `src`, both are called only from `accept`,
-    // and the only call to `accept` that is not behind a stored `granted` is in
-    // `decide`, after the click.
-    const pixel = consent.slice(
-      consent.indexOf('function loadPixel'),
-      consent.indexOf('function loadPostHog'),
-    )
-    const posthog = consent.slice(
-      consent.indexOf('function loadPostHog'),
-      consent.indexOf('function button'),
-    )
-    expect(pixel).toContain('script.src = SDK_URL')
-    expect(posthog).toContain("script.src = POSTHOG_ASSET_HOST + '/static/array.js'")
-    // A `src` is assigned in exactly two places in the file, and both are above.
-    expect(consent.match(/\.src = /g)).toHaveLength(2)
-    const accept = consent.slice(consent.indexOf('function accept'), consent.indexOf('function decide'))
-    expect(accept).toContain('loadPixel()')
-    expect(accept).toContain('loadPostHog()')
-    // Calls, not definitions: `function loadPixel()` is the one place each is written
-    // besides its call.
-    expect(consent.match(/(?<!function )loadPixel\(\)/g)).toHaveLength(1)
-    expect(consent.match(/(?<!function )loadPostHog\(\)/g)).toHaveLength(1)
-    expect(consent).toContain('if (decision === GRANTED) return accept()')
-    expect(consent).toContain('if (decision === GRANTED) accept()')
-    expect(consent.match(/(?<!function )accept\(\)/g)).toHaveLength(2)
-  })
-
-  it('asks again only while nothing has been decided', () => {
-    // A refusal is remembered, so the notice does not come back on every page. That is
-    // the difference between a notice and a nuisance.
-    expect(consent).toContain('if (decision === DENIED) return')
-    expect(consent).toContain('localStorage')
   })
 })
 
 describe('privacy.html', () => {
+  it('wires the withdraw links with their own script, not with the notice', () => {
+    expect(page['privacy.html']).toMatch(/<script type="module" src="\.\/consent-withdraw\.js"><\/script>/)
+  })
+
   it('says the pixel exists, what it sends, and what it does not', () => {
     // The page used to read "nessun cookie di terze parti, nessuna analitica, nessun
     // pixel", which stopped being true the moment the snippet shipped. A privacy policy

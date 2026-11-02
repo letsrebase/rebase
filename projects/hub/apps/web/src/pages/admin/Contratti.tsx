@@ -25,9 +25,10 @@ import {
   whatOf,
 } from '@/lib/contracts'
 import { ACTION_LABELS } from '@/lib/format'
+import { keys } from '@/lib/query-keys'
 import { FrameworkCard, MatchCards, type ActionHandles } from './contratti/Cards'
 import { FiscalSection } from './contratti/Fiscal'
-import { Empty, Header } from './lists'
+import { Empty, Header } from './list-kit'
 
 /** A framework agreement's actions belong to its regime's card (REB-687), a match's to
  *  the matches. */
@@ -108,8 +109,8 @@ export function AdminContratti() {
   const { id } = useParams({ from: '/signedIn/admin/freelance/$id/contracts' })
   const navigate = useNavigate()
   const client = useQueryClient()
-  const person = useQuery({ queryKey: ['freelancer', id], queryFn: () => admin.freelancer(id) })
-  const contracts = useQuery({ queryKey: ['contracts', id], queryFn: () => admin.contracts(id) })
+  const person = useQuery({ queryKey: keys.freelancer(id), queryFn: () => admin.freelancer(id) })
+  const contracts = useQuery({ queryKey: keys.contracts(id), queryFn: () => admin.contracts(id) })
   // What «Crea match» left for this page in the history entry (REB-476): shown on
   // arrival, as the last action's sentence, so the next action replaces it.
   const notice = useLocation({ select: (location) => location.state.notice })
@@ -153,7 +154,7 @@ export function AdminContratti() {
     if (active === null || active === document.body) focusBack(opener.current, landing.current)
     landing.current = []
   }, [contracts.dataUpdatedAt])
-  const refresh = () => void client.invalidateQueries({ queryKey: ['contracts', id] })
+  const refresh = () => void client.invalidateQueries({ queryKey: keys.contracts(id) })
   const saying = (sentence: string) => () => {
     setMessage(sentence)
     refresh()

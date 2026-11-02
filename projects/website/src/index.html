@@ -40,11 +40,9 @@
     <!-- The reveal gate (ORB-145): landing.css hides `[data-reveal]` only under
       `html.js`, so a page whose script never runs shows everything, and the timer is
       the net for a script that loads but fails: whatever happened, after three seconds
-      nothing is hidden. Inline because it has to run before the first paint. -->
-    <script>
-      document.documentElement.classList.add('js')
-      setTimeout(function () { document.documentElement.classList.add('reveal-all') }, 3000)
-    </script>
+      nothing is hidden. A blocking external script, so it still runs before the first paint
+      and the CSP needs no `'unsafe-inline'` for it. -->
+    <script src="/assets/reveal-gate.js"></script>
     <!-- The cookie notice, and with it the two trackers, the ChatGPT Ads measurement
       pixel and PostHog: consent.js shows the notice and injects both SDKs only once
       somebody has said yes, so before a decision this page asks nothing of anyone. Here,
