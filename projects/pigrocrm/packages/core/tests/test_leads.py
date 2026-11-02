@@ -479,3 +479,27 @@ def test_the_lock_is_released_after_a_refusal(door: Door) -> None:
         door.service().file(uuid4(), _body(deal_id=str(uuid4())))
     # Were the lock still held by a leaked connection, this would time out as busy.
     assert door.service().file(uuid4(), _body()).creato is True
+
+
+def test_a_retry_after_the_contact_was_archived_names_nobody(door: Door) -> None:
+    request_id = uuid4()
+    first = door.service().file(request_id, _body())
+    assert first.person_id is not None
+    with _space(door) as space:
+        PersonService(space).soft_delete(first.person_id, Actor.system())
+
+    again = door.service().file(request_id, _body())
+
+    assert again.creato is False and again.deal_id == first.deal_id
+    assert again.person_id is None
+
+
+def test_a_person_of_another_customer_is_not_named_on_a_link(door: Door) -> None:
+    with _space(door) as space:
+        other = _customer(space, "Altra S.r.l.")
+        _person(space, MARIA, other)
+        deal_id = _deal(space, _customer(space))
+
+    answer = door.service().file(uuid4(), _body(deal_id=str(deal_id)))
+
+    assert answer.person_id is None

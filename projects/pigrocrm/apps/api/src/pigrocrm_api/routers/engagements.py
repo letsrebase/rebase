@@ -50,6 +50,9 @@ logger = logging.getLogger(__name__)
 SPAZIO_NON_RAGGIUNGIBILE = (
     "Lo spazio del freelancer non è raggiungibile in questo momento: riprova più tardi."
 )
+SPAZIO_LEAD_NON_RAGGIUNGIBILE = (
+    "Lo spazio dei lead non è raggiungibile in questo momento: riprova più tardi."
+)
 
 
 def _require_root_door(
@@ -127,7 +130,10 @@ def _run[T](match_id: UUID, action: Callable[[], T], *, what: str = "match") -> 
             exc.tenant_id,
             type(exc.__cause__).__name__,
         )
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, SPAZIO_NON_RAGGIUNGIBILE) from exc
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            SPAZIO_LEAD_NON_RAGGIUNGIBILE if what == "request" else SPAZIO_NON_RAGGIUNGIBILE,
+        ) from exc
     except SQLAlchemyError as exc:
         logger.warning(
             "engagements: %s %s, the door's own call failed (%s)",
@@ -135,7 +141,10 @@ def _run[T](match_id: UUID, action: Callable[[], T], *, what: str = "match") -> 
             match_id,
             type(exc).__name__,
         )
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, SPAZIO_NON_RAGGIUNGIBILE) from exc
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            SPAZIO_LEAD_NON_RAGGIUNGIBILE if what == "request" else SPAZIO_NON_RAGGIUNGIBILE,
+        ) from exc
 
 
 _HTTP_EXCEPTION_SCHEMA: dict[str, Any] = {

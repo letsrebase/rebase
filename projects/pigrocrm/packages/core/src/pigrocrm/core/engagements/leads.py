@@ -51,7 +51,7 @@ from pigrocrm.core.engagements.service import (
 )
 from pigrocrm.core.errors import NotFound, ValidationFailed
 from pigrocrm.core.people.models import Person
-from pigrocrm.core.people.schemas import PersonCreate, PersonUpdate
+from pigrocrm.core.people.schemas import PersonCreate
 from pigrocrm.core.people.service import PersonService
 from pigrocrm.core.tenants.models import Tenant
 from pigrocrm.core.tenants.service import TenantService
@@ -200,8 +200,11 @@ class LeadService:
         self, space: Session, slug: str, request_id: UUID, data: LeadUpsert, email: str
     ) -> LeadRead:
         """§ 2 cases 2 and 3 and «always a new deal». The customer and the contact are
-        flushed and committed by the deal's own commit, so a call that fails before it
-        leaves no customer behind for its retry to duplicate."""
+        flushed on this session and committed by the deal's own commit, so a call that
+        fails before it leaves nothing behind. The deal's `KIND_FILED` entry is the one
+        write after that commit (`DealService.create` commits on its own and has no
+        no-commit variant): a crash between the two leaves a deal with no such entry,
+        and its retry, finding the marker, does not write it."""
         actor = Actor.rebase()
         customers = CustomerRepository(space)
         people = self._people_with_email(space, email)
@@ -238,7 +241,10 @@ class LeadService:
             # is attached to the new customer, not duplicated.
             person = people[0] if people else None
             if person is not None:
-                PersonService(space).update(person.id, PersonUpdate(customer_id=customer_id), actor)
+                person.customer_id = customer_id
+                ActivityService(space).record(
+                    "person", person.id, "updated", actor, {"changed": ["customer_id"]}
+                )
                 person_id = person.id
             else:
                 person_id = (
@@ -294,10 +300,10 @@ class LeadService:
 
     def _person_id(self, space: Session, email: str, customer_id: UUID) -> UUID | None:
         """The contact an answer names when the deal already exists: the oldest live
-        person with the address at the deal's customer, else the oldest anywhere."""
+        person with the address at the deal's customer, or `None`, never somebody of
+        another customer."""
         people = self._people_with_email(space, email)
-        at_customer = next((p for p in people if p.customer_id == customer_id), None)
-        found = at_customer or (people[0] if people else None)
+        found = next((p for p in people if p.customer_id == customer_id), None)
         return found.id if found is not None else None
 
     def _answer(
