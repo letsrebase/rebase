@@ -2,9 +2,10 @@
 
 Mail bodies, Drive files and document text already carry a `provenienza` sentence
 (`tools/gmail.py`, `core/text.py`). The other fields an agent reads are written the same
-way: an agent that read an email fills a customer's `note`, a proposal's `estratto`, a
-custom field, and the next session reads that back as if it were the owner's own words, so
-the text is a relay between sessions. One function adds the same sentence to any tool
+way: an agent that read an email adds a note to a customer's thread (`note`, and `testo` in
+the note an `add_*_note` answers with), fills a proposal's `estratto`, a custom field, and the
+next session reads that back as if it were the owner's own words, so the text is a relay
+between sessions. One function adds the same sentence to any tool
 result that carries such a field, in one place (`server._guarded`) and not per tool, so the
 next tool that returns a `note` is covered without anyone remembering to.
 """
@@ -23,6 +24,7 @@ FREE_TEXT_KEYS: frozenset[str] = frozenset(
     {
         "note",
         "note_clausole",
+        "testo",
         "estratto",
         "motivo_confidenza",
         "custom_fields",

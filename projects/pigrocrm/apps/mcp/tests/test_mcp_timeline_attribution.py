@@ -76,15 +76,11 @@ async def test_every_row_an_agent_writes_carries_the_token_owner_and_the_mcp_cha
     async with Client(owner_server) as client:
         stages = _payload(await client.call_tool("list_pipeline_stages", {}))["stages"]
         customer = _payload(await client.call_tool("create_customer", {"ragione_sociale": "ACME"}))
-        await client.call_tool(
-            "update_customer", {"customer_id": customer["id"], "changes": {"note": "una nota"}}
-        )
+        await client.call_tool("add_note", {"customer_id": customer["id"], "testo": "una nota"})
         person = _payload(
             await client.call_tool("create_person", {"nome": "Anna", "customer_id": customer["id"]})
         )
-        await client.call_tool(
-            "update_person", {"person_id": person["id"], "changes": {"note": "una nota"}}
-        )
+        await client.call_tool("add_note", {"person_id": person["id"], "testo": "una nota"})
         deal = _payload(
             await client.call_tool(
                 "create_deal", {"nome": "Progetto", "customer_id": customer["id"]}
@@ -114,7 +110,7 @@ async def test_get_timeline_serves_the_name_and_the_channel_of_a_web_and_an_mcp_
 
     async with Client(owner_server) as client:
         await client.call_tool(
-            "update_customer", {"customer_id": str(created.id), "changes": {"note": "una nota"}}
+            "update_customer", {"customer_id": str(created.id), "changes": {"pec": "a@pec.test"}}
         )
         entries = _payload(
             await client.call_tool(

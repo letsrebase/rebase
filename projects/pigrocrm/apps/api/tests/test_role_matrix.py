@@ -115,9 +115,13 @@ class Row:
 # period/year shapes the paths ask for; every gate that runs after them is admin-gated,
 # so their values never matter -- but they must parse or FastAPI answers 422 and the
 # assertion goes vacuous.
-PATH_VALUES = {"anno": "2026", "mese": "1", "numero": "1"}
+PATH_VALUES = {"anno": "2026", "mese": "1", "numero": "1", "collection": "deals"}
 
 ROWS: list[Row] = [
+    # --- notes thread of a deal, a customer, a person: `require_write` (notes/service.py) --
+    Row("POST", "/api/{collection}/{entity_id}/notes", body={"testo": "matrice-nota"}),
+    Row("PATCH", "/api/notes/{note_id}", body={"testo": "matrice-nota"}),
+    Row("DELETE", "/api/notes/{note_id}"),
     # --- activities: `require_write` on every method (attivita/service.py) ----------
     Row("POST", "/api/activities", body={"titolo": "matrice-attivita"}),
     Row("DELETE", "/api/activities/{attivita_id}"),

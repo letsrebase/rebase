@@ -39,6 +39,11 @@ const KIND_LABELS: Record<string, string> = {
   approval_added: 'Approvazione aggiunta',
   approval_recorded: 'Approvazione registrata',
   approval_linked: 'Approvazione collegata a una giornata',
+  // The notes thread of a deal, a customer or a person (REB-879): the text itself stays in
+  // the thread, the timeline only says that it moved.
+  note_added: 'Nota aggiunta',
+  note_edited: 'Nota modificata',
+  note_deleted: 'Nota eliminata',
   // The mail drafts of a record and the Slack settings, the other writes that used to leave
   // no row at all. `gmail.messaggio_inviato` and its siblings fall to `humanize`, as before.
   'gmail.bozza_creata': 'Bozza di email creata',

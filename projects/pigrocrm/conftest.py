@@ -121,6 +121,7 @@ _AZIENDA_SCOPE_REVISIONS = (
     "0049_azienda_scope_fast_path.py",
     "0056_contract_email_templates.py",
     "0060_clause_notes.py",
+    "0064_notes_thread.py",
 )
 
 

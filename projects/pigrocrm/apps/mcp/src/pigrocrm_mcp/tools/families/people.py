@@ -33,7 +33,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         custom_fields: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Crea una persona. `customer_id` è opzionale: un contatto può non avere ancora un
-        cliente.
+        cliente. `note` è la prima nota (senza data né autore: la firma il CRM).
         """
         return people.create(
             context,
@@ -61,7 +61,9 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def get_person(person_id: str) -> dict[str, Any]:
-        """Legge una persona."""
+        """Legge una persona, con le ultime 50 note (`note`, dalla più recente; `note_totale`
+        le conta, tutte in `person://<id>`).
+        """
         return people.get(context, person_id)
 
     @mcp.tool(annotations=READ_ONLY)

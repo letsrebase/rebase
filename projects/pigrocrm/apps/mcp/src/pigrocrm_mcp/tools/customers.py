@@ -4,6 +4,7 @@ from uuid import UUID
 from pigrocrm.core.customers.schemas import CustomerCreate, CustomerListQuery, CustomerUpdate
 from pigrocrm.core.customers.service import CustomerService
 from pigrocrm_mcp.context import McpContext
+from pigrocrm_mcp.tools import notes
 from pigrocrm_mcp.tools.changes import refuse_empty, report
 
 
@@ -15,6 +16,7 @@ def create(context: McpContext, data: dict[str, Any]) -> dict[str, Any]:
 def update(context: McpContext, customer_id: str, data: dict[str, Any]) -> dict[str, Any]:
     service = CustomerService(context.session)
     identifier = UUID(customer_id)
+    notes.refuse_note_in_changes(data, "add_note")
     changes = CustomerUpdate(**data)
     refuse_empty(data)
     before = service.get(identifier, context.actor)
@@ -22,11 +24,9 @@ def update(context: McpContext, customer_id: str, data: dict[str, Any]) -> dict[
 
 
 def get(context: McpContext, customer_id: str) -> dict[str, Any]:
-    return (
-        CustomerService(context.session)
-        .get(UUID(customer_id), context.actor)
-        .model_dump(mode="json")
-    )
+    identifier = UUID(customer_id)
+    customer = CustomerService(context.session).get(identifier, context.actor)
+    return {**customer.model_dump(mode="json"), **notes.thread(context, "customer", identifier)}
 
 
 def search(context: McpContext, query: CustomerListQuery) -> dict[str, Any]:

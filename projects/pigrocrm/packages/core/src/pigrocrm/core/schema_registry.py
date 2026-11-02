@@ -111,12 +111,32 @@ EXTRA_NATIVE_FIELDS: dict[str, tuple[str, ...]] = {
 }
 
 
+# What a Create schema accepts without it being a column of the entity: `note` on a deal,
+# a customer and a person is the text of the record's first note (REB-879), a row of the
+# `notes` thread. It is not listed as a native field, but it is reserved: no custom field
+# may be called `note` (`reserved_field_names`), since a form's first-note control and the
+# MCP's `create_*` read that name.
+NOT_COLUMNS: dict[str, tuple[str, ...]] = {
+    "customer": ("note",),
+    "person": ("note",),
+    "deal": ("note",),
+}
+
+
+def reserved_field_names(entity_type: str) -> list[str]:
+    """What a custom field may not be called: the native columns and what the Create schema
+    takes without a column of its own (`note`), which a form's first-note control and the
+    MCP's `create_*` read by that name."""
+    return [*native_fields(entity_type), *NOT_COLUMNS.get(entity_type, ())]
+
+
 def native_fields(entity_type: str) -> list[str]:
     """Derived from the Pydantic model, never hand-listed -- plus the columns that
     model cannot declare (see EXTRA_NATIVE_FIELDS). Order is stable: derived first, in
     field-definition order, then the extras in declaration order, so a caller can
     diff two runs."""
-    derived = [name for name in CREATE_MODELS[entity_type].model_fields if name != "custom_fields"]
+    skipped = ("custom_fields", *NOT_COLUMNS.get(entity_type, ()))
+    derived = [name for name in CREATE_MODELS[entity_type].model_fields if name not in skipped]
     extra = [name for name in EXTRA_NATIVE_FIELDS.get(entity_type, ()) if name not in derived]
     return derived + extra
 

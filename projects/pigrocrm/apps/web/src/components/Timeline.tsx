@@ -175,6 +175,10 @@ function ActivityDetail({ payload }: { payload: ActivityEntry['payload'] }) {
     attivata_via: true,
     draft_id: true,
     user_id: true,
+    // A note event's id and door: the label says what happened, the actor line says who and
+    // how, and the text of a note is on the page, never repeated here.
+    nota_id: true,
+    fonte: true,
   }
   const rest = Object.entries(payload).filter(([key]) => hidden[key] !== true)
   if (rest.length === 0) return null

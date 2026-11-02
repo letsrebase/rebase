@@ -1,7 +1,7 @@
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, Text, text
+from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -115,7 +115,6 @@ class Customer(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     telefono: Mapped[str | None] = mapped_column(String(40), default=None)
     sito_web: Mapped[str | None] = mapped_column(String(255), default=None)
     stato: Mapped[str | None] = mapped_column(String(40), default=None)
-    note: Mapped[str | None] = mapped_column(Text, default=None)
     # The payment terms agreed with this customer (REB-326): days after the invoice
     # date, and whether the due date then slides to the end of its month («30 giorni
     # data fattura fine mese»). `giorni_pagamento` null means the fiscal profile's

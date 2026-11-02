@@ -76,9 +76,22 @@ const DEAL = {
   valore_preventivato: null,
   tariffa_oraria: null,
   owner_id: null,
-  note: null,
   chiuso_il: null,
   custom_fields: {},
+} as never
+
+const NOTE = {
+  id: 'n1',
+  entity_type: 'deal',
+  entity_id: 'd1',
+  testo: 'Richiamare a settembre.',
+  autore: 'Giulia Rossi',
+  autore_id: 'u1',
+  fonte: 'web',
+  created_at: '2026-10-01T09:00:00Z',
+  modificata_at: null,
+  modificata_da: null,
+  modificabile: true,
 } as never
 
 function renderWithClient(ui: ReactElement) {
@@ -113,6 +126,26 @@ describe('DealDetail', () => {
     expect(screen.queryByText('Deal non trovato.')).not.toBeInTheDocument()
   })
 
+  /** REB-879: the Note card of the overview is the deal's thread, read from the notes
+   *  endpoint and not from a field of the deal. */
+  it('shows the deal’s notes thread in the overview', async () => {
+    mockGet.mockImplementation(
+      ((path: string) => {
+        if (path === '/api/deals/{deal_id}') return ok(DEAL)
+        if (path === '/api/users/directory' || path.endsWith('/timeline')) return ok([])
+        if (path === '/api/pipeline-stages') return ok([])
+        if (path === '/api/{collection}/{entity_id}/notes') return ok([NOTE])
+        return ok({ items: [], next_cursor: null })
+      }) as never,
+    )
+    renderWithClient(<DealDetail />)
+    expect(await screen.findByText('Richiamare a settembre.')).toBeInTheDocument()
+    expect(screen.getByText('Giulia Rossi')).toBeInTheDocument()
+    expect(mockGet).toHaveBeenCalledWith('/api/{collection}/{entity_id}/notes', {
+      params: { path: { collection: 'deals', entity_id: 'd1' } },
+    })
+  })
+
   /**
    * The commonest invoice of all is the one a deal has just earned, and every field it
    * needs is on this page already. The action is in the header rather than on the
@@ -139,6 +172,8 @@ describe('DealDetail', () => {
           // `getByRole` below would then fail on an empty body -- a mock shape reported
           // as a missing button.
           if (path.endsWith('/timeline')) return ok([])
+          // And the notes thread beside it (REB-879).
+          if (path === '/api/{collection}/{entity_id}/notes') return ok([])
           return ok({ items: [], next_cursor: null })
         }) as never,
       )

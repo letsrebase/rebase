@@ -246,7 +246,7 @@ def test_sorting_by_updated_at_puts_the_most_recently_touched_row_first(
     _customer(service, "Beta")
     _customer(service, "Gamma")
 
-    service.update(oldest, CustomerUpdate(note="toccato"), ADMIN)
+    service.update(oldest, CustomerUpdate(telefono="toccato"), ADMIN)
 
     newest_first = service.list(CustomerListQuery(sort="updated_at", dir="desc", limit=10), ADMIN)
     assert newest_first.items[0].id == oldest

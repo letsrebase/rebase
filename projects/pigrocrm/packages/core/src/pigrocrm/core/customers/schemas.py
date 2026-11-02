@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import CURSOR_MAX_LENGTH, SortDirection, SortSpec, SortWhitelist
+from pigrocrm.core.notes.schemas import NOTE_MAX_LENGTH
 from pigrocrm.core.validation import SafeStr
 
 # Mirror Customer's column widths (models.py). Without these, an over-length value
@@ -76,7 +77,7 @@ class CustomerCreate(BaseModel):
     telefono: SafeStr | None = Field(default=None, max_length=TELEFONO_MAX_LENGTH)
     sito_web: SafeStr | None = Field(default=None, max_length=SITO_WEB_MAX_LENGTH)
     stato: SafeStr | None = Field(default=None, max_length=STATO_MAX_LENGTH)
-    note: SafeStr | None = None
+    note: SafeStr | None = Field(default=None, max_length=NOTE_MAX_LENGTH)
     # Payment terms (REB-326): the days after the invoice date, and the end-of-month
     # slide. Absent days mean the fiscal profile's `giorni_scadenza`; the bounds are the
     # profile's own (`fiscal/schemas.py`), because a term the profile could not hold is
@@ -112,7 +113,6 @@ class CustomerUpdate(BaseModel):
     telefono: SafeStr | None = Field(default=None, max_length=TELEFONO_MAX_LENGTH)
     sito_web: SafeStr | None = Field(default=None, max_length=SITO_WEB_MAX_LENGTH)
     stato: SafeStr | None = Field(default=None, max_length=STATO_MAX_LENGTH)
-    note: SafeStr | None = None
     giorni_pagamento: int | None = Field(
         default=None, ge=GIORNI_PAGAMENTO_MIN, le=GIORNI_PAGAMENTO_MAX
     )
@@ -140,7 +140,6 @@ class CustomerRead(BaseModel):
     telefono: str | None
     sito_web: str | None
     stato: str | None
-    note: str | None
     giorni_pagamento: int | None
     pagamento_fine_mese: bool
     custom_fields: dict[str, Any]

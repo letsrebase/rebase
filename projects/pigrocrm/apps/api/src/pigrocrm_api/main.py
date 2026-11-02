@@ -36,6 +36,7 @@ from pigrocrm_api.routers import (
     identity,
     invoices,
     legal_entities,
+    notes,
     payment_reminders,
     people,
     period_locks,
@@ -148,6 +149,8 @@ def create_app() -> FastAPI:
         push,
         # REB-764: what the cron commands last did in this space.
         scheduled_jobs,
+        # REB-879: the signed, dated notes thread of a deal, a customer and a person.
+        notes,
     ):
         app.include_router(module.router)
 

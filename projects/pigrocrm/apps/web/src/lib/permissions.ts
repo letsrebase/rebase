@@ -58,6 +58,11 @@ export const MIN_ROLE = {
   update_deal: 'collaboratore',
   delete_deal: 'collaboratore',
   move_deal: 'collaboratore',
+  // The notes thread of a deal, a customer or a person (REB-879): `require_write` in
+  // `NoteService`. Whose note may be changed is the row's own `modificabile`, not a role.
+  add_note: 'collaboratore',
+  update_note: 'collaboratore',
+  delete_note: 'collaboratore',
   set_offer_state: 'collaboratore',
   // Amministrazione: documents
   create_document: 'collaboratore',

@@ -29,6 +29,7 @@ from pigrocrm.core.fields.service import FieldDefinitionService
 from pigrocrm.core.fields.validator import validate_custom_fields
 from pigrocrm.core.gmail.query import customer_domain
 from pigrocrm.core.gmail.roster import AddressRoster
+from pigrocrm.core.notes.writer import append_first_note
 from pigrocrm.core.people.schemas import (
     COGNOME_MAX_LENGTH,
     NOME_MAX_LENGTH,
@@ -234,6 +235,8 @@ class CustomerService:
         """
         actor.require_write("create_customer")
         payload = data.model_dump()
+        # Not a column: the first note of the customer, written below by the creating actor.
+        first_note = payload.pop("note", None)
         _check_fiscal(payload, payload.get("nazione") or "IT")
         payload["custom_fields"] = self._validated_custom(payload.get("custom_fields") or {})
         payload["azienda_id"] = self._azienda_for(payload.get("azienda_id"), payload.get("nazione"))
@@ -243,6 +246,7 @@ class CustomerService:
         self.activities.record(
             ENTITY, customer.id, "created", actor, {"ragione_sociale": customer.ragione_sociale}
         )
+        append_first_note(self.session, ENTITY, customer.id, first_note, actor)
         return customer
 
     def _azienda_for(self, azienda_id: UUID | None, nazione: str | None) -> UUID:

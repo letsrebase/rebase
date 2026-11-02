@@ -13,6 +13,7 @@ from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.fields.schemas import EntityType
 from pigrocrm.core.fields.service import FieldDefinitionService
 from pigrocrm.core.fields.validator import validate_custom_fields
+from pigrocrm.core.notes.writer import append_first_note
 from pigrocrm.core.people.models import Person
 from pigrocrm.core.people.repository import PersonRepository
 from pigrocrm.core.people.schemas import (
@@ -166,12 +167,15 @@ class PersonService:
         REB-223), the shape `CustomerService._insert` already has."""
         actor.require_write("create_person")
         payload = data.model_dump()
+        # Not a column: the first note of the person, written below by the creating actor.
+        first_note = payload.pop("note", None)
         _check_email(payload)
         self._check_customer(payload.get("customer_id"))
         payload["custom_fields"] = self._validated_custom(payload.get("custom_fields") or {})
 
         person = self.repo.add(Person(**payload))
         self.activities.record(ENTITY, person.id, "created", actor, {"nome": person.nome})
+        append_first_note(self.session, ENTITY, person.id, first_note, actor)
         return person
 
     def create(self, data: PersonCreate, actor: Actor) -> PersonRead:

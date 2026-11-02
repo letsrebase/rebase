@@ -54,6 +54,8 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
 
         `nazione`: ISO 3166-1 alpha-2 (`IT` se omessa). `azienda_id`: l'azienda che lo fattura
         (`list_aziende`); omessa, quella di `propose_azienda`.
+
+        `note` è la prima nota del cliente (senza data né autore: la firma il CRM).
         """
         return customers.create(
             context,
@@ -99,7 +101,9 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def get_customer(customer_id: str) -> dict[str, Any]:
-        """Legge un cliente. Per il contesto completo usa la risorsa `customer://<id>`."""
+        """Legge un cliente, con le ultime 50 note (`note`, dalla più recente; `note_totale`
+        le conta, tutte in `customer://<id>`).
+        """
         return customers.get(context, customer_id)
 
     @mcp.tool(annotations=READ_ONLY)

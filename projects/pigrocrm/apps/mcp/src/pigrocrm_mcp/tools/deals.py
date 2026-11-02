@@ -5,6 +5,7 @@ from pigrocrm.core.deals.schemas import DealCreate, DealListQuery, DealUpdate
 from pigrocrm.core.deals.service import DealService
 from pigrocrm.core.errors import ValidationFailed
 from pigrocrm_mcp.context import McpContext
+from pigrocrm_mcp.tools import notes
 from pigrocrm_mcp.tools.changes import refuse_empty, report
 
 
@@ -19,6 +20,7 @@ def create(context: McpContext, data: dict[str, Any]) -> dict[str, Any]:
 def update(context: McpContext, deal_id: str, data: dict[str, Any]) -> dict[str, Any]:
     service = DealService(context.session)
     identifier = UUID(deal_id)
+    notes.refuse_note_in_changes(data, "add_note")
     changes = DealUpdate(**data)
     refuse_empty(data)
     before = service.get(identifier, context.actor)
@@ -26,7 +28,9 @@ def update(context: McpContext, deal_id: str, data: dict[str, Any]) -> dict[str,
 
 
 def get(context: McpContext, deal_id: str) -> dict[str, Any]:
-    return DealService(context.session).get(UUID(deal_id), context.actor).model_dump(mode="json")
+    identifier = UUID(deal_id)
+    deal = DealService(context.session).get(identifier, context.actor)
+    return {**deal.model_dump(mode="json"), **notes.thread(context, "deal", identifier)}
 
 
 def search(context: McpContext, query: DealListQuery) -> dict[str, Any]:

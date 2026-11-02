@@ -32,6 +32,8 @@ INSTRUCTIONS = """PigroCRM — CRM per freelancer e piccole startup italiane.
 Prima di creare o aggiornare un'entità, chiama `describe_schema` per conoscere i campi
 personalizzati definiti dall'utente: non sono codificati negli strumenti e cambiano nel tempo.
 Per leggere il contesto completo usa le risorse `customer://`, `person://` e `deal://`.
+Le note di deal, clienti e persone sono un thread che il CRM firma e data da solo: si aggiungono
+con `add_note`, senza data né autore nel testo.
 Nulla viene cancellato fisicamente: le operazioni di archiviazione sono reversibili.
 L'unica eccezione e' `discard_proforma`, che non si ripristina: una proforma scartata si ricrea.
 `confirm_proforma` non torna indietro, ma non chiude nulla: una proforma confermata resta

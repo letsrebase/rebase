@@ -10,7 +10,7 @@ vi.mock('@tanstack/react-router', async (importOriginal) => {
   return { ...actual, useParams: () => ({ personId: 'p1' }), useNavigate: () => vi.fn() }
 })
 
-vi.mock('@/lib/auth', () => ({ useCanWrite: () => false }))
+vi.mock('@/lib/auth', () => ({ useCanWrite: () => false, useCan: () => false }))
 
 // `api.GET` is spied on directly, mirroring `customers/$customerId.test.tsx`: what
 // is under test is this route's own handling of what the real `unwrap` produces,
@@ -35,6 +35,20 @@ function mockPersonFetch(result: ReturnType<typeof ok> | ReturnType<typeof faile
 beforeEach(() => {
   mockGet.mockReset()
 })
+
+const NOTE = {
+  id: 'n1',
+  entity_type: 'person',
+  entity_id: 'p1',
+  testo: 'Richiamare a settembre.',
+  autore: 'Giulia Rossi',
+  autore_id: 'u1',
+  fonte: 'web',
+  created_at: '2026-10-01T09:00:00Z',
+  modificata_at: null,
+  modificata_da: null,
+  modificabile: true,
+} as never
 
 function renderWithClient(ui: ReactElement) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -72,5 +86,24 @@ describe('PersonDetail', () => {
     renderWithClient(<PersonDetail />)
     expect(await screen.findByRole('alert')).toHaveTextContent('Il server non risponde.')
     expect(screen.queryByText('Persona non trovata.')).not.toBeInTheDocument()
+  })
+
+  /** REB-879: the Note card of the overview is the person's thread, read from the notes
+   *  endpoint and not from a field of the person. A reader sees it and no form. */
+  it('shows the person’s notes thread in the overview', async () => {
+    mockGet.mockImplementation(
+      ((path: string) =>
+        path === '/api/people/{person_id}'
+          ? ok({ id: 'p1', nome: 'Giulia', cognome: 'Rossi', custom_fields: {} })
+          : path === '/api/{collection}/{entity_id}/notes'
+            ? ok([NOTE])
+            : ok({ items: [] })) as never,
+    )
+    renderWithClient(<PersonDetail />)
+    expect(await screen.findByText('Richiamare a settembre.')).toBeInTheDocument()
+    expect(mockGet).toHaveBeenCalledWith('/api/{collection}/{entity_id}/notes', {
+      params: { path: { collection: 'people', entity_id: 'p1' } },
+    })
+    expect(screen.queryByLabelText('Nuova nota')).not.toBeInTheDocument()
   })
 })

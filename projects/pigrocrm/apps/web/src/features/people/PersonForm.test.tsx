@@ -45,7 +45,6 @@ const BASE_PERSON: Person = {
   telefono: null,
   ruolo: null,
   linkedin: null,
-  note: null,
   customer_id: null,
   custom_fields: {},
   created_at: '2026-08-06T00:00:00Z',

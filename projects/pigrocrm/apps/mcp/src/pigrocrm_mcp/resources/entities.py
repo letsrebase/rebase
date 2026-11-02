@@ -5,6 +5,7 @@ from pigrocrm.core.analytics.service import AnalyticsService
 from pigrocrm.core.customers.schemas import CustomerRead
 from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.deals.service import DealService
+from pigrocrm.core.notes.service import NoteService
 from pigrocrm.core.people.schemas import PersonListQuery
 from pigrocrm.core.people.service import PersonService
 from pigrocrm.core.timetracking.service import TimeEntryService
@@ -25,6 +26,29 @@ def _custom_lines(custom_fields: dict[str, object]) -> list[str]:
     return ["", "## Campi personalizzati", "", f"_Provenienza: {PROVENIENZA_TESTO_LIBERO}_", ""] + [
         f"- **{key}**: {value}" for key, value in sorted(custom_fields.items())
     ]
+
+
+def _note_lines(context: McpContext, entity_type: str, entity_id: UUID) -> list[str]:
+    """The whole thread, newest first (the tools carry the latest 50): who wrote each note,
+    when, through which door and whether it was edited since. The text is free text somebody
+    else wrote, so the section opens with the same `Provenienza` sentence as the custom
+    fields."""
+    notes = NoteService(context.session).list_for_entity(entity_type, entity_id, context.actor)
+    if not notes:
+        return []
+    lines = ["", "## Note", "", f"_Provenienza: {PROVENIENZA_TESTO_LIBERO}_"]
+    for note in notes:
+        # A note from before the thread existed has no source and no author.
+        who = note.autore or ("Nota precedente" if note.fonte is None else note.fonte)
+        header = f"**{note.created_at:%Y-%m-%d %H:%M}** · {who}"
+        if note.fonte is not None:
+            header += f" · fonte: {note.fonte}"
+        if note.modificata_at is not None:
+            header += f" · modificata il {note.modificata_at:%Y-%m-%d %H:%M}"
+            if note.modificata_da:
+                header += f" da {note.modificata_da}"
+        lines += ["", header, "", note.testo]
+    return lines
 
 
 def _or_dash(value: object) -> str:
@@ -95,15 +119,7 @@ def render_customer(context: McpContext, customer_id: UUID) -> str:
     ] or ["_Nessun deal._"]
     lines += _custom_lines(customer.custom_fields)
     lines += ["", "## Timeline", ""] + _timeline_lines(context, "customer", customer_id)
-    if customer.note:
-        lines += [
-            "",
-            "## Note",
-            "",
-            f"_Provenienza: {PROVENIENZA_TESTO_LIBERO}_",
-            "",
-            customer.note,
-        ]
+    lines += _note_lines(context, "customer", customer_id)
     return "\n".join(lines)
 
 
@@ -124,8 +140,7 @@ def render_person(context: McpContext, person_id: UUID) -> str:
         lines.append("- Cliente: non associato")
     lines += _custom_lines(person.custom_fields)
     lines += ["", "## Timeline", ""] + _timeline_lines(context, "person", person_id)
-    if person.note:
-        lines += ["", "## Note", "", f"_Provenienza: {PROVENIENZA_TESTO_LIBERO}_", "", person.note]
+    lines += _note_lines(context, "person", person_id)
     return "\n".join(lines)
 
 
@@ -196,6 +211,5 @@ def render_deal(context: McpContext, deal_id: UUID) -> str:
         lines.append(f"- Margine %: {pnl.margine_percentuale}")
 
     lines += ["", "## Timeline", ""] + _timeline_lines(context, "deal", deal_id)
-    if deal.note:
-        lines += ["", "## Note", "", f"_Provenienza: {PROVENIENZA_TESTO_LIBERO}_", "", deal.note]
+    lines += _note_lines(context, "deal", deal_id)
     return "\n".join(lines)

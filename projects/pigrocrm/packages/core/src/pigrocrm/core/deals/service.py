@@ -26,6 +26,7 @@ from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.fields.schemas import EntityType
 from pigrocrm.core.fields.service import FieldDefinitionService
 from pigrocrm.core.fields.validator import validate_custom_fields
+from pigrocrm.core.notes.writer import append_first_note
 from pigrocrm.core.pipeline.schemas import PipelineStageRead
 from pigrocrm.core.pipeline.service import PipelineService
 from pigrocrm.core.schemas import reject_cleared_columns, supplied_changes
@@ -228,9 +229,14 @@ class DealService:
             for deal in deals
         ]
 
-    def create(self, data: DealCreate, actor: Actor) -> DealRead:
+    def create(self, data: DealCreate, actor: Actor, *, rebase_ref: str | None = None) -> DealRead:
+        """A new deal. `rebase_ref` is for the engagements door alone (the leads route and
+        the letters): the reference it finds this deal again by, which no schema carries,
+        since a caller who could set it could claim a request that was never made."""
         actor.require_write("create_deal")
         payload = data.model_dump()
+        # Not a column: the first note of the deal, written below by the creating actor.
+        first_note = payload.pop("note", None)
         _check_numbers(payload)
 
         # A deal without a customer has no economic meaning -- see Deal's own
@@ -256,11 +262,27 @@ class DealService:
         payload["pipeline_stage_id"] = stage.id
         payload["probabilita"] = _settle_probability(stage, payload.get("probabilita"))
         payload["custom_fields"] = self._validated_custom(payload.get("custom_fields") or {})
+        payload["rebase_refs"] = [rebase_ref] if rebase_ref is not None else []
 
         deal = self.repo.add(Deal(**payload))
         self.activities.record(
             ENTITY, deal.id, "created", actor, {"nome": deal.nome, "stage": stage.nome}
         )
+        append_first_note(self.session, ENTITY, deal.id, first_note, actor)
+        self.session.commit()
+        return self._read(deal)
+
+    def attach_rebase_ref(self, deal_id: UUID, rebase_ref: str, actor: Actor) -> DealRead:
+        """Adds a reference of the engagements door to a deal the CRM already had (the leads
+        route linking a request to it), once: the same one again changes nothing. The
+        door's own call, like `create`'s `rebase_ref`."""
+        actor.require_write("update_deal")
+        deal = self.repo.get(deal_id)
+        if deal is None:
+            raise NotFound(ENTITY, deal_id)
+        if rebase_ref not in deal.rebase_refs:
+            deal.rebase_refs = [*deal.rebase_refs, rebase_ref]
+            self.activities.record(ENTITY, deal.id, "updated", actor, {"changed": ["rebase_refs"]})
         self.session.commit()
         return self._read(deal)
 

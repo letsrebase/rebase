@@ -34,7 +34,6 @@ const BASE_DEAL: Deal = {
   probabilita: 10,
   data_chiusura_prevista: null,
   owner_id: null,
-  note: null,
   ore_preventivate: null,
   valore_preventivato: null,
   // Slice 4A added the per-deal hourly rate to `DealRead`; a deal that has never had

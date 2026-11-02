@@ -86,6 +86,9 @@ HAND_MAINTAINED_INDEXES = {
     # dropped in silence is a sequential scan on every dashboard load, and this file is
     # where a missing index is supposed to fail by name.
     "ix_deals_chiuso_il",
+    # REB-879, migration 0064: the references of the engagements door, a `text[]` with a GIN
+    # index, the shape autogenerate does not compare.
+    "ix_deals_rebase_refs",
     "ix_documents_stato_dal",
     # Slice 6, migration 0024. A *descending* expression index over two columns, which is
     # the fifth shape autogenerate cannot compare: `compare_metadata` does not look at
@@ -2118,3 +2121,240 @@ def test_0063_leaves_a_token_made_afterwards_closed(
             assert _token_flags(url)["nuova"] is False
     finally:
         get_settings.cache_clear()
+
+
+AZIENDA_0064 = "00000000-0000-7000-8000-0000000000a1"
+STAGE_0064 = "00000000-0000-7000-8000-0000000000e1"
+REQUEST_1, REQUEST_2, REQUEST_3, REQUEST_4 = (
+    f"rebase:request=00000000-0000-4000-8000-00000000000{n}" for n in range(1, 5)
+)
+MATCH_1, MATCH_2 = (f"rebase:match=00000000-0000-4000-8000-0000000000a{n}" for n in range(1, 3))
+
+
+def _plant_0064(url: str) -> None:
+    """Three customers, a person and six deals as 0063 leaves them, each with the `note`
+    the old code could have written: plain text, nothing, only spaces, a reference line
+    under a sentence, a reference alone, two references, a reference inside a line."""
+    engine: Engine = create_engine(url)
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO emitter_profile (id, nome, predefinita, attiva, ragione_sociale, "
+                    "nazione, created_at, updated_at) VALUES (:id, 'Studio', true, true, "
+                    "'Studio Rossi', 'IT', now(), now())"
+                ),
+                {"id": AZIENDA_0064},
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO pipeline_stages (id, nome, posizione, probabilita_default, tipo, "
+                    "created_at, updated_at) VALUES (:id, 'Lead', 0, 10, 'open', now(), now())"
+                ),
+                {"id": STAGE_0064},
+            )
+            customers = {
+                "c1": "Cliente storico\nsu due righe",
+                "c2": None,
+                "c3": "   \n",
+            }
+            for key, note in customers.items():
+                connection.execute(
+                    text(
+                        "INSERT INTO customers (id, ragione_sociale, nazione, azienda_id, note, "
+                        "custom_fields, created_at, updated_at) VALUES "
+                        f"('00000000-0000-7000-8000-0000000000{key}', :nome, 'IT', :azienda, "
+                        ":note, '{}', '2025-01-01', '2026-01-10 09:30:00+00')"
+                    ),
+                    {"nome": f"Cliente {key}", "azienda": AZIENDA_0064, "note": note},
+                )
+            connection.execute(
+                text(
+                    "INSERT INTO people (id, nome, customer_id, note, custom_fields, created_at, "
+                    "updated_at) VALUES ('00000000-0000-7000-8000-0000000000b1', 'Anna', "
+                    "'00000000-0000-7000-8000-0000000000c1', 'Contatto storico', '{}', "
+                    "'2025-01-01', '2026-02-11 10:00:00+00')"
+                )
+            )
+            deals = {
+                "d1": f"Riga uno\n{REQUEST_1}",
+                "d2": MATCH_1,
+                "d3": f"Testo\n{REQUEST_2}\n{REQUEST_3}\n",
+                "d4": f"Vedi {MATCH_2} nel testo",
+                "d5": None,
+                "d6": "Solo testo",
+            }
+            for key, note in deals.items():
+                connection.execute(
+                    text(
+                        "INSERT INTO deals (id, nome, customer_id, azienda_id, pipeline_stage_id, "
+                        "probabilita, note, custom_fields, created_at, updated_at) VALUES "
+                        f"('00000000-0000-7000-8000-0000000000{key}', :nome, "
+                        "'00000000-0000-7000-8000-0000000000c1', :azienda, :stage, 10, :note, "
+                        "'{}', '2025-01-01', '2026-03-12 11:15:00+00')"
+                    ),
+                    {
+                        "nome": f"Deal {key}",
+                        "azienda": AZIENDA_0064,
+                        "stage": STAGE_0064,
+                        "note": note,
+                    },
+                )
+    finally:
+        engine.dispose()
+
+
+def _moved_0064(
+    url: str,
+) -> tuple[list[tuple[str, str, str, str | None, str | None, str]], dict[str, list[str]]]:
+    engine: Engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            notes = [
+                tuple(row)
+                for row in connection.execute(
+                    text(
+                        "SELECT entity_type, right(entity_id::text, 2), testo, fonte, "
+                        "autore_id::text, created_at::text FROM notes "
+                        "ORDER BY entity_type, entity_id"
+                    )
+                )
+            ]
+            refs = {
+                row[0]: row[1]
+                for row in connection.execute(
+                    text("SELECT right(id::text, 2), rebase_refs FROM deals ORDER BY 1")
+                )
+            }
+        return notes, refs  # type: ignore[return-value]
+    finally:
+        engine.dispose()
+
+
+def _note_columns(url: str) -> set[str]:
+    engine: Engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            return set(
+                connection.execute(
+                    text(
+                        "SELECT table_name FROM information_schema.columns "
+                        "WHERE column_name = 'note' "
+                        "AND table_name IN ('deals', 'customers', 'people')"
+                    )
+                ).scalars()
+            )
+    finally:
+        engine.dispose()
+
+
+def _table_shape(url: str, table: str) -> tuple[bool, bool, set[str]]:
+    engine: Engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            exists = bool(
+                connection.execute(
+                    text("SELECT to_regclass(:name) IS NOT NULL"), {"name": f"public.{table}"}
+                ).scalar()
+            )
+            forced = bool(
+                connection.execute(
+                    text("SELECT relforcerowsecurity FROM pg_class WHERE relname = :name"),
+                    {"name": table},
+                ).scalar()
+            )
+            policies = set(
+                connection.execute(
+                    text("SELECT policyname FROM pg_policies WHERE tablename = :name"),
+                    {"name": table},
+                ).scalars()
+            )
+        return exists, forced, policies
+    finally:
+        engine.dispose()
+
+
+def test_0064_moves_every_note_into_a_thread_and_the_markers_into_a_column(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-879: over the notes planted at 0063. Each non-blank `note` of the three tables
+    becomes the first note of its row, with no author and no source and the row's
+    `updated_at` as its date; a reference line of a deal's note leaves the text and goes to
+    `rebase_refs`; the three columns are dropped; the table is under the azienda policy,
+    forced. The downgrade rebuilds the columns, references back as the last lines."""
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0063")
+        _plant_0064(url)
+        assert _note_columns(url) == {"deals", "customers", "people"}
+        assert _table_shape(url, "notes") == (False, False, set())
+        assert _table_shape(url, "note_revisions") == (False, False, set())
+
+        upgrade(config, "0064")
+
+        notes, refs = _moved_0064(url)
+        assert notes == [
+            (
+                "customer",
+                "c1",
+                "Cliente storico\nsu due righe",
+                None,
+                None,
+                "2026-01-10 09:30:00+00",
+            ),
+            ("deal", "d1", "Riga uno", None, None, "2026-03-12 11:15:00+00"),
+            ("deal", "d3", "Testo", None, None, "2026-03-12 11:15:00+00"),
+            ("deal", "d4", f"Vedi {MATCH_2} nel testo", None, None, "2026-03-12 11:15:00+00"),
+            ("deal", "d6", "Solo testo", None, None, "2026-03-12 11:15:00+00"),
+            ("person", "b1", "Contatto storico", None, None, "2026-02-11 10:00:00+00"),
+        ]
+        assert refs == {
+            "d1": [REQUEST_1],
+            "d2": [MATCH_1],
+            "d3": [REQUEST_2, REQUEST_3],
+            "d4": [MATCH_2],
+            "d5": [],
+            "d6": [],
+        }
+        assert _note_columns(url) == set()
+        assert _table_shape(url, "notes") == (True, True, {"ambito_azienda"})
+        assert _table_shape(url, "note_revisions") == (True, True, {"ambito_azienda"})
+
+        downgrade(config, "0063")
+
+        assert _table_shape(url, "notes")[0] is False
+        assert _table_shape(url, "note_revisions")[0] is False
+        assert _note_columns(url) == {"deals", "customers", "people"}
+        engine: Engine = create_engine(url)
+        with engine.connect() as connection:
+            restored = {
+                row[0]: row[1]
+                for row in connection.execute(
+                    text(
+                        "SELECT right(id::text, 2), note FROM deals "
+                        "UNION ALL SELECT right(id::text, 2), note FROM customers "
+                        "UNION ALL SELECT right(id::text, 2), note FROM people"
+                    )
+                )
+            }
+        engine.dispose()
+        assert restored["d1"] == f"Riga uno\n{REQUEST_1}"
+        assert restored["d2"] == MATCH_1
+        assert restored["d3"] == f"Testo\n{REQUEST_2}\n{REQUEST_3}"
+        assert restored["c1"] == "Cliente storico\nsu due righe"
+        assert restored["b1"] == "Contatto storico"
+        assert restored["d5"] is None and restored["c2"] is None
+
+        # And forward again over what the downgrade left: the same thread.
+        upgrade(config, "0064")
+        assert _moved_0064(url)[1] == refs
+
+
+def test_0064_runs_on_a_database_with_no_notes_at_all(pigrocrm_postgres: Any) -> None:
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0063")
+        upgrade(config, "0064")
+        assert _moved_0064(url) == ([], {})

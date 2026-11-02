@@ -118,7 +118,7 @@ def test_an_update_that_does_not_mention_the_owner_leaves_it_and_asks_nobody(
     service = CustomerService(db_session)
     created = service.create(CustomerCreate(ragione_sociale="ACME Srl"), _actor(member))
 
-    renamed = service.update(created.id, CustomerUpdate(note="una nota"), _actor(member))
+    renamed = service.update(created.id, CustomerUpdate(telefono="02 1234567"), _actor(member))
     again = service.update(created.id, CustomerUpdate(owner_id=member.id), _actor(member))
 
     assert renamed.owner_id == member.id

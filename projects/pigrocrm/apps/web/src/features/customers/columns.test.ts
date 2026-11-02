@@ -29,7 +29,6 @@ const BASE_CUSTOMER: Customer = {
   telefono: null,
   sito_web: null,
   stato: null,
-  note: null,
   giorni_pagamento: null,
   pagamento_fine_mese: false,
   custom_fields: {},

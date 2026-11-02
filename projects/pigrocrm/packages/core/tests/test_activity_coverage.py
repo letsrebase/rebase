@@ -47,6 +47,8 @@ from pigrocrm.core.customers.schemas import CustomerCreate, CustomerUpdate
 from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.deals.schemas import DealCreate, DealUpdate
 from pigrocrm.core.deals.service import DealService
+from pigrocrm.core.notes.schemas import NoteCreate, NoteUpdate
+from pigrocrm.core.notes.service import NoteService
 from pigrocrm.core.people.schemas import PersonCreate, PersonUpdate
 from pigrocrm.core.people.service import PersonService
 from pigrocrm.core.reminders.preferences import (
@@ -113,6 +115,10 @@ _DELEGA: dict[Method, str] = {
     ("ContractEmailService", "prepare"): "`EmailDraftService.create` records the draft",
     ("ContractRegisterService", "render_pdf"): "`DocumentService.create_from_template` records",
     ("CustomerService", "add_person_from_mail"): "`PersonService._insert` records `created`",
+    ("NoteService", "add"): (
+        "`append_note` records `note_added` on the parent, the one function the creating "
+        "services write a first note with as well"
+    ),
     ("EngagementService", "ensure"): (
         "creates the customer and the deal through their services as `Actor.rebase()`; "
         "`test_engagements.py` asserts the two `rebase` rows"
@@ -291,7 +297,7 @@ def _customer(session: Session, actor: Actor, ctx: dict[str, UUID]) -> tuple[str
 
 def _customer_update(session: Session, actor: Actor, ctx: dict[str, UUID]) -> tuple[str, UUID]:
     _customer(session, actor, ctx)
-    CustomerService(session).update(ctx["customer"], CustomerUpdate(note="una nota"), actor)
+    CustomerService(session).update(ctx["customer"], CustomerUpdate(telefono="02 1234567"), actor)
     return "customer", ctx["customer"]
 
 
@@ -304,10 +310,23 @@ def _customer_archive_restore(
     return "customer", ctx["customer"]
 
 
+def _customer_notes(session: Session, actor: Actor, ctx: dict[str, UUID]) -> tuple[str, UUID]:
+    """A first note on creation, then one added, edited and deleted: four entries, the first
+    from the creating service and the rest from `NoteService`."""
+    created = CustomerService(session).create(
+        CustomerCreate(ragione_sociale="ACME", note="Prima nota"), actor
+    )
+    service = NoteService(session)
+    added = service.add("customer", created.id, NoteCreate(testo="Seconda nota"), actor)
+    service.update(added.id, NoteUpdate(testo="Seconda nota, corretta"), actor)
+    service.delete(added.id, actor)
+    return "customer", created.id
+
+
 def _person(session: Session, actor: Actor, ctx: dict[str, UUID]) -> tuple[str, UUID]:
     service = PersonService(session)
     person = service.create(PersonCreate(nome="Anna"), actor)
-    service.update(person.id, PersonUpdate(note="una nota"), actor)
+    service.update(person.id, PersonUpdate(ruolo="CTO"), actor)
     service.soft_delete(person.id, actor)
     service.restore(person.id, actor)
     return "person", person.id
@@ -391,6 +410,10 @@ def _reminder_defaults(session: Session, actor: Actor, ctx: dict[str, UUID]) -> 
 SCENARIOS: dict[str, tuple[Scenario, set[str]]] = {
     "customer created": (_customer, {"created"}),
     "customer updated": (_customer_update, {"created", "updated"}),
+    "customer notes added, edited, deleted": (
+        _customer_notes,
+        {"created", "note_added", "note_edited", "note_deleted"},
+    ),
     "customer archived and restored": (
         _customer_archive_restore,
         {"created", "deleted", "restored"},

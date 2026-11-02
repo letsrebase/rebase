@@ -41,7 +41,6 @@ const BASE_DEAL: Deal = {
   probabilita: 10,
   data_chiusura_prevista: null,
   owner_id: null,
-  note: null,
   ore_preventivate: null,
   valore_preventivato: null,
   // See `columns.test.ts`: `DealRead.tariffa_oraria` arrived with slice 4A and is
@@ -147,9 +146,47 @@ describe('DealForm', () => {
     })
   })
 
+  /** REB-879: `note` on a new deal is its first note, written by the creating actor. After
+   *  that the thread is the page's own, and `DealUpdate` refuses a `note` outright. */
+  it('draws «Nota iniziale» and sends it as `note` on create', async () => {
+    const onSubmit = vi.fn()
+    renderWithClient(
+      <DealForm title="Nuovo deal" open onOpenChange={vi.fn()} customFields={[]} onSubmit={onSubmit} />,
+    )
+
+    await userEvent.type(screen.getByLabelText(/^Nome/), 'Progetto nuovo')
+    await userEvent.type(screen.getByLabelText('Nota iniziale'), 'Contatto arrivato dal sito')
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+
+    expect(submitted(onSubmit)).toEqual({
+      nome: 'Progetto nuovo',
+      note: 'Contatto arrivato dal sito',
+      custom_fields: {},
+    })
+  })
+
+  it('draws no note field on edit and never puts `note` in the payload', async () => {
+    const onSubmit = vi.fn()
+    renderWithClient(
+      <DealForm
+        title="Modifica deal"
+        open
+        onOpenChange={vi.fn()}
+        customFields={[]}
+        initial={dealToFormValues(BASE_DEAL)}
+        onSubmit={onSubmit}
+      />,
+    )
+
+    expect(screen.queryByLabelText('Nota iniziale')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Note')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    expect(submitted(onSubmit)).not.toHaveProperty('note')
+  })
+
   /** The other side of the same rule: doing this on edit would persist
    *  `urgente: false` on a record that never had a value for it, as a side
-   *  effect of touching Note alone. */
+   *  effect of touching Nome alone. */
   it('does not backfill an untouched checkbox on edit, whatever else changed', async () => {
     const onSubmit = vi.fn()
     renderWithClient(
@@ -163,15 +200,14 @@ describe('DealForm', () => {
       />,
     )
 
-    await userEvent.type(screen.getByLabelText('Note'), 'Richiamare a settembre')
+    await userEvent.type(screen.getByLabelText(/^Nome/), ' 2')
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
 
     const payload = submitted(onSubmit)
     expect(payload.custom_fields).toEqual({})
     expect(payload).toEqual({
-      nome: 'Sito vetrina',
+      nome: 'Sito vetrina 2',
       probabilita: 10,
-      note: 'Richiamare a settembre',
       custom_fields: {},
     })
   })
@@ -180,7 +216,6 @@ describe('DealForm', () => {
     const onSubmit = vi.fn()
     const initial = dealToFormValues({
       ...BASE_DEAL,
-      note: 'Vecchia nota',
       custom_fields: { fonte: 'referral' },
     })
     renderWithClient(
@@ -194,15 +229,14 @@ describe('DealForm', () => {
       />,
     )
 
-    await userEvent.clear(screen.getByLabelText('Note'))
+    await userEvent.clear(screen.getByLabelText(/^Nome/))
     await userEvent.click(screen.getByRole('combobox'))
     await userEvent.click(screen.getByRole('option', { name: 'Nessuna selezione' }))
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
 
     expect(submitted(onSubmit)).toEqual({
-      nome: 'Sito vetrina',
+      nome: '',
       probabilita: 10,
-      note: '',
       custom_fields: { fonte: null },
     })
   })
@@ -212,11 +246,10 @@ describe('DealForm', () => {
     // decimal and not a date, so before this these three keys came back as a 422 from
     // Pydantic and the estimate the user was trying to take back stayed put -- reading,
     // in the budget report, as an infinite overrun. `null` is what clears them now, and
-    // `note` in the same payload proves the text spelling did not move.
+    // `nome` in the same payload proves the text spelling did not move.
     const onSubmit = vi.fn()
     const initial = dealToFormValues({
       ...BASE_DEAL,
-      note: 'Vecchia nota',
       ore_preventivate: '40.00',
       valore_preventivato: '10000.00',
       data_chiusura_prevista: '2026-12-31',
@@ -235,16 +268,15 @@ describe('DealForm', () => {
     await userEvent.clear(screen.getByLabelText('Ore preventivate'))
     await userEvent.clear(screen.getByLabelText('Valore preventivato'))
     await userEvent.clear(screen.getByLabelText('Chiusura prevista'))
-    await userEvent.clear(screen.getByLabelText('Note'))
+    await userEvent.clear(screen.getByLabelText(/^Nome/))
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
 
     expect(submitted(onSubmit)).toEqual({
-      nome: 'Sito vetrina',
+      nome: '',
       probabilita: 10,
       ore_preventivate: null,
       valore_preventivato: null,
       data_chiusura_prevista: null,
-      note: '',
       custom_fields: {},
     })
   })

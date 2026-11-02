@@ -140,3 +140,21 @@ class ImmutableField(DomainError):
             field=field,
             reason=reason,
         )
+
+
+class NoteNotChangeable(DomainError):
+    """A note the caller may read but not edit or delete (REB-879): somebody else's, for a
+    caller who is not an admin, or one a job or rebase wrote, which is an event of the
+    record's life and nobody's remark. The same code as `PermissionDenied`, so the API
+    answers 403."""
+
+    code = "permission_denied"
+
+    def __init__(self, note_id: UUID, *, recorded: bool) -> None:
+        super().__init__(
+            "questa nota la hanno scritta il sistema o rebase: non si modifica e non si cancella"
+            if recorded
+            else "una nota la modifica o la cancella chi l'ha scritta o un amministratore",
+            action="change_note",
+            note_id=str(note_id),
+        )

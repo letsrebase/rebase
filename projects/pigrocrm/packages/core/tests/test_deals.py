@@ -13,6 +13,7 @@ from pigrocrm.core.auth.schemas import UserCreate
 from pigrocrm.core.auth.service import UserService
 from pigrocrm.core.customers.schemas import CustomerCreate
 from pigrocrm.core.customers.service import CustomerService
+from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.deals.repository import DealRepository
 from pigrocrm.core.deals.schemas import (
     DECIMAL_PLACES,
@@ -663,12 +664,12 @@ def test_update_records_only_the_changed_fields(db_session: Session, customer_id
 
     service = DealService(db_session)
     deal = service.create(DealCreate(nome="X", customer_id=customer_id), ADMIN)
-    service.update(deal.id, DealUpdate(note="Richiamare la prossima settimana"), ADMIN)
+    service.update(deal.id, DealUpdate(probabilita=30), ADMIN)
 
     updates = [
         e for e in ActivityService(db_session).timeline("deal", deal.id) if e.kind == "updated"
     ]
-    assert updates[0].payload["changed"] == ["note"]
+    assert updates[0].payload["changed"] == ["probabilita"]
 
 
 def test_a_new_deal_can_specify_an_explicit_stage(db_session: Session, customer_id, stages) -> None:
@@ -975,7 +976,7 @@ def test_every_read_path_names_the_deal_s_customer(
     assert created.customer_ragione_sociale == "ACME"
     assert service.get(created.id, ADMIN).customer_ragione_sociale == "ACME"
 
-    updated = service.update(created.id, DealUpdate(note="una nota"), ADMIN)
+    updated = service.update(created.id, DealUpdate(probabilita=30), ADMIN)
     assert updated.customer_ragione_sociale == "ACME"
 
     moved = service.move_stage(created.id, stages["Vinto"].id, ADMIN)
@@ -1018,35 +1019,54 @@ def test_the_customer_name_costs_one_query_for_the_whole_page(db_session: Sessio
     ]
 
 
-def test_find_by_marker_is_the_live_deal_carrying_it_under_any_customer(
+def test_find_by_rebase_ref_is_the_live_deal_carrying_it_under_any_customer(
     db_session: Session, customer_id, stages
 ) -> None:
     """How the engagements door finds again a deal it created and failed to record
-    (spec 2026-09-25 § 2.3 step 5): the marker in the note, as an exact substring, on a
-    live deal, under whichever customer it sits now (the freelancer may have renamed
-    ours, or moved the deal). A deal with the same name and no marker is not it."""
+    (spec 2026-09-25 § 2.3 step 5): the reference among the deal's `rebase_refs`, as an
+    exact element, on a live deal, under whichever customer it sits now (the freelancer
+    may have renamed ours, or moved the deal). A deal with the same name and no
+    reference is not it, nor is one whose note merely says it, nor another case."""
     marker = f"rebase:match={uuid4()}"
     service = DealService(db_session)
     repo = DealRepository(db_session)
     service.create(DealCreate(nome="Lettera n. 3/2026", customer_id=customer_id), ADMIN)
+    service.create(DealCreate(nome="Nella nota", customer_id=customer_id, note=marker), ADMIN)
     service.create(
-        DealCreate(nome="Maiuscolo", customer_id=customer_id, note=marker.upper()), ADMIN
+        DealCreate(nome="Maiuscolo", customer_id=customer_id), ADMIN, rebase_ref=marker.upper()
     )
     archived = service.create(
-        DealCreate(nome="Archiviato", customer_id=customer_id, note=marker), ADMIN
+        DealCreate(nome="Archiviato", customer_id=customer_id), ADMIN, rebase_ref=marker
     )
     service.soft_delete(archived.id, ADMIN)
-    assert repo.find_by_marker(marker) is None
+    assert repo.find_by_rebase_ref(marker) is None
 
     other = CustomerService(db_session).create(CustomerCreate(ragione_sociale="Beta"), ADMIN)
     ours = service.create(
-        DealCreate(
-            nome="Lettera n. 3/2026", customer_id=other.id, note=f"Creato da rebase.\n{marker}"
-        ),
+        DealCreate(nome="Lettera n. 3/2026", customer_id=other.id, note="Creato da rebase."),
         ADMIN,
+        rebase_ref=marker,
     )
-    found = repo.find_by_marker(marker)
+    found = repo.find_by_rebase_ref(marker)
     assert found is not None and (found.id, found.customer_id) == (ours.id, other.id)
+
+
+def test_a_reference_is_attached_once_and_a_deal_may_carry_several(
+    db_session: Session, customer_id, stages
+) -> None:
+    service = DealService(db_session)
+    deal = service.create(DealCreate(nome="Già nostro", customer_id=customer_id), ADMIN)
+    first, second = f"rebase:request={uuid4()}", f"rebase:request={uuid4()}"
+
+    service.attach_rebase_ref(deal.id, first, ADMIN)
+    service.attach_rebase_ref(deal.id, first, ADMIN)
+    service.attach_rebase_ref(deal.id, second, ADMIN)
+
+    repo = DealRepository(db_session)
+    assert db_session.get(Deal, deal.id).rebase_refs == [first, second]  # type: ignore[union-attr]
+    for ref in (first, second):
+        found = repo.find_by_rebase_ref(ref)
+        assert found is not None and found.id == deal.id
 
 
 # --- REB-780: the owner a deal is born with, and who it may be handed to ------------

@@ -293,5 +293,22 @@ describe('Timeline', () => {
       expect(item).toHaveTextContent('Regola: A1')
       expect(item).not.toHaveTextContent('Attivata da: ')
     })
+
+    it('shows a note event by its label alone: no note id, no door, no earlier text', async () => {
+      mockGet.mockReturnValue(
+        ok([
+          entry({
+            kind: 'note_edited',
+            actor_type: 'mcp',
+            actor_name: 'Marco Verdi',
+            payload: { nota_id: crypto.randomUUID(), fonte: 'mcp' },
+          }),
+        ]),
+      )
+      renderWithClient(<Timeline entityType="deal" entityId="d1" />)
+      const item = (await screen.findByText('Marco Verdi')).closest('li')
+      expect(item).toHaveTextContent('Nota modificata')
+      expect(item).not.toHaveTextContent(/Nota id|Fonte|prima/i)
+    })
   })
 })

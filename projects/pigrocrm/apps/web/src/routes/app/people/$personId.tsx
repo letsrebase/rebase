@@ -13,6 +13,7 @@ import { useCustomer } from '@/features/customers/queries'
 import { EmailTab } from '@/features/gmail/EmailTab'
 import { useGmailConfigured } from '@/features/gmail/queries'
 import { displayNative } from '@/features/people/columns'
+import { NotesSection } from '@/features/notes/NotesSection'
 import { PersonForm, personToFormValues } from '@/features/people/PersonForm'
 import { useDeletePerson, usePerson, useUpdatePerson } from '@/features/people/queries'
 import { toProblem, type ProblemDetail } from '@/lib/api'
@@ -163,14 +164,9 @@ export function PersonDetail() {
               </Card>
             )}
 
-            {person.note && (
-              <Card className="lg:col-span-2">
-                <CardContent className="pt-6">
-                  <h2 className="mb-3 font-semibold">Note</h2>
-                  <p className="whitespace-pre-wrap text-sm">{person.note}</p>
-                </CardContent>
-              </Card>
-            )}
+            <div className="lg:col-span-2">
+              <NotesSection entityType="person" entityId={personId} />
+            </div>
           </div>
         }
         links={

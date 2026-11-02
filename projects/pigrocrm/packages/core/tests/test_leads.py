@@ -17,6 +17,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
+from fakes.notes import texts
 from sqlalchemy import Engine, create_engine, func, select, text
 from sqlalchemy.orm import Session
 
@@ -173,7 +174,8 @@ def test_first_call_files_customer_person_and_deal(door: Door) -> None:
         deal = space.get(Deal, answer.deal_id)
         assert customer is not None and person is not None and deal is not None
         assert customer.ragione_sociale == "Acme S.r.l."
-        assert customer.note is not None and "hub" in customer.note
+        [customer_note] = texts(space, "customer", customer.id)
+        assert "hub" in customer_note
         assert (person.nome, person.cognome, person.email) == ("Maria", "Rossi", MARIA)
         assert person.telefono == "+39 02 1234567"
         assert person.linkedin == "https://www.linkedin.com/in/maria-rossi"
@@ -184,9 +186,12 @@ def test_first_call_files_customer_person_and_deal(door: Door) -> None:
         assert deal.data_chiusura_prevista == date(2099, 1, 15)
         assert deal.tariffa_oraria is None and deal.ore_preventivate is None
         assert deal.owner_id is None
-        assert deal.note is not None
-        assert deal.note.splitlines()[-1] == lead_marker(request_id)
-        assert "cerca uno sviluppatore backend" in deal.note
+        # The hub's sentence is the first note, written by rebase; the reference a retry
+        # finds the deal by is in `rebase_refs` and in no note.
+        [deal_note] = texts(space, "deal", deal.id)
+        assert "cerca uno sviluppatore backend" in deal_note
+        assert lead_marker(request_id) not in deal_note
+        assert deal.rebase_refs == [lead_marker(request_id)]
 
 
 def test_every_write_is_recorded_as_rebase(door: Door) -> None:
@@ -251,9 +256,10 @@ def test_a_different_typed_name_is_said_in_the_deal_note(door: Door) -> None:
 
     with _space(door) as space:
         deal = space.get(Deal, answer.deal_id)
-        assert deal is not None and deal.note is not None
-        assert "Nome indicato nella richiesta: Acme S.r.l." in deal.note
-        assert "Rossi Costruzioni S.r.l." in deal.note
+        assert deal is not None
+        [deal_note] = texts(space, "deal", deal.id)
+        assert "Nome indicato nella richiesta: Acme S.r.l." in deal_note
+        assert "Rossi Costruzioni S.r.l." in deal_note
 
 
 def test_the_same_typed_name_adds_no_line(door: Door) -> None:
@@ -264,8 +270,9 @@ def test_the_same_typed_name_adds_no_line(door: Door) -> None:
 
     with _space(door) as space:
         deal = space.get(Deal, answer.deal_id)
-        assert deal is not None and deal.note is not None
-        assert "Nome indicato" not in deal.note
+        assert deal is not None
+        [deal_note] = texts(space, "deal", deal.id)
+        assert "Nome indicato" not in deal_note
 
 
 def test_an_archived_customer_gives_a_new_customer_and_moves_the_person(door: Door) -> None:
@@ -333,7 +340,8 @@ def test_a_new_deal_is_made_even_when_the_customer_has_an_open_one(door: Door) -
     assert answer.creato is True and answer.deal_id != open_deal
     with _space(door) as space:
         untouched = space.get(Deal, open_deal)
-        assert untouched is not None and untouched.note is None
+        assert untouched is not None and untouched.rebase_refs == []
+        assert texts(space, "deal", open_deal) == []
 
 
 def test_a_customer_is_never_matched_by_name(door: Door) -> None:
@@ -368,9 +376,10 @@ def test_an_explicit_deal_is_linked_with_an_activity_and_nothing_is_created(door
     with _space(door) as space:
         assert (_count(space, Customer), _count(space, Person), _count(space, Deal)) == counts
         deal = space.get(Deal, deal_id)
-        assert deal is not None and deal.note is not None
-        assert deal.note.startswith("Trattativa in corso con Rossi.")
-        assert deal.note.splitlines()[-1] == lead_marker(request_id)
+        assert deal is not None
+        # The deal's own note is left as it was; only the reference is added.
+        assert texts(space, "deal", deal_id) == ["Trattativa in corso con Rossi."]
+        assert deal.rebase_refs == [lead_marker(request_id)]
         linked = space.scalars(select(Activity).where(Activity.kind == KIND_LINKED)).all()
         assert [(a.entity_type, a.entity_id, a.actor_type) for a in linked] == [
             ("deal", deal_id, "rebase")
