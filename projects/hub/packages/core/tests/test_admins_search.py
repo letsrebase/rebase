@@ -3,6 +3,7 @@
 from uuid import UUID
 
 import pytest
+from admins import an_admin
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -19,17 +20,10 @@ def clean(hub_session: Session) -> Session:
     hub_session.commit()
 
 
-def _admin(session: Session, email: str, nome: str, cognome: str = "Admin") -> User:
-    row = User(email=email, nome=nome, cognome=cognome, role="admin")
-    session.add(row)
-    session.commit()
-    return row
-
-
 def test_search_hits_a_partial_name_and_an_email_domain(clean: Session) -> None:
     service = UserService(clean)
-    _admin(clean, "ivan@rebase.it", "Ivan", "Fiore")
-    _admin(clean, "lorenzo@otherco.it", "Lorenzo", "Rossi")
+    an_admin(clean, "ivan@rebase.it", "Ivan", "Fiore")
+    an_admin(clean, "lorenzo@otherco.it", "Lorenzo", "Rossi")
 
     by_name = service.list_admins(q="Ros")
     assert [a.email for a in by_name.items] == ["lorenzo@otherco.it"]
@@ -41,7 +35,7 @@ def test_search_hits_a_partial_name_and_an_email_domain(clean: Session) -> None:
 def test_the_cursor_walks_every_admin_once_with_no_dupes_or_gaps(clean: Session) -> None:
     service = UserService(clean)
     for i in range(7):
-        _admin(clean, f"admin{i}@rebase.it", f"Admin{i}")
+        an_admin(clean, f"admin{i}@rebase.it", f"Admin{i}")
 
     full = service.list_admins(limit=100)
     assert len(full.items) == 7
@@ -65,11 +59,11 @@ def test_with_no_term_the_list_stays_oldest_first(clean: Session) -> None:
     """ORB-123: unlike Talenti and Aziende, a bare (no `q`) admins list reads oldest
     first, so the page still reads as a history."""
     service = UserService(clean)
-    first = _admin(clean, "first@rebase.it", "First")
-    second = _admin(clean, "second@rebase.it", "Second")
+    first = an_admin(clean, "first@rebase.it", "First")
+    second = an_admin(clean, "second@rebase.it", "Second")
 
     page = service.list_admins()
-    assert [a.id for a in page.items] == [first.id, second.id]
+    assert [a.id for a in page.items] == [first, second]
 
 
 def test_a_malformed_cursor_is_refused(clean: Session) -> None:
@@ -80,7 +74,7 @@ def test_a_malformed_cursor_is_refused(clean: Session) -> None:
 def test_a_non_admin_never_appears_in_the_list(clean: Session) -> None:
     clean.add(User(email="membro@rebase.it", nome="Membro", cognome="Utente", role="member"))
     clean.commit()
-    admin = _admin(clean, "ivan@rebase.it", "Ivan")
+    admin = an_admin(clean, "ivan@rebase.it", "Ivan")
 
     page = UserService(clean).list_admins()
-    assert [a.id for a in page.items] == [admin.id]
+    assert [a.id for a in page.items] == [admin]

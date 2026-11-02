@@ -14,6 +14,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
+from admins import an_admin
 from fakes_cards import CARD, MODEL
 from sqlalchemy import Engine, insert, select, text
 from sqlalchemy.exc import IntegrityError
@@ -63,13 +64,6 @@ def clean(hub_session: Session) -> Session:
     hub_session.commit()
 
 
-def _admin(session: Session) -> UUID:
-    admin = User(email="ivan@rebase.it", nome="Ivan", cognome="Sala", role="admin")
-    session.add(admin)
-    session.commit()
-    return admin.id
-
-
 def _request(session: Session, email: str = "wile@acme.it", azienda: str = "Acme S.r.l.") -> UUID:
     read, _ = CompanyService(session).request(
         CompanyCreate(
@@ -93,7 +87,7 @@ def _request(session: Session, email: str = "wile@acme.it", azienda: str = "Acme
 def test_grant_is_one_live_per_user_and_company_and_mails(
     clean: Session, settings: Settings
 ) -> None:
-    admin_id = _admin(clean)
+    admin_id = an_admin(clean)
     acme = _request(clean)
     cloud = TalentCloudService(clean, settings)
 
@@ -125,7 +119,7 @@ def test_grant_is_one_live_per_user_and_company_and_mails(
 def test_grant_on_a_request_that_is_not_there_is_not_found(
     clean: Session, settings: Settings
 ) -> None:
-    admin_id = _admin(clean)
+    admin_id = an_admin(clean)
     with pytest.raises(NotFound):
         TalentCloudService(clean, settings).grant(uuid4(), admin_id)
     acme = _request(clean)
@@ -135,7 +129,7 @@ def test_grant_on_a_request_that_is_not_there_is_not_found(
 
 
 def test_revoke_closes_it(clean: Session, settings: Settings) -> None:
-    admin_id = _admin(clean)
+    admin_id = an_admin(clean)
     acme, bianchi = _request(clean), _request(clean, azienda="Bianchi Srl")
     cloud = TalentCloudService(clean, settings)
     opened, _ = cloud.grant(acme, admin_id)
@@ -164,7 +158,7 @@ def test_revoke_closes_it(clean: Session, settings: Settings) -> None:
 def test_for_user_answers_the_newest_live_grant_across_companies(
     clean: Session, settings: Settings
 ) -> None:
-    admin_id = _admin(clean)
+    admin_id = an_admin(clean)
     acme, bianchi = _request(clean), _request(clean, azienda="Bianchi Srl")
     cloud = TalentCloudService(clean, settings)
     older, _ = cloud.grant(acme, admin_id)
@@ -188,7 +182,7 @@ def test_a_deleted_request_closes_its_door_and_a_restore_opens_it_again(
 ) -> None:
     """The cloud shows names and CVs: a request an admin took down does not keep the
     door open behind it, and `for_company` reads the page the admin can still open."""
-    admin_id = _admin(clean)
+    admin_id = an_admin(clean)
     acme = _request(clean)
     cloud = TalentCloudService(clean, settings)
     opened, _ = cloud.grant(acme, admin_id)
@@ -202,7 +196,7 @@ def test_a_deleted_request_closes_its_door_and_a_restore_opens_it_again(
 
 
 def test_the_company_page_reads_its_live_grant(clean: Session, settings: Settings) -> None:
-    admin_id = _admin(clean)
+    admin_id = an_admin(clean)
     acme = _request(clean)
     assert CompanyService(clean).get(acme).talent_cloud_grant is None
 
@@ -217,7 +211,7 @@ def test_the_company_page_reads_its_live_grant(clean: Session, settings: Setting
 def test_the_list_reads_every_grant_newest_first_with_the_names(
     clean: Session, settings: Settings
 ) -> None:
-    admin_id = _admin(clean)
+    admin_id = an_admin(clean)
     acme, bianchi = _request(clean), _request(clean, "ada@studio.it", "Bianchi Srl")
     cloud = TalentCloudService(clean, settings)
     first, _ = cloud.grant(acme, admin_id)
@@ -236,7 +230,7 @@ def test_the_list_leaves_out_a_deleted_requests_grant_until_it_is_restored(
 ) -> None:
     """The list says what `for_user` does: a deleted request's live grant opens nothing,
     so it is not listed as live."""
-    admin_id = _admin(clean)
+    admin_id = an_admin(clean)
     acme, bianchi = _request(clean), _request(clean, "ada@studio.it", "Bianchi Srl")
     cloud = TalentCloudService(clean, settings)
     kept, _ = cloud.grant(acme, admin_id)
@@ -254,7 +248,7 @@ def test_a_grant_that_loses_the_race_to_the_index_answers_the_winner(
 ) -> None:
     """Two «Apri» in two sessions both find nothing live and both insert: the partial
     unique index lets one in, and the other answers that row with no second mail."""
-    admin_id = _admin(clean)
+    admin_id = an_admin(clean)
     acme = _request(clean)
     cloud = TalentCloudService(clean, settings)
     winner, _ = cloud.grant(acme, admin_id)
@@ -283,7 +277,7 @@ def test_a_refused_insert_that_is_not_the_race_is_not_swallowed(
 ) -> None:
     """Only the live-grant index is the other click: any other refusal (here an admin
     that is not a `users` row) still raises."""
-    _admin(clean)
+    an_admin(clean)
     acme = _request(clean)
     with pytest.raises(IntegrityError):
         TalentCloudService(clean, settings).grant(acme, uuid4())
@@ -752,7 +746,7 @@ def test_the_cv_is_open_only_inside_the_cloud(talents: Session) -> None:
 def test_the_caller_is_the_newest_grants_company_and_the_users_phone(
     talents: Session, settings: Settings
 ) -> None:
-    admin_id = _admin(talents)
+    admin_id = an_admin(talents)
     acme = _request(talents)
     user_id = talents.scalar(select(User.id).where(User.email == "wile@acme.it"))
     assert user_id is not None
@@ -780,7 +774,7 @@ def test_the_caller_is_the_newest_grants_company_and_the_users_phone(
 def _open_cloud(session: Session, settings: Settings) -> tuple[UUID, UUID, UUID]:
     """The admin, the referente and the company of a live grant, opened an hour ago so
     the proposals the tests write (five minutes old) come after it."""
-    admin_id = _admin(session)
+    admin_id = an_admin(session)
     acme = _request(session)
     grant, _ = TalentCloudService(session, settings).grant(acme, admin_id)
     session.get_one(TalentCloudGrant, grant.id).granted_at = NOW - timedelta(hours=1)

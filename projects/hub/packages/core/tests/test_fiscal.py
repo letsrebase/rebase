@@ -6,6 +6,7 @@ from decimal import Decimal
 from uuid import UUID
 
 import pytest
+from admins import an_admin
 from sqlalchemy import Engine, func, select, text
 from sqlalchemy.orm import Session
 
@@ -16,7 +17,7 @@ from rebase_core.errors import NotFound
 from rebase_core.fiscal import FiscalService
 from rebase_core.freelancer_schemas import FreelancerCreate
 from rebase_core.freelancers import FreelancerService
-from rebase_core.models import FreelancerFiscal, User
+from rebase_core.models import FreelancerFiscal
 
 PDF = b"%PDF-1.7\n1 0 obj<<>>endobj\n%%EOF\n"
 MISSING = UUID("00000000-0000-7000-8000-000000000000")
@@ -29,13 +30,6 @@ def clean(hub_session: Session) -> Iterator[Session]:
     for table in ("admin_actions", "freelancer_fiscal", "freelancers", "users"):
         hub_session.execute(text(f"DELETE FROM {table}"))
     hub_session.commit()
-
-
-def _admin(session: Session) -> UUID:
-    admin = User(email="ivan@rebase.it", nome="Ivan", cognome="", role="admin")
-    session.add(admin)
-    session.commit()
-    return admin.id
 
 
 def _card(session: Session) -> UUID:
@@ -67,7 +61,7 @@ def _data(**change: str | None) -> FiscalData:
 
 
 def test_tax_data_are_saved_once_and_updated_in_place(clean: Session) -> None:
-    admin_id, card = _admin(clean), _card(clean)
+    admin_id, card = an_admin(clean), _card(clean)
     fiscal = FiscalService(clean)
     assert fiscal.get(card) is None
     saved = fiscal.save(card, _data(), admin_id)
@@ -84,7 +78,7 @@ def test_tax_data_are_saved_once_and_updated_in_place(clean: Session) -> None:
 
 
 def test_the_audit_names_the_fields_that_changed_and_never_their_values(clean: Session) -> None:
-    admin_id, card = _admin(clean), _card(clean)
+    admin_id, card = an_admin(clean), _card(clean)
     fiscal = FiscalService(clean)
     fiscal.save(card, _data(), admin_id)
     fiscal.save(card, _data(partita_iva="09876543210"), admin_id)
@@ -97,7 +91,7 @@ def test_the_audit_names_the_fields_that_changed_and_never_their_values(clean: S
 
 
 def test_an_unknown_or_deleted_card_has_no_tax_data(clean: Session) -> None:
-    admin_id, card = _admin(clean), _card(clean)
+    admin_id, card = an_admin(clean), _card(clean)
     with pytest.raises(NotFound):
         FiscalService(clean).get(MISSING)
     FreelancerService(clean).soft_delete(card, admin_id)
@@ -117,7 +111,7 @@ def test_two_admins_saving_one_cards_tax_data_at_once_run_one_after_the_other(
     VAT number back over it and audits `domicilio` alone: a change nobody recorded. With
     the freelancer's row locked first, the second waits, then reads the first's committed
     row, so its audit names both fields it really moved."""
-    admin_id, card = _admin(clean), _card(clean)
+    admin_id, card = an_admin(clean), _card(clean)
     FiscalService(clean).save(card, _data(), admin_id)
     factory = session_factory(hub_engine)
     first, second = factory(), factory()
@@ -182,7 +176,7 @@ def test_two_admins_saving_one_cards_tax_data_at_once_run_one_after_the_other(
 def test_tax_data_without_a_partita_iva_store_null_and_the_audit_names_it(
     clean: Session,
 ) -> None:
-    admin_id, card = _admin(clean), _card(clean)
+    admin_id, card = an_admin(clean), _card(clean)
     fiscal = FiscalService(clean)
     fiscal.save(card, _data(), admin_id)
     saved = fiscal.save(card, _data(partita_iva=None), admin_id)

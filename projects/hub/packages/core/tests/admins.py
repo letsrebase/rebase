@@ -8,13 +8,19 @@ from sqlalchemy.orm import Session
 
 from rebase_core.models import User
 
+ADMIN_EMAIL = "ivan@rebase.it"
 
-def an_admin(session: Session, email: str = "claude@rebase.it", nome: str = "Claude") -> UUID:
-    """The admin with this address, created on first call."""
+
+def an_admin(
+    session: Session, email: str = ADMIN_EMAIL, nome: str = "Ivan", cognome: str = ""
+) -> UUID:
+    """The admin with this address, created (and committed) on first call. The one place a
+    test makes an admin: another address, name or surname is a parameter, not another
+    helper."""
     existing = session.scalar(select(User).where(User.email == email))
     if existing is not None:
         return existing.id
-    admin = User(email=email, nome=nome, cognome="", role="admin")
+    admin = User(email=email, nome=nome, cognome=cognome, role="admin")
     session.add(admin)
     session.commit()
     return admin.id

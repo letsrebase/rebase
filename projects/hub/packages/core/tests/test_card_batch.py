@@ -12,14 +12,11 @@ from decimal import Decimal
 from uuid import UUID
 
 import pytest
+from admins import an_admin
 from fakes_cards import CARD, card_response
+from freelancer_fixtures import backdate_prompt, written_cards
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
-from test_card_staleness import (
-    _admin,
-    _backdate,
-    _cards,
-)
 
 from rebase_core.card_batch import (
     ACTIVE_GIVEN_UP_AFTER,
@@ -39,7 +36,6 @@ from rebase_core.models import (
     CardBatch,
     CardBatchItem,
     FreelancerCard,
-    User,
 )
 from rebase_core.team_schemas import CardsRefreshed
 
@@ -50,8 +46,8 @@ GENDERED = {**CARD, "sintesi": "Lei è una sviluppatrice con nove anni di esperi
 
 def _stale(session: Session, count: int = 3) -> list[UUID]:
     """`count` people with a card of prompt version 1: stale, listed for a start."""
-    people = _cards(session, count)
-    _backdate(session, 1)
+    people = written_cards(session, count)
+    backdate_prompt(session, 1)
     return people
 
 
@@ -74,13 +70,8 @@ def _writer(
     )
 
 
-def _an_admin(session: Session) -> UUID:
-    found = session.scalar(select(User.id).where(User.role == "admin"))
-    return found or _admin(session)
-
-
 def _start(session: Session, call: RecordingBatch, limit: int = 50) -> CardsRefreshed:
-    return _writer(session, call).regenerate_stale(_an_admin(session), limit, fonte="web")
+    return _writer(session, call).regenerate_stale(an_admin(session), limit, fonte="web")
 
 
 def _poll(session: Session, call: RecordingBatch, llm: object = NO_ANSWERS) -> BatchPolled:
@@ -145,7 +136,7 @@ def test_below_the_threshold_the_workers_write_it(clean_hub: Session) -> None:
     call = RecordingBatch()
     llm = RecordingCall([card_response(), card_response()])
 
-    result = _writer(clean_hub, call, llm).regenerate_stale(_an_admin(clean_hub), 50, fonte="web")
+    result = _writer(clean_hub, call, llm).regenerate_stale(an_admin(clean_hub), 50, fonte="web")
 
     assert result == CardsRefreshed(written=2, failed=0)
     assert call.submissions == 0 and clean_hub.scalars(select(CardBatch)).all() == []
@@ -176,7 +167,9 @@ def test_a_refused_submission_marks_the_batch_failed_and_leaves_every_card(
     [batch] = clean_hub.scalars(select(CardBatch)).all()
     assert batch.status == "failed"
     assert _writer(clean_hub, call).regeneration_running() is False
-    assert {c.freelancer_id for c in CardWriter(clean_hub, None).stale_cards()} == set(people)
+    assert {c.freelancer_id for c in CardWriter(clean_hub, None).stale_cards()} == set(
+        people
+    )
 
 
 def test_the_poll_waits_for_the_provider_then_applies_every_result(clean_hub: Session) -> None:
@@ -354,7 +347,9 @@ def test_a_batch_never_sent_is_given_up_after_a_while(clean_hub: Session) -> Non
     assert gone.state == "failed"
     clean_hub.refresh(batch)
     assert batch.status == "failed"
-    assert {c.freelancer_id for c in CardWriter(clean_hub, None).stale_cards()} == set(people)
+    assert {c.freelancer_id for c in CardWriter(clean_hub, None).stale_cards()} == set(
+        people
+    )
 
 
 def test_a_batch_that_cannot_be_applied_for_two_days_is_given_up(clean_hub: Session) -> None:
@@ -375,7 +370,9 @@ def test_a_batch_that_cannot_be_applied_for_two_days_is_given_up(clean_hub: Sess
     assert {i.status for i in clean_hub.scalars(select(CardBatchItem))} == {"errored"}
     assert _writer(clean_hub, call).regeneration_running() is False
     # The cards are still the old ones, still stale: the next start takes them.
-    assert {c.freelancer_id for c in CardWriter(clean_hub, None).stale_cards()} == set(people)
+    assert {c.freelancer_id for c in CardWriter(clean_hub, None).stale_cards()} == set(
+        people
+    )
 
 
 def test_without_a_batch_nothing_is_polled(clean_hub: Session) -> None:

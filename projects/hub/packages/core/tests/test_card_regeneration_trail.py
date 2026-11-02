@@ -18,12 +18,13 @@ from typing import Any
 from uuid import UUID
 
 import pytest
+from admins import an_admin
 from fakes_cards import MODEL, card_response
+from freelancer_fixtures import apply_numbered, written_cards
 from sqlalchemy import Engine, select, text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
-from test_card_batch import GENDERED, _an_admin, _outcomes, _poll, _stale, _start, _writer
-from test_card_staleness import _apply, _cards
+from test_card_batch import GENDERED, _outcomes, _poll, _stale, _start, _writer
 
 from rebase_core.ai_config import AI_CONFIG_ENTITY, AI_CONFIG_ENTITY_ID
 from rebase_core.audit import AdminActionService
@@ -145,7 +146,7 @@ def test_a_start_is_signed_and_sourced_and_its_end_counts_the_cards_and_the_cost
     clean_hub: Session, fonte: Fonte, workers: int
 ) -> None:
     people = _stale(clean_hub, 4)
-    admin = _an_admin(clean_hub)
+    admin = an_admin(clean_hub)
     refused = {people[0]: card_response(stop_reason="refusal")}
     llm = PricedCall(
         _engine(clean_hub),
@@ -180,7 +181,7 @@ def test_a_start_is_signed_and_sourced_and_its_end_counts_the_cards_and_the_cost
 
 def test_each_card_a_start_rewrites_is_in_its_talents_trail(clean_hub: Session) -> None:
     people = _stale(clean_hub, 3)
-    admin = _an_admin(clean_hub)
+    admin = an_admin(clean_hub)
     refused = {people[1]: card_response(stop_reason="refusal")}
     llm = PricedCall(
         _engine(clean_hub),
@@ -208,7 +209,7 @@ def test_an_outage_ends_the_regeneration_stopped_with_the_people_never_started(
     clean_hub: Session,
 ) -> None:
     _stale(clean_hub, 5)
-    admin = _an_admin(clean_hub)
+    admin = an_admin(clean_hub)
 
     result = CardWriter(clean_hub, Down(), now=lambda: NOW).regenerate_stale(  # type: ignore[arg-type]
         admin, 50, fonte="web"
@@ -230,7 +231,7 @@ def test_a_spent_cap_ends_the_regeneration_stopped_for_that_reason(clean_hub: Se
             raise LlmCapReached("Tetto giornaliero raggiunto")
 
     CardWriter(clean_hub, Spent(), now=lambda: NOW).regenerate_stale(  # type: ignore[arg-type]
-        _an_admin(clean_hub), 50, fonte="web"
+        an_admin(clean_hub), 50, fonte="web"
     )
 
     p = _one(clean_hub, "cards_regenerated").payload
@@ -241,7 +242,7 @@ def test_a_card_that_is_no_longer_stale_when_its_turn_comes_is_skipped_not_recor
     clean_hub: Session,
 ) -> None:
     people = _stale(clean_hub, 3)
-    admin = _an_admin(clean_hub)
+    admin = an_admin(clean_hub)
     second = CardWriter(clean_hub, None).stale_cards()[1].freelancer_id
 
     def another_start_wrote_it() -> None:
@@ -277,8 +278,8 @@ def test_a_card_that_is_no_longer_stale_when_its_turn_comes_is_skipped_not_recor
 
 
 def test_a_start_with_nothing_stale_is_still_signed_and_ended(clean_hub: Session) -> None:
-    _cards(clean_hub, 2)
-    admin = _an_admin(clean_hub)
+    written_cards(clean_hub, 2)
+    admin = an_admin(clean_hub)
 
     CardWriter(clean_hub, PricedCall(_engine(clean_hub)), now=lambda: NOW).regenerate_stale(  # type: ignore[arg-type]
         admin, 50, fonte="cli"
@@ -293,7 +294,7 @@ def test_a_start_with_nothing_stale_is_still_signed_and_ended(clean_hub: Session
 def test_without_a_model_a_start_records_nothing(clean_hub: Session) -> None:
     _stale(clean_hub, 2)
 
-    CardWriter(clean_hub, None).regenerate_stale(_an_admin(clean_hub), 50, fonte="web")
+    CardWriter(clean_hub, None).regenerate_stale(an_admin(clean_hub), 50, fonte="web")
 
     assert _actions(clean_hub, "cards_regenerate") == []
     assert _actions(clean_hub, "cards_regenerated") == []
@@ -306,8 +307,8 @@ def test_without_a_model_a_start_records_nothing(clean_hub: Session) -> None:
 def test_a_single_regeneration_is_signed_in_the_talents_trail(
     clean_hub: Session, fonte: Fonte
 ) -> None:
-    [person] = _cards(clean_hub, 1)
-    admin = _an_admin(clean_hub)
+    [person] = written_cards(clean_hub, 1)
+    admin = an_admin(clean_hub)
     llm = PricedCall(_engine(clean_hub))
 
     CardWriter(clean_hub, llm, now=lambda: NOW, run=Regeneration(admin, fonte)).write(  # type: ignore[arg-type]
@@ -325,14 +326,14 @@ def test_a_single_regeneration_is_signed_in_the_talents_trail(
 
 
 def test_a_single_regeneration_that_fails_says_why_and_what_it_cost(clean_hub: Session) -> None:
-    [person] = _cards(clean_hub, 1)
+    [person] = written_cards(clean_hub, 1)
     llm = PricedCall(_engine(clean_hub), lambda request: card_response(GENDERED_CARD))
 
     CardWriter(
         clean_hub,
         llm,
         now=lambda: NOW,
-        run=Regeneration(_an_admin(clean_hub), "web"),  # type: ignore[arg-type]
+        run=Regeneration(an_admin(clean_hub), "web"),  # type: ignore[arg-type]
     ).write(person, force=True)
 
     p = _one(clean_hub, "card_regenerated", person).payload
@@ -342,13 +343,13 @@ def test_a_single_regeneration_that_fails_says_why_and_what_it_cost(clean_hub: S
 
 
 def test_an_outage_on_a_single_regeneration_is_recorded_as_such(clean_hub: Session) -> None:
-    [person] = _cards(clean_hub, 1)
+    [person] = written_cards(clean_hub, 1)
 
     CardWriter(
         clean_hub,
         Down(),
         now=lambda: NOW,
-        run=Regeneration(_an_admin(clean_hub), "mcp"),  # type: ignore[arg-type]
+        run=Regeneration(an_admin(clean_hub), "mcp"),  # type: ignore[arg-type]
     ).write(person, force=True)
 
     p = _one(clean_hub, "card_regenerated", person).payload
@@ -356,7 +357,7 @@ def test_an_outage_on_a_single_regeneration_is_recorded_as_such(clean_hub: Sessi
 
 
 def test_the_hourly_refresh_and_a_write_nobody_started_record_nothing(clean_hub: Session) -> None:
-    person = _apply(clean_hub, 1)
+    person = apply_numbered(clean_hub, 1)
     llm = PricedCall(_engine(clean_hub))
 
     assert CardWriter(clean_hub, llm, now=lambda: NOW).refresh_stale() == CardsRefreshed(1, 0)  # type: ignore[arg-type]
@@ -374,7 +375,7 @@ def test_a_batch_records_its_start_with_the_batch_and_its_end_when_it_is_applied
     clean_hub: Session,
 ) -> None:
     people = _stale(clean_hub, 5)
-    admin = _an_admin(clean_hub)
+    admin = an_admin(clean_hub)
     answers = _outcomes(
         people,
         p0=BatchOutcome("succeeded", card_response(GENDERED)),  # still gendered after its rewrite
@@ -535,7 +536,7 @@ def test_a_batch_without_a_start_in_the_trail_applies_and_records_nothing(
 
 def test_the_batch_is_signed_by_the_admin_who_started_it_whoever_polls(clean_hub: Session) -> None:
     people = _stale(clean_hub, 3)
-    admin = _an_admin(clean_hub)
+    admin = an_admin(clean_hub)
     call = PricedBatch(_outcomes(people))
     _start(clean_hub, call)
 
@@ -583,7 +584,7 @@ def test_a_database_error_mid_run_still_records_the_end_and_raises_the_original(
     """The error leaves the session's transaction aborted: the end is recorded after a rollback,
     and the caller gets the database's error, not the one the aborted transaction would raise."""
     people = _stale(clean_hub, 3)
-    admin = _an_admin(clean_hub)
+    admin = an_admin(clean_hub)
 
     def broken(self: CardWriter, ids: Any, **kwargs: Any) -> None:
         kwargs["outcomes"].update(dict.fromkeys(ids))
@@ -636,7 +637,7 @@ def test_a_settle_that_fails_after_the_card_was_saved_enters_it_once_and_settles
     clean_hub: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     people = _stale(clean_hub, 3)
-    admin = _an_admin(clean_hub)
+    admin = an_admin(clean_hub)
     call = PricedBatch(_outcomes(people))
     _start(clean_hub, call)
     seen = _failing_settle(monkeypatch, people[0], times=1)
@@ -710,7 +711,7 @@ def test_a_lost_start_makes_the_end_say_so_and_keep_only_what_the_pool_counted(
     _lose_the_start(monkeypatch)
 
     CardWriter(clean_hub, llm, now=lambda: NOW).regenerate_stale(
-        _an_admin(clean_hub), 50, fonte="web"
+        an_admin(clean_hub), 50, fonte="web"
     )
 
     assert _actions(clean_hub, "cards_regenerate") == []
@@ -767,7 +768,7 @@ def test_a_batch_that_cannot_be_prepared_still_leaves_its_start_and_its_end(
     transaction: the session is rolled back, the start and the end are recorded, nothing is sent
     and the original error is raised."""
     _stale(clean_hub, 3)
-    admin = _an_admin(clean_hub)
+    admin = an_admin(clean_hub)
 
     def prepare(self: CardWriter, freelancer_id: UUID, *args: Any, **kwargs: Any) -> Any:
         self.session.execute(text("SELECT 1 / 0"))
