@@ -41,7 +41,9 @@ function failWith(status: number, detail: unknown): never {
     const message = items.map((item) => item.msg).filter(Boolean).join(' · ') || 'Dati non validi.'
     throw new ApiError(status, message, fields)
   }
-  if (status === 429) {
+  // The API's own sentence says what ran out and when to come back (the CV applications'
+  // hourly cap, the day's sign-in links); the generic one is for a limiter that names none.
+  if (status === 429 && typeof detail !== 'string') {
     throw new ApiError(429, 'Troppe richieste da qui. Riprova tra un minuto.')
   }
   throw new ApiError(
@@ -246,7 +248,7 @@ export type Scheda = Schemas['CardRead']
 
 /** One person of a proposed team. The public read has no `freelancer_id` (a visitor
  *  cannot follow a talent across proposals), nor a name. */
-export type TeamMember = Narrow<Schemas['TeamMemberRead'], { modalita: Remoto | null }>
+export type TeamMember = Schemas['TeamMemberRead']
 
 /** The team's bands: the sum of its people's, per day and per month at `giorni_mese`
  *  (22) days; both `null` when somebody has no band, or nobody is proposed. */
@@ -257,10 +259,7 @@ export type TeamEconomia = {
 }
 
 /** `luogo` is what the engine read in the visitor's own description about place. */
-export type TeamProposal = Narrow<
-  Schemas['TeamProposalRead'],
-  { luogo: { locale: boolean; dove: string | null }; economia: TeamEconomia; team: TeamMember[] }
->
+export type TeamProposal = Schemas['TeamProposalRead']
 
 export type TeamProposalCreate = Schemas['TeamProposalCreate']
 export type TeamRequestCreate = Schemas['TeamRequestCreate']
@@ -297,31 +296,14 @@ export type TeamRequestOrigine = 'pubblico' | 'cloud'
 /** A talent's answer to the availability mail (D1): `null` until they give one. */
 export type TalentAnswer = 'si' | 'no'
 
-/** One person of a proposal as the admin reads it: the public shape, plus who it is. */
-export type AdminTeamMember = Narrow<TeamMember, { freelancer_id: string }>
-export type AdminTeamProposal = Narrow<TeamProposal, { team: AdminTeamMember[] }>
-export type TeamRequestTalent = Narrow<Schemas['TeamRequestTalentRead'], { risposta: TalentAnswer | null }>
-export type TeamRequest = Narrow<
-  Schemas['TeamRequestRead'],
-  {
-    proposal: AdminTeamProposal | null
-    origine: TeamRequestOrigine
-    stato: TeamRequestStato
-    talenti: TeamRequestTalent[]
-  }
->
-export type TeamRequestListItem = Narrow<
-  Schemas['TeamRequestListItem'],
-  { origine: TeamRequestOrigine; stato: TeamRequestStato }
->
+export type TeamRequestTalent = Schemas['TeamRequestTalentRead']
+export type TeamRequest = Schemas['TeamRequestRead']
+export type TeamRequestListItem = Schemas['TeamRequestListItem']
 export type TeamProposalListMember = Schemas['TeamProposalListMember']
 /** The refusal an attempt row keeps: Claude did not answer, or every slot or the day's
  *  proposals were spent. */
 export type TeamProposalErrore = 'llm_unavailable' | 'team_builder_busy'
-export type TeamProposalListItem = Narrow<
-  Schemas['TeamProposalListItem'],
-  { origine: 'pubblico' | 'cloud' | 'admin'; errore: TeamProposalErrore | null }
->
+export type TeamProposalListItem = Schemas['TeamProposalListItem']
 
 /** What the list takes beside `cursor`/`limit`, and what `/admin/team` carries in its
  *  URL: a state of `TeamRequestStato`, which the API checks. */
@@ -337,11 +319,8 @@ export interface TeamProposalsFilters {
   esito?: string
 }
 
-export type FreelancerCard = Narrow<
-  Schemas['FreelancerCardAdminRead'],
-  { modalita: Remoto | null; persona?: CardPersona | null; differenze?: PersonaDifference[] }
->
-export type CardPersona = Narrow<Schemas['CardPersonaRead'], { altri_link: string[]; aziende: string[] }>
+export type FreelancerCard = Schemas['FreelancerCardAdminRead']
+export type CardPersona = Schemas['CardPersonaRead']
 export type PersonaDifference = Schemas['PersonaDifference']
 export type PersonaDifferenceField = PersonaDifference['campo']
 export type CardConflict = Schemas['ConflictRead']
@@ -352,47 +331,9 @@ export type CardProvenance = Schemas['CardProvenance']
 export type Role = 'member' | 'admin'
 
 export type Admin = Schemas['AdminRead']
-export type Freelancer = Narrow<
-  Schemas['FreelancerDetail'],
-  {
-    /** The detail carries these; the list and the mutations' answers leave them out. */
-    iscrizione_utm: Schemas['SignupUtm'] | null
-    ultimi_accessi: Schemas['LoginRead'][]
-    ultimi_download_guida: Schemas['GuideDownloadRead'][]
-    pigro_slug: string | null
-    remoto: Remoto | null
-    stato: 'nuovo' | 'contattato' | 'attivo' | 'scartato'
-    compilata_da: 'persona' | 'admin'
-    provenienza: 'form' | 'landing'
-    note: Note[]
-    origine: string | null
-    utm_source: string | null
-    utm_campaign: string | null
-    ultimo_accesso: string | null
-    deleted_at: string | null
-    vetted_at: string | null
-  }
->
-export type TalentCloudGrant = Narrow<
-  Schemas['TalentCloudGrantRead'],
-  { revoked_by: string | null; revoked_by_nome: string | null; revoked_at: string | null }
->
-export type Company = Narrow<
-  Schemas['CompanyRead'],
-  {
-    remoto: Remoto
-    stato: 'nuovo' | 'contattato' | 'in_corso' | 'chiuso'
-    crm_stato: PigroStato | null
-    crm_situazione: string | null
-    crm_deal_url: string | null
-    crm_attempted_at: string | null
-    origine: string | null
-    utm_source: string | null
-    deleted_at: string | null
-    note: Note[]
-    talent_cloud_grant: TalentCloudGrant | null
-  }
->
+export type Freelancer = Schemas['FreelancerDetail']
+export type TalentCloudGrant = Schemas['TalentCloudGrantRead']
+export type Company = Schemas['CompanyRead']
 
 /** Where a note came from (REB-856). `null` is a note that predates the tracking. */
 export type NoteSource = 'web' | 'mcp' | 'persona' | 'sistema'
@@ -401,80 +342,14 @@ export type NoteSource = 'web' | 'mcp' | 'persona' | 'sistema'
  *  the cards, `cli` too (REB-861). */
 export type ActionSource = NoteSource | 'cli'
 
-export type Note = Narrow<Schemas['NoteRead'], { fonte: NoteSource | null }>
+export type Note = Schemas['NoteRead']
 
 /** The two rows a thread can hang on, as the API paths name them. */
 export type ThreadKind = 'freelancers' | 'companies'
 
-export type AdminActionKind =
-  | 'overridden'
-  | 'cleared'
-  | 'deleted'
-  | 'restored'
-  /** A framework agreement's own actions (REB-407), recorded on entity `freelancer`. */
-  | 'mail_resent'
-  | 'document_cancelled'
-  | 'notice_recorded'
-  /** «Segna come verificato» / «Togli la verifica» (REB-518): `payload.vetted` says which. */
-  | 'vetted'
-  /** «Riprova su Pigro» (REB-498), recorded on entity `match`. */
-  | 'pigro_link'
-  | 'crm_link'
-  | 'company_created'
-  /** Two cards of one person merged (REB-800): `merged` is on the absorbed card,
-   *  `absorbed` on the one that stayed, `unmerged` on both once the shell put it back. */
-  | 'merged'
-  | 'absorbed'
-  | 'unmerged'
-  /** The notes' trail (REB-856), on the freelancer or the company the note is about,
-   *  and a change of status: `payload.fonte` is the door (`web` or `mcp`). */
-  | 'note_added'
-  | 'note_edited'
-  | 'note_deleted'
-  | 'status_changed'
-  | 'card_regenerated'
-  /** «Scarica CV anonimo» (REB-862): `payload.riusato` is true when the PDF was already made. */
-  | 'anon_cv_downloaded'
+export type AdminActionKind = Schemas['AdminActionRead']['kind']
 
-/** What an entry's `payload` carries, by `kind`: the API sends a free-form object. */
-export type AdminActionPayload = {
-  changed?: string[]
-  /** An `overridden`/`cleared` entry's diff is an object per field; a `note_edited`
-   *  (the text) and a `status_changed` (the state) carry plain strings. */
-  before?: Record<string, unknown> | string
-  after?: Record<string, unknown> | string
-  vetted?: boolean
-  /** The door the action came through: `web` or `mcp` (REB-856), `cli` for a
-   *  regeneration started from the command line (REB-861). */
-  fonte?: ActionSource
-  /** A `note_added` / `note_deleted` entry's text. */
-  testo?: string
-  nota_id?: string
-  /** A `pigro_link` entry's: the state the link reached, and the CRM's sentence. */
-  esito?: PigroStato | 'scritta' | 'non_scritta'
-  errore?: string | null
-  /** A `merged` / `absorbed` entry's (REB-800). `moved` is a list of row ids per
-   *  relation on `merged` (what an undo reads) and a count per relation on `absorbed`. */
-  into_freelancer_id?: string
-  from_freelancer_id?: string
-  moved?: Record<string, number | string[]>
-  cv?: MergeResult['cv']
-  scheda_da_rigenerare?: boolean
-  /** A `card_regenerated` entry's (REB-861): a regeneration of the card, one of a bulk
-   *  start (`bulk`, `start_action_id`) or a single «Rigenera scheda», the prompt version
-   *  and model that wrote it, the reason it was not written and what its calls cost. */
-  bulk?: boolean
-  start_action_id?: string | null
-  prompt_version?: number
-  model?: string | null
-  reason?: string
-  cost_eur?: string
-  unpriced?: number
-  /** An `anon_cv_downloaded` entry's: the stored CV was served, no model call. */
-  riusato?: boolean
-}
-
-export type AdminAction = Narrow<Schemas['AdminActionRead'], { kind: AdminActionKind; payload: AdminActionPayload }>
+export type AdminAction = Schemas['AdminActionRead']
 
 export type FreelancerOverride = Schemas['FreelancerOverride']
 export type CompanyOverride = Schemas['CompanyOverride']
@@ -482,37 +357,18 @@ export type LoginStats = Schemas['LoginStats']
 /** `freelancer_id` is what the page links each download by; the API's `GuideDownloadRead`
  *  has no such field yet (HubBackend adds it, `null` for a company contact), so until the
  *  types are regenerated this is the page's own reading. */
-export type GuideStats = Narrow<
-  Schemas['GuideStats'],
-  { recenti: (Schemas['GuideDownloadRead'] & { freelancer_id: string })[] }
->
-export type Talento = Narrow<
-  Schemas['TalentoRead'],
-  {
-    nome: string | null
-    cognome: string | null
-    linkedin_url: string | null
-    origine: 'form' | 'wizard' | 'admin'
-    tariffa_giornaliera: string | null
-    remoto: string | null
-    vetted_at: string | null
-    utm_source: string | null
-    possibile_duplicato_di: string[]
-  }
->
-export type TalentoList = Narrow<Schemas['TalentoList'], { items: Talento[] }>
+export type GuideStats = Schemas['GuideStats']
+export type Talento = Schemas['TalentoRead']
+export type TalentoList = Schemas['TalentoList']
 
 /** Why two cards look like one person (REB-800): the same LinkedIn profile, the same name
  *  or the same telephone number. Only the first is a reason to merge. */
 export type DuplicateSignal = 'linkedin' | 'nome' | 'telefono'
 
 export type DuplicatePerson = Schemas['PersonRead']
-export type DuplicatePair = Narrow<Schemas['DuplicatePairRead'], { segnali: DuplicateSignal[] }>
-export type DuplicateList = Narrow<
-  Schemas['DuplicateListRead'],
-  { unibili: DuplicatePair[]; da_rivedere: DuplicatePair[] }
->
-export type MergeResult = Narrow<Schemas['MergeRead'], { cv: 'invariato' | 'assorbita' | 'nessuno' }>
+export type DuplicatePair = Schemas['DuplicatePairRead']
+export type DuplicateList = Schemas['DuplicateListRead']
+export type MergeResult = Schemas['MergeRead']
 export type FreelancerDraft = Schemas['FreelancerDraft']
 export type AdminToken = Schemas['AdminTokenRead']
 export type CreatedToken = Schemas['CreatedToken']
@@ -566,31 +422,14 @@ export type Action = NonNullable<Schemas['ContractDocumentRead']['prossima_azion
 
 export type FiscalData = Narrow<Schemas['FiscalData'], { partita_iva: string | null; pec: string | null }>
 export type Fiscal = Schemas['FiscalRead']
-export type ContractDocument = Narrow<
-  Schemas['ContractDocumentRead'],
-  { kind: 'quadro' | 'lettera'; stato: DocumentStato }
->
-export type Match = Narrow<
-  Schemas['MatchRead'],
-  { stato: MatchStato; pigro_stato: PigroStato | null; lettera: ContractDocument }
->
+export type ContractDocument = Schemas['ContractDocumentRead']
+export type Match = Schemas['MatchRead']
 /** `previsto` while the first letter is not signed (a projection), the reward's own
  *  state after, `gia_maturato` when the referral already paid on another match, and
  *  `da_verificare` for a company whose referente has not logged in yet (REB-658). */
 export type MatchReferralStato = 'previsto' | 'gia_maturato' | 'da_verificare' | RewardStato
-export type MatchReferral = Narrow<
-  Schemas['MatchReferral'],
-  { kind: 'freelancer' | 'company'; stato: MatchReferralStato }
->
-export type MatchListItem = Narrow<
-  Schemas['MatchListItem'],
-  {
-    stato: MatchStato
-    lettera_stato: DocumentStato | null
-    pigro_stato: PigroStato | null
-    referrals: MatchReferral[]
-  }
->
+export type MatchReferral = Schemas['MatchReferral']
+export type MatchListItem = Schemas['MatchListItem']
 
 /** What `GET /api/hub/matches` takes beside `limit`/`offset` (REB-413): `stato` one of
  *  `MatchStato`, `q` matching the freelancer's name, surname or email and the
@@ -607,55 +446,27 @@ export type CampaignAzione = Schemas['CampaignDraft']['azione']
 export type CampaignMeta = Schemas['CampaignDraft']['bottone_meta']
 export type RecipientStato = 'in_coda' | 'inviata' | 'saltata' | 'fallita'
 
-export type Campaign = Narrow<
-  Schemas['CampaignRead'],
-  {
-    fonte: 'stato' | 'filtri' | 'lista'
-    bottone_meta: CampaignMeta
-    bottone_url: string | null
-    azione: CampaignAzione
-    stato: CampaignStato
-  }
->
+export type Campaign = Schemas['CampaignRead']
 export type CampaignCounts = Schemas['CampaignCounts']
-export type CampaignListItem = Narrow<Schemas['CampaignListItem'], Pick<Campaign, 'fonte' | 'bottone_meta' | 'bottone_url' | 'azione' | 'stato'>>
-export type CampaignRecipient = Narrow<Schemas['RecipientRead'], { stato: RecipientStato }>
+export type CampaignListItem = Schemas['CampaignListItem']
+export type CampaignRecipient = Schemas['RecipientRead']
 export type AudienceRow = Schemas['AudienceRowRead']
 export type AudiencePreview = Schemas['AudiencePreview']
-export type CampaignTemplate = Narrow<Schemas['TemplateRead'], { bottone_meta: CampaignMeta; azione: CampaignAzione }>
+export type CampaignTemplate = Schemas['TemplateRead']
 /** The form builds `filtri` and the API validates it by `lista`, so the form's own
  *  reading is the looser one, narrowed back to the schema's where a body is sent. */
 export type CampaignDraft = Narrow<Schemas['CampaignDraft'], { filtri?: Record<string, unknown> | null }>
 
-export type MatchReport = Narrow<Schemas['MatchReport'], { pigro_stato: PigroStato | null }>
+export type MatchReport = Schemas['MatchReport']
 export type ReportDayInvoice = Schemas['ReportDayInvoice']
 export type ReportDay = Schemas['ReportDay']
 export type ReportWeek = Schemas['ReportWeek']
 export type ReportMonth = Schemas['ReportMonth']
 export type ReportInvoice = Schemas['ReportInvoice']
-export type SendReport = Narrow<Schemas['SendReport'], { match: Match; inviato: 'quadro' | 'lettera' | null }>
-export type MemberContract = Narrow<
-  Schemas['MemberContract'],
-  { kind: 'quadro' | 'lettera'; stato: DocumentStato }
->
-export type MemberContracts = Narrow<
-  Schemas['MemberContracts'],
-  {
-    quadro: MemberContract | null
-    quadro_occasionale: MemberContract | null
-    quadri_precedenti: MemberContract[]
-    lettere: MemberContract[]
-  }
->
-export type FreelancerContracts = Narrow<
-  Schemas['FreelancerContracts'],
-  {
-    quadro: ContractDocument | null
-    quadro_occasionale: ContractDocument | null
-    quadri: ContractDocument[]
-    matches: Match[]
-  }
->
+export type SendReport = Schemas['SendReport']
+export type MemberContract = Schemas['MemberContract']
+export type MemberContracts = Schemas['MemberContracts']
+export type FreelancerContracts = Schemas['FreelancerContracts']
 export type MatchPrefill = Narrow<
   Schemas['MatchPrefill'],
   {
@@ -736,15 +547,12 @@ const matchBody = (body: MatchCreate) => body as Schemas['MatchCreate']
 
 export type MatchCheck = Schemas['MatchCheck']
 
-export type CompanyList = Narrow<Schemas['CompanyList'], { items: Company[] }>
-export type MatchList = Narrow<Schemas['MatchList'], { items: MatchListItem[] }>
-export type TeamRequestList = Narrow<Schemas['TeamRequestList'], { items: TeamRequestListItem[] }>
-export type TeamProposalList = Narrow<Schemas['TeamProposalList'], { items: TeamProposalListItem[] }>
-export type CampaignList = Narrow<Schemas['CampaignList'], { items: CampaignListItem[] }>
-export type CampaignDetail = Narrow<
-  Schemas['CampaignDetail'],
-  { campagna: Campaign; destinatari: CampaignRecipient[] }
->
+export type CompanyList = Schemas['CompanyList']
+export type MatchList = Schemas['MatchList']
+export type TeamRequestList = Schemas['TeamRequestList']
+export type TeamProposalList = Schemas['TeamProposalList']
+export type CampaignList = Schemas['CampaignList']
+export type CampaignDetail = Schemas['CampaignDetail']
 
 /** A page of one of the four small admin lists REB-313 adds `q` and `cursor` to
  *  (Amministratori, Agenti, Accessi): a term, a cursor from the previous page's
@@ -938,7 +746,7 @@ export const admin = {
           ...data,
           remoto: asSent<Remoto>(data.remoto),
           giorni_presenza: data.giorni_presenza ? Number(data.giorni_presenza) : null,
-          numero_risorse: asSent<number>(data.numero_risorse),
+          numero_risorse: Number(data.numero_risorse),
           deal_id: data.deal_id ?? null,
         },
       }),
@@ -1299,65 +1107,16 @@ export const admin = {
 export type AiProvider = Schemas['ProviderRead']
 export type AiTask = Schemas['TaskRead']
 export type AiSourceSwitch = Schemas['SourceSwitchRead']
-export type AiStaleCards = Narrow<Schemas['StaleCardsRead'], { by_reason: { prompt?: number; source?: number } }>
+export type AiStaleCards = Schemas['StaleCardsRead']
 export type AiConfig = Schemas['AiConfigRead']
 export type AiProva = Schemas['ProvaRead']
 
 /** One entry of the «Registro» of «Modelli AI» (REB-861): what an admin changed in the
  *  configuration and every regeneration of the cards, its start and its end. The payloads
  *  carry counts, costs and the people's ids, never a name or a card's text. */
-export type AiAuditKind =
-  | 'ai_key'
-  | 'ai_switch'
-  | 'ai_task'
-  | 'ai_price'
-  | 'eval_add'
-  | 'eval_remove'
-  | 'eval_expected'
-  | 'eval_accept'
-  | 'eval_rate'
-  | 'cards_regenerate'
-  | 'cards_regenerated'
+export type AiAuditKind = AdminActionKind
 
-export type AiAuditPayload = {
-  provider?: string
-  model?: string
-  /** An `ai_switch` entry's source (`github`, `links`) when it is not a provider's. */
-  source?: string
-  /** An `ai_key` entry's: `chiave sostituita`, or `seed` for the command line's import. */
-  azione?: string
-  task?: string
-  changed?: string[]
-  after?: Record<string, unknown>
-  /** A `cards_regenerate` entry's: how many cards were asked for and queued, whether
-   *  they went through the Batch API (and as which batch), and the door. */
-  limit?: number
-  queued?: number
-  batch?: boolean
-  batch_id?: string
-  fonte?: ActionSource
-  /** A `cards_regenerated` entry's: the start it ends and what became of the cards. */
-  start_action_id?: string | null
-  /** The counts, the cost and the failures are `null` when the start's entry was lost
-   *  (`start_missing`) and the caller could not count them itself. */
-  written?: number | null
-  failed?: number | null
-  superseded?: number | null
-  skipped?: number | null
-  errored?: number | null
-  /** The calls' cost in euros, as a decimal string. */
-  cost_eur?: string | null
-  unpriced?: number
-  failures?: { freelancer_id: string; reason: string }[] | null
-  start_missing?: boolean
-  stopped?: boolean
-  /** Why it stopped, when known (`unavailable`, `cap_reached`, `not_configured`, `error`). */
-  stop_reason?: string
-  left?: number
-  batch_status?: 'applied' | 'failed'
-}
-
-export type AiAuditAction = Narrow<Schemas['AdminActionRead'], { kind: AiAuditKind; payload: AiAuditPayload }>
+export type AiAuditAction = Schemas['AdminActionRead']
 
 /** One match's link to its deal on Pigro and the hours read from there (REB-498), the
  *  admin's: the browser never talks to the CRM, the hub's API does with its own token. */
@@ -1380,39 +1139,19 @@ export const matches = {
 
 // ---- whoever is signed in --------------------------------------------------------------
 
-export type MemberRequest = Narrow<Schemas['MemberRequest'], { remoto: Remoto }>
-export type Me = Narrow<
-  Schemas['MeRead'],
-  {
-    role: Role
-    remoto: Remoto | null
-    cv_filename: string | null
-    cv_size: number | null
-    tariffa_giornaliera: string | null
-    posizione: string | null
-    links: string[]
-    richieste: MemberRequest[]
-  }
->
+export type MemberRequest = Schemas['MemberRequest']
+export type Me = Schemas['MeRead']
 export type MemberUpdate = Schemas['MemberUpdate']
 export type CompanyUpdate = Schemas['CompanyUpdate']
-export type MemberReferral = Narrow<Schemas['MemberReferral'], { referred: { kind: 'freelancer' | 'company'; nome: string; created_at: string; stato: string | null }[] }>
+export type MemberReferral = Schemas['MemberReferral']
 
 // ---- referrals (P-REB-44) --------------------------------------------------------------
 
 export type RewardStato = 'da_confermare' | 'confermato' | 'pagato'
 export type ReferralStato = 'da_verificare' | 'verificato'
 export type ReferralVerifiedVia = 'accesso' | 'lettera' | 'storico'
-export type ReferralLedgerItem = Narrow<
-  Schemas['ReferralLedgerItem'],
-  {
-    kind: 'freelancer' | 'company'
-    stato: RewardStato | null
-    referral_stato: ReferralStato
-    verified_via: ReferralVerifiedVia | null
-  }
->
-export type ReferralLedgerList = Narrow<Schemas['ReferralLedgerList'], { items: ReferralLedgerItem[] }>
+export type ReferralLedgerItem = Schemas['ReferralLedgerItem']
+export type ReferralLedgerList = Schemas['ReferralLedgerList']
 export type ReferralSettings = Schemas['ReferralSettingsRead']
 
 export interface ReferralLedgerParams {
@@ -1466,8 +1205,8 @@ export const member = {
 
 // ---- the talent cloud (REB-519, spec § 4.2) -------------------------------------------------
 
-export type CloudTalent = Narrow<Schemas['CloudTalentRead'], { modalita: Remoto | null }>
-export type CloudTalentList = Narrow<Schemas['CloudTalentList'], { items: CloudTalent[] }>
+export type CloudTalent = Schemas['CloudTalentRead']
+export type CloudTalentList = Schemas['CloudTalentList']
 
 /** The cloud's filters: a role of `ruoli`, a seniority, one skill, a work mode, and a
  *  band of the client's price per day in whole euro (its bottom and its top). */
@@ -1482,8 +1221,8 @@ export interface CloudFilters {
 
 /** One person of the builder's proposal in the cloud: the admin's shape and the name,
  *  which the cloud shows (spec § 4.2) and the public read never carries. */
-export type CloudTeamMember = Narrow<AdminTeamMember, { nome: string; cognome: string }>
-export type CloudTeamProposal = Narrow<AdminTeamProposal, { team: CloudTeamMember[] }>
+export type CloudTeamMember = Narrow<TeamMember, { nome: string; cognome: string }>
+export type CloudTeamProposal = Narrow<TeamProposal, { team: CloudTeamMember[] }>
 
 export const cloud = {
   /** 403 with the API's sentence when no grant of the caller is live. */

@@ -228,6 +228,19 @@
       "why": "vite build then tsc --noEmit, the same pair the node gate runs. The route tree is code, so nothing has to be generated first."
     },
     {
+      "id": "hub-api-types",
+      "run": "pnpm --filter hub generate:api && git diff --exit-code -- projects/hub/apps/web/src/lib/api-types.ts",
+      "when": [
+        "projects/hub/apps/api/**",
+        "projects/hub/packages/core/**",
+        "projects/hub/apps/web/scripts/**",
+        "projects/hub/apps/web/package.json",
+        "pyproject.toml",
+        "uv.lock"
+      ],
+      "why": "api-types.ts is generated from the API's OpenAPI document; a response model changed without regenerating it leaves the web typed against the old shape."
+    },
+    {
       "id": "website-types",
       "run": "pnpm --filter website exec tsc --noEmit",
       "when": [

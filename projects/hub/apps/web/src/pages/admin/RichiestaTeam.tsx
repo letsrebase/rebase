@@ -9,8 +9,8 @@ import { Textarea } from '@rebase/ui/textarea'
 import {
   admin,
   ApiError,
-  type AdminTeamMember,
-  type AdminTeamProposal,
+  type TeamMember,
+  type TeamProposal,
   type TeamRequest,
   type TeamRequestStato,
   type TeamRequestTalent,
@@ -41,7 +41,7 @@ function sentence(error: unknown, fallback: string): string {
 
 /** What the engine read about place in the company's description: whether the work is
  *  on site, and the place it named, if any. */
-function place(luogo: AdminTeamProposal['luogo']): string {
+function place(luogo: TeamProposal['luogo']): string {
   if (luogo.locale) return luogo.dove ? `In sede, a ${luogo.dove}` : 'In sede, luogo non indicato'
   return luogo.dove ? `Da remoto · ${luogo.dove}` : 'Da remoto'
 }
@@ -49,7 +49,7 @@ function place(luogo: AdminTeamProposal['luogo']): string {
 /** The team's bands per day and per month, as the company read them; «Tariffa da
  *  definire» when a member has no rate. Never asked of an empty team, which has no price
  *  at all rather than one to define. */
-function teamBands(economia: AdminTeamProposal['economia']): string {
+function teamBands(economia: TeamProposal['economia']): string {
   if (!economia.giorno || !economia.mese) return 'Tariffa da definire'
   return `${bandLabel(economia.giorno)} · ${bandLabel(economia.mese, 'mese')}`
 }
@@ -115,8 +115,10 @@ function RequestPage({ request }: { request: TeamRequest }) {
     client.setQueryData<TeamRequest>(key, updated)
     void client.invalidateQueries({ queryKey: keys.teamRequests() })
   }
-  const members = new Map<string, AdminTeamMember>(
-    (request.proposal?.team ?? []).map((member) => [member.freelancer_id, member]),
+  const members = new Map<string, TeamMember>(
+    (request.proposal?.team ?? []).flatMap((member) =>
+      member.freelancer_id ? [[member.freelancer_id, member] as const] : [],
+    ),
   )
   const teamId = useId()
   const contactsId = useId()
@@ -202,7 +204,7 @@ function RequestPage({ request }: { request: TeamRequest }) {
   )
 }
 
-function TalentRow({ talent, member }: { talent: TeamRequestTalent; member: AdminTeamMember | undefined }) {
+function TalentRow({ talent, member }: { talent: TeamRequestTalent; member: TeamMember | undefined }) {
   return (
     <TableRow>
       <TableCell>

@@ -48,13 +48,19 @@ export function AdminGuida() {
                     {stats.data.recenti.map((download) => (
                       <TableRow key={download.id}>
                         <TableCell>
-                          <Link
-                            to="/admin/freelance/$id"
-                            params={{ id: download.freelancer_id }}
-                            className="font-medium hover:underline"
-                          >
-                            {download.nome} {download.cognome}
-                          </Link>
+                          {download.freelancer_id ? (
+                            <Link
+                              to="/admin/freelance/$id"
+                              params={{ id: download.freelancer_id }}
+                              className="font-medium hover:underline"
+                            >
+                              {download.nome} {download.cognome}
+                            </Link>
+                          ) : (
+                            <span className="font-medium">
+                              {download.nome} {download.cognome}
+                            </span>
+                          )}
                           <p className="text-xs text-muted-foreground">{download.email}</p>
                         </TableCell>
                         <TableCell className="text-right text-muted-foreground">
