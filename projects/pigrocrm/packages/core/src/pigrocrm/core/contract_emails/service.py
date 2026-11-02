@@ -337,6 +337,9 @@ class ContractEmailService:
                 raise NotFound("document_version", invoice.pdf_document_id)
             version_ids.append(version.id)
         if "registro_pdf" in template.allegati:
+            # Everything the render reads is read: end the transaction first, so the pooled
+            # connection is not held while the render waits for one of its slots.
+            self.session.commit()
             archived = ContractRegisterService(self.session, storage).render_pdf(
                 contract_id, da, a, actor, invoice_id=invoice.id
             )
