@@ -94,11 +94,10 @@ test('a dead API reads as a failure on the Kanban board too, not an empty pipeli
   await killApi()
 
   try {
-    // Through the group, closed on the dashboard since the sidebar became grouped --
-    // see `helpers.ts::navigate`. Arriving *by clicking* rather than by `goto` is
-    // deliberate: the point is that `useDeals` mounts for the first time in this
-    // session and really does hit the dead API.
-    await navigate(page, 'Vendite', 'Deal')
+    // Through the sidebar, see `helpers.ts::navigate`. Arriving *by clicking* rather than
+    // by `goto` is deliberate: the point is that `useDeals` mounts for the first time in
+    // this session and really does hit the dead API.
+    await navigate(page, 'Deal')
     await expect(page).toHaveURL(/\/app\/deal/)
 
     await expect(page.getByRole('alert')).toBeVisible()

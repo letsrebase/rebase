@@ -1,6 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { useBlocker } from '@tanstack/react-router'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { toast } from '@rebase/ui/sonner'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -19,41 +18,7 @@ vi.mock('@rebase/ui/sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() 
 vi.mock('@/lib/auth', () => ({ useAuth: vi.fn() }))
 vi.mock('@tanstack/react-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@tanstack/react-router')>()
-  return {
-    ...actual,
-    useBlocker: vi.fn(),
-    // `onClick` is forwarded: the dialog closes itself from the link's handler, and
-    // cancels the navigation when the unsaved-token guard is declined. `ignoreBlocker`
-    // is honoured the way the real router does: unless it is set, the navigation also
-    // runs the blocker's own `shouldBlockFn` (the most recent one `useUnsavedTokenGuard`
-    // registered) before committing -- this is what makes REB-238's double prompt, and
-    // its fix, observable from a test at all.
-    Link: ({
-      children,
-      to,
-      onClick,
-      ignoreBlocker,
-    }: {
-      children: React.ReactNode
-      to: string
-      onClick?: (event: React.MouseEvent<HTMLAnchorElement>) => void
-      ignoreBlocker?: boolean
-    }) => (
-      <a
-        href={to}
-        onClick={(event) => {
-          onClick?.(event)
-          if (event.defaultPrevented || ignoreBlocker) return
-          const call = vi.mocked(useBlocker).mock.calls.at(-1)?.[0] as
-            | { shouldBlockFn?: () => boolean | Promise<boolean> }
-            | undefined
-          if (call?.shouldBlockFn?.()) event.preventDefault()
-        }}
-      >
-        {children}
-      </a>
-    ),
-  }
+  return { ...actual, useBlocker: vi.fn() }
 })
 const mockTenant = vi.hoisted(() => ({ prefix: '' }))
 vi.mock('@/lib/tenant', async (importOriginal) => {
@@ -179,59 +144,9 @@ describe('ConnectAgentDialog', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 
-  it('links to the Token page', () => {
+  it('has no link out: the page it opens on is the token list', () => {
     renderDialog()
-    expect(within(screen.getByRole('dialog')).getByRole('link', { name: 'Gestisci i token' })).toHaveAttribute(
-      'href',
-      '/app/token',
-    )
-  })
-
-  it('closes the dialog when the Token page link is followed', async () => {
-    const onOpenChange = renderDialog()
-    await userEvent.click(screen.getByRole('link', { name: 'Gestisci i token' }))
-    expect(onOpenChange).toHaveBeenCalledWith(false)
-  })
-
-  it('asks exactly once before the Token page link leaves with a token on screen, and "no" keeps the token visible', async () => {
-    vi.mocked(api.POST).mockReturnValueOnce(
-      Promise.resolve(ok({ id: 't2', nome: 'Claude Code', prefix: 'pgc_zzzz9999', full_access: false, last_used_at: null, revoked_at: null, created_at: '2026-09-12T10:00:00Z', token: 'pgc_x' })),
-    )
-    const onOpenChange = renderDialog()
-    await userEvent.click(screen.getByRole('button', { name: 'Crea il token' }))
-    await screen.findByDisplayValue('pgc_x')
-    const confirmSpy = vi.mocked(window.confirm)
-    confirmSpy.mockClear()
-    confirmSpy.mockReturnValueOnce(false)
-    // `fireEvent.click` answers false when the handler called `preventDefault`, which
-    // is the assertion: the dialog stays open *and* the router never navigates.
-    expect(fireEvent.click(screen.getByRole('link', { name: 'Gestisci i token' }))).toBe(false)
-    expect(onOpenChange).not.toHaveBeenCalledWith(false)
-    // The single guard this navigation goes through (`close()`'s own prompt via
-    // `ignoreBlocker`) is asked once, not twice, and declining it never discards the
-    // token the way the pre-fix double prompt did.
-    expect(confirmSpy).toHaveBeenCalledTimes(1)
-    expect(screen.getByDisplayValue('pgc_x')).toBeInTheDocument()
-  })
-
-  it('asks only once when the answer is yes, not twice through a second, stale blocker check', async () => {
-    vi.mocked(api.POST).mockReturnValueOnce(
-      Promise.resolve(ok({ id: 't2', nome: 'Claude Code', prefix: 'pgc_zzzz9999', full_access: false, last_used_at: null, revoked_at: null, created_at: '2026-09-12T10:00:00Z', token: 'pgc_x' })),
-    )
-    const onOpenChange = renderDialog()
-    await userEvent.click(screen.getByRole('button', { name: 'Crea il token' }))
-    await screen.findByDisplayValue('pgc_x')
-    const confirmSpy = vi.mocked(window.confirm)
-    confirmSpy.mockClear()
-    confirmSpy.mockReturnValue(true)
-    // Without `ignoreBlocker` this reaches the mock's own blocker check after
-    // `close(false)` already answered yes and discarded the token, which is exactly
-    // the case the decline-path test above cannot see (it returns before the blocker
-    // is ever consulted): a second, stale `shouldBlockFn` call for a token that no
-    // longer exists.
-    await userEvent.click(screen.getByRole('link', { name: 'Gestisci i token' }))
-    expect(onOpenChange).toHaveBeenCalledWith(false)
-    expect(confirmSpy).toHaveBeenCalledTimes(1)
+    expect(within(screen.getByRole('dialog')).queryByRole('link')).not.toBeInTheDocument()
   })
 
   it('says so when the clipboard refuses', async () => {

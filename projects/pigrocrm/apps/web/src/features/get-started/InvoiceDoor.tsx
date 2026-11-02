@@ -442,7 +442,7 @@ function Handoff({
           <Link to="/app/settings/space" className="font-medium underline underline-offset-4">
             Impostazioni → Spazio
           </Link>
-          , dai l’accesso completo al token dell’assistente in Token di accesso, poi ricollega
+          , dai l’accesso completo al token dell’assistente in Agenti, poi ricollega
           l’assistente perché veda lo strumento.
         </p>
       )}

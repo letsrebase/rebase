@@ -117,6 +117,40 @@ const OPTIONS = { retry: false, staleTime: 30_000 } as const
  *  dropped request must not send an empty space's Home to the dashboard. */
 const WORK_OPTIONS = { staleTime: 30_000 } as const
 
+/** What a step's read says: a read that failed counts as done (see `settled`). */
+const value = (q: { data?: boolean; isError: boolean }) => (q.isError ? true : (q.data ?? false))
+
+/** The four reads that say whether the space has any work, and the verdict they give. */
+function useWork() {
+  const cliente = useQuery({ queryKey: queryKeys.customers(SCOPE), queryFn: hasCustomers, ...WORK_OPTIONS })
+  const deal = useQuery({ queryKey: queryKeys.deals(SCOPE), queryFn: hasDeals, ...WORK_OPTIONS })
+  const ore = useQuery({ queryKey: queryKeys.timeEntries(SCOPE), queryFn: hasTimeEntries, ...WORK_OPTIONS })
+  const documento = useQuery({ queryKey: queryKeys.documents(SCOPE), queryFn: hasDocuments, ...WORK_OPTIONS })
+  const reads = [cliente, deal, ore, documento]
+  return {
+    cliente,
+    deal,
+    ore,
+    reads,
+    // Not while a work read is refetching either: a Home mounted right after the first
+    // customer was created would otherwise decide on the cached «empty» that the
+    // invalidation is about to replace, and then hold that stale answer for the visit.
+    spaceEmpty: reads.some((q) => q.isPending || q.isFetching) ? null : !reads.some(value),
+    workFailed: reads.some((q) => q.isError),
+  }
+}
+
+/**
+ * Whether the space has any work yet, `null` while that is not known: the question the Home
+ * asks to choose between the start page and the dashboard, and the sidebar asks to decide
+ * whether «Primi passi» goes into the profile menu (REB-873). The same four reads under the
+ * same keys, so the two share one answer and the second asker costs no request.
+ */
+export function useSpaceEmpty(): { spaceEmpty: boolean | null; workFailed: boolean } {
+  const { spaceEmpty, workFailed } = useWork()
+  return { spaceEmpty, workFailed }
+}
+
 export function useFirstSteps(): FirstStepsState {
   const { user } = useAuth()
   const userId = user?.id ?? ''
@@ -127,19 +161,14 @@ export function useFirstSteps(): FirstStepsState {
     ...OPTIONS,
   })
   const fiscali = useQuery({ queryKey: [...queryKeys.aziende, 'first-steps'], queryFn: fiscalDataSaved, ...OPTIONS })
-  const cliente = useQuery({ queryKey: queryKeys.customers(SCOPE), queryFn: hasCustomers, ...WORK_OPTIONS })
-  const deal = useQuery({ queryKey: queryKeys.deals(SCOPE), queryFn: hasDeals, ...WORK_OPTIONS })
-  const ore = useQuery({ queryKey: queryKeys.timeEntries(SCOPE), queryFn: hasTimeEntries, ...WORK_OPTIONS })
-  const documento = useQuery({ queryKey: queryKeys.documents(SCOPE), queryFn: hasDocuments, ...WORK_OPTIONS })
+  const { cliente, deal, ore, reads, spaceEmpty, workFailed } = useWork()
   const offerta = useQuery({
     queryKey: queryKeys.documents({ ...SCOPE, tipo: 'offerta' }),
     queryFn: hasOffers,
     ...OPTIONS,
   })
 
-  const work = [cliente, deal, ore, documento]
-  const loading = [token, fiscali, offerta, ...work].some((q) => q.isPending)
-  const value = (q: { data?: boolean; isError: boolean }) => (q.isError ? true : (q.data ?? false))
+  const loading = [token, fiscali, offerta, ...reads].some((q) => q.isPending)
 
   const list: FirstStep[] = [
     {
@@ -188,10 +217,7 @@ export function useFirstSteps(): FirstStepsState {
     doneCount,
     allDone: doneCount === list.length,
     assistantConnected: value(token),
-    // Not while a work read is refetching either: a Home mounted right after the first
-    // customer was created would otherwise decide on the cached «empty» that the
-    // invalidation is about to replace, and then hold that stale answer for the visit.
-    spaceEmpty: work.some((q) => q.isPending || q.isFetching) ? null : !work.some(value),
-    workFailed: work.some((q) => q.isError),
+    spaceEmpty,
+    workFailed,
   }
 }

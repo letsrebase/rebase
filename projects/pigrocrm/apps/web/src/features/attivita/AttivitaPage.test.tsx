@@ -3,9 +3,8 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
-import { toIsoDate } from '@/lib/dates'
 import { AttivitaPage } from './AttivitaPage'
-import { toFilters } from './filters'
+import type { Vista } from './vista'
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>()
@@ -22,7 +21,6 @@ vi.mock('@/lib/auth', () => ({
 
 vi.mock('@rebase/ui/sonner', () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.fn() } }))
 
-// Only what the page draws from the router: the link of a linked record.
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children }: { children: React.ReactNode }) => <a href="/x">{children}</a>,
 }))
@@ -53,176 +51,116 @@ function ok(data: unknown) {
   return Promise.resolve({ data, response: new Response(null, { status: 200 }) }) as never
 }
 
-type Query = Record<string, unknown>
+const gruppo = (items: unknown[]) => ({ totale: items.length, items })
 
-/** The `query` of every `GET /api/activities` the page has made, oldest first. */
-function activityQueries(): Query[] {
-  return (vi.mocked(api.GET).mock.calls as unknown as [string, { params: { query: Query } }][])
-    .filter(([path]) => path === '/api/activities')
-    .map(([, options]) => options.params.query)
-}
+const FOUND = row({ id: 'found', titolo: 'Da cercare', stato: 'completata', assegnata_a: null })
 
-function serve(items: unknown[]) {
+/** The server for both views and for the one attività `?apri=` names. */
+function serve() {
   vi.mocked(api.GET).mockImplementation(((path: string) => {
-    if (path === '/api/activities') return ok({ items, next_cursor: null })
+    if (path === '/api/activities/oggi') {
+      return ok({
+        oggi: '2026-10-26',
+        in_ritardo: gruppo([row({ id: 'late', titolo: 'Sollecitare Rossi', scadenza: '2026-10-25' })]),
+        scadono_oggi: gruppo([]),
+        prossimi_sette_giorni: gruppo([]),
+        senza_scadenza: gruppo([]),
+      })
+    }
+    if (path === '/api/activities') {
+      return ok({ items: [row({ id: 'listed', titolo: 'Preparare le proposte' })], next_cursor: null })
+    }
+    if (path === '/api/activities/{attivita_id}') return ok(FOUND)
     if (path === '/api/users') return ok([{ id: ME, nome: 'Lorenzo', attivo: true }])
     throw new Error(`unexpected GET ${path}`)
   }) as never)
 }
 
-function renderPage(openId?: string, onDismissOpen?: () => void, initialAssignee?: string) {
+function renderPage(
+  vista: Vista,
+  extra: { openId?: string; onDismissOpen?: () => void; onVistaChange?: (next: Vista) => void } = {},
+) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={client}>
-      <AttivitaPage openId={openId} onDismissOpen={onDismissOpen} initialAssignee={initialAssignee} />
+      <AttivitaPage vista={vista} onVistaChange={extra.onVistaChange ?? vi.fn()} {...extra} />
     </QueryClientProvider>,
   )
 }
 
 beforeEach(() => {
   vi.mocked(api.GET).mockReset()
-  vi.mocked(api.POST).mockReset()
-  vi.mocked(api.POST).mockImplementation((() => ok(row({}))) as never)
-})
-
-describe('toFilters', () => {
-  const base = {
-    stato: null,
-    scadenza: null,
-    assignee: 'tutte',
-    meId: ME,
-    link: null,
-    archiviate: false,
-  } as const
-
-  it('sends nothing for «all», except the order', () => {
-    expect(toFilters(base)).toEqual({ sort: 'scadenza', dir: 'asc', limit: 50 })
-  })
-
-  it('turns «mine» into the caller, and another person into their id', () => {
-    expect(toFilters({ ...base, assignee: 'io' })).toMatchObject({
-      assegnata_a: ME,
-      anche_non_assegnate: true,
-    })
-    const colleague = toFilters({ ...base, assignee: 'u-2' })
-    expect(colleague.assegnata_a).toBe('u-2')
-    expect(colleague).not.toHaveProperty('anche_non_assegnate')
-  })
-
-  it('reads «scadute» as due before today: yesterday is the inclusive bound', () => {
-    const yesterday = new Date()
-    yesterday.setDate(yesterday.getDate() - 1)
-    expect(toFilters({ ...base, scadenza: 'scadute' }).scade_entro).toBe(toIsoDate(yesterday))
-  })
-
-  it('keeps «scadute» to the open ones whatever the state chips say', () => {
-    expect(toFilters({ ...base, scadenza: 'scadute', stato: null }).stato).toBe('aperta')
-  })
-
-  it('names the linked record by the column of its kind', () => {
-    expect(toFilters({ ...base, link: { kind: 'deal', id: 'd-1' } })).toMatchObject({
-      deal_id: 'd-1',
-    })
-  })
+  serve()
 })
 
 describe('AttivitaPage', () => {
-  it('opens on everybody\'s when the Oggi page sends it there for «Di chiunque»', async () => {
-    serve([row({ id: '1', titolo: 'Preparare le proposte', scadenza: '2026-10-30' })])
-    renderPage(undefined, undefined, 'tutte')
+  it('opens on Oggi: one title, two tabs, the sections and no table', async () => {
+    renderPage('oggi')
 
+    expect(screen.getByRole('heading', { level: 1, name: 'Attività' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Oggi' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'Tutte' })).toHaveAttribute('aria-selected', 'false')
+    expect(await screen.findByText('Sollecitare Rossi')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /In ritardo/ })).toBeInTheDocument()
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+  })
+
+  it('shows today\'s table on Tutte, under the same title', async () => {
+    renderPage('tutte')
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Attività' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Tutte' })).toHaveAttribute('aria-selected', 'true')
     expect(await screen.findByText('Preparare le proposte')).toBeInTheDocument()
-    expect(activityQueries()[0]).not.toHaveProperty('assegnata_a')
-    expect(screen.getByRole('combobox', { name: 'Filtra per assegnatario' })).toHaveTextContent(
-      'Di chiunque',
-    )
+    expect(screen.getByRole('table')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: /In ritardo/ })).not.toBeInTheDocument()
   })
 
-  it('opens on the open ones assigned to me, and says so in its controls', async () => {
-    serve([row({ id: '1', titolo: 'Preparare le proposte', scadenza: '2026-10-30' })])
-    renderPage()
+  it('hands the chosen tab back for the route to put in the URL', async () => {
+    const onVistaChange = vi.fn()
+    renderPage('oggi', { onVistaChange })
 
-    expect(await screen.findByText('Preparare le proposte')).toBeInTheDocument()
-    expect(activityQueries()[0]).toMatchObject({
-      stato: 'aperta',
-      assegnata_a: ME,
-      anche_non_assegnate: true,
-    })
-    expect(screen.getByRole('button', { name: 'Aperte' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('combobox', { name: 'Filtra per assegnatario' })).toHaveTextContent(
-      'Mie e non assegnate',
-    )
-    expect(screen.getByText('30/10/2026')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('tab', { name: 'Tutte' }))
+    expect(onVistaChange).toHaveBeenCalledWith('tutte')
   })
 
-  it('filters «scadute» on the server and completes a row from the row', async () => {
-    serve([row({ id: '1', titolo: 'In ritardo', scadenza: '2026-10-01' })])
-    renderPage()
-    await screen.findByText('In ritardo')
+  it.each(['oggi', 'tutte'] as const)(
+    'opens the attività a link names in its dialog over the %s view, even when no filter shows it',
+    async (vista) => {
+      const onDismissOpen = vi.fn()
+      renderPage(vista, { openId: 'found', onDismissOpen })
 
-    await userEvent.click(screen.getByRole('button', { name: 'Scadute' }))
-    await waitFor(() =>
-      expect(activityQueries().some((query) => query.scade_entro !== undefined)).toBe(true),
-    )
-    const scadute = activityQueries().find((query) => query.scade_entro !== undefined)
-    expect(scadute).toMatchObject({ stato: 'aperta', assegnata_a: ME })
+      const dialog = await screen.findByRole('dialog', { name: 'Modifica attività' })
+      expect(within(dialog).getByLabelText('Titolo')).toHaveValue('Da cercare')
+      // Closed, so the dialog offers the way back to open.
+      expect(within(dialog).getByRole('button', { name: 'Riapri' })).toBeInTheDocument()
 
-    const table = await screen.findByRole('table')
-    await userEvent.click(within(table).getByRole('button', { name: 'Fatto' }))
-    await waitFor(() => expect(api.POST).toHaveBeenCalled())
-    expect(vi.mocked(api.POST).mock.calls[0]?.[0]).toBe('/api/activities/{attivita_id}/complete')
-  })
+      // Closing asks the route to take `?apri=` off the URL, so picking the same hit
+      // again is a new navigation and not a no-op.
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Annulla' }))
+      await waitFor(() => expect(onDismissOpen).toHaveBeenCalled())
+    },
+  )
 
-  it('ends «scadute» when another state is chosen, and «scadute» chooses «aperte»', async () => {
-    serve([])
-    renderPage()
-    await userEvent.click(screen.getByRole('button', { name: 'Completate' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Scadute' }))
-    expect(screen.getByRole('button', { name: 'Aperte' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('button', { name: 'Completate' })).toHaveAttribute('aria-pressed', 'false')
-
-    await userEvent.click(screen.getByRole('button', { name: 'Annullate' }))
-    expect(screen.getByRole('button', { name: 'Scadute' })).toHaveAttribute('aria-pressed', 'false')
-  })
-
-  it('lists the archived ones on their own and offers to restore, never to archive', async () => {
-    serve([row({ id: '9', titolo: 'Creata per errore' })])
-    renderPage()
-    await screen.findByText('Creata per errore')
-
-    await userEvent.click(screen.getByRole('button', { name: 'Archiviate' }))
-    await waitFor(() =>
-      expect(activityQueries().some((query) => query.archiviate === true)).toBe(true),
-    )
-    await screen.findByText('Creata per errore')
-    expect(screen.queryByRole('button', { name: 'Fatto' })).not.toBeInTheDocument()
-
-    await userEvent.click(screen.getByRole('button', { name: 'Azioni su Creata per errore' }))
-    expect(screen.queryByRole('menuitem', { name: 'Archivia' })).not.toBeInTheDocument()
-    await userEvent.click(await screen.findByRole('menuitem', { name: 'Ripristina' }))
-    await waitFor(() => expect(api.POST).toHaveBeenCalled())
-    expect(vi.mocked(api.POST).mock.calls[0]?.[0]).toBe('/api/activities/{attivita_id}/restore')
-  })
-
-  it('opens the attività the global search sent it for, even when no filter shows it', async () => {
-    const found = row({ id: 'found', titolo: 'Da cercare', stato: 'completata', assegnata_a: null })
+  it('says so when the attività a link names cannot be read', async () => {
     vi.mocked(api.GET).mockImplementation(((path: string) => {
-      if (path === '/api/activities') return ok({ items: [], next_cursor: null })
-      if (path === '/api/activities/{attivita_id}') return ok(found)
-      if (path === '/api/users') return ok([])
-      throw new Error(`unexpected GET ${path}`)
+      if (path === '/api/activities/{attivita_id}') {
+        return Promise.resolve({
+          error: { detail: 'Attività non trovata.' },
+          response: new Response(null, { status: 404 }),
+        }) as never
+      }
+      return serveFallback(path) as never
     }) as never)
-    const onDismissOpen = vi.fn()
-    renderPage('found', onDismissOpen)
+    renderPage('tutte', { openId: 'missing' })
 
-    const dialog = await screen.findByRole('dialog', { name: 'Modifica attività' })
-    expect(within(dialog).getByLabelText('Titolo')).toHaveValue('Da cercare')
-    // Closed, so the dialog offers the way back to open.
-    expect(within(dialog).getByRole('button', { name: 'Riapri' })).toBeInTheDocument()
-
-    // Closing asks the route to take `?apri=` off the URL, so picking the same hit again
-    // is a new navigation and not a no-op.
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Annulla' }))
-    await waitFor(() => expect(onDismissOpen).toHaveBeenCalled())
+    expect(await screen.findByRole('alert')).toHaveTextContent('Attività non trovata.')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 })
+
+/** The rest of the server, for the test above that overrides one path. */
+function serveFallback(path: string): unknown {
+  if (path === '/api/activities') return ok({ items: [], next_cursor: null })
+  if (path === '/api/users') return ok([])
+  throw new Error(`unexpected GET ${path}`)
+}

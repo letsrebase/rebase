@@ -201,8 +201,8 @@ to the expiry of the Google consent — is
 Every operation in the UI is also an MCP tool. Over HTTP the server answers at
 `https://<host>/mcp` for the root installation and `https://<host>/<slug>/mcp` for a
 space, authenticated with a personal access token as a bearer. In the app, the
-«Collega un agente» entry at the bottom of the sidebar mints a token and gives you
-both snippets below with the values filled in.
+«Collega un agente» button on the Agenti page (at the foot of the sidebar) mints a token
+and gives you both snippets below with the values filled in.
 
 ```
 claude mcp add --transport http pigrocrm https://<host>/mcp --header "Authorization: Bearer pgc_..."

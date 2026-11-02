@@ -3,7 +3,7 @@ import type { LucideIcon } from 'lucide-react'
 import {
   ArrowLeftRight,
   Bell,
-  Briefcase,
+  Bot,
   Building2,
   CalendarCheck,
   CalendarDays,
@@ -13,13 +13,11 @@ import {
   Handshake,
   HardDrive,
   Inbox,
-  KeyRound,
   LayoutDashboard,
   ListChecks,
   LogOut,
   MailPlus,
   PanelLeftIcon,
-  Plug,
   Plus,
   Receipt,
   Rocket,
@@ -27,16 +25,14 @@ import {
   Settings,
   UserRound,
   Users,
-  Wallet,
 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { BrandMark } from '@/components/BrandMark'
-import { readSidebarGroups, writeSidebarGroups } from '@/components/sidebarGroups'
 import { useOverdueCount } from '@/features/attivita/queries'
+import { useSpaceEmpty } from '@/features/get-started/firstSteps'
 import { useUnreadCount } from '@/features/reminders/queries'
 import { CommandPalette } from '@/features/search/CommandPalette'
 import { SETTINGS_GROUPS, type SettingsTabValue } from '@/features/settings/tabs'
-import { ConnectAgentDialog } from '@/features/tokens/ConnectAgentDialog'
 import { useMediaQuery } from '@/hooks/use-media-query'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@rebase/ui/button'
@@ -72,70 +68,60 @@ type IdentitySpace = components['schemas']['IdentitySpace']
  * The shell of the app: a dark sidebar on the left, everything else the page, full
  * width from the sidebar to the edge of the window (REB-328).
  *
- * Three things moved in this revision. The global search is a field at the top of the
- * sidebar rather than a control in a top bar -- there is no top bar any more, so a page's
- * own `PageHeader` is the first thing on the page and owns the title and the primary
- * action. The navigation is grouped instead of flat: nine entries in one column had no
- * reading order left to give, while «Vendite» / «Amministrazione» say what the sections
- * are for. And the page scrolls on its own, so the sidebar never scrolls away with
- * it.
+ * The global search is a field at the top of the sidebar rather than a control in a top
+ * bar -- there is no top bar -- so a page's own `PageHeader` is the first thing on the page
+ * and owns the title and the primary action. The page scrolls on its own, so the sidebar
+ * never scrolls away with it.
  *
- * Home is the dashboard, `/app`, and it is where the economic reading of the books now
- * lives: the «Analisi» entry that stood between it and «Token» is gone with the section
- * it opened (2026-09-09), whose estimate is a card in Home and whose two reports left the
- * interface. `GET /api/analytics/*` and the MCP tools are untouched.
+ * The navigation reads in the order of the brief Lorenzo approved on 2026-11-02 (sidebar A,
+ * REB-873): Home; then three sections named by what they are for, drawn as captions that
+ * are always open and are never controls, «Da fare» (Attività, Calendario, Avvisi,
+ * Proposte), «Vendite» and «Amministrazione»; then, at the foot, «Agenti» and
+ * «Impostazioni», the only entry that still opens onto sub-items. «Oggi» is no entry of
+ * its own: it is the first view of the Attività page, whose overdue count it carries.
+ * «Primi passi» is in the profile menu once the space has data.
+ *
+ * Home is the dashboard, `/app`, and it is where the economic reading of the books lives
+ * (the «Analisi» section left on 2026-09-09; `GET /api/analytics/*` and the MCP tools are
+ * untouched).
  *
  * Below `lg` the sidebar is the icon rail by default and its expanded form is an overlay
  * over the page, dismissed by a backdrop or by navigating: 272px of the 390px a phone has
  * would leave the content about 118px, which is not a layout. Above `lg` it is the column
- * beside the page, collapsible to the same rail as before.
+ * beside the page, collapsible to the same rail as before; there the captions become thin
+ * separators and every entry an icon.
  */
 
-// Token is a top-level entry, not one of the settings sub-items below: a personal access
-// token belongs to whoever creates it, any role (`PatService` scopes by `actor.id`, not
-// role), so it is its own entry and not a section under «Impostazioni».
-const TOP_LEVEL = [
-  { to: '/app', label: 'Home', icon: LayoutDashboard, exact: true },
-  // The start page (ORB-180, REB-222): the Gmail door, the assistant and the first steps.
-  // The Home is this same page while the space is empty; this entry, right under Home and
-  // for every role, keeps it one click away once the Home has become the dashboard.
-  { to: '/app/get-started', label: 'Primi passi', icon: Rocket, exact: false },
-  // Under Home, at Ivan's request (2026-09-09), and top-level rather than inside a
-  // group for the same reason Home is: a month of one's own days and deadlines is a
-  // cross-cutting view, not a step of «Vendite» or of «Amministrazione».
-  { to: '/app/calendar', label: 'Calendario', icon: CalendarDays, exact: false },
-  // What falls due today (REB-725): overdue, today, the next seven days and the undated,
-  // with the overdue count beside it. Between the calendar and the full list, since it is
-  // the one cut of the list a person opens first thing.
-  { to: '/app/oggi', label: 'Oggi', icon: CalendarCheck, exact: false },
-  // Every to-do of the space, right under the calendar that draws the dated ones by day
-  // (REB-722): the calendar answers «what falls on which day», this answers «what is
-  // still open for me», and neither can answer the other's question.
-  { to: '/app/activities', label: 'Attività', icon: ListChecks, exact: false },
-  { to: '/app/token', label: 'Token', icon: KeyRound, exact: false },
-  // What needs attention, with the count of what is still unread (REB-734). Right before
-  // Proposte, so it sits clear of the entries other cards add between Calendario and Token.
-  { to: '/app/avvisi', label: 'Avvisi', icon: Bell, exact: false },
-  // The agent proposals waiting for a decision (REB-750). Last, after Token, so it stays
-  // clear of the entries other cards add between Calendario and Token.
-  { to: '/app/proposals', label: 'Proposte', icon: Inbox, exact: false },
-] as const
+const HOME = { to: '/app', label: 'Home', icon: LayoutDashboard, exact: true } as const
 
 /**
- * The two collapsible groups. The sub-items carry an icon even though the expanded
- * rendering shows only their label: the icon is what the collapsed rail draws, where
- * these become plain icon links and the group header disappears.
+ * The three sections, each a caption over its entries. The entries carry an icon even
+ * though the expanded rendering shows it too: the icon is what the collapsed rail draws,
+ * where the caption becomes a separator.
  *
- * «Amministrazione» reads in the order the money is supposed to move: the register, then
- * the hours the next invoice is built from. Neither group is admin-gated: every write
- * behind these pages is gated at the service, where the refusal belongs. The Solleciti
- * page left the menu on 2026-09-09 at Ivan's request; its API and MCP tools remain.
+ * «Da fare» is what asks for a person's attention, in the order they reach for it: the
+ * attività (late ones counted beside it), the calendar that draws the dated ones by day,
+ * the reminders still unread (REB-734) and the proposals an agent left for a decision
+ * (REB-750). «Amministrazione» reads in the order the money is supposed to move: the
+ * register, the hours the next invoice is built from, the contract days (REB-745). None of
+ * it is admin-gated: every write behind these pages is gated at the service, where the
+ * refusal belongs. The Solleciti page left the menu on 2026-09-09 at Ivan's request; its
+ * API and MCP tools remain.
  */
-const GROUPS = [
+const SECTIONS = [
+  {
+    id: 'da-fare',
+    caption: 'Da fare',
+    items: [
+      { to: '/app/activities', label: 'Attività', icon: ListChecks },
+      { to: '/app/calendar', label: 'Calendario', icon: CalendarDays },
+      { to: '/app/avvisi', label: 'Avvisi', icon: Bell },
+      { to: '/app/proposals', label: 'Proposte', icon: Inbox },
+    ],
+  },
   {
     id: 'vendite',
-    label: 'Vendite',
-    icon: Briefcase,
+    caption: 'Vendite',
     items: [
       { to: '/app/customers', label: 'Clienti', icon: Building2 },
       { to: '/app/people', label: 'Persone', icon: Users },
@@ -144,16 +130,22 @@ const GROUPS = [
   },
   {
     id: 'amministrazione',
-    label: 'Amministrazione',
-    icon: Wallet,
+    caption: 'Amministrazione',
     items: [
       { to: '/app/invoices', label: 'Fatture', icon: Receipt },
       { to: '/app/hours', label: 'Ore', icon: Clock },
-      // The contract days (REB-745): the register, and the page a day is recorded from.
       { to: '/app/days', label: 'Giornate', icon: CalendarCheck },
     ],
   },
 ] as const
+
+/**
+ * «Agenti», at the foot with «Impostazioni» (REB-873): the personal access tokens and the
+ * «Collega un agente» action that mints one. Not one of the settings sub-items: a token
+ * belongs to whoever creates it, any role (`PatService` scopes by `actor.id`, not role), so
+ * the page is every role's own and its route, `/app/token`, carries no admin guard.
+ */
+const AGENTI = { to: '/app/token', label: 'Agenti', icon: Bot } as const
 
 /**
  * One literal path per settings tab. `satisfies Record<SettingsTabValue, ...>` is what
@@ -184,9 +176,9 @@ const SETTINGS_PATHS = {
  * «Impostazioni», whose sub-items are the six settings groups of the REB-770 brief (option
  * A), built from the shared `SETTINGS_GROUPS` so the sidebar cannot drift from the page.
  *
- * Its own constant, separate from `GROUPS`, because in the collapsed rail it becomes a
- * single icon link: one icon per section of one page would be a rail of settings and
- * nothing else.
+ * Its own constant, apart from the three sections, because it is the one entry that opens
+ * onto sub-items, and because in the collapsed rail it becomes a single icon link: one icon
+ * per section of one page would be a rail of settings and nothing else.
  *
  * Shown to every role (R2): each role sees only the groups holding a section it may open
  * (`canSeeSettingsTab`), so a member has «Personale» alone and a collaboratore adds
@@ -194,7 +186,6 @@ const SETTINGS_PATHS = {
  * Profilo for whoever got the mail (spec 2026-09-16 §3.6).
  */
 const SETTINGS = {
-  id: 'impostazioni',
   label: 'Impostazioni',
   icon: Settings,
   base: '/app/settings',
@@ -227,8 +218,9 @@ function settingsSubItems(role: Role, pathname: string) {
  * fail to compile the day one of these routes is renamed.
  */
 type LinkTo =
-  | (typeof TOP_LEVEL)[number]['to']
-  | (typeof GROUPS)[number]['items'][number]['to']
+  | typeof HOME.to
+  | (typeof SECTIONS)[number]['items'][number]['to']
+  | typeof AGENTI.to
   | (typeof SETTINGS_PATHS)[SettingsTabValue]
 
 // `metaKey` on Apple platforms, `ctrlKey` elsewhere. Read once at module scope from the
@@ -293,9 +285,9 @@ export function AppShell({
   // *structures*, not two widths of one.
   const isDesktop = useMediaQuery(DESKTOP)
   // Local, unpersisted UI state -- collapsing to an icon rail is a per-visit
-  // convenience, not a setting worth a round trip or a storage key. Which groups are
-  // open *is* stored (see `sidebarGroups.ts`): it is a standing preference about the
-  // shape of your own navigation.
+  // convenience, not a setting worth a round trip or a storage key. Nothing about the
+  // shape of the navigation is stored any more: the sections are always open
+  // (REB-873), and «Impostazioni» below follows the route until it is toggled.
   const [collapsed, setCollapsed] = useState(false)
   // The overlay, stored as *where* it was opened rather than as a boolean: navigating
   // closes it, with no effect to synchronise, because the pathname it was opened at is no
@@ -306,9 +298,6 @@ export function AppShell({
   // Cmd/Ctrl+K listener, so it has to be alive even while the field has never been
   // clicked.
   const [searchOpen, setSearchOpen] = useState(false)
-  // The connect-agent dialog, same idea as the search palette: mounted here once so its
-  // trigger can sit in the sidebar as a plain button rather than a route.
-  const [agentOpen, setAgentOpen] = useState(false)
   // The other spaces this identity may reach, and the one being entered right now
   // (disables every row while that request is in flight). Fetched on mount and again
   // every time the menu opens (Greptile, PR #419): AppShell stays mounted for a whole
@@ -363,29 +352,14 @@ export function AppShell({
   // `canSeeSettingsTab` the settings page filters its own tabs with, so sidebar and
   // page read one table and cannot drift. The group itself is shown to every role.
   const settingsItems = user === null ? [] : settingsSubItems(user.ruolo, location.pathname)
-  const groups = [...GROUPS, SETTINGS]
-  const activeGroup = groups.find((group) =>
-    'base' in group
-      ? isUnder(location.pathname, group.base)
-      : group.items.some((item) => isUnder(location.pathname, item.to)),
-  )?.id
-
-  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(readSidebarGroups)
-  // The group holding the current route opens by itself unless you dismissed it in this
-  // session: the alternative is a page whose own entry in the sidebar is not on screen,
-  // and the alternative to *that* -- nailing it open -- is a chevron that does nothing.
-  // The dismissal is deliberately not stored: what gets written is the preference you
-  // chose, not what one route did on your behalf, so a reload of the same page opens the
-  // group again.
-  const [dismissed, setDismissed] = useState<string | undefined>(undefined)
-  const isOpen = (id: string) =>
-    openGroups[id] === true || (id === activeGroup && dismissed !== id)
-
-  const toggleGroup = (id: string) => {
-    const next = { ...openGroups, [id]: !isOpen(id) }
-    if (id === activeGroup) setDismissed(isOpen(id) ? id : undefined)
-    setOpenGroups(writeSidebarGroups(next))
-  }
+  // «Impostazioni» is the one entry that opens onto sub-items. `null` follows the route:
+  // the page holding the current route is open by itself, since the alternative is a page
+  // whose own entry is not on screen, and the alternative to *that* -- nailing it open --
+  // is a chevron that does nothing. A press settles it for the rest of the visit and no
+  // longer; what one route did on your behalf is not a preference worth storing.
+  const [settingsToggled, setSettingsToggled] = useState<boolean | null>(null)
+  const onSettings = isUnder(location.pathname, SETTINGS.base)
+  const settingsOpen = settingsToggled ?? onSettings
 
   // What the sidebar is showing right now, and what the one toggle does to it.
   const overlay = !isDesktop && openedAt === location.pathname
@@ -436,8 +410,14 @@ export function AppShell({
   }
 
   // The one number of the product that asks for an action (slice 7 §5): how many of my
-  // attività are past their deadline, drawn beside «Oggi» and only when it is above zero.
+  // attività are past their deadline, drawn beside «Attività» (REB-873: it sat beside «Oggi»
+  // while that was an entry) and only when it is above zero.
   const overdue = useOverdueCount()
+  // Whether the space has data yet: «Primi passi» is in the profile menu from then on. The
+  // same predicate the Home asks to choose between the start page and the dashboard, so the
+  // two cannot disagree about when a space stops being new. `false` only for a space that
+  // answered «has work»: while it is unknown the entry is not offered.
+  const { spaceEmpty } = useSpaceEmpty()
 
   /** A leaf entry: an icon and a label expanded, an icon alone in the rail. A `count`
    *  above zero is drawn as a badge after the label, and on the icon's corner in the rail,
@@ -468,7 +448,7 @@ export function AppShell({
     >
       <Icon className="size-4 shrink-0" aria-hidden="true" />
       <span className={cn('truncate', rail && 'sr-only')}>{label}</span>
-      {to === '/app/oggi' && overdue !== undefined && (
+      {to === '/app/activities' && overdue !== undefined && (
         <span
           className={cn(
             'bg-sidebar-primary px-1.5 text-xs font-medium text-sidebar-primary-foreground',
@@ -498,8 +478,8 @@ export function AppShell({
     </Link>
   )
 
-  /** The top-level entries below the groups, the one with a count carrying it. */
-  const topLevel = (item: (typeof TOP_LEVEL)[number]) =>
+  /** An entry of a section, the one with a count carrying it. */
+  const entry = (item: { to: LinkTo; label: string; icon: LucideIcon }) =>
     leaf(item.to === '/app/avvisi' ? { ...item, count: unread } : item)
 
   return (
@@ -648,63 +628,55 @@ export function AppShell({
             screen reader -- and to `getByRole('navigation')`. */}
         <nav
           aria-label="Navigazione principale"
-          className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 pb-3"
+          className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pb-3"
         >
-          {/* Home, then «Primi passi» right under it (ORB-180); the other top-level
-              entries follow the groups. */}
-          {leaf(TOP_LEVEL[0])}
-          {leaf(TOP_LEVEL[1])}
-
-          {rail
-            ? // The rail: no headers, no indentation, every section one click away. The
-              // settings tabs are the exception -- one link to the page that owns them.
-              [
-                ...GROUPS.flatMap((group) => group.items.map((item) => leaf(item))),
-                ...TOP_LEVEL.slice(2).map((item) => topLevel(item)),
-                // The first section, under the group's own name: in the rail the label is the
-                // accessible name, and «Profilo» would say nothing about where it goes.
-                // Profilo is open to every role, so every role has this link.
-                leaf({ to: SETTINGS_PATHS.profile, label: SETTINGS.label, icon: Settings }),
-              ]
-            : [
-                ...GROUPS.map((group) => (
-                  <NavGroup
-                    key={group.id}
-                    label={group.label}
-                    icon={group.icon}
-                    open={isOpen(group.id)}
-                    onToggle={() => toggleGroup(group.id)}
+          <div className="space-y-1">
+            {leaf(HOME)}
+            {SECTIONS.map((section) => (
+              // A group named by its caption, not a control: nothing opens or closes, so the
+              // caption is a plain line of text above its entries. In the rail it is a thin
+              // separator, and the group keeps its name for a screen reader either way.
+              <div key={section.id} role="group" aria-label={section.caption} className="space-y-1">
+                {rail ? (
+                  <div aria-hidden="true" className="mx-2 mt-3 mb-2 border-t border-sidebar-border" />
+                ) : (
+                  <p
+                    aria-hidden="true"
+                    className="px-3 pt-4 pb-1 text-xs font-medium uppercase tracking-wide text-sidebar-foreground/70"
                   >
-                    {group.items.map((item) => subItem(item))}
-                  </NavGroup>
-                )),
-                ...TOP_LEVEL.slice(2).map((item) => topLevel(item)),
-                <NavGroup
-                  key={SETTINGS.id}
-                  label={SETTINGS.label}
-                  icon={SETTINGS.icon}
-                  open={isOpen(SETTINGS.id)}
-                  onToggle={() => toggleGroup(SETTINGS.id)}
-                >
-                  {settingsItems.map((item) => subItem(item))}
-                </NavGroup>,
-              ]}
-        </nav>
+                    {section.caption}
+                  </p>
+                )}
+                {section.items.map((item) => entry(item))}
+              </div>
+            ))}
+          </div>
 
-        {/* «Collega un agente» (ORB-170): for every role, like Token, because a token
-            belongs to whoever creates it. A button and not a route: the dialog is the
-            whole surface. In the rail the label is for screen readers only. */}
-        <div className="px-3 pb-1">
-          <button
-            type="button"
-            onClick={() => setAgentOpen(true)}
-            className={cn(ITEM, QUIET, FOCUS, 'w-full', rail && 'justify-center px-0')}
-          >
-            <Plug className="size-4 shrink-0" aria-hidden="true" />
-            <span className={cn('truncate', rail && 'sr-only')}>Collega un agente</span>
-          </button>
-        </div>
-        <ConnectAgentDialog open={agentOpen} onOpenChange={setAgentOpen} />
+          {/* The foot (REB-873): «Agenti» and «Impostazioni», the two entries that are about
+              the account and the space rather than about the work. `mt-auto` keeps them at the
+              bottom of the column while the lists above are short; when the window is not tall
+              enough the whole navigation scrolls and they scroll with it, never under the
+              profile. «Impostazioni» is the one entry that still opens onto sub-items, and in
+              the rail it is one link to the first of them. */}
+          <div className="mt-auto space-y-1 border-t border-sidebar-border pt-3">
+            {leaf(AGENTI)}
+            {rail ? (
+              // The first section, under the group's own name: in the rail the label is the
+              // accessible name, and «Profilo» would say nothing about where it goes.
+              // Profilo is open to every role, so every role has this link.
+              leaf({ to: SETTINGS_PATHS.profile, label: SETTINGS.label, icon: Settings })
+            ) : (
+              <NavGroup
+                label={SETTINGS.label}
+                icon={SETTINGS.icon}
+                open={settingsOpen}
+                onToggle={() => setSettingsToggled(!settingsOpen)}
+              >
+                {settingsItems.map((item) => subItem(item))}
+              </NavGroup>
+            )}
+          </div>
+        </nav>
 
         {/* The profile, anchored at the bottom, opens a menu: the account's own things --
             who is signed in, the space's settings for an admin, the way out. */}
@@ -761,6 +733,19 @@ export function AppShell({
                   Profilo
                 </Link>
               </DropdownMenuItem>
+              {/* «Primi passi» (ORB-180, REB-222) used to be a sidebar entry, right under
+                  Home. It is the start page of a new space, and the Home already is that
+                  page while the space is empty, so the entry is only wanted from the first
+                  piece of work on: this is where it goes then, for every role, one click
+                  from the profile. `/app/get-started` itself answers as before. */}
+              {spaceEmpty === false && (
+                <DropdownMenuItem asChild>
+                  <Link to="/app/get-started">
+                    <Rocket className="size-4" />
+                    Primi passi
+                  </Link>
+                </DropdownMenuItem>
+              )}
               {/* «Google Drive», for a collaboratore (REB-457): their Drive is their own
                   credential, as the profile is, and the Drive tab is where every consent
                   outcome lands. Read from the tab table, so a readonly person, whose

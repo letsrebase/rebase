@@ -36,7 +36,7 @@ test('a revoked credential shows a persistent banner in the app shell', async ({
 
   // Persistent: still there after moving to a different page of the same shell, which
   // is what a toast would not survive.
-  await navigate(page, 'Vendite', 'Deal')
+  await navigate(page, 'Deal')
   await expect(page).toHaveURL(/\/app\/deal$/)
   await expect(page.getByRole('alert').filter({ hasText: 'è stato revocato' })).toBeVisible()
 

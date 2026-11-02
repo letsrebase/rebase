@@ -1,5 +1,5 @@
 import type { ColumnDef } from '@tanstack/react-table'
-import { Copy, KeyRound, Plus } from 'lucide-react'
+import { Bot, Copy, Plug, Plus } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from '@rebase/ui/sonner'
 import { DateCell } from '@/components/cells'
@@ -22,6 +22,7 @@ import { Label } from '@rebase/ui/label'
 import { fieldErrorFrom, toProblem, type ProblemDetail } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { roleLabel } from '@/lib/roles'
+import { ConnectAgentDialog } from './ConnectAgentDialog'
 import {
   useCreateToken,
   useRevokeToken,
@@ -102,6 +103,7 @@ function fullAccessAction(
 export function TokensPanel() {
   const { user } = useAuth()
   const [creating, setCreating] = useState(false)
+  const [connecting, setConnecting] = useState(false)
   const [nome, setNome] = useState('')
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
   const [fullAccess, setFullAccess] = useState(false)
@@ -285,14 +287,23 @@ export function TokensPanel() {
   return (
     <>
       <PageHeader
-        icon={KeyRound}
-        title="Token di accesso"
-        description="Servono a far usare PigroCRM a un agente (per esempio Claude, tramite il server MCP) con le credenziali di questo account."
+        icon={Bot}
+        title="Agenti"
+        description="Un agente (per esempio Claude, tramite il server MCP) usa PigroCRM con un token di accesso di questo account."
         actions={
-          <Button onClick={openDialog}>
-            <Plus className="mr-2 size-4" />
-            Nuovo token
-          </Button>
+          <>
+            {/* The page's one strong action (REB-873): connecting an agent is what the
+                token is for, and the dialog mints the token as its first step. A bare
+                token, to put in a variable by hand, is the quieter one beside it. */}
+            <Button onClick={() => setConnecting(true)}>
+              <Plug className="mr-2 size-4" />
+              Collega un agente
+            </Button>
+            <Button variant="outline" onClick={openDialog}>
+              <Plus className="mr-2 size-4" />
+              Nuovo token
+            </Button>
+          </>
         }
       />
 
@@ -409,6 +420,8 @@ export function TokensPanel() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConnectAgentDialog open={connecting} onOpenChange={setConnecting} />
 
       {/*
        * The one and only place this value is shown. No Esc, no click-outside,

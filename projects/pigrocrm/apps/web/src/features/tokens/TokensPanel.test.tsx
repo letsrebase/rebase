@@ -90,10 +90,16 @@ interface BlockerCallArgs {
   enableBeforeUnload: boolean
 }
 
-/** The most recent `shouldBlockFn`/`enableBeforeUnload` this render passed to
- *  `useBlocker` -- the one the router would actually consult right now. */
+/** The `shouldBlockFn`/`enableBeforeUnload` the router would act on right now. Two
+ *  components register a blocker per render, the page and the «Collega un agente» dialog
+ *  it hosts (REB-873), and the router consults every one of them: the answer is the
+ *  enabled one when either is, and the dialog's idle one otherwise. */
 function latestBlockerArgs(): BlockerCallArgs {
-  const call = vi.mocked(useBlocker).mock.calls.at(-1)?.[0] as BlockerCallArgs | undefined
+  const calls = vi
+    .mocked(useBlocker)
+    .mock.calls.slice(-2)
+    .map((call) => call[0] as BlockerCallArgs | undefined)
+  const call = calls.find((args) => args?.enableBeforeUnload) ?? calls.at(-1)
   if (!call?.shouldBlockFn) throw new Error('useBlocker was not called as expected')
   return call
 }
@@ -129,6 +135,28 @@ beforeEach(() => {
 })
 
 describe('TokensPanel', () => {
+  it('is the Agenti page, with «Collega un agente» as its primary action', async () => {
+    mockGets(ok([EXISTING_TOKEN]))
+    renderPanel()
+    expect(await screen.findByRole('heading', { level: 1, name: 'Agenti' })).toBeInTheDocument()
+
+    const connect = screen.getByRole('button', { name: 'Collega un agente' })
+    const create = screen.getByRole('button', { name: /nuovo token/i })
+    // The first action in the header and the filled one; a bare token is the outline beside it.
+    expect(connect.compareDocumentPosition(create) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(connect).toHaveAttribute('data-variant', 'default')
+    expect(create).toHaveAttribute('data-variant', 'outline')
+    // The tokens list is still the body of the page.
+    expect(await screen.findByText('Claude')).toBeInTheDocument()
+  })
+
+  it('opens the connect dialog from «Collega un agente»', async () => {
+    mockGets(ok([]))
+    renderPanel()
+    await userEvent.click(await screen.findByRole('button', { name: 'Collega un agente' }))
+    expect(await screen.findByRole('dialog', { name: 'Collega un agente' })).toBeInTheDocument()
+  })
+
   it('explains what the tokens are for', async () => {
     mockGets(ok([]))
     renderPanel()
