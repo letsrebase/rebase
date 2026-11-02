@@ -97,6 +97,12 @@ entry in `SCHEDULED_JOBS` and a write through `JobClock`, not a second table.
 
 ## Things that will cost you an afternoon if you do not know them
 
+**A route file in `apps/web/src/routes/` exports only `Route`.** Any other export turns off
+the router's automatic code splitting for that route and pulls its whole page into the
+entry chunk (it was 376 kB before the pages moved, 121 kB after). The page component lives
+in `src/features/<x>/` with its test, and the route is a one-line wiring of it; ESLint's
+`no-restricted-exports` fails the build otherwise.
+
 **The document renderer shells out to Pandoc and Typst.** Roughly thirty tests fail
 without both on `PATH`, with `strumento di composizione non installato`. The versions
 that matter are pinned in `Dockerfile.api` — Pandoc 3.8.2.1 and Typst 0.14.2 — and
