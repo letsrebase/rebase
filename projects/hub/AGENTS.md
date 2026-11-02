@@ -74,6 +74,7 @@ a `SigningService` over `FakeDocumenso`.
 - `record_notice`: «Registra disdetta» on an active framework agreement.
 - `cancel_match`: «Annulla» on a match in draft or in signature.
 - `close_match`: «Chiudi match», the engagement ends.
+- `link_company_to_pigro`: «Riprova» on a company request (REB-869), the way `link_match_to_pigro` is for matches: files it in the CRM now as the calling admin and answers the request with `crm_stato`, `crm_situazione` and `crm_deal_url`; with `deal_id` it is «Collega a un altro deal». `get_company` and `list_aziende` carry the same three fields.
 - `set_freelancer_tax_data`: saves the tax data, the partita IVA optional; answers that they are saved, never the values.
 
 The team builder and the talent cloud are twelve tools more (REB-520, spec § 8 of
@@ -220,7 +221,9 @@ alone for five minutes after it was written or attempted so it never races that 
 `POST /api/hub/companies/{id}/crm/link` is «Riprova»; with `{"deal_id"}` it is «Collega a un
 altro deal»: no draft, and a refusal is a 409 that changes nothing stored (the sweep would
 otherwise file the request by its address and make the second customer being corrected).
-The trail entry is `crm_link`.
+The trail entry is `crm_link`. The admin company page shows the state, the CRM's sentence and
+the deal's link in `pages/admin/CrmLink.tsx`, with «Riprova» and «Collega a un altro deal»;
+`link_company_to_pigro` is the same for agents (REB-869).
 
 ## One person, once (REB-800)
 

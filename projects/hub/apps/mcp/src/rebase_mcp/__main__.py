@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from rebase_core.admin_tokens import AdminTokenService
 from rebase_core.config import get_settings
 from rebase_core.contracts.render import ContractRenderer
+from rebase_core.crm_link import CrmLeadService
 from rebase_core.db import create_engine_from_settings, session_factory
 from rebase_core.engagements import EngagementService
 from rebase_core.errors import DomainError
@@ -61,6 +62,12 @@ def main() -> int:
         sender=sender,
         engagements=lambda session: EngagementService(
             session, settings, urllib_engagements_call, sender=sender
+        ),
+        crm_leads=lambda session: CrmLeadService(
+            session,
+            settings,
+            urllib_engagements_call,
+            lambda: call_for_task(open_session, settings, "crm_lead"),
         ),
     ).run("stdio")
     return 0
