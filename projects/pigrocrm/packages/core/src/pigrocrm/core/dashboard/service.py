@@ -129,31 +129,31 @@ class DashboardService:
     # Each dashboard reads a different subset of these, so they are built on first use
     # rather than all seven for every request.
     @cached_property
-    def deals(self) -> DealRepository:
+    def _deals(self) -> DealRepository:
         return DealRepository(self.session)
 
     @cached_property
-    def documents(self) -> DocumentRepository:
+    def _documents(self) -> DocumentRepository:
         return DocumentRepository(self.session)
 
     @cached_property
-    def analytics(self) -> AnalyticsService:
+    def _analytics(self) -> AnalyticsService:
         return AnalyticsService(self.session)
 
     @cached_property
-    def analytics_repo(self) -> AnalyticsRepository:
+    def _analytics_repo(self) -> AnalyticsRepository:
         return AnalyticsRepository(self.session)
 
     @cached_property
-    def invoices(self) -> InvoiceRepository:
+    def _invoices(self) -> InvoiceRepository:
         return InvoiceRepository(self.session)
 
     @cached_property
-    def entries(self) -> TimeEntryRepository:
+    def _entries(self) -> TimeEntryRepository:
         return TimeEntryRepository(self.session)
 
     @cached_property
-    def activities(self) -> ActivityRepository:
+    def _activities(self) -> ActivityRepository:
         return ActivityRepository(self.session)
 
     def _open_snapshot(self) -> datetime:
@@ -227,16 +227,16 @@ class DashboardService:
             periodo=periodo,
             calcolato_alle=calcolato_alle,
             azienda_id=azienda,
-            pipeline=self.deals.pipeline_summary(azienda),
-            chiusure=self.deals.closed_in_period(periodo.da, periodo.a, azienda),
-            offerte_in_attesa=self.documents.pending_offers(_PENDING_OFFERS_SHOWN, azienda),
-            offerte_in_attesa_totale=self.documents.count_pending_offers(azienda),
-            chiusure_previste_30_giorni=self.deals.expected_closures(
+            pipeline=self._deals.pipeline_summary(azienda),
+            chiusure=self._deals.closed_in_period(periodo.da, periodo.a, azienda),
+            offerte_in_attesa=self._documents.pending_offers(_PENDING_OFFERS_SHOWN, azienda),
+            offerte_in_attesa_totale=self._documents.count_pending_offers(azienda),
+            chiusure_previste_30_giorni=self._deals.expected_closures(
                 periodo.a, finestra_a, azienda
             ),
-            chiusure_non_attribuibili=self.deals.unattributable_closures(azienda),
+            chiusure_non_attribuibili=self._deals.unattributable_closures(azienda),
             offerte_accettate_deal_non_vinto=(
-                self.documents.count_accepted_with_unwon_deal(azienda)
+                self._documents.count_accepted_with_unwon_deal(azienda)
             ),
         )
 
@@ -273,19 +273,19 @@ class DashboardService:
             periodo=periodo,
             calcolato_alle=calcolato_alle,
             azienda_id=azienda,
-            pnl=self.analytics.period_pnl(
+            pnl=self._analytics.period_pnl(
                 PeriodPnlQuery(da=periodo.da, a=periodo.a, customer_id=None, azienda_id=azienda),
                 actor,
             ),
-            da_incassare=self.invoices.sum_da_incassare(azienda),
-            scaduto=self.invoices.sum_scaduto(azienda),
-            fatture_emesse=self.invoices.count_emesse_in_periodo(periodo.da, periodo.a, azienda),
+            da_incassare=self._invoices.sum_da_incassare(azienda),
+            scaduto=self._invoices.sum_scaduto(azienda),
+            fatture_emesse=self._invoices.count_emesse_in_periodo(periodo.da, periodo.a, azienda),
         )
 
     def _recent_feed(self, actor: Actor) -> list[Activity]:
         if actor.type == "user" and actor.can_administer:
-            return self.activities.recent(_RECENT_ACTIVITIES)
-        return self.activities.recent(_RECENT_ACTIVITIES_FILTERED, _BUSINESS_ENTITIES)
+            return self._activities.recent(_RECENT_ACTIVITIES)
+        return self._activities.recent(_RECENT_ACTIVITIES_FILTERED, _BUSINESS_ENTITIES)
 
     def get_operational_dashboard(
         self, actor: Actor, azienda_id: UUID | None = None
@@ -344,31 +344,31 @@ class DashboardService:
         return OperationalDashboard(
             calcolato_alle=calcolato_alle,
             azienda_id=azienda_id,
-            settimana=self.entries.week_hours(da, a, azienda_id),
-            arretrato=self.analytics.unbilled_backlog(actor, azienda_id),
+            settimana=self._entries.week_hours(da, a, azienda_id),
+            arretrato=self._analytics.unbilled_backlog(actor, azienda_id),
             segnali=[
                 Signal(
                     codice="fatturato_non_vinto",
                     etichetta="Fatturato ma non vinto",
-                    conteggio=self.invoices.count_deals_invoiced_not_won(azienda_id),
+                    conteggio=self._invoices.count_deals_invoiced_not_won(azienda_id),
                     collegamento="/app/deal/list?fatturato_non_vinto=true",
                 ),
                 Signal(
                     codice="vinto_da_fatturare",
                     etichetta="Vinto ma da fatturare",
-                    conteggio=self.entries.count_won_deals_to_invoice(azienda_id),
+                    conteggio=self._entries.count_won_deals_to_invoice(azienda_id),
                     collegamento="/app/deal/list?da_fatturare=true",
                 ),
                 Signal(
                     codice="scaduto_non_incassato",
                     etichetta="Scaduto e non incassato",
-                    conteggio=self.invoices.count_scadute_non_incassate(azienda_id),
+                    conteggio=self._invoices.count_scadute_non_incassate(azienda_id),
                     collegamento="/app/invoices?scadute=true",
                 ),
                 Signal(
                     codice="concentrazione_sopra_soglia",
                     etichetta="Concentrazione cliente sopra soglia",
-                    conteggio=self.analytics_repo.count_over_concentration_threshold(
+                    conteggio=self._analytics_repo.count_over_concentration_threshold(
                         anno, self.settings.concentrazione_soglia_preferita, azienda_id
                     ),
                     collegamento=_CONCENTRAZIONE_LINK,
@@ -399,26 +399,26 @@ class DashboardService:
                 quota=row.quota,
                 collegamento=_SCADUTO_LINK if row.codice == "scaduto" else None,
             )
-            for row in self.invoices.ageing_receivables(oggi, azienda_id)
+            for row in self._invoices.ageing_receivables(oggi, azienda_id)
         ]
         scadute = [
             FatturaScaduta(**row._asdict())
-            for row in self.invoices.overdue_with_reminders(oggi, _SCADUTE_SHOWN, azienda_id)
+            for row in self._invoices.overdue_with_reminders(oggi, _SCADUTE_SHOWN, azienda_id)
         ]
         return ReceivablesDashboard(
             calcolato_alle=calcolato_alle,
             oggi=oggi,
             azienda_id=azienda_id,
-            totale=self.invoices.sum_da_incassare(azienda_id),
+            totale=self._invoices.sum_da_incassare(azienda_id),
             fasce=fasce,
             per_mese=[
                 CassaAttesaMese(**row._asdict())
-                for row in self.invoices.receivables_by_due_month(azienda_id)
+                for row in self._invoices.receivables_by_due_month(azienda_id)
             ],
             per_cliente=[
                 EsposizioneCliente(**row._asdict())
-                for row in self.invoices.receivables_by_customer(oggi, _CLIENTI_SHOWN, azienda_id)
+                for row in self._invoices.receivables_by_customer(oggi, _CLIENTI_SHOWN, azienda_id)
             ],
             scadute=scadute,
-            scadute_totale=self.invoices.count_scadute_non_incassate(azienda_id),
+            scadute_totale=self._invoices.count_scadute_non_incassate(azienda_id),
         )
