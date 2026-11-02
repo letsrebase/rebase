@@ -209,6 +209,26 @@ describe('the api client', () => {
     expect((await admin.downloadAnonymousCv('f1')).filename).toBe('cv-anonimo.pdf')
   })
 
+  it('encodes an id that is not a plain slug in the path, and an href too', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { id: 'a/b' }))
+    await admin.freelancer('a/b?x')
+    expect(spy.mock.calls[0]![0]).toBe('/api/hub/freelancers/a%2Fb%3Fx')
+    expect(admin.cvUrl('a/b')).toBe('/api/hub/freelancers/a%2Fb/cv')
+    expect(admin.contractPdfUrl('a b', true)).toBe('/api/hub/contract-documents/a%20b/pdf?firmato=true')
+  })
+
+  it('sends only the filters that were set, and resolves a 204 with nothing', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch')
+    spy.mockResolvedValueOnce(answer(200, { totale: 0, items: [], per_stato: {}, next_cursor: null }))
+    await admin.talent({ stato: 'lead', q: '', posizione: undefined, has_cv: false })
+    expect(spy.mock.calls[0]![0]).toBe('/api/hub/talent?stato=lead&has_cv=false')
+
+    spy.mockResolvedValueOnce(new Response(null, { status: 204 }))
+    await expect(admin.deleteNote('n1')).resolves.toBeUndefined()
+    expect(spy.mock.calls[1]![0]).toBe('/api/hub/notes/n1')
+    expect(spy.mock.calls[1]![1]).toMatchObject({ method: 'DELETE', credentials: 'same-origin' })
+  })
+
   it('points the admin at the CV route by id', () => {
     expect(admin.cvUrl('abc')).toBe('/api/hub/freelancers/abc/cv')
   })
