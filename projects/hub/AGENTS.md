@@ -500,8 +500,8 @@ door is one module, `pigro_door` (`PigroDoor.put` never raises and maps the stat
 state the row is left in, `PigroDoor.get`, `write`, `committed`, `sweep_round`): the
 registry (`pigro`), the engagements link (`engagements`, its report maths in
 `engagement_report`) and the leads link (`crm_link`) pass it a path, a token and the row's
-column names, and the rule that **no database lock is held across the CRM's call** lives
-is written out in its docstring.
+column names, and the rule that **no database lock is held across the CRM's call** is written out in
+its docstring.
 
 ## Campaigns
 
