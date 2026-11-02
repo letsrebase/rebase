@@ -13,6 +13,11 @@ export type SessionUser = components['schemas']['UserRead']
 interface AuthValue {
   user: SessionUser | null
   isLoading: boolean
+  /** The first read of the session failed for a reason other than a 401 and nothing is
+   *  cached: whether there is a session is unknown, which is not "signed out". */
+  isError: boolean
+  /** Asks for the session again after such a failure. */
+  retrySession: () => void
   login: (email: string, password: string) => Promise<void>
   /** Spends a link-by-mail token (`/app/verify?t=...`) and publishes the session. */
   enterWithLink: (t: string) => Promise<void>
@@ -27,7 +32,7 @@ const AuthContext = createContext<AuthValue | null>(null)
 export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient()
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: queryKeys.me,
     queryFn: async () => {
       try {
@@ -137,6 +142,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () => ({
       user,
       isLoading,
+      isError: isError && data === undefined,
+      retrySession: () => void refetch(),
       login: async (email, password) => {
         await loginAsync({ email, password })
       },
@@ -185,6 +192,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [
       user,
       isLoading,
+      isError,
+      refetch,
+      data,
       loginAsync,
       enterAsync,
       inviteAsync,

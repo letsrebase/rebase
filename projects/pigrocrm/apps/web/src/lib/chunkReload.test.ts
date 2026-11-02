@@ -22,6 +22,19 @@ describe('isChunkLoadError', () => {
 })
 
 describe('reloadOncePerMinute', () => {
+  it('does not reload when the storage is unavailable or throws', () => {
+    const reload = vi.fn()
+    expect(reloadOncePerMinute(null, 1_000_000, reload)).toBe(false)
+    const broken = {
+      getItem: () => {
+        throw new Error('blocked')
+      },
+      setItem: () => {},
+    }
+    expect(reloadOncePerMinute(broken, 1_000_000, reload)).toBe(false)
+    expect(reload).not.toHaveBeenCalled()
+  })
+
   it('reloads once, then refuses within the minute so a persistent failure cannot loop', () => {
     const storage = memoryStorage()
     const reload = vi.fn()

@@ -36,14 +36,13 @@ describe('useCursorPages', () => {
     const { result, rerender } = renderHook(
       ({ term }: { term: string }) =>
         useCursorPages({
-          queryKey: ['t', term],
+          queryKey: ['t', { search: term }],
           fetchPage: () =>
             term === 'b'
               ? new Promise<{ items: string[]; next_cursor: null }>((resolve) => {
                   release = () => resolve({ items: ['y'], next_cursor: null })
                 })
               : fetchPage(),
-          keepPrevious: true,
         }),
       { wrapper, initialProps: { term: 'a' } },
     )

@@ -1,9 +1,10 @@
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { correspondentKeys } from '@/features/gmail/correspondents'
 import { useLegalEntityScope } from '@/lib/legalEntity'
 import { api, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
 import { asBody } from '@/lib/formValues'
+import { keepWhileTyping } from '@/lib/keepWhileTyping'
 import { queryKeys } from '@/lib/query'
 import { useCursorPages } from '@/lib/useCursorPages'
 
@@ -66,7 +67,7 @@ export function useCustomers(
     enabled: options.enabled ?? true,
     queryFn: () => fetchCustomersPage(scoped),
     // The picker's term is typed: keep the previous matches up until the next ones land.
-    placeholderData: keepPreviousData,
+    placeholderData: keepWhileTyping(queryKeys.customers(scoped)),
   })
 }
 
@@ -82,7 +83,6 @@ export function useCustomerPages(params: Pick<CustomersListParams, 'search'> = {
   return useCursorPages({
     queryKey: queryKeys.customers({ ...scoped, pages: true }),
     fetchPage: (cursor) => fetchCustomersPage(scoped, cursor),
-    keepPrevious: true,
   })
 }
 

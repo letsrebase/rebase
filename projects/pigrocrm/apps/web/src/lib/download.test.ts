@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { filenameFromDisposition } from './download'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { filenameFromDisposition, saveResponse } from './download'
 
 describe('filenameFromDisposition', () => {
   it('reads a quoted filename', () => {
@@ -16,5 +16,30 @@ describe('filenameFromDisposition', () => {
 
   it('answers an empty name when the header is absent', () => {
     expect(filenameFromDisposition(null)).toBe('')
+  })
+})
+
+describe('saveResponse', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  it('names the saved file after the server\'s Content-Disposition and revokes the URL afterwards', async () => {
+    vi.useFakeTimers()
+    URL.createObjectURL = vi.fn(() => 'blob:x')
+    URL.revokeObjectURL = vi.fn()
+    let saved: string | null = null
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      saved = this.download
+    })
+
+    await saveResponse(
+      new Response('x', { headers: { 'Content-Disposition': 'attachment; filename="registro-2026.csv"' } }),
+    )
+
+    expect(saved).toBe('registro-2026.csv')
+    // Not synchronously: a revoked URL can cancel the save in some browsers.
+    expect(URL.revokeObjectURL).not.toHaveBeenCalled()
+    vi.runAllTimers()
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:x')
+    vi.useRealTimers()
   })
 })

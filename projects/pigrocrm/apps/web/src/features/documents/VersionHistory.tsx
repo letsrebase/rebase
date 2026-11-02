@@ -1,4 +1,3 @@
-import { formatBytes } from '@rebase/ui/format'
 import { useState } from 'react'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { RowActions } from '@/components/RowActions'
@@ -10,6 +9,23 @@ import {
   useDocumentVersions,
   useRegenerateVersion,
 } from './queries'
+
+const BYTES_PER_KILOBYTE = 1024
+
+/**
+ * Bytes as the browser's own locale would write them: `Intl.NumberFormat` with a byte
+ * unit does the rounding, so nothing here does arithmetic that could drift from what the
+ * server reported. Divides by 1024 while labelling the decimal "kilobyte": `12345` bytes
+ * reads "12,1 kB", the figure Finder and Explorer show. Kilobytes at most, so 5 MiB is
+ * "5.120 kB" (never "5,0 MB"): that is what the screen has always said.
+ */
+function formatSize(bytes: number): string {
+  return new Intl.NumberFormat('it-IT', {
+    style: 'unit',
+    unit: bytes >= BYTES_PER_KILOBYTE ? 'kilobyte' : 'byte',
+    maximumFractionDigits: 1,
+  }).format(bytes >= BYTES_PER_KILOBYTE ? bytes / BYTES_PER_KILOBYTE : bytes)
+}
 
 const dateTimeFormatter = new Intl.DateTimeFormat('it-IT', {
   day: '2-digit',
@@ -76,7 +92,7 @@ export function VersionHistory({
             <li key={version.id} className="flex items-center gap-3 px-4 py-3">
               <span className="w-10 font-medium">v{version.numero}</span>
               <span className="flex-1 text-sm text-muted-foreground">
-                {formatDateTime(version.created_at)} · {formatBytes(version.dimensione)}
+                {formatDateTime(version.created_at)} · {formatSize(version.dimensione)}
               </span>
               {/* Behind the «⋯» like every other row action (§4), where the two lone
                   icons at the end of the row used to be. Only a version generated from

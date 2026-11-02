@@ -30,8 +30,7 @@ const router = createRouter({
 // reload fetches the new shell. At most once a minute, so a persistent failure shows the
 // router's error screen instead of looping.
 window.addEventListener('vite:preloadError', (event) => {
-  event.preventDefault()
-  reloadOncePerMinute()
+  if (reloadOncePerMinute()) event.preventDefault()
 })
 
 declare module '@tanstack/react-router' {

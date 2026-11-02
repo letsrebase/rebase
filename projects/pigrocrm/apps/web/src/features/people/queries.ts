@@ -50,8 +50,6 @@ export function usePeoplePages(params: PeopleListParams = {}) {
           },
         }),
       ),
-    // The search term is typed: keep the previous rows up until the next ones land.
-    keepPrevious: true,
   })
 }
 

@@ -62,7 +62,7 @@ export function DealsList({
   // The request follows the settled term, not every keystroke: each new key would
   // otherwise start a fresh walk of the whole cursor.
   const settled = useDebounced(search, SEARCH_DEBOUNCE_MS)
-  const deals = useDeals({ search: settled || undefined, ...filters }, { keepPrevious: true })
+  const deals = useDeals({ search: settled || undefined, ...filters })
   const active = DRILL_THROUGHS.filter((candidate) => filters[candidate.key] === true)
 
   // Recomputed every render, not memoised -- same call as `CustomersPage`/

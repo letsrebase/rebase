@@ -26,10 +26,11 @@ const DEMOTED = { ...ADMIN, ruolo: 'collaboratore' }
 
 function Probe() {
   const isAdmin = useIsAdmin()
-  const { login, logout } = useAuth()
+  const { login, logout, isError } = useAuth()
   return (
     <div>
       {isAdmin ? 'admin' : 'not-admin'}
+      {isError ? <span>session-unknown</span> : null}
       {/* `AppShell` fires `void logout()`; here the rejection is caught so a refused
           logout is asserted on rather than reported as an unhandled one. */}
       <button onClick={() => void logout().catch(() => undefined)}>Esci</button>
@@ -101,6 +102,14 @@ describe('AuthProvider — session freshness', () => {
 
     expect(screen.getByText('admin')).toBeInTheDocument()
     expect(resetUser).not.toHaveBeenCalled()
+  })
+
+  it('reports an unknown session, not a signed-out one, when the first read fails without a 401', async () => {
+    vi.mocked(api.GET).mockReturnValue(
+      Promise.resolve({ error: { detail: 'Bad gateway' }, response: new Response(null, { status: 502 }) } as never),
+    )
+    renderProbe()
+    expect(await screen.findByText('session-unknown', {}, { timeout: 10_000 })).toBeInTheDocument()
   })
 
   it('does not poll before a session exists, so the login page does not hammer the endpoint pre-auth', async () => {

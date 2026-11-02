@@ -554,26 +554,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/deals/{deal_id}/time-report/pdf": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Render Time Report Pdf
-         * @description The month's hours as a PDF, archived as a `document` of the deal.
-         */
-        post: operations["render_time_report_pdf_api_deals__deal_id__time_report_pdf_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/deals/{deal_id}/pnl": {
         parameters: {
             query?: never;
@@ -9665,8 +9645,12 @@ export interface components {
         MemberAnswer: {
             /** Membro */
             membro: boolean;
-            /** Has Spaces */
-            has_spaces: boolean;
+            /** Nome */
+            nome: string | null;
+            /** Cognome */
+            cognome: string | null;
+            /** Spazi */
+            spazi: number;
         };
         /**
          * MemberQuestion
@@ -17620,36 +17604,12 @@ export interface operations {
             };
         };
     };
-    render_time_report_pdf_api_deals__deal_id__time_report_pdf_post: {
-        parameters: {
-            query: {
-                /** @description Periodo nella forma AAAA-MM */
-                mese: string;
-            };
-            header?: never;
-            path: {
-                deal_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DocumentRead"];
-                };
-            };
-        };
-    };
     time_report_api_deals__deal_id__time_report_get: {
         parameters: {
             query: {
                 /** @description Periodo nella forma AAAA-MM */
                 mese: string;
+                formato?: "pdf" | "xlsx";
             };
             header?: never;
             path: {

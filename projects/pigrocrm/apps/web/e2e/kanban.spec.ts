@@ -50,8 +50,8 @@ test('a move the server refuses puts the card back in its original column and sa
   const dealName = `Deal Reject ${Date.now()}`
   await page.goto('/app/deal')
   await page.getByRole('button', { name: /nuovo deal/i }).click()
-  await page.getByLabel(/^Cliente/).click()
-  await page.getByRole('option', { name: customerName }).click()
+  await page.getByLabel('Cerca un cliente').fill(customerName)
+  await page.getByRole('button', { name: customerName }).click()
   // Anchored regex, not `exact: true`: "Nome" is required, so its real
   // accessible name is "Nome *" (DynamicFieldRenderer's RequiredMark) -- see
   // crm.spec.ts's identical comment for the two ways this can be gotten

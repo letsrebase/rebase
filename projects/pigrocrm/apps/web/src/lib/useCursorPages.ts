@@ -1,5 +1,6 @@
-import { keepPreviousData, useInfiniteQuery, type QueryKey } from '@tanstack/react-query'
+import { useInfiniteQuery, type QueryKey } from '@tanstack/react-query'
 import { useMemo } from 'react'
+import { keepWhileTyping } from './keepWhileTyping'
 
 interface CursorPage<T> {
   items: T[]
@@ -11,25 +12,23 @@ interface CursorPage<T> {
  * itself: the first page on arrival, one more per `loadMore()`.
  *
  * The filters belong in `queryKey`, so a changed filter starts a fresh walk at the first
- * page and never resumes a cursor issued for another query. `keepPrevious` keeps the old
- * rows on screen until the new first page lands -- for a list filtered by typing, where
- * dropping back to the loading state on every settled keystroke is a flash.
+ * page and never resumes a cursor issued for another query. When only the typed `search`
+ * in the key changed, the old rows stay on screen until the new first page lands (a flash
+ * on every settled keystroke otherwise); any other change shows the loading state.
  */
 export function useCursorPages<T>({
   queryKey,
   fetchPage,
-  keepPrevious = false,
 }: {
   queryKey: QueryKey
   fetchPage: (cursor: string | undefined) => Promise<CursorPage<T>>
-  keepPrevious?: boolean
 }) {
   const query = useInfiniteQuery({
     queryKey,
     queryFn: ({ pageParam }) => fetchPage(pageParam),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
-    placeholderData: keepPrevious ? keepPreviousData : undefined,
+    placeholderData: keepWhileTyping(queryKey),
   })
   // Memoised on the page array's reference: a fresh `items` on every render would
   // rebuild the table's row model for renders the fetched pages had no part in.

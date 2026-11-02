@@ -1,4 +1,4 @@
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from '@rebase/ui/sonner'
 import { useLegalEntityScope } from '@/lib/legalEntity'
 import { api, toProblem, unwrap } from '@/lib/api'
@@ -6,6 +6,7 @@ import type { StatusTone } from '@/components/StatusPill'
 import type { components } from '@/lib/api-types'
 import { fetchAllPages } from '@/lib/fetchAllPages'
 import { asBody } from '@/lib/formValues'
+import { keepWhileTyping } from '@/lib/keepWhileTyping'
 import { queryKeys } from '@/lib/query'
 
 /**
@@ -108,19 +109,18 @@ export function fetchAllDeals(params: DealsListParams): Promise<DealsResult> {
 }
 
 /**
- * `keepPrevious` is for a list the user filters by typing: a new term is a new key, and
- * without it the table drops back to its loading state on every settled keystroke. It is
- * opt-in because the previous rows belong to the previous params -- fine for a search
- * term, wrong for a consumer whose params are another azienda's.
+ * A new search term is a new key, and without a placeholder the table drops back to its
+ * loading state on every settled keystroke: the previous rows stay up only when the term
+ * is the one thing that changed (`keepWhileTyping`), never across another azienda's params.
  */
-export function useDeals(params: DealsListParams = {}, options: { keepPrevious?: boolean } = {}) {
+export function useDeals(params: DealsListParams = {}) {
   // The sidebar's azienda when one is selected and the list has no customer of its own
   // (REB-625): a customer's deals are that customer's whatever the sidebar says.
   const scoped = useLegalEntityScope(params)
   return useQuery({
     queryKey: queryKeys.deals(scoped),
     queryFn: () => fetchAllDeals(scoped),
-    placeholderData: options.keepPrevious ? keepPreviousData : undefined,
+    placeholderData: keepWhileTyping(queryKeys.deals(scoped)),
   })
 }
 
