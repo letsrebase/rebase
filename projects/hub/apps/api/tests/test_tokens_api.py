@@ -2,8 +2,10 @@
 
 import re
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 
 import pytest
+from api_responses import ok
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -96,7 +98,7 @@ def test_another_admins_token_is_not_found(
     _bootstrap_admin(api_session, "ada@rebase.it", "Ada")
     _login(client, sender, "ada@rebase.it")
     adas = client.post("/api/hub/tokens", json={"nome": "Cursor"}).json()
-    client.post("/api/hub/me/logout")
+    ok(client.post("/api/hub/me/logout"), 204)
 
     _login(client, sender)
     assert client.get("/api/hub/tokens").json()["items"] == []
@@ -107,8 +109,8 @@ def test_tokens_search_hits_a_partial_name(
     client: TestClient, admin: None, sender: RecordingSender
 ) -> None:
     _login(client, sender)
-    client.post("/api/hub/tokens", json={"nome": "Claude Code laptop"})
-    client.post("/api/hub/tokens", json={"nome": "Cursor desktop"})
+    ok(client.post("/api/hub/tokens", json={"nome": "Claude Code laptop"}), 201)
+    ok(client.post("/api/hub/tokens", json={"nome": "Cursor desktop"}), 201)
 
     by_name = client.get("/api/hub/tokens", params={"q": "Claude"}).json()
     assert [row["nome"] for row in by_name["items"]] == ["Claude Code laptop"]
@@ -135,3 +137,24 @@ def test_a_signed_in_member_without_the_admin_role_is_403_on_every_token_route(
     assert client.get("/api/hub/me").json()["role"] == "member"
     assert client.get("/api/hub/tokens").status_code == 403
     assert client.post("/api/hub/tokens", json={"nome": "x"}).status_code == 403
+
+
+def test_a_token_may_carry_an_expiry_and_a_bad_one_is_a_sentence(
+    client: TestClient, admin: None, api_session: Session, sender: RecordingSender
+) -> None:
+    """REB-803: `expires_at` is optional on the create body, echoed on the read, and an
+    instant that is past or has no timezone is refused before a token exists."""
+    _login(client, sender)
+    future = (datetime.now(UTC) + timedelta(days=30)).isoformat()
+    created = client.post("/api/hub/tokens", json={"nome": "Per un mese", "expires_at": future})
+    assert created.status_code == 201, created.text
+    assert created.json()["expires_at"] is not None
+    plain = client.post("/api/hub/tokens", json={"nome": "Per sempre"})
+    assert plain.json()["expires_at"] is None
+    past = (datetime.now(UTC) - timedelta(days=1)).isoformat()
+    naive = (datetime.now() + timedelta(days=1)).replace(tzinfo=None).isoformat()
+    for bad in (past, naive):
+        refused = client.post("/api/hub/tokens", json={"nome": "x", "expires_at": bad})
+        assert refused.status_code == 422, refused.text
+    listed = client.get("/api/hub/tokens").json()["items"]
+    assert len(listed) == 2
