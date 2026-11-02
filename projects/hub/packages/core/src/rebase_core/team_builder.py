@@ -101,7 +101,9 @@ from rebase_core.team_public import (
 )
 from rebase_core.team_schemas import (
     Card,
+    TeamEconomics,
     TeamMemberRead,
+    TeamPlace,
     TeamProposalCreate,
     TeamProposalList,
     TeamProposalListItem,
@@ -654,9 +656,11 @@ class TeamBuilder:
                 if public
                 else row.riassunto
             ),
-            luogo=public_place(row.luogo, row.descrizione) if public else row.luogo,
+            luogo=TeamPlace.model_validate(
+                public_place(row.luogo, row.descrizione) if public else row.luogo
+            ),
             team=members,
-            economia=_economia(day, month),
+            economia=TeamEconomics.model_validate(_economia(day, month)),
             previous_id=row.previous_id,
             origine=row.origine,
             created_at=row.created_at,

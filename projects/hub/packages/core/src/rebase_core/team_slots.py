@@ -43,9 +43,10 @@ from uuid import UUID
 from rebase_core.config import Settings
 from rebase_core.errors import TeamBuilderBusy, TeamBuilderOff
 from rebase_core.ratelimit import RateLimiter
-from rebase_core.team_builder import BUSY_SENTENCE, OFF_SENTENCE, TeamBuilder
+from rebase_core.team_builder import OFF_SENTENCE, TeamBuilder
 from rebase_core.team_caps import require_daily_room
 from rebase_core.team_schemas import TeamProposalCreate, TeamProposalRead
+from rebase_core.team_sentences import BUSY_SENTENCE
 
 logger = logging.getLogger(__name__)
 
