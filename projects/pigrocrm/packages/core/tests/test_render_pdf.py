@@ -1,10 +1,14 @@
 import shutil
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
 
 from pigrocrm.core.config import Settings
 from pigrocrm.core.errors import ValidationFailed
+from pigrocrm.core.render import pdf as pdf_module
 from pigrocrm.core.render.pdf import (
     ASSETS_DIR,
     BLANK_PNG,
@@ -215,3 +219,49 @@ def test_the_reported_line_survives_an_if_inside_an_each_inside_a_fence() -> Non
     with pytest.raises(ValidationFailed) as excinfo:
         render_pdf(compiled, header_typst=build_header(PROFILE), settings=SETTINGS)
     assert "riga 9" in excinfo.value.details["reason"]
+
+
+def test_a_package_import_cannot_reach_the_network() -> None:
+    """Typst downloads `@preview` packages on import and has no flag to refuse. The
+    render's environment points every proxy variable at a closed port, so the import
+    fails the compile instead of fetching: with network access on the host, an
+    unblocked compile of this document would succeed."""
+    markdown = '```{=typst}\n#import "@preview/cetz:0.3.0": canvas\n```\n'
+    with pytest.raises(ValidationFailed):
+        render_pdf(markdown, header_typst=build_header(PROFILE), settings=SETTINGS)
+
+
+def test_a_rendered_pdf_over_the_size_bound_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(pdf_module, "MAX_PDF_BYTES", 100)
+    with pytest.raises(ValidationFailed) as excinfo:
+        render_pdf("ok\n", header_typst=build_header(PROFILE), settings=SETTINGS)
+    assert excinfo.value.details["field"] == "corpo_markdown"
+
+
+def test_only_a_bounded_number_of_renders_run_their_tools_at_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    running = 0
+    peak = 0
+    guard = threading.Lock()
+
+    def fake_run(argv: list[str], workdir: Path, stage: str) -> pdf_module._Outcome:
+        nonlocal running, peak
+        with guard:
+            running += 1
+            peak = max(peak, running)
+        time.sleep(0.05)
+        target = Path(argv[argv.index("-o") + 1]) if stage == "pandoc" else Path(argv[-1])
+        target.write_bytes(b"%PDF-fake" if stage == "typst" else b"text")
+        with guard:
+            running -= 1
+        return pdf_module._Outcome(0, b"")
+
+    monkeypatch.setattr(pdf_module, "_run", fake_run)
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        futures = [
+            pool.submit(render_pdf, "ok\n", header_typst=build_header(PROFILE), settings=SETTINGS)
+            for _ in range(6)
+        ]
+        assert all(f.result() == b"%PDF-fake" for f in futures)
+    assert 1 <= peak <= pdf_module.MAX_CONCURRENT_RENDERS
