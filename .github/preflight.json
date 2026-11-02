@@ -92,7 +92,7 @@
         "shared/brand/**",
         "pnpm-lock.yaml"
       ],
-      "why": "The token contract both applications render on and the eighteen primitives that read it: every colour resolved back through the brand palette, the five chart mixes evaluated the way a browser does, the rules of the 2026-09-18 record (zero radius, ink lines, no blur, one scheme), and the gallery built, which is what proves the primitives still compile against Tailwind outside an application."
+      "why": "The token contract both applications render on and the seventeen primitives that read it: every colour resolved back through the brand palette, the five chart mixes evaluated the way a browser does, the rules of the 2026-09-18 record (zero radius, ink lines, no blur, one scheme), and the gallery built, which is what proves the primitives still compile against Tailwind outside an application."
     },
     {
       "id": "website-lint",
