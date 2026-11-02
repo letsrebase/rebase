@@ -8,13 +8,13 @@ has no MCP counterpart and never will (`routers/email_drafts.py` says why). So t
 module has none either.
 """
 
+from contextlib import AbstractContextManager
 from datetime import date
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
 from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
@@ -31,6 +31,7 @@ from pigrocrm.core.contract_emails.schemas import (
 )
 from pigrocrm.core.contracts.models import Contract
 from pigrocrm.core.customers.models import Customer
+from pigrocrm.core.db.transactions import savepoint
 from pigrocrm.core.documents.repository import DocumentRepository
 from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
@@ -47,32 +48,30 @@ from pigrocrm.core.work_units.register import ContractRegisterService
 ENTITY = "contract_email_template"
 CONTRACT_ENTITY = "contract"
 
-# What a template may name, declared once: the editor lists these, the save check renders
-# against sample values for them, and `values_for` supplies them. `scadenza` is optional
-# because an invoice need not have one.
-TEMPLATE_VARIABLES: tuple[DeclaredVariable, ...] = (
-    DeclaredVariable("cliente", "Cliente", "text", True),
-    DeclaredVariable("contratto", "Contratto", "text", True),
-    DeclaredVariable("periodo", "Periodo del registro", "text", True),
-    DeclaredVariable("numero_fattura", "Numero della fattura", "text", True),
-    DeclaredVariable("data_fattura", "Data della fattura", "text", True),
-    DeclaredVariable("importo", "Totale della fattura", "text", True),
-    DeclaredVariable("giornate", "Giornate in fattura", "text", True),
-    DeclaredVariable("scadenza", "Scadenza", "text", False),
+# One declaration per variable: its name, label, whether a template must be given it, and the
+# sample the save check renders it with. The editor lists them, the save check renders against
+# the samples, and `_values` supplies the real ones. `scadenza` is optional because an invoice
+# need not have one.
+_FIELDS: tuple[tuple[str, str, bool, str], ...] = (
+    ("cliente", "Cliente", True, "Acme S.r.l."),
+    ("contratto", "Contratto", True, "Consulenza"),
+    ("periodo", "Periodo del registro", True, "01/10/2026 - 31/10/2026"),
+    ("numero_fattura", "Numero della fattura", True, "2026/12"),
+    ("data_fattura", "Data della fattura", True, "31/10/2026"),
+    ("importo", "Totale della fattura", True, "1.250,00 €"),
+    ("giornate", "Giornate in fattura", True, "2.50"),
+    ("scadenza", "Scadenza", False, "30/11/2026"),
+)
+TEMPLATE_VARIABLES: tuple[DeclaredVariable, ...] = tuple(
+    DeclaredVariable(name, label, "text", required) for name, label, required, _ in _FIELDS
 )
 # `emittente.*` is the azienda's own identity, the same scope every template reads.
-EMITTER_VARIABLES = ("emittente.ragione_sociale", "emittente.telefono", "emittente.sito_web")
+_EMITTER_SAMPLE = {"ragione_sociale": "Studio Rossi", "telefono": "", "sito_web": ""}
+EMITTER_VARIABLES = tuple(f"emittente.{name}" for name in _EMITTER_SAMPLE)
 
 _SAMPLE: dict[str, Any] = {
-    "cliente": "Acme S.r.l.",
-    "contratto": "Consulenza",
-    "periodo": "01/10/2026 - 31/10/2026",
-    "numero_fattura": "2026/12",
-    "data_fattura": "31/10/2026",
-    "importo": "1.250,00 €",
-    "giornate": "2.50",
-    "scadenza": "30/11/2026",
-    "emittente": {"ragione_sociale": "Studio Rossi", "telefono": "", "sito_web": ""},
+    **{name: sample for name, _, _, sample in _FIELDS},
+    "emittente": _EMITTER_SAMPLE,
 }
 
 
@@ -145,8 +144,8 @@ class ContractEmailService:
             corpo=data.corpo,
             allegati=list(dict.fromkeys(data.allegati)),
         )
-        self.session.add(row)
-        self._flush_unique(row)
+        with self._unique_name(data.nome):
+            self.session.add(row)
         self.activities.record(
             CONTRACT_ENTITY, contract_id, "email_template_saved", actor, {"nome": data.nome}
         )
@@ -163,27 +162,31 @@ class ContractEmailService:
         actor.require_write("update_contract_email_template")
         row = self._template(contract_id, template_id)
         changes = data.model_dump(exclude_unset=True)
-        for field in ("nome", "oggetto", "corpo", "attivo"):
-            if changes.get(field) is not None:
-                setattr(row, field, changes[field])
-        if changes.get("allegati") is not None:
-            row.allegati = list(dict.fromkeys(changes["allegati"]))
-        self._check_renders(row.oggetto, row.corpo)
-        self._flush_unique(row)
+        oggetto = changes["oggetto"] if changes.get("oggetto") is not None else row.oggetto
+        corpo = changes["corpo"] if changes.get("corpo") is not None else row.corpo
+        self._check_renders(oggetto, corpo)
+        nome = changes["nome"] if changes.get("nome") is not None else row.nome
+        with self._unique_name(nome):
+            for field in ("nome", "oggetto", "corpo", "attivo"):
+                if changes.get(field) is not None:
+                    setattr(row, field, changes[field])
+            if changes.get("allegati") is not None:
+                row.allegati = list(dict.fromkeys(changes["allegati"]))
         self.activities.record(
             CONTRACT_ENTITY, contract_id, "email_template_saved", actor, {"nome": row.nome}
         )
         self.session.commit()
         return ContractEmailTemplateRead.model_validate(row)
 
-    def _flush_unique(self, row: ContractEmailTemplate) -> None:
-        try:
-            self.session.flush()
-        except IntegrityError as exc:
-            self.session.rollback()
-            raise Conflict(
-                ENTITY, "questo contratto ha già un modello con questo nome", nome=row.nome
-            ) from exc
+    def _unique_name(self, nome: str) -> AbstractContextManager[None]:
+        """The writes of a save, in a SAVEPOINT: two saves of one name at once are refused by
+        the unique index, and only that write is rolled back."""
+        return savepoint(
+            self.session,
+            lambda exc: Conflict(
+                ENTITY, "questo contratto ha già un modello con questo nome", nome=nome
+            ),
+        )
 
     # ---- from a template and an invoice to a draft -----------------------------------
 
@@ -229,7 +232,13 @@ class ContractEmailService:
         actor: Actor,
     ) -> dict[str, Any]:
         customer = self.session.get(Customer, contract.customer_id)
-        assert invoice.anno is not None and invoice.numero is not None
+        if invoice.anno is None or invoice.numero is None:
+            raise ValidationFailed(
+                ENTITY,
+                "invoice_id",
+                "si invia una fattura emessa: una bozza non ha ancora un numero",
+                expected="una fattura emessa",
+            )
         emitter = LegalEntityService(self.session).as_template_values(actor, invoice.azienda_id)
         return {
             "cliente": customer.ragione_sociale if customer is not None else "",
@@ -332,7 +341,8 @@ class ContractEmailService:
                 contract_id, da, a, actor, invoice_id=invoice.id
             )
             version = documents.version(archived.id, archived.versione_corrente)
-            assert version is not None
+            if version is None:
+                raise NotFound("document_version", archived.id)
             version_ids.append(version.id)
 
         return EmailDraftService(self.session, settings=settings).create(
