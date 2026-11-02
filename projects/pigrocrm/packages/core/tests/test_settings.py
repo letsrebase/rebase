@@ -57,9 +57,13 @@ def test_the_api_refuses_to_boot_on_a_published_signing_key(placeholder: str) ->
     assert placeholder not in str(caught.value)
 
 
-def test_a_bare_settings_carries_the_placeholder_and_is_refused() -> None:
+def test_a_bare_settings_carries_the_placeholder_and_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """The default is what a CLI command or a test builds, so it must stay constructible;
-    the boot of the API is where it is turned down."""
+    the boot of the API is where it is turned down. The API test suite exports a real key
+    for the whole process, so it is cleared here."""
+    monkeypatch.delenv("PIGROCRM_JWT_SECRET", raising=False)
     assert _settings().jwt_secret == DEFAULT_JWT_SECRET
     with pytest.raises(ValueError, match="PIGROCRM_JWT_SECRET"):
         require_production_secrets(_settings())

@@ -21,6 +21,7 @@ from fakes.gmail_fixtures import TOKEN_KEY, gmail_settings  # noqa: E402
 from sqlalchemy.orm import Session, sessionmaker  # noqa: E402
 
 import pigrocrm.core.documents.service as document_service  # noqa: E402
+import pigrocrm.core.documents.uploads as document_uploads  # noqa: E402
 import pigrocrm_api.deps as deps  # noqa: E402
 import pigrocrm_api.routers.documents as documents_router  # noqa: E402
 from pigrocrm.core.auth.models import User  # noqa: E402
@@ -130,7 +131,7 @@ def test_an_upload_is_read_one_byte_past_the_limit_and_no_more(
     the whole body."""
     limit = 1024
     monkeypatch.setattr(documents_router, "DIMENSIONE_MAX", limit)
-    monkeypatch.setattr(document_service, "DIMENSIONE_MAX", limit)
+    monkeypatch.setattr(document_uploads, "DIMENSIONE_MAX", limit)
     seen: list[int] = []
     add_version = document_service.DocumentService.add_version
 

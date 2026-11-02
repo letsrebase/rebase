@@ -153,8 +153,6 @@ class TimeReportService:
         slice 2 pipeline unchanged -- so it gets the versioning, the hash, the pluggable
         storage and the timeline that already work, and a regenerated report is a new
         version rather than a silent overwrite."""
-        # Before the lookups: a `readonly` caller learns nothing, not even that the deal exists.
-        actor.require_write("create_document")
         variables = self.variables_for(deal_id, mese, actor)
         template = self.templates.repo.get_by_nome(TIME_REPORT_TEMPLATE_NOME)
         if template is None:

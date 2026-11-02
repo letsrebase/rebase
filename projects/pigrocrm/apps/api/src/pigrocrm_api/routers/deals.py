@@ -202,6 +202,8 @@ def render_time_report_pdf(
     returns: the bytes are fetched from the document download endpoint, like every other
     archived file, and the PDF gets attached to the invoice. A POST because it creates a
     document -- every call archives a new version, never overwriting an earlier one."""
+    # Before the lookups: a `readonly` caller learns nothing, not even that the deal exists.
+    actor.require_write("create_document")
     return TimeReportService(session, storage).render_pdf(deal_id, mese, actor)
 
 
