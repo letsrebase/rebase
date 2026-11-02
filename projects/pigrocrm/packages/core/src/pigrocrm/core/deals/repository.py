@@ -12,7 +12,7 @@ from pigrocrm.core.db import decode_cursor, escape_like, keyset_predicate, order
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.deals.schemas import DEAL_SORTS, DealListQuery
 from pigrocrm.core.invoices.models import Invoice
-from pigrocrm.core.invoices.repository import invoiced_not_won_predicate
+from pigrocrm.core.invoices.receivables import invoiced_not_won_predicate
 from pigrocrm.core.money import percentage_of, round_money
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.timetracking.models import TimeEntry

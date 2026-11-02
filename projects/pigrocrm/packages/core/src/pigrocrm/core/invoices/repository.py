@@ -12,14 +12,13 @@ force either a new tool or an edit to another slice's declared list.
 from collections.abc import Collection
 from datetime import date, timedelta
 from decimal import Decimal
-from typing import NamedTuple, cast
+from typing import cast
 from uuid import UUID
 
 from sqlalchemy import ColumnElement, case, delete, distinct, func, select, text
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.customers.models import Customer
-from pigrocrm.core.db import today_local
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.gmail.models import PaymentReminder
 from pigrocrm.core.invoices.models import (
@@ -30,141 +29,21 @@ from pigrocrm.core.invoices.models import (
     InvoiceRegisterGap,
 )
 from pigrocrm.core.invoices.naming import numero_completo
-from pigrocrm.core.invoices.schemas import InvoiceListQuery
-from pigrocrm.core.money import round_money
-from pigrocrm.core.pipeline.models import PipelineStage
-
-
-def _issued_filter() -> tuple[ColumnElement[bool], ...]:
-    """The one definition of "an invoice that exists as a fiscal document".
-
-    Identical to `AnalyticsRepository._revenue_filter` on purpose and not imported from it:
-    that function answers "which invoices are revenue" and this one answers "which invoices
-    are documents somebody owes on". They coincide today because both mean "a `fattura`
-    that was issued and not annulled", and the day they stop coinciding a shared alias
-    would silently pick a side -- the same reasoning `analytics/schemas.py` records for
-    `DealStato`.
-    """
-    return (
-        Invoice.deleted_at.is_(None),
-        Invoice.tipo == "fattura",
-        Invoice.stato == "emessa",
-    )
-
-
-def _azienda_filter(azienda_id: UUID | None) -> tuple[ColumnElement[bool], ...]:
-    """One azienda's register, or every azienda's (REB-630, spec 2026-10-03 §1.9): the
-    one predicate the dashboard sums below add when the sidebar names an azienda, so
-    «tutte» stays their unfiltered sum by construction."""
-    return () if azienda_id is None else (Invoice.azienda_id == azienda_id,)
-
-
-def _receivable_filter() -> tuple[ColumnElement[bool], ...]:
-    """An issued invoice nobody has paid. The base of both "Da incassare" and "Scaduto",
-    which is what makes the second a subset of the first rather than a figure of its own
-    (§5.2)."""
-    return (*_issued_filter(), Invoice.stato_pagamento == "da_incassare")
-
-
-def _overdue_predicate() -> tuple[ColumnElement[bool], ...]:
-    """A receivable past its due date, strictly.
-
-    Due today is due today, so `<` and not `<=`. A null `data_scadenza` is never overdue,
-    which Postgres's three-valued logic gives for free -- the explicit `IS NOT NULL` is
-    there because relying on that silently is how the opposite gets implemented by
-    accident.
-
-    `today_local()` and not `CURRENT_DATE`: `CURRENT_DATE` is the *database server's* day,
-    and every date in this product is a day in the emitter's zone (`db/clock.py`). Read at
-    call time, never bound once at import, so a process that outlives midnight in Rome does
-    not keep answering yesterday.
-    """
-    return (
-        *_receivable_filter(),
-        Invoice.data_scadenza.is_not(None),
-        Invoice.data_scadenza < today_local(),
-    )
-
-
-# The six ageing buckets of the scadenziario (slice 8 §2.1, REB-329), in the order the
-# page draws them. Six and not five: `data_scadenza` is nullable and a NULL is not today.
-FASCE_SCADENZIARIO: tuple[str, ...] = (
-    "scaduto",
-    "entro_30",
-    "da_31_a_60",
-    "da_61_a_90",
-    "oltre_90",
-    "senza_scadenza",
+from pigrocrm.core.invoices.receivables import (
+    FASCE_SCADENZIARIO,
+    ClienteRow,
+    FasciaRow,
+    MeseRow,
+    ScadutaRow,
+    _azienda_filter,
+    _issued_filter,
+    _overdue_predicate,
+    _receivable_filter,
+    invoiced_not_won_predicate,
 )
-
-
-class FasciaRow(NamedTuple):
-    codice: str
-    da: date | None
-    a: date | None
-    importo: Decimal
-    numero: int
-    # The bucket's share of the largest bucket, in [0, 1], so a page can scale a bar
-    # without turning an amount string into a number (slice 6 criterion 14).
-    quota: float
-
-
-class MeseRow(NamedTuple):
-    mese: date  # the first day
-    importo: Decimal
-    numero: int
-    quota: float
-
-
-class ClienteRow(NamedTuple):
-    customer_id: UUID
-    ragione_sociale: str
-    importo: Decimal
-    numero: int
-    scaduto: Decimal
-    quota: float
-
-
-class ScadutaRow(NamedTuple):
-    invoice_id: UUID
-    numero: str
-    customer_id: UUID
-    cliente: str
-    data_scadenza: date
-    giorni_di_ritardo: int
-    importo: Decimal
-    solleciti_inviati: int
-    ultimo_sollecito_il: date | None
-
-
-def _quota(value: Decimal, of: Decimal) -> float:
-    """A share of the largest figure, the same rule `AnalyticsService.cash_overview` uses
-    for its months: zero when there is nothing to scale against."""
-    return float(value / of) if of > Decimal("0") else 0.0
-
-
-def invoiced_not_won_predicate() -> tuple[ColumnElement[bool], ...]:
-    """A deal with an issued invoice that is still sitting on an `open` stage (§6.2).
-
-    `tipo = 'open'`, not `tipo <> 'won'`. The drill-through is a list of deals to go and
-    win -- almost always the stage somebody forgot to move -- and an invoiced deal parked
-    on `perso` is a different problem with a different remedy, which this signal must not
-    silently absorb.
-
-    Written as a predicate rather than inlined because slice 6 §6.2's card and its
-    drill-through must be the *same* predicate: `DealRepository.list` filters on this same
-    tuple, so the count on the card and the length of the list behind it cannot drift.
-
-    Public, unlike `_issued_filter` and `_overdue_predicate` beside it, because its second
-    caller lives in another module: `deals/repository.py` imports it for the
-    `fatturato_non_vinto` drill-through. A leading underscore reached across a package
-    boundary is a worse signal than a public name.
-    """
-    return (
-        *_issued_filter(),
-        Deal.deleted_at.is_(None),
-        PipelineStage.tipo == "open",
-    )
+from pigrocrm.core.invoices.schemas import InvoiceListQuery
+from pigrocrm.core.money import round_money, share
+from pigrocrm.core.pipeline.models import PipelineStage
 
 
 class InvoiceRepository:
@@ -673,7 +552,7 @@ class InvoiceRepository:
             da, a = bounds.get(codice, (None, None))
             if codice == "oltre_90":
                 da = bounds["da_61_a_90"][1] + timedelta(days=1)
-            out.append(FasciaRow(codice, da, a, importo, numero, _quota(importo, largest)))
+            out.append(FasciaRow(codice, da, a, importo, numero, share(importo, largest)))
         return out
 
     def receivables_by_due_month(self, azienda_id: UUID | None = None) -> list[MeseRow]:
@@ -700,7 +579,7 @@ class InvoiceRepository:
                 mese=row[0].date() if hasattr(row[0], "date") else row[0],
                 importo=importo,
                 numero=int(row[2]),
-                quota=_quota(importo, largest),
+                quota=share(importo, largest),
             )
             for row, importo in zip(rows, importi, strict=True)
         ]
@@ -732,7 +611,7 @@ class InvoiceRepository:
                 importo=importo,
                 numero=int(row[3]),
                 scaduto=round_money(Decimal(row[4])),
-                quota=_quota(importo, largest),
+                quota=share(importo, largest),
             )
             for row, importo in zip(rows, importi, strict=True)
         ]
