@@ -7,7 +7,7 @@ from uuid import UUID
 
 import pytest
 from admins import an_admin
-from sqlalchemy import text
+from sqlalchemy import event, text
 from sqlalchemy.orm import Session
 
 from rebase_core.admin_schemas import StatusChange
@@ -840,3 +840,30 @@ def test_the_filters_and_the_sort_compose_in_one_call(clean: Session) -> None:
         ordina="tariffa_asc",
     )
     assert _emails(found) == ["b@studio.it", "a@studio.it"]
+
+
+def test_a_page_costs_a_fixed_number_of_statements_whatever_the_table_holds(
+    clean: Session,
+) -> None:
+    """REB-891/REB-804: the cards, the leads, the duplicate flags (two reads) and the counts
+    (one statement for every state and the leads) are five reads for a page of cards and
+    leads together, and a longer table does not add to them."""
+
+    def reads_for(people: int) -> int:
+        for n in range(people):
+            FreelancerService(clean).apply(_application(f"card{n}@studio.it", nome=f"Nome{n}"))
+            _signup(clean, f"lead{n}@studio.it")
+        seen: list[str] = []
+        engine = clean.get_bind()
+
+        def record(*args: object) -> None:
+            seen.append(str(args[2]))
+
+        event.listen(engine, "before_cursor_execute", record)
+        try:
+            TalentiService(clean).list_recent(limit=50)
+        finally:
+            event.remove(engine, "before_cursor_execute", record)
+        return len(seen)
+
+    assert reads_for(3) == reads_for(20) == 5

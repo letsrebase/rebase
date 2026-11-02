@@ -11,18 +11,20 @@ from uuid import UUID
 
 import pytest
 from admins import an_admin
-from sqlalchemy import select, text
+from sqlalchemy import event, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from rebase_core.cli import talent_duplicates
+from rebase_core.cli.members import talent_duplicates
 from rebase_core.duplicates import (
+    FLAGS_PER_ROW,
     LINKEDIN,
     NOME,
     TELEFONO,
     UNIQUE_INDEXES,
     IndexesEnsured,
     duplicate_list,
+    duplicates_of,
     ensure_unique_indexes,
     find_duplicates,
 )
@@ -564,3 +566,115 @@ def test_an_address_with_no_card_does_not_hide_a_profile_that_is_on_one(clean: S
     clean.commit()
     read, created = _apply(clean, "nuova@studio.it", ADA)
     assert (read.id, created) == (card.id, False)
+
+
+# ---- a Talenti page reads its own cards' neighbours, not the table (REB-891) -------------
+
+
+def _full_scan_flags(session: Session, ids: list[UUID]) -> dict[UUID, list[UUID]]:
+    """What `duplicates_of` answered before it stopped reading the table: the whole report,
+    then the cards of the page picked out of its pairs, mergeable pairs first."""
+    wanted = set(ids)
+    answer: dict[UUID, list[UUID]] = {}
+    report = find_duplicates(session)
+    for pair in (*report.unibili, *report.da_rivedere):
+        for mine, other in (
+            (pair.survivor, pair.assorbito),
+            (pair.assorbito, pair.survivor),
+        ):
+            if mine.freelancer_id in wanted:
+                flagged = answer.setdefault(mine.freelancer_id, [])
+                if len(flagged) < FLAGS_PER_ROW:
+                    flagged.append(other.freelancer_id)
+    return answer
+
+
+def _seed_a_crowd(session: Session) -> list[UUID]:
+    """Forty cards where every kind of match, and every kind of near miss, is present."""
+    people: list[dict[str, Any]] = [
+        # One profile on three cards, one of them an admin's.
+        {"nome": "Ada", "cognome": "Lovelace", "linkedin_url": ADA},
+        {"nome": "Augusta", "cognome": "King", "linkedin_url": ADA},
+        {"nome": "Lady", "cognome": "Byron", "linkedin_url": ADA, "role": "admin"},
+        # One name written four ways: case, accents, the two words swapped, punctuation.
+        {"nome": "José", "cognome": "Álvarez"},
+        {"nome": "jose", "cognome": "alvarez"},
+        {"nome": "ÁLVAREZ", "cognome": "José"},
+        {"nome": "Jose'", "cognome": "Alvarez-"},
+        # One number written four ways, and a short one nobody shares.
+        {"nome": "Uno", "cognome": "Telefono", "telefono": "+39 333 1234567"},
+        {"nome": "Due", "cognome": "Telefono", "telefono": "0039 3331234567"},
+        {"nome": "Tre", "cognome": "Telefono", "telefono": "333-123-4567"},
+        {"nome": "Quattro", "cognome": "Telefono", "telefono": "3331234567"},
+        {"nome": "Corto", "cognome": "Numero", "telefono": "12345"},
+        {"nome": "Corto", "cognome": "Altro", "telefono": "12345"},
+        # More than the five flags a row carries: seven people called Maria Bianchi.
+        *({"nome": "Maria", "cognome": "Bianchi"} for _ in range(7)),
+        # Not Latin letters, an empty word, and a number outside ASCII.
+        {"nome": "山田", "cognome": "太郎"},
+        {"nome": "山田", "cognome": "太郎"},
+        {"nome": "Solo", "cognome": ""},
+        {"nome": "Solo", "cognome": ""},
+        {"nome": "Arabo", "cognome": "Uno", "telefono": "٠٣٣٣١٢٣٤٥٦٧"},
+        {"nome": "Arabo", "cognome": "Due", "telefono": "٠٣٣٣١٢٣٤٥٦٧"},
+        # Alone.
+        *({"nome": f"Sola{n}", "cognome": f"Persona{n}"} for n in range(6)),
+    ]
+    ids: list[UUID] = []
+    for n, person in enumerate(people):
+        user = _user(session, f"p{n}@studio.it", **person)
+        ids.append(_card(session, user, NOW - timedelta(days=n)).id)
+    # The same name as a card that was deleted, and as a person merged away: neither counts.
+    gone = _user(session, "gone@studio.it", nome="Maria", cognome="Bianchi")
+    _card(session, gone).deleted_at = NOW
+    merged = _user(session, "merged@studio.it", nome="Maria", cognome="Bianchi")
+    _card(session, merged)
+    merged.merged_into_id = gone.id
+    session.commit()
+    return ids
+
+
+def test_a_page_flags_exactly_what_a_scan_of_every_card_flags(twice: Session) -> None:
+    ids = _seed_a_crowd(twice)
+    pages = [ids[start : start + 7] for start in range(0, len(ids), 7)]
+    pages += [[ids[0]], [ids[3], ids[-1]], ids[::2], ids]
+    for page in pages:
+        assert duplicates_of(twice, page) == _full_scan_flags(twice, page)
+    flagged = duplicates_of(twice, ids)
+    assert sum(1 for others in flagged.values() if others) >= 20  # the crowd really matches
+    assert max(len(others) for others in flagged.values()) == FLAGS_PER_ROW
+
+
+def test_the_list_flags_a_pair_that_straddles_two_pages(twice: Session) -> None:
+    ids = _seed_a_crowd(twice)
+    seen: dict[UUID, list[UUID]] = {}
+    cursor = None
+    pages = 0
+    while True:
+        page = TalentiService(twice).list_recent(limit=6, cursor=cursor)
+        pages += 1
+        seen.update({row.id: row.possibile_duplicato_di for row in page.items})
+        cursor = page.next_cursor
+        if cursor is None:
+            break
+    assert pages > 3 and set(ids) <= set(seen)
+    assert {i: seen[i] for i in ids} == {i: _full_scan_flags(twice, ids).get(i, []) for i in ids}
+
+
+def test_a_page_reads_a_fixed_number_of_statements(twice: Session) -> None:
+    ids = _seed_a_crowd(twice)
+    statements: list[str] = []
+
+    def count(conn: Any, cursor: Any, statement: str, *args: Any) -> None:
+        statements.append(statement)
+
+    engine = twice.get_bind()
+    event.listen(engine, "before_cursor_execute", count)
+    try:
+        duplicates_of(twice, ids[:10])
+        small = len(statements)
+        statements.clear()
+        duplicates_of(twice, ids)
+    finally:
+        event.remove(engine, "before_cursor_execute", count)
+    assert small == len(statements) == 2
