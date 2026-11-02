@@ -3,6 +3,7 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import (
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -61,7 +62,12 @@ class Note(Base, PrimaryKeyMixin):
     eliminata_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     eliminata_da_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
 
-    __table_args__ = (Index("ix_notes_entity", "entity_type", "entity_id", "created_at"),)
+    __table_args__ = (
+        Index("ix_notes_entity", "entity_type", "entity_id", "created_at"),
+        CheckConstraint(
+            "fonte IS NULL OR fonte IN ('web', 'mcp', 'persona', 'sistema')", name="ck_notes_fonte"
+        ),
+    )
 
 
 # ---- what an admin overrode, cleared, deleted or restored, and when --------------------
@@ -186,8 +192,8 @@ class AdminToken(Base, PrimaryKeyMixin, TimestampMixin):
     """A personal token of an admin, for an agent (REB-213): the credential the MCP
     server takes as a bearer. Only the sha256 of the value is stored; the value itself
     is shown once, at creation, and never again. `prefix` is the visible head of it, so a
-    list can tell two tokens apart. No expiry: `revoked_at` is the end of a token, and a
-    revoked one is refused like an unknown one.
+    list can tell two tokens apart. `revoked_at` is the end of a token, `expires_at` an optional
+    one set when it is minted, and a revoked or expired one is refused like an unknown one.
 
     Since REB-278 `user_id` (`users.id`, `role == 'admin'`) is the owner; migration B
     (REB-281) drops the `admin_id` column it replaced, once `admin_users` itself is
@@ -203,6 +209,9 @@ class AdminToken(Base, PrimaryKeyMixin, TimestampMixin):
     prefix: Mapped[str] = mapped_column(String(ADMIN_TOKEN_PREFIX_LENGTH), nullable=False)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    # The token's end, when it was minted with one (REB-803): `NULL` never expires. A token
+    # past it is refused like a revoked one.
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
     __table_args__ = (
         # Trigram search (REB-313): Agenti's list matches a token by its own `nome`,

@@ -5,6 +5,7 @@ from uuid import UUID
 
 from sqlalchemy import (
     CheckConstraint,
+    Computed,
     Date,
     DateTime,
     ForeignKey,
@@ -98,6 +99,11 @@ class Freelancer(Base, PrimaryKeyMixin, TimestampMixin, UtmMixin):
 
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     cv_bytes: Mapped[bytes | None] = mapped_column(LargeBinary, default=None)
+    # The digest of `cv_bytes`, generated and stored by the database (migration 0047): the
+    # card's staleness reads it instead of hashing every CV on each pass. `NULL` with no CV.
+    cv_sha256: Mapped[str | None] = mapped_column(
+        String(64), Computed("encode(sha256(cv_bytes), 'hex')", persisted=True)
+    )
     cv_filename: Mapped[str | None] = mapped_column(String(CV_FILENAME_MAX_LENGTH), default=None)
     # When the CV in this row was stored (REB-800): what «the newest CV» means when two
     # cards of one person are merged. `updated_at` moves on every status change, so it
@@ -129,6 +135,14 @@ class Freelancer(Base, PrimaryKeyMixin, TimestampMixin, UtmMixin):
 
     __table_args__ = (
         Index("ix_freelancers_created_at", "created_at"),
+        CheckConstraint(
+            "stato IN ('nuovo', 'contattato', 'attivo', 'scartato')", name="ck_freelancers_stato"
+        ),
+        CheckConstraint("compilata_da IN ('persona', 'admin')", name="ck_freelancers_compilata_da"),
+        CheckConstraint(
+            "remoto IS NULL OR remoto IN ('remoto', 'ibrido', 'in_sede')",
+            name="ck_freelancers_remoto",
+        ),
         CheckConstraint(
             "seniority_admin IS NULL OR seniority_admin IN ('junior', 'mid', 'senior', 'lead')",
             name="ck_freelancers_seniority_admin",
@@ -202,6 +216,10 @@ class Company(Base, PrimaryKeyMixin, TimestampMixin, UtmMixin):
 
     __table_args__ = (
         Index("ix_companies_created_at", "created_at"),
+        CheckConstraint(
+            "stato IN ('nuovo', 'contattato', 'in_corso', 'chiuso')", name="ck_companies_stato"
+        ),
+        CheckConstraint("remoto IN ('remoto', 'ibrido', 'in_sede')", name="ck_companies_remoto"),
         # Trigram search (REB-285): `nome`/`referente`/`email` are the linked `users`
         # row's own (indexed there); `nome_azienda`, `progetto` and `figura_richiesta`
         # (REB-380) are this table's. Migration 0013/0016 create the GIN indexes.

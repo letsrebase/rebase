@@ -158,6 +158,11 @@ class AiUsage(Base, PrimaryKeyMixin):
     batch: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
+    # Set while the row is a hold, not a call that was answered (HCORE-01, migration 0047):
+    # `cost_eur` is then the estimate reserved before the network call, and the hold counts
+    # against the daily cap until it is settled (this column cleared, the real numbers
+    # written), released (the row deleted) or this moment passes.
+    reserved_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
     __table_args__ = (
         Index("ix_ai_usage_task_at", "task", "at"),
