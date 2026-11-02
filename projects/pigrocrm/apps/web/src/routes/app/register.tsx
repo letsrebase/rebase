@@ -86,11 +86,6 @@ export function SignupPage({ go = (url) => window.location.assign(url) }: { go?:
   // PR #425). Irrelevant outside the fast path -- `canCreate` below only consults it
   // while `fastPathActive` is true.
   const [memberSettled, setMemberSettled] = useState(false)
-  // Whether `nome` carries anything the person (or this page) put there, read fresh by
-  // the fast path's background lookup below -- unlike `nome === ''`, which a one-time
-  // mount effect would see through the closure it was created with (empty, always),
-  // never what is on screen once the request actually answers.
-  const nomeTouched = useRef(false)
   // Set once the person explicitly leaves the fast path (`backToEmail`), including
   // while its background lookup is still in flight. Two flags, not one: `left` is
   // read during render (below), which a ref may never be (`react-hooks/refs`);
@@ -165,17 +160,14 @@ export function SignupPage({ go = (url) => window.location.assign(url) }: { go?:
 
   // The name proposes the address until the person edits the address by hand.
   function onNomeChange(value: string) {
-    nomeTouched.current = value !== ''
     setNome(value)
     if (!slugTouched) setSlug(slugify(value))
   }
 
-  // The fast path skips straight to the name step, but the hub's answer (the
-  // proposed name, the `membro` flag the create call sends) still matters: fetched
-  // here in the background rather than blocking the form on it. `nomeTouched` is
-  // read fresh at resolution time so a name the person already started typing is
-  // never clobbered by a slow answer landing after them, and `memberSettled` keeps
-  // the create button off until this settles one way or the other.
+  // The fast path skips straight to the name step, but the hub's answer (the `membro`
+  // flag the create call sends) still matters: fetched here in the background rather
+  // than blocking the form on it, and `memberSettled` keeps the create button off until
+  // this settles one way or the other.
   useEffect(() => {
     if (!fastPathActive || !handoffEmail) return
     const address = handoffEmail
@@ -187,7 +179,6 @@ export function SignupPage({ go = (url) => window.location.assign(url) }: { go?:
       })
       .catch(() => {})
       .finally(() => setMemberSettled(true))
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- onNomeChange is a plain function redefined every render; this must fire only when the fast path (re)activates or the lookup's own email changes, not on every render
   }, [fastPathActive, handoffEmail])
 
   async function onEmailNext(event: FormEvent) {

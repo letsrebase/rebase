@@ -125,8 +125,8 @@ function DraftCard({
   // REB-294: one check per button, each against the string its own service passes to
   // `require_write` (`gmail/send.py`, `gmail/drafts.py`). A readonly person reads the
   // draft and is offered nothing to press.
-  const maySend = useCan("inviare un'email")
-  const mayVerify = useCan("verificare l'esito di un'email")
+  const maySend = useCan('send_email')
+  const mayVerify = useCan('reconcile_email')
   const mayDelete = useCan('delete_email_draft')
   const queryClient = useQueryClient()
   const health = useGmailHealth()
