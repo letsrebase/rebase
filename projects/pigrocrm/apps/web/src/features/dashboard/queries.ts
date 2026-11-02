@@ -222,7 +222,7 @@ export function useUpdateAutomationConfig() {
       // configuration change is a reason to re-read it. By the `['dashboard']` prefix
       // rather than an exact key: a mutation cannot know which period the user is looking
       // at, and the prefix covers every cached period and every tab.
-      void client.invalidateQueries({ queryKey: ['dashboard'] })
+      void client.invalidateQueries({ queryKey: queryKeys.dashboardAll })
       toast.success('Configurazione aggiornata')
       // Awaited, last: a caller's own `onSuccess` runs once the description is fresh, so a
       // box that held a typed number can let go of it without flashing the old one.

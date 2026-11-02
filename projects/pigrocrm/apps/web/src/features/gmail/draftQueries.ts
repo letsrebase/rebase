@@ -129,7 +129,7 @@ export function patchCachedDraft(
  */
 function invalidateOutcome(queryClient: QueryClient) {
   void queryClient.invalidateQueries({ queryKey: draftKeys.all })
-  void queryClient.invalidateQueries({ queryKey: ['gmail', 'messages'] })
+  void queryClient.invalidateQueries({ queryKey: gmailKeys.allMessages })
   void queryClient.invalidateQueries({ queryKey: gmailKeys.health })
 }
 

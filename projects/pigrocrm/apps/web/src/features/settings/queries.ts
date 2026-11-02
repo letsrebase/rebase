@@ -419,7 +419,7 @@ export function useCreateLegalEntity() {
       // The Home's «tutte» is a different answer from the second azienda on (no
       // space-wide estimate, the concentration per azienda), and its key does not
       // change: dropped here so a sixty-second `staleTime` cannot keep the old shape.
-      void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.dashboardAll })
       void queryClient.invalidateQueries({ queryKey: ['fiscal-estimate'] })
     },
   })

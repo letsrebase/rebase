@@ -215,7 +215,7 @@ export function useSetOfferState(documentId: string) {
       // closures and the "offerta accettata, deal non vinto" signal. By the ['dashboard']
       // prefix rather than an exact key: this mutation cannot know which period the user is
       // looking at, and the prefix covers every cached period and every tab.
-      void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.dashboardAll })
     },
   })
 }

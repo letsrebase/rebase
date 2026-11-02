@@ -263,7 +263,7 @@ export function useMoveDeal() {
       // A move changes which stage a deal is in, which is the whole of the commercial
       // dashboard's pipeline snapshot, and it may change the closures too. By the
       // ['dashboard'] prefix: this mutation cannot know which period is on screen.
-      void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.dashboardAll })
     },
   })
 }

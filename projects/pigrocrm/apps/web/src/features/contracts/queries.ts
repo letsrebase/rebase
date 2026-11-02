@@ -120,9 +120,9 @@ export function useRateCards(contractId: string) {
 /** A rate card moves what the projection programs, so both go stale together. */
 function invalidateRates(client: QueryClient, contractId: string) {
   void client.invalidateQueries({ queryKey: queryKeys.contractRateCards(contractId) })
-  void client.invalidateQueries({ queryKey: ['contract', contractId, 'projection'] })
+  void client.invalidateQueries({ queryKey: queryKeys.contractProjection(contractId) })
   // The days analysis sets the realised rate against the card in force (REB-756).
-  void client.invalidateQueries({ queryKey: ['dashboard'] })
+  void client.invalidateQueries({ queryKey: queryKeys.dashboardAll })
   void client.invalidateQueries({ queryKey: queryKeys.timeline('contract', contractId) })
 }
 
@@ -247,7 +247,7 @@ export function useSetRenewalAssumption(contractId: string) {
       ),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.contractAssumption(contractId) })
-      void queryClient.invalidateQueries({ queryKey: ['contract', contractId, 'projection'] })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.contractProjection(contractId) })
       void queryClient.invalidateQueries({ queryKey: queryKeys.timeline('contract', contractId) })
     },
   })

@@ -174,11 +174,11 @@ export function useApprovalCandidates(contractId: string, openedFor: readonly st
 function useInvalidateDays() {
   const queryClient = useQueryClient()
   return () => {
-    void queryClient.invalidateQueries({ queryKey: ['work-units'] })
-    void queryClient.invalidateQueries({ queryKey: ['work-unit'] })
-    void queryClient.invalidateQueries({ queryKey: ['calendario'] })
+    void queryClient.invalidateQueries({ queryKey: queryKeys.workUnitsAll })
+    void queryClient.invalidateQueries({ queryKey: queryKeys.workUnitAll })
+    void queryClient.invalidateQueries({ queryKey: queryKeys.calendarAll })
     // The dashboard's «Giornate» tab reads the same ledger (REB-756).
-    void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    void queryClient.invalidateQueries({ queryKey: queryKeys.dashboardAll })
   }
 }
 

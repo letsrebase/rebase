@@ -52,8 +52,8 @@ export function useInvoiceDays(contractId: string) {
       void queryClient.invalidateQueries({ queryKey: queryKeys.contract(contractId) })
       void queryClient.invalidateQueries({ queryKey: queryKeys.invoices() })
       // The days list and the calendar read the same days, now `fatturato`.
-      void queryClient.invalidateQueries({ queryKey: ['work-units'] })
-      void queryClient.invalidateQueries({ queryKey: ['calendario'] })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.workUnitsAll })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.calendarAll })
     },
   })
 }
