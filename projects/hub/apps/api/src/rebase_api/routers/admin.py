@@ -27,6 +27,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from rebase_api.deps import (
     AdminDep,
     CardLlmDep,
+    CrmFilingDep,
     CrmLeadsDep,
     CvLlmDep,
     CvRendererDep,
@@ -65,6 +66,7 @@ from rebase_core.referral_schemas import (
 )
 from rebase_core.referrals import ReferralService
 from rebase_core.schemas import (
+    CompanyAdminCreate,
     CompanyList,
     CompanyOverride,
     CompanyRead,
@@ -401,6 +403,31 @@ def list_companies(
         creato_da=creato_da,
         creato_a=creato_a,
     )
+
+
+@router.post("/admin/companies", response_model=CompanyRead, status_code=status.HTTP_201_CREATED)
+def create_company(
+    admin: AdminDep,
+    session: SessionDep,
+    background: BackgroundTasks,
+    crm: CrmLeadsDep,
+    crm_filing: CrmFilingDep,
+    data: CompanyAdminCreate,
+) -> CompanyRead:
+    """An admin opens a request for a company met directly (REB-870): the wizard's fields,
+    validated the same way, the referente found or created by email, and no mail to anybody.
+    Without `deal_id` it is a new request like any other: `da_collegare`, filed in the CRM in
+    the background as a new deal. With `deal_id`, the CRM deal it already has, the CRM links
+    it now and creates nothing (no second customer, no second deal): the answer carries
+    `collegato`, or `rifiutato` with the CRM's sentence when the CRM does not know the deal.
+    The deal stays on the request, so «Riprova» and the sweep ask for it again."""
+    service = CompanyService(session)
+    created = service.create_by_admin(data, admin.id, fonte=SOURCE)
+    if data.deal_id is None:
+        background.add_task(crm_filing, created.id)
+        return created
+    crm.link(created.id, admin.id)
+    return service.get(created.id)
 
 
 @router.get("/companies/{company_id}", response_model=CompanyRead)

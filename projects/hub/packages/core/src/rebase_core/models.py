@@ -783,6 +783,7 @@ ADMIN_ACTION_KINDS = (
     "status_changed",
     "anon_cv_downloaded",
     "crm_link",
+    "company_created",
 )
 
 

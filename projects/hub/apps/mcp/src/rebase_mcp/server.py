@@ -20,6 +20,7 @@ them: the core's `signing_from_settings` for the real ones, test doubles in the 
 """
 
 import logging
+import re
 from collections.abc import Callable, Sequence
 from datetime import date, datetime
 from decimal import Decimal
@@ -74,6 +75,7 @@ from rebase_core.perks import PerkService
 from rebase_core.pigro import PigroRegistry, PigroUnavailable
 from rebase_core.regimes import OCCASIONALE, Regime
 from rebase_core.schemas import (
+    CompanyAdminCreate,
     CompanyOverride,
     FreelancerDraft,
     FreelancerOverride,
@@ -138,6 +140,19 @@ SOURCE = "mcp"
 TAX_DATA_SAVED = {"dati_fiscali": "salvati"}
 
 logger = logging.getLogger(__name__)
+
+
+_DEAL_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
+
+
+def _deal_id(text: str | None) -> str | None:
+    """The CRM deal's id out of what an admin gives: the id, or the deal's address."""
+    if text is None or not text.strip():
+        return None
+    found = _DEAL_UUID.search(text)
+    if found is None:
+        raise ToolError("deal_id: non è l'id di un deal né il suo indirizzo")
+    return found.group(0).lower()
 
 
 def _field_refusal(exc: PydanticValidationError) -> ToolError:
@@ -1535,6 +1550,65 @@ def build_server(
             )
         except PigroUnavailable as exc:
             raise ToolError(str(exc)) from exc
+
+    @mcp.tool()
+    def create_company(
+        nome_azienda: str,
+        referente_nome: str,
+        referente_cognome: str,
+        email: str,
+        telefono: str,
+        figura_richiesta: str,
+        progetto: str,
+        periodo_da: str,
+        durata: str,
+        budget_giornaliero: str,
+        remoto: str,
+        numero_risorse: int = 1,
+        giorni_presenza: int | None = None,
+        deal_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Apre la richiesta di un'azienda a nome del referente, per un'azienda incontrata
+        direttamente: gli stessi campi del wizard e gli stessi controlli (`periodo_da` in
+        AAAA-MM-GG, `budget_giornaliero` in euro al giorno, `remoto` uno fra `remoto`,
+        `ibrido`, `in_sede`; `giorni_presenza` solo, e sempre, per l'ibrido). Il referente si
+        trova o si crea dall'email. Non parte nessuna mail, né al referente né a rebase. Senza
+        `deal_id` è una richiesta come le altre: il CRM la registra come cliente e deal nuovi.
+        Con `deal_id` (l'id del deal che il CRM ha già, o il suo indirizzo `.../app/deal/<id>`)
+        il CRM collega quel deal e non crea nulla: né un secondo cliente né un secondo deal.
+        Risponde la richiesta com'è, con `crm_stato` (`collegato`, o `rifiutato`/`errore` con la
+        frase del CRM in `crm_situazione`, per esempio per un deal che il CRM non conosce) e
+        `crm_deal_url`. Quando il CRM non è configurato su questo ambiente la richiesta si apre
+        comunque e resta `da_collegare`."""
+        fields: dict[str, Any] = {
+            "nome_azienda": nome_azienda,
+            "referente_nome": referente_nome,
+            "referente_cognome": referente_cognome,
+            "email": email,
+            "telefono": telefono,
+            "figura_richiesta": figura_richiesta,
+            "progetto": progetto,
+            "periodo_da": periodo_da,
+            "durata": durata,
+            "budget_giornaliero": budget_giornaliero,
+            "remoto": remoto,
+            "numero_risorse": numero_risorse,
+            "giorni_presenza": giorni_presenza,
+            "deal_id": _deal_id(deal_id),
+        }
+        try:
+            data = CompanyAdminCreate.model_validate(fields)
+        except PydanticValidationError as exc:
+            raise _field_refusal(exc) from None
+
+        def call(session: Session) -> dict[str, Any]:
+            service = CompanyService(session)
+            created = service.create_by_admin(data, admin().id, fonte=SOURCE)
+            if crm_leads is not None and settings is not None and settings.pigro_engagements_token:
+                crm_leads(session).link(created.id, admin().id)
+            return service.get(created.id).model_dump(mode="json")
+
+        return _call(call)
 
     @mcp.tool()
     def link_company_to_pigro(company_id: str, deal_id: str | None = None) -> dict[str, Any]:

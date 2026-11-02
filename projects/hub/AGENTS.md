@@ -75,6 +75,7 @@ a `SigningService` over `FakeDocumenso`.
 - `cancel_match`: «Annulla» on a match in draft or in signature.
 - `close_match`: «Chiudi match», the engagement ends.
 - `link_company_to_pigro`: «Riprova» on a company request (REB-869), the way `link_match_to_pigro` is for matches: files it in the CRM now as the calling admin and answers the request with `crm_stato`, `crm_situazione` and `crm_deal_url`; with `deal_id` it is «Collega a un altro deal». `get_company` and `list_aziende` carry the same three fields.
+- `create_company`: opens a company request for a company met directly, optionally linked to the CRM deal it already has (REB-870); sends no mail.
 - `set_freelancer_tax_data`: saves the tax data, the partita IVA optional; answers that they are saved, never the values.
 
 The team builder and the talent cloud are thirteen tools more (REB-520, spec § 8 of
@@ -234,6 +235,35 @@ otherwise file the request by its address and make the second customer being cor
 The trail entry is `crm_link`. The admin company page shows the state, the CRM's sentence and
 the deal's link in `pages/admin/CrmLink.tsx`, with «Riprova» and «Collega a un altro deal»;
 `link_company_to_pigro` is the same for agents (REB-869).
+
+**An admin opens a request for a company met directly (REB-870).** `POST /api/hub/admin/companies`
+(`CompanyAdminCreate`: the wizard's fields, validated the same way, plus `deal_id`) writes the
+wizard's row through `CompanyService.create_by_admin` (the referente found or created by email,
+**no mail to anybody**, the trail entry `company_created` with the admin, `fonte` and the deal).
+Without `deal_id` it is a request like any other: `da_collegare`, first attempt in the background,
+a new deal in the CRM. With it the row is written with `crm_deal_id` set and the CRM is asked at
+once: the door links that deal and creates nothing, so the answer is `collegato`, or `rifiutato`
+with the CRM's sentence when it does not know the deal. **The named deal stays on the row until it
+is linked** and `CrmLeadService.link` asks for it again whoever repeats the attempt («Riprova», the
+sweep): a transient `errore` must not end in the request being filed by its address, which is the
+second customer the deal was named to avoid; only a refusal of a deal *named in the call* is raised
+instead of written. The admin screen is `pages/admin/CreaAzienda.tsx` at `/admin/companies/nuova`
+(«Nuova richiesta» on «Aziende»), with a field that takes the deal's address or id (`lib/crm.ts`).
+`create_company` is the same for agents.
+
+## MCP surface
+
+The tools this step adds to the hub's MCP server (the rest are listed under «The MCP server is an
+admin's, by token»):
+
+- `create_company`: opens a company request on the referente's behalf with the wizard's fields
+  (`nome_azienda`, `referente_nome`, `referente_cognome`, `email`, `telefono`, `figura_richiesta`,
+  `progetto`, `periodo_da`, `durata`, `budget_giornaliero`, `remoto`, `numero_risorse`,
+  `giorni_presenza`) and, optionally, `deal_id` (the id of a deal the CRM has, or its
+  `.../app/deal/<id>` address). Sends no mail. It files the request in the CRM before answering
+  when the engagements token is configured (it has no background task) and answers the request with
+  `crm_stato`, `crm_situazione` and `crm_deal_url`; without the token it stays `da_collegare` for
+  the sweep.
 
 ## One person, once (REB-800)
 
