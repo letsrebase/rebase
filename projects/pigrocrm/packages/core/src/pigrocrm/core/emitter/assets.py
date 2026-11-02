@@ -250,7 +250,7 @@ def _references_external_file(root: etree._Element) -> bool:
         for name, value in element.attrib.items():
             if etree.QName(name).localname != "href":
                 continue
-            if not value.strip().lower().startswith(("#", "data:")):
+            if not str(value).strip().lower().startswith(("#", "data:")):
                 return True
     return False
 
