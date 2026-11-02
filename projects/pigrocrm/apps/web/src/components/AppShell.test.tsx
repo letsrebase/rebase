@@ -192,7 +192,7 @@ describe('AppShell', () => {
     expect(oggi).toBeInTheDocument()
     // Asked for the signed-in user's own, a single row: the sidebar wants the number.
     expect(GET).toHaveBeenCalledWith('/api/activities/oggi', {
-      params: { query: { assegnata_a: 'u-1', limit: 1 } },
+      params: { query: { assegnata_a: 'u-1', anche_non_assegnate: true, limit: 1 } },
     })
   })
 

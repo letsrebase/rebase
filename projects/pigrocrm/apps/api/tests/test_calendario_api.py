@@ -323,3 +323,41 @@ def test_an_overdue_attivita_leaves_the_panel_when_it_is_completed(
 
     after = logged_in.get("/api/activities/oggi", params={"assegnata_a": me}).json()
     assert after["in_ritardo"] == {"totale": 0, "items": []}
+
+
+# --- «mine and nobody's» ---------------------------------------------------------------
+
+
+def test_anche_non_assegnate_adds_the_unassigned_to_one_persons_list(
+    logged_in: TestClient,
+) -> None:
+    me = _me(logged_in)
+    logged_in.post("/api/activities", json={"titolo": "Mia", "assegnata_a": me})
+    logged_in.post("/api/activities", json={"titolo": "Di nessuno"})
+
+    def titoli(path: str, **query: object) -> set[str]:
+        body = logged_in.get(path, params=query).json()
+        return {a["titolo"] for a in body["items"]}
+
+    assert titoli("/api/activities", assegnata_a=me) == {"Mia"}
+    assert titoli("/api/activities", assegnata_a=me, anche_non_assegnate="true") == {
+        "Mia",
+        "Di nessuno",
+    }
+    # Without an assignee the flag has nothing to attach to: the whole space.
+    assert titoli("/api/activities", anche_non_assegnate="true") == {"Mia", "Di nessuno"}
+
+
+def test_oggi_honours_anche_non_assegnate(logged_in: TestClient) -> None:
+    me = _me(logged_in)
+    ieri = (OGGI - timedelta(days=1)).isoformat()
+    logged_in.post("/api/activities", json={"titolo": "Mia", "scadenza": ieri, "assegnata_a": me})
+    logged_in.post("/api/activities", json={"titolo": "Di nessuno", "scadenza": ieri})
+
+    solo = logged_in.get("/api/activities/oggi", params={"assegnata_a": me}).json()
+    anche = logged_in.get(
+        "/api/activities/oggi", params={"assegnata_a": me, "anche_non_assegnate": "true"}
+    ).json()
+
+    assert [a["titolo"] for a in solo["in_ritardo"]["items"]] == ["Mia"]
+    assert {a["titolo"] for a in anche["in_ritardo"]["items"]} == {"Mia", "Di nessuno"}

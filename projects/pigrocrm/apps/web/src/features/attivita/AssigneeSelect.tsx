@@ -28,7 +28,7 @@ export function AssigneeSelect({
       </SelectTrigger>
       <SelectContent>
         <SelectItem value={EVERYONE}>Di chiunque</SelectItem>
-        <SelectItem value={ME}>Assegnate a me</SelectItem>
+        <SelectItem value={ME}>Mie e non assegnate</SelectItem>
         {assignees.options
           .filter((person) => person.id !== assignees.me)
           .map((person) => (

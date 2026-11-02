@@ -39783,6 +39783,8 @@ export interface operations {
             query?: {
                 stato?: ("aperta" | "completata" | "annullata") | null;
                 assegnata_a?: string | null;
+                /** @description Con `assegnata_a`: anche le attività senza assegnatario */
+                anche_non_assegnate?: boolean;
                 customer_id?: string | null;
                 person_id?: string | null;
                 deal_id?: string | null;
@@ -40037,6 +40039,8 @@ export interface operations {
             query?: {
                 /** @description Solo le attività di questa persona; senza, di tutto lo spazio */
                 assegnata_a?: string | null;
+                /** @description Con `assegnata_a`: anche le attività senza assegnatario */
+                anche_non_assegnate?: boolean;
                 /** @description Righe per sezione */
                 limit?: number;
             };
