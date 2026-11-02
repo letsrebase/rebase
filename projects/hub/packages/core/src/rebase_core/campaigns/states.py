@@ -11,9 +11,10 @@ from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
-from sqlalchemy import exists, func, select
-from sqlalchemy.orm import Session, defer
+from sqlalchemy import ColumnElement, and_, exists, func, select
+from sqlalchemy.orm import Session
 
+from rebase_core.card_rows import card_emails
 from rebase_core.errors import ValidationFailed
 from rebase_core.leads import card_by_linkedin
 from rebase_core.models import Company, Freelancer, Login, Signup, User
@@ -94,73 +95,81 @@ def candidates_for_state(session: Session, stato: str) -> list[Candidate]:
 
 def _leads(session: Session) -> list[Candidate]:
     """A sign-up whose address has no card at all, the same anti-join Talenti runs
-    (`talenti._card_emails`): a card deleted by an admin still says «this person is not
+    (`card_rows.card_emails`): a card deleted by an admin still says «this person is not
     a lead to chase»."""
-    card_emails = select(func.lower(User.email)).join(Freelancer, Freelancer.user_id == User.id)
+    addresses = select(card_emails().c.email)
     signup_user = select(User.id).where(func.lower(User.email) == func.lower(Signup.email))
     rows = session.execute(
-        select(Signup, signup_user.scalar_subquery())
-        .where(func.lower(Signup.email).not_in(card_emails), ~card_by_linkedin())
+        select(Signup.id, Signup.email, Signup.nome, signup_user.scalar_subquery())
+        .where(func.lower(Signup.email).not_in(addresses), ~card_by_linkedin())
         .order_by(Signup.created_at, Signup.id)
     ).all()
     return [
         Candidate(
-            email=row.email.lower(),
-            nome=display_name(row.nome),
+            email=email.lower(),
+            nome=display_name(nome),
             tipo="lead",
             user_id=user_id,
-            signup_id=row.id,
+            signup_id=signup_id,
         )
-        for row, user_id in rows
+        for signup_id, email, nome, user_id in rows
     ]
 
 
-def _cards(session: Session, stato: str) -> list[Candidate]:
+def _journey_state(stato: str) -> ColumnElement[bool]:
+    """Whether a card is in journey state `stato`, in SQL: `card_state`'s rule over the
+    same four columns (`schema_common.card_is_complete`), with the login `entered` splitting the
+    cards that are neither complete nor missing only the CV. A test holds the two to the
+    same answer for every combination of the four being there or not."""
+    others = and_(
+        Freelancer.tariffa_giornaliera.is_not(None),
+        Freelancer.posizione.is_not(None),
+        Freelancer.remoto.is_not(None),
+    )
+    has_cv = Freelancer.cv_size.is_not(None)
+    if stato == "completo":
+        return and_(has_cv, others)
+    if stato == "manca_cv":
+        return and_(~has_cv, others)
     entered = exists(select(Login.id).where(Login.user_id == Freelancer.user_id))
+    return and_(~others, entered if stato == "scheda_vuota_entrati" else ~entered)
+
+
+def _cards(session: Session, stato: str) -> list[Candidate]:
     rows = session.execute(
-        select(Freelancer, User, entered.label("entrato"))
+        select(Freelancer.id, User.id, User.email, User.nome)
         .join(User, User.id == Freelancer.user_id)
-        .where(Freelancer.deleted_at.is_(None))
+        .where(Freelancer.deleted_at.is_(None), _journey_state(stato))
         .order_by(Freelancer.created_at, Freelancer.id)
-        .options(defer(Freelancer.cv_bytes))  # completeness reads `cv_size`, never the PDF
     ).all()
-    found: list[Candidate] = []
-    for card, user, entrato in rows:
-        state = card_state(card.cv_size, card.tariffa_giornaliera, card.posizione, card.remoto)
-        key = (
-            state
-            if state != "scheda"
-            else ("scheda_vuota_entrati" if entrato else "scheda_vuota_nuovi")
+    return [
+        Candidate(
+            email=email.lower(),
+            nome=display_name(nome),
+            tipo="freelancer",
+            user_id=user_id,
+            freelancer_id=freelancer_id,
         )
-        if key == stato:
-            found.append(
-                Candidate(
-                    email=user.email.lower(),
-                    nome=display_name(user.nome),
-                    tipo="freelancer",
-                    user_id=user.id,
-                    freelancer_id=card.id,
-                )
-            )
-    return found
+        for freelancer_id, user_id, email, nome in rows
+    ]
 
 
 def _companies(session: Session) -> list[Candidate]:
     rows = session.execute(
-        select(Company, User)
+        select(Company.id, User.id, User.email, User.nome)
         .join(User, User.id == Company.user_id)
         .where(Company.deleted_at.is_(None), Company.stato.in_(OPEN_COMPANY_STATES))
         .order_by(Company.created_at, Company.id)
     ).all()
     by_user: dict[UUID, Candidate] = {}
-    for request, user in rows:
-        known = by_user.get(user.id)
-        ids = (*known.company_ids, request.id) if known else (request.id,)
-        by_user[user.id] = Candidate(
-            email=user.email.lower(),
-            nome=display_name(user.nome),
+    for company_id, user_id, email, nome in rows:
+        known = by_user.get(user_id)
+        ids = (*known.company_ids, company_id) if known else (company_id,)
+        by_user[user_id] = Candidate(
+            email=email.lower(),
+            nome=display_name(nome),
             tipo="azienda",
-            user_id=user.id,
+            user_id=user_id,
             company_ids=ids,
         )
     return list(by_user.values())
