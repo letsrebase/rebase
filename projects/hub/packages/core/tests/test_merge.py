@@ -16,7 +16,8 @@ from rebase_core.config import Settings
 from rebase_core.db import Base
 from rebase_core.errors import InvalidState, NotFound, ValidationFailed
 from rebase_core.freelancers import FreelancerService
-from rebase_core.merge import LEFT_IN_PLACE, RELATIONS, PersonMergeService
+from rebase_core.merge import PersonMergeService
+from rebase_core.merge_relations import LEFT_IN_PLACE, RELATIONS
 from rebase_core.models import (
     AdminAction,
     Campaign,
