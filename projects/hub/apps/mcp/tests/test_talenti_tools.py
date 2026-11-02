@@ -17,16 +17,12 @@ from test_tools import IVAN, PDF, _payload
 
 import rebase_mcp.server as server_module
 from rebase_core.errors import ValidationFailed
+from rebase_core.freelancer_schemas import FreelancerCreate, FreelancerDraft
 from rebase_core.freelancers import FreelancerService
 from rebase_core.models import FreelancerCard, User
-from rebase_core.schemas import (
-    FreelancerCreate,
-    FreelancerDraft,
-    SignupCreate,
-    SignupUtm,
-    TalentoRead,
-)
 from rebase_core.service import SignupService
+from rebase_core.signup_schemas import SignupCreate, SignupUtm
+from rebase_core.talent_schemas import TalentoRead
 from rebase_mcp.server import build_server
 from rebase_mcp.talenti_view import (
     SHORT_FIELDS,

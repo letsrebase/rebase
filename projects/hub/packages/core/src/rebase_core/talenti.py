@@ -79,7 +79,6 @@ from rebase_core.models import (
     User,
 )
 from rebase_core.pagination import SortSpec, decode_cursor, encode_cursor, keyset_predicate
-from rebase_core.schemas import TalentoList, TalentoOrigine, TalentoRead
 from rebase_core.search import (
     any_element_matches,
     escape_like,
@@ -87,6 +86,7 @@ from rebase_core.search import (
     similarity_score,
     string_field_matches,
 )
+from rebase_core.talent_schemas import TalentoList, TalentoOrigine, TalentoRead
 
 LIST_LIMIT_DEFAULT = 100
 LIST_LIMIT_MAX = 500

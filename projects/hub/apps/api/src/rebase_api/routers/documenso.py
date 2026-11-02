@@ -37,7 +37,7 @@ from rebase_api.deps import (
 )
 from rebase_core.db import SessionOpener
 from rebase_core.documenso import WebhookBody, outcome_from_webhook
-from rebase_core.schemas import Ack
+from rebase_core.schema_common import Ack
 from rebase_core.signing import SigningFactory
 
 router = APIRouter(prefix="/api/hub", tags=["hub-documenso"])

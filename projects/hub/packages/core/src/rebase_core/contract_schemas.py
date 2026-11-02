@@ -1,12 +1,13 @@
 """What the matches and contracts pages send and read (REB-387, phase 2).
 
-Kept out of `schemas.py`, already the size of a chapter: everything here is one flow,
-the admin's «Crea match» and «Match e contratti», and the MCP tools that read the same
-rows. A letter's field names are the Markdown's own keys with underscores for hyphens
-(`data_inizio` is `{{data-inizio}}`), so `LetteraFields.to_fields` is a rename and a
-formatting step, nothing else. The company's `budget_giornaliero` has no field anywhere
-here on purpose: what rebase agrees with the client never reaches a freelancer's
-document (spec § 1h), and `test_contract_schemas.py` holds every model to that.
+Kept out of the family schema modules (`freelancer_schemas.py` and the others):
+everything here is one flow, the admin's «Crea match» and «Match e contratti», and the
+MCP tools that read the same rows. A letter's field names are the Markdown's own keys
+with underscores for hyphens (`data_inizio` is `{{data-inizio}}`), so
+`LetteraFields.to_fields` is a rename and a formatting step, nothing else. The company's
+`budget_giornaliero` has no field anywhere here on purpose: what rebase agrees with the
+client never reaches a freelancer's document (spec § 1h), and `test_contract_schemas.py`
+holds every model to that.
 """
 
 import re
@@ -38,7 +39,7 @@ from rebase_core.models import (
 )
 from rebase_core.referral_schemas import MatchReferral
 from rebase_core.regimes import OCCASIONALE, PARTITA_IVA, Regime
-from rebase_core.schemas import PROGETTO_MAX_LENGTH, TARIFFA_MAX, TARIFFA_MIN, clean_multiline
+from rebase_core.schema_common import PROGETTO_MAX_LENGTH, TARIFFA_MAX, TARIFFA_MIN, clean_multiline
 from rebase_core.validation import SafeStr
 
 # A person's codice fiscale is sixteen letters and digits; a ditta's is its eleven digits.

@@ -1,7 +1,8 @@
 """What the member area and the admin ledger read and write about referrals (P-REB-44).
 
-Kept beside `contract_schemas.py`'s own split from `schemas.py`: a domain with more than
-a couple of shapes gets its own file rather than growing the general one further.
+Kept beside `contract_schemas.py`'s own split from the family schema modules: a domain
+with more than a couple of shapes gets its own file rather than growing the general one
+further.
 """
 
 from datetime import datetime

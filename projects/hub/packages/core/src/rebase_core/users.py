@@ -34,8 +34,8 @@ from rebase_core.models import (
 )
 from rebase_core.pagination import SortSpec, decode_cursor, encode_cursor, keyset_predicate
 from rebase_core.referrals import ReferralService
-from rebase_core.schemas import SignupUtm
 from rebase_core.search import matches_any, similarity_score
+from rebase_core.signup_schemas import SignupUtm
 
 ENTITY = "user"
 # The one sentence for a LinkedIn profile that belongs to somebody else's card (REB-800):

@@ -37,6 +37,7 @@ from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from rebase_core.admin_schemas import StatusChange
 from rebase_core.admin_tokens import AdminRead
 from rebase_core.ai_config import AiConfigService
 from rebase_core.amounts import NotAnAmount, italian_amount
@@ -44,6 +45,7 @@ from rebase_core.campaigns.service import CampaignService
 from rebase_core.cards import CardWriter, Regeneration, persona_differences, stored_persona
 from rebase_core.cloud import TalentCloudService
 from rebase_core.companies import CompanyService
+from rebase_core.company_schemas import CompanyAdminCreate, CompanyOverride
 from rebase_core.config import Settings
 from rebase_core.contract_schemas import FiscalData, MatchCreate
 from rebase_core.contracts.fields import signer_data
@@ -54,6 +56,7 @@ from rebase_core.duplicates import duplicate_list
 from rebase_core.engagements import EngagementService
 from rebase_core.errors import DomainError, NotFound, ValidationFailed
 from rebase_core.fiscal import FiscalService
+from rebase_core.freelancer_schemas import FreelancerDraft, FreelancerOverride, FreelancerRead
 from rebase_core.freelancers import FreelancerService
 from rebase_core.http import HttpCall
 from rebase_core.llm import LlmCall
@@ -74,14 +77,6 @@ from rebase_core.notes import NoteService
 from rebase_core.perks import PerkService
 from rebase_core.pigro import PigroRegistry, PigroUnavailable
 from rebase_core.regimes import OCCASIONALE, Regime
-from rebase_core.schemas import (
-    CompanyAdminCreate,
-    CompanyOverride,
-    FreelancerDraft,
-    FreelancerOverride,
-    FreelancerRead,
-    StatusChange,
-)
 from rebase_core.search import SEARCH_MAX_LENGTH
 from rebase_core.service import LIST_LIMIT_DEFAULT
 from rebase_core.signing import SigningFactory, SigningService

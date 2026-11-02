@@ -49,13 +49,15 @@ from rebase_api.deps import (
 from rebase_api.ratelimit import spend_one
 from rebase_core.amounts import NotAnAmount, italian_amount
 from rebase_core.cards import write_after_response
+from rebase_core.freelancer_schemas import FreelancerCreate
 from rebase_core.freelancers import (
     ALREADY_HAS_CARD_BY_LINKEDIN_NOTE,
     ALREADY_HAS_CARD_NOTE,
     FreelancerService,
 )
 from rebase_core.mail import EmailSender, Mail
-from rebase_core.schemas import DISTINCT_ID_MAX_LENGTH, Ack, FreelancerCreate, SignupUtm
+from rebase_core.schema_common import DISTINCT_ID_MAX_LENGTH, Ack
+from rebase_core.signup_schemas import SignupUtm
 from rebase_core.users import UserService
 
 router = APIRouter(prefix="/api/hub", tags=["hub"])

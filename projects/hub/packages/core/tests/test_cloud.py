@@ -28,6 +28,7 @@ from rebase_core.cloud import (
     TalentCloudService,
 )
 from rebase_core.companies import CompanyService
+from rebase_core.company_schemas import CompanyCreate
 from rebase_core.config import Settings
 from rebase_core.errors import InvalidState, NotFound, ValidationFailed
 from rebase_core.models import (
@@ -40,7 +41,6 @@ from rebase_core.models import (
     TeamRequestTalent,
     User,
 )
-from rebase_core.schemas import CompanyCreate
 from rebase_core.team_requests import PROPOSAL_REFUSED, TeamRequestService
 from rebase_core.team_schemas import CloudTalentQuery, CloudTalentRead
 

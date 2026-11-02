@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 
 from rebase_api.deps import SessionDep, SettingsDep
 from rebase_core.campaigns.webhook import apply_event, verify_signature
-from rebase_core.schemas import Ack
+from rebase_core.schema_common import Ack
 
 router = APIRouter(prefix="/api/hub/webhooks", tags=["hub-resend"])
 

@@ -19,6 +19,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from rebase_core.companies import CompanyService
+from rebase_core.company_schemas import CompanyCreate, CompanyFields
 from rebase_core.config import Settings
 from rebase_core.crm_lead import LeadDraftOut
 from rebase_core.crm_link import CrmLeadService, link_after_response
@@ -28,7 +29,6 @@ from rebase_core.llm import LlmCall, LlmRequest, LlmResponse, RecordingCall
 from rebase_core.match_words import HTTPS_ONLY
 from rebase_core.members import MemberService
 from rebase_core.models import AdminAction, Company, User
-from rebase_core.schemas import CompanyCreate, CompanyFields
 
 NOW = datetime(2026, 11, 2, 9, 0, tzinfo=UTC)
 TODAY = date(2026, 11, 2)

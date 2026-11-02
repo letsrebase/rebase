@@ -35,11 +35,11 @@ from rebase_core.contract_schemas import FiscalData
 from rebase_core.db import session_factory
 from rebase_core.errors import AnonymousCvFailed, LlmNotConfigured, LlmUnavailable, NotFound
 from rebase_core.fiscal import FiscalService
+from rebase_core.freelancer_schemas import FreelancerCreate
 from rebase_core.freelancers import FreelancerService
 from rebase_core.llm import LlmRequest, LlmResponse, RecordingCall
 from rebase_core.members import MemberService
 from rebase_core.models import AnonymousCvRow, FreelancerCard, User
-from rebase_core.schemas import FreelancerCreate
 
 NOW = datetime(2026, 10, 30, 10, 0, tzinfo=UTC)
 MODEL = "claude-opus-5"

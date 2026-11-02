@@ -17,15 +17,11 @@ from rebase_core.audit import (
     sanitize_payload,
 )
 from rebase_core.companies import CompanyService
+from rebase_core.company_schemas import CompanyCreate, CompanyOverride
 from rebase_core.errors import NotFound, ValidationFailed
+from rebase_core.freelancer_schemas import FreelancerCreate, FreelancerOverride
 from rebase_core.freelancers import FreelancerService
 from rebase_core.models import Company, Freelancer, User
-from rebase_core.schemas import (
-    CompanyCreate,
-    CompanyOverride,
-    FreelancerCreate,
-    FreelancerOverride,
-)
 
 PDF = b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"
 
@@ -466,8 +462,8 @@ def test_deleting_one_company_request_leaves_the_others_listed_and_editable(
     admin-editable-only once the newest is deleted: the member area lists every live
     request now and edits any of them by id, so a delete takes away that one request
     and no other. The deleted one is a 404 by id, and comes back on restore."""
+    from rebase_core.company_schemas import CompanyUpdate
     from rebase_core.members import MemberService
-    from rebase_core.schemas import CompanyUpdate
 
     service = CompanyService(clean)
     older, _ = service.request(_company_request())

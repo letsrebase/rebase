@@ -23,10 +23,10 @@ from test_sources import FakeFetcher, FakeGithub, snapshot_of
 from rebase_core.cards import ESTIMATE_CALLS, PROMPT_VERSION, CardWriter, stale_reason
 from rebase_core.db import session_factory
 from rebase_core.errors import LlmCapReached
+from rebase_core.freelancer_schemas import FreelancerCreate
 from rebase_core.freelancers import FreelancerService
 from rebase_core.llm import LlmResponse, RecordingCall
 from rebase_core.models import AdminAction, AiUsage, Freelancer, FreelancerCard, User
-from rebase_core.schemas import FreelancerCreate
 from rebase_core.sources import SourceService
 from rebase_core.team_schemas import CardsRefreshed
 

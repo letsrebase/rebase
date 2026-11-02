@@ -14,9 +14,9 @@ from rebase_core.contract_schemas import FiscalData
 from rebase_core.db import session_factory
 from rebase_core.errors import NotFound
 from rebase_core.fiscal import FiscalService
+from rebase_core.freelancer_schemas import FreelancerCreate
 from rebase_core.freelancers import FreelancerService
 from rebase_core.models import FreelancerFiscal, User
-from rebase_core.schemas import FreelancerCreate
 
 PDF = b"%PDF-1.7\n1 0 obj<<>>endobj\n%%EOF\n"
 MISSING = UUID("00000000-0000-7000-8000-000000000000")

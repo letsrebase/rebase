@@ -17,8 +17,8 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from rebase_core.login_schemas import GuideDownloadRead, GuideStats
 from rebase_core.models import Freelancer, GuideDownload, User
-from rebase_core.schemas import GuideDownloadRead, GuideStats
 
 PERKS_DIR = Path(__file__).resolve().parent / "perks"
 

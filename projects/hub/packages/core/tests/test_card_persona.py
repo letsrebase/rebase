@@ -20,11 +20,11 @@ from rebase_core.card_draft import CardPersona, clean_persona, differenze, phone
 from rebase_core.card_guard import KnownIdentifiers, identifying
 from rebase_core.cards import IDENTIFYING_AGAIN, CardWriter, stored_persona
 from rebase_core.cloud import CloudTalentService
+from rebase_core.freelancer_schemas import FreelancerCreate
 from rebase_core.freelancers import FreelancerService
 from rebase_core.llm import RecordingCall
 from rebase_core.members import MemberService
 from rebase_core.models import FreelancerCard
-from rebase_core.schemas import FreelancerCreate
 from rebase_core.talenti import TalentiService
 from rebase_core.team_schemas import Card, CardPersonaRead, CloudTalentQuery
 

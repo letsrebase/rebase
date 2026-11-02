@@ -23,10 +23,10 @@ import rebase_core.sources as sources_module
 from rebase_core.ai_config import AI_CONFIG_ENTITY_ID
 from rebase_core.audit import AdminActionService
 from rebase_core.errors import NotFound, ValidationFailed
+from rebase_core.freelancer_schemas import FreelancerCreate
 from rebase_core.freelancers import FreelancerService
 from rebase_core.github_source import GithubSnapshot, GithubSource, Repo
 from rebase_core.models import AiSource, Freelancer, FreelancerSource, User
-from rebase_core.schemas import FreelancerCreate
 from rebase_core.sources import (
     SourceService,
     candidate_links,

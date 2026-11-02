@@ -8,6 +8,7 @@ from sqlalchemy import Subquery, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from rebase_core.admin_schemas import StatusChange
 from rebase_core.audit import (
     TIMELINE_LIMIT_DEFAULT,
     AdminActionRead,
@@ -21,6 +22,15 @@ from rebase_core.audit import (
 from rebase_core.config import Settings
 from rebase_core.cv_text import CvText, extract_text
 from rebase_core.errors import InvalidState, NotFound, ValidationFailed
+from rebase_core.freelancer_schemas import (
+    CvFile,
+    FreelancerCreate,
+    FreelancerDetail,
+    FreelancerDraft,
+    FreelancerList,
+    FreelancerOverride,
+    FreelancerRead,
+)
 from rebase_core.http import HttpCall
 from rebase_core.leads import card_by_linkedin
 from rebase_core.logins import LoginService
@@ -37,18 +47,7 @@ from rebase_core.notes import NoteService
 from rebase_core.perks import PerkService
 from rebase_core.pigro import PigroRegistry, PigroUnavailable
 from rebase_core.referrals import ReferralService
-from rebase_core.schemas import (
-    CvFile,
-    FreelancerCreate,
-    FreelancerDetail,
-    FreelancerDraft,
-    FreelancerList,
-    FreelancerOverride,
-    FreelancerRead,
-    SignupListItem,
-    SignupUtm,
-    StatusChange,
-)
+from rebase_core.signup_schemas import SignupListItem, SignupUtm
 from rebase_core.sources import delete_sources
 from rebase_core.users import UserService, refuse_linkedin_conflict
 

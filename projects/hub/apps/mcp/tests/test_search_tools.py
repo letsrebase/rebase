@@ -15,10 +15,12 @@ from sqlalchemy.orm import Session, sessionmaker
 from test_tools import IVAN, PDF, _payload
 
 from rebase_core.companies import CompanyService
+from rebase_core.company_schemas import CompanyCreate
+from rebase_core.freelancer_schemas import FreelancerCreate
 from rebase_core.freelancers import FreelancerService
 from rebase_core.models import FreelancerCard
-from rebase_core.schemas import CompanyCreate, FreelancerCreate, SignupCreate
 from rebase_core.service import SignupService
+from rebase_core.signup_schemas import SignupCreate
 from rebase_mcp.server import build_server
 
 # The words a tool description is written with, and the ones an English rewrite would

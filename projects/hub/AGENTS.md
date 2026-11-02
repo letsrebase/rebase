@@ -282,11 +282,12 @@ lead (`rebase_core.leads.card_by_linkedin`, in the three lead lists).
 
 Two live cards that share a profile are a *unibile* pair (`rebase_core.duplicates.find_duplicates`);
 the same name or telephone number only flags (`possibile_duplicato_di` on a Talenti row and in
-`get_talento`, `da_rivedere`), never merged on its own. `PersonMergeService` (`rebase_core.merge`)
+`get_talento`, `da_rivedere`), never merged on its own. `PersonMergeService` (`rebase_core.merge`;
+the relations table is `merge_relations.py`, the CV/profile/identity parts `merge_steps.py`)
 merges one card into another: admin «Unisci» (`POST /api/hub/freelancers/{id}/merge`), MCP
 `merge_freelancers` (`list_duplicati` lists the pairs, without addresses), and
-`rebase talent-duplicates` (dry run unless `--apply`). Every relation moves by id (`RELATIONS`, with
-`LEFT_IN_PLACE` naming what stays and why; `test_every_foreign_key_to_a_person_is_moved_or_left_on_purpose`
+`rebase talent-duplicates` (dry run unless `--apply`). Every relation moves by id (`merge_relations.RELATIONS`, with
+`merge_relations.LEFT_IN_PLACE` naming what stays and why; `test_every_foreign_key_to_a_person_is_moved_or_left_on_purpose`
 fails on a table added later that points at a person), the newest CV (`freelancers.cv_uploaded_at`)
 stays with its card and the card is flagged for `cards-refresh`, the absorbed card is soft-deleted and
 its `users` row points at the survivor (`merged_into_id`), and the `merged` entry in the trail names

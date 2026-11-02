@@ -10,17 +10,13 @@ from admins import an_admin
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from rebase_core.admin_schemas import StatusChange
 from rebase_core.errors import NotFound, ValidationFailed
+from rebase_core.freelancer_schemas import FreelancerCreate, FreelancerDraft
 from rebase_core.freelancers import FreelancerService
 from rebase_core.models import FreelancerCard, Login, User
-from rebase_core.schemas import (
-    FreelancerCreate,
-    FreelancerDraft,
-    SignupCreate,
-    SignupUtm,
-    StatusChange,
-)
 from rebase_core.service import SignupService
+from rebase_core.signup_schemas import SignupCreate, SignupUtm
 from rebase_core.talenti import TalentiService
 
 PDF = b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"

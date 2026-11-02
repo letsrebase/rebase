@@ -62,25 +62,24 @@ from rebase_api.deps import (
 from rebase_api.downloads import cv_response, pdf_response, perk_response
 from rebase_api.ratelimit import spend_one
 from rebase_core.cards import write_after_response
+from rebase_core.company_schemas import CompanyFields, CompanyUpdate
 from rebase_core.contract_schemas import MemberContracts
+from rebase_core.freelancer_schemas import MemberUpdate
 from rebase_core.mail import EmailSender, Mail
 from rebase_core.member_contracts import MemberContractService
+from rebase_core.member_schemas import (
+    EnterRequest,
+    LinkRequest,
+    MemberLookup,
+    MemberLookupRequest,
+    MeRead,
+)
 from rebase_core.members import MemberService
 from rebase_core.models import CV_MAX_BYTES
 from rebase_core.perks import GUIDE_FILENAME, PerkService, guide_bytes
 from rebase_core.referral_schemas import MemberReferral
 from rebase_core.referrals import ReferralService
-from rebase_core.schemas import (
-    Ack,
-    CompanyFields,
-    CompanyUpdate,
-    EnterRequest,
-    LinkRequest,
-    MemberLookup,
-    MemberLookupRequest,
-    MemberUpdate,
-    MeRead,
-)
+from rebase_core.schema_common import Ack
 from rebase_core.users import UserService
 
 router = APIRouter(prefix="/api/hub", tags=["hub-member"])

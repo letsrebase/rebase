@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from rebase_core.linkedin import linkedin_key
 from rebase_core.models import Freelancer, Signup, User
-from rebase_core.schemas import SignupCreate, SignupList, SignupListItem, SignupRead
+from rebase_core.signup_schemas import SignupCreate, SignupList, SignupListItem, SignupRead
 
 LIST_LIMIT_DEFAULT = 100
 LIST_LIMIT_MAX = 1000

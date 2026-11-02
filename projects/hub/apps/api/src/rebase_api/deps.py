@@ -34,8 +34,8 @@ from rebase_core.llm import (
     call_for_task,
 )
 from rebase_core.mail import EmailSender, sender_from_settings
+from rebase_core.member_schemas import MeRead
 from rebase_core.members import MemberService
-from rebase_core.schemas import MeRead
 from rebase_core.signing import SigningFactory, signing_from_settings
 from rebase_core.team_builder import TeamBuilder
 from rebase_core.users import UserService

@@ -32,11 +32,11 @@ from rebase_core.crm_link import CrmLinkCount
 from rebase_core.db import session_factory
 from rebase_core.engagements import EngagementService
 from rebase_core.errors import LlmCapReached
+from rebase_core.freelancer_schemas import FreelancerCreate
 from rebase_core.freelancers import FreelancerService
 from rebase_core.http import urllib_engagements_call
 from rebase_core.llm import LlmResponse, RecordingBatch, RecordingCall, TaskOverride
 from rebase_core.models import CardEvalProfile, CardEvalRun, FreelancerCard, User
-from rebase_core.schemas import FreelancerCreate
 from rebase_core.signing import SweepResult
 from rebase_core.team_schemas import Card, CardsRefreshed
 

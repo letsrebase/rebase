@@ -16,23 +16,18 @@ from pydantic import ValidationError
 from sqlalchemy import Engine, select, text
 from sqlalchemy.orm import Session
 
+from rebase_core.admin_schemas import StatusChange
 from rebase_core.companies import CompanyService
+from rebase_core.company_schemas import CompanyCreate, CompanyFields, CompanyUpdate
 from rebase_core.config import Settings
 from rebase_core.errors import NotFound, ValidationFailed
+from rebase_core.freelancer_schemas import FreelancerCreate, MemberUpdate
 from rebase_core.freelancers import FreelancerService
+from rebase_core.member_schemas import MemberProfile
 from rebase_core.members import MemberService
 from rebase_core.models import Freelancer
 from rebase_core.notes import NoteService
-from rebase_core.schemas import (
-    CompanyCreate,
-    CompanyFields,
-    CompanyUpdate,
-    FreelancerCreate,
-    MemberProfile,
-    MemberUpdate,
-    SignupUtm,
-    StatusChange,
-)
+from rebase_core.signup_schemas import SignupUtm
 from rebase_core.users import UserService
 
 PDF = b"%PDF-1.7\n1 0 obj<<>>endobj\n%%EOF\n"
@@ -123,8 +118,9 @@ def _apply(session: Session, email: str = "ada@studio.it") -> UUID:
 
 
 def _draft_card(session: Session, email: str = "ada@studio.it") -> UUID:
-    from rebase_core.schemas import FreelancerDraft, SignupCreate
+    from rebase_core.freelancer_schemas import FreelancerDraft
     from rebase_core.service import SignupService
+    from rebase_core.signup_schemas import SignupCreate
 
     signup = SignupService(session).subscribe(
         SignupCreate(email=email, nome="Ada", cognome="Lovelace")
@@ -567,8 +563,8 @@ def test_the_welcome_mailing_speaks_to_every_address_the_hub_knows(
 ) -> None:
     from rebase_core.cli import send_welcome
     from rebase_core.mail import RecordingSender
-    from rebase_core.schemas import SignupCreate
     from rebase_core.service import SignupService
+    from rebase_core.signup_schemas import SignupCreate
 
     _apply(hub_session, "ada@studio.it")  # a card the person filled, no signup
     _draft_card(hub_session, "bruna@studio.it")  # a signup and a card we drafted

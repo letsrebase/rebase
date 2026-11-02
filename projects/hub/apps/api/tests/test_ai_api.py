@@ -36,11 +36,11 @@ from rebase_core.card_batch import CardBatches
 from rebase_core.cards import CardWriter
 from rebase_core.config import Settings
 from rebase_core.errors import LlmUnavailable
+from rebase_core.freelancer_schemas import FreelancerCreate
 from rebase_core.freelancers import FreelancerService
 from rebase_core.llm import LlmRequest, LlmResponse, RecordingBatch, RecordingCall
 from rebase_core.mail import RecordingSender
 from rebase_core.models import AdminAction, AiUsage, CardBatch, FreelancerCard, User
-from rebase_core.schemas import FreelancerCreate
 
 SECRET = "sk-secret-abcd"
 SECRETS_KEY = base64.b64encode(os.urandom(32)).decode()

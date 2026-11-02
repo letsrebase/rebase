@@ -8,6 +8,7 @@ from uuid import UUID
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
+from rebase_core.admin_schemas import StatusChange
 from rebase_core.audit import (
     TIMELINE_LIMIT_DEFAULT,
     AdminActionRead,
@@ -19,20 +20,19 @@ from rebase_core.audit import (
     utcnow,
 )
 from rebase_core.cloud import TalentCloudService
+from rebase_core.company_schemas import (
+    CompanyAdminCreate,
+    CompanyCreate,
+    CompanyList,
+    CompanyOverride,
+    CompanyRead,
+)
 from rebase_core.crm_words import DA_COLLEGARE, crm_state_sentence
 from rebase_core.errors import NotFound, ValidationFailed
 from rebase_core.models import COMPANY_STATES, Company, User
 from rebase_core.notes import NoteService
 from rebase_core.pagination import SortSpec, decode_cursor, encode_cursor, keyset_predicate
 from rebase_core.referrals import ReferralService
-from rebase_core.schemas import (
-    CompanyAdminCreate,
-    CompanyCreate,
-    CompanyList,
-    CompanyOverride,
-    CompanyRead,
-    StatusChange,
-)
 from rebase_core.search import matches_any, similarity_score
 from rebase_core.users import UserService
 

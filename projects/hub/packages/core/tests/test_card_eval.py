@@ -44,6 +44,7 @@ from rebase_core.cards import PROMPT_VERSION
 from rebase_core.config import Settings
 from rebase_core.db import Base
 from rebase_core.errors import InvalidState, LlmUnavailable, NotFound, ValidationFailed
+from rebase_core.freelancer_schemas import FreelancerCreate
 from rebase_core.freelancers import FreelancerService
 from rebase_core.llm import AiCall, LlmResponse, RecordingCall, TaskOverride
 from rebase_core.models import (
@@ -56,7 +57,6 @@ from rebase_core.models import (
     FreelancerCard,
     User,
 )
-from rebase_core.schemas import FreelancerCreate
 from rebase_core.team_schemas import Card
 
 # A CV that dates its one role: nine years to this autumn at 2017 - 2025 (the card's 9).

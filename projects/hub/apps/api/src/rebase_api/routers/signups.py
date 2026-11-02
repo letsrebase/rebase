@@ -32,8 +32,8 @@ from fastapi import APIRouter, BackgroundTasks, Request, status
 from rebase_api.deps import SessionDep, SettingsDep
 from rebase_api.ratelimit import observed_address, spend_one
 from rebase_core.conversions import Visitor, pixel_from_settings
-from rebase_core.schemas import SignupAck, SignupCreate
 from rebase_core.service import SignupService
+from rebase_core.signup_schemas import SignupAck, SignupCreate
 
 # The cookie the measurement SDK sets on our own domain. First-party, so the browser
 # sends it to this endpoint too, which is the only reason the server event can carry it.

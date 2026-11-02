@@ -10,10 +10,11 @@ from sqlalchemy.orm import Session
 
 from rebase_core.config import Settings
 from rebase_core.errors import ValidationFailed
+from rebase_core.freelancer_schemas import FreelancerCreate
 from rebase_core.freelancers import FreelancerService
 from rebase_core.logins import LoginService
 from rebase_core.models import Login, MagicLinkToken, User, UserSession
-from rebase_core.schemas import FreelancerCreate, SignupUtm
+from rebase_core.signup_schemas import SignupUtm
 from rebase_core.users import UserService
 
 PDF = b"%PDF-1.7\n1 0 obj<<>>endobj\n%%EOF\n"
@@ -107,7 +108,7 @@ def test_two_company_requests_from_the_same_address_share_one_user(
     `telefono` (REB-380) follows the same rule as `nome`/`cognome`: the first
     request's, never overwritten by a later one's own answer."""
     from rebase_core.companies import CompanyService
-    from rebase_core.schemas import CompanyCreate
+    from rebase_core.company_schemas import CompanyCreate
 
     def _company(nome: str, cognome: str, telefono: str) -> None:
         CompanyService(hub_session).request(

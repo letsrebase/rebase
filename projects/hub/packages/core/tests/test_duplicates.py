@@ -27,19 +27,19 @@ from rebase_core.duplicates import (
     find_duplicates,
 )
 from rebase_core.errors import ValidationFailed
+from rebase_core.freelancer_schemas import (
+    FreelancerCreate,
+    FreelancerDraft,
+    FreelancerOverride,
+    MemberUpdate,
+)
 from rebase_core.freelancers import LINKEDIN_HAS_CARD, FreelancerService
 from rebase_core.linkedin import linkedin_key
 from rebase_core.members import MemberService
 from rebase_core.merge import PersonMergeService
 from rebase_core.models import Freelancer, Signup, User
-from rebase_core.schemas import (
-    FreelancerCreate,
-    FreelancerDraft,
-    FreelancerOverride,
-    MemberUpdate,
-    SignupCreate,
-)
 from rebase_core.service import SignupService
+from rebase_core.signup_schemas import SignupCreate
 from rebase_core.talenti import TalentiService
 from rebase_core.users import LINKEDIN_TAKEN
 

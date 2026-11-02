@@ -16,6 +16,7 @@ from rebase_core.campaigns.actions import done_at
 from rebase_core.campaigns.schemas import AziendeFiltri, Filtri, TalentiFiltri
 from rebase_core.campaigns.states import Candidate, candidates_for_state, display_name
 from rebase_core.companies import CompanyService
+from rebase_core.company_schemas import CompanyRead
 from rebase_core.models import (
     Campaign,
     CampaignOptout,
@@ -24,7 +25,7 @@ from rebase_core.models import (
     Freelancer,
     User,
 )
-from rebase_core.schemas import CompanyRead, TalentoRead
+from rebase_core.talent_schemas import TalentoRead
 from rebase_core.talenti import LIST_LIMIT_MAX, TalentiService
 
 ROME = ZoneInfo("Europe/Rome")

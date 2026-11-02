@@ -7,7 +7,7 @@ visitor asks the engine for and `TeamProposalRead` what it answers (REB-511,
 `team_builder.py`, § 3.3), with `Band` from `bands.py`. The request's models, § 3.2 and
 § 3.5, are what a visitor's «Assumi team» sends and what the admin reads and edits
 (REB-512, `team_requests.py`); the tasks after it (D1 to D4) extend them here, kept out
-of `schemas.py`, already the size of a chapter, the same reasoning `contract_schemas.py`
+of the family schema modules, the same reasoning `contract_schemas.py`
 gives for its own flow.
 """
 
@@ -34,7 +34,7 @@ from rebase_core.models import (
     TEAM_REQUEST_STATES,
     TELEFONO_MAX_LENGTH,
 )
-from rebase_core.schemas import PROGETTO_MAX_LENGTH, clean_multiline, clean_rif, clean_text
+from rebase_core.schema_common import PROGETTO_MAX_LENGTH, clean_multiline, clean_rif, clean_text
 from rebase_core.validation import SafeStr
 
 __all__ = [

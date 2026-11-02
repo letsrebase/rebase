@@ -2,7 +2,7 @@
 
 The address is the admin's, typed into the editor, and it goes into every mail of the
 campaign, so it is checked the way the rest of the hub checks a link a person wrote
-(`rebase_core.schemas._https_url`): https with a host, nothing that reads differently
+(`rebase_core.schema_common.https_url`): https with a host, nothing that reads differently
 in a browser than in `urlsplit`, no credentials in front of the host. A link measures
 the one thing the hub can see of a page it does not own, the click Resend reports
 (`campaign_recipients.primo_clic_at`), so «Un link» and the action «clic» go together

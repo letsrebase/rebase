@@ -38,12 +38,12 @@ from rebase_core.cards import (
 )
 from rebase_core.cloud import CloudTalentService
 from rebase_core.cv_text import CvText
+from rebase_core.freelancer_schemas import FreelancerCreate
 from rebase_core.freelancers import FreelancerService
 from rebase_core.github_source import GithubSnapshot, Repo
 from rebase_core.hub_facts import HubFacts, MatchFact
 from rebase_core.llm import LlmMessage, RecordingCall
 from rebase_core.models import AdminAction, AiUsage, Freelancer, FreelancerCard
-from rebase_core.schemas import FreelancerCreate
 from rebase_core.sources import SourceItem, SourceService, SourceSet
 from rebase_core.talenti import TalentiService
 from rebase_core.team_schemas import Card, CloudTalentQuery

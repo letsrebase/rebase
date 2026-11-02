@@ -19,8 +19,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from rebase_core import matches as matches_module
+from rebase_core.admin_schemas import StatusChange
 from rebase_core.audit import AdminActionService
 from rebase_core.companies import CompanyService
+from rebase_core.company_schemas import CompanyCreate
 from rebase_core.contract_schemas import (
     ClienteData,
     FiscalData,
@@ -41,11 +43,11 @@ from rebase_core.framework import (
     framework_states,
     pending_framework,
 )
+from rebase_core.freelancer_schemas import FreelancerCreate
 from rebase_core.freelancers import FreelancerService
 from rebase_core.matches import MatchService, require_live_document, require_live_match
 from rebase_core.models import ContractDocument, Freelancer, Match, User
 from rebase_core.regimes import Regime
-from rebase_core.schemas import CompanyCreate, FreelancerCreate, StatusChange
 
 PDF = b"%PDF-1.7\n1 0 obj<<>>endobj\n%%EOF\n"
 TODAY = date(2026, 9, 23)

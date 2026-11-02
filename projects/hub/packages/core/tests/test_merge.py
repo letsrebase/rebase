@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from rebase_core.config import Settings
 from rebase_core.db import Base
 from rebase_core.errors import InvalidState, NotFound, ValidationFailed
+from rebase_core.freelancer_schemas import FreelancerCreate
 from rebase_core.freelancers import FreelancerService
 from rebase_core.merge import PersonMergeService
 from rebase_core.merge_relations import LEFT_IN_PLACE, RELATIONS
@@ -42,7 +43,6 @@ from rebase_core.models import (
     User,
     UserSession,
 )
-from rebase_core.schemas import FreelancerCreate
 from rebase_core.users import UserService
 
 NOW = datetime(2026, 10, 27, 12, 0, tzinfo=UTC)

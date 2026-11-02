@@ -11,9 +11,9 @@ from sqlalchemy.orm import Session, sessionmaker
 from test_tools import IVAN, PDF, _payload
 
 from rebase_core.duplicates import UNIQUE_INDEXES
+from rebase_core.freelancer_schemas import FreelancerCreate
 from rebase_core.freelancers import FreelancerService
 from rebase_core.models import ContractDocument, Freelancer, User
-from rebase_core.schemas import FreelancerCreate
 from rebase_mcp.server import build_server
 
 TABLES = (

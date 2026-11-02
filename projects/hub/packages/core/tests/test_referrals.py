@@ -29,6 +29,7 @@ from test_signing import (
 
 from rebase_core.cloud import TalentCloudService
 from rebase_core.companies import CompanyService
+from rebase_core.company_schemas import CompanyCreate
 from rebase_core.config import Settings
 from rebase_core.contract_schemas import (
     DAY_RATE,
@@ -40,6 +41,7 @@ from rebase_core.contract_schemas import (
 )
 from rebase_core.db import session_factory
 from rebase_core.errors import ValidationFailed
+from rebase_core.freelancer_schemas import FreelancerCreate, FreelancerDraft
 from rebase_core.freelancers import FreelancerService
 from rebase_core.mail import RecordingSender
 from rebase_core.matches import MatchService
@@ -58,13 +60,7 @@ from rebase_core.referral_evidence import domains_match, email_domain
 from rebase_core.referral_ledger import ReferralLedgerService
 from rebase_core.referral_settings import ReferralSettingsService
 from rebase_core.referrals import ReferralService, reward_base
-from rebase_core.schemas import (
-    CompanyCreate,
-    FreelancerCreate,
-    FreelancerDraft,
-    SignupCreate,
-    SignupUtm,
-)
+from rebase_core.signup_schemas import SignupCreate, SignupUtm
 from rebase_core.users import UserService
 
 TABLES = (

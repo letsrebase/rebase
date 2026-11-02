@@ -10,9 +10,10 @@ from sqlalchemy.orm import Session, sessionmaker
 from test_tools import IVAN, PDF, _payload
 
 from rebase_core.companies import CompanyService
+from rebase_core.company_schemas import CompanyCreate
+from rebase_core.freelancer_schemas import FreelancerCreate
 from rebase_core.freelancers import FreelancerService
 from rebase_core.models import User
-from rebase_core.schemas import CompanyCreate, FreelancerCreate
 from rebase_mcp.server import build_server
 
 

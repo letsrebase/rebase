@@ -2,7 +2,7 @@
 
 Each state is a query over the hub's own tables, evaluated when the list is shown and
 again when a mail is about to leave. A card's state reads the same four fields
-`card_is_complete` reads (`schemas.py`, the function `_is_complete` itself calls): the
+`card_is_complete` reads (`schema_common.py`, the function `is_complete` itself calls): the
 CV, the rate, the position and the work mode. Completeness is never re-derived here.
 """
 
@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session, defer
 from rebase_core.errors import ValidationFailed
 from rebase_core.leads import card_by_linkedin
 from rebase_core.models import Company, Freelancer, Login, Signup, User
-from rebase_core.schemas import card_is_complete
+from rebase_core.schema_common import card_is_complete
 
 ENTITY = "campagna"
 

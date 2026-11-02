@@ -12,13 +12,14 @@ from sqlalchemy.orm import Session, sessionmaker
 from test_tools import IVAN, PDF, _payload
 
 from rebase_core.companies import CompanyService
+from rebase_core.company_schemas import CompanyCreate
 from rebase_core.config import Settings
 from rebase_core.contract_schemas import ClienteData, FiscalData, LetteraFields, MatchCreate
 from rebase_core.fiscal import FiscalService
+from rebase_core.freelancer_schemas import FreelancerCreate
 from rebase_core.freelancers import FreelancerService
 from rebase_core.matches import MatchService
 from rebase_core.models import User
-from rebase_core.schemas import CompanyCreate, FreelancerCreate
 from rebase_mcp.server import build_server
 
 TABLES = (

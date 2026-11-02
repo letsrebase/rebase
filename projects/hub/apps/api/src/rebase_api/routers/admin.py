@@ -37,6 +37,7 @@ from rebase_api.deps import (
     SettingsDep,
 )
 from rebase_api.downloads import cv_response, pdf_response
+from rebase_core.admin_schemas import CrmLinkBody, StatusChange, VettedChange
 from rebase_core.admin_tokens import AdminList, AdminRead
 from rebase_core.anonymous_cv.render import CvHead, filename
 from rebase_core.anonymous_cv.writer import AnonymousCvWriter
@@ -44,15 +45,31 @@ from rebase_core.audit import AdminActionRead, AdminActionService
 from rebase_core.cards import CardWriter, Regeneration
 from rebase_core.cloud import TalentCloudService
 from rebase_core.companies import CompanyService
+from rebase_core.company_schemas import (
+    CompanyAdminCreate,
+    CompanyList,
+    CompanyOverride,
+    CompanyRead,
+    TalentCloudGrantRead,
+)
 from rebase_core.crm_link import NOT_CONFIGURED as CRM_NOT_CONFIGURED
 from rebase_core.duplicates import DuplicateListRead, duplicate_list
 from rebase_core.errors import TeamBuilderOff
+from rebase_core.freelancer_schemas import (
+    FreelancerDetail,
+    FreelancerDraft,
+    FreelancerList,
+    FreelancerOverride,
+    FreelancerRead,
+)
 from rebase_core.freelancers import ENTITY as FREELANCER
 from rebase_core.freelancers import FreelancerService
+from rebase_core.login_schemas import GuideStats, LoginStats
 from rebase_core.logins import LoginService
 from rebase_core.mail import EmailSender, Mail
 from rebase_core.merge import MergeRead, MergeRequest, PersonMergeService
 from rebase_core.models import NAME_MAX_LENGTH, User
+from rebase_core.note_schemas import NoteCreate, NoteRead, NoteUpdate
 from rebase_core.notes import NoteService
 from rebase_core.pagination import CURSOR_MAX_LENGTH
 from rebase_core.perks import PerkService
@@ -66,30 +83,10 @@ from rebase_core.referral_schemas import (
     ReferralSettingsUpdate,
 )
 from rebase_core.referral_settings import ReferralSettingsService
-from rebase_core.schemas import (
-    CompanyAdminCreate,
-    CompanyList,
-    CompanyOverride,
-    CompanyRead,
-    CrmLinkBody,
-    FreelancerDetail,
-    FreelancerDraft,
-    FreelancerList,
-    FreelancerOverride,
-    FreelancerRead,
-    GuideStats,
-    LoginStats,
-    NoteCreate,
-    NoteRead,
-    NoteUpdate,
-    SignupList,
-    StatusChange,
-    TalentCloudGrantRead,
-    TalentoList,
-    VettedChange,
-)
 from rebase_core.search import SEARCH_MAX_LENGTH
 from rebase_core.service import SignupService
+from rebase_core.signup_schemas import SignupList
+from rebase_core.talent_schemas import TalentoList
 from rebase_core.talenti import TalentiService
 from rebase_core.team_schemas import FreelancerCardAdminRead
 from rebase_core.users import UserService

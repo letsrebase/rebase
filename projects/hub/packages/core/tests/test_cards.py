@@ -36,6 +36,7 @@ from rebase_core.cards import (
 from rebase_core.cv_text import CvText
 from rebase_core.db import session_factory
 from rebase_core.errors import LlmCapReached, LlmNotConfigured
+from rebase_core.freelancer_schemas import FreelancerCreate, FreelancerOverride
 from rebase_core.freelancers import FreelancerService
 from rebase_core.llm import (
     LlmMessage,
@@ -47,7 +48,6 @@ from rebase_core.llm import (
 )
 from rebase_core.members import MemberService
 from rebase_core.models import Freelancer, FreelancerCard, User
-from rebase_core.schemas import FreelancerCreate, FreelancerOverride
 from rebase_core.team_schemas import Card, CardRead, CardsRefreshed
 
 NOW = datetime(2026, 9, 26, 9, 30, tzinfo=UTC)

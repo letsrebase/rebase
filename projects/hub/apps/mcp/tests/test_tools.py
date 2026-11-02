@@ -18,8 +18,8 @@ from rebase_core.llm import RecordingCall
 from rebase_core.mail import RecordingSender
 from rebase_core.models import AdminAction, Freelancer, FreelancerCard, TeamProposal, User
 from rebase_core.perks import guide_bytes
-from rebase_core.schemas import SignupCreate
 from rebase_core.service import SignupService
+from rebase_core.signup_schemas import SignupCreate
 from rebase_core.team_requests import TeamRequestService
 from rebase_core.team_schemas import TeamRequestCreate
 from rebase_mcp.server import build_server
@@ -116,8 +116,8 @@ async def test_the_admin_tools_read_and_move_a_candidate_without_the_cv(
 ) -> None:
     from decimal import Decimal
 
+    from rebase_core.freelancer_schemas import FreelancerCreate
     from rebase_core.freelancers import FreelancerService
-    from rebase_core.schemas import FreelancerCreate
 
     session = factory()
     try:
@@ -264,8 +264,8 @@ def _ensure_admin(session: Session) -> UUID:
 def _seed_freelancer(factory: sessionmaker[Session]) -> str:
     from decimal import Decimal
 
+    from rebase_core.freelancer_schemas import FreelancerCreate
     from rebase_core.freelancers import FreelancerService
-    from rebase_core.schemas import FreelancerCreate
 
     session = factory()
     try:
@@ -292,7 +292,7 @@ def _seed_company(factory: sessionmaker[Session]) -> str:
     from decimal import Decimal
 
     from rebase_core.companies import CompanyService
-    from rebase_core.schemas import CompanyCreate
+    from rebase_core.company_schemas import CompanyCreate
 
     session = factory()
     try:
@@ -588,8 +588,8 @@ async def test_the_cv_is_read_as_text_and_a_card_without_one_answers_a_sentence(
 ) -> None:
     from decimal import Decimal
 
+    from rebase_core.freelancer_schemas import FreelancerCreate, FreelancerDraft
     from rebase_core.freelancers import FreelancerService
-    from rebase_core.schemas import FreelancerCreate, FreelancerDraft
 
     session = factory()
     try:
@@ -690,8 +690,8 @@ def _seed_freelancer_with_text_cv(factory: sessionmaker[Session], text: str) -> 
     """Like `_seed_freelancer`, but with a CV `pypdf` reads text out of (`PDF`, the
     module's own fixture, is a scan with none): the card writer needs a real CV to
     write anything from."""
+    from rebase_core.freelancer_schemas import FreelancerCreate
     from rebase_core.freelancers import FreelancerService
-    from rebase_core.schemas import FreelancerCreate
 
     session = factory()
     try:

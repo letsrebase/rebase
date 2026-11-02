@@ -22,6 +22,7 @@ from rebase_api.deps import get_clock, get_team_llm
 from rebase_api.ratelimit import reset_rate_limit
 from rebase_core.cloud import TalentCloudService
 from rebase_core.companies import CompanyService
+from rebase_core.company_schemas import CompanyCreate
 from rebase_core.config import Settings, get_settings
 from rebase_core.llm import LlmRequest, LlmResponse, RecordingCall
 from rebase_core.mail import RecordingSender
@@ -35,7 +36,6 @@ from rebase_core.models import (
     TeamRequestTalent,
     User,
 )
-from rebase_core.schemas import CompanyCreate
 from rebase_core.team_builder import ProposalAnswer
 from rebase_core.team_requests import CLOUD_CLOSED_FOR_PROPOSAL
 

@@ -878,9 +878,10 @@ def test_creating_a_company_request_with_no_existing_one_is_a_404(
 def test_a_member_completes_the_card_an_admin_drafted(
     client: TestClient, sender: RecordingSender, clean: None, api_session: Session
 ) -> None:
+    from rebase_core.freelancer_schemas import FreelancerDraft
     from rebase_core.freelancers import FreelancerService
-    from rebase_core.schemas import FreelancerDraft, SignupCreate
     from rebase_core.service import SignupService
+    from rebase_core.signup_schemas import SignupCreate
 
     signup = SignupService(api_session).subscribe(
         SignupCreate(email="ada@studio.it", nome="Ada", cognome="Lovelace")

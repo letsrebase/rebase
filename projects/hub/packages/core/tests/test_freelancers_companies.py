@@ -11,20 +11,17 @@ from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from rebase_core.admin_schemas import StatusChange
 from rebase_core.audit import AdminActionService
 from rebase_core.companies import CompanyService
+from rebase_core.company_schemas import CompanyCreate
 from rebase_core.config import Settings
 from rebase_core.errors import NotFound, ValidationFailed
+from rebase_core.freelancer_schemas import FreelancerCreate, FreelancerDraft
 from rebase_core.freelancers import FreelancerService, check_cv
 from rebase_core.models import CV_MAX_BYTES, Freelancer, Login
 from rebase_core.perks import PerkService
-from rebase_core.schemas import (
-    CompanyCreate,
-    FreelancerCreate,
-    FreelancerDraft,
-    SignupUtm,
-    StatusChange,
-)
+from rebase_core.signup_schemas import SignupUtm
 
 PDF = b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"
 
@@ -267,8 +264,8 @@ def test_a_company_request_outside_the_form_is_refused(bad: dict[str, object]) -
 
 
 def _signup(session: Session, email: str = "ada@studio.it", **extra: object) -> UUID:
-    from rebase_core.schemas import SignupCreate
     from rebase_core.service import SignupService
+    from rebase_core.signup_schemas import SignupCreate
 
     payload: dict[str, object] = {"email": email, "nome": "Ada", "cognome": "Lovelace"}
     payload.update(extra)

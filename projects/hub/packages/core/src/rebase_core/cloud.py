@@ -38,8 +38,10 @@ from sqlalchemy.orm import Session
 from rebase_core.audit import utcnow
 from rebase_core.bands import BANDS, CLIENT_MARKUP, band_for
 from rebase_core.card_level import card_read
+from rebase_core.company_schemas import TalentCloudGrantRead
 from rebase_core.config import Settings
 from rebase_core.errors import InvalidState, NotFound, ValidationFailed
+from rebase_core.freelancer_schemas import CvFile
 from rebase_core.freelancers import cv_of
 from rebase_core.mail import Mail, talent_cloud_opened_mail
 from rebase_core.models import (
@@ -52,7 +54,6 @@ from rebase_core.models import (
     User,
 )
 from rebase_core.referrals import ReferralService
-from rebase_core.schemas import CvFile, TalentCloudGrantRead
 from rebase_core.search import any_element_matches
 from rebase_core.team_builder import cloud_visible
 from rebase_core.team_schemas import Card, CloudTalentList, CloudTalentQuery, CloudTalentRead
