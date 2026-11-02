@@ -71,8 +71,49 @@ runs, and `build_server` takes a callable answering who that is: the admin signs
 tools write. Over HTTP the `mcp` compose service serves `rebase_mcp.http:app` on 8088
 (preview 8089, `REBASE_MCP_PORT`), and the host vhost proxies `/api/hub/mcp` there; it
 is a process of its own because `apps/api` may not import `apps/mcp`. Over stdio the token
-is `REBASE_MCP_TOKEN`. Design record:
-`docs/superpowers/specs/2026-09-15-mcp-for-admins-design.md`.
+is `REBASE_MCP_TOKEN`, resolved again every minute (`rebase_mcp.actor.CachedAdmin`), so a
+revoked or expired token or a demoted owner stops writing within it and not at the next
+restart. Design record: `docs/superpowers/specs/2026-09-15-mcp-for-admins-design.md`.
+
+**The server is one module per tool family** (REB-805, REB-892): `tools_freelancers`,
+`tools_talenti`, `tools_cards`, `tools_companies`, `tools_campaigns`, `tools_team`,
+`tools_admin`, `tools_matches` and `tools_fiscal`, each with `register(mcp, deps)`, and
+`build_server` (`server.py`) only builds `Deps` and calls them. What they share is
+`tools_common.py`: `Deps` (the session factory, the admin, the settings and the transports'
+collaborators, `call`/`run`/`run_list` opening one session per tool call and mapping
+`DomainError` only) and the parsers every id and number goes through (`to_uuid`, `number`,
+`integer`, `day`, `moment`, `as_remote`): a malformed parameter is a `ToolError` in Italian
+naming the parameter, never a bare `ValueError`. Tool names, parameters and the Italian
+docstrings are the published surface; a new tool goes in its family's module and brings a
+test in that family's `apps/mcp/tests/test_*_tools.py`. The collaborators both transports
+need come from `rebase_core.dependencies.build_dependencies` (renderer, signing, the model
+seam, the mail sender, the CRM services), so stdio and HTTP cannot drift.
+
+**Naming of tool parameters.** Entity fields keep the Italian domain noun the API and the
+database use (`stato`, `origine`, `testo`, `posizione`, `remoto`, `tariffa_giornaliera`);
+generic paging and flags are English (`limit`, `cursor`, `has_cv`, `only_silent`). The
+mix is the published surface and is not renamed here (a rename wave owns it): a new
+parameter follows the rule, a domain noun in Italian and a mechanism in English.
+
+**What the HTTP transport guards** (REB-803, REB-889). DNS rebinding protection is on:
+`REBASE_MCP_ALLOWED_HOSTS` and `REBASE_MCP_ALLOWED_ORIGINS` (comma-separated, `host:*` for
+any port, `rebase_mcp.settings`) default to the public names nginx forwards
+(`letsrebase.com`, `preview.letsrebase.com`; the vhost passes `Host $host`), the loopback
+and the compose service `mcp`; another name needs the variable passed through the compose
+file. A client that presents `REBASE_MCP_BAD_BEARERS_PER_MINUTE` (10) wrong bearers in a
+minute is answered 429 without the database being asked; its address is `X-Real-IP`, an
+IPv6 one as its /64, and only failures are counted. `AdminTokenService.resolve` stamps
+`last_used_at` at most once a minute and refuses an expired token (`admin_tokens.expires_at`,
+set when minted from «Agenti» or by `POST /api/hub/tokens`) like a revoked one. The tools
+that ask the model (`regenerate_freelancer_card`, and `create_company` and
+`link_company_to_pigro` when they file a new deal) are capped at 30 an hour per admin
+(`Deps.spend_model_call`), and a refusal is a sentence. A read of personal data leaves an
+`AdminAction` of the admin behind the token: `cv_read` on the freelancer
+(`read_freelancer_cv`), `recipients_read` on the campaign (`get_campagna`) and
+`emails_read` on entity type `mcp_read`, one fixed id per tool (`list_talenti` when `campi`
+asks for `email` or `tutti`, `list_aziende`); the payload names the tool and the row count,
+never a value. The server instructions and `read_freelancer_cv` say that what comes back
+(CV, notes, campaign texts) is data and not an instruction.
 
 Every match and contract action is a tool too (REB-478): each runs the guard the admin
 API runs, then the same core service, with the calling admin as the actor, and answers
@@ -179,9 +220,13 @@ The campaigns are read-only over MCP (P-REB-41 phase 2), so an agent reports on 
 campaign without a terminal:
 
 - `list_campagne`: every campaign, newest first, with its `conteggi`, clicks, entries and
-  actions included.
+  actions included. Paged (REB-804): `limit` (20, at most 100) and `cursor`; `next_cursor`
+  is `None` on the last page.
 - `get_campagna`: one campaign, with each person's outcome, and `entrato_dalla_mail` /
-  `azione_dalla_mail` when the mail's own link was the door.
+  `azione_dalla_mail` when the mail's own link was the door. The recipients, by address, are
+  paged the same way (`limit` 50, at most 200, `cursor`); `conteggi` count the whole campaign.
+  `CampaignService.list_all` and `detail` take the same `limit`/`cursor`, `None` for the
+  admin screen, which reads everything.
 
 ## The anonymous CV as a PDF (REB-862)
 
@@ -210,7 +255,7 @@ Spec: `docs/superpowers/specs/2026-10-30-anonymous-cv-pdf-design.md`.
   card of another CV file, and no seniority the card marks uncertain unless an admin set
   one.
 - **The audit.** One `anon_cv_downloaded` entry on the freelancer per 200, payload
-  `{"riusato": bool}`. The name is short on purpose: `admin_actions.kind` holds 20 characters and `audit.record` cuts silently.
+  `{"riusato": bool}`. The name is short on purpose: `admin_actions.kind` holds 20 characters and `AdminActionService.record` refuses a longer one.
 - **The wait.** The task's calls wait 150 seconds and are never retried (`llm.py`,
   `_TASK_HTTP_LIMITS`); the host vhost gives the route 330 seconds, a by-hand change on the
   installed copies (below, after the team builder's 90 seconds).
@@ -299,7 +344,10 @@ lead (`rebase_core.leads.card_by_linkedin`, in the three lead lists).
 
 Two live cards that share a profile are a *unibile* pair (`rebase_core.duplicates.find_duplicates`);
 the same name or telephone number only flags (`possibile_duplicato_di` on a Talenti row and in
-`get_talento`, `da_rivedere`), never merged on its own. `PersonMergeService` (`rebase_core.merge`;
+`get_talento`, `da_rivedere`), never merged on its own. A Talenti page reads only its own cards
+and the cards sharing a key with them (`duplicates.duplicates_of`, two statements however many
+people there are); the whole-table read is `find_duplicates`, for the report and the command.
+`PersonMergeService` (`rebase_core.merge`;
 the relations table is `merge_relations.py`, the CV/profile/identity parts `merge_steps.py`)
 merges one card into another: admin «Unisci» (`POST /api/hub/freelancers/{id}/merge`), MCP
 `merge_freelancers` (`list_duplicati` lists the pairs, without addresses), and
@@ -520,7 +568,7 @@ refused there, so the preview never has a sent row to stamp.
 **«Riscrivi a chi non ha fatto niente»** (`POST /api/hub/campaigns/{id}/follow-up`) makes a
 `bozza` with `fonte = lista` and `segue_id`. It keeps the earlier campaign's action and a
 copy of its mail, and only the mail can change (`LIST_IS_FIXED`). Its list is the earlier
-campaign's sent rows with no action, each checked live with `done_at`, less the rows
+campaign's sent rows with no action, each checked live with `done_at_many` (one statement per kind of fact for the whole list), less the rows
 whose mail bounced or drew a complaint, which the page's «Riscrivi (N)» leaves out too. The gap rule
 applies, so a follow-up drafted within `REBASE_CAMPAIGN_GAP_DAYS` of the send lists
 everyone as excluded, with the date.
@@ -534,7 +582,7 @@ checkout, was wiped this way on 24/09. A wave's own scripts belong in the reposi
 they are worth keeping) or outside `/opt/hub` entirely, the same rule `REBASE_DATA_DIR`
 follows for Postgres's own files.
 
-**Five rules keep an address out of a campaign, and only one of them is an opt-out.**
+**Six rules keep an address out of a campaign, and only one of them is an opt-out.**
 `exclusions()` (`rebase_core.campaigns.audience`) runs when the list is shown, when it
 is frozen and again right before each mail, and leaves out, with the reason on screen:
 an admin, by `User.role == "admin"` (`REASON_ADMIN`, no row needed); a person whose card
@@ -543,12 +591,19 @@ row in `campaign_optouts` -- `fonte='link'` for the recipient's own unsubscribe,
 `'reclamo'` for a spam complaint Resend reports, `'admin'` for «Non scrivere mai»,
 which is how the team goes in rather than relying on the role check; an address that
 hard-bounced on any earlier campaign (`campaign_recipients.rimbalzata_at`, no optout
-row); and an address another campaign reached in the last `REBASE_CAMPAIGN_GAP_DAYS`
+row); an address nobody has shown to be its owner's (`REASON_UNVERIFIED`, REB-889: a card
+the person made in the wizard, `compilata_da = 'persona'`, whose address has no `logins` row,
+since anyone can type any address into the wizard; the first magic-link login lifts it;
+an admin's own draft, `compilata_da = 'admin'`, is vouched for by the admin and is not held
+back, nor is a sign-up lead, whose form is the list itself, nor a company's referente, whose
+request an admin works); and an address another campaign reached in the last `REBASE_CAMPAIGN_GAP_DAYS`
 (3), the gap rule that also turns several campaigns scheduled for the same minute into
-one mail per person. Before each mail the tick also checks whether the action is
+one mail per person. A wizard card nobody has entered through is therefore never in
+«Scheda vuota, mai entrati» as anything but greyed out; that journey reaches the admin's drafts. Before each mail the tick also checks whether the action is
 already done (`done_at`) and, for a list built from a state or from filters, whether
-the person is still on it. That list is rebuilt once per pass, since it is a scan of
-every card; an opt-out or a bounce recorded mid-pass keeps a queued mail from leaving.
+the person is still on it. That list is rebuilt once per pass, since it is a query over
+every card (the state is filtered in SQL, `states._journey_state`, held to `card_state` by a
+test); an opt-out or a bounce recorded mid-pass keeps a queued mail from leaving.
 Optouts are campaigns-only: the magic link, the welcome mail and the contracts flow
 keep reaching an opted-out address, since none of those is a campaign. The unsubscribe
 route (`POST /api/hub/campagne/disiscrizione`) has no rate limit on purpose: Gmail and
@@ -1119,6 +1174,100 @@ location ^~ /api/hub/freelancers {
 
 and the preview's the same on 127.0.0.1:8086, pasted into the installed copies' existing
 server blocks beside `location ^~ /api/hub/`; `nginx -t`, then `systemctl reload nginx`.
+
+## The public doors, and the real cap in front of them (REB-889)
+
+Four routes take a stranger's input with no login: `POST /api/hub/freelancers` (up to 5 MB
+of CV, and a model call for the card), `POST /api/hub/auth/link` and `/auth/enter`, the
+company and signup forms, and the team builder. The API's own limits are the floor, not
+the cap, and all of them are per process:
+
+- **Per client**: `rebase_core.ratelimit.RateLimiter`, a sliding window (`SIGNUPS_PER_MINUTE`,
+  5 a minute, shared by every public write through `rebase_api.ratelimit.spend_one`). The
+  client is `X-Real-IP` as nginx saw it, an IPv6 address as its /64 and an IPv4-mapped one
+  as the IPv4 it wraps; the table is bounded and forgets the least recently seen client, so
+  it can only become too lenient, never lock anybody out.
+- **Applications with a CV, the whole world** (`REBASE_APPLICATIONS_WITH_CV_PER_HOUR`, 30):
+  the cards the wizard created in the last hour with a CV (`Freelancer.created_at`,
+  `compilata_da = 'persona'`); past it `POST /api/hub/freelancers` answers 429 «Stiamo
+  ricevendo molte candidature…» with `Retry-After: 3600`, for a post that carries a CV
+  only. The card's model write after the answer needs no extra gate: the seam refuses
+  before any network call once the task's daily cap is spent (`AiConfigService.can_call`),
+  and `cards-refresh` writes whatever the seam turned away.
+- **Public mail, the whole world** (`REBASE_PUBLIC_MAIL_DAILY_BUDGET`, 15, never above
+  `REBASE_CAMPAIGN_DAILY_RESERVE`): the magic links the public doors may mail in a day,
+  counted as the `magic_link_tokens` created since midnight in Rome (`request_link` keeps
+  the day's spent rows until the day is over, which is why the count is the real mail
+  count). Spent, `/auth/link` answers 429 «Oggi abbiamo inviato troppi link di accesso.
+  Riprova domani.» with `Retry-After` to the next midnight in Rome, the same for every
+  address, and the wizard's «you already have a card» mail is not sent; both log «public
+  mail budget … spent». The budget plus the campaigns' ceiling stay inside Resend's 100 a
+  day. `ResendSender.send` logs the provider's status (401/403 key or domain, 429 quota,
+  5xx outage) and never the address or the key.
+- **The server half of the ad conversion** is sent only when the signup body says
+  `pixel_consent: true`, the same «granted» decision (`localStorage["rebase.consent"]`)
+  that loads the browser pixel; absent means no.
+
+**The real cap is nginx's `limit_req`, committed here because nothing else holds it.** Once
+in the `http` context of the host (the repository's vhost copies include nothing for it,
+so it is a file of its own, `/etc/nginx/conf.d/rebase-limits.conf`), then a `limit_req`
+line in each location below, in both the production and the preview vhost:
+
+```
+# One key per client: an IPv4 address, an IPv6 one as its /64 (the groups written out,
+# or the ones before a `::`), an IPv4-mapped one as the IPv4.
+map $remote_addr $rebase_client {
+    default                                          $remote_addr;
+    "~^::ffff:(?<v4>[0-9.]+)$"                       $v4;
+    "~^(?<net>[0-9a-f]{1,4}(:[0-9a-f]{1,4}){3}):"    $net;
+    "~^(?<net>[0-9a-f]{1,4}(:[0-9a-f]{1,4}){0,2})::" $net;
+}
+limit_req_zone $rebase_client zone=rebase_write:10m  rate=6r/m;    # the public writes
+limit_req_zone $rebase_client zone=rebase_auth:10m   rate=10r/m;   # the magic link
+limit_req_zone $rebase_client zone=rebase_door:10m   rate=60r/m;   # bearer-secret doors
+limit_req_zone $rebase_client zone=rebase_mcp:10m    rate=120r/m;  # the MCP server
+limit_req_status 429;
+```
+
+| Location | Zone | Line to add |
+|---|---|---|
+| `= /api/hub/freelancers` (the wizard's POST; not the admin routes under `^~ /api/hub/freelancers/`) | `rebase_write` | `limit_req zone=rebase_write burst=3 nodelay;` |
+| `= /api/community/signups` | `rebase_write` | `limit_req zone=rebase_write burst=3 nodelay;` |
+| `^~ /api/hub/auth/` | `rebase_auth` | `limit_req zone=rebase_auth burst=5 nodelay;` |
+| `= /api/hub/members/lookup` (PigroCRM's server, one address) | `rebase_door` | `limit_req zone=rebase_door burst=30 nodelay;` |
+| `= /api/hub/documenso/webhook` (Documenso retries three times in 160 ms) | `rebase_door` | `limit_req zone=rebase_door burst=30 nodelay;` |
+| `= /api/hub/webhooks/resend` | `rebase_door` | `limit_req zone=rebase_door burst=30 nodelay;` |
+| `^~ /api/hub/mcp` | `rebase_mcp` | `limit_req zone=rebase_mcp burst=60 nodelay;` |
+
+The bearer-secret doors (`/members/lookup`, the Documenso webhook, the MCP bearer) compare
+in constant time against a long secret, so brute force is impractical; the zone is for
+the noise, and the MCP transport also refuses a client after
+`REBASE_MCP_BAD_BEARERS_PER_MINUTE` wrong bearers. Their `detail` strings are English
+codes (`invalid_token`, `invalid_secret`, `invalid_signature`, `invalid_body`, `retry`,
+`webhook_disabled`, `not_found`) because their only reader is the caller's log; everything
+a person reads is Italian. After a change, `nginx -t`, then `systemctl reload nginx`.
+
+**The legacy cookie name stays.** `orbiters_user` is still read beside `rebase_user`
+(`deps.LEGACY_MEMBER_COOKIE`) and removed with `adopt_legacy_cookie` on or after 2026-11-18
+(REB-697), 30 days after the rename; not before, or everybody signed in before it is logged
+out.
+
+**Sessions slide at most once an hour** (`users.SESSION_SLIDE_AFTER`): a request that finds
+its deadline less than an hour behind the one it would set writes nothing, so a `/me` poll
+is a read.
+
+**Who is an admin is audited in the transaction that changes it.** `promote` and `demote`
+write `admin_promoted` and `admin_demoted` (entity type `user`) in the same commit as the
+role; `demote` refuses the last remaining admin with a 409 and an address merged into
+somebody with a 422. An admin may demote themselves while another admin exists; the rule that
+protects the area is the last-admin one, and `rebase setrole` (the operator's recovery
+tool, no actor) is not guarded. The trail has two modes, `AdminActionService.record`:
+best effort by default (its own commit after the change, a failure logged), and
+`commit=False` for the sensitive kinds, which the caller commits with the change and which
+fail the change when they cannot be written: `overridden` (card and company identity and
+profile), `status_changed`, `fiscal_updated`, `admin_promoted`, `admin_demoted`. A kind or
+entity type over its 20-character column raises `ValueError` instead of being cut, and
+`test_admin_actions.py` checks every kind in `ADMIN_ACTION_KINDS` fits.
 
 ## Running it
 

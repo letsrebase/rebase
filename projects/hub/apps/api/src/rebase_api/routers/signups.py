@@ -102,9 +102,12 @@ def subscribe(
     `_measure_the_conversion`. It is scheduled even for an address already on the list,
     because the browser fires its own event on the same submit and the two carry one id
     -- suppressing the server half would not remove that event, it would only remove the
-    half that survives an ad blocker.
+    half that survives an ad blocker. But only for a visitor who accepted the cookie
+    notice (`pixel_consent`): the event carries their address, user agent and click ids
+    to OpenAI, which is the same decision the browser pixel waits for.
     """
     spend_one(request)
     SignupService(session).subscribe(data)
-    background.add_task(_measure_the_conversion, data, request, settings)
+    if data.pixel_consent:
+        background.add_task(_measure_the_conversion, data, request, settings)
     return SignupAck()

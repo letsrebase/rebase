@@ -62,7 +62,8 @@ async def domain_error_handler(request: Request, exc: Exception) -> JSONResponse
     `SigningUnavailable` a 503, `AnonymousCvFailed` a 422 with its sentence,
     `CvPrintFailed` a 503, `TeamBuilderOff` a 503, `TeamBuilderBusy` a 503 with
     `Retry-After`, anything else a 409."""
-    assert isinstance(exc, DomainError)
+    if not isinstance(exc, DomainError):
+        raise exc  # registered for this type only, so never reached
     if isinstance(exc, NotFound):
         return JSONResponse({"detail": exc.message}, status_code=404)
     if isinstance(exc, ValidationFailed):
@@ -120,7 +121,8 @@ async def validation_error_handler(request: Request, exc: Exception) -> JSONResp
     """FastAPI's own 422, except on a provider key's route: the default answer echoes each
     error's `input`, which there is the submitted key (a body that is a bare string, a key
     over the length limit), and a key never comes back in a response (REB-833)."""
-    assert isinstance(exc, RequestValidationError)
+    if not isinstance(exc, RequestValidationError):
+        raise exc  # registered for this type only, so never reached
     path = request.url.path
     if path.startswith("/api/hub/admin/ai/providers/") and path.endswith("/key"):
         errors = [{k: v for k, v in e.items() if k != "input"} for e in exc.errors()]

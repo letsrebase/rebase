@@ -272,7 +272,8 @@ def test_a_signup_measures_one_conversion_with_the_id_the_browser_used(
     client: TestClient, api_session: Session, pixel: RecordingHttp
 ) -> None:
     response = client.post(
-        "/api/community/signups", json=_body("ada@studio.it", pixel_event_id=EVENT_ID)
+        "/api/community/signups",
+        json=_body("ada@studio.it", pixel_event_id=EVENT_ID, pixel_consent=True),
     )
 
     assert response.status_code == 201, response.text
@@ -294,7 +295,7 @@ def test_the_click_identifier_and_the_browser_cookie_reach_the_event(
     server event is a conversion the platform cannot attribute to a click."""
     response = client.post(
         "/api/community/signups",
-        json=_body("ada@studio.it", pixel_event_id=EVENT_ID, oppref="clic-123"),
+        json=_body("ada@studio.it", pixel_event_id=EVENT_ID, oppref="clic-123", pixel_consent=True),
         headers={
             # Sent as a header rather than through the client's cookie jar: the jar
             # applies its own domain and Secure policy, and what is under test is the
@@ -323,7 +324,7 @@ def test_an_address_the_proxy_could_not_name_is_left_out_rather_than_invented(
     where a third party expects an address."""
     response = client.post(
         "/api/community/signups",
-        json=_body("ada@studio.it", pixel_event_id=EVENT_ID),
+        json=_body("ada@studio.it", pixel_event_id=EVENT_ID, pixel_consent=True),
         headers={"X-Real-IP": "non-un-indirizzo"},
     )
 
@@ -334,7 +335,10 @@ def test_an_address_the_proxy_could_not_name_is_left_out_rather_than_invented(
 def test_the_subscribers_address_does_not_travel(client: TestClient, pixel: RecordingHttp) -> None:
     """Not raw, not hashed. The installation has not asked for it -- and pasting a pixel
     id must not be what starts sending an ad platform the mailing list."""
-    client.post("/api/community/signups", json=_body("ada@studio.it", pixel_event_id=EVENT_ID))
+    client.post(
+        "/api/community/signups",
+        json=_body("ada@studio.it", pixel_event_id=EVENT_ID, pixel_consent=True),
+    )
 
     body = pixel.calls[-1][3].decode()
     assert "ada@studio.it" not in body
@@ -359,13 +363,32 @@ def test_an_installation_without_a_pixel_sends_nothing(
     assert _row(api_session, "ada@studio.it") == ("Ada", "Lovelace", None)
 
 
+@pytest.mark.parametrize("consent", [{}, {"pixel_consent": False}])
+def test_a_visitor_who_did_not_accept_the_notice_is_never_measured_by_the_server(
+    client: TestClient, api_session: Session, pixel: RecordingHttp, consent: dict[str, object]
+) -> None:
+    """The server event carries the visitor's address, user agent and click ids to
+    OpenAI, so it waits for the same yes the browser pixel waits for. A client that does
+    not know about the notice, or a visitor who refused it, signs up and is not sent."""
+    response = client.post(
+        "/api/community/signups",
+        json=_body("ada@studio.it", pixel_event_id=EVENT_ID, oppref="clic-123", **consent),
+    )
+
+    assert response.status_code == 201, response.text
+    assert pixel.calls == []
+    assert _row(api_session, "ada@studio.it") == ("Ada", "Lovelace", None)
+
+
 def test_a_signup_without_a_pixel_event_id_still_converts(
     client: TestClient, pixel: RecordingHttp
 ) -> None:
     """A client that posted without the pixel -- JavaScript off, a script, a curl. The
     event gets an id of its own, which makes it unpairable, and that is right: there is
     no browser event to pair it with."""
-    response = client.post("/api/community/signups", json=_body("ada@studio.it"))
+    response = client.post(
+        "/api/community/signups", json=_body("ada@studio.it", pixel_consent=True)
+    )
 
     assert response.status_code == 201, response.text
     assert pixel.event()["id"]
@@ -385,7 +408,8 @@ def test_a_failed_conversion_never_becomes_a_failed_signup(
     pixel.raises = bool(failure.get("raises", False))
 
     response = client.post(
-        "/api/community/signups", json=_body("ada@studio.it", pixel_event_id=EVENT_ID)
+        "/api/community/signups",
+        json=_body("ada@studio.it", pixel_event_id=EVENT_ID, pixel_consent=True),
     )
 
     assert response.status_code == 201, response.text

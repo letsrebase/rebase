@@ -32,6 +32,7 @@ the address in the body, so no access log on either host writes it.
 
 import logging
 import secrets
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 from uuid import UUID
 
@@ -61,11 +62,11 @@ from rebase_api.deps import (
 )
 from rebase_api.downloads import cv_response, pdf_response, perk_response
 from rebase_api.ratelimit import spend_one
-from rebase_core.cards import write_after_response
+from rebase_core.card_writer import write_after_response
 from rebase_core.company_schemas import CompanyFields, CompanyUpdate
 from rebase_core.contract_schemas import MemberContracts
 from rebase_core.freelancer_schemas import MemberUpdate
-from rebase_core.mail import EmailSender, Mail
+from rebase_core.mail import send_after_response
 from rebase_core.member_contracts import MemberContractService
 from rebase_core.member_schemas import (
     EnterRequest,
@@ -80,6 +81,7 @@ from rebase_core.perks import GUIDE_FILENAME, PerkService, guide_bytes
 from rebase_core.referral_schemas import MemberReferral
 from rebase_core.referrals import ReferralService
 from rebase_core.schema_common import Ack
+from rebase_core.team_caps import rome_midnight
 from rebase_core.users import UserService
 
 router = APIRouter(prefix="/api/hub", tags=["hub-member"])
@@ -87,11 +89,11 @@ router = APIRouter(prefix="/api/hub", tags=["hub-member"])
 _log = logging.getLogger(__name__)
 
 
-def _send(sender: EmailSender, mail: Mail) -> None:
-    """Runs after the response. A refusal is logged without the address or the key: the
-    operator needs to know the provider said no, not to whom."""
-    if not sender.send(mail):
-        _log.warning("the magic link mail was refused by the provider")
+def _seconds_until_tomorrow() -> int:
+    """Until the next midnight in Rome: when the day's mail budget is new again."""
+    now = datetime.now(UTC)
+    tomorrow = rome_midnight(now) + timedelta(days=1)
+    return max(int((tomorrow - now).total_seconds()), 1)
 
 
 @router.post("/auth/link", response_model=Ack, status_code=status.HTTP_202_ACCEPTED)
@@ -109,9 +111,23 @@ def request_link(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             "L'accesso via email non è ancora attivo. Riprova più avanti.",
         )
-    mail = UserService(session, settings).request_link(payload.email, utm=payload.utm)
+    users = UserService(session, settings)
+    if users.public_links_left() == 0:
+        # The circuit breaker of the public mail budget (`config.py`): refused for
+        # everybody alike, so it says nothing about any address, and logged so the
+        # operator sees the door closing rather than finding out from Resend's 429.
+        _log.warning(
+            "public mail budget of %s links a day spent: /auth/link refused until tomorrow",
+            settings.public_mail_daily_budget,
+        )
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            "Oggi abbiamo inviato troppi link di accesso. Riprova domani.",
+            headers={"Retry-After": str(_seconds_until_tomorrow())},
+        )
+    mail = users.request_link(payload.email, utm=payload.utm)
     if mail is not None:
-        background.add_task(_send, sender, mail)
+        background.add_task(send_after_response, sender, mail, "the magic link mail")
     return Ack()
 
 
@@ -267,14 +283,14 @@ def lookup_member(
     error: the hub says who is a member, not who is at the keyboard. A POST so the address
     travels in the body and not in a URL the access log would keep."""
     if not settings.pigro_registry_token:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not Found")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "not_found")
     presented = authorization.removeprefix("Bearer ").strip() if authorization else ""
     # Bytes, not str: Starlette decodes headers as latin-1 and `compare_digest` refuses a
     # `str` with a non-ASCII character, which would turn a stray byte into a 500.
     if not presented or not secrets.compare_digest(
         presented.encode("utf-8"), settings.pigro_registry_token.encode("utf-8")
     ):
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "token non valido")
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid_token")
     return MemberService(session).lookup(payload.email)
 
 

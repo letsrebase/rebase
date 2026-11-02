@@ -18,7 +18,7 @@ from rebase_api.ratelimit import reset_rate_limit
 from rebase_core.config import Settings, get_settings
 from rebase_core.llm import RecordingCall
 from rebase_core.mail import Mail, RecordingSender
-from rebase_core.models import GuideDownload, Login, User
+from rebase_core.models import GuideDownload, Login, MagicLinkToken, User
 from rebase_core.perks import GUIDE_PATH
 
 PDF = b"%PDF-1.7\n1 0 obj<<>>endobj\n%%EOF\n"
@@ -173,13 +173,14 @@ def test_a_refused_mail_is_logged_without_the_address(
     # `[loggers]` list -- this module's among them. Undo that here so `caplog` can see
     # what this test is about; nothing at runtime relies on the logger being disabled.
     logging.getLogger("rebase_api.routers.members").disabled = False
+    logging.getLogger("rebase_core.mail").disabled = False
     client.app.dependency_overrides[get_sender] = lambda: RefusingSender()  # type: ignore[attr-defined]
     _apply(client, "ada@studio.it")
     with caplog.at_level(logging.WARNING):
         response = client.post("/api/hub/auth/link", json={"email": "ada@studio.it"})
     assert response.status_code == 202
     warnings = [record for record in caplog.records if record.levelno == logging.WARNING]
-    assert any("refused by the provider" in record.getMessage() for record in warnings)
+    assert any("the magic link mail" in record.getMessage() for record in warnings)
     assert "ada@studio.it" not in caplog.text
 
 
@@ -193,6 +194,72 @@ def test_the_link_request_answers_the_same_whether_the_address_applied_or_not(
     assert known.json() == unknown.json() == {"ok": True}
     assert [mail.to for mail in sender.sent] == ["ada@studio.it"]
     assert "/entra?t=" in sender.sent[0].text
+
+
+def _tight_budget(client: TestClient, api_session: Session, room: int) -> None:
+    """The settings of an installation whose public mail budget has `room` links left today:
+    the shared database keeps every test's tokens, so the budget is the day's count plus
+    `room`."""
+    used = api_session.scalar(select(func.count()).select_from(MagicLinkToken)) or 0
+    client.app.dependency_overrides[get_settings] = lambda: Settings(  # type: ignore[attr-defined,call-arg]
+        _env_file=None,
+        resend_daily_quota=100_000,
+        campaign_daily_reserve=50_000,
+        public_mail_daily_budget=max(used + room, 1),
+    )
+
+
+def test_the_public_mail_budget_closes_the_link_request_for_everybody_alike(
+    client: TestClient,
+    sender: RecordingSender,
+    api_session: Session,
+    clean: None,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A stranger typing other people's addresses must not burn the Resend quota the
+    members' own links and the campaigns share: once the day's budget is spent the door
+    refuses with a sentence and a `Retry-After`, whoever asks and whatever they type, and
+    says so in the log."""
+    logging.getLogger("rebase_api.routers.members").disabled = False
+    _apply(client, "ada@studio.it")
+    _apply(client, "grace@studio.it")
+    _tight_budget(client, api_session, room=1)
+
+    assert client.post("/api/hub/auth/link", json={"email": "ada@studio.it"}).status_code == 202
+    with caplog.at_level(logging.WARNING):
+        refused = client.post("/api/hub/auth/link", json={"email": "grace@studio.it"})
+        unknown = client.post("/api/hub/auth/link", json={"email": "nessuno@studio.it"})
+
+    assert refused.status_code == unknown.status_code == 429
+    assert refused.json() == unknown.json()
+    assert "Riprova domani" in refused.json()["detail"]
+    assert 0 < int(refused.headers["Retry-After"]) <= 86400
+    assert [mail.to for mail in sender.sent] == ["ada@studio.it"]
+    assert "public mail budget" in caplog.text and "grace@studio.it" not in caplog.text
+
+
+def test_an_application_for_an_address_on_file_sends_no_mail_once_the_budget_is_spent(
+    client: TestClient, sender: RecordingSender, api_session: Session, clean: None
+) -> None:
+    _apply(client, "ada@studio.it")
+    _apply(client, "grace@studio.it")
+    assert client.post("/api/hub/auth/link", json={"email": "ada@studio.it"}).status_code == 202
+    _tight_budget(client, api_session, room=0)  # that one link spent the day's budget
+
+    again = client.post(
+        "/api/hub/freelancers",
+        data={
+            "nome": "Grace",
+            "cognome": "Hopper",
+            "email": "grace@studio.it",
+            "tariffa_giornaliera": "450",
+            "posizione": "Backend developer",
+            "remoto": "remoto",
+        },
+    )
+
+    assert again.status_code == 201  # the same answer as always: nothing says what happened
+    assert [mail.to for mail in sender.sent] == ["ada@studio.it"]
 
 
 def test_the_link_enters_once_sets_the_member_cookie_and_opens_only_the_members_routes(

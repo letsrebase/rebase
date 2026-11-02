@@ -2,7 +2,8 @@
 over the raw body against REBASE_RESEND_WEBHOOK_SECRET. A tagged event whose row is not
 found yet answers 503, the one answer that makes Resend retry (immediately, 5 s, 5 min,
 30 min, 2 h, 5 h, 10 h, 10 h): the tick may not have committed it. Everything else that
-verified answers 200."""
+verified answers 200. The `detail` of a refusal is an English code, not a sentence: nobody
+reads it but the sender's log."""
 
 import json
 import time
@@ -31,10 +32,7 @@ def resend_webhook(
     svix_signature: Annotated[str | None, Header()] = None,
 ) -> Ack:
     if not settings.resend_webhook_secret:
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE,
-            "Il webhook di Resend non è attivo su questo ambiente.",
-        )
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "webhook_disabled")
     if not verify_signature(
         settings.resend_webhook_secret,
         svix_id or "",
@@ -43,13 +41,13 @@ def resend_webhook(
         body,
         time.time(),
     ):
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "firma non valida")
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid_signature")
     try:
         event = json.loads(body)
     except ValueError:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "corpo non valido") from None
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid_body") from None
     if not isinstance(event, dict):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "corpo non valido")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid_body")
     if apply_event(session, event) == "da_riprovare":
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "riprova")
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "retry")
     return Ack()

@@ -124,6 +124,11 @@ def test_the_guide_page_counts_downloads_and_names_who_took_it(
     assert latest["email"] == "ada@studio.it"
     assert latest["user_id"] == str(ada_user_id)
     assert people["ada@studio.it"] != str(ada_user_id)  # the freelancer id, not the user id
+    assert latest["freelancer_id"] == people["ada@studio.it"]
+    admin_user_id = api_session.scalar(select(User.id).where(User.role == "admin"))
+    perks.record_guide_download(admin_user_id)  # a person with no card: nothing to link to
+    again = client.get("/api/hub/perks/guide").json()["recenti"][0]
+    assert (again["user_id"], again["freelancer_id"]) == (str(admin_user_id), None)
     moments = [item["downloaded_at"] for item in stats["recenti"]]
     assert moments == sorted(moments, reverse=True)
 
