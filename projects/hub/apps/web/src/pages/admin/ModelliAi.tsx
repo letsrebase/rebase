@@ -28,6 +28,7 @@ const TASK_LABELS: Record<string, string> = {
   card: 'Scheda anonima',
   team_proposal: 'Proposta di team',
   cv_anonimo: 'CV anonimo',
+  crm_lead: 'Bozza del deal nel CRM',
 }
 const SOURCE_LABELS: Record<string, string> = { github: 'GitHub', links: 'Altri link' }
 const STALE_KEY = ['ai-stale-cards'] as const

@@ -96,7 +96,8 @@ where an admin replaces a provider's key (write-only: the answer is «configurat
 …abcd»), picks each task's provider, model, effort, token and daily euro cap, edits the price
 table and reads the month's spend. «Prova» sends one fixed non-personal prompt through the
 task's own seam, recorded as `purpose="prova"`, so it spends the task's cap. The tasks are
-`card`, `team_proposal` and, since REB-862, `cv_anonimo`.
+`card`, `team_proposal`, since REB-862 `cv_anonimo` and, since REB-867, `crm_lead`. «Prova» of
+`crm_lead` sends an invented request and shows the draft as the deal would take it.
 
 There is no «Valutazione» page: the evaluation is the command `rebase cards-eval` (REB-842, below),
 which an operator runs and reads, and the admin API has no `card-eval` route.
@@ -185,6 +186,18 @@ Spec: `docs/superpowers/specs/2026-10-30-anonymous-cv-pdf-design.md`.
   `_TASK_HTTP_LIMITS`); the host vhost gives the route 330 seconds, a by-hand change on the
   installed copies (below, after the team builder's 90 seconds).
 - **Logs.** Nothing here logs the CV, the answer or a name.
+
+## The CRM draft task (REB-867)
+
+`crm_lead` (`rebase_core.crm_lead`, migration 0045, seeded from the `team_proposal` row, effort
+`low`, 1500 tokens, 1 euro a day, **off**) drafts a CRM deal from a company request. Spec:
+`docs/superpowers/specs/2026-10-30-company-requests-into-the-rebase-crm-design.md` § 3. The model
+reads `figura_richiesta`, `progetto`, `durata` and `periodo_da` and nothing else: never the
+company's name, the referente or the budget (`draft_lead` takes no such argument). Its answer's
+schema is lenient on purpose and `LeadDraft.from_output` holds each field to its bound (ruolo 80
+characters, days 0.5 to 5, weeks 1 to 104 whole, ten skills of 40, sintesi 800): a value outside
+is dropped, never clamped. A call that cannot answer gives `None` and the filing goes ahead with
+no draft. Switch it on in «Modelli AI» only once `privacy.html` names what it sends.
 
 ## One person, once (REB-800)
 
