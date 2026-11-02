@@ -88,6 +88,7 @@ export function useAssignees() {
 export interface AttivitaFilters {
   stato?: Attivita['stato']
   assegnata_a?: string
+  anche_non_assegnate?: boolean
   customer_id?: string
   person_id?: string
   deal_id?: string
@@ -155,7 +156,7 @@ export type AttivitaOggi = components['schemas']['AttivitaOggi']
  * session's user id before asking for «mine», rather than asking for everybody's first.
  */
 export function useAttivitaOggi(
-  params: { assegnata_a?: string; limit?: number },
+  params: { assegnata_a?: string; anche_non_assegnate?: boolean; limit?: number },
   options: { enabled?: boolean } = {},
 ) {
   return useQuery({
@@ -170,7 +171,10 @@ export function useAttivitaOggi(
  *  is nothing to count, so the badge is drawn only for a real figure. */
 export function useOverdueCount(): number | undefined {
   const { user } = useAuth()
-  const query = useAttivitaOggi({ assegnata_a: user?.id, limit: 1 }, { enabled: Boolean(user?.id) })
+  const query = useAttivitaOggi(
+    { assegnata_a: user?.id, anche_non_assegnate: true, limit: 1 },
+    { enabled: Boolean(user?.id) },
+  )
   const total = query.data?.in_ritardo.totale
   return total ? total : undefined
 }

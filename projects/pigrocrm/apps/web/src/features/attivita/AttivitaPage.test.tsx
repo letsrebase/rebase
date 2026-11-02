@@ -100,8 +100,13 @@ describe('toFilters', () => {
   })
 
   it('turns «mine» into the caller, and another person into their id', () => {
-    expect(toFilters({ ...base, assignee: 'io' }).assegnata_a).toBe(ME)
-    expect(toFilters({ ...base, assignee: 'u-2' }).assegnata_a).toBe('u-2')
+    expect(toFilters({ ...base, assignee: 'io' })).toMatchObject({
+      assegnata_a: ME,
+      anche_non_assegnate: true,
+    })
+    const colleague = toFilters({ ...base, assignee: 'u-2' })
+    expect(colleague.assegnata_a).toBe('u-2')
+    expect(colleague).not.toHaveProperty('anche_non_assegnate')
   })
 
   it('reads «scadute» as due before today: yesterday is the inclusive bound', () => {
@@ -138,10 +143,14 @@ describe('AttivitaPage', () => {
     renderPage()
 
     expect(await screen.findByText('Preparare le proposte')).toBeInTheDocument()
-    expect(activityQueries()[0]).toMatchObject({ stato: 'aperta', assegnata_a: ME })
+    expect(activityQueries()[0]).toMatchObject({
+      stato: 'aperta',
+      assegnata_a: ME,
+      anche_non_assegnate: true,
+    })
     expect(screen.getByRole('button', { name: 'Aperte' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('combobox', { name: 'Filtra per assegnatario' })).toHaveTextContent(
-      'Assegnate a me',
+      'Mie e non assegnate',
     )
     expect(screen.getByText('30/10/2026')).toBeInTheDocument()
   })

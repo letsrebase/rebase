@@ -34,6 +34,10 @@ def list_attivita(
     actor: ActorDep,
     stato: Annotated[AttivitaStato | None, Query()] = None,
     assegnata_a: Annotated[UUID | None, Query()] = None,
+    anche_non_assegnate: Annotated[
+        bool,
+        Query(description="Con `assegnata_a`: anche le attività senza assegnatario"),
+    ] = False,
     customer_id: Annotated[UUID | None, Query()] = None,
     person_id: Annotated[UUID | None, Query()] = None,
     deal_id: Annotated[UUID | None, Query()] = None,
@@ -58,6 +62,7 @@ def list_attivita(
     query = AttivitaListQuery(
         stato=stato,
         assegnata_a=assegnata_a,
+        anche_non_assegnate=anche_non_assegnate,
         customer_id=customer_id,
         person_id=person_id,
         deal_id=deal_id,
@@ -83,10 +88,17 @@ def oggi(
         UUID | None,
         Query(description="Solo le attività di questa persona; senza, di tutto lo spazio"),
     ] = None,
+    anche_non_assegnate: Annotated[
+        bool,
+        Query(description="Con `assegnata_a`: anche le attività senza assegnatario"),
+    ] = False,
     limit: Annotated[int, Query(ge=1, le=200, description="Righe per sezione")] = 100,
 ) -> AttivitaOggi:
     return AttivitaService(session).oggi(
-        actor, AttivitaOggiQuery(assegnata_a=assegnata_a, limit=limit)
+        actor,
+        AttivitaOggiQuery(
+            assegnata_a=assegnata_a, anche_non_assegnate=anche_non_assegnate, limit=limit
+        ),
     )
 
 

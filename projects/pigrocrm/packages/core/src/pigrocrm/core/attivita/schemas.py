@@ -90,6 +90,8 @@ class AttivitaListQuery(BaseModel):
     # list somebody will use to conclude the work was never done.
     stato: AttivitaStato | None = None
     assegnata_a: UUID | None = None
+    # Only read together with `assegnata_a`: «this person's, and nobody's».
+    anche_non_assegnate: bool = False
     customer_id: UUID | None = None
     person_id: UUID | None = None
     deal_id: UUID | None = None
@@ -128,6 +130,8 @@ class AttivitaOggiQuery(BaseModel):
     agent's `limit` of 0 or of «molti» is a sentence and not a database error."""
 
     assegnata_a: UUID | None = None
+    # Only read together with `assegnata_a`: «this person's, and nobody's».
+    anche_non_assegnate: bool = False
     limit: int = Field(default=100, ge=1, le=200)
 
 

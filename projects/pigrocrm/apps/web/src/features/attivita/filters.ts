@@ -33,7 +33,10 @@ export function toFilters(state: {
   if (state.stato) filters.stato = state.stato
   if (state.archiviate) filters.archiviate = true
   if (state.assignee === ME) {
-    if (state.meId) filters.assegnata_a = state.meId
+    if (state.meId) {
+      filters.assegnata_a = state.meId
+      filters.anche_non_assegnate = true
+    }
   } else if (state.assignee !== EVERYONE) {
     filters.assegnata_a = state.assignee
   }

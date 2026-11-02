@@ -476,3 +476,60 @@ def test_oggi_without_an_assignee_is_the_whole_space(
         "di nessuno",
         "di qualcuno",
     }
+
+
+def test_oggi_mine_and_nobodys_leaves_out_a_colleagues(
+    service: AttivitaService, db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    congela(monkeypatch)
+    ieri = OGGI_IN_ITALIA - timedelta(days=1)
+    io, collega = _persona(db_session, "Io"), _persona(db_session, "Collega")
+    _create(service, titolo="mia", scadenza=ieri, assegnata_a=io)
+    _create(service, titolo="di nessuno", scadenza=ieri)
+    _create(service, titolo="del collega", scadenza=ieri, assegnata_a=collega)
+    archiviata = _create(service, titolo="archiviata", scadenza=ieri)
+    service.soft_delete(archiviata.id, ADMIN)  # type: ignore[attr-defined]
+
+    solo_mie = service.oggi(ADMIN, AttivitaOggiQuery(assegnata_a=io))
+    assert [a.titolo for a in solo_mie.in_ritardo.items] == ["mia"]
+
+    anche = service.oggi(ADMIN, AttivitaOggiQuery(assegnata_a=io, anche_non_assegnate=True))
+    assert {a.titolo for a in anche.in_ritardo.items} == {"mia", "di nessuno"}
+    assert anche.in_ritardo.totale == 2
+
+
+def test_list_mine_and_nobodys_is_an_or_and_needs_an_assignee(
+    service: AttivitaService, db_session: Session
+) -> None:
+    io, collega = _persona(db_session, "Io"), _persona(db_session, "Collega")
+    _create(service, titolo="mia", assegnata_a=io)
+    _create(service, titolo="di nessuno")
+    _create(service, titolo="del collega", assegnata_a=collega)
+
+    def titoli(**kw: object) -> set[str]:
+        return {a.titolo for a in service.list(AttivitaListQuery(**kw), ADMIN).items}  # type: ignore[arg-type]
+
+    assert titoli(assegnata_a=io) == {"mia"}
+    assert titoli(assegnata_a=io, anche_non_assegnate=True) == {"mia", "di nessuno"}
+    assert titoli(assegnata_a=collega, anche_non_assegnate=True) == {"del collega", "di nessuno"}
+    assert {"mia", "di nessuno", "del collega"} <= titoli(anche_non_assegnate=True)
+
+
+def test_the_window_stays_strict_unless_asked_otherwise(
+    service: AttivitaService, db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The weekly digest reads `aperte_nella_finestra` with a person and no flag: it lists
+    what is theirs, so an attività nobody holds must stay out of it."""
+    from pigrocrm.core.attivita.repository import AttivitaRepository
+
+    congela(monkeypatch)
+    ieri = OGGI_IN_ITALIA - timedelta(days=1)
+    io = _persona(db_session, "Io")
+    _create(service, titolo="mia", scadenza=ieri, assegnata_a=io)
+    _create(service, titolo="di nessuno", scadenza=ieri)
+
+    repo = AttivitaRepository(db_session)
+    totale, righe = repo.aperte_nella_finestra(assegnata_a=io, limit=10, prima_del=OGGI_IN_ITALIA)
+
+    assert totale == 1
+    assert [r.titolo for r in righe] == ["mia"]
