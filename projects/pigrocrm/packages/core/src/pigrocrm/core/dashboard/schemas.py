@@ -292,7 +292,7 @@ class FasciaScadenza(BaseModel):
 
     `collegamento` is the drill-through, on the one bucket a list can answer today: the
     overdue one, which is `?scadute=true` on the invoice list and the same
-    `overdue_predicate` (criterion 2). The others carry `None` until the list takes a
+    `_overdue_predicate` (criterion 2). The others carry `None` until the list takes a
     due-date window."""
 
     codice: str
@@ -346,7 +346,7 @@ class ReceivablesDashboard(BaseModel):
 
     **No period**, like the operational dashboard: a receivable is owed today whatever
     window the reader is looking at, and `oggi` is the one date every bucket is measured
-    from. **No new data**: every figure is a `SUM` or a `COUNT` over `receivable_filter`
+    from. **No new data**: every figure is a `SUM` or a `COUNT` over `_receivable_filter`
     in `InvoiceRepository`, and the six buckets add up to `totale`, which is
     `sum_da_incassare` -- the same figure the economic dashboard prints, read the same
     way, which is what `test_dashboard_receivables.py` pins to the cent (§2.2).
