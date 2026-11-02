@@ -41,7 +41,8 @@ SURFACES: dict[str, dict[str, Any]] = {
 
 # The card's done-when: the default list under 90 KB. Full access opens 19 more tools and is
 # allowed to cost what they cost; both numbers are measured by `_listing_bytes`.
-DEFAULT_BUDGET_BYTES = 90_000
+# REB-879: 91.5 KB, up from 90 KB, for `add_note`, `update_note` and `delete_note`.
+DEFAULT_BUDGET_BYTES = 91_500
 FULL_ACCESS_BUDGET_BYTES = 105_000
 
 # A name starting with one of these reads. The tools that read without such a name are

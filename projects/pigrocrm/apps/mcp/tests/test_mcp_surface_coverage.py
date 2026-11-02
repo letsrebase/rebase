@@ -690,6 +690,16 @@ _COPERTE_O_UMANE: dict[Method, str] = {
     "and proposing then accepting in one turn closes the chain. `Actor.require_person` "
     "refuses every agent credential, over REST too, with or without `mcp_full_access`",
     ("ProposalService", "reject"): "same as accept: rejecting is a person's decision too",
+    ("DealService", "attach_rebase_ref"): (
+        "the leads route of the hub's door, under PIGROCRM_ENGAGEMENTS_TOKEN: it stamps a "
+        "request's reference on a deal the CRM already had, so the hub's link to it is found "
+        "again. A reference of the hub's own bookkeeping, set by the hub when it links a "
+        "request and never by an agent inside the space"
+    ),
+    ("NoteService", "revisions"): (
+        "the text a note had before each edit is read on the page; an agent reads the thread's "
+        "current text through the `get_*` tools, and the replaced one has no use for it"
+    ),
     ("ContractEmailService", "create"): "il testo che esce a nome del titolare lo salva la "
     "persona dalla pagina del contratto; l'agente scrive bozze con draft_email",
     ("ContractEmailService", "update"): "come create: il testo di un modello e' della persona",

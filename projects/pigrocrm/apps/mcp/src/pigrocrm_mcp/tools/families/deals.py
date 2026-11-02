@@ -42,7 +42,8 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     ) -> dict[str, Any]:
         """Crea un deal per un cliente, nel primo stato della pipeline. `data_chiusura_prevista` in
         formato YYYY-MM-DD. `owner_id` è l'utente attivo che segue il deal e riceve i
-        promemoria: omesso, è chi lo crea.
+        promemoria: omesso, è chi lo crea. `note` è la prima nota (senza data né autore: la
+        firma il CRM).
         """
         return deals.create(
             context,
@@ -71,7 +72,9 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def get_deal(deal_id: str) -> dict[str, Any]:
-        """Legge un deal."""
+        """Legge un deal, con le ultime 50 note (`note`, dalla più recente; `note_totale`
+        le conta, tutte in `deal://<id>`).
+        """
         return deals.get(context, deal_id)
 
     @mcp.tool(annotations=READ_ONLY)

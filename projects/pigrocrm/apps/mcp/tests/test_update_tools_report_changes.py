@@ -125,7 +125,6 @@ async def _customer(client: Client) -> dict[str, Any]:
         "create_customer",
         {
             "ragione_sociale": "ACME Srl",
-            "note": "cliente storico",
             "pec": "acme@pec.example.test",
             "telefono": "0212345678",
             "email": "info@acme.example.test",
@@ -142,14 +141,13 @@ async def _deal(client: Client, customer_id: str) -> dict[str, Any]:
             "customer_id": customer_id,
             "valore_previsto": "1000.00",
             "data_chiusura_prevista": "2026-12-31",
-            "note": "in trattativa",
             "ore_preventivate": "10.00",
             "valore_preventivato": "900.00",
         },
     )
 
 
-@pytest.mark.parametrize("field", ["note", "pec", "telefono", "email"])
+@pytest.mark.parametrize("field", ["pec", "telefono", "email"])
 async def test_clearing_a_customer_field_is_reported_with_the_value_it_held(
     server, field: str
 ) -> None:
@@ -172,7 +170,6 @@ async def test_clearing_a_customer_field_is_reported_with_the_value_it_held(
     [
         "valore_previsto",
         "data_chiusura_prevista",
-        "note",
         "ore_preventivate",
         "valore_preventivato",
     ],
@@ -205,7 +202,10 @@ async def test_a_value_that_is_not_new_is_not_reported_as_changed(
         result = await _create(
             client,
             "update_deal",
-            {"deal_id": deal["id"], "changes": {"nome": "Rinominato", "note": deal["note"]}},
+            {
+                "deal_id": deal["id"],
+                "changes": {"nome": "Rinominato", "valore_previsto": deal["valore_previsto"]},
+            },
         )
 
     assert result["changed"] == ["nome"]
@@ -217,7 +217,7 @@ async def test_clearing_a_person_field_is_reported(server) -> None:
         person = await _create(
             client,
             "create_person",
-            {"nome": "Mario", "cognome": "Rossi", "ruolo": "CTO", "note": "referente"},
+            {"nome": "Mario", "cognome": "Rossi", "ruolo": "CTO"},
         )
         result = await _create(
             client, "update_person", {"person_id": person["id"], "changes": {"ruolo": None}}

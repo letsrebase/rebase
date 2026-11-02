@@ -47,11 +47,17 @@ async def test_every_tool_from_the_spec_is_exposed(server) -> None:
     } <= names
 
 
+# The one tool that starts with `delete_`, and why it is not a way to destroy rows: a note is
+# soft-deleted (the row stays, `deleted_at` is set), only for who may edit it, and the parent's
+# timeline records who did it (REB-879), like `archive_*` for the records it hangs on.
+_SOFT_DELETES = {"delete_note"}
+
+
 async def test_no_destructive_delete_tool_exists(server) -> None:
     """An agent misreading 'elimina i deal chiusi' must not be able to destroy rows."""
     async with Client(server) as client:
         names = {tool.name for tool in (await client.list_tools()).tools}
-    assert not [name for name in names if name.startswith("delete_")]
+    assert not [name for name in names - _SOFT_DELETES if name.startswith("delete_")]
 
 
 async def test_the_full_journey_an_agent_would_take(server, mcp_session: Session) -> None:
