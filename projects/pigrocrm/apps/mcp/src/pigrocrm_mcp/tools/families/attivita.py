@@ -41,7 +41,9 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         «senza scadenza».
 
         Si aggancia a un solo fra cliente, persona, deal e fattura, o a nessuno. `assegnata_a` è
-        l'id di una persona: lo trovi in `list_members`.
+        l'id di una persona: lo trovi in `list_members`. Se lo ometti, l'attività è assegnata a chi
+        possiede il token; passa l'id di un collega per assegnarla a lui, o `"nessuno"` per
+        lasciarla senza assegnatario di proposito.
         """
         return calendar_tools.create(
             context,
@@ -53,7 +55,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
                 "person_id": UUID(person_id) if person_id else None,
                 "deal_id": UUID(deal_id) if deal_id else None,
                 "invoice_id": UUID(invoice_id) if invoice_id else None,
-                "assegnata_a": UUID(assegnata_a) if assegnata_a else None,
+                "assegnata_a": calendar_tools.assegnataria_di_default(context, assegnata_a),
                 "custom_fields": custom_fields or {},
             },
         )

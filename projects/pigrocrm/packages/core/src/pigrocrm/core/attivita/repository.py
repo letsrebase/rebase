@@ -1,12 +1,19 @@
 from datetime import date
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, func, or_, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.attivita.models import Attivita
 from pigrocrm.core.attivita.schemas import ATTIVITA_SORTS, AttivitaListQuery
 from pigrocrm.core.db import decode_cursor, keyset_predicate, order_by
+
+
+def _assegnata(user_id: UUID, anche_non_assegnate: bool) -> ColumnElement[bool]:
+    """One person's attività, and with `anche_non_assegnate` the ones nobody holds too."""
+    if anche_non_assegnate:
+        return or_(Attivita.assegnata_a == user_id, Attivita.assegnata_a.is_(None))
+    return Attivita.assegnata_a == user_id
 
 
 class AttivitaRepository:
@@ -77,6 +84,7 @@ class AttivitaRepository:
         *,
         assegnata_a: UUID | None,
         limit: int,
+        anche_non_assegnate: bool = False,
         prima_del: date | None = None,
         dal: date | None = None,
         al: date | None = None,
@@ -96,7 +104,7 @@ class AttivitaRepository:
         """
         base = [Attivita.deleted_at.is_(None), Attivita.stato == "aperta"]
         if assegnata_a is not None:
-            base.append(Attivita.assegnata_a == assegnata_a)
+            base.append(_assegnata(assegnata_a, anche_non_assegnate))
         if senza_scadenza:
             base.append(Attivita.scadenza.is_(None))
         if prima_del is not None:
@@ -125,7 +133,7 @@ class AttivitaRepository:
         if query.stato:
             stmt = stmt.where(Attivita.stato == query.stato)
         if query.assegnata_a:
-            stmt = stmt.where(Attivita.assegnata_a == query.assegnata_a)
+            stmt = stmt.where(_assegnata(query.assegnata_a, query.anche_non_assegnate))
         if query.customer_id:
             stmt = stmt.where(Attivita.customer_id == query.customer_id)
         if query.person_id:

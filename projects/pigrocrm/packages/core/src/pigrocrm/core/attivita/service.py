@@ -305,6 +305,7 @@ class AttivitaService:
         """The four sections of the Oggi panel, cut on the emitter's today.
 
         `query.assegnata_a` narrows every section to one person's; `None` is the whole space.
+        With `query.anche_non_assegnate` it keeps the attività nobody holds too.
         The day is read once and every section is cut on it, so a request that straddles
         midnight cannot list the same commitment under two headings.
         """
@@ -312,7 +313,10 @@ class AttivitaService:
 
         def gruppo(**finestra: Any) -> AttivitaGruppo:
             totale, righe = self.repo.aperte_nella_finestra(
-                assegnata_a=query.assegnata_a, limit=query.limit, **finestra
+                assegnata_a=query.assegnata_a,
+                anche_non_assegnate=query.anche_non_assegnate,
+                limit=query.limit,
+                **finestra,
             )
             return AttivitaGruppo(
                 totale=totale, items=[AttivitaRead.model_validate(riga) for riga in righe]

@@ -124,7 +124,10 @@ export function OggiPage() {
   // would send the whole space's list and replace it a moment later.
   const waiting = assignee === ME && assignees.me === null
   const who = assignee === EVERYONE ? undefined : assignee === ME ? (assignees.me ?? undefined) : assignee
-  const panel = useAttivitaOggi({ assegnata_a: who, limit: 100 }, { enabled: !waiting })
+  const panel = useAttivitaOggi(
+    { assegnata_a: who, anche_non_assegnate: assignee === ME ? true : undefined, limit: 100 },
+    { enabled: !waiting },
+  )
 
   return (
     <>

@@ -32,6 +32,21 @@ def _attivita(context: McpContext) -> AttivitaService:
     return AttivitaService(context.session)
 
 
+NESSUNO = "nessuno"
+
+
+def assegnataria_di_default(context: McpContext, assegnata_a: str | None) -> UUID | None:
+    """Who a new attività goes to: the id given, nobody for `"nessuno"`, and, when the
+    agent says nothing, the user who owns the token (`None` still for a token with no
+    person behind it). Agents almost never pass an id, and an unassigned attività would
+    be nobody's to-do."""
+    if assegnata_a is None or assegnata_a == "":
+        return context.actor.id
+    if assegnata_a == NESSUNO:
+        return None
+    return UUID(assegnata_a)
+
+
 def create(context: McpContext, data: dict[str, Any]) -> dict[str, Any]:
     result = _attivita(context).create(AttivitaCreate(**data), context.actor)
     return result.model_dump(mode="json")

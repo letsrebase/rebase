@@ -136,12 +136,20 @@ describe('OggiPage', () => {
       (vi.mocked(api.GET).mock.calls as unknown as [string, { params: { query: Record<string, unknown> } }][])
         .filter(([path]) => path === '/api/activities/oggi')
         .map(([, options]) => options.params.query)
-    expect(calls()).toContainEqual({ assegnata_a: ME, limit: 100 })
+    expect(calls()).toContainEqual({
+      assegnata_a: ME,
+      anche_non_assegnate: true,
+      limit: 100,
+    })
 
     await userEvent.click(screen.getByRole('combobox', { name: 'Filtra per assegnatario' }))
     await userEvent.click(await screen.findByRole('option', { name: 'Di chiunque' }))
 
-    await waitFor(() => expect(calls()).toContainEqual({ assegnata_a: undefined, limit: 100 }))
+    await waitFor(() => expect(calls()).toContainEqual({
+        assegnata_a: undefined,
+        anche_non_assegnate: undefined,
+        limit: 100,
+      }))
   })
 
   it('takes an overdue attività out of the section and out of the count when it is completed', async () => {
