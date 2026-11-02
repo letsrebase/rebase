@@ -215,10 +215,14 @@ def signup(
     one, or another address changes nothing: typing an address proves nothing, and
     trusting it would let anyone browse the spaces of an address they do not own."""
     spend_one(request)
-    spend_global("signup", per_minute=GLOBAL_SIGNUPS_PER_MINUTE)
     spaces = TenantService(registry, settings)
     if spaces.count() >= settings.max_spaces:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, SIGNUP_CLOSED)
+    # The global bucket guards the expensive part (the database and its migrations): a name
+    # `provision` refuses at the registry row (taken or reserved: 409, 422) costs nothing
+    # and goes straight there without spending it.
+    if spaces.availability(data.slug).disponibile:
+        spend_global("signup", per_minute=GLOBAL_SIGNUPS_PER_MINUTE)
     with _provisioning_slot():
         tenant = spaces.provision(data)
     try:

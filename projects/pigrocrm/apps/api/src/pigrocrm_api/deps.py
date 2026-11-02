@@ -256,16 +256,20 @@ def get_actor(request: Request, session: SessionDep, settings: SettingsDep) -> A
     existed, is refused like an expired one: it lives fifteen minutes and the SPA renews
     it from the refresh cookie on the 401 it just got, so nobody is signed out.
 
-    Failed bearers are throttled per client address (`ratelimit.refuse_if_locked`)."""
+    Failed bearers are throttled per client address (`ratelimit.refuse_if_locked`); a token
+    that resolves is never counted or refused by it."""
     pat = _bearer_pat(request)
     if pat is not None:
         key = bearer_key(request)
-        refuse_if_locked(request, key)
         try:
             # `settings`, so a space's own `mcp_full_access` is what stamps
             # `Actor.full_access`, not the process environment's.
             actor = PatService(session, settings=settings).resolve(pat)
         except DomainError as exc:
+            # The lock is only for a client that keeps presenting tokens that do not
+            # resolve: a valid token is never refused because of what else shares its
+            # address, so the check comes after the resolution failed.
+            refuse_if_locked(request, key)
             record_failure(key, free=FREE_BEARER_FAILURES)
             log_unauthorized(request, "bearer")
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token non valido") from exc

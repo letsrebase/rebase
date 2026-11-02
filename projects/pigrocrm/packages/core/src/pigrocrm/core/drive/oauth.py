@@ -96,7 +96,9 @@ class GoogleDriveOAuthService(GoogleConsentFlow[GoogleDriveAccount]):
             # Google refused before saying which identity this was.
             raise DriveCredentialRevoked() from revoked
         except GmailUnavailable as unavailable:
-            raise DriveUnavailable(int(unavailable.details.get("status", 0))) from unavailable
+            raise DriveUnavailable(
+                int(unavailable.details.get("upstream_status", 0))
+            ) from unavailable
 
     def account_for_user(self, user_id: UUID) -> GoogleDriveAccount | None:
         return self.repo.account_for_user(user_id)

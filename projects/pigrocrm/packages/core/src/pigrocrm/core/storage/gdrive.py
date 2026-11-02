@@ -269,7 +269,10 @@ class GDriveStorage:
         try:
             return self._transport.bytes("GET", url, what=_WHAT_DOWNLOAD)
         except Conflict as failed:
-            if failed.details.get("what") == _WHAT_DOWNLOAD and failed.details.get("status") == 404:
+            if (
+                failed.details.get("what") == _WHAT_DOWNLOAD
+                and failed.details.get("upstream_status") == 404
+            ):
                 # Found a moment ago by `_find_file_by_key`, gone now: a concurrent
                 # delete, not a bug in the query. Either way, "no such document" is the
                 # honest answer to give this caller.
@@ -341,7 +344,7 @@ class GDriveStorage:
                 raise
             raise RuntimeError(
                 "PIGROCRM_GDRIVE_ROOT_FOLDER_ID non e' raggiungibile dal service "
-                f"account (HTTP {failed.details.get('status')}). Verificare che la "
+                f"account (HTTP {failed.details.get('upstream_status')}). Verificare che la "
                 "cartella esista e sia stata condivisa con l'indirizzo email del "
                 "service account, direttamente o tramite uno Shared Drive."
             ) from failed

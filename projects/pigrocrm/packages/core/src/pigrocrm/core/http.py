@@ -173,4 +173,6 @@ class UpstreamUnavailable(Conflict):
 
     def __init__(self, entity: str, service: str, status: int, *, what: str | None = None) -> None:
         sentence = f"{service} non ha risposto correttamente (codice {status}). Riprova più tardi"
-        super().__init__(entity, f"{what}: {sentence}" if what else sentence, status=status)
+        super().__init__(
+            entity, f"{what}: {sentence}" if what else sentence, upstream_status=status
+        )

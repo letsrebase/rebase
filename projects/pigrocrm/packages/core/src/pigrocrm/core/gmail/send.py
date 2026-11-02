@@ -252,7 +252,7 @@ class EmailSendService:
                     ENTITY,
                     "Gmail ha rifiutato il messaggio: il testo è rimasto nella bozza",
                     send_state="fallito",
-                    status=failed.failure.status,
+                    upstream_status=failed.failure.status,
                 ) from failed
             # (3b) We do not know. The message MAY be in the user's Sent folder. Neither
             # assumption is made -- `reconcile` settles it by asking.
@@ -270,7 +270,7 @@ class EmailSendService:
                 ENTITY,
                 "esito dell'invio da verificare: Gmail non ha risposto",
                 send_state="incerto",
-                status=failed.failure.status,
+                upstream_status=failed.failure.status,
             ) from failed
 
         return self._record_sent(

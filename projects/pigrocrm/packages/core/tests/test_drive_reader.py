@@ -411,7 +411,7 @@ def test_a_403_on_an_ancestor_is_reported_and_not_read_as_outside_the_roots() ->
     with pytest.raises(Conflict) as excinfo:
         reader.is_within_roots(PDF_FILE)
 
-    assert excinfo.value.details["status"] == 403
+    assert excinfo.value.details["upstream_status"] == 403
     # Re-stamped by `_guarded`, like every other transport failure out of this module.
     assert excinfo.value.details["entity"] == "drive_file"
 
@@ -687,7 +687,7 @@ def test_a_google_failure_mid_read_is_about_the_drive_file_and_not_a_crm_documen
 
     assert excinfo.value.details["entity"] == "drive_file"
     assert "document_blob" not in excinfo.value.message
-    assert excinfo.value.details["status"] == 500
+    assert excinfo.value.details["upstream_status"] == 500
     assert excinfo.value.details["what"]
 
 

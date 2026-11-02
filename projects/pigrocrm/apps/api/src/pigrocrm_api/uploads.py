@@ -4,8 +4,10 @@ A declared `File()` parameter makes FastAPI parse the multipart body before it c
 handler, and Starlette spools every file part to disk while it does -- so a `readonly`
 caller would have had up to the proxy's limit written to disk before the 403. A handler
 that takes the `Request` instead checks the role first and reads the form itself, through
-`read_upload`, which reads one byte past the limit and no more, so a larger file is refused
-by the service's own sentence without being held in memory.
+`read_upload`, which reads the form only after that check and keeps one byte past the
+limit of the file at most, so a larger file is refused by the service's own sentence. The
+body itself is still parsed (and spooled) by `request.form()`: what the order buys is that a
+caller who may not write never gets that far.
 
 The schema is stated by hand for the OpenAPI document (`single_file_body`).
 """

@@ -107,7 +107,7 @@ def _decode(status: int, payload: bytes, what: str) -> dict[str, Any]:
         raise Conflict(
             TRANSPORT_ENTITY,
             f"{what} fallita ({status}){': ' + detail if detail else ''}",
-            status=status,
+            upstream_status=status,
             what=what,
         )
     return json.loads(payload.decode()) if payload else {}
@@ -249,7 +249,9 @@ class UserTokens:
         except CredentialRevoked as revoked:
             raise DriveCredentialRevoked(self.account_id, self.email_address) from revoked
         except GmailUnavailable as unavailable:
-            raise DriveUnavailable(int(unavailable.details.get("status", 0))) from unavailable
+            raise DriveUnavailable(
+                int(unavailable.details.get("upstream_status", 0))
+            ) from unavailable
 
     def forget(self) -> None:
         self.tokens.forget(self.account_id)

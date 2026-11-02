@@ -745,7 +745,7 @@ def test_a_listing_that_stays_down_answers_gmail_unavailable_and_frees_the_lock(
     with pytest.raises(GmailUnavailable) as failure:
         service.sync(actor_for(account))
 
-    assert failure.value.details["status"] == 429
+    assert failure.value.details["upstream_status"] == 429
     # The lock is not left behind by the failure.
     with Session(db_engine) as other:
         assert GmailRepository(other).try_sync_lock(account.id) is True

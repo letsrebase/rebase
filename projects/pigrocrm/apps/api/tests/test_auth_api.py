@@ -272,6 +272,22 @@ def test_a_run_of_bad_bearers_backs_off_without_touching_the_cookie_path(
     assert other.status_code == 401
 
 
+def test_a_valid_token_is_never_refused_by_the_lock_its_neighbours_earned(
+    logged_in: TestClient,
+) -> None:
+    """The backoff is per client address, so a revoked token in a cron job behind the same
+    egress must not lock out the working ones: a token that resolves passes whatever the
+    address has failed with."""
+    raw = logged_in.post("/api/tokens", json={"nome": "Claude"}).json()["token"]
+    bare = TestClient(logged_in.app)
+    bad = {"Authorization": "Bearer pgc_inventato"}
+    for _ in range(FREE_BEARER_FAILURES + 2):
+        bare.get("/api/auth/me", headers=bad)
+    assert bare.get("/api/auth/me", headers=bad).status_code == 429
+    good = bare.get("/api/auth/me", headers={"Authorization": f"Bearer {raw}"})
+    assert good.status_code == 200, good.text
+
+
 def test_a_throttled_refusal_is_logged_without_the_email_or_the_token(
     client: TestClient, admin_user, caplog: pytest.LogCaptureFixture
 ) -> None:

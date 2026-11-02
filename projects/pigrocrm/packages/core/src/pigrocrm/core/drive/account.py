@@ -542,7 +542,7 @@ class GoogleDriveAccountService:
         except Conflict as failed:
             if (
                 failed.details.get("what") == _WHAT_VERIFY_STORAGE_FOLDER
-                and failed.details.get("status") == 404
+                and failed.details.get("upstream_status") == 404
             ):
                 raise ValidationFailed(
                     "google_drive_account",

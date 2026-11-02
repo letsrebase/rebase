@@ -212,7 +212,7 @@ def test_a_non_transient_client_error_is_not_retried() -> None:
     with pytest.raises(Conflict) as excinfo:
         transport.json("GET", "https://www.googleapis.com/drive/v3/files", what="richiesta")
 
-    assert excinfo.value.details["status"] == 403
+    assert excinfo.value.details["upstream_status"] == 403
 
 
 # --- 401: the one failure a fresh token fixes ----------------------------------------
@@ -246,7 +246,7 @@ def test_a_401_that_survives_a_fresh_token_is_reported_rather_than_retried_forev
     with pytest.raises(Conflict) as excinfo:
         transport.json("GET", "https://www.googleapis.com/drive/v3/files", what="richiesta")
 
-    assert excinfo.value.details["status"] == 401
+    assert excinfo.value.details["upstream_status"] == 401
     assert tokens.forgotten == 1
     assert len(http.seen) == 2
 
@@ -374,7 +374,7 @@ def test_a_drive_outage_is_not_reported_as_a_gmail_outage() -> None:
     assert details["reason"] == (
         "Google Drive non ha risposto correttamente (codice 503). Riprova più tardi"
     )
-    assert details["status"] == 503
+    assert details["upstream_status"] == 503
     assert "Gmail" not in details["reason"]
     assert REFRESH not in str(details) and REFRESH not in str(excinfo.value)
 

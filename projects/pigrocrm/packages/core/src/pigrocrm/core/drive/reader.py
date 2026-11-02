@@ -491,7 +491,7 @@ class DriveReader:
                 "GET", file_meta_url(file_id, fields=_PARENT_FIELDS), what=_WHAT_META
             )
         except Conflict as refusal:
-            if refusal.details.get("status") != 404:
+            if refusal.details.get("upstream_status") != 404:
                 raise
             payload = {}
         parents = _parents(payload)
@@ -504,7 +504,7 @@ class DriveReader:
                 "GET", file_meta_url(file_id, fields=_ENTRY_FIELDS), what=_WHAT_META
             )
         except Conflict as refusal:
-            if refusal.details.get("status") == 404:
+            if refusal.details.get("upstream_status") == 404:
                 # Same sentence as a file outside the roots: see the module docstring.
                 raise NotFound(ENTITY, file_id) from refusal
             raise
