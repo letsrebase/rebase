@@ -698,11 +698,14 @@ def test_an_invoice_that_is_already_overdue_is_not_also_in_scadenza(corpus: Corp
     assert scaduta not in [i.invoice_id for i in digest.in_scadenza]
 
 
-def test_an_invoice_with_no_date_at_all_is_refused_by_its_id(db_engine: Engine) -> None:
+def test_an_invoice_with_no_date_at_all_is_skipped_and_logged_by_its_id(
+    db_engine: Engine, caplog: pytest.LogCaptureFixture
+) -> None:
     """`_riga`'s three predicates cannot produce a row with no date, so the row that
-    arrives without one is a register this report has no honest line for: `date.min`
-    would put «lun 1 gen» of the year 1 in a mail every Monday. The id is in the message
-    because that is what the operator has to look up."""
+    arrives without one is one this report has no honest line for: `date.min` would put
+    «lun 1 gen» of the year 1 in a mail every Monday. That row alone is left out, so one
+    odd invoice does not cost the whole space its week, and its id is in the log because
+    that is what the operator has to look up."""
     invoice = Invoice(
         id=uuid7(),
         customer_id=uuid7(),
@@ -721,11 +724,12 @@ def test_an_invoice_with_no_date_at_all_is_refused_by_its_id(db_engine: Engine) 
         divisa="EUR",
         custom_fields={},
     )
-    with (
-        session_factory(db_engine)() as session,
-        pytest.raises(ValueError, match=str(invoice.id)),
-    ):
-        DigestService(session, SETTINGS)._riga(invoice, {}, None)
+    with session_factory(db_engine)() as session, caplog.at_level("WARNING"):
+        service = DigestService(session, SETTINGS)
+        assert service._riga(invoice, {}, None) is None
+        # The row is left out of a list and the rest of the list survives it.
+        assert service._righe([invoice], {}, lambda row: row.data_incasso) == []
+    assert str(invoice.id) in caplog.text
 
 
 def test_a_quiet_week_is_flagged_but_the_space_is_not_empty(corpus: Corpus) -> None:

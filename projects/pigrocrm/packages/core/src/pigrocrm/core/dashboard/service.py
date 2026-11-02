@@ -32,6 +32,7 @@ and it is the price of the property this page exists for.
 from __future__ import annotations
 
 from datetime import datetime
+from functools import cached_property
 from uuid import UUID
 
 from sqlalchemy import text
@@ -124,13 +125,36 @@ class DashboardService:
     def __init__(self, session: Session, settings: Settings | None = None) -> None:
         self.session = session
         self.settings = settings or get_settings()
-        self.deals = DealRepository(session)
-        self.documents = DocumentRepository(session)
-        self.analytics = AnalyticsService(session)
-        self.analytics_repo = AnalyticsRepository(session)
-        self.invoices = InvoiceRepository(session)
-        self.entries = TimeEntryRepository(session)
-        self.activities = ActivityRepository(session)
+
+    # Each dashboard reads a different subset of these, so they are built on first use
+    # rather than all seven for every request.
+    @cached_property
+    def deals(self) -> DealRepository:
+        return DealRepository(self.session)
+
+    @cached_property
+    def documents(self) -> DocumentRepository:
+        return DocumentRepository(self.session)
+
+    @cached_property
+    def analytics(self) -> AnalyticsService:
+        return AnalyticsService(self.session)
+
+    @cached_property
+    def analytics_repo(self) -> AnalyticsRepository:
+        return AnalyticsRepository(self.session)
+
+    @cached_property
+    def invoices(self) -> InvoiceRepository:
+        return InvoiceRepository(self.session)
+
+    @cached_property
+    def entries(self) -> TimeEntryRepository:
+        return TimeEntryRepository(self.session)
+
+    @cached_property
+    def activities(self) -> ActivityRepository:
+        return ActivityRepository(self.session)
 
     def _open_snapshot(self) -> datetime:
         """Begin the one read-only `REPEATABLE READ` transaction, and return its instant.

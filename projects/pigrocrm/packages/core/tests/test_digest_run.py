@@ -993,6 +993,37 @@ def test_a_rehearsal_builds_the_report_and_leaves_nothing_behind(corpus: Corpus)
     assert _attivita(corpus.engine) == []
 
 
+def test_the_report_is_built_with_no_transaction_in_progress(
+    corpus: Corpus, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The reads that decide whether to send autobegin a transaction, and the operational
+    dashboard refuses to open its `REPEATABLE READ` snapshot on a session that already
+    has one. So whatever `DigestRun` does between its reads and `DigestService.build`, the
+    session has to be free of a transaction when `build` starts, for every scope it builds
+    a report in. Asserted at that call rather than through the outcome, which an
+    over-broad `except` would turn into a quiet `saltato`."""
+    from pigrocrm.core.digest.service import DigestService
+
+    in_transaction: list[bool] = []
+    build = DigestService.build
+
+    def recording_build(self: DigestService, *args: Any, **kwargs: Any) -> WeeklyDigest:
+        in_transaction.append(self.session.in_transaction())
+        return build(self, *args, **kwargs)
+
+    monkeypatch.setattr(DigestService, "build", recording_build)
+    esito = _esegui(
+        corpus.engine,
+        settimana=corpus.settimana,
+        titolare=corpus.titolare,
+        sender=RecordingSender(),
+        dry_run=True,
+    )
+
+    assert esito.esito == "inviato"
+    assert in_transaction != [] and not any(in_transaction)
+
+
 def test_a_space_where_nobody_wants_it_is_left_alone(corpus: Corpus) -> None:
     """Everyone switched it off. There is something to report and nobody to report it to,
     which is a different answer from «this space is empty» and leaves no row either."""
