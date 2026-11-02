@@ -137,16 +137,20 @@ pidfile trap does not show up any other way.
 
 **Migrations live in `packages/core/migrations` with `alembic.ini` beside them**, and
 `tenants/service.py` finds that file from `pigrocrm.core.__file__` rather than from
-the checkout, so it works identically in the image. The API container runs
-`alembic upgrade head` at start-up; there is one instance, so there is no
-concurrent-migration risk. That command migrates the **root** database only. After it
-the same `CMD` runs `pigrocrm ensure-space-defaults`, which brings every space in the
-registry to head with the same `migrate_to_head` provisioning uses (ORB-189: a space
-was migrated once, at creation, and `pigrocrm-v0.13.0` broke every space's login by
-shipping a migration they had never received), then gives it its default stages,
-templates and cost categories where a table is empty, and never fails the boot (spec
-2026-09-12 §6.5). A new migration reaches the spaces at the first boot after the deploy,
-not before: nothing else runs DDL on a space.
+the checkout, so it works identically in the image. The schema is the `migrate` service's,
+a one-shot of `docker-compose.yml` that runs once per deploy and before `api` starts (`api`
+waits for it with `service_completed_successfully`, and the previous `api` keeps serving
+meanwhile): it runs `alembic upgrade head`, which migrates the **root** database only, and then
+`pigrocrm ensure-space-defaults`, which brings every space in the registry to head with the same
+`migrate_to_head` provisioning uses (ORB-189: a space was migrated once, at creation, and
+`pigrocrm-v0.13.0` broke every space's login by shipping a migration they had never received),
+then gives it its default stages, templates and cost categories where a table is empty, and
+never fails the boot (spec 2026-09-12 §6.5). It also creates and grants `pigrocrm_app`, and, as
+root for the one command that needs it, hands the documents directory to the image's uid 10001
+before it drops to that user (`setpriv`), so the unprivileged `api` can write there with nothing
+to prepare on the host. A deploy therefore shows `migrate` as `exited (0)`, which
+`_deploy-compose.yml` accepts for that service alone. A new migration reaches the spaces at the
+deploy, not before: nothing else runs DDL on a space.
 
 **A deal, a customer and a person have no `note` column: they have a thread (REB-879).** The
 table `notes` (`core/notes/`) holds one row per remark, signed by the actor that wrote it: the
