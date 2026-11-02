@@ -44,10 +44,11 @@ import {
   type FiscalKey,
   type LetteraForm,
 } from '@/lib/contracts'
+import { keys } from '@/lib/query-keys'
 import { ChiStep } from './crea-match/ChiStep'
 import { CondizioniStep } from './crea-match/CondizioniStep'
 import { ControllaStep, type Review } from './crea-match/ControllaStep'
-import { Header } from './lists'
+import { Header } from './list-kit'
 
 const STEPS = ['Chi e per chi', 'Condizioni', 'Controlla e invia'] as const
 
@@ -79,7 +80,7 @@ function revoke(review: Review) {
 export function AdminCreaMatch() {
   const { id } = useParams({ from: '/signedIn/admin/freelance/$id/match/new' })
   const navigate = useNavigate()
-  const person = useQuery({ queryKey: ['freelancer', id], queryFn: () => admin.freelancer(id) })
+  const person = useQuery({ queryKey: keys.freelancer(id), queryFn: () => admin.freelancer(id) })
   // One id per wizard run (REB-406): mounting this page is starting one over, and the
   // page always navigates away once a match is written. Sent with both «Salva senza
   // inviare» and «Invia per la firma», so a retry after the response is lost (a network

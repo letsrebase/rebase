@@ -1,12 +1,11 @@
-import { useInfiniteQuery } from '@tanstack/react-query'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
-import { useMemo } from 'react'
 import { Badge } from '@rebase/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@rebase/ui/table'
 import { admin, type TeamRequestListItem, type TeamRequestsFilters } from '@/lib/api'
-import { isFilterActive } from '@/lib/adminList'
+import { isFilterActive, pageItems, useCursorList } from '@/lib/adminList'
 import { TEAM_ORIGIN_LABELS, TEAM_REQUEST_STATES, TEAM_REQUEST_STATE_LABELS, formatDate } from '@/lib/format'
-import { Empty, Header, LoadMore, StateFilter } from './lists'
+import { keys } from '@/lib/query-keys'
+import { Empty, Header, LoadMore, StateFilter } from './list-kit'
 
 function RequestRow({ item }: { item: TeamRequestListItem }) {
   return (
@@ -43,14 +42,11 @@ export function AdminRichiesteTeam() {
   }
 
   const filters: TeamRequestsFilters = search
-  const list = useInfiniteQuery({
-    queryKey: ['team-requests', filters],
-    queryFn: ({ pageParam }: { pageParam: string | undefined }) =>
-      admin.teamRequests({ ...filters, cursor: pageParam }),
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
+  const { list, items } = useCursorList({
+    queryKey: keys.teamRequests(filters),
+    fetchPage: (cursor) => admin.teamRequests({ ...filters, cursor }),
+    itemsOf: pageItems,
   })
-  const items = useMemo(() => list.data?.pages.flatMap((page) => page.items) ?? [], [list.data?.pages])
 
   return (
     <>

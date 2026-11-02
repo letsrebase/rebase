@@ -24,7 +24,9 @@ import {
   romeToday,
   sliceDays,
 } from '@/lib/report'
-import { Header } from './lists'
+import { keys } from '@/lib/query-keys'
+import { isHttpUrl } from '@/lib/url'
+import { Header } from './list-kit'
 
 const ROUTE = '/signedIn/admin/matches/$id/report'
 const TUTTO_LABEL = "Tutto l'incarico"
@@ -69,9 +71,9 @@ function Frame({ label, children }: { label: string; children: React.ReactNode }
 }
 
 function DealLink({ url }: { url: string }) {
+  if (!isHttpUrl(url)) return null
   return (
     <Button asChild variant="outline" size="sm">
-      {/* The API keeps only an http(s) address the CRM answered for the deal's page. */}
       <a href={url} target="_blank" rel="noreferrer">
         Apri il deal su Pigro
         <ExternalLink className="ml-2 size-3.5" aria-hidden="true" />
@@ -230,8 +232,8 @@ export function AdminConsuntivo() {
   const { id } = useParams({ from: ROUTE })
   const search = useSearch({ from: ROUTE })
   const navigate = useNavigate()
-  const match = useQuery({ queryKey: ['match', id], queryFn: () => matches.get(id) })
-  const report = useQuery({ queryKey: ['match-report', id], queryFn: () => matches.report(id) })
+  const match = useQuery({ queryKey: keys.match(id), queryFn: () => matches.get(id) })
+  const report = useQuery({ queryKey: keys.matchReport(id), queryFn: () => matches.report(id) })
   const period = search.mese ?? romeToday().slice(0, 7)
   const dealUrl = report.data?.pigro_url ?? match.data?.pigro_url ?? null
 

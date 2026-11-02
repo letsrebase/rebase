@@ -1,3 +1,4 @@
+import { ANY, boolToSelect, selectToBool } from '@/lib/adminList'
 import { amountFilter } from '@/lib/amount'
 import type { AudiencePreview, Campaign, CampaignAzione, CampaignDraft, CampaignMeta, CampaignTemplate } from '@/lib/api'
 import { CAMPAIGN_MAX_LENGTH, META_LABELS } from '@/lib/campaigns'
@@ -8,15 +9,6 @@ export type Lista = 'talenti' | 'aziende'
 // A `Select` cannot take an item with value `""` -- Radix reserves it for "nothing
 // picked yet", which is exactly what an unset filter or an unset template is here.
 export const NONE = ''
-export const ANY = 'tutti'
-
-export function boolToSelect(value: boolean | undefined): string {
-  return value === undefined ? ANY : value ? 'si' : 'no'
-}
-
-function selectToBool(value: string): boolean | undefined {
-  return value === 'si' ? true : value === 'no' ? false : undefined
-}
 
 /** The Talenti list's own filters (spec § 2), field for field the server's
  *  `TalentiFiltri` (`rebase_core/campaigns/schemas.py`) and the list page's

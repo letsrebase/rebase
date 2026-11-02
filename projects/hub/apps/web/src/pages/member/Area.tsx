@@ -5,7 +5,8 @@ import type { ReactNode } from 'react'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
 import { member, type MemberRequest } from '@/lib/api'
-import { formatBytes, formatDate, formatDay, formatEuro } from '@/lib/format'
+import { formatDate, formatDay } from '@/lib/format'
+import { formatBytes, formatMoney } from '@rebase/ui/format'
 import { toApplication, toCompanyApplication, useMe } from '@/lib/me'
 import { GUIDE } from '@/lib/perks'
 import { COMPANY_FIELDS } from '@/pages/CompanyWizard'
@@ -81,7 +82,7 @@ function RequestCard({ request, position, total }: { request: MemberRequest; pos
         <p className="line-clamp-2 text-sm text-muted-foreground">{request.progetto}</p>
       </div>
       <dl className="grid grid-cols-2 gap-(--line) border-t bg-border">
-        <Cell label="Budget">{formatEuro(request.budget_giornaliero)} / giorno</Cell>
+        <Cell label="Budget">{formatMoney(request.budget_giornaliero)} / giorno</Cell>
         <Cell label="Da quando">
           {formatDay(request.periodo_da)}, {request.durata}
         </Cell>

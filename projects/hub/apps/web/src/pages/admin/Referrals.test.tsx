@@ -265,6 +265,32 @@ describe('the Referral admin page (P-REB-44)', () => {
     await waitFor(() => expect(moved).toEqual({ stato: 'confermato' }))
   })
 
+  it('says so in the row when a reward cannot be moved', async () => {
+    mount([CONFIRMED_REWARD], {
+      '/api/hub/referrals/r1/state': () => answer(409, { detail: 'Il referral non è più verificato.' }),
+    })
+    await screen.findByText('Ada Lovelace')
+
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Conferma' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Il referral non è più verificato.')
+    expect(screen.getByRole('button', { name: 'Conferma' })).toBeInTheDocument()
+  })
+
+  it('says so when a price cannot be saved', async () => {
+    mount([UNPRICED_REWARD], {
+      '/api/hub/referrals/r2/price': () => answer(422, { detail: 'La base deve essere maggiore del reward.' }),
+    })
+    await screen.findByText('ACME S.r.l.')
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('Base, €'), '10')
+    await user.type(screen.getByLabelText('Reward, €'), '300')
+
+    await user.click(screen.getByRole('button', { name: 'Prezza' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('La base deve essere maggiore del reward.')
+  })
+
   it('prices a reward with no computed figure before it can move', async () => {
     let priced: unknown = null
     mount([UNPRICED_REWARD], {

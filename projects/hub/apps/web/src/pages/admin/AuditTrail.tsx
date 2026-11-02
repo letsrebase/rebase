@@ -4,6 +4,7 @@ import { Button } from '@rebase/ui/button'
 import { ApiError, admin, type AdminAction, type ThreadKind } from '@/lib/api'
 import { formatDateTime, formatSmallEuro } from '@/lib/format'
 import { noteSourceLabel, regenerationReason } from '@/lib/notes'
+import { keys } from '@/lib/query-keys'
 
 const KIND_LABELS: Record<AdminAction['kind'], string> = {
   overridden: 'Modifica',
@@ -130,7 +131,7 @@ export function AuditTrail({
   onReverted: () => void
 }) {
   const client = useQueryClient()
-  const queryKey = ['audit', kind, id] as const
+  const queryKey = keys.audit(kind, id)
   const trail = useQuery({ queryKey, queryFn: () => admin.auditTrail(kind, id) })
   const revert = useMutation({
     mutationFn: (actionId: string) => admin.revertAction(kind, id, actionId),

@@ -83,6 +83,16 @@ describe('the Agenti page (REB-213)', () => {
     expect((init as RequestInit).method).toBe('DELETE')
   })
 
+  it('says so when a token cannot be revoked, and leaves it active', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch')
+    spy.mockResolvedValueOnce(answer(200, page([ACTIVE])))
+    spy.mockResolvedValueOnce(answer(500, { detail: 'Riprova tra poco.' }))
+    mount()
+    await userEvent.setup().click(await screen.findByRole('button', { name: /^Revoca/ }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Riprova tra poco.')
+    expect(screen.getByText('Attivo')).toBeInTheDocument()
+  })
+
   it('debounces the search box and asks the server to narrow the list by name', async () => {
     const spy = vi.spyOn(globalThis, 'fetch')
     spy.mockResolvedValueOnce(answer(200, page([ACTIVE, REVOKED])))

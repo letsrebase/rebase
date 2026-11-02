@@ -29,6 +29,12 @@ describe('«Il tuo link di segnalazione» in the member area (P-REB-44)', () => 
     expect(screen.getByText('Nessuna segnalazione ancora.')).toBeInTheDocument()
   })
 
+  it('escapes a code that is not plain letters and digits before it goes into the link', async () => {
+    mount({ ...RATES, code: 'A B&C', referred: [] })
+    const input = await screen.findByLabelText('Link di segnalazione da copiare')
+    expect(input).toHaveValue(`${window.location.origin}/hub/?rif=A%20B%26C`)
+  })
+
   it('lists who the code brought in, freelance and company alike', async () => {
     mount({
       ...RATES,

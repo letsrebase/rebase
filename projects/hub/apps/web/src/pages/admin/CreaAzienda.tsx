@@ -9,7 +9,8 @@ import { Textarea } from '@rebase/ui/textarea'
 import { AMOUNT_PROBLEM, euroAmount, sentAmount } from '@/lib/amount'
 import { ApiError, admin, type AdminCompanyRequest, type Remoto } from '@/lib/api'
 import { dealIdOf } from '@/lib/crm'
-import { Header } from './lists'
+import { keys } from '@/lib/query-keys'
+import { Header } from './list-kit'
 
 const REMOTO_WORDS: Record<Remoto, string> = {
   remoto: 'Da remoto',
@@ -63,7 +64,7 @@ export function AdminCreaAzienda() {
   const create = useMutation({
     mutationFn: (data: AdminCompanyRequest) => admin.createCompany(data),
     onSuccess: (created) => {
-      void queryClient.invalidateQueries({ queryKey: ['companies'] })
+      void queryClient.invalidateQueries({ queryKey: keys.companies() })
       void navigate({ to: '/admin/companies/$id', params: { id: created.id } })
     },
   })

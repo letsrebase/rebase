@@ -1,25 +1,25 @@
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@rebase/ui/table'
 import { admin, type ReferralLedgerItem, type ReferralSettings, type RewardStato } from '@/lib/api'
+import { failureMessage, pageItems, useCursorList } from '@/lib/adminList'
 import { matchHeadingId } from '@/lib/contracts'
 import {
   REFERRAL_STATE_LABELS,
   REFERRAL_VERIFIED_VIA_LABELS,
   formatDate,
   formatDateTime,
-  formatEuro,
   formatRate,
 } from '@/lib/format'
-import { Empty, Header, StateFilter } from './lists'
+import { formatMoney } from '@rebase/ui/format'
+import { keys } from '@/lib/query-keys'
+import { Empty, Header, LoadMore, StateFilter } from './list-kit'
 
-const LEDGER_KEY = ['referrals'] as const
-const SETTINGS_KEY = ['referral-settings'] as const
 const STATES: readonly RewardStato[] = ['da_confermare', 'confermato', 'pagato']
 const STATE_LABELS: Record<string, string> = { ...REFERRAL_STATE_LABELS, in_attesa: 'In attesa' }
 const KIND_LABELS: Record<string, string> = { freelancer: 'Freelance', company: 'Azienda' }
@@ -31,7 +31,7 @@ const NEXT_STATE: Record<RewardStato, RewardStato | null> = {
 const NEXT_LABEL: Record<RewardStato, string> = { da_confermare: 'Conferma', confermato: 'Segna pagato', pagato: '' }
 
 function RateForm() {
-  const settings = useQuery({ queryKey: SETTINGS_KEY, queryFn: () => admin.referralSettings() })
+  const settings = useQuery({ queryKey: keys.referralSettings, queryFn: () => admin.referralSettings() })
   if (!settings.data) return null
   return <RateFields data={settings.data} />
 }
@@ -53,7 +53,7 @@ function RateFields({ data }: { data: ReferralSettings }) {
         (Number(rateCompany) / 100).toFixed(4),
       ),
     onSuccess: () => {
-      void client.invalidateQueries({ queryKey: SETTINGS_KEY })
+      void client.invalidateQueries({ queryKey: keys.referralSettings })
     },
   })
 
@@ -115,6 +115,7 @@ function PriceForm({ rewardId, onPriced }: { rewardId: string; onPriced: () => v
     mutationFn: () => admin.setReferralPrice(rewardId, base, euroReward),
     onSuccess: onPriced,
   })
+  const priceFailure = failureMessage(price.error, 'Non riesco a salvare il prezzo.')
   return (
     <div className="flex flex-wrap items-end gap-2">
       <div className="space-y-1">
@@ -154,6 +155,11 @@ function PriceForm({ rewardId, onPriced }: { rewardId: string; onPriced: () => v
       >
         {price.isPending ? 'Prezzo…' : 'Prezza'}
       </Button>
+      {priceFailure && (
+        <p role="alert" className="w-full text-xs text-destructive">
+          {priceFailure}
+        </p>
+      )}
     </div>
   )
 }
@@ -211,7 +217,7 @@ function RewardCell({ item, onPriced }: { item: ReferralLedgerItem; onPriced: ()
     if (item.projected_amount !== null && item.projected_rate !== null) {
       return (
         <>
-          <p className="font-medium text-muted-foreground tabular-nums">{formatEuro(item.projected_amount)}</p>
+          <p className="font-medium text-muted-foreground tabular-nums">{formatMoney(item.projected_amount)}</p>
           <p className="text-xs text-muted-foreground">{`Stima al ${formatRate(item.projected_rate)}, se il match firma`}</p>
         </>
       )
@@ -240,9 +246,9 @@ function RewardCell({ item, onPriced }: { item: ReferralLedgerItem; onPriced: ()
   }
   return (
     <>
-      <p className="font-medium tabular-nums">{formatEuro(item.reward_amount)}</p>
+      <p className="font-medium tabular-nums">{formatMoney(item.reward_amount)}</p>
       <p className="text-xs text-muted-foreground tabular-nums">
-        {formatEuro(item.base_amount)} · {item.rate !== null ? formatRate(item.rate) : '-'}
+        {formatMoney(item.base_amount)} · {item.rate !== null ? formatRate(item.rate) : '-'}
       </p>
     </>
   )
@@ -298,8 +304,9 @@ function ReferralRow({ item }: { item: ReferralLedgerItem }) {
   const client = useQueryClient()
   const move = useMutation({
     mutationFn: ({ id, stato }: { id: string; stato: RewardStato }) => admin.setReferralState(id, stato),
-    onSuccess: () => void client.invalidateQueries({ queryKey: LEDGER_KEY }),
+    onSuccess: () => void client.invalidateQueries({ queryKey: keys.referrals() }),
   })
+  const moveFailure = failureMessage(move.error, 'Non riesco a cambiare lo stato.')
   const rewardId = item.reward_id
   const next = item.stato ? NEXT_STATE[item.stato] : null
   const estimated = rewardId === null && item.projected_amount !== null
@@ -333,7 +340,7 @@ function ReferralRow({ item }: { item: ReferralLedgerItem }) {
         <MatchCell item={item} />
       </TableCell>
       <TableCell className="text-right align-top">
-        <RewardCell item={item} onPriced={() => void client.invalidateQueries({ queryKey: LEDGER_KEY })} />
+        <RewardCell item={item} onPriced={() => void client.invalidateQueries({ queryKey: keys.referrals() })} />
       </TableCell>
       <TableCell className="align-top">
         {/* A hairline pill for an estimate, a filled one for a state a reward is really in. */}
@@ -354,6 +361,11 @@ function ReferralRow({ item }: { item: ReferralLedgerItem }) {
             {item.stato ? NEXT_LABEL[item.stato] : ''}
           </Button>
         )}
+        {moveFailure && (
+          <p role="alert" className="mt-1 text-xs text-destructive">
+            {moveFailure}
+          </p>
+        )}
       </TableCell>
     </TableRow>
   )
@@ -370,27 +382,11 @@ function ReferralRow({ item }: { item: ReferralLedgerItem }) {
  */
 export function AdminReferrals() {
   const [stato, setStato] = useState<RewardStato | undefined>(undefined)
-  const list = useInfiniteQuery({
-    queryKey: [...LEDGER_KEY, stato] as const,
-    queryFn: ({ pageParam }: { pageParam: string | undefined }) =>
-      admin.referrals({ stato, cursor: pageParam }),
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (last) => last.next_cursor ?? undefined,
+  const { list, items } = useCursorList({
+    queryKey: keys.referrals(stato),
+    fetchPage: (cursor) => admin.referrals({ stato, cursor }),
+    itemsOf: pageItems,
   })
-  const items = useMemo(() => list.data?.pages.flatMap((page) => page.items) ?? [], [list.data])
-  const { hasNextPage, fetchNextPage } = list
-
-  const sentinelRef = useRef<HTMLDivElement | null>(null)
-  useEffect(() => {
-    if (!hasNextPage || typeof IntersectionObserver === 'undefined') return
-    const node = sentinelRef.current
-    if (!node) return
-    const observer = new IntersectionObserver((entries) => {
-      if (entries[0]?.isIntersecting) void fetchNextPage()
-    })
-    observer.observe(node)
-    return () => observer.disconnect()
-  }, [hasNextPage, fetchNextPage])
 
   return (
     <>
@@ -437,20 +433,12 @@ export function AdminReferrals() {
               </Table>
             </div>
           </div>
-          <div ref={sentinelRef} />
           {list.hasNextPage && (
-            <div className="flex flex-col items-center gap-2 px-6 py-5">
-              <p className="text-sm text-muted-foreground">Mostrati {items.length} referral, ce ne sono altri.</p>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={list.isFetchingNextPage}
-                onClick={() => void list.fetchNextPage()}
-              >
-                {list.isFetchingNextPage ? 'Carico…' : 'Mostra altri'}
-              </Button>
-            </div>
+            <LoadMore
+              label={`Mostrati ${items.length} referral, ce ne sono altri.`}
+              isFetchingMore={list.isFetchingNextPage}
+              onLoadMore={() => void list.fetchNextPage()}
+            />
           )}
         </>
       )}
