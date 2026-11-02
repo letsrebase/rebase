@@ -104,6 +104,11 @@ x-hub-api-only: &hub-api-only
   # defaults: an int field fails at start-up on an empty value.
   REBASE_TEAM_BUILDER_CONCURRENCY: ${REBASE_TEAM_BUILDER_CONCURRENCY:-4}
   REBASE_TEAM_BUILDER_DAILY_CAP: ${REBASE_TEAM_BUILDER_DAILY_CAP:-300}
+  REBASE_TEAM_BUILDER_CLIENT_DAILY_CAP: ${REBASE_TEAM_BUILDER_CLIENT_DAILY_CAP:-30}
+  # Public doors' ceilings: CV applications per hour, and the public mail a day. Not empty
+  # defaults: an int field fails at start-up on an empty value.
+  REBASE_APPLICATIONS_WITH_CV_PER_HOUR: ${REBASE_APPLICATIONS_WITH_CV_PER_HOUR:-30}
+  REBASE_PUBLIC_MAIL_DAILY_BUDGET: ${REBASE_PUBLIC_MAIL_DAILY_BUDGET:-15}
 
 # The hardening every long-running service takes: no capabilities and no way to gain any, the
 # logs rotated (the default json-file driver never does and these containers share a small disk
@@ -200,7 +205,9 @@ services:
     # The MCP server over Streamable HTTP for admins (REB-213): the same image as `api`,
     # a process of its own because `apps/api` may not import `apps/mcp`. The host's
     # nginx proxies `/api/hub/mcp` here. It starts after `api` is healthy, which is after
-    # the migrations. It is the admin's tool surface and so reads most of what `api`
+    # the migrations. A stack served under a name other than letsrebase.com or preview.letsrebase.com
+    # adds REBASE_MCP_ALLOWED_HOSTS / REBASE_MCP_ALLOWED_ORIGINS here (comma-separated; the
+    # defaults are compiled in, so they are not forwarded empty). It is the admin's tool surface and so reads most of what `api`
     # does, but not the webhooks' secrets, the conversion key or the analytics key.
     build: *api-build
     restart: unless-stopped
@@ -225,10 +232,10 @@ services:
       - '${REBASE_MCP_PORT:-127.0.0.1:8088}:8001'
 
   campaigns:
-    # `rebase campaigns-tick` (P-REB-41): sends the campaigns whose time has come, one
-    # mail at a time, every minute, on both stacks. A loop, never a one-shot, for the
-    # same reason as `sweep`: `_deploy-compose.yml` fails a deploy on any container not
-    # `running`. Harmless without REBASE_RESEND_API_KEY: it prints why and sends nothing.
+    # `rebase loop campaigns` (P-REB-41): runs `campaigns-tick` every minute, on both stacks,
+    # in one long-lived process (the intervals live in `rebase_core.cli`): sends the campaigns
+    # whose time has come, one mail at a time. A loop, never a one-shot, for the same reason as
+    # `sweep`: `_deploy-compose.yml` fails a deploy on any container not `running`. Harmless without REBASE_RESEND_API_KEY: it prints why and sends nothing.
     # Reads the database, the mail key and sender, the campaign gap and quota, and the
     # hub's URL for the links: nothing else. Read with `docker logs rebase-campaigns-1`
     # (production) or `rebase-preview-campaigns-1` (preview).
@@ -237,7 +244,7 @@ services:
     <<: *hardening
     mem_limit: 512m
     pids_limit: 128
-    command: ['sh', '-c', 'while :; do sleep 60; rebase campaigns-tick; done']
+    command: ['uv', 'run', '--no-sync', 'rebase', 'loop', 'campaigns']
     depends_on:
       db:
         condition: service_healthy
@@ -247,8 +254,8 @@ services:
       <<: [*hub-database, *hub-mail, *hub-links, *hub-campaign, *hub-quota]
 
   sweep:
-    # `rebase contracts-sweep` (REB-391), scheduled here rather than by the host, so both
-    # stacks carry their own schedule (REB-393): a loop, never a one-shot, because
+    # `rebase loop sweep` (every ten minutes: `rebase contracts-sweep`, REB-391), scheduled here
+    # rather than by the host, so both stacks carry their own schedule (REB-393): a loop, never a one-shot, because
     # `_deploy-compose.yml` fails a deploy on any container that is not `running`. Sleeps
     # first so the api's `alembic upgrade head` (Dockerfile.api) has already run. Harmless
     # on an environment with no Documenso settings: `finish` swallows `SigningUnavailable`.
@@ -261,7 +268,7 @@ services:
     <<: *hardening
     mem_limit: 512m
     pids_limit: 128
-    command: ['sh', '-c', 'while :; do sleep 600; rebase contracts-sweep; done']
+    command: ['uv', 'run', '--no-sync', 'rebase', 'loop', 'sweep']
     depends_on:
       db:
         condition: service_healthy
@@ -273,13 +280,14 @@ services:
       REBASE_PIGRO_ENGAGEMENTS_TOKEN: ${REBASE_PIGRO_ENGAGEMENTS_TOKEN:-}
 
   cards:
-    # `rebase cards-refresh --limit 50` (REB-552): the team builder's backlog, once an
+    # `rebase loop cards`: every five minutes `rebase cards-batch-poll`, and every twelfth pass
+    # the hourly work below. `rebase cards-refresh --limit 50` (REB-552): the team builder's backlog, once an
     # hour on both stacks, so a card an outage retired (spec § 5.1) comes back without
     # someone running the command by hand, and follows its CV within the hour rather
     # than a day. A loop, never a one-shot, for the same reason as `campaigns`:
     # `_deploy-compose.yml` fails a deploy on any container not `running`. Gated by
     # `REBASE_CARDS_LOOP` (`.env`, default `off`: a deploy on a host whose `.env` says nothing
-    # writes no card), no Python setting: a deploy that already has a model configured must
+    # writes no card; `Settings.cards_loop`, read by the loop itself): a deploy that already has a model configured must
     # not start sending CVs to a provider before the talents' mail (AGENTS.md, "The team
     # builder") has gone out, so production sets `REBASE_CARDS_LOOP=off` first and only turns
     # it `on` (`docker compose up -d cards` to recreate the service) once the mail has. Off,
@@ -307,7 +315,9 @@ services:
     <<: *hardening
     mem_limit: 768m
     pids_limit: 128
-    command: ['sh', '-c', 'n=0; while :; do sleep 300; rebase cards-batch-poll || true; n=$$((n + 1)); if [ "$$n" -ge 12 ]; then n=0; rebase sources-refetch --limit 50 || true; if [ "${REBASE_CARDS_LOOP:-off}" = "on" ]; then rebase cards-refresh --limit 50; else echo "cards: loop off (REBASE_CARDS_LOOP)"; fi; fi; done']
+    command: ['uv', 'run', '--no-sync', 'rebase', 'loop', 'cards']
+    # A pass in progress finishes before the process exits on SIGTERM.
+    stop_grace_period: 60s
     depends_on:
       db:
         condition: service_healthy

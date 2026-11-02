@@ -106,7 +106,7 @@ def test_the_hub_compose_file_runs_the_sweep_on_a_loop_with_no_port() -> None:
     `running`, and no port, since nothing ever calls the sweep directly."""
     services = _compose().split("\nservices:", 1)[1]
     sweep = services.split("\n  sweep:", 1)[1].split("\n  cards:", 1)[0]
-    assert "while :; do sleep 600; rebase contracts-sweep; done" in sweep
+    assert "'rebase', 'loop', 'sweep'" in sweep
     assert "<<: *hardening" in sweep
     assert "ports:" not in sweep
 
@@ -122,14 +122,7 @@ def test_the_hub_compose_file_runs_the_cards_backlog_and_the_batch_poll() -> Non
     the hourly pass. `$$` is compose's escape for the shell's own `$`."""
     services = _compose().split("\nservices:", 1)[1]
     cards = services.split("\n  cards:", 1)[1].split("\n  web:", 1)[0]
-    assert (
-        "n=0; while :; do sleep 300; rebase cards-batch-poll || true; "
-        'n=$$((n + 1)); if [ "$$n" -ge 12 ]; then n=0; '
-        "rebase sources-refetch --limit 50 || true; "
-        'if [ "${REBASE_CARDS_LOOP:-off}" = "on" ]; then rebase '
-        'cards-refresh --limit 50; else echo "cards: loop off (REBASE_CARDS_LOOP)"; fi; '
-        "fi; done"
-    ) in cards
+    assert "'rebase', 'loop', 'cards'" in cards
     assert "<<: *hardening" in cards
     assert "ports:" not in cards
 
@@ -143,7 +136,7 @@ def test_the_hub_compose_file_runs_the_campaigns_loop_every_minute_with_no_port(
     «Invia adesso» promises the mail within one."""
     services = _compose().split("\nservices:", 1)[1]
     loop = services.split("\n  campaigns:", 1)[1].split("\n  sweep:", 1)[0]
-    assert "while :; do sleep 60; rebase campaigns-tick; done" in loop
+    assert "'rebase', 'loop', 'campaigns'" in loop
     assert "<<: *hardening" in loop
     assert "ports:" not in loop
 
