@@ -19,6 +19,7 @@ from rebase_core.audit import (
     supplied_changes,
     utcnow,
 )
+from rebase_core.card_rows import card_emails, card_row_fields
 from rebase_core.config import Settings
 from rebase_core.cv_text import CvText, extract_text
 from rebase_core.errors import InvalidState, NotFound, ValidationFailed
@@ -45,7 +46,8 @@ from rebase_core.models import (
 )
 from rebase_core.notes import NoteService
 from rebase_core.perks import PerkService
-from rebase_core.pigro import PigroRegistry, PigroUnavailable
+from rebase_core.pigro import PigroRegistry
+from rebase_core.pigro_door import PigroUnavailable
 from rebase_core.referrals import ReferralService
 from rebase_core.signup_schemas import SignupListItem, SignupUtm
 from rebase_core.sources import delete_sources
@@ -116,32 +118,21 @@ def freelancer_read(row: Freelancer, user: User) -> FreelancerRead:
     `email`/`linkedin_url` left the card itself in migration B (REB-281), once
     `FreelancerService` no longer had two copies of the person to keep in step."""
     return FreelancerRead(
-        id=row.id,
-        nome=user.nome,
-        cognome=user.cognome,
-        email=user.email,
-        linkedin_url=user.linkedin_url,
+        **card_row_fields(row, user),
         telefono=user.telefono,
         cv_filename=row.cv_filename,
         cv_mime=row.cv_mime,
         cv_size=row.cv_size,
-        tariffa_giornaliera=row.tariffa_giornaliera,
-        posizione=row.posizione,
-        remoto=row.remoto,
         links=list(row.links),
-        stato=row.stato,
         compilata_da=row.compilata_da,
         origine=row.origine,
-        utm_source=row.utm_source,
         utm_medium=row.utm_medium,
         utm_campaign=row.utm_campaign,
         utm_content=row.utm_content,
         utm_term=row.utm_term,
         utm_id=row.utm_id,
-        created_at=row.created_at,
         updated_at=row.updated_at,
         deleted_at=row.deleted_at,
-        vetted_at=row.vetted_at,
         seniority_admin=row.seniority_admin,
         anni_admin=row.anni_admin,
     )
@@ -166,18 +157,6 @@ def _signed_up() -> Subquery:
     """Which addresses are also on the landing's list (ORB-161), lowercased once so the
     join lands on `uq_orbiters_signups_email_lower` rather than on a function per row."""
     return select(func.lower(Signup.email).label("email")).subquery()
-
-
-def _card_emails() -> Subquery:
-    """Lowercased addresses that already have a card (ORB-163): a card's identity lives
-    on the linked `users` row since REB-281, so this is the one place that joins the
-    two to answer "does this address have a card" without repeating the join per
-    caller."""
-    return (
-        select(func.lower(User.email).label("email"))
-        .join(Freelancer, Freelancer.user_id == User.id)
-        .subquery()
-    )
 
 
 def _read_with_logins(
@@ -249,8 +228,7 @@ class FreelancerService:
         email = data.email.strip().lower()
         row = self._find(email, data.linkedin_url)
         if row is not None:
-            owner = self.session.get(User, row.user_id)
-            assert owner is not None
+            owner = self._owner(row)
             return freelancer_read(row, owner), False
         utm = data.utm.model_dump() if data.utm is not None and not data.utm.is_empty() else {}
         user = UserService(self.session).get_or_create(
@@ -395,11 +373,9 @@ class FreelancerService:
     def _leads(self, limit: int) -> tuple[list[SignupListItem], int]:
         """Signups whose address has no card (ORB-163), newest first, and how many
         there are: one anti-join on the two case-insensitive indexes."""
-        card_emails = _card_emails()
-        no_card = card_emails.c.email.is_(None)
-        base = select(Signup).outerjoin(
-            card_emails, card_emails.c.email == func.lower(Signup.email)
-        )
+        addresses = card_emails()
+        no_card = addresses.c.email.is_(None)
+        base = select(Signup).outerjoin(addresses, addresses.c.email == func.lower(Signup.email))
         rows = self.session.scalars(
             base.where(no_card, ~card_by_linkedin())
             .order_by(Signup.created_at.desc(), Signup.id.desc())
@@ -409,7 +385,7 @@ class FreelancerService:
             self.session.scalar(
                 select(func.count())
                 .select_from(Signup)
-                .outerjoin(card_emails, card_emails.c.email == func.lower(Signup.email))
+                .outerjoin(addresses, addresses.c.email == func.lower(Signup.email))
                 .where(no_card, ~card_by_linkedin())
             )
             or 0
@@ -423,8 +399,7 @@ class FreelancerService:
         the address owns one. Only here: the list stays `FreelancerRead` alone, since
         two hundred people are not two hundred fan-outs to four sources."""
         row = self._require(freelancer_id)
-        user = self.session.get(User, row.user_id)
-        assert user is not None
+        user = self._owner(row)
         logins = _logins_per_card()
         counted = self.session.execute(
             select(logins.c.accessi, logins.c.ultimo_accesso).where(logins.c.user_id == row.user_id)
@@ -473,18 +448,18 @@ class FreelancerService:
         row = self._require(freelancer_id)
         before = row.stato
         row.stato = change.stato
-        self.session.commit()
         if before != change.stato:
+            # Same transaction as the change (HCORE-09).
             AdminActionService(self.session).record(
                 ENTITY,
                 row.id,
                 "status_changed",
                 admin_id,
                 {"before": before, "after": change.stato, "fonte": fonte},
+                commit=False,
             )
-        user = self.session.get(User, row.user_id)
-        assert user is not None
-        return freelancer_read(row, user)
+        self.session.commit()
+        return freelancer_read(row, self._owner(row))
 
     def override(
         self, freelancer_id: UUID, data: FreelancerOverride, admin_id: UUID
@@ -497,8 +472,7 @@ class FreelancerService:
         person has here; overriding a name moves it everywhere that row is read, the
         same as a self-edit through `MemberService.update` already does."""
         row = self._require(freelancer_id)
-        user = self.session.get(User, row.user_id)
-        assert user is not None
+        user = self._owner(row)
         changes = supplied_changes(data)
         if not changes:
             return freelancer_read(row, user)
@@ -517,7 +491,7 @@ class FreelancerService:
         for field, value in row_changes.items():
             setattr(row, field, value)
         try:
-            self.session.commit()
+            self.session.flush()
         except IntegrityError as exc:
             refuse_linkedin_conflict(self.session, exc)
         after = {
@@ -526,7 +500,12 @@ class FreelancerService:
         }
         delta = field_changes(before, after)
         if delta:
-            AdminActionService(self.session).record(ENTITY, row.id, "overridden", admin_id, delta)
+            # The entry goes in the same transaction as the override (HCORE-09): an
+            # identity change never exists without its trail.
+            AdminActionService(self.session).record(
+                ENTITY, row.id, "overridden", admin_id, delta, commit=False
+            )
+        self.session.commit()
         return freelancer_read(row, user)
 
     def clear_cv(self, freelancer_id: UUID, admin_id: UUID) -> FreelancerRead:
@@ -547,11 +526,10 @@ class FreelancerService:
         (`CardWriter._save`, `AnonymousCvWriter._store`)."""
         # Imported here, not at the top: both writers read the CV through this module.
         from rebase_core.anonymous_cv.writer import AnonymousCvWriter
-        from rebase_core.cards import CardWriter
+        from rebase_core.card_writer import CardWriter
 
         row = self._require(freelancer_id)
-        user = self.session.get(User, row.user_id)
-        assert user is not None
+        user = self._owner(row)
         cards = CardWriter(self.session, None)
         anonymous = AnonymousCvWriter(self.session, None)
         if row.cv_bytes is None:
@@ -582,8 +560,7 @@ class FreelancerService:
         one already off, is left alone and records nothing: the date is the first
         verification's, not the last click's."""
         row = self._require(freelancer_id)
-        user = self.session.get(User, row.user_id)
-        assert user is not None
+        user = self._owner(row)
         if vetted == (row.vetted_at is not None):
             return freelancer_read(row, user)
         row.vetted_at = utcnow() if vetted else None
@@ -607,16 +584,14 @@ class FreelancerService:
         delete_sources(self.session, row.id)
         self.session.commit()
         AdminActionService(self.session).record(ENTITY, row.id, "deleted", admin_id, {})
-        user = self.session.get(User, row.user_id)
-        assert user is not None
+        user = self._owner(row)
         return freelancer_read(row, user)
 
     def restore(self, freelancer_id: UUID, admin_id: UUID) -> FreelancerRead:
         """A no-op, not an error, on a card that is not deleted -- an idempotent call
         must never write a timeline entry claiming a recovery that never happened."""
         row = self._require(freelancer_id, include_deleted=True)
-        user = self.session.get(User, row.user_id)
-        assert user is not None
+        user = self._owner(row)
         if row.deleted_at is not None and user.merged_into_id is not None:
             raise InvalidState(
                 "Questa scheda è stata unita a un'altra: per riaverla si annulla l'unione "
@@ -669,6 +644,33 @@ class FreelancerService:
         if row is None or (row.deleted_at is not None and not include_deleted):
             raise NotFound(ENTITY, freelancer_id)
         return row
+
+    def _owner(self, row: Freelancer) -> User:
+        """The `users` row a card hangs on. The foreign key guarantees it; a missing one is
+        a broken database, answered as the `NotFound` it is rather than an `assert` that
+        `python -O` strips."""
+        user = self.session.get(User, row.user_id)
+        if user is None:
+            raise NotFound("user", row.user_id)
+        return user
+
+    def applications_with_cv_since(self, since: datetime) -> int:
+        """The cards the wizard itself created with a CV since `since`: the count the
+        public application route holds against `applications_with_cv_per_hour`. Counts
+        `compilata_da = 'persona'` (an admin's draft is not an application) and reads
+        `cv_size`, never the bytes."""
+        return (
+            self.session.scalar(
+                select(func.count())
+                .select_from(Freelancer)
+                .where(
+                    Freelancer.created_at >= since,
+                    Freelancer.cv_size.is_not(None),
+                    Freelancer.compilata_da == "persona",
+                )
+            )
+            or 0
+        )
 
     def _find(self, email: str, linkedin_url: str | None = None) -> Freelancer | None:
         """The card of whoever this submission is about (REB-800): the person who answers to

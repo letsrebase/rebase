@@ -258,7 +258,8 @@ class MemberService:
             else self.require_request(user_id, company_id)
         )
         user = self.session.get(User, user_id)
-        assert user is not None
+        if user is None:
+            raise NotFound("user", user_id)
         changed: list[str] = []
         for field, label in COMPANY_FIELD_LABELS.items():
             value = getattr(data, field)
@@ -345,7 +346,8 @@ class MemberService:
 
     def _owner(self, row: Freelancer) -> User:
         user = self.session.get(User, row.user_id)
-        assert user is not None
+        if user is None:
+            raise NotFound("user", row.user_id)
         return user
 
     def _note(self, user: User, row: Freelancer, text: str) -> None:

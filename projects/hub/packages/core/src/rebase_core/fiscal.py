@@ -51,15 +51,23 @@ class FiscalService:
             for field in FISCAL_FIELDS:
                 setattr(row, field, getattr(data, field))
             row.updated_by = admin_id
+            changed = [field for field in FISCAL_FIELDS if before.get(field) != getattr(row, field)]
+            if changed:
+                # Tax data is sensitive: the entry shares the save's transaction, under the
+                # card's row lock, so a save never exists without its trail (HCORE-09).
+                self.session.flush()
+                AdminActionService(self.session).record(
+                    ENTITY,
+                    freelancer_id,
+                    "fiscal_updated",
+                    admin_id,
+                    {"changed": changed},
+                    commit=False,
+                )
             self.session.commit()
         except Exception:
             self.session.rollback()
             raise
-        changed = [field for field in FISCAL_FIELDS if before.get(field) != getattr(row, field)]
-        if changed:
-            AdminActionService(self.session).record(
-                ENTITY, freelancer_id, "fiscal_updated", admin_id, {"changed": changed}
-            )
         return FiscalRead.model_validate(row)
 
     def _row(self, freelancer_id: UUID) -> FreelancerFiscal | None:

@@ -79,6 +79,13 @@ class SignupCreate(BaseModel):
     # its shape is theirs to change, and a value we do not recognise is still the value
     # that arrived.
     oppref: SafeStr | None = Field(default=None, max_length=OPPREF_MAX_LENGTH)
+    # Whether this visitor said yes to the measurement cookie notice (`consent.js` keeps
+    # the decision in `localStorage["rebase.consent"]`, `"granted"` or `"denied"`, and
+    # loads the browser pixel only on a yes). The server half of the conversion sends the
+    # visitor's address, user agent and click ids to OpenAI, so it follows the browser
+    # half: it is sent only when this is `true`. Absent means no: a client that does not
+    # know about the notice is never measured, and neither is a refusal.
+    pixel_consent: bool = False
 
     @field_validator("rif", mode="before")
     @classmethod

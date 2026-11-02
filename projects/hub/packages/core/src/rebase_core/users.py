@@ -19,10 +19,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from rebase_core.admin_tokens import AdminList, AdminRead
+from rebase_core.audit import AdminActionService
 from rebase_core.config import Settings
-from rebase_core.errors import NotFound, ValidationFailed
+from rebase_core.errors import InvalidState, NotFound, ValidationFailed
 from rebase_core.linkedin import linkedin_key
-from rebase_core.mail import Mail, magic_link_mail
+from rebase_core.mail import Mail
+from rebase_core.mail_member import magic_link_mail
 from rebase_core.models import (
     ATTRIBUTION_COLUMNS,
     USER_ROLES,
@@ -36,8 +38,14 @@ from rebase_core.pagination import SortSpec, decode_cursor, encode_cursor, keyse
 from rebase_core.referrals import ReferralService
 from rebase_core.search import matches_any, similarity_score
 from rebase_core.signup_schemas import SignupUtm
+from rebase_core.team_caps import rome_midnight
 
 ENTITY = "user"
+LAST_ADMIN = "Questo è l'ultimo amministratore: promuovine un altro prima di togliergli il ruolo."
+# A session's deadline is pushed forward on use, but only once it has fallen this far
+# behind the deadline a fresh request would set: every authenticated call used to write
+# and commit, the SPA's `/me` poll included, for a deadline measured in days.
+SESSION_SLIDE_AFTER = timedelta(hours=1)
 # The one sentence for a LinkedIn profile that belongs to somebody else's card (REB-800):
 # the member is told how to get back in, the admin how to settle it.
 LINKEDIN_TAKEN = (
@@ -181,12 +189,13 @@ class UserService:
         self.session.add(row)
         try:
             self.session.commit()
-        except IntegrityError:
+        except IntegrityError as exc:
             # Two first applications racing: the index on the address, or since REB-800
             # on the LinkedIn profile, decides, and the loser attaches to the winner.
             self.session.rollback()
             existing = self.find_person(email, linkedin_url)
-            assert existing is not None
+            if existing is None:
+                raise exc  # not a race we know: the caller's own integrity error
             return existing
         return row
 
@@ -239,16 +248,27 @@ class UserService:
         )
 
     def promote(
-        self, email: str, nome: str | None = None, cognome: str | None = None
+        self,
+        email: str,
+        nome: str | None = None,
+        cognome: str | None = None,
+        *,
+        admin_id: UUID,
     ) -> tuple[User, bool]:
         """Whatever `users` row already answers to this address is promoted with one
         click and no form; an address with none yet needs `nome`/`cognome` to create a
         bare row first, no freelancer card invented for it (§1, Nav and Amministratori).
         The second element is whether a row was created, so the caller knows to mail a
-        fresh promotion the same link everyone else gets."""
+        fresh promotion the same link everyone else gets.
+
+        `admin_promoted` is written in the same transaction as the role (`record` with
+        `commit=False`): a role is the most sensitive change an admin can make, and it
+        never exists without its entry. Promoting somebody who already is an admin
+        changes nothing and records nothing."""
         row = self.by_email(email)
         self._refuse_merged(row)
         created = row is None
+        was = None if row is None else row.role
         if row is None:
             nome, cognome = (nome or "").strip(), (cognome or "").strip()
             if not nome or not cognome:
@@ -258,15 +278,44 @@ class UserService:
             row = User(email=email.strip().lower(), nome=nome, cognome=cognome)
             self.session.add(row)
         row.role = "admin"
+        if was != "admin":
+            self.session.flush()
+            AdminActionService(self.session).record(
+                ENTITY,
+                row.id,
+                "admin_promoted",
+                admin_id,
+                {"created": created, "before": was},
+                commit=False,
+            )
         self.session.commit()
         return row, created
 
-    def demote(self, user_id: UUID) -> User:
-        """Sets `role = 'member'`, fully reversible since nothing is deleted."""
+    def demote(self, user_id: UUID, *, admin_id: UUID) -> User:
+        """Sets `role = 'member'`, fully reversible since nothing is deleted. Refused
+        for an address merged into somebody (the role is theirs), and for the last
+        admin: with nobody left to promote anybody, the only way back would be
+        `rebase setrole` on the server. Demoting yourself is allowed while another
+        admin exists, and is the same act as demoting anyone else (it signs the entry
+        with your own id); it is the last-admin rule, not a self-check, that protects
+        the area. The admin rows are locked for the count, so two admins demoting each
+        other at once cannot both pass it. `admin_demoted` is written in the same
+        transaction as the role."""
         row = self.session.get(User, user_id)
         if row is None:
             raise NotFound(ENTITY, user_id)
+        self._refuse_merged(row)
+        if row.role != "admin":
+            return row
+        admins = self.session.scalars(
+            select(User.id).where(User.role == "admin").with_for_update()
+        ).all()
+        if len(admins) <= 1:
+            raise InvalidState(LAST_ADMIN)
         row.role = "member"
+        AdminActionService(self.session).record(
+            ENTITY, row.id, "admin_demoted", admin_id, {"before": "admin"}, commit=False
+        )
         self.session.commit()
         return row
 
@@ -294,6 +343,21 @@ class UserService:
 
     # ---- the way in ----------------------------------------------------------------
 
+    def public_links_left(self, now: datetime | None = None) -> int:
+        """How many more magic links the public doors may mail today (REB-889): the
+        budget (`public_mail_daily_budget`) less the tokens created since midnight in
+        Rome. A token is one mail, and `request_link` keeps the day's rows until the
+        day is over, so the count is the day's real mail count, spent or not. Zero is
+        the circuit breaker: the doors refuse until tomorrow instead of burning the
+        Resend quota the real members' links and the campaigns share."""
+        moment = now or datetime.now(UTC)
+        sent = self.session.scalar(
+            select(func.count())
+            .select_from(MagicLinkToken)
+            .where(MagicLinkToken.created_at >= rome_midnight(moment))
+        )
+        return max(self._config.public_mail_daily_budget - (sent or 0), 0)
+
     def request_link(
         self, email: str, note: str | None = None, utm: SignupUtm | None = None
     ) -> Mail | None:
@@ -302,11 +366,12 @@ class UserService:
         token, no mail, the same silence a caller sees either way -- the throttle is
         per address, not per client, and sits beside the per-client bucket `spend_one`
         already charges in the router. Sweeps the person's spent and expired tokens
-        first: nothing needs a cron.
+        from before today first: nothing needs a cron, and today's rows stay, since
+        they are what `public_links_left` counts.
 
         `utm` is what the login page's URL said (REB-426), kept on the token for the
         `Login` it will open; an empty one is no attribution at all."""
-        assert self.settings is not None
+        settings = self._config
         typed = self.by_email(email)
         if typed is None:
             return None
@@ -317,6 +382,7 @@ class UserService:
         self.session.execute(
             delete(MagicLinkToken).where(
                 MagicLinkToken.user_id == row.id,
+                MagicLinkToken.created_at < rome_midnight(now),
                 or_(MagicLinkToken.used_at.is_not(None), MagicLinkToken.expires_at <= now),
             )
         )
@@ -336,20 +402,19 @@ class UserService:
             MagicLinkToken(
                 user_id=row.id,
                 token_hash=_hash(raw),
-                expires_at=now + timedelta(minutes=self.settings.magic_link_minutes),
+                expires_at=now + timedelta(minutes=settings.magic_link_minutes),
                 **attribution,
             )
         )
         self.session.commit()
-        link = f"{self.settings.hub_url.rstrip('/')}/entra?t={raw}"
-        return magic_link_mail(typed.email, link, self.settings.magic_link_minutes, note)
+        link = f"{settings.hub_url.rstrip('/')}/entra?t={raw}"
+        return magic_link_mail(typed.email, link, settings.magic_link_minutes, note)
 
     def enter(self, raw_token: str) -> tuple[User, str] | None:
         """The person and the raw session token for the cookie, or `None` for a wrong,
         spent or expired link. Spent by a conditional update gated on it still being
         unused, so of two requests racing on the same raw token only one opens a
         session (`MemberService.enter`'s own reasoning, unchanged)."""
-        assert self.settings is not None
         if not raw_token:
             return None
         now = datetime.now(UTC)
@@ -395,9 +460,11 @@ class UserService:
         return row, raw_session
 
     def resolve(self, raw: str | None) -> User | None:
-        """The person behind a cookie, or `None`. Slides the expiry on every hit and
-        forgets a session past its deadline the moment it is presented."""
-        assert self.settings is not None
+        """The person behind a cookie, or `None`. Slides the expiry forward on use, but
+        only once the stored deadline is `SESSION_SLIDE_AFTER` behind the one this
+        request would set: a request inside that hour writes nothing, so an
+        authenticated read is no longer a write transaction. Forgets a session past its
+        deadline the moment it is presented."""
         if not raw:
             return None
         session_row = self.session.scalar(
@@ -414,18 +481,11 @@ class UserService:
         if row is None:
             return None
         row = self.survivor(row)
-        session_row.expires_at = self._deadline(now)
-        self.session.commit()
+        deadline = self._deadline(now)
+        if deadline - session_row.expires_at > SESSION_SLIDE_AFTER:
+            session_row.expires_at = deadline
+            self.session.commit()
         return row
-
-    def resolve_admin(self, raw: str | None) -> User | None:
-        """`resolve`, checked for the admin role: `None` for a signed-out cookie and
-        for a real, signed-in member alike -- the caller decides which is a 401 and
-        which is a 403."""
-        user = self.resolve(raw)
-        if user is None or user.role != "admin":
-            return None
-        return user
 
     def close_session(self, raw: str | None) -> None:
         if not raw:
@@ -437,6 +497,13 @@ class UserService:
             self.session.delete(session_row)
             self.session.commit()
 
+    @property
+    def _config(self) -> Settings:
+        """The settings the session and link methods need; the pure identity methods
+        never ask. A service built without them is a programming error."""
+        if self.settings is None:
+            raise RuntimeError("UserService needs settings for sessions and magic links")
+        return self.settings
+
     def _deadline(self, now: datetime | None = None) -> datetime:
-        assert self.settings is not None
-        return (now or datetime.now(UTC)) + timedelta(days=self.settings.member_session_days)
+        return (now or datetime.now(UTC)) + timedelta(days=self._config.member_session_days)

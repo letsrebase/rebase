@@ -79,6 +79,8 @@ ADMIN_ACTION_ENTITY_TYPES = (
     "freelancer_fiscal",
     "ai_config",
     "card_eval",
+    "campaign",
+    "mcp_read",
 )
 # `overridden` covers both "set" and "clear" -- clearing is setting a field to its empty
 # value, and `rebase_core.audit.field_changes` records the same `changed`/`before`/`after`
@@ -114,7 +116,14 @@ ADMIN_ACTION_ENTITY_TYPES = (
 # `cards_regenerated` on `ai_config` (counts, cost, failures by reason, no personal data)
 # and each card a regeneration rewrites, or fails to, as `card_regenerated` on the
 # freelancer. The hourly `cards-refresh` and the wizard's write are started by no person
-# and record nothing.
+# and record nothing. REB-803 files the MCP's reads of personal data: `cv_read` on the
+# freelancer whose CV text an agent read, `recipients_read` on the `campaign` whose
+# recipients it read, and `emails_read` on entity type `mcp_read` (one fixed id per tool:
+# a list belongs to no row) for a list that carries addresses; the payload names the tool
+# and how many rows, never a value.
+# REB-889 adds `admin_promoted` and `admin_demoted` on entity type `user` (the person whose
+# role changed; the payload says whether a row was created and what the role was), written
+# in the same transaction as the role change.
 ADMIN_ACTION_KINDS = (
     "overridden",
     "cleared",
@@ -153,6 +162,8 @@ ADMIN_ACTION_KINDS = (
     "anon_cv_downloaded",
     "crm_link",
     "company_created",
+    "admin_promoted",
+    "admin_demoted",
 )
 
 

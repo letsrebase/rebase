@@ -8,12 +8,13 @@ import pytest
 from sqlalchemy import Engine, select, text
 from sqlalchemy.orm import Session
 
+from rebase_core.audit import AdminActionService
 from rebase_core.config import Settings
-from rebase_core.errors import ValidationFailed
+from rebase_core.errors import InvalidState, ValidationFailed
 from rebase_core.freelancer_schemas import FreelancerCreate
 from rebase_core.freelancers import FreelancerService
 from rebase_core.logins import LoginService
-from rebase_core.models import Login, MagicLinkToken, User, UserSession
+from rebase_core.models import AdminAction, Login, MagicLinkToken, User, UserSession
 from rebase_core.signup_schemas import SignupUtm
 from rebase_core.users import UserService
 
@@ -49,6 +50,7 @@ def users(hub_engine: Engine, hub_session: Session, settings: Settings) -> UserS
         "notes",
         "freelancers",
         "companies",
+        "admin_actions",
         "users",
     ):
         hub_session.execute(text(f"DELETE FROM {table}"))
@@ -292,6 +294,7 @@ def test_an_expired_link_opens_nothing_and_is_swept_by_the_next_request(
     row = hub_session.scalar(select(MagicLinkToken))
     assert row is not None
     row.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+    row.created_at = datetime.now(UTC) - timedelta(days=2)  # today's rows are kept (the budget)
     hub_session.commit()
     assert users.enter(_token_from(mail.text)) is None
 
@@ -328,22 +331,9 @@ def test_a_session_is_hashed_sliding_and_closable(users: UserService, hub_sessio
     assert users.resolve(None) is None
 
 
-def test_resolve_admin_tells_a_member_from_an_admin(
-    users: UserService, hub_session: Session
-) -> None:
-    _apply(hub_session, "ada@studio.it")  # a plain member
-    users.promote("ivan@rebase.it", "Ivan", "Fiore")
-
-    member_mail = users.request_link("ada@studio.it")
-    admin_mail = users.request_link("ivan@rebase.it")
-    assert member_mail is not None and admin_mail is not None
-    _, member_session = users.enter(_token_from(member_mail.text))  # type: ignore[misc]
-    _, admin_session = users.enter(_token_from(admin_mail.text))  # type: ignore[misc]
-
-    assert users.resolve_admin(member_session) is None
-    assert users.resolve(member_session) is not None  # a real identity, just not an admin
-    admin = users.resolve_admin(admin_session)
-    assert admin is not None and admin.email == "ivan@rebase.it"
+def _admin(users: UserService) -> User:
+    """An admin made the way the operator makes the first one: `rebase setrole`."""
+    return users.set_role("boss@rebase.it", "admin", "Boss", "Rebase")[0]
 
 
 # ---- promote, demote, setrole -------------------------------------------------------------
@@ -352,17 +342,19 @@ def test_resolve_admin_tells_a_member_from_an_admin(
 def test_promote_grants_an_existing_row_the_role_with_no_form(
     users: UserService, hub_session: Session
 ) -> None:
+    boss = _admin(users)
     _apply(hub_session, "ada@studio.it")
-    user, created = users.promote("ADA@studio.it")
+    user, created = users.promote("ADA@studio.it", admin_id=boss.id)
     assert created is False and user.role == "admin"
 
 
 def test_promoting_a_new_address_needs_a_name_and_creates_a_bare_row(
     users: UserService, hub_session: Session
 ) -> None:
+    boss = _admin(users)
     with pytest.raises(ValidationFailed):
-        users.promote("ivan@rebase.it")
-    user, created = users.promote("ivan@rebase.it", "Ivan", "Fiore")
+        users.promote("ivan@rebase.it", admin_id=boss.id)
+    user, created = users.promote("ivan@rebase.it", "Ivan", "Fiore", admin_id=boss.id)
     assert created is True and user.role == "admin" and user.cognome == "Fiore"
     # No freelancer card is invented for a bare admin.
     from rebase_core.models import Freelancer
@@ -371,11 +363,84 @@ def test_promoting_a_new_address_needs_a_name_and_creates_a_bare_row(
 
 
 def test_demote_is_fully_reversible(users: UserService, hub_session: Session) -> None:
-    user, _ = users.promote("ivan@rebase.it", "Ivan", "Fiore")
-    demoted = users.demote(user.id)
+    boss = _admin(users)
+    user, _ = users.promote("ivan@rebase.it", "Ivan", "Fiore", admin_id=boss.id)
+    demoted = users.demote(user.id, admin_id=boss.id)
     assert demoted.role == "member"
-    promoted_again, created = users.promote("ivan@rebase.it")
+    promoted_again, created = users.promote("ivan@rebase.it", admin_id=boss.id)
     assert created is False and promoted_again.role == "admin"
+
+
+def _trail(session: Session, user_id: UUID) -> list[tuple[str, UUID, dict[str, object]]]:
+    return [
+        (row.kind, row.admin_id, row.payload)
+        for row in session.scalars(
+            select(AdminAction)
+            .where(AdminAction.entity_type == "user", AdminAction.entity_id == user_id)
+            .order_by(AdminAction.created_at, AdminAction.id)
+        )
+    ]
+
+
+def test_a_promotion_and_a_demotion_are_signed_in_the_trail(
+    users: UserService, hub_session: Session
+) -> None:
+    boss = _admin(users)
+    ivan, _ = users.promote("ivan@rebase.it", "Ivan", "Fiore", admin_id=boss.id)
+    users.promote("ivan@rebase.it", admin_id=boss.id)  # already an admin: no second entry
+    users.demote(ivan.id, admin_id=boss.id)
+
+    assert _trail(hub_session, ivan.id) == [
+        ("admin_promoted", boss.id, {"created": True, "before": None}),
+        ("admin_demoted", boss.id, {"before": "admin"}),
+    ]
+
+
+def test_a_role_never_changes_without_its_entry(
+    users: UserService, hub_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The entry is in the role's own transaction: when it cannot be written, the role
+    is not changed either, rather than a promotion that exists with no trail."""
+    boss = _admin(users)
+    ada_id = users.get_or_create("ada@studio.it", "Ada", "Lovelace").id
+
+    def refuse(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("the trail is down")
+
+    monkeypatch.setattr(AdminActionService, "record", refuse)
+    with pytest.raises(RuntimeError):
+        users.promote("ada@studio.it", admin_id=boss.id)
+    hub_session.rollback()
+
+    assert hub_session.get(User, ada_id).role == "member"  # type: ignore[union-attr]
+
+
+def test_the_last_admin_cannot_be_demoted_not_even_by_themselves(
+    users: UserService, hub_session: Session
+) -> None:
+    boss = _admin(users)
+
+    with pytest.raises(InvalidState):
+        users.demote(boss.id, admin_id=boss.id)
+    assert hub_session.get(User, boss.id).role == "admin"  # type: ignore[union-attr]
+
+    # With a second admin the first may step down: it is the same act as any demotion.
+    ivan, _ = users.promote("ivan@rebase.it", "Ivan", "Fiore", admin_id=boss.id)
+    assert users.demote(boss.id, admin_id=boss.id).role == "member"
+    with pytest.raises(InvalidState):
+        users.demote(ivan.id, admin_id=ivan.id)
+
+
+def test_a_demotion_refuses_an_address_merged_into_somebody(
+    users: UserService, hub_session: Session
+) -> None:
+    boss = _admin(users)
+    ivan, _ = users.promote("ivan@rebase.it", "Ivan", "Fiore", admin_id=boss.id)
+    ivan.merged_into_id = boss.id
+    hub_session.commit()
+
+    with pytest.raises(ValidationFailed):
+        users.demote(ivan.id, admin_id=boss.id)
 
 
 def test_set_role_is_createtokens_own_shape(users: UserService, hub_session: Session) -> None:
@@ -385,3 +450,66 @@ def test_set_role_is_createtokens_own_shape(users: UserService, hub_session: Ses
     assert created is True and user.role == "admin"
     demoted, created_again = users.set_role("ivan@rebase.it", "member")
     assert created_again is False and demoted.role == "member" and demoted.id == user.id
+
+
+# ---- the session slides, but not on every request ---------------------------------------
+
+
+def test_a_request_inside_the_hour_writes_nothing_and_a_later_one_slides(
+    users: UserService, hub_session: Session, settings: Settings
+) -> None:
+    _apply(hub_session)
+    _, raw = users.enter(_token_from(users.request_link("ada@studio.it").text))  # type: ignore[union-attr,misc]
+    row = hub_session.scalar(select(UserSession))
+    assert row is not None
+    full = timedelta(days=settings.member_session_days)
+
+    inside = datetime.now(UTC) + full - timedelta(minutes=30)
+    row.expires_at = inside
+    hub_session.commit()
+    assert users.resolve(raw) is not None
+    hub_session.refresh(row)
+    assert row.expires_at == inside  # no write: the deadline is the one stored
+
+    behind = datetime.now(UTC) + full - timedelta(hours=2)
+    row.expires_at = behind
+    hub_session.commit()
+    assert users.resolve(raw) is not None
+    hub_session.refresh(row)
+    assert row.expires_at > behind + timedelta(hours=1)
+
+
+# ---- the public mail budget -----------------------------------------------------------
+
+
+def test_the_days_links_are_counted_and_todays_rows_survive_the_sweep(
+    users: UserService, hub_session: Session, settings: Settings
+) -> None:
+    for index in range(3):
+        email = f"p{index}@studio.it"
+        users.get_or_create(email, "Ada", "Lovelace")
+        assert users.request_link(email) is not None
+    assert users.public_links_left() == settings.public_mail_daily_budget - 3
+
+    # A spent link of the same person, asked for again, is not swept while today lasts:
+    # it is part of the day's count.
+    token = hub_session.scalars(select(MagicLinkToken)).first()
+    assert token is not None
+    token.used_at = datetime.now(UTC)
+    hub_session.commit()
+    users.request_link("p0@studio.it")
+    assert users.public_links_left() <= settings.public_mail_daily_budget - 3
+
+
+def test_the_budget_runs_out_at_zero_and_starts_again_tomorrow(
+    users: UserService, hub_session: Session, settings: Settings
+) -> None:
+    tight = settings.model_copy(update={"public_mail_daily_budget": 2})
+    limited = UserService(hub_session, tight)
+    for index in range(2):
+        email = f"p{index}@studio.it"
+        limited.get_or_create(email, "Ada", "Lovelace")
+        assert limited.request_link(email) is not None
+
+    assert limited.public_links_left() == 0
+    assert limited.public_links_left(datetime.now(UTC) + timedelta(days=1)) == 2
