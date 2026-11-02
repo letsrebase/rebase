@@ -124,6 +124,18 @@ class Settings(BaseSettings):
     # mails and the campaign test mails (not rows, so not counted) all share the key. A
     # campaign may send `resend_daily_quota - campaign_daily_reserve` a day.
     campaign_daily_reserve: int = Field(default=20, ge=0)
+    # What the public doors together may spend of that reserve in a day: the magic links
+    # asked from `/auth/link` and the «you already have a card» mail of the wizard, one
+    # token row each, counted since midnight in Rome. A stranger typing other people's
+    # addresses could otherwise burn the whole key and leave the real members locked
+    # out; once the budget is spent the routes refuse until tomorrow and log it. It must
+    # fit the reserve, so the campaigns keep their room.
+    public_mail_daily_budget: int = Field(default=15, ge=1)
+    # The wizard's applications that carry a CV, the whole world together, in the last
+    # hour (`Freelancer.created_at`): each one stores up to 5 MB and may start a model
+    # call, and the per-client speed bump alone is no ceiling against many addresses.
+    # Beyond it the wizard answers 429 and the person tries again later.
+    applications_with_cv_per_hour: int = Field(default=30, ge=1)
     # The `whsec_` secret Resend shows for this environment's webhook (spec § 6.1).
     # Empty: the webhook answers 503 and delivery, bounces and complaints are not read.
     resend_webhook_secret: str = ""
@@ -141,6 +153,11 @@ class Settings(BaseSettings):
     # midnight in Rome (`team_caps.py`); once reached, the same 503 until tomorrow. A
     # proposal that asked no model (an empty catalogue) cost nothing and does not count.
     team_builder_daily_cap: int = Field(default=300, ge=1)
+    # What one client of the public page may ask of that cap in a rolling day, refused asks
+    # included (`team_slots.py`, REB-889): without it a single address at the speed bump's
+    # five a minute spends the whole cap in about an hour and closes the builder for
+    # everybody. The cloud's asks are not counted per client: they are grant-gated.
+    team_builder_client_daily_cap: int = Field(default=30, ge=1)
 
     # --- writing cards in bulk (REB-853) -------------------------------------------------
     # How many cards `cards-refresh` and an admin's regeneration write at once, each worker
@@ -170,6 +187,10 @@ class Settings(BaseSettings):
         if self.campaign_daily_reserve >= self.resend_daily_quota:
             raise ValueError(
                 "REBASE_CAMPAIGN_DAILY_RESERVE must be below REBASE_RESEND_DAILY_QUOTA"
+            )
+        if self.public_mail_daily_budget > self.campaign_daily_reserve:
+            raise ValueError(
+                "REBASE_PUBLIC_MAIL_DAILY_BUDGET must fit REBASE_CAMPAIGN_DAILY_RESERVE"
             )
         return self
 

@@ -59,6 +59,8 @@ x-api-environment: &api-environment
   # Not empty defaults: an int field fails at start-up on an empty value.
   REBASE_TEAM_BUILDER_CONCURRENCY: ${REBASE_TEAM_BUILDER_CONCURRENCY:-4}
   REBASE_TEAM_BUILDER_DAILY_CAP: ${REBASE_TEAM_BUILDER_DAILY_CAP:-300}
+  # What one public client may ask of that day in a rolling 24 hours, refused asks included.
+  REBASE_TEAM_BUILDER_CLIENT_DAILY_CAP: ${REBASE_TEAM_BUILDER_CLIENT_DAILY_CAP:-30}
   # Cards in bulk (REB-853): the workers `cards-refresh` and an admin's regeneration write
   # with at once, and the number of cards from which a regeneration is sent to Anthropic's
   # Message Batches API. Not empty defaults: an int field fails at start-up on an empty value.

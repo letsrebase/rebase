@@ -36,7 +36,7 @@ from rebase_core.models import (
     TeamRequestTalent,
     User,
 )
-from rebase_core.team_builder import ProposalAnswer
+from rebase_core.team_prompt import ProposalAnswer
 from rebase_core.team_requests import CLOUD_CLOSED_FOR_PROPOSAL
 
 PDF = b"%PDF-1.7\n1 0 obj<<>>endobj\n%%EOF\n"

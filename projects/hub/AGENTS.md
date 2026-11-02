@@ -426,6 +426,25 @@ and adds «, N match collegati a Pigro», and «, M non collegati» when any sta
 (the reason is on each match, `pigro_errore`); without `REBASE_PIGRO_ENGAGEMENTS_TOKEN`
 it links nothing and says 0.
 
+**How the contracts code is laid out (REB-892).** No module passes 800 lines. A match's
+code is `rebase_core.matches.MatchService` (`create`, `cancel`, `close`) built from
+`reads` (`match_reads`: `get`, `list_all`, `for_freelancer`, `document_pdf`), `drafts`
+(`match_drafts`: `prefill`, `proposal`, `preview`, `check`, which write nothing) and
+`documents` (`match_documents`: what the documents print, `write_framework`); the shared
+rows and the **global lock order** (the freelancer's row, then the match, then its
+documents) are the functions of `match_rows`. `SigningService` (`signing`: `send_match`,
+`apply`, the plumbing) holds `recovery` (`signing_recovery`: `finish`, `sweep`) and `admin`
+(`signing_admin`: `refresh`, `resend_mail`, `cancel_document`, `cancel_match`,
+`record_notice`); the sentences they store are `signing_words`. The signing `dispatch`
+calls Documenso under the freelancer's row lock on purpose: it is one admin's click and
+the document must roll back when Documenso refuses, so the latency is the price. The CRM
+door is one module, `pigro_door` (`PigroDoor.put` never raises and maps the status to the
+state the row is left in, `PigroDoor.get`, `write`, `committed`, `sweep_round`): the
+registry (`pigro`), the engagements link (`engagements`, its report maths in
+`engagement_report`) and the leads link (`crm_link`) pass it a path, a token and the row's
+column names, and the rule that **no database lock is held across the CRM's call** lives
+is written out in its docstring.
+
 ## Campaigns
 
 Since P-REB-41 «Invia una campagna» the `campaigns` service in `docker-compose.yml` runs
@@ -568,8 +587,9 @@ before it ever gets a webhook secret.
 
 Since milestone C of `docs/superpowers/specs/2026-09-25-team-builder-and-talent-cloud-design.md`
 (REB-508 to REB-516) Claude reads every freelancer's CV once and writes an anonymous
-card of it (`rebase_core.cards`), and `/hub/team` turns a project's description and
-those cards into a team (`rebase_core.team_builder`), which a company files with
+card of it (`rebase_core.card_writer`), and `/hub/team` turns a project's description and
+those cards into a team (`rebase_core.team_builder`, with `team_catalogue`, `team_prompt` and
+`team_public` beside it, REB-892), which a company files with
 «Assumi team» and an admin works in «Richieste team». The landing's hero
 (`projects/website`, REB-676) asks the same `POST /api/hub/team/proposals` and sends the
 visitor to `/hub/team?proposta=<id>` for the whole team, which the page reads back with
@@ -578,7 +598,17 @@ visitor to `/hub/team?proposta=<id>` for the whole team, which the page reads ba
 output ceiling answer a task, and the provider's key, are read from the database on every
 call («Modelli AI», `ai_tasks`), never from the environment, and every call writes its
 usage (`ai_usage`). It refuses before any network when the task's daily euro cap is spent,
-its model has no price, or its provider is off or has no key. The Anthropic path keeps what
+its model has no price, or its provider is off or has no key. **The cap is held, not just
+read (REB-889):** before the network a call places a hold, an `ai_usage` row with
+`reserved_until` set and its worst case in `cost_eur` (input at 3 characters per token, the
+output ceiling at the dearer of the output and thinking prices), under an advisory lock on the
+task, so concurrent calls cannot all pass the same sum (`ai_spend.py`,
+`AiConfigService.reserve`); the answer settles that row to the real tokens and cost
+(`record_usage(hold_id=...)`), a call that fails releases it, and a hold nobody settles stops
+counting after five minutes. A call is refused when what is spent and held plus its worst case
+passes the cap, so the last worst case of a cap stays unspent. A hold is not a call: lists,
+the month's spend and the card cost readers keep to `ai_spend.settled()`; only the cap's sum
+counts it. Code that records after the fact (`record_usage` with no hold) is unchanged. The Anthropic path keeps what
 the hub always sent: the `server-side-fallback-2026-07-01` beta with `fallbacks="default"`,
 inference global (`inference_geo`; the API offers `global` or `us`, EU residency would take
 Vertex AI or Bedrock in an EU region, not decided), adaptive thinking at the task's effort,
@@ -654,7 +684,7 @@ schede scritte, 1 non riuscite, fermato: modello non disponibile» is the model 
 answering (or its daily cap spent, or no model configured: the card then carries that reason,
 «Tetto giornaliero raggiunto», and nothing is retired), not a CV. «Rigenera scheda» on
 the talent's page asks again for one. A card whose Italian gives the person's gender away
-(`_gendered` in `cards.py`, the gate under the prompt's rule) is asked for once more, and
+(`gendered_words` in `card_persona.py`, the gate under the prompt's rule) is asked for once more, and
 one still gendered after it is not written: the card read shows the error «La scheda
 rivela il genere della persona anche dopo la riscrittura», the run counts it under «non
 riuscite», and the CV is not asked again until it changes or an admin asks with «Rigenera
@@ -706,7 +736,7 @@ is in `WAREHOUSE_TABLES`. The admin area has no page for it and the API no route
   the sources (`cards.card_prompt_v1`, the answer a bare `Card`, version 1's guards), which is how
   the baseline of the sources is written; the default is the current `PROMPT_VERSION`.
 - **The rules** (`card_eval_checks.py`), where a rule exists: the card validates and no guard of
-  `cards.py` refused it (`guardia`); `identifying` read again against everything the person's data
+  `card_writer.py` refused it (`guardia`); `identifying` read again against everything the person's data
   holds (their name, the GitHub login, the owned repositories, the links' hostnames, the hub's
   clients), **for every prompt version**, so a v1 card is held to the rule the v2 card is; and the
   years. (The seniority is no check of its own: `compose` brings it inside the years' bands for
@@ -755,11 +785,11 @@ runs, never the last candidate
 tried. With none the report says «Nessun riferimento»: run the live configuration first and that run
 is the baseline. To measure the sources, write the baseline first with `--prompt-version 1`, then run
 the current prompt with `--baseline <that run>`. Record the ids in the PR that changes the prompt
-(`PROMPT_VERSION` in `cards.py`).
+(`PROMPT_VERSION` in `card_prompt.py`).
 
 **The card is written from more than the CV, and every switch is off in production** (REB-837 to
 REB-839, design 2026-10-27, «Sources» and «Provenance, versions and regeneration»). The prompt is
-`PROMPT_VERSION` 3 in `cards.py` (REB-839 wrote version 2, REB-855 version 3): version 1's words, then the version line and the description of
+`PROMPT_VERSION` 3 in `card_prompt.py` (REB-839 wrote version 2, REB-855 version 3): version 1's words, then the version line and the description of
 a private answer (`card_draft.CardDraft`): the `card` as before, `fonti` (which sources the model
 says supported each field) and `employers` (every employer the CV names). `Card` did not change,
 and only `card` is ever the card: the cloud, the talent list and every public read serve `Card`'s
@@ -833,16 +863,27 @@ scheda»; the hourly `refresh_stale` only writes a card whose CV is new.
   names the card's fields, never the words. The employers are stored only as `aziende` of the
   persona (below), never in another column, a log, an `ai_usage` record or a conflict
   (`test_employers_are_stored_only_with_the_persona`).
+- **A CV is parsed in a child process** (`cv_text.extract_text` runs `cv_text_worker`, REB-889): the
+  file is a stranger's upload and `pypdf` has no bound of its own, so the parent kills the child after
+  20 seconds, the child has a 2 GiB address-space limit, and the 20 page and 200,000 character
+  ceilings are applied while it reads. A parse that overruns, dies or answers badly is the same answer
+  as a scan, empty text (the card fails `no_text`), never an exception.
 - **A card is stale when its inputs are not the ones it was written from**, and that never spends
   by itself. `freelancer_cards` keeps `prompt_version` (`NULL` is version 1), `provider`, `fonti`,
   `source_hashes` (`wizard`: the position; `hub`: the hub's facts without the months of a running
   engagement; `github`, `link:<n>`), `conflicts` and `thinking_tokens` (migration 0038).
-  `CardWriter.stale_of` says `cv` (the hourly loop writes a card for a new CV, and for nothing
+  `CardWriter.stale_of` says `cv` (the CV is compared by `freelancers.cv_sha256`, the digest the
+  database generates, never hashed in Python; the hourly loop writes a card for a new CV, and for nothing
   else), `prompt` (another version) or `source` (the hub's facts, the position or a source
   changed; the rate and the work mode are not read by the prompt). The last two are listed in
   «Modelli AI», «Schede da aggiornare» (`GET /api/hub/admin/ai/cards/stale`), with the estimated
   cost, the average of the recorded `card` calls times the count, «stima non disponibile» while
-  none is recorded. **«Avvia rigenerazione»** (`POST .../cards/regenerate-stale`, `{limit}` 1 to
+  none is recorded; the list reads 200 cards at a time and their inputs by `IN (...)`
+  (`input_hashes_many`, `SourceService.current_many`, `hub_facts_many`), and a start reads only
+  as far as its `limit` (`stale_cards(limit)`). `CardWriter` is assembled from `card_base`,
+  `card_regen` (the trail and the locks), `card_staleness`, `card_store` and `card_writer`; the
+  prompt is `card_prompt`, the persona and the gender guard `card_persona`, the hashes `card_provenance`.
+  **«Avvia rigenerazione»** (`POST .../cards/regenerate-stale`, `{limit}` 1 to
   50, a signed `AdminAction` `cards_regenerate` and, at its end, `cards_regenerated`: see «Every
   regeneration a person starts is traced in full» below) writes the oldest `limit` after the response, each
   re-checked **under the person's claim** just before its write, so a double click pays once, and
@@ -867,7 +908,7 @@ scheda»; the hourly `refresh_stale` only writes a card whose CV is new.
   most), and only for the Anthropic provider (any other falls back to the workers, and the CLI
   says so). A single «Rigenera scheda», `cards-refresh` and the wizard's write stay synchronous.
   `card_batch.CardBatches.submit` builds each person's request with `CardWriter.prepare`, the same
-  prompt and answer shape the synchronous write sends, and `llm.AiBatch` encodes it with Pydantic
+  prompt and answer shape the synchronous write sends, and `llm_batch.AiBatch` encodes it with Pydantic
   AI's own batch encoder (`build_batch_model`): same model, effort, adaptive thinking, schema,
   output ceiling and `inference_geo` as the `card` task, less what a batch refuses (the
   server-side fallback and the per-request timeout and retries; extended output is a separate
@@ -875,7 +916,9 @@ scheda»; the hourly `refresh_stale` only writes a card whose CV is new.
   row per card (the hash of the CV and of every input, no text; migration 0041) are written
   **before** the provider is called, and the batch's state is `submitting`, `in_progress`,
   `ended`, `applied` or `failed`. **One batch is active at a time**: a start while one is not
-  applied queues nothing («Una rigenerazione è già in corso»).
+  applied is refused with a 409 («Una rigenerazione delle schede è già in corso»); the advisory lock
+  `regenerate_stale` holds for the whole run is the one guard, and a start that loses the race to
+  it still queues and spends nothing.
   `rebase cards-batch-poll` carries it on (the `cards` service runs it every five minutes,
   whatever `REBASE_CARDS_LOOP` says; the hourly `sources-refetch` and `cards-refresh` are every
   twelfth tick): when the provider says the batch ended, each result is applied through the
@@ -891,7 +934,11 @@ scheda»; the hourly `refresh_stale` only writes a card whose CV is new.
   (`ai_usage.batch`, cost = 50% of the price row's input, output, thinking and cache reads, as
   Anthropic bills a batch), once per card (`usage_recorded`, committed in the same transaction as
   the row), so the cap counts it the day it lands, and a batch whose estimated cost (half the
-  synchronous estimate) would pass what is left of the daily cap is refused at submission; the
+  synchronous estimate) would pass what is left of the daily cap is refused at submission, and
+  one that fits holds that estimate (a batch hold, 25 hours, its id in the stored handle) so a
+  call and a batch see each other; the first answer recorded deletes the hold in its own
+  transaction, a batch that ends with nothing to record releases it, and a crash leaves it to
+  its TTL; the
   cost estimate of «Schede da aggiornare» (synchronous calls only) is not halved by it.
   **To resume after a restart, nothing is needed**: the state is in the tables and the results at
   the provider for 29 days, so the next poll goes on, or run `docker compose -p rebase --env-file
@@ -979,12 +1026,19 @@ there is one and, since REB-607, each talent it held by name, linked to their ad
 page (`team` on the row, one name query per page; a talent removed with «Elimina»
 since stays by id, unnamed, since their page no longer opens). That is where the usage of the builder is read; PostHog's
 `team_proposta_generata` counts only the proposals that answered. One bound: a
-refusal's row holds no proposal slot, so `routers/team.py` writes at most
+refusal's row holds no proposal slot, so `rebase_core.team_slots` (which both the public
+and the cloud router call; routers never import each other) writes at most
 `REFUSAL_WRITES` (2) of them at once, and at most `REFUSAL_WAITERS` (8) more wait
 `REFUSAL_WAIT_SECONDS` (0.5) for a turn; past that, which only a flood reaches, the 503 is answered, the row is
 not written and the log says «refused ask not kept».
 
-**Two caps.** `REBASE_TEAM_BUILDER_CONCURRENCY` (4) is how many proposals run at once
+**Three caps**, all in `rebase_core.team_slots` and `team_caps`, in the order a proposal meets
+them (the switch comes first: off says «Il team builder è spento.», not «Troppe richieste»).
+`REBASE_TEAM_BUILDER_CLIENT_DAILY_CAP` (30) is one public client's share of the day: every
+public ask, refused ones included, counts against its own client (`rebase_core.ratelimit`,
+a rolling 24 hours, IPv6 on its /64, per process like every limiter here), so one address at
+the speed bump's five a minute cannot spend the daily cap for everybody (REB-889); the cloud
+is grant-gated and has no such share. `REBASE_TEAM_BUILDER_CONCURRENCY` (4) is how many proposals run at once
 in the API process: the next one answers 503 «Troppe richieste in questo momento:
 riprova tra un minuto.» at once rather than wait on the threads the member area and the
 webhooks share. `REBASE_TEAM_BUILDER_DAILY_CAP` (300) is how many proposals a day, the
@@ -1184,7 +1238,10 @@ Provider API keys live encrypted in the database (`ai_providers`, AES-256-GCM,
 `rebase_core/secrets.py`); the key that opens them, `REBASE_SECRETS_KEY` (32 bytes in
 base64, `openssl rand -base64 32`), lives only in the host `.env`, root-only (`chmod
 600`), never in the database or a backup. Without it the app refuses to save or read a
-provider key and «Modelli AI» says so.
+provider key and «Modelli AI» says so. The provider's name is the GCM associated data
+(REB-889), so a sealed key copied to another provider's row does not open; a row sealed before
+that opens through a fallback with no associated data and is sealed again by the next «save»
+(`save_key`, `ai-rotate-secrets`): reading never writes.
 
 **Order on production, once (REB-834): one deploy, then `ai-seed` at once.** The two-tag
 path (tag the `ai-seed` commit, then the head) does not work: that commit still numbers

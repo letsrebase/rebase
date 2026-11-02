@@ -23,6 +23,8 @@ from sqlalchemy.orm import Session
 
 from rebase_api.deps import get_clock, get_sender, get_session_opener, get_team_llm
 from rebase_api.ratelimit import SIGNUPS_PER_MINUTE, reset_rate_limit
+from rebase_core import team_slots
+from rebase_core.audit import utcnow
 from rebase_core.config import Settings, get_settings
 from rebase_core.errors import LlmUnavailable
 from rebase_core.llm import UNAVAILABLE_SENTENCE, LlmRequest, LlmResponse, RecordingCall
@@ -36,7 +38,10 @@ from rebase_core.models import (
     TeamRequestTalent,
     User,
 )
-from rebase_core.team_builder import ProposalAnswer, TeamBuilder
+from rebase_core.team_builder import TeamBuilder
+from rebase_core.team_caps import proposals_today
+from rebase_core.team_prompt import ProposalAnswer
+from rebase_core.team_slots import REFUSAL_WAIT_SECONDS, proposal_slots
 
 ADMIN_EMAIL = "ivan@rebase.it"
 MISSING = "00000000-0000-7000-8000-000000000000"
@@ -74,9 +79,10 @@ def team(api_session: Session) -> Iterator[Session]:
     api_session.commit()
 
 
-def _settings(client: TestClient, **overrides: Any) -> None:
+def _settings(client: TestClient, **overrides: Any) -> Settings:
     settings = Settings(_env_file=None, **overrides)  # type: ignore[call-arg]
     client.app.dependency_overrides[get_settings] = lambda: settings  # type: ignore[attr-defined]
+    return settings
 
 
 def _llm(client: TestClient, call: Any) -> None:
@@ -358,14 +364,62 @@ def test_public_proposal_is_503_when_the_daily_cap_is_reached(
     assert team.scalar(select(func.count()).select_from(TeamProposal).where(failed)) == 2
 
 
+def test_one_client_cannot_spend_the_daily_cap_for_everybody(
+    client: TestClient, team: Session
+) -> None:
+    """REB-889: a single address used to be able to spend `team_builder_daily_cap` alone
+    and close the public builder for the day. Its share is refused at its own limit, the
+    refusal costs the cap nothing and is kept as an attempt, and another client still gets
+    its proposal."""
+    _talent(team)
+    _settings(client, team_builder_client_daily_cap=2, team_builder_daily_cap=3)
+    _llm(client, RecordingCall([proposal_response() for _ in range(4)]))
+    abuser = {"x-real-ip": "203.0.113.7"}
+    other = {"x-real-ip": "198.51.100.9"}
+
+    def propose(headers: dict[str, str]) -> Any:
+        return client.post(
+            "/api/hub/team/proposals", json={"descrizione": DESCRIZIONE}, headers=headers
+        )
+
+    assert [propose(abuser).status_code for _ in range(2)] == [200, 200]
+    refused = propose(abuser)
+    assert refused.status_code == 503
+    assert refused.json() == {"detail": BUSY}
+    # The abuser used 2 of the 3 paid proposals of the day; the room left is somebody else's.
+    assert propose(other).status_code == 200
+    team.expire_all()
+    errors = [row.errore for row in team.scalars(select(TeamProposal)) if row.errore]
+    assert errors == ["team_builder_busy"]
+    assert proposals_today(team, now=utcnow()) == 3
+
+
+def test_a_refused_ask_is_counted_against_its_client(client: TestClient, team: Session) -> None:
+    """The share counts asks, not answers: a client hammering a builder whose slots or day
+    are spent keeps spending its own share, so it cannot go on refused forever for free."""
+    _talent(team)
+    _settings(client, team_builder_client_daily_cap=2, team_builder_daily_cap=1)
+    _llm(client, RecordingCall([proposal_response()]))
+    headers = {"x-real-ip": "203.0.113.7"}
+
+    def propose() -> Any:
+        return client.post(
+            "/api/hub/team/proposals", json={"descrizione": DESCRIZIONE}, headers=headers
+        )
+
+    assert propose().status_code == 200
+    assert propose().status_code == 503  # the day is spent: refused, and counted
+    # Room in the day again, but the two asks already used the client's share.
+    _settings(client, team_builder_client_daily_cap=2, team_builder_daily_cap=10)
+    assert propose().status_code == 503
+
+
 def test_a_failing_count_or_record_never_keeps_a_slot_or_hides_the_refusal(
     client: TestClient, team: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Review of 0028: the slot is given back whatever the day's count raises, so a
     database blip does not close the builder for good; and a record of the refusal
     that cannot be written is logged, never a 500 in place of the 503."""
-    from rebase_api.routers import team as routes
-
     _talent(team)
     _settings(client, team_builder_concurrency=1)
     _llm(client, RecordingCall([proposal_response(), proposal_response()]))
@@ -373,7 +427,7 @@ def test_a_failing_count_or_record_never_keeps_a_slot_or_hides_the_refusal(
     def broken_count(*args: Any, **kwargs: Any) -> None:
         raise OperationalError("SELECT count(*)", {}, Exception("connection dropped"))
 
-    monkeypatch.setattr(routes, "require_daily_room", broken_count)
+    monkeypatch.setattr(team_slots, "require_daily_room", broken_count)
     with pytest.raises(OperationalError):
         _propose(client)
     monkeypatch.undo()
@@ -392,29 +446,28 @@ def test_a_failing_count_or_record_never_keeps_a_slot_or_hides_the_refusal(
 
     # With every refusal write busy for longer than the wait (PR #495) the row is
     # skipped: the answer is the same 503 and the table does not grow.
-    from rebase_api.routers import team as routes
-
-    _settings(client, team_builder_concurrency=1, team_builder_daily_cap=1)
+    settings = _settings(client, team_builder_concurrency=1, team_builder_daily_cap=1)
+    gate = proposal_slots(settings)
     before = team.scalar(select(func.count()).select_from(TeamProposal))
-    monkeypatch.setattr(routes, "_refusal_slots", threading.BoundedSemaphore(1))
-    routes._refusal_slots.acquire()
+    monkeypatch.setattr(gate, "_refusal_slots", threading.BoundedSemaphore(1))
+    gate._refusal_slots.acquire()
     try:
         skipped = _propose(client)
     finally:
-        routes._refusal_slots.release()
+        gate._refusal_slots.release()
     assert skipped.status_code == 503 and skipped.json() == {"detail": BUSY}
     team.expire_all()
     assert team.scalar(select(func.count()).select_from(TeamProposal)) == before
     # And with every waiter taken the row is skipped at once, with no wait at all.
-    monkeypatch.setattr(routes, "_refusal_waiters", threading.BoundedSemaphore(1))
-    routes._refusal_waiters.acquire()
+    monkeypatch.setattr(gate, "_refusal_waiters", threading.BoundedSemaphore(1))
+    gate._refusal_waiters.acquire()
     try:
         started = time.monotonic()
         skipped = _propose(client)
         waited = time.monotonic() - started
     finally:
-        routes._refusal_waiters.release()
-    assert skipped.status_code == 503 and waited < routes.REFUSAL_WAIT_SECONDS
+        gate._refusal_waiters.release()
+    assert skipped.status_code == 503 and waited < REFUSAL_WAIT_SECONDS
     team.expire_all()
     assert team.scalar(select(func.count()).select_from(TeamProposal)) == before
 
@@ -610,8 +663,8 @@ def test_public_request_logs_nothing_personal_when_the_mail_is_refused(
     refusing = Refusing()
     client.app.dependency_overrides[get_sender] = lambda: refusing  # type: ignore[attr-defined]
     # Alembic's `fileConfig` disabled every logger it does not list, this one among them.
-    logging.getLogger("rebase_api.routers.team").disabled = False
-    caplog.set_level(logging.INFO, logger="rebase_api.routers.team")
+    logging.getLogger("rebase_core.mail").disabled = False
+    caplog.set_level(logging.INFO, logger="rebase_core.mail")
     proposal_id = _proposal_row(team, [_talent(team)])
 
     created = client.post(

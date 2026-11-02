@@ -26,6 +26,7 @@ from rebase_core.config import Settings, get_settings
 from rebase_core.db import create_engine_from_settings, session_factory
 from rebase_core.llm import RecordingCall
 from rebase_core.mail import RecordingSender
+from rebase_core.team_slots import reset_proposal_slots
 
 
 @pytest.fixture(scope="session")
@@ -54,7 +55,15 @@ def client(api_session: Session) -> Iterator[TestClient]:
     app = create_app()
     app.dependency_overrides[get_session] = lambda: api_session
     # Declared, never inherited from a developer's `.env`: no pixel unless a test says so.
-    app.dependency_overrides[get_settings] = lambda: Settings(_env_file=None)  # type: ignore[call-arg]
+    # The public mail budget is counted on the day's `magic_link_tokens` rows, which this
+    # suite's shared database keeps across tests: a roomy one here, and the tests of the
+    # breaker itself set their own.
+    app.dependency_overrides[get_settings] = lambda: Settings(  # type: ignore[call-arg]
+        _env_file=None,
+        resend_daily_quota=100_000,
+        campaign_daily_reserve=50_000,
+        public_mail_daily_budget=50_000,
+    )
     # No model configured unless a test hands one (`llm` here, `_llm` in the team tests):
     # the real dependencies read «Modelli AI» through the default database URL.
     app.dependency_overrides[get_card_llm] = lambda: None
@@ -68,6 +77,8 @@ def client(api_session: Session) -> Iterator[TestClient]:
     # The limiter counts requests per process, so one test's posts would otherwise be
     # spent out of the next test's budget.
     reset_rate_limit()
+    # The same for the team builder's per-client daily share (`team_slots`).
+    reset_proposal_slots()
     with TestClient(app, base_url="https://testserver") as test_client:
         yield test_client
 
