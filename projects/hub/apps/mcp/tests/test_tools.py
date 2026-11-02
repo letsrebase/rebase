@@ -1,6 +1,7 @@
 """The hub's MCP tools over its own database: the reads, the status moves, the notes."""
 
 import json
+import re
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -206,6 +207,7 @@ async def test_the_admin_tools_read_and_move_a_candidate_without_the_cv(
             "list_ai_config",
             "get_team_request",
             "set_team_request_summary",
+            "contact_team_talents",
             "set_team_request_status",
             "grant_talent_cloud",
             "revoke_talent_cloud",
@@ -1157,6 +1159,65 @@ async def test_set_team_request_status_refuses_a_bad_note_before_moving_anything
         untouched = _payload(await client.call_tool("get_team_request", {"request_id": request_id}))
         assert untouched["stato"] == "nuova" and untouched["note"] is None
         assert untouched["contacted_at"] is None and untouched["closed_at"] is None
+    _wipe_team(factory)
+
+
+async def test_contact_team_talents_mails_once_then_rimanda_only_the_silent(
+    factory: sessionmaker[Session],
+) -> None:
+    session = factory()
+    members = [_talent_with_card(session, 1), _talent_with_card(session, 2)]
+    session.close()
+    request_id = _team_request(factory, members)
+    _seed_admin(factory)
+    sender = RecordingSender()
+
+    async with Client(
+        build_server(factory, lambda: IVAN, settings=_team_settings(), sender=sender)
+    ) as client:
+        contacted = _payload(
+            await client.call_tool("contact_team_talents", {"request_id": request_id})
+        )
+        assert contacted["stato"] == "contattata"
+        assert len(sender.sent) == 2
+        addresses = {mail.to for mail in sender.sent}
+        assert addresses == {"talento1@studio.it", "talento2@studio.it"}
+        assert all(mail.subject == "Un progetto per te: sei disponibile?" for mail in sender.sent)
+
+        again = await client.call_tool("contact_team_talents", {"request_id": request_id})
+        assert again.is_error
+        assert "già stati contattati" in again.content[0].text
+
+        first_mail = next(mail for mail in sender.sent if mail.to == "talento1@studio.it")
+        found = re.search(r"[?&]t=([A-Za-z0-9_-]+)&r=si", first_mail.text)
+        assert found
+        session2 = factory()
+        TeamRequestService(session2, settings=_team_settings()).answer(found.group(1), "si")
+        session2.close()
+
+        rimanda = _payload(
+            await client.call_tool(
+                "contact_team_talents", {"request_id": request_id, "only_silent": True}
+            )
+        )
+        assert rimanda["stato"] == "contattata"
+        assert len(sender.sent) == 3
+        assert sender.sent[2].to == "talento2@studio.it"
+    _wipe_team(factory)
+
+
+async def test_contact_team_talents_without_a_sender_is_the_no_sender_sentence(
+    factory: sessionmaker[Session],
+) -> None:
+    session = factory()
+    member = _talent_with_card(session)
+    session.close()
+    request_id = _team_request(factory, [member])
+
+    async with Client(build_server(factory, lambda: IVAN, settings=_team_settings())) as client:
+        refused = await client.call_tool("contact_team_talents", {"request_id": request_id})
+        assert refused.is_error
+        assert "L'invio delle email non è attivo" in refused.content[0].text
     _wipe_team(factory)
 
 

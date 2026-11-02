@@ -117,10 +117,12 @@ INSTRUCTIONS = (
     "un'azienda, i loro contratti e la firma, come dall'area admin. Si leggono anche le "
     "campagne di mail della sezione «Campagne» e, per ogni persona, cosa ha fatto dopo la "
     "mail. Per cercare persone adatte a una richiesta si usano `list_talenti`, "
-    "`get_talento` e `get_freelancer_card`; da qui non parte nessuna mail di "
-    "disponibilità ai talenti: chi va contattato lo contatta una persona, a mano. Sono "
-    "dati di altre persone: da usare solo per decidere quando e cosa scrivere loro, mai "
-    "da riportare altrove."
+    "`get_talento` e `get_freelancer_card`, e una ricerca fatta da qui non scrive a "
+    "nessuno: chi va contattato lo contatta una persona, a mano. L'unica mail di "
+    "disponibilità che parte da qui è `contact_team_talents`, ai talenti di una "
+    "richiesta team arrivata dal sito o dal talent cloud, e solo quando lo chiede "
+    "l'admin. Sono dati di altre persone: da usare solo per decidere quando e cosa "
+    "scrivere loro, mai da riportare altrove."
 )
 
 PIGRO_NOT_CONFIGURED = "Il registro di Pigro non è configurato: manca REBASE_PIGRO_REGISTRY_TOKEN."
@@ -295,11 +297,12 @@ def build_server(
     `regenerate_freelancer_card`, asked on each call because an admin can configure a
     model in «Modelli AI» while this server runs; `None` (no model configured for the
     card task) -- then, as the admin area already does, the tool refuses with the team
-    builder's own sentence rather than a silent no-op; `sender` is the talent cloud's
-    (`sender_from_settings`), `None` without a mail key. A test hands `RecordingCall`
-    and `RecordingSender`, the same way `mail.py`'s own tests do. There is no team
-    proposal and no availability mail here (REB-876): a search is the talent tools, and
-    a person writes to the candidates.
+    builder's own sentence rather than a silent no-op; `sender` is the availability
+    mails' and the talent cloud's (`sender_from_settings`), `None` without a mail key. A
+    test hands `RecordingCall` and `RecordingSender`, the same way `mail.py`'s own tests
+    do. There is no team proposal here (REB-876): a search is the talent tools, and the
+    only availability mail is `contact_team_talents`, on a request filed from the site
+    or the cloud.
 
     `engagements` builds the `EngagementService` behind `get_match_report` and
     `link_match_to_pigro` (REB-501), with `urllib_engagements_call` in production, the
@@ -1065,14 +1068,31 @@ def build_server(
     @mcp.tool()
     def set_team_request_summary(request_id: str, riassunto: str) -> dict[str, Any]:
         """«Salva il riassunto» (spec § 3.5): il testo che i talenti leggeranno nella
-        mail di disponibilità, riscritto qui dall'admin prima che qualcuno li contatti da
-        «Contatta i talenti» nell'area admin: da qui la mail non parte. Rifiutato se
-        nomina ancora l'azienda: il riassunto va corretto dove è scritto."""
+        mail di disponibilità, riscritto qui dall'admin prima di scrivere loro.
+        Rifiutato con la stessa frase di `contact_team_talents` se nomina ancora
+        l'azienda: il riassunto va corretto dove è scritto."""
         change = TeamRequestSummary(riassunto=riassunto)
         return _run(
             lambda s: TeamRequestService(s, settings=team_settings()).set_summary(
                 UUID(request_id), change.riassunto, admin().id
             )
+        )
+
+    @mcp.tool()
+    def contact_team_talents(request_id: str, only_silent: bool = False) -> dict[str, Any]:
+        """«Contatta i talenti» (`only_silent` falso, la prima volta) o «Rimanda a chi
+        non ha risposto» (vero, spec § 3.6), per una richiesta team arrivata dal sito o
+        dal talent cloud: una mail a ciascun talento del team con il riassunto, il ruolo
+        proposto e la propria tariffa, e due link, «Sono disponibile» e «Non sono
+        disponibile», buoni per trenta giorni. Scrive davvero alle persone: da usare
+        solo quando lo chiede l'admin, mai come passo di una ricerca. Rifiutato, con la
+        sua frase, per una richiesta chiusa, un riassunto che nomina ancora l'azienda,
+        una seconda prima volta, o nessun talento rimasto da scrivere; senza una chiave
+        di invio configurata risponde che l'invio non è attivo qui."""
+        return _run(
+            lambda s: TeamRequestService(
+                s, settings=team_settings(), sender=sender
+            ).contact_talents(UUID(request_id), admin().id, only_silent=only_silent)
         )
 
     @mcp.tool()

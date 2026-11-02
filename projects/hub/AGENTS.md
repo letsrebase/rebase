@@ -76,7 +76,7 @@ a `SigningService` over `FakeDocumenso`.
 - `close_match`: «Chiudi match», the engagement ends.
 - `set_freelancer_tax_data`: saves the tax data, the partita IVA optional; answers that they are saved, never the values.
 
-The team builder and the talent cloud are twelve tools more (REB-520, spec § 8 of
+The team builder and the talent cloud are thirteen tools more (REB-520, spec § 8 of
 `docs/superpowers/specs/2026-09-25-team-builder-and-talent-cloud-design.md`), each
 running the core service the admin area runs, with the calling admin as the actor:
 
@@ -84,19 +84,22 @@ running the core service the admin area runs, with the calling admin as the acto
 - `list_team_proposals`: «Proposte», every «Proponi il team» asked, filed or not.
 - `list_ai_config`: «Modelli AI», read only: providers (the hint, never a key), tasks, prices, the month's spend, and `registro`, the last 50 entries of the configuration's trail (keys, switches, prices and every regeneration of the cards, start and end). No tool writes a key.
 - `set_team_request_summary`: «Salva il riassunto», refused while it names the company.
+- `contact_team_talents`: «Contatta i talenti», or with `only_silent` «Rimanda a chi non ha risposto», on a request filed from the site or the cloud.
 - `set_team_request_status`: «Segna come contattata», «Chiudi», with an optional note.
 - `get_freelancer_card`, `regenerate_freelancer_card`: the anonymous card, and «Rigenera scheda». The card's `seniority` and `anni` are the admin's when `override_freelancer` set them (`seniority`, `anni`), Claude's otherwise; `anni` is `null` and `seniority_incerta` true when the CV dates no role (REB-799).
 - `set_freelancer_vetted`: «Segna come verificato» and «Togli la verifica».
 - `grant_talent_cloud`, `revoke_talent_cloud`, `list_talent_cloud_grants`: the cloud's grants.
 
-**No team is proposed and no talent is mailed over MCP** (REB-876, Lorenzo 2026-11-02).
-`propose_team` and `contact_team_talents` were tools until then and are gone on purpose:
-an agent finds the people for a request with `list_talenti`, `get_talento` and the cards,
-which spends nothing on the team builder's model, and a person writes to the candidates
-by hand, from drafts the agent can prepare. «Contatta i talenti» stays in the admin area,
-«Proponi il team» on the public page and in the talent cloud (the admin area only reads
-«Proposte»), and the server's instructions say that no availability mail goes out from it.
-Rows with `origine` `admin` are older than this and stay readable.
+**No team is proposed over MCP, and a search there writes to nobody** (REB-876, Lorenzo
+2026-11-02). `propose_team` was a tool until then and is gone on purpose: an agent finds
+the people for a request with `list_talenti`, `get_talento` and the cards, which spends
+nothing on the team builder's model, and a person writes to the candidates by hand, from
+drafts the agent can prepare. `contact_team_talents` went with it and came back the same
+day, at Lorenzo's word: it is the one availability mail the server sends, to the talents
+of a request a company filed from the site or the cloud, and only when an admin asks.
+«Proponi il team» stays on the public page and in the talent cloud (the admin area only
+reads «Proposte»), and the server's instructions say all of this. Rows with `origine`
+`admin` are older than this and stay readable.
 
 «Modelli AI» (`/hub/admin/modelli-ai`, REB-833, `routers/ai.py` under `/api/hub/admin/ai`) is
 where an admin replaces a provider's key (write-only: the answer is «configurata, finisce con
@@ -535,9 +538,10 @@ what their card says, that the public builder shows it without their name, and t
 companies rebase admits see their profile by name with the CV. **The `mcp` service uses
 «Modelli AI» and the Resend key** as `api` does: `regenerate_freelancer_card` calls the
 configured model (asked on each call, so a model configured while it runs applies at
-once), and `grant_talent_cloud` sends mail. Recreate it beside `api` when the Resend key
-changes; without a model or a mail key those tools answer as the admin area does (the
-card refused with the builder's sentence, the cloud opened with no mail).
+once), and `contact_team_talents` and `grant_talent_cloud` send mail. Recreate it beside
+`api` when the Resend key changes; without a model or a mail key those tools answer as
+the admin area does (the card refused with the builder's sentence, sending not active
+here, the cloud opened with no mail).
 
 **The key** is saved in «Modelli AI», encrypted, never in the repository or the
 environment (see «Model provider keys» below); the old `REBASE_ANTHROPIC_API_KEY` and
