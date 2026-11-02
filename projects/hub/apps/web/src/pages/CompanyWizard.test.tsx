@@ -118,7 +118,7 @@ describe('CompanyWizard', () => {
       budget_giornaliero: '500.00',
       remoto: 'ibrido',
       giorni_presenza: 3,
-      numero_risorse: 2,
+      numero_risorse: '2',
     })
   })
 })

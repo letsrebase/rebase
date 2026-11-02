@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import { ArrowLeft } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
@@ -80,6 +80,7 @@ function revoke(review: Review) {
 export function AdminCreaMatch() {
   const { id } = useParams({ from: '/signedIn/admin/freelance/$id/match/new' })
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const person = useQuery({ queryKey: keys.freelancer(id), queryFn: () => admin.freelancer(id) })
   // One id per wizard run (REB-406): mounting this page is starting one over, and the
   // page always navigates away once a match is written. Sent with both «Salva senza
@@ -166,6 +167,8 @@ export function AdminCreaMatch() {
   })
 
   function landOnContracts(notice: string) {
+    // The contracts page reads this key: the new match must not wait out the cache.
+    void queryClient.invalidateQueries({ queryKey: keys.contracts(id) })
     void navigate({ to: '/admin/freelance/$id/contracts', params: { id }, state: { notice } })
   }
 

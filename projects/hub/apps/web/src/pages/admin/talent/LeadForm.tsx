@@ -64,6 +64,7 @@ export function AdminTalentoLead() {
     mutationFn: (data: FreelancerDraft) => admin.draftFromSignup(id, data),
     onSuccess: (created) => {
       void client.invalidateQueries({ queryKey: keys.talents() })
+      void client.invalidateQueries({ queryKey: keys.signup(id) })
       void navigate({ to: '/admin/freelance/$id', params: { id: created.id } })
     },
   })

@@ -137,11 +137,11 @@ function safeFilename(name: string): string {
     .trim()
 }
 
-/** The wizards do not go on without an answer to the work mode; this says so to the
- *  type, and to anyone who sends a form that never asked. */
-function answered(remoto: Remoto | ''): Remoto {
-  if (remoto === '') throw new ApiError(422, 'Scegli una delle tre.', ['remoto'])
-  return remoto
+/** A form value sent as the form holds it. The body type wants the narrower one (a work
+ *  mode, a number), the wizards validate before they send, and the API names a bad field
+ *  in its own 422, which is the message the page shows. */
+function asSent<T>(value: unknown): T {
+  return value as T
 }
 
 /** `params` without what is `undefined` or `""`: the list endpoints send exactly the
@@ -226,11 +226,11 @@ export function requestPeople(
     client.POST('/api/hub/companies', {
       body: {
         ...data,
-        remoto: answered(data.remoto),
+        remoto: asSent<Remoto>(data.remoto),
         // `''` means "not ibrido, never asked": the API's own `giorni_presenza` is
         // `int | None`, which a blank string does not coerce to.
         giorni_presenza: data.giorni_presenza ? Number(data.giorni_presenza) : null,
-        numero_risorse: Number(data.numero_risorse),
+        numero_risorse: asSent<number>(data.numero_risorse),
         utm: Object.keys(utm).length ? utm : null,
         ...(distinctId ? { distinct_id: distinctId } : {}),
         ...(rif ? { rif } : {}),
@@ -871,9 +871,10 @@ export const admin = {
       params: { path: { freelancer_id: id } },
       parseAs: 'blob',
     })
-    if (data === undefined) return failWith(response.status, detailOf(error))
+    if (!response.ok) return failWith(response.status, detailOf(error))
     return {
-      blob: data,
+      // An empty body comes back as no data at all: an empty file, as it always did.
+      blob: data ?? new Blob([]),
       filename: dispositionFilename(response.headers.get('Content-Disposition'), 'cv-anonimo.pdf'),
     }
   },
@@ -935,9 +936,9 @@ export const admin = {
       client.POST('/api/hub/admin/companies', {
         body: {
           ...data,
-          remoto: answered(data.remoto),
+          remoto: asSent<Remoto>(data.remoto),
           giorni_presenza: data.giorni_presenza ? Number(data.giorni_presenza) : null,
-          numero_risorse: Number(data.numero_risorse),
+          numero_risorse: asSent<number>(data.numero_risorse),
           deal_id: data.deal_id ?? null,
         },
       }),

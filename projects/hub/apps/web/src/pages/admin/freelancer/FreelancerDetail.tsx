@@ -11,10 +11,11 @@ import {
   FREELANCER_STATES,
   REMOTO_LABELS,
   VETTED_LABEL,
+  formatBytes,
   formatDate,
   formatDateTime,
 } from '@/lib/format'
-import { formatBytes, formatMoney } from '@rebase/ui/format'
+import { formatMoney } from '@rebase/ui/format'
 import { keys } from '@/lib/query-keys'
 import { AuditTrail } from '../AuditTrail'
 import { DuplicateOf } from '../DuplicateMarks'
@@ -62,6 +63,8 @@ export function AdminFreelancerDetail() {
         current && { ...current, ...updated, note: current.note },
       )
       void client.invalidateQueries({ queryKey: auditKey })
+      // The list shows the state: it must not be served from cache for 30 s.
+      void client.invalidateQueries({ queryKey: keys.talents() })
     },
   })
   // Every mutation REB-355 adds shares `move`'s own merge-not-replace contract, plus a
@@ -78,6 +81,7 @@ export function AdminFreelancerDetail() {
     // «Scheda anonima» (REB-514): clearing the CV deletes the card, and an override
     // may change the work mode or the rate, whose band the section reads beside it.
     void client.invalidateQueries({ queryKey: keys.freelancerCard(id) })
+    void client.invalidateQueries({ queryKey: keys.talents() })
   }
   const [overrideOpen, setOverrideOpen] = useState(false)
   const override = useMutation({
@@ -251,6 +255,7 @@ export function AdminFreelancerDetail() {
           // A reverted override can put back the work mode or the rate, which the
           // «Scheda anonima» section reads beside the card, as `mergeAndRefresh` says.
           void client.invalidateQueries({ queryKey: keys.freelancerCard(id) })
+          void client.invalidateQueries({ queryKey: keys.talents() })
         }}
       />
       <p className="px-6 pb-6">

@@ -53,6 +53,12 @@ export function formatDecimal(value: string): string {
   return quantity.format(Number(value))
 }
 
+export function formatBytes(size: number): string {
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`
+}
+
 export const REMOTO_LABELS = { remoto: 'Da remoto', ibrido: 'Ibrido', in_sede: 'In sede' } as const
 export const FREELANCER_STATES = ['nuovo', 'contattato', 'attivo', 'scartato'] as const
 /** The states the freelancer list filters by: the card's four, plus the pseudo-state of a

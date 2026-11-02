@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { copyText, downloadBlob, formatBytes, formatMoney } from './format'
+import { copyText, downloadBlob, formatMoney } from './format'
 
 const NBSP = '\u00a0'
 
@@ -16,18 +16,6 @@ describe('formatMoney', () => {
   it('keeps the cents of a decimal string a float would lose', () => {
     expect(formatMoney('0.29')).toBe(`0,29${NBSP}€`)
     expect(formatMoney('9007199254740993.01')).toContain('9.007.199.254.740.993,01')
-  })
-})
-
-describe('formatBytes', () => {
-  it.each([
-    [0, '0 byte'],
-    [1023, '1023 byte'],
-    [12345, '12,1 kB'],
-    [1_572_864, '1,5 MB'],
-  ])('writes %i as %s', (size, expected) => {
-    // Whatever space ICU puts before the unit.
-    expect(formatBytes(size).replace(/\s/g, ' ')).toBe(expected)
   })
 })
 

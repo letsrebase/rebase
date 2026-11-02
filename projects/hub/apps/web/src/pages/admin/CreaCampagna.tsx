@@ -1,4 +1,4 @@
-import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import { useState } from 'react'
 import { Input } from '@rebase/ui/input'
@@ -60,6 +60,7 @@ function SaveStatus({ saving, error, savedAt }: { saving: boolean; error: unknow
  *  edit route, `null` on «Nuova campagna». */
 function Editor({ initial }: { initial: Campaign | null }) {
   const navigate = useNavigate()
+  const client = useQueryClient()
   const me = useMe()
   const templates = useQuery({ queryKey: keys.campaignTemplates, queryFn: admin.campaignTemplates })
 
@@ -177,7 +178,10 @@ function Editor({ initial }: { initial: Campaign | null }) {
       const moment = mode === 'programma' ? { giorno: when.giorno, ora: when.ora } : {}
       return save.run(key, (saved) => admin.scheduleCampaign(saved.id, { ...moment, esclusi: esclusiOra }))
     },
-    onSuccess: (sent) => void navigate({ to: '/admin/campaigns/$id', params: { id: sent.id } }),
+    onSuccess: (sent) => {
+      void client.invalidateQueries({ queryKey: keys.campaigns })
+      void navigate({ to: '/admin/campaigns/$id', params: { id: sent.id } })
+    },
   })
 
   function blockedReason(): string | null {
