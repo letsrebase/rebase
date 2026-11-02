@@ -9,10 +9,9 @@ import { useCallback, useSyncExternalStore } from 'react'
  * The server snapshot is `false`, so anything rendered without a window gets the
  * small-screen answer -- the layout that needs no measurement to be usable.
  *
- * Used by `SignedInLayout` for the one thing CSS cannot express: below `lg` the sidebar
- * is an overlay drawer behind a menu button, which is a different *structure*, not a
- * different width. Same shape as the CRM's `AppShell` hook of the same name (REB-316);
- * a third shell that needs it is what moves one copy into `@rebase/ui`.
+ * For the one thing CSS cannot express: below `lg` a shell's sidebar is an overlay drawer
+ * behind a menu button, which is a different *structure*, not a different width. Both
+ * SPAs' shells use it (REB-316 for the CRM's `AppShell`).
  */
 export function useMediaQuery(query: string): boolean {
   const subscribe = useCallback(
