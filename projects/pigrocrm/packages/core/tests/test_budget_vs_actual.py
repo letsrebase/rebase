@@ -10,7 +10,7 @@ nothing.
 from collections.abc import Callable
 from datetime import date
 from decimal import Decimal
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from periodo_fiscale import OGGI, PRIMO_DEL_MESE
@@ -267,6 +267,25 @@ def test_the_list_is_paginated_from_the_first_commit(
         seen.extend(row.deal_id for row in page.items)
     assert len(seen) == 5
     assert len(set(seen)) == 5
+
+
+def test_a_cursor_that_names_no_deal_is_refused_rather_than_read_as_the_first_page(
+    db_session: Session, budgeted_deal: BudgetedDeal
+) -> None:
+    """An unresolved cursor used to return page one again, so a client following
+    `next_cursor` through a list that changed under it looped for ever. It is a 422 that
+    names the field instead."""
+    budgeted_deal(
+        ore_preventivate="10.00",
+        valore_preventivato="1000.00",
+        ore_registrate="1.00",
+        ricavi="100.00",
+    )
+    with pytest.raises(ValidationFailed) as excinfo:
+        AnalyticsService(db_session).budget_vs_actual(
+            BudgetQuery(da=PERIODO.da, a=PERIODO.a, cursor=uuid4()), READER
+        )
+    assert excinfo.value.details["field"] == "cursor"
 
 
 def test_an_inverted_window_is_refused(db_session: Session) -> None:

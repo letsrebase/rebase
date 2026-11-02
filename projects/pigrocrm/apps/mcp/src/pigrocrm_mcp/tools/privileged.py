@@ -67,6 +67,7 @@ from pigrocrm.core.invoices.schemas import (
     RegisterGapsDeclare,
 )
 from pigrocrm.core.invoices.service import InvoiceService
+from pigrocrm.core.timetracking.billing import TimeBilling
 from pigrocrm.core.timetracking.categories import CostCategoryService
 from pigrocrm.core.timetracking.locks import PeriodLockService
 from pigrocrm.core.timetracking.schemas import (
@@ -448,15 +449,15 @@ def register(
         fatturare è una decisione commerciale: `entry_ids` è obbligatorio.
         """
         return (
-            # `context.storage`, never the default: `AnalyticsService` resolves a backend
+            # `context.storage`, never the default: `TimeBilling` resolves a backend
             # from `get_settings()` when it is handed none, and on an installation whose
             # documents live on the titolare's own Drive that resolution has no session
             # factory to reach the row the folder lives in -- so it refuses the whole
             # configuration by name and every call to this tool fails with a message
             # about service-account variables the operator deliberately does not have.
             # The adapter already holds the one backend this process writes through.
-            AnalyticsService(context.session, context.storage)
-            .bind_time_to_invoice(
+            TimeBilling(context.session, context.storage)
+            .bind_to_invoice(
                 UUID(deal_id),
                 BindTimeRequest(
                     entry_ids=[UUID(entry_id) for entry_id in entry_ids],
@@ -477,11 +478,7 @@ def register(
         Presentala sempre come tale.
         """
         return (
-            # No storage of its own is read by the estimate, but the argument is passed
-            # for the same reason it is above: which backend this process writes through
-            # is the adapter's answer, and a call site that omits it is one refactor away
-            # from resolving a second one from the environment (see `bind_time_to_invoice`).
-            AnalyticsService(context.session, context.storage)
+            AnalyticsService(context.session)
             .get_fiscal_estimate(anno, context.actor, azienda_id=parse_legal_entity_id(azienda_id))
             .model_dump(mode="json")
         )
