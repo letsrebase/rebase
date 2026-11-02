@@ -54,7 +54,7 @@ from rebase_core.company_schemas import (
 )
 from rebase_core.crm_link import NOT_CONFIGURED as CRM_NOT_CONFIGURED
 from rebase_core.duplicates import DuplicateListRead, duplicate_list
-from rebase_core.errors import TeamBuilderOff
+from rebase_core.errors import NotFound, TeamBuilderOff
 from rebase_core.freelancer_schemas import (
     FreelancerDetail,
     FreelancerDraft,
@@ -68,7 +68,7 @@ from rebase_core.login_schemas import GuideStats, LoginStats
 from rebase_core.logins import LoginService
 from rebase_core.mail import EmailSender, Mail
 from rebase_core.merge import MergeRead, MergeRequest, PersonMergeService
-from rebase_core.models import NAME_MAX_LENGTH, User
+from rebase_core.models import NAME_MAX_LENGTH, Signup, User
 from rebase_core.note_schemas import NoteCreate, NoteRead, NoteUpdate
 from rebase_core.notes import NoteService
 from rebase_core.pagination import CURSOR_MAX_LENGTH
@@ -86,8 +86,8 @@ from rebase_core.referral_settings import ReferralSettingsService
 from rebase_core.search import SEARCH_MAX_LENGTH
 from rebase_core.service import SignupService
 from rebase_core.signup_schemas import SignupList
-from rebase_core.talent_schemas import TalentoList
-from rebase_core.talenti import TalentiService
+from rebase_core.talent_schemas import TalentoList, TalentoRead
+from rebase_core.talenti import TalentiService, signup_read
 from rebase_core.team_schemas import FreelancerCardAdminRead
 from rebase_core.users import UserService
 from rebase_core.validation import SafeStr
@@ -643,6 +643,16 @@ def draft_card_from_signup(
     resolves to. 404 for an unknown signup; 422 naming `email` when the person has
     already filled their card, which research never overwrites."""
     return FreelancerService(session).draft_from_signup(signup_id, payload, admin.id, SOURCE)
+
+
+@router.get("/signups/{signup_id}", response_model=TalentoRead)
+def get_signup(_: AdminDep, session: SessionDep, signup_id: UUID) -> TalentoRead:
+    """One bare sign-up as the row the Talenti list shows for it (`stato` «lead», `origine`
+    «form»): the page of a person who has no card yet. 404 for an unknown id."""
+    signup = session.get(Signup, signup_id)
+    if signup is None:
+        raise NotFound("talento", signup_id)
+    return signup_read(signup)
 
 
 # ---- notes -----------------------------------------------------------------------------
