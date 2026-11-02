@@ -1,14 +1,20 @@
 from uuid import UUID
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel, Field
 
 from pigrocrm.core.auth.pat_service import PatRead, PatService, TeamPatRead
 from pigrocrm.core.validation import SafeStr
-from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep
+from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, get_actor
 from pigrocrm_api.errors import PROBLEM_RESPONSES
+from pigrocrm_api.person_only import person_only
 
-router = APIRouter(prefix="/api/tokens", tags=["tokens"], responses=PROBLEM_RESPONSES)
+router = APIRouter(
+    prefix="/api/tokens",
+    tags=["tokens"],
+    responses=PROBLEM_RESPONSES,
+    dependencies=[Depends(get_actor)],
+)
 
 # Mirrors PersonalAccessToken.nome's column width (auth/pat_models.py: String(120)).
 # Without this, an over-length value sails past Pydantic, reaches flush(), and comes
@@ -49,7 +55,12 @@ class CreatedToken(PatRead):
     token: str
 
 
-@router.post("", response_model=CreatedToken, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=CreatedToken,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[person_only("create_token")],
+)
 def create(
     data: CreateTokenRequest, session: SessionDep, actor: ActorDep, settings: SettingsDep
 ) -> CreatedToken:
@@ -61,13 +72,13 @@ def create(
     return CreatedToken(**record.model_dump(), token=raw)
 
 
-@router.get("", response_model=list[PatRead])
+@router.get("", response_model=list[PatRead], dependencies=[person_only("list_tokens")])
 def list_tokens(session: SessionDep, actor: ActorDep) -> list[PatRead]:
     return PatService(session).list(actor)
 
 
 @router.get("/options", response_model=TokenOptions)
-def token_options(actor: ActorDep, settings: SettingsDep) -> TokenOptions:
+def token_options(settings: SettingsDep) -> TokenOptions:
     """Readable by any member, unlike the space settings page that holds the switch: a
     collaboratore who makes a token has to be told why the box is off."""
     return TokenOptions(full_access_available=settings.mcp_full_access)
@@ -92,6 +103,10 @@ def set_full_access(
     return PatService(session, settings).set_full_access(token_id, data.full_access, actor)
 
 
-@router.delete("/{token_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{token_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[person_only("revoke_token")],
+)
 def revoke(token_id: UUID, session: SessionDep, actor: ActorDep) -> None:
     PatService(session).revoke(token_id, actor)

@@ -309,7 +309,7 @@ def test_a_readonly_actor_is_refused(db_session: Session, local_storage: LocalFi
 def test_an_agent_credential_without_full_access_is_forbidden(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
-    """The credential-level half of the ban (`actor.py::AGENT_FORBIDDEN_ACTIONS`),
+    """The credential-level half of the ban (`agent_actions.py::FULL_ACCESS_ACTIONS`),
     proven at the service the tool actually calls -- the tool's own absence on a
     default installation is `test_mcp_invoice_ban.py`'s guarantee, not this one."""
     _emitter(db_session)

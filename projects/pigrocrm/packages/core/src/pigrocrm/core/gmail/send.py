@@ -68,8 +68,8 @@ from pigrocrm.core.gmail.transport import GmailTransport
 from pigrocrm.core.storage.base import DocumentStorage
 
 ENTITY = "email_draft"
-_SEND_ACTION = "inviare un'email"
-_RECONCILE_ACTION = "verificare l'esito di un'email"
+_SEND_ACTION = "send_email"
+_RECONCILE_ACTION = "reconcile_email"
 _WHAT_SEND = "invio del messaggio"
 _WHAT_VERIFY = "verifica dell'invio"
 

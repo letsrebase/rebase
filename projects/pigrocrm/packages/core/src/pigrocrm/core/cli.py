@@ -912,7 +912,7 @@ def gmail_sync(email: str | None) -> int:
     opens the refresh tokens its callback sealed. And its own `GoogleTokenClient`, built
     from those settings: the client caches access tokens by account id alone, so one
     shared across spaces could hand a row copied from another space's database a live
-    token (the API keys its cache per space for the same reason, `routers/gmail.py`).
+    token (the API keys its cache per space for the same reason, `pigrocrm_api/google_tokens.py`).
 
     **Every connected mailbox, not one.** Until REB-404 a second mailbox made this refuse
     and ask for `--email`, because picking one would have left the other silently
@@ -936,7 +936,7 @@ def gmail_sync(email: str | None) -> int:
     records. The alternative -- the owner's own `user` actor -- would write a timeline
     that says a person synchronised at 03:15, and the timeline exists not to say that.
 
-    It widens nothing. `AGENT_FORBIDDEN_ACTIONS` is checked against `type == "mcp"`
+    It widens nothing. `FULL_ACCESS_ACTIONS` is checked against `type == "mcp"`
     only, so a system actor was never subject to it and a personal access token gains
     nothing from this command existing; the credential an agent presents still resolves
     to `type="mcp"` in `PatService.resolve`, whatever this process does.

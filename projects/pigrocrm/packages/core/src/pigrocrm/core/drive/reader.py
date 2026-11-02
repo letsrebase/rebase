@@ -552,7 +552,7 @@ def drive_reader_for(
     before the next has anything to say:
 
     1. `action`: the operation the caller is about, checked against
-       `AGENT_FORBIDDEN_ACTIONS` before this function touches the database at all. An
+       `FULL_ACCESS_ACTIONS` before this function touches the database at all. An
        agent credential on an installation that has not opted in is refused here, so it
        never learns whether a Drive is even connected;
     2. `usable`, which holds no transport and therefore *cannot* have called Google, so
@@ -567,7 +567,7 @@ def drive_reader_for(
     `feature` is the name the refusal uses ("la lettura dei documenti da Drive"), so a
     missing scope reads as a feature that is off rather than as a broken credential.
 
-    `action` is the name `AGENT_FORBIDDEN_ACTIONS` lists the operation under -- the MCP
+    `action` is the name `FULL_ACCESS_ACTIONS` lists the operation under -- the MCP
     tool's own name, which is also what a REST route would pass. It is here, at the one
     point every reader of Drive is built from, rather than in each caller: the tool being
     unregistered protects the MCP transport only, and a personal access token is not
@@ -603,10 +603,10 @@ def drive_reader_for(
     discovered it, and then the exception continues.
 
     The `GoogleTokenClient` `user_transport_for` builds lives as long as the reader.
-    Unlike `routers/gmail.py`'s per-process cache, that means one token exchange per
-    reader rather than one per hour per process -- the price of `packages/core` not
-    owning a process-wide cache, and the same choice `apps/mcp`'s privileged tools
-    already make.
+    Unlike the API's per-process cache (`pigrocrm_api/google_tokens.py`), that means one
+    token exchange per reader rather than one per hour per process -- the price of
+    `packages/core` not owning a process-wide cache, and the same choice `apps/mcp`'s
+    privileged tools already make.
     """
     if isinstance(action, str):
         # Before the session is touched: a refusal here must not double as "there is a

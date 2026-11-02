@@ -57,8 +57,8 @@ PURPOSE = "slack"
 # redeemable authorisation, so it is sized as a secret (`gmail/oauth.py`).
 _JTI_BYTES = 24
 
-_CONNECT_ACTION = "collegare Slack"
-_DISCONNECT_ACTION = "scollegare Slack"
+_CONNECT_ACTION = "connect_slack"
+_DISCONNECT_ACTION = "disconnect_slack"
 
 
 def _b64url(raw: bytes) -> str:

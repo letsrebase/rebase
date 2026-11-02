@@ -2,6 +2,8 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
+from pigrocrm.core.agent_actions import action_label
+
 
 class DomainError(Exception):
     """Base for every business-rule failure.
@@ -56,7 +58,7 @@ class PermissionDenied(DomainError):
 
     def __init__(self, action: str, required_roles: list[str], actual_role: str) -> None:
         super().__init__(
-            f"{action} requires one of {required_roles}, actor has {actual_role}",
+            f"{action_label(action)} requires one of {required_roles}, actor has {actual_role}",
             action=action,
             required_roles=required_roles,
             actual_role=actual_role,
@@ -86,7 +88,7 @@ class ScopedAdmin(DomainError):
 
     def __init__(self, action: str) -> None:
         super().__init__(
-            f"{action} requires an admin whose view covers the whole space",
+            f"{action_label(action)} requires an admin whose view covers the whole space",
             action=action,
             required_roles=["admin"],
             actual_role="admin",
@@ -107,7 +109,8 @@ class AgentForbidden(DomainError):
 
     def __init__(self, action: str) -> None:
         super().__init__(
-            f"{action} non è eseguibile da un agente: è un atto che richiede una persona",
+            f"{action_label(action)} non è eseguibile da un agente: "
+            "è un atto che richiede una persona",
             action=action,
         )
 

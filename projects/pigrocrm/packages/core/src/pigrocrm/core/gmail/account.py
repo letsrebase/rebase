@@ -47,7 +47,7 @@ CONSENT_WARNING_HOURS = 48
 
 _NO_ACCOUNT = "nessuna casella Google collegata"
 _NOT_A_USER = "solo un utente può usare una casella Google"
-_SETTINGS_ACTION = "modificare le impostazioni Gmail"
+_SETTINGS_ACTION = "update_gmail_settings"
 
 _REVOKED_TEXT = (
     "Il consenso Google per {email} è stato revocato: la sincronizzazione e l'invio "

@@ -73,7 +73,7 @@ CHASEABLE_STATO = "emessa"
 
 ENTITY = "payment_reminder"
 INVOICE_ENTITY = "invoice"
-_PREPARE_ACTION = "preparare un sollecito"
+_PREPARE_ACTION = "prepare_payment_reminder"
 
 
 def _data_italiana(value: date | None) -> str:

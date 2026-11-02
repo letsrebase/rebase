@@ -46,6 +46,11 @@ not a table in the document; this file is the table:
   minting, so the two rows and the spec §10 table below are unchanged.
 * `POST /api/templates/{id}/preview` is a render, not a write; the same content is
   reachable through the ungated `GET describe`.
+
+The roles are one axis; the *credential* is the other (PAPI-01). A personal access token
+inherits its owner's role, so the role sweeps cannot say what an agent may do. The last
+sweep walks the same rows with an administrator's token and requires `agent_forbidden`
+on every row not listed in `AGENT_REACHABLE`.
 """
 
 from __future__ import annotations
@@ -354,6 +359,8 @@ ROWS: list[Row] = [
         admin_only=True,
         body={"entry_ids": ["__FAKE__"]},
     ),
+    # The PDF of a month's hours archives a document (REB-880: a POST, not a GET).
+    Row("POST", "/api/deals/{deal_id}/time-report/pdf", params={"mese": "2026-01"}),
     # --- documents: `require_write` on every method (documents/service.py) -----------
     Row("POST", "/api/documents", body={"titolo": "matrice-doc"}),
     Row(
@@ -887,7 +894,16 @@ def matrix(api_engine: Engine) -> Iterator[Matrix]:
         deal = admin.post("/api/deals", json={"nome": "Matrice", "customer_id": ids["__CUST__"]})
         assert deal.status_code == 201, deal.text
         ids["__DEAL__"] = deal.json()["id"]
-        yield Matrix(app, {"admin": admin, **users}, ids)
+        # An administrator's personal access token, which is a *credential*, not a role:
+        # the same person, the same role, carried by `Bearer pgc_...` and no cookie.
+        minted = admin.post("/api/tokens", json={"nome": "matrice-agente"})
+        assert minted.status_code == 201, minted.text
+        agent = TestClient(
+            app,
+            base_url="https://testserver",
+            headers={"Authorization": f"Bearer {minted.json()['token']}"},
+        )
+        yield Matrix(app, {"admin": admin, "agent": agent, **users}, ids)
     finally:
         session.close()
         transaction.rollback()
@@ -938,6 +954,104 @@ def test_collaboratore_holds_writes_and_is_refused_on_admin_routes(
             f"{row.method} {row.path} role-refused a collaboratore: {response.text[:200]}"
         )
         assert response.status_code < 500, response.text
+
+
+# The writing routes an administrator's personal access token reaches (PAPI-01). A token
+# is a credential, not a role: it inherits its owner's role, so the sweeps above (which
+# walk roles) cannot say what a *token* may do, and the review found a PAT could create
+# administrators, rewrite the space settings and mint further tokens over REST while no
+# MCP tool existed for any of them. Every other row must answer 403 `agent_forbidden`.
+# A route joins this list when an MCP tool (or a tool's own sub-step) does the same
+# operation; adding one here is the decision to give an agent that operation.
+AGENT_REACHABLE: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("DELETE", "/api/activities/{attivita_id}"),
+        ("DELETE", "/api/costs/{cost_id}"),
+        ("DELETE", "/api/customers/{customer_id}"),
+        ("DELETE", "/api/deals/{deal_id}"),
+        ("DELETE", "/api/documents/{document_id}"),
+        ("DELETE", "/api/invoices/{invoice_id}"),
+        ("DELETE", "/api/notes/{note_id}"),
+        ("DELETE", "/api/people/{person_id}"),
+        ("DELETE", "/api/time-entries/{entry_id}"),
+        ("DELETE", "/api/time-entries/timer"),
+        ("GET", "/api/users/directory"),
+        ("PATCH", "/api/activities/{attivita_id}"),
+        ("PATCH", "/api/auth/me"),
+        ("PATCH", "/api/contracts/{contract_id}"),
+        ("PATCH", "/api/contracts/{contract_id}/clause-notes/{note_id}"),
+        ("PATCH", "/api/contracts/{contract_id}/expenses/{expense_id}"),
+        ("PATCH", "/api/contracts/{contract_id}/rate-cards/{rate_card_id}"),
+        ("PATCH", "/api/costs/{cost_id}"),
+        ("PATCH", "/api/customers/{customer_id}"),
+        ("PATCH", "/api/deals/{deal_id}"),
+        ("PATCH", "/api/deals/{deal_id}/stage"),
+        ("PATCH", "/api/invoices/{invoice_id}"),
+        ("PATCH", "/api/invoices/{invoice_id}/payment"),
+        ("PATCH", "/api/notes/{note_id}"),
+        ("PATCH", "/api/people/{person_id}"),
+        ("PATCH", "/api/time-entries/{entry_id}"),
+        ("PATCH", "/api/time-entries/timer"),
+        ("POST", "/api/activities"),
+        ("POST", "/api/activities/{attivita_id}/cancel"),
+        ("POST", "/api/activities/{attivita_id}/complete"),
+        ("POST", "/api/activities/{attivita_id}/reopen"),
+        ("POST", "/api/activities/{attivita_id}/restore"),
+        ("POST", "/api/aziende"),
+        ("POST", "/api/{collection}/{entity_id}/notes"),
+        ("POST", "/api/contracts"),
+        ("POST", "/api/contracts/{contract_id}/approval-request/preview"),
+        ("POST", "/api/contracts/{contract_id}/clause-notes"),
+        ("POST", "/api/contracts/{contract_id}/email/preview"),
+        ("POST", "/api/contracts/{contract_id}/expenses"),
+        ("POST", "/api/contracts/{contract_id}/rate-cards"),
+        ("POST", "/api/contracts/{contract_id}/renew"),
+        ("POST", "/api/contracts/{contract_id}/state"),
+        ("POST", "/api/costs"),
+        ("POST", "/api/costs/{cost_id}/restore"),
+        ("POST", "/api/customers"),
+        ("POST", "/api/customers/{customer_id}/people-from-mail"),
+        ("POST", "/api/customers/{customer_id}/restore"),
+        ("POST", "/api/customers/from-suggestions"),
+        ("POST", "/api/deals"),
+        ("POST", "/api/deals/{deal_id}/restore"),
+        ("POST", "/api/documents"),
+        ("POST", "/api/documents/{document_id}/restore"),
+        ("POST", "/api/documents/{document_id}/status"),
+        ("POST", "/api/documents/{document_id}/versions"),
+        ("POST", "/api/documents/{document_id}/versions/{numero}/regenerate"),
+        ("POST", "/api/documents/from-template"),
+        ("POST", "/api/deals/{deal_id}/time-report/pdf"),
+        ("POST", "/api/email-drafts"),
+        ("POST", "/api/invoices"),
+        ("POST", "/api/invoices/{invoice_id}/artifacts"),
+        ("POST", "/api/invoices/{invoice_id}/confirm"),
+        ("POST", "/api/people"),
+        ("POST", "/api/people/{person_id}/restore"),
+        ("POST", "/api/proposals"),
+        ("POST", "/api/templates/{template_id}/preview"),
+        ("POST", "/api/time-entries"),
+        ("POST", "/api/time-entries/{entry_id}/restore"),
+        ("POST", "/api/time-entries/timer/start"),
+        ("POST", "/api/time-entries/timer/stop"),
+        ("PUT", "/api/aziende/{azienda_id}"),
+        ("PUT", "/api/aziende/{azienda_id}/fiscal-profile"),
+        ("PUT", "/api/contracts/{contract_id}/renewal-assumption"),
+        ("PUT", "/api/invoices/{invoice_id}/lines"),
+    }
+)
+
+
+@pytest.mark.parametrize("row", ROWS, ids=lambda r: f"{r.method} {r.path}")
+def test_an_admin_agent_token_reaches_only_the_listed_routes(row: Row, matrix: Matrix) -> None:
+    response = matrix.call("agent", row)
+    assert response.status_code != 401, response.text
+    refused = response.status_code == 403 and response.json().get("code") == "agent_forbidden"
+    listed = (row.method, row.path) in AGENT_REACHABLE
+    assert refused != listed, (
+        f"{row.method} {row.path}: the admin agent got {response.status_code} "
+        f"{response.text[:160]}; it is {'listed as reachable' if listed else 'not listed'}"
+    )
 
 
 def test_the_matrix_classifies_every_route_in_the_schema(matrix: Matrix) -> None:

@@ -69,8 +69,8 @@ _VERIFIER_BYTES = 48  # 64 base64url characters, inside PKCE's 43-128 range
 # identifier.
 _JTI_BYTES = 24
 
-_CONNECT_ACTION = "collegare un account Google"
-_DISCONNECT_ACTION = "scollegare un account Google"
+_CONNECT_ACTION = "connect_gmail"
+_DISCONNECT_ACTION = "disconnect_gmail"
 
 
 def _b64url(raw: bytes) -> str:

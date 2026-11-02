@@ -66,8 +66,8 @@ UNVERIFIED_CONSENT_DAYS = 7
 _VERIFIER_BYTES = 48  # 64 base64url characters, inside PKCE's 43-128 range
 _JTI_BYTES = 24
 
-_CONNECT_ACTION = "collegare Google Drive"
-_DISCONNECT_ACTION = "scollegare Google Drive"
+_CONNECT_ACTION = "connect_drive"
+_DISCONNECT_ACTION = "disconnect_drive"
 
 
 def _b64url(raw: bytes) -> str:

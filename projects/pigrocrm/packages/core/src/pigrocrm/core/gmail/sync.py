@@ -82,9 +82,9 @@ from pigrocrm.core.people.models import Person
 # How far back the first cycle looks when there is no watermark yet.
 _FIRST_CYCLE_DAYS = 30
 
-_SYNC_ACTION = "sincronizzare Gmail"
-_BACKFILL_ACTION = "sincronizzare lo storico Gmail"
-# Also the name under which `AGENT_FORBIDDEN_ACTIONS` lists it: an agent gets this only
+_SYNC_ACTION = "sync_gmail"
+_BACKFILL_ACTION = "backfill_gmail"
+# Also the name under which `FULL_ACCESS_ACTIONS` lists it: an agent gets this only
 # on an installation that opened `mcp_full_access`, like every other spend of the
 # owner's own resources.
 _DISCOVER_ACTION = "discover_gmail_correspondents"
@@ -92,7 +92,7 @@ _WHAT_LIST = "elenco dei messaggi"
 _WHAT_THREAD = "lettura di una conversazione"
 
 # The customer proposals (spec 2026-09-16 §5, REB-223). The action is also the name
-# `AGENT_FORBIDDEN_ACTIONS` lists, for the reason `discover` is there: it spends the
+# `FULL_ACCESS_ACTIONS` lists, for the reason `discover` is there: it spends the
 # owner's Gmail quota under the owner's consent.
 _SUGGEST_ACTION = "suggest_customers_from_gmail"
 SUGGEST_MAX_MONTHS = 24
