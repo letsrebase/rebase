@@ -197,23 +197,29 @@ class ApprovalRequestService:
                 "il contratto ha gia' una giornata in queste date: " + ", ".join(taken),
                 date=taken,
             )
-        days = WorkUnitService(self.session)
-        proposed = [
-            days.create(
-                WorkUnitCreate(
-                    contract_id=contract_id,
-                    data=day.data,
-                    quantita=day.quantita,
-                    descrizione=day.descrizione,
-                    stato="proposto",
-                ),
-                actor,
-                "Richiesta di approvazione preparata",
-                commit=False,
-            )
-            for day in sorted(data.days, key=lambda day: day.data)
-        ]
+        # The days are flushed and the draft's own commit is what lands them with it, so the
+        # days and the draft go in one SAVEPOINT: a draft that could not be filed takes the
+        # days with it and nothing else the caller has pending. Not a `with` block: the
+        # commit inside `create` closes the savepoint with the transaction, and a context
+        # manager would then try to close it a second time.
+        savepoint = self.session.begin_nested()
         try:
+            days = WorkUnitService(self.session)
+            proposed = [
+                days.create(
+                    WorkUnitCreate(
+                        contract_id=contract_id,
+                        data=day.data,
+                        quantita=day.quantita,
+                        descrizione=day.descrizione,
+                        stato="proposto",
+                    ),
+                    actor,
+                    "Richiesta di approvazione preparata",
+                    commit=False,
+                )
+                for day in sorted(data.days, key=lambda day: day.data)
+            ]
             draft = EmailDraftService(self.session, settings=self.settings).create(
                 EmailDraftCreate(
                     entity_type="customer",
@@ -226,9 +232,8 @@ class ApprovalRequestService:
                 actor,
             )
         except Exception:
-            # The days are flushed and the draft is what commits them: a draft that could not
-            # be filed takes the days with it, here and not by the session happening to close.
-            self.session.rollback()
+            if savepoint.is_active:
+                savepoint.rollback()
             raise
         return ApprovalRequestPrepared(draft=draft, work_units=proposed)
 

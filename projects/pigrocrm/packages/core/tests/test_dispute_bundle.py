@@ -22,10 +22,14 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.contracts.models import Contract, RateCard
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.models import Document, DocumentVersion
-from pigrocrm.core.errors import Conflict, NotFound
+from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.invoices.schemas import InvoiceIssue
 from pigrocrm.core.storage.local import LocalFileStorage
-from pigrocrm.core.work_units.dispute_bundle import build_dispute_bundle, safe_entry_name
+from pigrocrm.core.work_units.dispute_bundle import (
+    SOURCE_MAX_BYTES,
+    build_dispute_bundle,
+    safe_entry_name,
+)
 from pigrocrm.core.work_units.invoicing import assemble_unbilled_work_units_into_new_invoice
 from pigrocrm.core.work_units.models import WorkUnit
 from pigrocrm.core.work_units.schemas import ApprovalRecord
@@ -262,6 +266,44 @@ def test_a_file_the_disk_cannot_read_is_said_so_too(
     _, content = build_dispute_bundle(db_session, local_storage, proposed.id, READER)
 
     assert "non è leggibile dall'archivio" in _open(content).read("summary.txt").decode()
+
+
+def test_an_original_over_the_cap_is_refused_by_name_before_it_is_read(
+    db_session: Session, local_storage: LocalFileStorage, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    contract = _contract(db_session)
+    proposed = _day(db_session, contract, date(2026, 3, 2), "proposto")
+    document = _approve(db_session, local_storage, contract, [proposed])
+    db_session.query(DocumentVersion).filter_by(document_id=document.id).update(
+        {"dimensione": SOURCE_MAX_BYTES + 1}
+    )
+    db_session.flush()
+
+    def never_read(*_: object, **__: object) -> bytes:
+        raise AssertionError("the oversized original must not be loaded")
+
+    monkeypatch.setattr(local_storage, "get", never_read)
+
+    with pytest.raises(ValidationFailed) as refused:
+        build_dispute_bundle(db_session, local_storage, proposed.id, READER)
+    assert refused.value.details["field"] == "document_id"
+
+
+def test_the_register_names_the_approval_each_day_rests_on(
+    db_session: Session, local_storage: LocalFileStorage
+) -> None:
+    contract = _contract(db_session)
+    approved = _day(db_session, contract, date(2026, 3, 2), "proposto")
+    _day(db_session, contract, date(2026, 3, 3))
+    _approve(db_session, local_storage, contract, [approved])
+
+    _, content = build_dispute_bundle(db_session, local_storage, approved.id, READER)
+    summary = _open(content).read("summary.txt").decode()
+
+    assert (
+        "(approvazione email di giulia@cliente.example, 2026-03-01) <- questa giornata" in summary
+    )
+    assert "2026-03-03  1.00  lavorato  (senza approvazione)" in summary
 
 
 def test_the_log_names_who_acted(db_session: Session, local_storage: LocalFileStorage) -> None:

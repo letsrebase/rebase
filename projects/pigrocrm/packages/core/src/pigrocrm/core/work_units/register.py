@@ -274,7 +274,8 @@ class ContractRegisterService:
                 )
         except IntegrityError:
             existing = self.templates.get_by_nome(REGISTER_TEMPLATE_NOME)
-            assert existing is not None
+            if existing is None:
+                raise
             return existing
 
     def render_pdf(
@@ -299,7 +300,8 @@ class ContractRegisterService:
             )
         register = self.build(contract_id, da, a, actor, invoice_id=invoice_id)
         contract = self.session.get(Contract, contract_id)
-        assert contract is not None  # `build` raised NotFound otherwise
+        if contract is None:
+            raise NotFound("contract", contract_id)
         template = self._template()
         return DocumentService(self.session, self.storage).create_from_template(
             DocumentFromTemplate(

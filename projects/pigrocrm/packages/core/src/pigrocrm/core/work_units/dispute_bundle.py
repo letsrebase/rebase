@@ -22,7 +22,7 @@ import hashlib
 import io
 import re
 import zipfile
-from datetime import date, datetime
+from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -30,7 +30,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.documents.models import Document
+from pigrocrm.core.db.clock import month_bounds
+from pigrocrm.core.documents.models import Document, DocumentVersion
 from pigrocrm.core.documents.service import DocumentService
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
@@ -41,6 +42,8 @@ from pigrocrm.core.work_units.schemas import WorkUnitDetail
 from pigrocrm.core.work_units.service import WorkUnitService
 
 MAX_ENTRY_NAME_LENGTH = 200
+# What a bundle may carry of the archived original, since the ZIP is built in memory.
+SOURCE_MAX_BYTES = 25 * 1024 * 1024
 # What a ZIP entry's timestamp can hold, fixed: the bundle of a day is the same bytes however
 # often it is downloaded, which is what lets a person compare two copies by hash.
 ENTRY_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
@@ -105,11 +108,11 @@ def _approval_reference(detail: WorkUnitDetail) -> list[str]:
     return lines
 
 
-def _proof_label(session: Session, unit: WorkUnit) -> str:
+def _proof_label(unit: WorkUnit, approvals: dict[UUID, Approval]) -> str:
     """The approval a day rests on, as a person reads it: channel, sender, date."""
     if unit.approval_id is None:
         return "senza approvazione"
-    approval = session.get(Approval, unit.approval_id)
+    approval = approvals.get(unit.approval_id)
     if approval is None:
         return "approvazione non leggibile"
     return f"approvazione {approval.canale} di {approval.mittente}, {approval.ricevuto_il.date()}"
@@ -118,30 +121,39 @@ def _proof_label(session: Session, unit: WorkUnit) -> str:
 def _register_lines(session: Session, detail: WorkUnitDetail) -> tuple[str, str, list[str]]:
     """The contract's days in the month of the day, the window a register of approvals is read
     in, each with the state it is in and the approval it rests on."""
-    first = detail.data.replace(day=1)
-    last = date(first.year + 1, 1, 1) if first.month == 12 else date(first.year, first.month + 1, 1)
-    rows = session.execute(
-        select(WorkUnit)
-        .where(
-            WorkUnit.contract_id == detail.contract_id,
-            WorkUnit.data >= first,
-            WorkUnit.data < last,
-            WorkUnit.stato.not_in(NEVER_HAPPENED),
-        )
-        .order_by(WorkUnit.data, WorkUnit.id)
-    ).scalars()
+    first, end = month_bounds(detail.data.year, detail.data.month)
+    units = list(
+        session.execute(
+            select(WorkUnit)
+            .where(
+                WorkUnit.contract_id == detail.contract_id,
+                WorkUnit.data >= first,
+                WorkUnit.data <= end,
+                WorkUnit.stato.not_in(NEVER_HAPPENED),
+            )
+            .order_by(WorkUnit.data, WorkUnit.id)
+        ).scalars()
+    )
+    approval_ids = {unit.approval_id for unit in units if unit.approval_id is not None}
+    approvals = (
+        {
+            approval.id: approval
+            for approval in session.scalars(select(Approval).where(Approval.id.in_(approval_ids)))
+        }
+        if approval_ids
+        else {}
+    )
     lines: list[str] = []
     total = Decimal("0.00")
-    for unit in rows:
+    for unit in units:
         if unit.stato in COUNTED:
             total += unit.quantita
         mark = " <- questa giornata" if unit.id == detail.id else ""
-        proof = _proof_label(session, unit)
+        proof = _proof_label(unit, approvals)
         lines.append(f"{unit.data.isoformat()}  {unit.quantita}  {unit.stato}  ({proof}){mark}")
     lines.append(
         f"Totale giornate del mese: {total} (approvate, lavorate, contestate, fatturate, pagate)"
     )
-    end = date.fromordinal(last.toordinal() - 1)
     return first.isoformat(), end.isoformat(), lines
 
 
@@ -197,6 +209,24 @@ def render_summary(session: Session, detail: WorkUnitDetail, source_line: str) -
     return "\n".join(parts).rstrip("\n") + "\n"
 
 
+def _refuse_oversized_source(session: Session, document: Document, title: str) -> None:
+    """The bundle is built in memory, so the archived original it carries is bounded: a
+    larger file is refused by name before it is read, not truncated and not left out."""
+    size = session.scalar(
+        select(DocumentVersion.dimensione).where(
+            DocumentVersion.document_id == document.id,
+            DocumentVersion.numero == document.versione_corrente,
+        )
+    )
+    if size is not None and size > SOURCE_MAX_BYTES:
+        raise ValidationFailed(
+            "dispute_bundle",
+            "document_id",
+            f"il file originale di «{title}» pesa troppo per un fascicolo: scaricalo dal documento",
+            expected=f"un originale fino a {SOURCE_MAX_BYTES // (1024 * 1024)} MiB",
+        )
+
+
 def build_dispute_bundle(
     session: Session, storage: DocumentStorage, work_unit_id: UUID, actor: Actor
 ) -> tuple[str, bytes]:
@@ -209,6 +239,8 @@ def build_dispute_bundle(
     if approval is not None:
         document = session.get(Document, approval.document_id)
         title = document.titolo if document is not None else str(approval.document_id)
+        if document is not None:
+            _refuse_oversized_source(session, document, title)
         try:
             content, _, filename = DocumentService(session, storage).download(
                 approval.document_id, None, actor
