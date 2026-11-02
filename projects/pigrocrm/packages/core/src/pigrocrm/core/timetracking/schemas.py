@@ -22,7 +22,6 @@ from pigrocrm.core.validation import SafeStr
 DESCRIZIONE_MAX_LENGTH = 2000  # `Text`, so no column width to mirror; bounded anyway
 FORNITORE_MAX_LENGTH = 200
 CATEGORIA_NOME_MAX_LENGTH = 60
-CATEGORIA_CODE_MAX_LENGTH = 30
 HOURS_MAX_DIGITS = 8
 MONEY_MAX_DIGITS = 12
 FACTOR_MAX_DIGITS = 12

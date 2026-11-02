@@ -17,13 +17,19 @@ shapes every domain shares; this holds what storage knows how to say about itsel
 never about which Google account it happens to be backed by.
 """
 
-from pigrocrm.core.errors import Conflict
+from pigrocrm.core.errors import Conflict, ValidationFailed
 
 # The entity every failure about a document's bytes is reported under -- the same one
 # `drive/transport.py` uses (`_ENTITY`), because the API and the MCP adapter both
 # render `Conflict.details["entity"]` and an adapter that routed on it would otherwise
 # send the reader to a different place for two failures of the same feature.
 STORAGE_ENTITY = "document_blob"
+
+
+def unusable_storage_key(reason: str, expected: str) -> ValidationFailed:
+    """A key a backend refuses, reported under the one entity every storage failure uses."""
+    return ValidationFailed(STORAGE_ENTITY, "storage_key", reason, expected=expected)
+
 
 # The whole point of the class. An operator setting `PIGROCRM_STORAGE_BACKEND=gdrive`
 # has two ways to finish the job, and this is the one that needs no Google Cloud

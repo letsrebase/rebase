@@ -20,7 +20,6 @@ Three decisions, each the one mastro made:
   counted apart (`giorni_senza_listino`), never priced at zero.
 """
 
-import calendar
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date
@@ -30,11 +29,13 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from pigrocrm.core.analytics.filters import revenue_filter
 from pigrocrm.core.analytics.schemas import DaysMonth, DaysRate, DaysStateShare
 from pigrocrm.core.contracts.models import Contract, RateCard
 from pigrocrm.core.customers.models import Customer
+from pigrocrm.core.db.clock import month_bounds
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
-from pigrocrm.core.money import ZERO_MONEY, round_money
+from pigrocrm.core.money import ZERO_MONEY, round_money, share
 from pigrocrm.core.work_units.models import WorkUnit, WorkUnitTransition
 
 # The eight states a bar stacks, in the order the legend reads them.
@@ -84,10 +85,6 @@ def shift_month(year: int, month: int, delta: int) -> tuple[int, int]:
     return index // 12, index % 12 + 1
 
 
-def _share(value: Decimal, tallest: Decimal) -> float:
-    return 0.0 if tallest <= 0 else float(value / tallest)
-
-
 def monthly_figures(
     session: Session,
     da: date,
@@ -102,7 +99,7 @@ def monthly_figures(
     first_year, first_month = window[0]
     lookback_year, lookback_month = shift_month(first_year, first_month, -FINESTRA_MEDIA)
     fetch_from = date(lookback_year, lookback_month, 1)
-    fetch_to = date(a.year, a.month, calendar.monthrange(a.year, a.month)[1])
+    fetch_to = month_bounds(a.year, a.month)[1]
 
     month_of = func.to_char(WorkUnit.data, "YYYY-MM")
     stmt = (
@@ -172,22 +169,22 @@ def monthly_figures(
     months: list[DaysMonth] = []
     for year, month, key, stack, registrati, average, risk in rows:
         total = sum(stack.values(), start=ZERO_DAYS)
-        end = date(year, month, calendar.monthrange(year, month)[1])
+        end = month_bounds(year, month)[1]
         months.append(
             DaysMonth(
                 mese=key,
                 completo=end < today,
                 per_stato=[
-                    DaysStateShare(stato=s, giorni=stack[s], quota=_share(stack[s], tallest))
+                    DaysStateShare(stato=s, giorni=stack[s], quota=share(stack[s], tallest))
                     for s in STATI_GRAFICO
                 ],
                 totale=total,
-                quota_totale=_share(total, tallest),
+                quota_totale=share(total, tallest),
                 registrati=registrati,
-                quota_registrati=_share(registrati, tallest_recorded),
+                quota_registrati=share(registrati, tallest_recorded),
                 media_precedente=average,
                 senza_approvazione=risk,
-                quota_senza_approvazione=_share(risk, tallest_risk),
+                quota_senza_approvazione=share(risk, tallest_risk),
             )
         )
     last_complete = next((m.mese for m in reversed(months) if m.completo), None)
@@ -252,9 +249,7 @@ def realised_rates(
             WorkUnit.data >= da,
             WorkUnit.data <= a,
             WorkUnit.stato.not_in(STATI_MAI_ACCADUTI),
-            Invoice.tipo == "fattura",
-            Invoice.stato == "emessa",
-            Invoice.deleted_at.is_(None),
+            *revenue_filter(),
         )
         .order_by(WorkUnit.data, WorkUnit.id)
     )
@@ -301,7 +296,7 @@ def realised_rates(
             ),
             None,
         )
-        share = line_total * quantita / line_days[line_id]
+        portion = line_total * quantita / line_days[line_id]
         for key, label, bucket in (
             (customer_id, nome, by_customer),
             (contract_id, titolo, by_contract),
@@ -313,9 +308,9 @@ def realised_rates(
             else:
                 rate.nominale += round_money(card.importo * quantita)
                 rate.giorni_con_listino += quantita
-            rate.importo += share
+            rate.importo += portion
         total_days += quantita
-        total_amount += share
+        total_amount += portion
 
     def ordered(bucket: dict[UUID, _Rate]) -> list[DaysRate]:
         read = [rate.read(key) for key, rate in bucket.items()]

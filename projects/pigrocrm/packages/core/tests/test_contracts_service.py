@@ -3,6 +3,7 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 import pytest
+from fakes.customer_fixtures import make_customer
 from orologio import OGGI_IN_ITALIA, congela
 from sqlalchemy.orm import Session
 
@@ -11,6 +12,10 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.analytics.service import AnalyticsService
 from pigrocrm.core.contract_expenses.schemas import ContractExpenseCreate
 from pigrocrm.core.contract_expenses.service import ContractExpenseService
+from pigrocrm.core.contracts.projection_service import ContractProjectionService
+from pigrocrm.core.contracts.rate_card_service import RateCardService
+from pigrocrm.core.contracts.renewal_assumption_service import RenewalAssumptionService
+from pigrocrm.core.contracts.repository import ContractRepository
 from pigrocrm.core.contracts.schemas import (
     ContractCreate,
     ContractListQuery,
@@ -21,12 +26,7 @@ from pigrocrm.core.contracts.schemas import (
     RateCardUpdate,
     RenewalAssumptionUpsert,
 )
-from pigrocrm.core.contracts.service import (
-    ContractProjectionService,
-    ContractService,
-    RateCardService,
-    RenewalAssumptionService,
-)
+from pigrocrm.core.contracts.service import ContractService
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.fields.schemas import FieldDefinitionCreate
@@ -35,13 +35,6 @@ from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.timetracking.models import CostCategory
 
 ADMIN = Actor(id=None, type="system", role="admin")
-
-
-def _customer(db_session: Session) -> Customer:
-    customer = Customer(ragione_sociale="ACME S.r.l.")
-    db_session.add(customer)
-    db_session.flush()
-    return customer
 
 
 def _create_payload(customer_id: object, **overrides: object) -> ContractCreate:
@@ -62,7 +55,7 @@ def _create_payload(customer_id: object, **overrides: object) -> ContractCreate:
 
 
 def test_a_contract_can_be_created_read_and_listed(db_session: Session) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     service = ContractService(db_session)
 
     created = service.create(_create_payload(customer.id), ADMIN)
@@ -85,7 +78,7 @@ def test_create_rejects_an_unknown_customer(db_session: Session) -> None:
 def test_create_rejects_half_set_payment_terms_with_a_clean_validation_error(
     db_session: Session,
 ) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     service = ContractService(db_session)
     payload = _create_payload(customer.id).model_copy(update={"giorni_pagamento": 30})
     with pytest.raises(ValidationFailed) as excinfo:
@@ -96,7 +89,7 @@ def test_create_rejects_half_set_payment_terms_with_a_clean_validation_error(
 def test_create_rejects_a_missing_renewal_notice_with_a_clean_validation_error(
     db_session: Session,
 ) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     service = ContractService(db_session)
     payload = _create_payload(customer.id).model_copy(update={"tipo_rinnovo": "esplicito"})
     with pytest.raises(ValidationFailed) as excinfo:
@@ -145,7 +138,7 @@ def _rate_card_payload(**overrides: object) -> RateCardCreate:
 
 
 def test_a_rate_card_can_be_created_and_listed_for_its_contract(db_session: Session) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contracts = ContractService(db_session)
     rate_cards = RateCardService(db_session)
     contract = contracts.create(_create_payload(customer.id), ADMIN)
@@ -169,7 +162,7 @@ def test_rate_card_create_turns_an_overlap_into_a_clean_conflict_not_a_raw_db_er
     """Done-when: "a second rate card overlapping an existing one on the same
     contract is refused by the database, not by a service-level check" -- the
     service still owes the caller a clean domain error, not a raw IntegrityError."""
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contracts = ContractService(db_session)
     rate_cards = RateCardService(db_session)
     contract = contracts.create(_create_payload(customer.id), ADMIN)
@@ -193,10 +186,38 @@ def test_rate_card_create_turns_an_overlap_into_a_clean_conflict_not_a_raw_db_er
     assert [c.valido_a for c in surviving] == [date(2026, 6, 30)]
 
 
+def test_an_overlap_conflict_leaves_the_callers_other_pending_work_alone(
+    db_session: Session,
+) -> None:
+    """The refusal confines itself to the rate card's own savepoint: a write the caller
+    made earlier in the same session and has not committed is still there afterwards."""
+    customer = make_customer(db_session)
+    contract = ContractService(db_session).create(_create_payload(customer.id), ADMIN)
+    rate_cards = RateCardService(db_session)
+    rate_cards.create(
+        contract.id,
+        _rate_card_payload(valido_da=date(2026, 1, 1), valido_a=date(2026, 6, 30)),
+        ADMIN,
+    )
+    pending = Customer(ragione_sociale="Pending S.r.l.")
+    db_session.add(pending)
+
+    with pytest.raises(Conflict):
+        rate_cards.create(
+            contract.id,
+            _rate_card_payload(valido_da=date(2026, 6, 1), valido_a=date(2026, 12, 31)),
+            ADMIN,
+        )
+
+    assert pending in db_session
+    db_session.flush()
+    assert db_session.get(Customer, pending.id) is not None
+
+
 def test_rate_card_create_rejects_ore_minime_outside_orario_with_a_clean_validation_error(
     db_session: Session,
 ) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contracts = ContractService(db_session)
     rate_cards = RateCardService(db_session)
     contract = contracts.create(_create_payload(customer.id), ADMIN)
@@ -251,7 +272,7 @@ def test_concentration_cap_computes_the_clients_share_of_the_anniversary_year(
     """The window anchors to the contract's own `inizio` (10 March), not the calendar
     year: an invoice dated before that anniversary is out of the window even though
     it falls inside the same `data_emissione.year`."""
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     other = Customer(ragione_sociale="Altro Cliente")
     db_session.add(other)
     db_session.flush()
@@ -281,7 +302,7 @@ def test_concentration_cap_computes_the_clients_share_of_the_anniversary_year(
 def test_concentration_cap_is_zero_when_nothing_has_been_invoiced_in_the_window(
     db_session: Session,
 ) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contract = ContractService(db_session).create(_create_payload(customer.id), ADMIN)
 
     cap = ContractService(db_session).concentration_cap(contract.id, ADMIN, as_of=date(2026, 6, 1))
@@ -300,7 +321,7 @@ def test_concentration_cap_reports_the_currency_the_invoices_are_in_not_the_cont
     """REB-776: a USD contract of a customer billed in euros answers euro totals, so the
     page cannot label them as dollars. Invoices in another currency are their own row
     and never summed into the euro figure."""
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     other = Customer(ragione_sociale="Altro Cliente")
     db_session.add(other)
     db_session.flush()
@@ -324,7 +345,7 @@ def test_concentration_cap_reports_the_currency_the_invoices_are_in_not_the_cont
 
 
 def test_concentration_cap_reports_whether_a_threshold_is_exceeded(db_session: Session) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     other = Customer(ragione_sociale="Altro Cliente")
     db_session.add(other)
     db_session.flush()
@@ -347,7 +368,7 @@ def test_concentration_cap_defaults_as_of_to_today(
     db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     congela(monkeypatch)
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contract = ContractService(db_session).create(
         _create_payload(customer.id, inizio=date(2025, 6, 1)), ADMIN
     )
@@ -361,7 +382,7 @@ def test_concentration_cap_defaults_as_of_to_today(
 def test_concentration_cap_rejects_an_as_of_before_the_contracts_own_start(
     db_session: Session,
 ) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contract = ContractService(db_session).create(
         _create_payload(customer.id, inizio=date(2026, 3, 10)), ADMIN
     )
@@ -390,7 +411,7 @@ def _assumption_payload(**overrides: object) -> RenewalAssumptionUpsert:
 
 
 def test_a_renewal_assumption_can_be_set_and_read(db_session: Session) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contracts = ContractService(db_session)
     assumptions = RenewalAssumptionService(db_session)
     contract = contracts.create(_create_payload(customer.id), ADMIN)
@@ -406,7 +427,7 @@ def test_a_renewal_assumption_can_be_set_and_read(db_session: Session) -> None:
 
 def test_a_second_upsert_revises_the_same_row_in_place(db_session: Session) -> None:
     """Done-when: a human's belief is revised, not accumulated into a history."""
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contracts = ContractService(db_session)
     assumptions = RenewalAssumptionService(db_session)
     contract = contracts.create(_create_payload(customer.id), ADMIN)
@@ -434,7 +455,7 @@ def test_renewal_assumption_get_of_an_unknown_contract_is_not_found(db_session: 
 def test_renewal_assumption_get_before_any_upsert_is_not_found(db_session: Session) -> None:
     """A contract with no recorded belief yet -- the honest default this slice's own
     design insists on (never a guessed pace standing in for a missing one)."""
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contract = ContractService(db_session).create(_create_payload(customer.id), ADMIN)
     with pytest.raises(NotFound):
         RenewalAssumptionService(db_session).get(contract.id, ADMIN)
@@ -457,7 +478,7 @@ def test_the_projected_figure_combines_the_schedule_and_the_renewal_assumption(
     genuine "projected" figure -- exercised end to end through the real services,
     with numbers chosen to divide evenly so the assertion is exact, not a tolerance.
     """
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contracts = ContractService(db_session)
     rate_cards = RateCardService(db_session)
     assumptions = RenewalAssumptionService(db_session)
@@ -513,7 +534,7 @@ def test_the_projected_figure_is_independent_of_cash_overviews_own_proiettato(
     it. A contract's own schedule and assumption contribute nothing to the
     draft-based figure, and an empty ledger's `proiettato` stays exactly zero
     whether or not a contract projects real money."""
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contracts = ContractService(db_session)
     rate_cards = RateCardService(db_session)
     assumptions = RenewalAssumptionService(db_session)
@@ -547,7 +568,7 @@ def test_the_projected_figure_is_independent_of_cash_overviews_own_proiettato(
 
 
 def test_update_changes_only_the_fields_it_names(db_session: Session) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     service = ContractService(db_session)
     created = service.create(_create_payload(customer.id), ADMIN)
 
@@ -561,7 +582,7 @@ def test_update_changes_only_the_fields_it_names(db_session: Session) -> None:
 def test_update_can_clear_the_end_date_and_the_payment_terms_together(
     db_session: Session,
 ) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     service = ContractService(db_session)
     created = service.create(
         _create_payload(
@@ -585,7 +606,7 @@ def test_update_can_clear_the_end_date_and_the_payment_terms_together(
 
 
 def test_update_refuses_half_set_payment_terms_on_the_merged_row(db_session: Session) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     service = ContractService(db_session)
     created = service.create(_create_payload(customer.id), ADMIN)
 
@@ -595,7 +616,7 @@ def test_update_refuses_half_set_payment_terms_on_the_merged_row(db_session: Ses
 
 
 def test_update_refuses_a_renewal_type_without_its_notice(db_session: Session) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     service = ContractService(db_session)
     created = service.create(_create_payload(customer.id), ADMIN)
 
@@ -614,7 +635,7 @@ def test_update_refuses_a_renewal_type_without_its_notice(db_session: Session) -
 def test_update_refuses_an_end_before_the_start_and_a_cleared_required_field(
     db_session: Session,
 ) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     service = ContractService(db_session)
     created = service.create(_create_payload(customer.id), ADMIN)
 
@@ -630,7 +651,7 @@ def test_update_refuses_an_end_before_the_start_and_a_cleared_required_field(
 def test_update_merges_custom_fields_and_removes_a_key_supplied_as_null(
     db_session: Session,
 ) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     fields = FieldDefinitionService(db_session)
     for key in ("referente", "codice_po"):
         fields.create(
@@ -653,7 +674,7 @@ def test_update_merges_custom_fields_and_removes_a_key_supplied_as_null(
 
 
 def test_update_that_changes_nothing_writes_no_timeline_row(db_session: Session) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     service = ContractService(db_session)
     created = service.create(_create_payload(customer.id), ADMIN)
     before = len(ActivityService(db_session).timeline("contract", created.id, 20))
@@ -668,7 +689,7 @@ def test_changing_the_expense_policy_reevaluates_the_expenses_not_yet_billed(
 ) -> None:
     """`rimborsabile` is written by a trigger when an expense is written. A policy that
     changes later must not leave an expense «Da fatturare» under the old verdict."""
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     category = CostCategory(nome="Trasferte", posizione=0)
     db_session.add(category)
     db_session.flush()
@@ -737,7 +758,7 @@ def test_update_of_an_unknown_contract_is_not_found(db_session: Session) -> None
 
 
 def test_set_state_moves_a_contract_out_of_bozza_and_records_it(db_session: Session) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     service = ContractService(db_session)
     created = service.create(_create_payload(customer.id), ADMIN)
 
@@ -750,7 +771,7 @@ def test_set_state_moves_a_contract_out_of_bozza_and_records_it(db_session: Sess
 
 
 def test_set_state_refuses_the_state_the_contract_already_has(db_session: Session) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     service = ContractService(db_session)
     created = service.create(_create_payload(customer.id), ADMIN)
 
@@ -771,7 +792,7 @@ def test_contract_state_rejects_a_value_outside_the_four() -> None:
 def test_a_new_rate_can_close_the_open_one_the_day_before_in_the_same_call(
     db_session: Session,
 ) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contract = ContractService(db_session).create(_create_payload(customer.id), ADMIN)
     rate_cards = RateCardService(db_session)
     first = rate_cards.create(contract.id, _rate_card_payload(valido_da=date(2026, 1, 1)), ADMIN)
@@ -794,7 +815,7 @@ def test_a_new_rate_can_close_the_open_one_the_day_before_in_the_same_call(
 def test_without_chiudi_precedente_the_overlap_is_still_refused_and_nothing_moves(
     db_session: Session,
 ) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contract = ContractService(db_session).create(_create_payload(customer.id), ADMIN)
     rate_cards = RateCardService(db_session)
     rate_cards.create(contract.id, _rate_card_payload(valido_da=date(2026, 1, 1)), ADMIN)
@@ -810,7 +831,7 @@ def test_a_close_that_ends_in_an_overlap_is_rolled_back_with_the_insert(
 ) -> None:
     """The earlier card is closed and the new one then collides with a later card: the
     refusal takes the close with it, so a rejected rate never shortens another."""
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contract = ContractService(db_session).create(_create_payload(customer.id), ADMIN)
     rate_cards = RateCardService(db_session)
     earlier = rate_cards.create(
@@ -834,7 +855,7 @@ def test_a_close_that_ends_in_an_overlap_is_rolled_back_with_the_insert(
 
 
 def test_closing_the_previous_rate_says_so_in_the_timeline(db_session: Session) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contract = ContractService(db_session).create(_create_payload(customer.id), ADMIN)
     rate_cards = RateCardService(db_session)
     rate_cards.create(contract.id, _rate_card_payload(valido_da=date(2026, 1, 1)), ADMIN)
@@ -854,7 +875,7 @@ def test_closing_the_previous_rate_says_so_in_the_timeline(db_session: Session) 
 
 
 def test_a_rate_card_can_be_edited_and_its_validity_reopened(db_session: Session) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contract = ContractService(db_session).create(_create_payload(customer.id), ADMIN)
     rate_cards = RateCardService(db_session)
     card = rate_cards.create(
@@ -872,7 +893,7 @@ def test_a_rate_card_can_be_edited_and_its_validity_reopened(db_session: Session
 
 
 def test_a_rate_card_edit_that_overlaps_another_is_a_clean_conflict(db_session: Session) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contract = ContractService(db_session).create(_create_payload(customer.id), ADMIN)
     rate_cards = RateCardService(db_session)
     first = rate_cards.create(
@@ -890,7 +911,7 @@ def test_a_rate_card_edit_that_overlaps_another_is_a_clean_conflict(db_session: 
 
 
 def test_a_rate_card_edit_checks_the_merged_shape(db_session: Session) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contract = ContractService(db_session).create(_create_payload(customer.id), ADMIN)
     rate_cards = RateCardService(db_session)
     card = rate_cards.create(contract.id, _rate_card_payload(), ADMIN)
@@ -905,7 +926,7 @@ def test_a_rate_card_edit_checks_the_merged_shape(db_session: Session) -> None:
 
 
 def test_a_rate_card_of_another_contract_is_not_found(db_session: Session) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contracts = ContractService(db_session)
     one = contracts.create(_create_payload(customer.id), ADMIN)
     other = contracts.create(_create_payload(customer.id, titolo="Altro"), ADMIN)
@@ -931,6 +952,20 @@ def test_an_expense_policy_the_trigger_cannot_read_is_refused_on_create(
 ) -> None:
     import pydantic
 
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     with pytest.raises(pydantic.ValidationError, match="politica_spese"):
         _create_payload(customer.id, politica_spese=policy)
+
+
+def test_a_customers_and_an_aziendas_contracts_are_filtered_in_sql(db_session: Session) -> None:
+    first = make_customer(db_session)
+    second = make_customer(db_session)
+    contracts = ContractService(db_session)
+    mine = contracts.create(_create_payload(first.id), ADMIN)
+    other = contracts.create(_create_payload(second.id), ADMIN)
+
+    repo = ContractRepository(db_session)
+    assert [c.id for c in repo.list_for_customer(first.id)] == [mine.id]
+    assert repo.list_for_customer(uuid4()) == []
+    assert {c.id for c in repo.list_active(azienda_id=mine.azienda_id)} >= {mine.id, other.id}
+    assert repo.list_active(azienda_id=uuid4()) == []

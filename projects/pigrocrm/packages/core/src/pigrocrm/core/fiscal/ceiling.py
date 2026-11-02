@@ -39,28 +39,31 @@ is why none of them belong in `pack.py` (pure data, no database access at all):
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, func, select
+from sqlalchemy import ColumnElement, func, or_, select
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.fiscal.pack import RIVALSA_INPS_CHARGE_ID, Ceiling, FiscalPack
+from pigrocrm.core.fiscal.pack import (
+    RIVALSA_INPS_CHARGE_ID,
+    Ceiling,
+    FiscalPack,
+    known_charge_markers,
+)
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
 from pigrocrm.core.invoices.schemas import InvoiceLineIn
 from pigrocrm.core.money import ZERO_MONEY, round_money
 
 
 # The one definition of "an invoice that is revenue", duplicated rather than imported
-# from `analytics/repository.py`'s own `_revenue_filter`: that function is a private,
-# underscore-prefixed detail of a package `fiscal` should not reach across (`analytics`
-# already imports `fiscal`'s `FiscalProfileService`, and importing its *service*
-# module back from here would be the real cycle -- reaching only into
-# `analytics.repository` happens not to cycle today, but a private helper in another
-# package's repository is not a contract this module should depend on regardless).
-# Three comparisons cost nothing to rebuild -- the same reasoning `_revenue_filter`'s
-# own docstring gives for not sharing a module-level tuple either.
+# from `analytics/filters.py`'s `revenue_filter`: `analytics` already imports `fiscal`'s
+# `FiscalProfileService`, so reaching back into it from here is a package cycle waiting to
+# happen. Three comparisons cost nothing to rebuild, and `revenue_filter` says the same
+# about not sharing a module-level tuple.
 def _azienda_filter(azienda_id: UUID | None) -> tuple[ColumnElement[bool], ...]:
     """One azienda's register, or every one (REB-630, spec 2026-10-03 §1.9). A ceiling
     exists on one pack and a pack is one azienda's, so every caller on the service side
@@ -88,13 +91,20 @@ def _paid_calendar_year_filter(
     falling back to `data_emissione` when a paid invoice never recorded the exact
     collection date -- the identical fallback `AnalyticsRepository.monthly_incassato`
     already uses for the same reason."""
-    quando = func.coalesce(Invoice.data_incasso, Invoice.data_emissione)
+    first, next_year = date(anno, 1, 1), date(anno + 1, 1, 1)
     return (
         Invoice.tipo == "fattura",
         Invoice.stato == "emessa",
         Invoice.deleted_at.is_(None),
         Invoice.stato_pagamento == "incassato",
-        func.extract("year", quando) == anno,
+        # Half-open ranges so the date columns' indexes stay usable; the second branch
+        # is the `coalesce(data_incasso, data_emissione)` fallback.
+        or_(
+            (Invoice.data_incasso >= first) & (Invoice.data_incasso < next_year),
+            Invoice.data_incasso.is_(None)
+            & (Invoice.data_emissione >= first)
+            & (Invoice.data_emissione < next_year),
+        ),
         *_azienda_filter(azienda_id),
     )
 
@@ -181,6 +191,24 @@ def rivalsa_line_for_contract(
     )
 
 
+# A statutory charge's line is recognised by its `descrizione` alone. No structural
+# signature can replace that without a new column: the line is an ordinary zero-VAT line
+# whose `natura`/`riferimento_normativo` are the regime's single pair, shared by every
+# zero-rate fee line, with a quantity of one and no unit like any flat fee. These two
+# helpers are the only place that reads the text marker, so the day `invoice_lines`
+# gains a charge column both change together and nothing else does.
+def charge_line_clause(markers: Iterable[str]) -> ColumnElement[bool]:
+    """SQL predicate: `InvoiceLine` rows carrying one of the charge `markers`."""
+    return InvoiceLine.descrizione.in_(tuple(markers))
+
+
+def is_statutory_charge_line(line: InvoiceLine) -> bool:
+    """Whether `line` is the line of a statutory charge any shipped pack declares,
+    whatever pack the azienda is on today: an invoice keeps the lines it was issued
+    with after the profile moves to another pack."""
+    return line.descrizione in known_charge_markers()
+
+
 def excluded_from_coefficiente_base(
     pack: FiscalPack, session: Session, anno: int, azienda_id: UUID | None = None
 ) -> Decimal:
@@ -201,7 +229,7 @@ def excluded_from_coefficiente_base(
                 .join(Invoice, InvoiceLine.invoice_id == Invoice.id)
                 .where(
                     *_issued_invoice_filter(anno, azienda_id),
-                    InvoiceLine.descrizione.in_(marcatori),
+                    charge_line_clause(marcatori),
                 )
             ).scalar_one()
         )
@@ -226,9 +254,11 @@ def taxable_ricavi(
 
 __all__ = [
     "CeilingStatus",
+    "charge_line_clause",
     "evaluate_ceiling",
     "evaluate_pack",
     "excluded_from_coefficiente_base",
+    "is_statutory_charge_line",
     "paid_revenue_for_calendar_year",
     "rivalsa_line_for_contract",
     "taxable_ricavi",

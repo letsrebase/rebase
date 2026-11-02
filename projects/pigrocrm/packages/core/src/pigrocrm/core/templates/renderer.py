@@ -1,7 +1,7 @@
 """Walk the parsed tree, escaping each value for the context its node recorded.
 
 The output is *compiled Markdown*, not a PDF: Pandoc and Typst are somebody else's
-job (`pigrocrm.core.render.pdf`, not built yet). Keeping this module free of I/O is
+job (`pigrocrm.core.render.pdf`). Keeping this module free of I/O is
 what lets the adversarial escaping cases be tested as pure string comparisons, with
 no container, no subprocess and no PDF to parse.
 
@@ -39,7 +39,7 @@ __all__ = [
     "render_template",
 ]
 
-# The generic "template body" field name, unused as of fix round 1, item 4: every
+# The generic "template body" field name, unused: every
 # error this module raises now names the specific variable or dotted path at
 # fault as `field` instead (`variable.nome`, or `".".join(path)`) -- naming
 # "which variable" via the same structured detail every caller already knows to
@@ -101,7 +101,7 @@ def format_value(value: Any) -> str:
     `tuple` still falls through to the final `str(value)` here (this function's
     own contract does not promise otherwise), but `_render_variable` -- this
     function's only caller -- refuses one with a precise error before ever
-    reaching this point, fix round 2, precisely to stop a container's own
+    reaching this point, precisely to stop a container's own
     `repr` (internal keys included) from reaching a rendered document.
 
     `Decimal` is formatted with `str`, never `float`: a binary float cannot represent
@@ -193,7 +193,7 @@ def _first_root_line_referencing(nodes: tuple[Node, ...], nome: str) -> int | No
 def _check_declared(
     nodes: tuple[Node, ...], declared: tuple[DeclaredVariable, ...], values: dict[str, Any]
 ) -> None:
-    """Fix round 1, item 4: `field` is the variable's own name and `reason` names
+    """`field` is the variable's own name and `reason` names
     the line of its first root-level reference, when it has one -- both were
     previously missing (`field` was the constant "corpo_markdown", the generic
     template-body field; `reason` had no line at all, because this check used to
@@ -249,7 +249,7 @@ def render_template(
     # supplied *or* declared-optional value covers. `values` is layered on top and
     # always wins, so an actual (even falsy) value is never masked by this default.
     #
-    # Fix round 1, item 3: this used to seed `""` unconditionally, regardless of
+    # This used to seed `""` unconditionally, regardless of
     # `tipo`. For a scalar type that is merely cosmetic -- `format_value("")` and
     # `format_value(None)` are both `""`, and `bool("")`/`bool(None)` are both
     # falsy, so `{{note}}` and `{{#if note}}` behave identically either way -- but
@@ -304,7 +304,7 @@ def _render_nodes(
             case EachNode(path=path, line=line, body=body):
                 _render_each(path, line, body, scopes, out, override)
             case _:
-                # Fix round 2: a future fifth `Node` variant silently rendering as
+                # A future fifth `Node` variant silently rendering as
                 # nothing here is the same class of failure as any of the errors
                 # above -- just later, and quieter. `assert_never` makes it
                 # impossible to add one to the `ast.py` union without this match
@@ -318,7 +318,7 @@ def _render_nodes(
 def _render_variable(
     path: tuple[str, ...], context: RenderContext, line: int, scopes: list[dict[str, Any]]
 ) -> str:
-    # Fix round 1, item 4: `field` is the dotted path itself, not the constant
+    # `field` is the dotted path itself, not the constant
     # "corpo_markdown" -- naming *which* variable failed via the same structured
     # detail `_check_declared`'s error uses (`variable.nome` there), rather than
     # leaving that fact recoverable only by parsing the free-text `reason`.
@@ -332,7 +332,7 @@ def _render_variable(
             expected="una variabile dichiarata dal template",
         )
     if isinstance(value, (dict, list, tuple)):
-        # Fix round 2: a dict or a list in *value* position -- a bare `{{cliente}}`
+        # A dict or a list in *value* position -- a bare `{{cliente}}`
         # where the author meant `{{cliente.nome}}` -- used to fall through to
         # `format_value`'s final `str(value)` and print the value's own Python
         # `repr` into the document, internal keys included: confirmed live,
@@ -383,7 +383,7 @@ def _render_each(
         # the wrong shape entirely, and worth surfacing rather than silently
         # iterating zero (or, for a string, character-by-character) times.
         # `field` is the dotted path, not the generic "corpo_markdown" constant --
-        # fix round 1, item 4, same as `_render_variable`'s two errors above.
+        # same as `_render_variable`'s two errors above.
         dotted = ".".join(path)
         raise ValidationFailed(
             ENTITY,

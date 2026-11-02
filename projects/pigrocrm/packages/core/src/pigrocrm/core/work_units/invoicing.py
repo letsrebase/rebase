@@ -4,8 +4,8 @@ This is the foundations half REB-359 owns -- fee lines only, for a day with no
 `applies_social_charge` awareness at all (that election, and the rivalsa line itself,
 is a later issue's job, appended by a separate step onto whatever this one produces).
 No schema change to `Invoice`/`InvoiceLine`: an approved, worked day becomes an
-ordinary `InvoiceLine` through `InvoiceService.replace_lines`, the same path every
-other line on this schema already goes through.
+ordinary `InvoiceLine` on a draft that `invoices.assembly.assemble_draft` creates, the
+same lines every other draft carries.
 
 Mirrors `AnalyticsService.bind_time_to_invoice` (`analytics/service.py`) in shape --
 one line per rate card per month, for legibility, with the resulting line ids bound
@@ -26,9 +26,9 @@ its days back (`release_days_of_invoice`), through the two edges the state graph
 case: a contract with nothing else being assembled onto the same invoice. A caller that
 also needs to append a rivalsa line or a rebillable expense to the *same* invoice
 should use `unbilled_work_unit_lines` and `bind_work_units` directly around its own
-single `replace_lines` call instead -- `InvoiceLineIn` deliberately carries no
+single `assemble_draft` call instead -- `InvoiceLineIn` deliberately carries no
 `natura`/`riferimento_normativo` (`invoices/schemas.py`), so an existing rivalsa line
-read back and round-tripped through a second, independent `replace_lines` call would
+read back and round-tripped through a second, independent line replacement would
 silently lose the very fields that make it a rivalsa line.
 """
 
@@ -37,14 +37,13 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.contracts.models import Contract, RateCard
 from pigrocrm.core.contracts.repository import RateCardRepository
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
-from pigrocrm.core.invoices.models import InvoiceLine
+from pigrocrm.core.invoices.assembly import assemble_draft
 from pigrocrm.core.invoices.schemas import DIVISA, InvoiceCreate, InvoiceLineIn, InvoiceRead
 from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm.core.money import round_money
@@ -220,16 +219,21 @@ def bind_work_units(
     persisted lines. The move goes through the state graph's own trigger, which logs it
     under `actor` and `motivo`; it flushes, never commits.
 
-    Each day is read again under a row lock and refused unless it is still `lavorato` and
-    on no line: the gather above ran in another transaction, and two requests (a double
-    click, two tabs) can both have seen the same days as ready. The trigger would let the
-    second one repoint the line of a day that keeps its state, so this is what makes the
-    loser fail instead of leaving the first draft with lines whose days moved away."""
+    Each day is read again under a row lock (`populate_existing`, so a day already loaded
+    by the gather is overwritten with the locked row, not returned stale) and refused
+    unless it is still `lavorato` and on no line: the gather above ran in another
+    transaction, and two requests (a double click, two tabs) can both have seen the same
+    days as ready. The trigger would let the second one repoint the line of a day that
+    keeps its state, so this is what makes the loser fail instead of leaving the first
+    draft with lines whose days moved away."""
     set_transition_context(session, actor, motivo)
     for member_ids, line_id in zip(gruppi, line_ids, strict=True):
         for work_unit_id in member_ids:
-            work_unit = session.get(WorkUnit, work_unit_id, with_for_update=True)
-            assert work_unit is not None, f"work_unit {work_unit_id} vanished mid-assembly"
+            work_unit = session.get(
+                WorkUnit, work_unit_id, with_for_update=True, populate_existing=True
+            )
+            if work_unit is None:
+                raise NotFound(ENTITY, work_unit_id)
             if work_unit.stato != "lavorato" or work_unit.invoice_line_id is not None:
                 raise Conflict(
                     ENTITY,
@@ -251,9 +255,10 @@ def assemble_unbilled_work_units_into_new_invoice(
 ) -> InvoiceRead:
     """The end-to-end common case: every unbilled, worked day on `contract_id` (or those
     in `[da, a]`) becomes one line each (grouped by rate card and month) on a fresh draft
-    invoice for the contract's own customer, through `InvoiceService.create` then
-    `replace_lines` -- mirroring `bind_time_to_invoice`'s own two-call shape -- and
-    each day is bound to the line it produced.
+    invoice for the contract's own customer, under the contract's own azienda, and each
+    day is bound to the line it produced. The draft, its lines and the binding are one
+    transaction (`assemble_draft`): a day that was billed in the meantime refuses the
+    whole thing and no draft is left behind.
 
     `admin` and never an agent (`actor.py`'s ban list, `test_mcp_invoice_ban.py`), the
     rung `bind_time_to_invoice` sits on: choosing what goes on a draft decides what an
@@ -276,32 +281,13 @@ def assemble_unbilled_work_units_into_new_invoice(
             ),
         )
 
-    service = InvoiceService(session, storage)
-    invoice = service.create(
-        InvoiceCreate(customer_id=contract.customer_id, righe=[]),
+    return assemble_draft(
+        InvoiceService(session, storage),
+        InvoiceCreate(customer_id=contract.customer_id, righe=righe),
         actor,
         azienda_id=contract.azienda_id,
+        bind=lambda line_ids: bind_work_units(session, gruppi, line_ids, actor),
     )
-    invoice = service.replace_lines(invoice.id, righe, actor)
-
-    line_ids = list(
-        session.execute(
-            select(InvoiceLine.id)
-            .where(InvoiceLine.invoice_id == invoice.id)
-            .order_by(InvoiceLine.numero_linea)
-        ).scalars()
-    )
-    try:
-        bind_work_units(session, gruppi, line_ids, actor)
-        session.commit()
-    except Exception:
-        # The draft and its lines are already committed (`create` and `replace_lines` commit
-        # on their own), so a failure here would leave a draft billing days that are still
-        # ready, and a retry would bill them a second time. Take the draft back out.
-        session.rollback()
-        service.soft_delete(invoice.id, actor)
-        raise
-    return invoice
 
 
 __all__ = [

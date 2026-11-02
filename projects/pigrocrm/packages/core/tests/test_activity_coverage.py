@@ -5,10 +5,10 @@ halves, because "every write is recorded" is a claim about code nobody has writt
 a claim about code that exists, and one test cannot hold both.
 
 **The sweep** is the half that fails when somebody adds a write path and forgets the
-record. It reads every `*Service` class under `packages/core` the way
-`apps/mcp/tests/test_mcp_surface_coverage.py` does (the naming convention is the
-enumeration) and asks of each public method two things, from its AST and through the
-`self.` helpers it calls: does it write (it asks for a role, or it commits), and does it
+record. It reads every `*Service` class under `packages/core`, and the classes a facade splits
+its writes out to, the way `apps/mcp/tests/test_mcp_surface_coverage.py` does (the naming
+convention is the enumeration) and asks of each public method two things, from its AST and
+through the `self.` helpers it calls: does it write (it asks for a role, or it commits), and does it
 reach `ActivityService.record`. A method that writes and does not record is either a gap,
 which is fixed, or one of the named exclusions below, each with the reason it is not one.
 Adding a writer therefore fails this file until it records, or until somebody writes down
@@ -68,6 +68,24 @@ from pigrocrm.core.timetracking.service import TimeEntryService
 
 CORE_DIR = Path(__file__).resolve().parents[1] / "src" / "pigrocrm" / "core"
 
+# The classes a `*Service` facade hands its writes to (`InvoiceService.issue` is
+# `InvoiceEmission.issue`): the sweep reads them under their own names, because the facade's
+# method is a one-line delegation and would show as a reader.
+_SPLIT_OUT = frozenset(
+    {
+        "DocumentTemplating",
+        "DocumentText",
+        "DocumentUploads",
+        "InvoiceArtifacts",
+        "InvoiceDrafting",
+        "InvoiceEmission",
+        "InvoiceImporter",
+        "IssuedInvoiceImporter",
+        "RegisterGaps",
+        "TimeBilling",
+    }
+)
+
 Method = tuple[str, str]
 
 # What makes a method a writer: it asks for a role (the convention every service write
@@ -94,8 +112,11 @@ _LETTURE: dict[Method, str] = {
     ("GmailSyncService", "discover"): "asks Gmail, writes nothing",
     ("GmailSyncService", "suggest_customers"): "asks Gmail, writes nothing",
     ("InvitationService", "list"): "reads the invitations",
-    ("InvoiceService", "review_import"): "classifies stored bytes, writes nothing",
-    ("InvoiceService", "review_upload"): "classifies uploaded bytes, writes nothing",
+    ("DocumentTemplating", "render_to_pdf"): (
+        "commits only to release the read transaction before the Typst compile; writes nothing"
+    ),
+    ("InvoiceImporter", "review_import"): "classifies stored bytes, writes nothing",
+    ("InvoiceImporter", "review_upload"): "classifies uploaded bytes, writes nothing",
     ("PatService", "list_team"): "reads the live tokens of the other members",
     ("ScheduledJobService", "describe"): "reads the job runs",
     ("SlackService", "channels"): "asks Slack, writes nothing",
@@ -123,8 +144,16 @@ _DELEGA: dict[Method, str] = {
         "creates the customer and the deal through their services as `Actor.rebase()`; "
         "`test_engagements.py` asserts the two `rebase` rows"
     ),
-    ("InvoiceService", "export_xml"): "files the XML through `DocumentService.add_version`",
-    ("InvoiceService", "produce_artifacts"): "files the PDF and XML through `add_version`",
+    ("DocumentService", "create"): "`DocumentContext.create_row` records `created`",
+    ("DocumentTemplating", "regenerate"): "`DocumentUploads.add_version` records the version",
+    ("InvoiceArtifacts", "export_xml"): "files the XML through `DocumentService.add_version`",
+    ("InvoiceArtifacts", "produce_artifacts"): "files the PDF and XML through `add_version`",
+    ("InvoiceImporter", "confirm_import"): (
+        "each invoice is written by `IssuedInvoiceImporter.import_issued`, swept under its name"
+    ),
+    ("InvoiceImporter", "confirm_upload"): (
+        "each invoice is written by `IssuedInvoiceImporter.import_issued`, swept under its name"
+    ),
     ("TimerService", "stop"): "`TimeEntryService.create` records the entry the timer becomes",
 }
 
@@ -188,7 +217,7 @@ def _sweep() -> dict[Method, tuple[bool, bool]]:
     for path in sorted(CORE_DIR.rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for cls in (n for n in ast.walk(tree) if isinstance(n, ast.ClassDef)):
-            if not cls.name.endswith("Service"):
+            if not (cls.name.endswith("Service") or cls.name in _SPLIT_OUT):
                 continue
             methods = {
                 m.name: m for m in cls.body if isinstance(m, ast.FunctionDef | ast.AsyncFunctionDef)
@@ -226,7 +255,7 @@ def test_the_sweep_finds_writers_that_record_and_writers_that_do_not() -> None:
     """The guard on the guard: an empty sweep (a moved directory, a renamed convention)
     would make every assertion below pass while checking nothing."""
     assert SWEEP[("CustomerService", "update")] == (True, True)
-    assert SWEEP[("DocumentService", "add_version")] == (True, True)  # through `_add_version_row`
+    assert SWEEP[("DocumentUploads", "add_version")] == (True, True)  # through `_add_version_row`
     assert SWEEP[("CustomerService", "get")][0] is False
     assert SWEEP[("ApprovalService", "record")] == (True, True)  # the approval's own row
     assert SWEEP[("TimerService", "start")] == (True, False)

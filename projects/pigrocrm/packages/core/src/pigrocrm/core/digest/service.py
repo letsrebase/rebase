@@ -23,6 +23,8 @@ the mail are the same walk.
 
 from __future__ import annotations
 
+import logging
+from collections.abc import Callable, Sequence
 from datetime import date, datetime, time, timedelta
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -53,6 +55,8 @@ from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.invoices.naming import numero_completo
 from pigrocrm.core.invoices.repository import InvoiceRepository
 from pigrocrm.core.timetracking.repository import TimeEntryRepository
+
+logger = logging.getLogger(__name__)
 
 # §3.1: «quelle in scadenza nei prossimi sette giorni», counted from the day *after* the
 # closed week -- this constant is only the width of that window.
@@ -192,9 +196,11 @@ class DigestService:
         # The `is not None` guard is `list_scadute`'s own `WHERE` restated -- the column is
         # nullable and `mypy` reads it as such.
         scadute = [
-            self._riga(row, nomi, scadenza, giorni_di_ritardo=(oggi - scadenza).days)
+            riga
             for row in scadute_rows
             if (scadenza := row.data_scadenza) is not None
+            and (riga := self._riga(row, nomi, scadenza, giorni_di_ritardo=(oggi - scadenza).days))
+            is not None
         ]
         mese_da, mese_a = month_bounds(a.year, a.month)
         # The last day of the previous month is the day before this one's first, which is
@@ -235,14 +241,14 @@ class DigestService:
             da=da,
             a=a,
             scadute=scadute,
-            in_scadenza=[self._riga(row, nomi, row.data_scadenza) for row in in_scadenza_rows],
+            in_scadenza=self._righe(in_scadenza_rows, nomi, lambda row: row.data_scadenza),
             vinti_da_fatturare=vinti_da_fatturare,
             ore_non_fatturate=arretrato.ore_fatturabili_non_fatturate,
             valore_maturato=arretrato.valore_maturato,
-            emesse=[self._riga(row, nomi, row.data_emissione) for row in emesse_rows],
+            emesse=self._righe(emesse_rows, nomi, lambda row: row.data_emissione),
             totale_mese_corrente=invoices.sum_emesse_in_periodo(mese_da, mese_a),
             totale_mese_precedente=invoices.sum_emesse_in_periodo(precedente_da, precedente_a),
-            incassate=[self._riga(row, nomi, row.data_incasso) for row in incassate_rows],
+            incassate=self._righe(incassate_rows, nomi, lambda row: row.data_incasso),
             ore=ore,
             pipeline=pipeline,
             deal_mossi=deal_mossi,
@@ -323,6 +329,15 @@ class DigestService:
             in_settimana_totale=totale_settimana,
         )
 
+    def _righe(
+        self,
+        rows: Sequence[Invoice],
+        nomi: dict[UUID, str],
+        date_of: Callable[[Invoice], date | None],
+    ) -> list[DigestInvoice]:
+        """`_riga` over a list, leaving out the rows it declines to print."""
+        return [riga for row in rows if (riga := self._riga(row, nomi, date_of(row))) is not None]
+
     def _riga(
         self,
         invoice: Invoice,
@@ -330,7 +345,7 @@ class DigestService:
         data: date | None,
         *,
         giorni_di_ritardo: int | None = None,
-    ) -> DigestInvoice:
+    ) -> DigestInvoice | None:
         """One register row as a mail line.
 
         `data` is passed in rather than picked here: which of three dates a section is
@@ -349,12 +364,13 @@ class DigestService:
         A row with no date at all is the one case that gets no fallback. `date.min` would
         put «lun 1 gen» of the year 1 in a mail and go on being sent every Monday; the
         three predicates cannot produce it, so if it ever arrives the register holds
-        something this report has no honest line for, and the space is better skipped with
-        the invoice's id in the log (`cli.digest` prints `saltato` and moves on).
+        something this report has no honest line for. That one row is left out and its id
+        logged: one odd invoice must not cost the whole space its week. `None` says so.
         """
         giorno = data or invoice.data_emissione or invoice.data_scadenza
         if giorno is None:
-            raise ValueError(f"invoice {invoice.id} has no date to print")
+            logger.warning("digest: invoice %s has no date to print, row skipped", invoice.id)
+            return None
         return DigestInvoice(
             invoice_id=invoice.id,
             numero=numero_completo(invoice.anno or 0, invoice.numero or 0),

@@ -19,7 +19,7 @@ from pigrocrm.core.customers.schemas import CustomerCreate, CustomerUpdate
 from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.deals.schemas import DealCreate
 from pigrocrm.core.deals.service import DealService
-from pigrocrm.core.documents import service as documents_service_module
+from pigrocrm.core.documents import templating as documents_templating_module
 from pigrocrm.core.documents.schemas import DocumentFromTemplate
 from pigrocrm.core.documents.service import DocumentService
 from pigrocrm.core.emitter.assets import LegalEntityAssets
@@ -33,7 +33,6 @@ from pigrocrm.core.gmail.repository import GmailRepository
 from pigrocrm.core.gmail.schemas import EmailDraftCreate
 from pigrocrm.core.gmail.solleciti import SollecitiService
 from pigrocrm.core.invoices import pdf as invoice_pdf
-from pigrocrm.core.invoices import service as invoices_service_module
 from pigrocrm.core.invoices.schemas import InvoiceCreate, InvoiceLineIn
 from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm.core.people.models import Person
@@ -110,7 +109,7 @@ def test_a_document_renders_from_its_own_azienda_with_its_logo(
         seen["media"] = dict(media or {})
         return b"%PDF-1.7 fake"
 
-    monkeypatch.setattr(documents_service_module, "render_pdf", fake_render)
+    monkeypatch.setattr(documents_templating_module, "render_pdf", fake_render)
     service = DocumentService(db_session, local_storage, SETTINGS)
     document = service.create_from_template(
         DocumentFromTemplate(
@@ -173,7 +172,7 @@ def test_the_invoice_pdf_carries_the_issuing_azienda_s_logo(
         )
         return "md", b"%PDF-1.7 fake"
 
-    monkeypatch.setattr(invoices_service_module.invoice_pdf, "render_invoice_pdf", fake_render)
+    monkeypatch.setattr(invoice_pdf, "render_invoice_pdf", fake_render)
     invoices.produce_artifacts(proforma.id, ADMIN)
     assert seen["media"] == {"logo.png": BLANK_PNG}
     assert '#image("./media/logo.png"' in seen["header"]

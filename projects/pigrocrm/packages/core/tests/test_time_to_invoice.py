@@ -34,6 +34,7 @@ from pigrocrm.core.invoices.schemas import InvoiceIssue
 from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm.core.money import line_value, sum_hours, sum_money
 from pigrocrm.core.storage.local import LocalFileStorage
+from pigrocrm.core.timetracking.billing import TimeBilling
 from pigrocrm.core.timetracking.schemas import TimeEntryCreate, TimeEntryRead
 from pigrocrm.core.timetracking.service import TimeEntryService
 
@@ -103,7 +104,7 @@ def test_thirty_seven_entries_on_three_rates_and_two_months_become_six_lines(
                 )
     assert len(entries) == 37
 
-    invoice = AnalyticsService(db_session, local_storage).bind_time_to_invoice(
+    invoice = TimeBilling(db_session, local_storage).bind_to_invoice(
         billable_deal_id, BindTimeRequest(entry_ids=[e.id for e in entries]), ADMIN
     )
 
@@ -187,14 +188,14 @@ def test_one_line_per_rate_when_the_monthly_grouping_is_turned_off(
         for month in (3, 4)
         for tariffa in ("80.000000", "100.000000")
     ]
-    service = AnalyticsService(db_session, local_storage)
+    service = TimeBilling(db_session, local_storage)
 
-    monthly = service.bind_time_to_invoice(
+    monthly = service.bind_to_invoice(
         billable_deal_id, BindTimeRequest(entry_ids=[e.id for e in entries]), ADMIN
     )
     assert len(_lines(db_session, monthly.id)) == 4
 
-    collapsed = service.bind_time_to_invoice(
+    collapsed = service.bind_to_invoice(
         billable_deal_id,
         BindTimeRequest(entry_ids=[e.id for e in entries], raggruppa_per_mese=False),
         ADMIN,
@@ -239,8 +240,8 @@ def test_the_derived_value_stops_being_consulted_once_the_invoice_exists(
     derived = sum_money([line_value(e.ore, e.tariffa_applicata) for e in entries])
     assert derived == Decimal("9.99")
 
-    analytics = AnalyticsService(db_session, local_storage)
-    invoice = analytics.bind_time_to_invoice(
+    billing = TimeBilling(db_session, local_storage)
+    invoice = billing.bind_to_invoice(
         billable_deal_id, BindTimeRequest(entry_ids=[e.id for e in entries]), ADMIN
     )
     InvoiceService(db_session, local_storage).issue(invoice.id, InvoiceIssue(), ADMIN)
@@ -255,7 +256,7 @@ def test_the_derived_value_stops_being_consulted_once_the_invoice_exists(
     assert issued_imponibile == Decimal("10.00")
     assert issued_imponibile - derived == Decimal("0.01")
 
-    pnl = analytics.deal_pnl(billable_deal_id, READER)
+    pnl = AnalyticsService(db_session).deal_pnl(billable_deal_id, READER)
     # The invoice's figure, not the sum of the derived ones. This is the assertion the
     # whole rounding question reduces to.
     assert pnl.ricavi == Decimal("10.00")
@@ -293,8 +294,9 @@ def test_the_draft_is_not_revenue_and_the_estimate_is_still_the_one_consulted(
         )
         for day in (1, 2, 3)
     ]
-    analytics = AnalyticsService(db_session, local_storage)
-    invoice = analytics.bind_time_to_invoice(
+    billing = TimeBilling(db_session, local_storage)
+    analytics = AnalyticsService(db_session)
+    invoice = billing.bind_to_invoice(
         billable_deal_id, BindTimeRequest(entry_ids=[e.id for e in entries]), ADMIN
     )
 
@@ -348,7 +350,7 @@ def test_unpriced_entries_are_refused_with_a_count_and_a_list(
         for day in (2, 3)
     ]
     with pytest.raises(ValidationFailed) as excinfo:
-        AnalyticsService(db_session, local_storage).bind_time_to_invoice(
+        TimeBilling(db_session, local_storage).bind_to_invoice(
             billable_deal_id,
             BindTimeRequest(entry_ids=[priced.id, *[e.id for e in unpriced]]),
             ADMIN,
@@ -390,7 +392,7 @@ def test_non_billable_entries_are_refused_by_definition(
         fatturabile=False,
     )
     with pytest.raises(ValidationFailed) as excinfo:
-        AnalyticsService(db_session, local_storage).bind_time_to_invoice(
+        TimeBilling(db_session, local_storage).bind_to_invoice(
             billable_deal_id, BindTimeRequest(entry_ids=[internal.id]), ADMIN
         )
     assert excinfo.value.details["field"] == "entry_ids"
@@ -414,16 +416,14 @@ def test_an_hour_already_on_an_issued_invoice_cannot_be_invoiced_twice(
         ore="1.00",
         tariffa="80.000000",
     )
-    analytics = AnalyticsService(db_session, local_storage)
-    invoice = analytics.bind_time_to_invoice(
+    billing = TimeBilling(db_session, local_storage)
+    invoice = billing.bind_to_invoice(
         billable_deal_id, BindTimeRequest(entry_ids=[entry.id]), ADMIN
     )
     issued = InvoiceService(db_session, local_storage).issue(invoice.id, InvoiceIssue(), ADMIN)
 
     with pytest.raises(Conflict) as excinfo:
-        analytics.bind_time_to_invoice(
-            billable_deal_id, BindTimeRequest(entry_ids=[entry.id]), ADMIN
-        )
+        billing.bind_to_invoice(billable_deal_id, BindTimeRequest(entry_ids=[entry.id]), ADMIN)
     assert "fattura" in excinfo.value.message
     # The refusal names the document, because "already invoiced" is only actionable if
     # the user can go and look at the invoice in question.
@@ -442,17 +442,17 @@ def test_an_hour_on_a_draft_can_be_rebound(
     invoice is a draft the hours stay modifiable and re-selectable -- which is what lets
     slice 3's wholesale line replacement work without slice 4 joining its transaction.
 
-    Constructed with no injected storage, deliberately: every read call site builds
-    `AnalyticsService(session)` with one argument, and a draft produces no artefact, so
+    Constructed with no injected storage, deliberately: a caller with no backend of its
+    own builds `TimeBilling(session)` with one argument, and a draft produces no artefact, so
     the one-argument form has to keep working here too. That form resolves its storage
     from `get_settings()`, which reads the worktree's `.env`: pinned to the code's own
     defaults (`_env_file=None`) so an installation that has switched its document store
     to Drive does not turn this into a test of its configuration.
     """
-    from pigrocrm.core.analytics import service as analytics_service
+    from pigrocrm.core.timetracking import billing as billing_module
 
     monkeypatch.setattr(
-        analytics_service,
+        billing_module,
         "get_settings",
         lambda: Settings(_env_file=None),  # type: ignore[call-arg]
     )
@@ -464,16 +464,12 @@ def test_an_hour_on_a_draft_can_be_rebound(
         ore="1.00",
         tariffa="80.000000",
     )
-    analytics = AnalyticsService(db_session)
-    first = analytics.bind_time_to_invoice(
-        billable_deal_id, BindTimeRequest(entry_ids=[entry.id]), ADMIN
-    )
+    billing = TimeBilling(db_session)
+    first = billing.bind_to_invoice(billable_deal_id, BindTimeRequest(entry_ids=[entry.id]), ADMIN)
     first_line = _lines(db_session, first.id)[0][0]
     assert TimeEntryService(db_session).get(entry.id, READER).invoice_line_id == first_line
 
-    second = analytics.bind_time_to_invoice(
-        billable_deal_id, BindTimeRequest(entry_ids=[entry.id]), ADMIN
-    )
+    second = billing.bind_to_invoice(billable_deal_id, BindTimeRequest(entry_ids=[entry.id]), ADMIN)
     assert second.id != first.id
     # Moved, not duplicated: the entry now points at the second draft's line, and the
     # first draft keeps its line with nothing hanging off it.
@@ -488,7 +484,7 @@ def test_a_collaborator_cannot_call_it(
     immediately before the irreversible one -- slice 3 §11 withdrew `issue_invoice` from
     MCP with the same reasoning."""
     with pytest.raises(PermissionDenied):
-        AnalyticsService(db_session, local_storage).bind_time_to_invoice(
+        TimeBilling(db_session, local_storage).bind_to_invoice(
             billable_deal_id, BindTimeRequest(entry_ids=[uuid4()]), WRITER
         )
 
@@ -521,7 +517,7 @@ def test_an_entry_from_another_deal_is_refused(
         tariffa="80.000000",
     )
     with pytest.raises(ValidationFailed) as excinfo:
-        AnalyticsService(db_session, local_storage).bind_time_to_invoice(
+        TimeBilling(db_session, local_storage).bind_to_invoice(
             billable_deal_id, BindTimeRequest(entry_ids=[mine.id, stray]), ADMIN
         )
     assert excinfo.value.details["field"] == "entry_ids"
@@ -537,7 +533,7 @@ def test_an_unknown_entry_id_is_a_not_found_not_a_silent_skip(
     client."""
     ghost = uuid4()
     with pytest.raises(NotFound) as excinfo:
-        AnalyticsService(db_session, local_storage).bind_time_to_invoice(
+        TimeBilling(db_session, local_storage).bind_to_invoice(
             billable_deal_id, BindTimeRequest(entry_ids=[ghost]), ADMIN
         )
     assert excinfo.value.details["identifier"] == str(ghost)
@@ -561,7 +557,7 @@ def test_the_same_entry_twice_in_one_selection_is_billed_once(
         ore="1.00",
         tariffa="80.000000",
     )
-    invoice = AnalyticsService(db_session, local_storage).bind_time_to_invoice(
+    invoice = TimeBilling(db_session, local_storage).bind_to_invoice(
         billable_deal_id, BindTimeRequest(entry_ids=[entry.id, entry.id]), ADMIN
     )
     lines = _lines(db_session, invoice.id)

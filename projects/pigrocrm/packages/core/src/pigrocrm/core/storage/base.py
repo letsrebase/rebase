@@ -9,7 +9,7 @@ import re
 from datetime import timedelta
 from typing import Protocol
 
-from pigrocrm.core.errors import ValidationFailed
+from pigrocrm.core.storage.errors import unusable_storage_key
 
 MAX_KEY_LENGTH: int = 255
 
@@ -19,8 +19,7 @@ MAX_KEY_LENGTH: int = 255
 # let "a.pdf\n" through and reach the filesystem, and reach the `String(255)` column, as
 # something neither had agreed to.
 #
-# Lowercase-only is a deliberate override of what an earlier version of this function
-# allowed (`A-Z` too) -- see task-4-report.md, "Fix round 1". Two keys differing only in
+# Lowercase-only is deliberate. Two keys differing only in
 # case are different Python strings but can name the *same* file on a case-insensitive
 # filesystem (macOS/APFS and Windows/NTFS by default): `put("ACME/V1.PDF", b)` after
 # `put("acme/v1.pdf", a)` silently leaves one file containing `b`, with no exception on
@@ -56,6 +55,10 @@ _WINDOWS_RESERVED_NAMES = {
     *(f"COM{digit}" for digit in range(1, 10)),
     *(f"LPT{digit}" for digit in range(1, 10)),
 }
+
+
+_INVALID_KEY_REASON = "chiave di storage non valida"
+_INVALID_KEY_EXPECTED = "segmenti alfanumerici separati da '/', max 255 caratteri"
 
 
 def _unsafe_segment(segment: str) -> bool:
@@ -96,22 +99,12 @@ def validate_storage_key(key: str) -> str:
     containment check on top after this one passes.
     """
     if not _KEY_RE.fullmatch(key) or len(key) > MAX_KEY_LENGTH:
-        raise ValidationFailed(
-            "document_version",
-            "storage_key",
-            "chiave di storage non valida",
-            expected="segmenti alfanumerici separati da '/', max 255 caratteri",
-        )
+        raise unusable_storage_key(_INVALID_KEY_REASON, _INVALID_KEY_EXPECTED)
     segments = key.split("/")
     if any(segment == ".." for segment in segments) or any(
         _unsafe_segment(segment) for segment in segments
     ):
-        raise ValidationFailed(
-            "document_version",
-            "storage_key",
-            "chiave di storage non valida",
-            expected="segmenti alfanumerici separati da '/', max 255 caratteri",
-        )
+        raise unusable_storage_key(_INVALID_KEY_REASON, _INVALID_KEY_EXPECTED)
     return key
 
 

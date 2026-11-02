@@ -5,16 +5,19 @@ from decimal import Decimal
 from uuid import uuid4
 
 import pytest
+from fakes.customer_fixtures import make_customer
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from test_contracts_service import _create_payload, _customer
+from test_contracts_service import _create_payload
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.contracts.clause_note_service import ClauseNoteService
 from pigrocrm.core.contracts.models import Contract, RateCard
+from pigrocrm.core.contracts.rate_card_service import RateCardService
 from pigrocrm.core.contracts.renewal import add_months, renewed_term
 from pigrocrm.core.contracts.schemas import ContractRenew, RateCardCreate, RenewalDuration
-from pigrocrm.core.contracts.service import ClauseNoteService, ContractService, RateCardService
+from pigrocrm.core.contracts.service import ContractService
 from pigrocrm.core.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
 
 ADMIN = Actor(id=None, type="system", role="admin")
@@ -34,7 +37,7 @@ def _year_contract(db_session: Session, **overrides: object):  # type: ignore[no
         **overrides,
     }
     return ContractService(db_session).create(
-        _create_payload(_customer(db_session).id, **payload), ADMIN
+        _create_payload(make_customer(db_session).id, **payload), ADMIN
     )
 
 

@@ -15,6 +15,7 @@ from threading import Barrier
 from uuid import UUID, uuid4
 
 import pytest
+from fakes.customer_fixtures import make_customer
 from fakes.gmail_fixtures import actor_for, connected_account, gmail_settings
 from pydantic import ValidationError
 from sqlalchemy import Engine, delete, select
@@ -42,13 +43,6 @@ from pigrocrm.core.people.models import Person
 BODY = "Gentile Ada,\n\nin allegato l'offerta."
 
 
-def _customer(session: Session) -> Customer:
-    customer = Customer(ragione_sociale="Acme", email="info@acme.it")
-    session.add(customer)
-    session.flush()
-    return customer
-
-
 def _payload(customer: Customer, **overrides: object) -> EmailDraftCreate:
     base: dict[str, object] = {
         "entity_type": "customer",
@@ -71,7 +65,7 @@ def test_a_draft_is_written_to_the_database_before_anything_else(db_session: Ses
     """Losing a hand-written email to an HTTP error is unforgivable, and a composer that
     keeps the text only in React state loses it on the first refresh."""
     account = connected_account(db_session)
-    customer = _customer(db_session)
+    customer = make_customer(db_session, email="info@acme.it")
     read = _service(db_session).create(_payload(customer), actor_for(account))
 
     stored = db_session.get(EmailDraft, read.id)
@@ -86,7 +80,7 @@ def test_a_message_id_is_minted_at_creation_not_at_send(db_session: Session) -> 
     """Spec 6.2: the Message-ID exists *before* Gmail is called. That is what makes an
     unknown outcome resolvable by lookup instead of by guessing."""
     account = connected_account(db_session)
-    customer = _customer(db_session)
+    customer = make_customer(db_session, email="info@acme.it")
     read = _service(db_session).create(_payload(customer), actor_for(account))
 
     assert read.message_id_header.startswith("<")
@@ -102,7 +96,7 @@ def test_a_message_id_is_minted_at_creation_not_at_send(db_session: Session) -> 
 
 def test_two_drafts_never_share_a_message_id(db_session: Session) -> None:
     account = connected_account(db_session)
-    customer = _customer(db_session)
+    customer = make_customer(db_session, email="info@acme.it")
     service = _service(db_session)
     ids = {
         service.create(_payload(customer), actor_for(account)).message_id_header for _ in range(10)
@@ -132,7 +126,7 @@ def test_editing_a_draft_keeps_its_message_id(db_session: Session) -> None:
     """Changing the id on every keystroke would make the reconciliation look for a
     message that was never sent under that name."""
     account = connected_account(db_session)
-    customer = _customer(db_session)
+    customer = make_customer(db_session, email="info@acme.it")
     service = _service(db_session)
     created = service.create(_payload(customer), actor_for(account))
     updated = service.update(
@@ -152,7 +146,7 @@ def test_a_draft_is_recorded_on_its_record_with_the_member_and_never_its_text(
     timeline, and the draft's words are not."""
     account = connected_account(db_session)
     actor = actor_for(account)
-    customer = _customer(db_session)
+    customer = make_customer(db_session, email="info@acme.it")
     service = _service(db_session)
     created = service.create(_payload(customer), actor)
     service.update(created.id, EmailDraftUpdate(body_markdown="Testo nuovo"), actor)
@@ -179,7 +173,7 @@ def test_a_draft_being_sent_or_already_sent_can_no_longer_be_edited(
     `incerto` may have left, and editing it would make the reconciliation of spec 6.3
     compare a Gmail message against text that is no longer the text that was sent."""
     account = connected_account(db_session)
-    customer = _customer(db_session)
+    customer = make_customer(db_session, email="info@acme.it")
     service = _service(db_session)
     for state in ("in_invio", "inviato", "incerto"):
         created = service.create(_payload(customer), actor_for(account))
@@ -199,7 +193,7 @@ def test_a_failed_draft_is_editable_again_and_loses_its_stale_error(
     to prevent. The error goes when the text changes: an error sentence next to text it
     no longer describes is worse than none."""
     account = connected_account(db_session)
-    customer = _customer(db_session)
+    customer = make_customer(db_session, email="info@acme.it")
     service = _service(db_session)
     created = service.create(_payload(customer), actor_for(account))
     draft = service.repo_draft(created.id)
@@ -220,7 +214,7 @@ def test_deleting_a_draft_in_flight_is_refused(db_session: Session) -> None:
     to be recorded against -- which is the previous system's `404 'Offerta non trovata per
     registrare l'invio email.'` with the mail already delivered."""
     account = connected_account(db_session)
-    customer = _customer(db_session)
+    customer = make_customer(db_session, email="info@acme.it")
     service = _service(db_session)
     created = service.create(_payload(customer), actor_for(account))
     draft = service.repo_draft(created.id)
@@ -241,7 +235,7 @@ def test_deleting_a_draft_in_flight_is_refused(db_session: Session) -> None:
 
 def test_an_unknown_entity_is_a_not_found_not_a_foreign_key_error(db_session: Session) -> None:
     account = connected_account(db_session)
-    customer = _customer(db_session)
+    customer = make_customer(db_session, email="info@acme.it")
     with pytest.raises(NotFound):
         _service(db_session).create(_payload(customer, entity_id=uuid4()), actor_for(account))
 
@@ -251,7 +245,7 @@ def test_each_entity_type_is_checked_against_its_own_table(db_session: Session) 
     table, and checking only "some row with this id exists somewhere" would file the
     draft against a row of the wrong kind."""
     account = connected_account(db_session)
-    customer = _customer(db_session)
+    customer = make_customer(db_session, email="info@acme.it")
     person = Person(nome="Ada", cognome="Rossi", email="ada@acme.it", customer_id=customer.id)
     db_session.add(person)
     db_session.flush()
@@ -275,7 +269,7 @@ def test_a_soft_deleted_entity_is_not_a_valid_target(db_session: Session) -> Non
     from datetime import UTC, datetime
 
     account = connected_account(db_session)
-    customer = _customer(db_session)
+    customer = make_customer(db_session, email="info@acme.it")
     customer.deleted_at = datetime.now(UTC)
     db_session.flush()
     with pytest.raises(NotFound):
@@ -287,7 +281,7 @@ def test_an_attachment_that_is_not_a_document_version_is_refused(db_session: Ses
     well-formed must become a `NotFound` here rather than an `IntegrityError` -- or,
     worse, a send that discovers at Gmail's door that there is nothing to attach."""
     account = connected_account(db_session)
-    customer = _customer(db_session)
+    customer = make_customer(db_session, email="info@acme.it")
     with pytest.raises(NotFound):
         _service(db_session).create(
             _payload(customer, attachment_version_ids=[uuid4()]), actor_for(account)
@@ -296,7 +290,7 @@ def test_an_attachment_that_is_not_a_document_version_is_refused(db_session: Ses
 
 def test_a_reply_to_an_unknown_message_is_refused(db_session: Session) -> None:
     account = connected_account(db_session)
-    customer = _customer(db_session)
+    customer = make_customer(db_session, email="info@acme.it")
     with pytest.raises(NotFound):
         _service(db_session).create(
             _payload(customer, in_reply_to_message_id=uuid4()), actor_for(account)
@@ -305,14 +299,14 @@ def test_a_reply_to_an_unknown_message_is_refused(db_session: Session) -> None:
 
 def test_a_draft_with_no_recipients_is_refused_at_creation(db_session: Session) -> None:
     account = connected_account(db_session)
-    customer = _customer(db_session)
+    customer = make_customer(db_session, email="info@acme.it")
     with pytest.raises(ValidationFailed):
         _service(db_session).create(_payload(customer, to_addresses=[]), actor_for(account))
 
 
 def test_an_update_may_not_empty_the_recipients_either(db_session: Session) -> None:
     account = connected_account(db_session)
-    customer = _customer(db_session)
+    customer = make_customer(db_session, email="info@acme.it")
     service = _service(db_session)
     created = service.create(_payload(customer), actor_for(account))
     with pytest.raises(ValidationFailed):
@@ -408,7 +402,7 @@ def test_no_error_this_service_raises_carries_the_body_or_a_recipient(
     reach an exception message, its `details`, or the pytest dump of either -- which is
     where a `NotFound(entity, payload)` written in a hurry would put them."""
     account = connected_account(db_session)
-    customer = _customer(db_session)
+    customer = make_customer(db_session, email="info@acme.it")
     secret_body = "il prezzo riservato è 12.000 €"
     secret_address = "segreta@altrove.it"
     with pytest.raises((NotFound, ValidationFailed, Conflict)) as caught:
@@ -433,7 +427,7 @@ def test_list_returns_the_drafts_of_one_entity_and_filters_by_state(
     db_session: Session,
 ) -> None:
     account = connected_account(db_session)
-    customer = _customer(db_session)
+    customer = make_customer(db_session, email="info@acme.it")
     other = Customer(ragione_sociale="Beta", email="info@beta.it")
     db_session.add(other)
     db_session.flush()
@@ -483,7 +477,7 @@ def test_every_read_names_the_attachments_the_send_will_carry(db_session: Sessio
     receive. `get`, `list` and the create that hands the row back all name the file the
     way the send will (`attach.attachment_filename`), in the order the draft keeps."""
     account = connected_account(db_session)
-    customer = _customer(db_session)
+    customer = make_customer(db_session, email="info@acme.it")
     document = Document(customer_id=customer.id, tipo="offerta", titolo="Offerta Q1")
     db_session.add(document)
     db_session.flush()
@@ -563,7 +557,7 @@ def test_the_draft_is_on_disk_before_the_caller_does_anything_else(db_engine: En
         with factory() as writer:
             account = connected_account(writer)
             user_id = account.user_id
-            customer = _customer(writer)
+            customer = make_customer(writer, email="info@acme.it")
             customer_id = customer.id
             writer.commit()
             read = EmailDraftService(writer, settings=gmail_settings()).create(
@@ -610,7 +604,7 @@ def test_two_concurrent_creates_can_never_share_a_message_id(
         with factory() as setup:
             account = connected_account(setup)
             user_id = account.user_id
-            customer = _customer(setup)
+            customer = make_customer(setup, email="info@acme.it")
             customer_id = customer.id
             setup.commit()
             actor = actor_for(account)

@@ -34,7 +34,10 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from pigrocrm.core.errors import ValidationFailed
-from pigrocrm.core.invoices.fatturapa import normalise_fiscal_id, normalise_foreign_fiscal_id
+from pigrocrm.core.invoices.fatturapa.normalise import (
+    normalise_fiscal_id,
+    normalise_foreign_fiscal_id,
+)
 from pigrocrm.core.invoices.import_confirm import InvoiceConfirmOutcome
 from pigrocrm.core.invoices.import_review import InvoiceReviewOutcome
 from pigrocrm.core.invoices.import_schemas import ParsedInvoice, ParsedInvoiceParty

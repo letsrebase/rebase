@@ -16,6 +16,7 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 import pytest
+from fakes.customer_fixtures import make_customer
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from test_text import minimal_pdf
@@ -41,18 +42,11 @@ from pigrocrm.core.work_units.models import Approval, WorkUnit
 ADMIN = Actor(id=None, type="system", role="admin")
 
 
-def _customer(db_session: Session) -> Customer:
-    customer = Customer(ragione_sociale=f"ACME {uuid4()}")
-    db_session.add(customer)
-    db_session.flush()
-    return customer
-
-
 def _contract(
     db_session: Session, *, customer_id: UUID | None = None, **overrides: object
 ) -> Contract:
     payload: dict[str, object] = {
-        "customer_id": customer_id or _customer(db_session).id,
+        "customer_id": customer_id or make_customer(db_session).id,
         "titolo": "Consulenza",
         "inizio": date(2026, 1, 1),
         "tipo_rinnovo": "nessuno",
@@ -132,7 +126,7 @@ def _proposal_create(document_id: UUID, **overrides: object) -> ProposalCreate:
 def test_create_of_a_contratto_proposal_produces_a_reviewable_row_with_its_excerpt(
     db_session: Session,
 ) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     document = _document(db_session, customer_id=customer.id)
     proposal = ProposalService(db_session).create(
         _proposal_create(
@@ -179,7 +173,7 @@ def test_create_rejects_an_unknown_document(db_session: Session) -> None:
 def test_create_of_contratto_rejects_a_supplied_contract_id(db_session: Session) -> None:
     """REB-344's own scope-down: this spike does not model a renewal-targeted
     proposal, so a `'contratto'` proposal never points at an existing contract."""
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     document = _document(db_session, customer_id=customer.id)
     contract = _contract(db_session, customer_id=customer.id)
     with pytest.raises(ValidationFailed) as excinfo:
@@ -196,7 +190,7 @@ def test_create_of_contratto_rejects_a_supplied_contract_id(db_session: Session)
 
 
 def test_create_of_giornata_requires_a_contract_id(db_session: Session) -> None:
-    document = _document(db_session, customer_id=_customer(db_session).id)
+    document = _document(db_session, customer_id=make_customer(db_session).id)
     with pytest.raises(ValidationFailed) as excinfo:
         ProposalService(db_session).create(
             _proposal_create(document.id, target_type="giornata", campi_proposti={}), ADMIN
@@ -224,7 +218,7 @@ def test_create_of_giornata_rejects_a_contract_id_mismatched_with_campi_proposti
 
 
 def test_create_of_giornata_rejects_an_unknown_contract(db_session: Session) -> None:
-    document = _document(db_session, customer_id=_customer(db_session).id)
+    document = _document(db_session, customer_id=make_customer(db_session).id)
     unknown = uuid4()
     with pytest.raises(NotFound):
         ProposalService(db_session).create(
@@ -239,7 +233,7 @@ def test_create_of_giornata_rejects_an_unknown_contract(db_session: Session) -> 
 
 
 def test_create_of_contratto_rejects_an_unknown_customer(db_session: Session) -> None:
-    document = _document(db_session, customer_id=_customer(db_session).id)
+    document = _document(db_session, customer_id=make_customer(db_session).id)
     with pytest.raises(NotFound):
         ProposalService(db_session).create(
             _proposal_create(
@@ -254,7 +248,7 @@ def test_create_rejects_a_malformed_campi_proposti_shape_with_a_clean_error(
 ) -> None:
     """A schema mismatch is a `ValidationFailed`, not a raw pydantic traceback or a
     silent write of garbage into the JSONB column."""
-    document = _document(db_session, customer_id=_customer(db_session).id)
+    document = _document(db_session, customer_id=make_customer(db_session).id)
     with pytest.raises(ValidationFailed) as excinfo:
         ProposalService(db_session).create(
             _proposal_create(document.id, target_type="contratto", campi_proposti={"contract": {}}),
@@ -272,7 +266,7 @@ def test_get_of_an_unknown_proposal_is_not_found(db_session: Session) -> None:
 
 
 def test_list_filters_by_stato_oldest_first(db_session: Session) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     document = _document(db_session, customer_id=customer.id)
     service = ProposalService(db_session)
     first = service.create(
@@ -299,7 +293,7 @@ def test_list_filters_by_stato_oldest_first(db_session: Session) -> None:
 def test_reject_moves_a_proposal_to_rifiutata_and_records_who_and_when(
     db_session: Session,
 ) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     document = _document(db_session, customer_id=customer.id)
     service = ProposalService(db_session)
     proposal = service.create(
@@ -315,7 +309,7 @@ def test_reject_moves_a_proposal_to_rifiutata_and_records_who_and_when(
 
 
 def test_reject_of_an_already_decided_proposal_is_a_conflict(db_session: Session) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     document = _document(db_session, customer_id=customer.id)
     service = ProposalService(db_session)
     proposal = service.create(
@@ -340,7 +334,7 @@ def test_reject_of_an_unknown_proposal_is_not_found(db_session: Session) -> None
 def test_accept_contratto_creates_a_contract_and_its_first_rate_card(
     db_session: Session,
 ) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     document = _document(db_session, customer_id=customer.id)
     service = ProposalService(db_session)
     proposal = service.create(
@@ -365,7 +359,7 @@ def test_accept_contratto_creates_a_contract_and_its_first_rate_card(
 def test_accept_contratto_repoints_the_originating_documents_ownership(
     db_session: Session,
 ) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     document = _document(db_session, customer_id=customer.id)
     service = ProposalService(db_session)
     proposal = service.create(
@@ -388,7 +382,7 @@ def test_accept_preserves_campi_proposti_and_stores_the_override_separately(
 ) -> None:
     """Spec §10: "kept separately... it stays correct forever only if neither side
     is ever overwritten." """
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     document = _document(db_session, customer_id=customer.id)
     service = ProposalService(db_session)
     original_campi = _contratto_campi(customer.id)
@@ -408,7 +402,7 @@ def test_accept_preserves_campi_proposti_and_stores_the_override_separately(
 
 
 def test_accept_of_an_already_decided_proposal_is_a_conflict(db_session: Session) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     document = _document(db_session, customer_id=customer.id)
     service = ProposalService(db_session)
     proposal = service.create(
@@ -530,6 +524,73 @@ def test_accept_giornata_is_atomic_when_the_work_unit_write_conflicts(
     assert reloaded.id_risultato is None
 
 
+def test_a_refused_giornata_accept_keeps_what_the_caller_had_pending(db_session: Session) -> None:
+    """The refusal rolls back to its own SAVEPOINT: a row the caller flushed before calling
+    `accept` is still there afterwards, which a `session.rollback()` would have discarded."""
+    contract = _contract(db_session)
+    document = _document(db_session, contract_id=contract.id)
+    service = ProposalService(db_session)
+    proposal = service.create(
+        _proposal_create(
+            document.id,
+            target_type="giornata",
+            contract_id=contract.id,
+            campi_proposti=_giornata_campi(contract.id, data="2026-03-05"),
+        ),
+        ADMIN,
+    )
+    db_session.add(
+        WorkUnit(
+            contract_id=contract.id,
+            data=date(2026, 3, 5),
+            quantita=Decimal("1.00"),
+            descrizione="Giornata già registrata",
+            stato="proposto",
+        )
+    )
+    db_session.commit()
+    pending = make_customer(db_session)
+
+    with pytest.raises(Conflict):
+        service.accept(proposal.id, ProposalAccept(), ADMIN)
+
+    assert db_session.get(Customer, pending.id) is not None
+    assert service.get(proposal.id, ADMIN).stato == "in_attesa"
+
+
+def test_a_second_decision_on_a_proposal_loaded_before_the_first_is_refused(
+    db_session: Session,
+) -> None:
+    """Another transaction accepted the proposal after this session had loaded it: the
+    locked re-read overwrites the loaded copy, so the late accept finds `accettata` and
+    creates no second contract, instead of acting on the stale `in_attesa`."""
+    from sqlalchemy import update
+
+    customer = make_customer(db_session)
+    document = _document(db_session, customer_id=customer.id)
+    service = ProposalService(db_session)
+    proposal = service.create(
+        _proposal_create(
+            document.id, target_type="contratto", campi_proposti=_contratto_campi(customer.id)
+        ),
+        ADMIN,
+    )
+    loaded = db_session.get(Proposal, proposal.id)
+    assert loaded is not None and loaded.stato == "in_attesa"
+    db_session.execute(
+        update(Proposal)
+        .where(Proposal.id == proposal.id)
+        .values(stato="accettata")
+        .execution_options(synchronize_session=False)
+    )
+    contracts_before = db_session.query(Contract).count()
+
+    with pytest.raises(Conflict):
+        service.accept(proposal.id, ProposalAccept(), ADMIN)
+
+    assert db_session.query(Contract).count() == contracts_before
+
+
 # ---- the database CHECK, bypassing the service entirely -----------------------------
 
 
@@ -539,7 +600,7 @@ def test_the_database_refuses_a_giornata_proposal_with_no_contract_id(
     """Done-when: the CHECK tying `contract_id`'s nullability to `target_type` is
     enforced by the database, not only by `ProposalService.create`'s friendly
     pre-check -- a direct ORM insert that skips the service hits it too."""
-    document = _document(db_session, customer_id=_customer(db_session).id)
+    document = _document(db_session, customer_id=make_customer(db_session).id)
     with pytest.raises(IntegrityError):
         db_session.add(
             Proposal(
@@ -560,7 +621,7 @@ def test_the_database_allows_a_contratto_proposal_with_no_contract_id(
     """The CHECK's asymmetry, asserted directly: `'contratto'` is the one
     `target_type` allowed to omit `contract_id` -- first intake has no contract row
     to point at yet."""
-    document = _document(db_session, customer_id=_customer(db_session).id)
+    document = _document(db_session, customer_id=make_customer(db_session).id)
     proposal = Proposal(
         document_id=document.id,
         contract_id=None,
@@ -584,7 +645,7 @@ def test_a_citato_excerpt_is_verifiable_against_the_documents_own_text(
     located in the document's own text (verifiable, searchable)". Proved here
     against the real extraction pipeline (`DocumentService.extract_text`), not a
     string the test only asserts is equal to itself."""
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     storage = LocalFileStorage(str(tmp_path))  # type: ignore[arg-type]
     doc_service = DocumentService(db_session, storage)
     created = doc_service.create(

@@ -13,7 +13,6 @@ from pydantic import ValidationError
 from pigrocrm.core.documents.schemas import ALLOWED_CONTENT_TYPES, DocumentTipo
 from pigrocrm.core.fields.schemas import EntityType
 from pigrocrm.core.invoices.schemas import (
-    ALLOWED_STATI,
     DESCRIZIONE_MAX_LENGTH,
     MAX_LINES,
     MAX_NUMERO,
@@ -63,15 +62,6 @@ def test_native_fields_for_the_older_entities_is_unchanged() -> None:
 def test_documents_learns_the_three_invoice_artefact_types() -> None:
     assert {"fattura", "fattura_xml", "proforma"} <= set(get_args(DocumentTipo))
     assert ALLOWED_CONTENT_TYPES["application/xml"] == ".xml"
-
-
-def test_the_state_machines_are_declared_per_tipo() -> None:
-    """Two state machines in one column would be ambiguous, so the legal pairs are
-    data here and a table constraint in the database."""
-    assert {
-        "fattura": frozenset({"bozza", "emessa", "annullata"}),
-        "proforma": frozenset({"bozza", "confermata", "consumata"}),
-    } == ALLOWED_STATI
 
 
 def test_a_line_rejects_a_nul_byte_in_its_description() -> None:

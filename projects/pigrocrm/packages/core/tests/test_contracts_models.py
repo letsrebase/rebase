@@ -8,19 +8,13 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+from fakes.customer_fixtures import make_customer
 from sqlalchemy import inspect
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.contracts.models import Contract, RateCard, RenewalAssumption
 from pigrocrm.core.customers.models import Customer
-
-
-def _customer(db_session: Session) -> Customer:
-    customer = Customer(ragione_sociale="ACME")
-    db_session.add(customer)
-    db_session.flush()
-    return customer
 
 
 def _contract(db_session: Session, customer: Customer, **overrides: object) -> Contract:
@@ -41,7 +35,7 @@ def _contract(db_session: Session, customer: Customer, **overrides: object) -> C
 
 
 def test_a_contract_can_be_created_read_and_carries_its_defaults(db_session: Session) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contract = _contract(db_session, customer)
     assert contract.stato == "bozza"
     assert contract.divisa == "EUR"
@@ -55,7 +49,7 @@ def test_a_contract_can_be_created_read_and_carries_its_defaults(db_session: Ses
 
 
 def test_tipo_rinnovo_is_constrained_to_the_closed_set(db_session: Session) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     with pytest.raises(IntegrityError):
         _contract(db_session, customer, tipo_rinnovo="rinnovo_magico")
 
@@ -66,7 +60,7 @@ def test_tipo_rinnovo_is_constrained_to_the_closed_set(db_session: Session) -> N
 def test_preavviso_rinnovo_giorni_required_unless_renewal_type_is_nessuno(
     db_session: Session,
 ) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     with pytest.raises(IntegrityError):
         _contract(
             db_session,
@@ -79,7 +73,7 @@ def test_preavviso_rinnovo_giorni_required_unless_renewal_type_is_nessuno(
 def test_preavviso_rinnovo_giorni_supplied_for_a_real_renewal_type_is_accepted(
     db_session: Session,
 ) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contract = _contract(
         db_session,
         customer,
@@ -92,7 +86,7 @@ def test_preavviso_rinnovo_giorni_supplied_for_a_real_renewal_type_is_accepted(
 def test_preavviso_rinnovo_giorni_absent_is_fine_when_renewal_type_is_nessuno(
     db_session: Session,
 ) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contract = _contract(db_session, customer, tipo_rinnovo="nessuno")
     assert contract.preavviso_rinnovo_giorni is None
 
@@ -101,26 +95,26 @@ def test_preavviso_rinnovo_giorni_absent_is_fine_when_renewal_type_is_nessuno(
 
 
 def test_payment_terms_half_set_is_refused(db_session: Session) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     with pytest.raises(IntegrityError):
         _contract(db_session, customer, giorni_pagamento=30, pagamento_fine_mese=None)
 
 
 def test_payment_terms_the_other_half_set_is_also_refused(db_session: Session) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     with pytest.raises(IntegrityError):
         _contract(db_session, customer, giorni_pagamento=None, pagamento_fine_mese=True)
 
 
 def test_payment_terms_fully_null_inherits_the_customers_own_term(db_session: Session) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contract = _contract(db_session, customer)
     assert contract.giorni_pagamento is None
     assert contract.pagamento_fine_mese is None
 
 
 def test_payment_terms_fully_set_is_accepted(db_session: Session) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contract = _contract(db_session, customer, giorni_pagamento=30, pagamento_fine_mese=True)
     assert contract.giorni_pagamento == 30
     assert contract.pagamento_fine_mese is True
@@ -150,7 +144,7 @@ def _rate_card(db_session: Session, contract: Contract, **overrides: object) -> 
 
 
 def test_a_rate_card_can_be_created_with_its_own_defaults(db_session: Session) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contract = _contract(db_session, customer)
     rate_card = _rate_card(db_session, contract)
     assert rate_card.valido_a is None
@@ -161,7 +155,7 @@ def test_a_rate_card_can_be_created_with_its_own_defaults(db_session: Session) -
 
 
 def test_two_overlapping_rate_cards_on_one_contract_are_refused(db_session: Session) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contract = _contract(db_session, customer)
     _rate_card(db_session, contract, valido_da=date(2026, 1, 1), valido_a=date(2026, 6, 30))
     with pytest.raises(IntegrityError):
@@ -169,7 +163,7 @@ def test_two_overlapping_rate_cards_on_one_contract_are_refused(db_session: Sess
 
 
 def test_two_adjacent_rate_cards_on_one_contract_are_accepted(db_session: Session) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contract = _contract(db_session, customer)
     _rate_card(db_session, contract, valido_da=date(2026, 1, 1), valido_a=date(2026, 6, 30))
     second = _rate_card(
@@ -185,7 +179,7 @@ def test_two_open_ended_rate_cards_on_one_contract_overlap_and_are_refused(
     of them on the same contract both claim "now onward", which the exclusion
     constraint must refuse -- `daterange(..., NULL, '[]')` is Postgres's own
     unbounded-on-this-side range, not a range with no members."""
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contract = _contract(db_session, customer)
     _rate_card(db_session, contract, valido_da=date(2026, 1, 1), valido_a=None)
     with pytest.raises(IntegrityError):
@@ -197,7 +191,7 @@ def test_overlapping_rate_cards_on_different_contracts_are_both_accepted(
 ) -> None:
     """The exclusion constraint's own `contract_id WITH =` clause: overlap is
     refused only within one contract, never across two."""
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contract_a = _contract(db_session, customer)
     contract_b = _contract(db_session, customer)
     _rate_card(db_session, contract_a, valido_da=date(2026, 1, 1), valido_a=date(2026, 12, 31))
@@ -211,14 +205,14 @@ def test_overlapping_rate_cards_on_different_contracts_are_both_accepted(
 
 
 def test_ore_minime_is_refused_outside_a_tipo_orario_card(db_session: Session) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contract = _contract(db_session, customer)
     with pytest.raises(IntegrityError):
         _rate_card(db_session, contract, tipo="giornaliero", ore_minime=Decimal("4.00"))
 
 
 def test_ore_minime_is_accepted_on_a_tipo_orario_card(db_session: Session) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contract = _contract(db_session, customer)
     rate_card = _rate_card(
         db_session, contract, tipo="orario", unita="ora", ore_minime=Decimal("4.00")
@@ -229,7 +223,7 @@ def test_ore_minime_is_accepted_on_a_tipo_orario_card(db_session: Session) -> No
 def test_periodo_erogazione_is_refused_outside_a_tipo_ricorrente_fisso_card(
     db_session: Session,
 ) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contract = _contract(db_session, customer)
     with pytest.raises(IntegrityError):
         _rate_card(db_session, contract, tipo="una_tantum", periodo_erogazione="mensile")
@@ -238,7 +232,7 @@ def test_periodo_erogazione_is_refused_outside_a_tipo_ricorrente_fisso_card(
 def test_periodo_erogazione_is_accepted_on_a_tipo_ricorrente_fisso_card(
     db_session: Session,
 ) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contract = _contract(db_session, customer)
     rate_card = _rate_card(
         db_session, contract, tipo="ricorrente_fisso", periodo_erogazione="mensile"
@@ -271,7 +265,7 @@ def _renewal_assumption(
 
 
 def test_a_renewal_assumption_can_be_created_and_read(db_session: Session) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contract = _contract(db_session, customer)
     assumption = _renewal_assumption(db_session, contract)
     assert assumption.contract_id == contract.id
@@ -281,21 +275,21 @@ def test_a_renewal_assumption_can_be_created_and_read(db_session: Session) -> No
 
 
 def test_probabilita_below_zero_is_refused(db_session: Session) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contract = _contract(db_session, customer)
     with pytest.raises(IntegrityError):
         _renewal_assumption(db_session, contract, probabilita=-1)
 
 
 def test_probabilita_above_a_hundred_is_refused(db_session: Session) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contract = _contract(db_session, customer)
     with pytest.raises(IntegrityError):
         _renewal_assumption(db_session, contract, probabilita=101)
 
 
 def test_a_negative_volume_atteso_is_refused(db_session: Session) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contract = _contract(db_session, customer)
     with pytest.raises(IntegrityError):
         _renewal_assumption(db_session, contract, volume_atteso=Decimal("-1.00"))
@@ -306,7 +300,7 @@ def test_a_second_renewal_assumption_on_the_same_contract_is_refused(
 ) -> None:
     """One row per contract (Done-when: a human revises the belief in place, this
     table never accumulates a history the database would have to disambiguate)."""
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contract = _contract(db_session, customer)
     _renewal_assumption(db_session, contract)
     with pytest.raises(IntegrityError):
@@ -316,7 +310,7 @@ def test_a_second_renewal_assumption_on_the_same_contract_is_refused(
 def test_renewal_assumptions_on_different_contracts_are_both_accepted(
     db_session: Session,
 ) -> None:
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contract_a = _contract(db_session, customer, titolo="Contratto A")
     contract_b = _contract(db_session, customer, titolo="Contratto B")
     first = _renewal_assumption(db_session, contract_a)

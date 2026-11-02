@@ -8,9 +8,10 @@ the API".
 
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
@@ -25,12 +26,13 @@ from pigrocrm.core.errors import (
     PermissionDenied,
     ValidationFailed,
 )
-from pigrocrm.core.work_units.models import Approval
+from pigrocrm.core.work_units.models import Approval, WorkUnit
 from pigrocrm.core.work_units.schemas import ApprovalCreate, WorkUnitCreate, WorkUnitListQuery
 from pigrocrm.core.work_units.service import (
     ApprovalService,
     WorkUnitService,
     actor_to_transition_json,
+    set_transition_context,
 )
 
 WRITER = Actor(id=uuid4(), type="user", role="collaboratore")
@@ -79,6 +81,17 @@ def _approval(db_session: Session, contract: Contract) -> Approval:
         ),
         WRITER,
     )
+
+
+def _link_approval(db_session: Session, work_unit_id: UUID, approval_id: UUID) -> None:
+    """What recording an approval does to a day, minus the proof and the timeline entry:
+    link it, and let the trigger recover a day worked without one."""
+    set_transition_context(db_session, WRITER, "approvazione ricevuta")
+    db_session.execute(
+        update(WorkUnit).where(WorkUnit.id == work_unit_id).values(approval_id=approval_id)
+    )
+    db_session.flush()
+    db_session.expire_all()
 
 
 # ---- actor_to_transition_json -------------------------------------------------------
@@ -172,7 +185,7 @@ def test_a_reader_cannot_create_a_work_unit(db_session: Session) -> None:
         )
 
 
-# ---- WorkUnitService.transition / link_approval / transitions_for --------------------
+# ---- WorkUnitService.transition / transitions_for -----------------------------------
 
 
 def test_transition_moves_a_day_and_logs_the_supplied_actor_and_motivo(
@@ -218,27 +231,6 @@ def test_transition_to_an_illegal_target_is_refused(db_session: Session) -> None
         service.transition(work_unit.id, "pagato", WRITER, "tentativo illegale")
 
 
-def test_link_approval_recovers_the_flagged_state(db_session: Session) -> None:
-    contract = _contract(db_session, requires_prior_approval=True)
-    service = WorkUnitService(db_session)
-    work_unit = service.create(
-        WorkUnitCreate(
-            contract_id=contract.id,
-            data=date(2026, 3, 1),
-            quantita=Decimal("1.00"),
-            descrizione="Giornata",
-            stato="lavorato",
-        ),
-        WRITER,
-    )
-    assert work_unit.stato == "lavorato_senza_approvazione"
-
-    approval = _approval(db_session, contract)
-    recovered = service.link_approval(work_unit.id, approval.id, WRITER, "approvazione ricevuta")
-    assert recovered.stato == "lavorato"
-    assert recovered.approval_id == approval.id
-
-
 def test_days_and_approvals_name_the_member_and_the_channel_on_the_contract(
     db_session: Session,
 ) -> None:
@@ -257,8 +249,7 @@ def test_days_and_approvals_name_the_member_and_the_channel_on_the_contract(
         ),
         WRITER,
     )
-    approval = _approval(db_session, contract)
-    service.link_approval(day.id, approval.id, TRUSTED_AGENT, "approvazione ricevuta")
+    _approval(db_session, contract)
     service.transition(day.id, "contestato", TRUSTED_AGENT, "contestata dal cliente")
 
     entries = {e.kind: e for e in ActivityService(db_session).timeline("contract", contract.id)}
@@ -272,14 +263,10 @@ def test_days_and_approvals_name_the_member_and_the_channel_on_the_contract(
         "stato": "lavorato_senza_approvazione",
     }
     assert entries["approval_added"].actor_type == "user"
-    assert (entries["approval_linked"].actor_id, entries["approval_linked"].actor_type) == (
-        TRUSTED_AGENT.id,
-        "mcp",
-    )
     assert entries["day_state_changed"].actor_type == "mcp"
     assert entries["day_state_changed"].payload == {
         "giornata": "2026-03-01",
-        "da": "lavorato",
+        "da": "lavorato_senza_approvazione",
         "a": "contestato",
     }
 
@@ -324,8 +311,6 @@ def test_an_agent_credential_cannot_record_or_move_a_day(db_session: Session) ->
         service.transition(day.id, "approvato", AGENT, "ok")
     approval = _approval(db_session, contract)
     with pytest.raises(AgentForbidden):
-        service.link_approval(day.id, approval.id, AGENT, "ok")
-    with pytest.raises(AgentForbidden):
         ApprovalService(db_session).create(
             ApprovalCreate(
                 contract_id=contract.id,
@@ -357,8 +342,9 @@ def test_a_second_live_day_on_the_same_date_is_a_conflict(db_session: Session) -
     service = WorkUnitService(db_session)
     service.create(_day(contract, date(2026, 3, 2)), WRITER)
 
-    with pytest.raises(Conflict, match="gia' una giornata"):
+    with pytest.raises(Conflict) as refused:
         service.create(_day(contract, date(2026, 3, 2)), WRITER)
+    assert refused.value.details["data"] == "2026-03-02"
 
 
 def test_a_revoked_day_frees_its_date(db_session: Session) -> None:
@@ -408,7 +394,7 @@ def test_detail_names_the_approval_and_its_document(db_session: Session) -> None
     service = WorkUnitService(db_session)
     day = service.create(_day(contract, date(2026, 3, 2)), WRITER)
     approval = _approval(db_session, contract)
-    service.link_approval(day.id, approval.id, WRITER, "approvazione ricevuta")
+    _link_approval(db_session, day.id, approval.id)
 
     detail = service.detail(day.id, WRITER)
 
@@ -491,12 +477,18 @@ def test_move_refuses_what_the_days_page_would_not_offer(db_session: Session) ->
     flagged = service.create(_day(contract, date(2026, 3, 2)), WRITER)
     proposed = service.create(_day(contract, date(2026, 3, 3), "proposto"), WRITER)
 
-    with pytest.raises(Conflict, match="da qui"):
-        service.move(proposed.id, "approvato", WRITER, "senza prova")
-    with pytest.raises(Conflict, match="da qui"):
-        service.move(flagged.id, "lavorato", WRITER, "il trigger lo riscriverebbe")
-    with pytest.raises(Conflict, match="da qui"):
-        service.move(flagged.id, "fatturato", WRITER, "lo fa una fattura")
+    for work_unit, target, reason in (
+        (proposed, "approvato", "senza prova"),
+        (flagged, "lavorato", "il trigger lo riscriverebbe"),
+        (flagged, "fatturato", "lo fa una fattura"),
+    ):
+        with pytest.raises(Conflict) as refused:
+            service.move(work_unit.id, target, WRITER, reason)
+        # The graph allows these edges (`transition` does them); `move` refuses them.
+        assert (refused.value.details["da"], refused.value.details["a"]) == (
+            work_unit.stato,
+            target,
+        )
 
     assert service.get(flagged.id).stato == "lavorato_senza_approvazione"
     assert service.get(proposed.id).stato == "proposto"

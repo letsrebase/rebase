@@ -208,6 +208,7 @@ def test_an_entry_on_an_issued_invoice_freezes_the_named_fields(
         ("descrizione", "Altro"),
         ("deal_id", seeded_deal_id),
         ("fatturabile", False),
+        ("user_id", seeded_user_id),
     ]:
         with pytest.raises(ImmutableField) as excinfo:
             service.update(entry.id, TimeEntryUpdate(**{field: value}), WRITER)
@@ -382,3 +383,17 @@ def test_the_future_limit_is_italys_own_day_not_the_processs(
     with pytest.raises(ValidationFailed) as excinfo:
         _create(service, seeded_deal_id, seeded_user_id, data=OGGI_IN_ITALIA + timedelta(days=1))
     assert excinfo.value.details["field"] == "data"
+
+
+def test_a_cursor_that_names_no_entry_is_refused_not_read_as_the_first_page(
+    db_session: Session, seeded_deal_id: UUID, seeded_user_id: UUID
+) -> None:
+    """Answering page 1 again would send a client that follows `next_cursor` round in a
+    circle for ever."""
+    service = TimeEntryService(db_session)
+    _create(service, seeded_deal_id, seeded_user_id)
+
+    with pytest.raises(ValidationFailed) as refused:
+        service.list(TimeEntryListQuery(cursor=uuid4()), READER)
+
+    assert refused.value.details["field"] == "cursor"

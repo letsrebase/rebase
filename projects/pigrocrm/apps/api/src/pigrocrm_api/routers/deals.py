@@ -27,6 +27,7 @@ from pigrocrm.core.deals.schemas import (
 from pigrocrm.core.deals.service import DealService
 from pigrocrm.core.errors import NotFound
 from pigrocrm.core.invoices.schemas import InvoiceRead
+from pigrocrm.core.timetracking.billing import TimeBilling
 from pigrocrm.core.timetracking.report import TimeReportService
 from pigrocrm.core.timetracking.schemas import (
     DealRateUpdate,
@@ -274,9 +275,8 @@ def to_invoice_draft(
     somebody is redoing, while hours on an *issued* invoice come back as a 409 naming the
     document -- one does not invoice the same work twice.
 
-    `storage` is passed rather than left to the service's own settings fallback: this is
-    the one method in `AnalyticsService` that constructs an `InvoiceService`, whose
+    `storage` is passed rather than left to the service's own settings fallback: the
     backend is the same process-wide one every other document route resolves through
     `StorageDep`.
     """
-    return AnalyticsService(session, storage).bind_time_to_invoice(deal_id, data, actor)
+    return TimeBilling(session, storage).bind_to_invoice(deal_id, data, actor)

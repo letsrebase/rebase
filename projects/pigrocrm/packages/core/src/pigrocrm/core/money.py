@@ -33,6 +33,12 @@ ZERO_HOURS = Decimal("0.00")
 
 
 def round_money(value: Decimal) -> Decimal:
+    """Two decimals, `ROUND_HALF_UP`.
+
+    Not `Decimal`'s own `ROUND_HALF_EVEN` default: Italian fiscal practice, and the
+    arithmetic the SdI's own checks perform, round a half away from zero. Banker's
+    rounding disagrees on alternate cents, which is enough for a file to be discarded.
+    """
     return value.quantize(MONEY_QUANT, rounding=ROUND_HALF_UP)
 
 
@@ -87,3 +93,15 @@ def percentage_of(part: Decimal, whole: Decimal) -> Decimal | None:
     if whole == 0:
         return None
     return round_money(part / whole * Decimal(100))
+
+
+def share(part: Decimal, whole: Decimal) -> float:
+    """`part / whole` as the float a `quota` field carries, `0.0` when there is nothing to
+    scale against (a zero or negative `whole`). The one zero-guarded ratio of this
+    project: a share is presentation, so the float is made here and nowhere else."""
+    return float(part / whole) if whole > 0 else 0.0
+
+
+def percent_to_share(percent: Decimal) -> float:
+    """A percentage stored as `50.00` as the share in [0, 1] every `quota` is."""
+    return float(percent / 100)

@@ -110,3 +110,24 @@ def test_the_autofilter_covers_the_data_rows_only() -> None:
     supposed to update."""
     sheet = _sheet()
     assert sheet.auto_filter.ref == f"A5:C{5 + len(ROWS)}"
+
+
+def test_free_text_that_starts_like_a_formula_is_written_as_a_string() -> None:
+    """A description, a customer name and an offer title are typed by people (or written by an
+    agent from an email) and the file goes to a client: `=HYPERLINK(...)` must stay text. The
+    `SUBTOTAL` the sheet writes itself is the only formula in the file."""
+    formula = '=HYPERLINK("http://evil.example","clicca")'
+    sheet = _sheet(
+        cliente=formula,
+        offerta="+cmd|' /C calc'!A0",
+        rows=[(date(2026, 3, 4), Decimal("1.00"), formula)],
+    )
+
+    for ref in ("B2", "B3", "C6"):
+        assert sheet[ref].data_type == "s", ref
+    assert sheet["C6"].value == formula
+    assert sheet["B2"].value == formula
+    formulas = [
+        cell.coordinate for row in sheet.iter_rows() for cell in row if cell.data_type == "f"
+    ]
+    assert formulas == ["B7"]

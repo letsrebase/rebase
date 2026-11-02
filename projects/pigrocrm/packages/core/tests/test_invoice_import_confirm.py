@@ -17,7 +17,8 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import func, select
+from fakes.customer_fixtures import make_customer_with_address
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
@@ -105,22 +106,6 @@ def _svc(session: Session, storage: LocalFileStorage) -> InvoiceService:
     return InvoiceService(session, storage)
 
 
-def _customer(session: Session, **overrides: object) -> Customer:
-    base: dict[str, object] = {
-        "ragione_sociale": f"Cliente {uuid4()}",
-        "indirizzo": "Piazza dei Modelli 4",
-        "cap": "00187",
-        "comune": "Roma",
-        "provincia": "RM",
-        "nazione": "IT",
-    }
-    base.update(overrides)
-    customer = Customer(**base)
-    session.add(customer)
-    session.flush()
-    return customer
-
-
 def _document(
     session: Session,
     storage: LocalFileStorage,
@@ -129,7 +114,7 @@ def _document(
     content_type: str = "application/xml",
     owner: Customer | None = None,
 ) -> UUID:
-    owner = owner if owner is not None else _customer(session)
+    owner = owner if owner is not None else make_customer_with_address(session)
     service = DocumentService(session, storage)
     document = service.create(
         DocumentCreate(customer_id=owner.id, titolo="Fattura ricevuta"), ADMIN
@@ -142,7 +127,7 @@ def _seed_register_row(
     session: Session, *, anno: int, numero: int, xml_hash_sha256: str | None
 ) -> UUID:
     row = Invoice(
-        customer_id=_customer(session).id,
+        customer_id=make_customer_with_address(session).id,
         tipo="fattura",
         stato="emessa",
         anno=anno,
@@ -168,7 +153,7 @@ def test_confirming_a_fresh_invoice_produces_exactly_what_import_issued_would_by
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     service = _svc(db_session, local_storage)
-    customer = _customer(db_session, partita_iva=CLIENTE_PIVA)
+    customer = make_customer_with_address(db_session, partita_iva=CLIENTE_PIVA)
     content = _fixture(CONSULENZA)
     document_id = _document(db_session, local_storage, content, owner=customer)
 
@@ -218,7 +203,7 @@ def test_a_single_invoice_source_document_gets_a_hash_verified_xml_document_id(
 ) -> None:
     service = _svc(db_session, local_storage)
     content = _fixture(CONSULENZA)
-    customer = _customer(db_session, partita_iva=CLIENTE_PIVA)
+    customer = make_customer_with_address(db_session, partita_iva=CLIENTE_PIVA)
     document_id = _document(db_session, local_storage, content, owner=customer)
 
     [row] = service.confirm_import(document_id, ADMIN)
@@ -233,7 +218,7 @@ def test_a_batch_sourced_document_leaves_xml_document_id_and_hash_null_on_every_
 ) -> None:
     service = _svc(db_session, local_storage)
     content = _fixture(LOTTO)
-    customer = _customer(db_session, partita_iva=CLIENTE_PIVA)
+    customer = make_customer_with_address(db_session, partita_iva=CLIENTE_PIVA)
     document_id = _document(db_session, local_storage, content, owner=customer)
 
     rows = service.confirm_import(document_id, ADMIN)
@@ -256,7 +241,10 @@ def test_confirming_an_already_present_invoice_is_a_no_op_never_a_duplicate_inse
         db_session, anno=2026, numero=6, xml_hash_sha256=hashlib.sha256(content).hexdigest()
     )
     document_id = _document(
-        db_session, local_storage, content, owner=_customer(db_session, partita_iva=CLIENTE_PIVA)
+        db_session,
+        local_storage,
+        content,
+        owner=make_customer_with_address(db_session, partita_iva=CLIENTE_PIVA),
     )
 
     before = _invoice_count(db_session)
@@ -344,8 +332,8 @@ def test_an_explicit_customer_id_overrides_the_automatic_match(
     is exactly how a reviewer says which `Customer` this invoice attaches to, even
     when one already matches on its own."""
     service = _svc(db_session, local_storage)
-    matched = _customer(db_session, partita_iva=CLIENTE_PIVA)
-    chosen = _customer(db_session)
+    matched = make_customer_with_address(db_session, partita_iva=CLIENTE_PIVA)
+    chosen = make_customer_with_address(db_session)
     document_id = _document(db_session, local_storage, _fixture(CONSULENZA), owner=matched)
 
     [row] = service.confirm_import(document_id, ADMIN, customer_id=chosen.id)
@@ -368,7 +356,7 @@ def test_a_customer_of_another_azienda_is_refused_and_nothing_is_written(
     )
     db_session.add(other)
     db_session.flush()
-    foreign = _customer(db_session, azienda_id=other.id)
+    foreign = make_customer_with_address(db_session, azienda_id=other.id)
     document_id = _document(db_session, local_storage, _fixture(CONSULENZA))
 
     before = _invoice_count(db_session)
@@ -385,8 +373,8 @@ def test_an_archived_customer_is_refused_and_one_of_the_right_azienda_still_impo
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     service = _svc(db_session, local_storage)
-    archived = _customer(db_session, deleted_at=datetime.now(UTC))
-    chosen = _customer(db_session)
+    archived = make_customer_with_address(db_session, deleted_at=datetime.now(UTC))
+    chosen = make_customer_with_address(db_session)
     document_id = _document(db_session, local_storage, _fixture(CONSULENZA))
 
     with pytest.raises(ValidationFailed) as caught:
@@ -411,8 +399,8 @@ def test_a_refusal_in_a_later_file_leaves_the_earlier_files_unwritten(
     )
     db_session.add(other)
     db_session.flush()
-    own = _customer(db_session)
-    foreign = _customer(db_session, azienda_id=other.id)
+    own = make_customer_with_address(db_session)
+    foreign = make_customer_with_address(db_session, azienda_id=other.id)
     first = _fixture(CONSULENZA)
     second = (
         first.decode()
@@ -455,7 +443,7 @@ def test_the_automatic_match_never_attaches_a_customer_of_another_azienda(
     )
     db_session.add(other)
     db_session.flush()
-    foreign = _customer(db_session, azienda_id=other.id, partita_iva=CLIENTE_PIVA)
+    foreign = make_customer_with_address(db_session, azienda_id=other.id, partita_iva=CLIENTE_PIVA)
     document_id = _document(db_session, local_storage, _fixture(CONSULENZA), owner=foreign)
 
     [reviewed] = service.review_import([document_id], ADMIN)
@@ -572,7 +560,7 @@ def test_confirming_the_same_document_twice_the_second_time_is_already_present(
     """The natural-key/hash rule applies to confirm's own prior write too: a second
     confirm of the same document never inserts a second row."""
     service = _svc(db_session, local_storage)
-    customer = _customer(db_session, partita_iva=CLIENTE_PIVA)
+    customer = make_customer_with_address(db_session, partita_iva=CLIENTE_PIVA)
     document_id = _document(db_session, local_storage, _fixture(CONSULENZA), owner=customer)
 
     [first] = service.confirm_import(document_id, ADMIN)
@@ -612,7 +600,9 @@ def test_no_emitter_profile_configured_refuses_rather_than_guesses(
 ) -> None:
     # Since REB-615 every space has its azienda from the first boot, so «not configured»
     # is an azienda with neither fiscal id, and the refusal names that field rather
-    # than a missing row: the import never guesses which P.IVA is ours.
+    # than a missing row: the import never guesses which P.IVA is ours. Blanked here
+    # rather than assumed, since the race tests commit an identity on the default azienda.
+    db_session.execute(text("UPDATE emitter_profile SET partita_iva = NULL, codice_fiscale = NULL"))
     document_id = _document(db_session, local_storage, _fixture(CONSULENZA))
     with pytest.raises(ValidationFailed) as caught:
         InvoiceService(db_session, local_storage).confirm_import(document_id, ADMIN)
@@ -713,7 +703,7 @@ def test_a_register_rule_conflict_mid_batch_is_reported_and_the_rest_still_lands
     it hits one of those rules: the first invoice's write survives, the second is
     reported `"conflict"`, and the session stays usable after."""
     service = _svc(db_session, local_storage)
-    customer = _customer(db_session, partita_iva=CLIENTE_PIVA)
+    customer = make_customer_with_address(db_session, partita_iva=CLIENTE_PIVA)
     InvoiceRepository(db_session).add_gap(
         InvoiceRegisterGap(anno=2026, numero=7, motivo="annullata prima della trasmissione")
     )
