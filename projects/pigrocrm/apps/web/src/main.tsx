@@ -4,6 +4,8 @@ import { RouterProvider, createRouter } from '@tanstack/react-router'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { analyticsMiddleware } from './lib/analytics'
+import { RoutePending, RouteError, RouteNotFound } from './components/RouteFallbacks'
+import { reloadOncePerMinute } from './lib/chunkReload'
 import { api } from './lib/api'
 import { AuthProvider } from './lib/auth'
 import { LegalEntityProvider } from './lib/legalEntity'
@@ -16,7 +18,21 @@ import './styles/tokens.css'
 
 // Under a space the same routes live at `/<slug>/app/...`: the basepath is the one
 // place the prefix enters the router, so every `to: '/app/...'` keeps working as is.
-const router = createRouter({ routeTree, basepath: tenantPrefix || undefined })
+const router = createRouter({
+  routeTree,
+  basepath: tenantPrefix || undefined,
+  defaultErrorComponent: RouteError,
+  defaultNotFoundComponent: RouteNotFound,
+  defaultPendingComponent: RoutePending,
+})
+
+// After a deploy the old hashed chunks are gone: a lazy route's import fails, and a
+// reload fetches the new shell. At most once a minute, so a persistent failure shows the
+// router's error screen instead of looping.
+window.addEventListener('vite:preloadError', (event) => {
+  event.preventDefault()
+  reloadOncePerMinute()
+})
 
 declare module '@tanstack/react-router' {
   interface Register {
