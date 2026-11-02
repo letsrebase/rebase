@@ -684,6 +684,7 @@ export interface AdminAction {
     /** «Riprova su Pigro» (REB-498), recorded on entity `match`. */
     | 'pigro_link'
     | 'crm_link'
+    | 'company_created'
     /** Two cards of one person merged (REB-800): `merged` is on the absorbed card,
      *  `absorbed` on the one that stayed, `unmerged` on both once the shell put it back. */
     | 'merged'
