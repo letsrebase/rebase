@@ -756,6 +756,14 @@ _COPERTE_O_UMANE: dict[Method, str] = {
         "agent inside a space decides on the titolare's behalf, and no per-space schema "
         "changed for it (§2.6)"
     ),
+    ("LeadService", "file"): (
+        "the leads route of the same hub door (spec 2026-10-30 § 2, REB-866), under the "
+        "same PIGROCRM_ENGAGEMENTS_TOKEN: filing a company's request in rebase's space is "
+        "the hub's own act when the request is completed, in one space the installation "
+        "names (PIGROCRM_LEADS_SPACE), never something an agent inside a space decides, "
+        "and creating the customer, contact and deal is what `create_customer`, "
+        "`create_person` and `create_deal` already are for an agent"
+    ),
     ("EngagementService", "report"): (
         "reads a match's hours back for the same hub door (spec 2026-09-25 §2.4), never "
         "for an agent in the space: the deal's own hours are already `list_time_entries`, "

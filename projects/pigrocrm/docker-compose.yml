@@ -60,6 +60,8 @@ x-api-environment: &api-environment
   PIGROCRM_REGISTRY_TOKEN: ${PIGROCRM_REGISTRY_TOKEN:-}
   # The bearer the engagements door checks (milestone A, REB-490). Empty: no such route.
   PIGROCRM_ENGAGEMENTS_TOKEN: ${PIGROCRM_ENGAGEMENTS_TOKEN:-}
+  # The one space the leads route files company requests into (REB-866). Empty: 503.
+  PIGROCRM_LEADS_SPACE: ${PIGROCRM_LEADS_SPACE:-}
   # Resend sends the login link and the welcome mail (spec 2026-09-12 §6.1). Empty
   # key: no mail, the endpoints answer 503, the password login still works.
   PIGROCRM_RESEND_API_KEY: ${PIGROCRM_RESEND_API_KEY:-}
