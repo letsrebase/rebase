@@ -10,6 +10,11 @@ import { DocumentsTab } from './DocumentsTab'
 // `collaboratore` in the service); these tests drive that path, so the session is a
 // writer by default. The readonly shape is asserted in `DocumentsTab.readonly` below.
 vi.mock('@/lib/auth', () => ({ useCanWrite: () => true }))
+vi.mock('@tanstack/react-router', () => ({
+  Link: ({ children, className }: { children: ReactNode; className?: string }) => (
+    <a className={className}>{children}</a>
+  ),
+}))
 
 const DOCUMENT = {
   id: 'doc-1',

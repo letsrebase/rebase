@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router'
 import { useState } from 'react'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { RowActions } from '@/components/RowActions'
@@ -132,12 +133,13 @@ export function DocumentsTab({ owner }: { owner: DocumentOwner }) {
           {documents.data.items.map((document) => (
             <li key={document.id} className="flex items-center gap-3 px-4 py-3">
               <div className="min-w-0 flex-1">
-                <a
-                  href={`/app/documents/${document.id}`}
+                <Link
+                  to="/app/documents/$documentId"
+                  params={{ documentId: document.id }}
                   className="block truncate font-medium underline-offset-2 hover:underline"
                 >
                   {document.titolo}
-                </a>
+                </Link>
                 <p className="text-sm text-muted-foreground">{formatDate(document.created_at)}</p>
               </div>
               <Badge variant="secondary">

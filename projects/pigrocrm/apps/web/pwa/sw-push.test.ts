@@ -66,6 +66,11 @@ describe('clickTarget', () => {
     expect(clickTarget({ url: '//evil.example/phish' }, SCOPE)).toBe(`${SCOPE}/avvisi`)
   })
 
+  it("stays inside the space: another space's path opens the list of reminders", () => {
+    expect(clickTarget({ url: '/other/app/invoices/1' }, SCOPE)).toBe(`${SCOPE}/avvisi`)
+    expect(clickTarget({ url: '/acme/api/auth/me' }, SCOPE)).toBe(`${SCOPE}/avvisi`)
+  })
+
   it.each([undefined, null, {}, { url: 7 }, { url: 'http://[::bad' }])(
     'opens the list of reminders for %j',
     (data) => {
