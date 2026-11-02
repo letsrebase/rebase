@@ -29,7 +29,7 @@ import math
 from collections.abc import Mapping
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from typing import Annotated, Any, TypedDict
+from typing import Annotated, Any, TypedDict, cast
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, SkipValidation
@@ -376,7 +376,7 @@ class AdminActionService:
                 kind=action.kind,
                 admin_id=action.admin_id,
                 admin_nome=f"{admin.nome} {admin.cognome}".strip(),
-                payload=action.payload,
+                payload=cast(AdminActionPayload, action.payload),
                 created_at=action.created_at,
             )
             for action, admin in rows

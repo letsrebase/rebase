@@ -54,7 +54,7 @@ class PerkService:
         self.session.commit()
 
     @staticmethod
-    def _downloads() -> Select[tuple[GuideDownload, User, UUID | None]]:
+    def _downloads() -> Select[GuideDownload, User, UUID]:
         """A download, its person and that person's live card (`None` for a company
         contact): a person has at most one card (`uq_freelancers_user_id`), so the outer
         join never doubles a row."""
