@@ -11,6 +11,7 @@ vi.mock('posthog-js', () => ({
     setInternalOrTestUser: vi.fn(),
     opt_in_capturing: vi.fn(),
     opt_out_capturing: vi.fn(),
+    has_opted_out_capturing: vi.fn(() => false),
   },
 }))
 
@@ -233,6 +234,23 @@ describe('on a page with public routes (requireConsent)', () => {
     expect(posthog.opt_out_capturing).not.toHaveBeenCalled()
     a.capture('wizard_iniziato')
     expect(posthog.capture).toHaveBeenCalledWith('wizard_iniziato', undefined)
+  })
+})
+
+describe('an opt-out the SDK persisted from an earlier logout', () => {
+  it('is lifted when a fresh load is let in, so the person is measured', async () => {
+    vi.mocked(posthog.has_opted_out_capturing).mockReturnValueOnce(true)
+    stubBrowser('granted')
+    a.initAnalytics({ hostname: 'letsrebase.com', requireConsent: true })
+    await settled()
+    expect(posthog.opt_in_capturing).toHaveBeenCalledWith({ captureEventName: false })
+  })
+
+  it('is left alone when there is none', async () => {
+    stubBrowser('granted')
+    a.initAnalytics({ hostname: 'letsrebase.com', requireConsent: true })
+    await settled()
+    expect(posthog.opt_in_capturing).not.toHaveBeenCalled()
   })
 })
 
