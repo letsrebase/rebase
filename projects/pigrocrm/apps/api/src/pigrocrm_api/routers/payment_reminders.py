@@ -13,7 +13,7 @@ seeing which invoices are late is reading your own books. What is gated is prepa
 reminder, because that writes a demand for payment in the owner's name.
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.config import Settings
@@ -23,11 +23,14 @@ from pigrocrm.core.gmail.schemas import (
     SollecitiPage,
 )
 from pigrocrm.core.gmail.solleciti import SollecitiService
-from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep
+from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, get_actor
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 
 router = APIRouter(
-    prefix="/api/payment-reminders", tags=["payment-reminders"], responses=PROBLEM_RESPONSES
+    prefix="/api/payment-reminders",
+    tags=["payment-reminders"],
+    responses=PROBLEM_RESPONSES,
+    dependencies=[Depends(get_actor)],
 )
 
 

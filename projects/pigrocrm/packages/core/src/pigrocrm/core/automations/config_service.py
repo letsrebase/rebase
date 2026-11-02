@@ -11,19 +11,17 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.activities.repository import ActivityRepository
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.automations.repository import AutomationConfigRepository
+from pigrocrm.core.automations.runs import recent_runs
 from pigrocrm.core.automations.schemas import (
-    AUTOMATION_KINDS,
     KIND_CONFIG_CHANGED,
     RULE_DESCRIPTIONS,
     AutomationConfigRead,
     AutomationConfigUpdate,
     AutomationRuleCode,
     AutomationRuleDescription,
-    AutomationRun,
     AutomationsDescription,
 )
 
@@ -43,7 +41,6 @@ class AutomationConfigService:
         self.session = session
         self.repo = AutomationConfigRepository(session)
         self.activities = ActivityService(session)
-        self.activity_repo = ActivityRepository(session)
 
     def describe_automations(self, actor: Actor) -> AutomationsDescription:
         """The rules, their state, and the last twenty executions with their outcome.
@@ -68,20 +65,7 @@ class AutomationConfigService:
             )
             for code in RULE_CODES
         ]
-        runs = [
-            AutomationRun(
-                kind=activity.kind,
-                occurred_at=activity.occurred_at,
-                # `None` unless the activity really is about a deal. A bare `entity_id`
-                # here would give the `automation_config` row's own id for a configuration
-                # change, which renders as a link to a deal that does not exist.
-                deal_id=activity.entity_id if activity.entity_type == "deal" else None,
-                regola=activity.payload.get("regola"),
-                motivo=activity.payload.get("motivo"),
-                payload=activity.payload,
-            )
-            for activity in self.activity_repo.by_kind(AUTOMATION_KINDS, _RUN_LIMIT)
-        ]
+        runs = recent_runs(self.session, _RUN_LIMIT)
         self.session.commit()
         return AutomationsDescription(configurazione=config, regole=rules, esecuzioni=runs)
 

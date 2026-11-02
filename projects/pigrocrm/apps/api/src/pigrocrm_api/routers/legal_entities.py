@@ -15,10 +15,11 @@ put the same rule in two places.
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, File, Query, UploadFile, status
+from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import Response
 
-from pigrocrm.core.emitter.assets import MAX_IMAGE_BYTES, LegalEntityAssets
+from pigrocrm.core.emitter.assets import ASSETS_ACTION, MAX_IMAGE_BYTES, LegalEntityAssets
 from pigrocrm.core.emitter.schemas import (
     NAZIONE_MAX_LENGTH,
     LegalEntityCreate,
@@ -31,10 +32,17 @@ from pigrocrm.core.errors import NotFound
 from pigrocrm.core.fiscal.schemas import FiscalProfileRead, FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.validation import SafeStr
-from pigrocrm_api.deps import ActorDep, SessionDep, StorageDep
+from pigrocrm_api.deps import ActorDep, SessionDep, StorageDep, get_actor
+from pigrocrm_api.downloads import attachment_response
 from pigrocrm_api.errors import PROBLEM_RESPONSES
+from pigrocrm_api.uploads import read_upload, single_file_body
 
-router = APIRouter(prefix="/api/aziende", tags=["aziende"], responses=PROBLEM_RESPONSES)
+router = APIRouter(
+    prefix="/api/aziende",
+    tags=["aziende"],
+    responses=PROBLEM_RESPONSES,
+    dependencies=[Depends(get_actor)],
+)
 
 
 @router.get("", response_model=list[LegalEntityRead])
@@ -62,7 +70,6 @@ def create_azienda(
 @router.get("/proposta", response_model=LegalEntityRead)
 def propose_azienda(
     session: SessionDep,
-    actor: ActorDep,
     nazione: Annotated[
         SafeStr | None,
         Query(
@@ -140,10 +147,9 @@ def upsert_fiscal_profile(
 Slot = Literal["logo", "firma"]
 
 _IMAGE_HEADERS = {
-    # A stored file served from the app's own origin: never sniffed into something
-    # else, never run as a page. The policy is what keeps an SVG opened in a tab inert
+    # A stored file served from the app's own origin, never run as a page (`nosniff` comes
+    # with `attachment_response`). The policy is what keeps an SVG opened in a tab inert
     # even if the upload's own check were ever wrong.
-    "X-Content-Type-Options": "nosniff",
     "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'",
     "Cache-Control": "private, no-store",
 }
@@ -156,13 +162,12 @@ def _serve(session: SessionDep, storage: StorageDep, azienda_id: UUID, slot: Slo
         raise NotFound("emitter_profile", f"{azienda_id}/{slot}")
     data, content_type = image
     extension = "svg" if content_type.endswith("svg+xml") else "png"
-    return Response(
-        content=data,
-        media_type=content_type,
-        headers={
-            **_IMAGE_HEADERS,
-            "Content-Disposition": f'inline; filename="{slot}.{extension}"',
-        },
+    return attachment_response(
+        data,
+        content_type,
+        f"{slot}.{extension}",
+        disposition="inline",
+        headers=_IMAGE_HEADERS,
     )
 
 
@@ -171,27 +176,32 @@ def _serve(session: SessionDep, storage: StorageDep, azienda_id: UUID, slot: Slo
     response_class=Response,
     responses={200: {"content": {"image/png": {}, "image/svg+xml": {}}}},
 )
-def get_logo(
-    azienda_id: UUID, session: SessionDep, storage: StorageDep, actor: ActorDep
-) -> Response:
+def get_logo(azienda_id: UUID, session: SessionDep, storage: StorageDep) -> Response:
     """The azienda's logo, PNG or SVG; 404 when it has none."""
     return _serve(session, storage, azienda_id, "logo")
 
 
-@router.put("/{azienda_id}/logo", response_model=LegalEntityRead)
+@router.put(
+    "/{azienda_id}/logo",
+    response_model=LegalEntityRead,
+    openapi_extra=single_file_body("A PNG or an SVG under 1 MiB."),
+)
 async def put_logo(
     azienda_id: UUID,
+    request: Request,
     session: SessionDep,
     storage: StorageDep,
     actor: ActorDep,
-    file: Annotated[UploadFile, File()],
 ) -> LegalEntityRead:
     """A PNG or an SVG under 1 MiB, sniffed from the bytes: the client's content type
     and file name are never trusted. Replaces the one before. One byte past the limit
     is read and no more, so an oversize body is refused by the service's own sentence
     without being buffered whole."""
-    data = await file.read(MAX_IMAGE_BYTES + 1)
-    return LegalEntityAssets(session, storage).set_logo(data, actor, azienda_id)
+    actor.require_admin(ASSETS_ACTION)
+    data, _ = await read_upload(request, MAX_IMAGE_BYTES)
+    return await run_in_threadpool(
+        LegalEntityAssets(session, storage).set_logo, data, actor, azienda_id
+    )
 
 
 @router.delete("/{azienda_id}/logo", response_model=LegalEntityRead)
@@ -207,25 +217,30 @@ def delete_logo(
     response_class=Response,
     responses={200: {"content": {"image/png": {}}}},
 )
-def get_firma(
-    azienda_id: UUID, session: SessionDep, storage: StorageDep, actor: ActorDep
-) -> Response:
+def get_firma(azienda_id: UUID, session: SessionDep, storage: StorageDep) -> Response:
     """The azienda's signature image, PNG; 404 when it has none."""
     return _serve(session, storage, azienda_id, "firma")
 
 
-@router.put("/{azienda_id}/firma", response_model=LegalEntityRead)
+@router.put(
+    "/{azienda_id}/firma",
+    response_model=LegalEntityRead,
+    openapi_extra=single_file_body("A PNG under 1 MiB."),
+)
 async def put_firma(
     azienda_id: UUID,
+    request: Request,
     session: SessionDep,
     storage: StorageDep,
     actor: ActorDep,
-    file: Annotated[UploadFile, File()],
 ) -> LegalEntityRead:
     """A PNG under 1 MiB: the offers draw the signature through a Markdown image whose
     name is fixed in the template, so an SVG is refused."""
-    data = await file.read(MAX_IMAGE_BYTES + 1)
-    return LegalEntityAssets(session, storage).set_firma(data, actor, azienda_id)
+    actor.require_admin(ASSETS_ACTION)
+    data, _ = await read_upload(request, MAX_IMAGE_BYTES)
+    return await run_in_threadpool(
+        LegalEntityAssets(session, storage).set_firma, data, actor, azienda_id
+    )
 
 
 @router.delete("/{azienda_id}/firma", response_model=LegalEntityRead)

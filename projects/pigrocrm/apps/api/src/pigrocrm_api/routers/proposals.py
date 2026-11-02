@@ -1,10 +1,10 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Depends, Query, status
+from sqlalchemy.orm import Session
 
-from pigrocrm.core.activities.schemas import ActivityRead
-from pigrocrm.core.activities.service import ActivityService
+from pigrocrm.core.actor import Actor
 from pigrocrm.core.proposals.schemas import (
     ProposalAccept,
     ProposalCreate,
@@ -17,10 +17,16 @@ from pigrocrm.core.proposals.schemas import (
     ProposalTargetType,
 )
 from pigrocrm.core.proposals.service import ProposalService
-from pigrocrm_api.deps import ActorDep, SessionDep
+from pigrocrm_api.deps import ActorDep, SessionDep, get_actor
 from pigrocrm_api.errors import PROBLEM_RESPONSES
+from pigrocrm_api.timeline import timeline_router
 
-router = APIRouter(prefix="/api/proposals", tags=["proposals"], responses=PROBLEM_RESPONSES)
+router = APIRouter(
+    prefix="/api/proposals",
+    tags=["proposals"],
+    responses=PROBLEM_RESPONSES,
+    dependencies=[Depends(get_actor)],
+)
 
 
 @router.post("", response_model=ProposalRead, status_code=status.HTTP_201_CREATED)
@@ -72,16 +78,20 @@ def reject(
     return ProposalService(session).reject(proposal_id, data, actor)
 
 
-@router.get("/{proposal_id}/timeline", response_model=list[ActivityRead])
-def timeline(
-    proposal_id: UUID,
-    session: SessionDep,
-    actor: ActorDep,
-    limit: Annotated[int, Query(ge=1, le=200)] = 50,
-) -> list[ActivityRead]:
-    """La cronologia della proposta: depositata, poi accettata o rifiutata. Il motivo di
-    un rifiuto sta solo qui, nel payload della riga `rejected`."""
+def _proposal_exists(session: Session, proposal_id: UUID, actor: Actor) -> None:
     # A rejection's `motivo` has no column on `proposals` (see `ProposalReject`). The
     # proposal is read first so an id that is not one answers 404, not an empty list.
     ProposalService(session).get(proposal_id, actor)
-    return ActivityService(session).timeline("proposal", proposal_id, limit)
+
+
+router.include_router(
+    timeline_router(
+        "proposal",
+        id_param="proposal_id",
+        guard=_proposal_exists,
+        description=(
+            "La cronologia della proposta: depositata, poi accettata o rifiutata. Il motivo "
+            "di un rifiuto sta solo qui, nel payload della riga `rejected`."
+        ),
+    )
+)

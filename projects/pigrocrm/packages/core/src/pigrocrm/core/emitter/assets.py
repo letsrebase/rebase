@@ -40,6 +40,10 @@ DEFAULT_LABEL: Final = "predefinita"
 # Spec §3: «a PNG or SVG under 1 MiB».
 MAX_IMAGE_BYTES: Final = 1024 * 1024
 
+# The action the services refuse a non-admin under; the upload routes check it before reading
+# the body, so they name it from here.
+ASSETS_ACTION: Final = "update_azienda_assets"
+
 ImageKind = Literal["png", "svg"]
 Slot = Literal["logo", "firma"]
 
@@ -347,7 +351,7 @@ class LegalEntityAssets:
     def _set(
         self, azienda_id: UUID | None, data: bytes, actor: Actor, *, slot: Slot
     ) -> LegalEntityRead:
-        actor.require_admin("update_azienda_assets")
+        actor.require_admin(ASSETS_ACTION)
         row = self._row(azienda_id)
         kind = self._check(data, slot=slot)
         attribute = f"{slot}_key"
@@ -367,7 +371,7 @@ class LegalEntityAssets:
         return LegalEntityRead.model_validate(row)
 
     def _remove(self, azienda_id: UUID | None, actor: Actor, *, slot: Slot) -> LegalEntityRead:
-        actor.require_admin("update_azienda_assets")
+        actor.require_admin(ASSETS_ACTION)
         row = self._row(azienda_id)
         attribute = f"{slot}_key"
         key = getattr(row, attribute)

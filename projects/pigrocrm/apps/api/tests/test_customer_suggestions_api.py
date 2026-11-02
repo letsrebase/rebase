@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "packages" / "core" / "tests"))
 from fakes.fake_gmail import FakeGmail, FakeMessage  # noqa: E402
 
+import pigrocrm_api.google_tokens as google_tokens  # noqa: E402
 import pigrocrm_api.routers.gmail as gmail_router  # noqa: E402
 from pigrocrm.core.config import Settings, get_settings  # noqa: E402
 from pigrocrm.core.customers.models import Customer  # noqa: E402
@@ -56,14 +57,14 @@ def gmail_ready(client: TestClient) -> Iterator[TestClient]:
 
 @pytest.fixture
 def google(monkeypatch: pytest.MonkeyPatch) -> FakeGmail:
-    """The router builds its transport and its token client from the module's own
-    `GmailTransport`: pointed at the fake, with an empty token-client cache so no other
+    """The router and the token-client cache each build their transport from their own
+    `GmailTransport`: both pointed at the fake, with an empty token-client cache so no other
     test's client answers."""
     fake = FakeGmail(access_token="ya29.fake")
-    monkeypatch.setattr(
-        gmail_router, "GmailTransport", lambda: GmailTransport(http=fake, sleep=lambda _: None)
-    )
-    monkeypatch.setattr(gmail_router, "_token_clients", {})
+    transport = lambda: GmailTransport(http=fake, sleep=lambda _: None)  # noqa: E731
+    monkeypatch.setattr(gmail_router, "GmailTransport", transport)
+    monkeypatch.setattr(google_tokens, "GmailTransport", transport)
+    monkeypatch.setattr(google_tokens, "_token_clients", {})
     return fake
 
 

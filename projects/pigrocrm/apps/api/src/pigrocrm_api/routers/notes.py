@@ -1,7 +1,7 @@
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, Query, status
 
 from pigrocrm.core.notes.schemas import (
     NoteCreate,
@@ -11,10 +11,16 @@ from pigrocrm.core.notes.schemas import (
     NoteUpdate,
 )
 from pigrocrm.core.notes.service import NoteService
-from pigrocrm_api.deps import ActorDep, SessionDep
+from pigrocrm_api.deps import ActorDep, SessionDep, get_actor
 from pigrocrm_api.errors import PROBLEM_RESPONSES
+from pigrocrm_api.query_params import PAGE_LIMIT_MAX
 
-router = APIRouter(prefix="/api", tags=["notes"], responses=PROBLEM_RESPONSES)
+router = APIRouter(
+    prefix="/api",
+    tags=["notes"],
+    responses=PROBLEM_RESPONSES,
+    dependencies=[Depends(get_actor)],
+)
 
 # The collection a note hangs on, as the URL spells it, and the entity type the service
 # and the timeline know it by.
@@ -28,11 +34,19 @@ ENTITY_TYPES: dict[str, NoteEntityType] = {
 
 @router.get("/{collection}/{entity_id}/notes", response_model=list[NoteRead])
 def list_notes(
-    collection: Collection, entity_id: UUID, session: SessionDep, actor: ActorDep
+    collection: Collection,
+    entity_id: UUID,
+    session: SessionDep,
+    actor: ActorDep,
+    limit: Annotated[int, Query(ge=1, le=PAGE_LIMIT_MAX)] = PAGE_LIMIT_MAX,
 ) -> list[NoteRead]:
     """Le note di un deal, di un cliente o di una persona, la più recente per prima. Ognuna
-    dice chi l'ha scritta, quando e da dove, e se chi chiede può modificarla."""
-    return NoteService(session).list_for_entity(ENTITY_TYPES[collection], entity_id, actor)
+    dice chi l'ha scritta, quando e da dove, e se chi chiede può modificarla. Un thread è
+    una manciata di osservazioni: `limit` è un tetto contro una lettura senza fine, e il
+    suo valore predefinito è il massimo, perché mezzo thread vale meno di uno intero."""
+    return NoteService(session).list_for_entity(
+        ENTITY_TYPES[collection], entity_id, actor, limit=limit
+    )
 
 
 @router.post(

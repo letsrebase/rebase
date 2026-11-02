@@ -50,6 +50,9 @@ from pigrocrm.core.templates.service import TemplateService
 from pigrocrm.core.text import file_text
 
 ENTITY: EntityType = "document"
+# The action `add_version` refuses a non-writer under; the upload route checks it before
+# reading the body, so it names it from here.
+ADD_VERSION_ACTION = "add_document_version"
 
 # The template types a `documents` row can legitimately be created from. Derived from
 # `DocumentTipo` itself, never retyped, so a value added there is covered here by
@@ -391,7 +394,7 @@ class DocumentService:
         that were never written. Rolling back trades that for the harmless outcome:
         nothing committed, the number is not burned, the session stays usable.
         """
-        actor.require_write("add_document_version")
+        actor.require_write(ADD_VERSION_ACTION)
         document = self._require(document_id)
         version = self._add_version_row(
             document,

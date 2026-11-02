@@ -34,21 +34,18 @@ from pigrocrm.core.slack.schemas import (
     SlackMine,
 )
 from pigrocrm.core.slack.service import SlackService
-from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, callback_actor
+from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, get_actor
 from pigrocrm_api.errors import PROBLEM_RESPONSES
-from pigrocrm_api.oauth_relay import relay_to_space
-from pigrocrm_api.tenancy import cookie_path
+from pigrocrm_api.oauth_callback import finish_consent
 
 router = APIRouter(prefix="/api/slack", tags=["slack"], responses=PROBLEM_RESPONSES)
+# The one public route is the OAuth callback: a browser navigation that decides for itself
+# what a missing session means (`oauth_callback.py`). Everything else sits behind
+# `get_actor`, so a handler added to `authenticated` cannot forget to ask who is calling.
+authenticated = APIRouter(dependencies=[Depends(get_actor)])
 
-# The outcome codes of a consent, rendered in Italian by the SPA: the same fixed table of
-# four as Gmail's and Drive's, so nothing an attacker appends to this URL puts words of its
-# own on the screen.
+# Where the SPA renders the outcome of a consent (`oauth_callback.py`).
 _SETTINGS_PAGE = "/app/settings/slack"
-_ESITO_COLLEGATO = "collegato"
-_ESITO_NEGATO = "negato"
-_ESITO_ERRORE = "errore"
-_ESITO_SESSIONE = "sessione"
 
 _CALLBACK_ROUTE = "/oauth/callback"
 _CALLBACK_PATH = f"{router.prefix}{_CALLBACK_ROUTE}"
@@ -69,7 +66,7 @@ def _oauth(session: SessionDep, settings: Settings, client: SlackClient) -> Slac
     return SlackOAuthService(session, settings=settings, client=client)
 
 
-@router.get("/account", response_model=SlackHealth)
+@authenticated.get("/account", response_model=SlackHealth)
 def read_account(
     session: SessionDep, actor: ActorDep, settings: SettingsDep, client: SlackClientDep
 ) -> SlackHealth:
@@ -78,7 +75,7 @@ def read_account(
     return _service(session, settings, client).health(actor)
 
 
-@router.get("/me", response_model=SlackMine)
+@authenticated.get("/me", response_model=SlackMine)
 def read_mine(
     session: SessionDep, actor: ActorDep, settings: SettingsDep, client: SlackClientDep
 ) -> SlackMine:
@@ -86,7 +83,7 @@ def read_mine(
     return _service(session, settings, client).mine(actor)
 
 
-@router.get("/oauth/start")
+@authenticated.get("/oauth/start")
 def start_oauth(
     session: SessionDep, actor: ActorDep, settings: SettingsDep, client: SlackClientDep
 ) -> RedirectResponse:
@@ -105,53 +102,36 @@ def finish_oauth(
     state: str | None = None,
     error: str | None = None,
 ) -> RedirectResponse:
-    # Before the actor: a consent a space started through the root's app comes back here
-    # carrying that space's cookie only (`oauth_relay.py`).
-    relayed = relay_to_space(
+    # Every refusal `complete` can produce: a `Conflict` (a replayed or expired state, a
+    # workspace already connected, a code Slack refused, an app installed with fewer
+    # scopes) or a refused role (a scoped or demoted admin must not meet a problem document
+    # mid-consent). All end on the settings page, which re-reads `GET /account` and shows
+    # the true state.
+    return finish_consent(
         request,
+        session,
         settings,
-        _CALLBACK_PATH,
+        callback_path=_CALLBACK_PATH,
         code=code,
         state=state,
         error=error,
+        complete=lambda code, state, actor: _oauth(session, settings, client).complete(
+            code=code, state=state, actor=actor
+        ),
+        page=_SETTINGS_PAGE,
+        refusals=(DomainError,),
         lends=bool(settings.slack_client_id),
     )
-    if relayed is not None:
-        return relayed
-    actor = callback_actor(request, session, settings)
-    if actor is None:
-        return _back_to_settings(request, _ESITO_SESSIONE)
-    if error is not None or code is None or state is None:
-        return _back_to_settings(request, _ESITO_NEGATO)
-    try:
-        _oauth(session, settings, client).complete(code=code, state=state, actor=actor)
-    except DomainError:
-        # Every refusal `complete` can produce: a `Conflict` (a replayed or expired state, a
-        # workspace already connected, a code Slack refused, an app installed with fewer
-        # scopes) or a refused role (a scoped or demoted admin must not meet a problem
-        # document mid-consent). All end on the settings page, which re-reads
-        # `GET /account` and shows the true state.
-        return _back_to_settings(request, _ESITO_ERRORE)
-    return _back_to_settings(request, _ESITO_COLLEGATO)
 
 
-def _back_to_settings(request: Request, esito: str) -> RedirectResponse:
-    # Under the prefix the request wore: a space's consent must end on that space's page.
-    prefix = cookie_path(request).rstrip("/")
-    # Snyk Code python/OR here is a false positive: a fixed page, under the request's own
-    # prefix (a slug that matched SLUG_PATTERN in `tenancy.py`, or none for the root), with
-    # one of the four constant esito codes.
-    return RedirectResponse(f"{prefix}{_SETTINGS_PAGE}?esito={esito}", status_code=307)
-
-
-@router.delete("/account", status_code=204)
+@authenticated.delete("/account", status_code=204)
 def disconnect(
     session: SessionDep, actor: ActorDep, settings: SettingsDep, client: SlackClientDep
 ) -> None:
     _oauth(session, settings, client).disconnect(actor)
 
 
-@router.post("/account/rematch", response_model=SlackHealth)
+@authenticated.post("/account/rematch", response_model=SlackHealth)
 def rematch(
     session: SessionDep, actor: ActorDep, settings: SettingsDep, client: SlackClientDep
 ) -> SlackHealth:
@@ -159,7 +139,7 @@ def rematch(
     return _service(session, settings, client).rematch(actor)
 
 
-@router.put("/users/{user_id}/link", response_model=SlackHealth)
+@authenticated.put("/users/{user_id}/link", response_model=SlackHealth)
 def link_user(
     user_id: UUID,
     payload: SlackLinkWrite,
@@ -172,7 +152,7 @@ def link_user(
     return _service(session, settings, client).link(actor, user_id, payload.email)
 
 
-@router.delete("/users/{user_id}/link", response_model=SlackHealth)
+@authenticated.delete("/users/{user_id}/link", response_model=SlackHealth)
 def unlink_user(
     user_id: UUID,
     session: SessionDep,
@@ -184,14 +164,14 @@ def unlink_user(
     return _service(session, settings, client).unlink(actor, user_id)
 
 
-@router.get("/channels", response_model=list[SlackChannelRead])
+@authenticated.get("/channels", response_model=list[SlackChannelRead])
 def list_channels(
     session: SessionDep, actor: ActorDep, settings: SettingsDep, client: SlackClientDep
 ) -> list[SlackChannelRead]:
     return _service(session, settings, client).channels(actor)
 
 
-@router.put("/channel", response_model=SlackHealth)
+@authenticated.put("/channel", response_model=SlackHealth)
 def set_channel(
     payload: SlackChannelWrite,
     session: SessionDep,
@@ -201,3 +181,6 @@ def set_channel(
 ) -> SlackHealth:
     """The channel the space-wide reminders are also posted to, or `null` for none."""
     return _service(session, settings, client).set_channel(actor, payload.channel_id)
+
+
+router.include_router(authenticated)

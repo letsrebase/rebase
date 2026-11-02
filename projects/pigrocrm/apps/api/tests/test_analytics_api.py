@@ -832,7 +832,9 @@ def test_the_year_routes_answer_for_one_azienda_and_the_csv_is_a_spreadsheet_dow
     file = logged_in.get("/api/analytics/year/csv", params={"anno": ANNO})
     assert file.status_code == 200, file.text
     assert file.headers["content-type"] == "text/csv; charset=utf-8"
-    assert file.headers["content-disposition"].startswith(f'attachment; filename="registro-{ANNO}-')
+    assert file.headers["content-disposition"].startswith(
+        f"attachment; filename*=UTF-8''registro-{ANNO}-"
+    )
     assert file.content.startswith(b"\xef\xbb\xbf")
     assert "1.200,50" in file.content.decode("utf-8")
 

@@ -2,10 +2,11 @@ from datetime import date
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Depends, Query, status
+from pydantic import Field
+from sqlalchemy.orm import Session
 
-from pigrocrm.core.activities.schemas import ActivityRead
-from pigrocrm.core.activities.service import ActivityService
+from pigrocrm.core.actor import Actor
 from pigrocrm.core.contracts.schemas import (
     ClauseNoteCreate,
     ClauseNoteRead,
@@ -34,12 +35,18 @@ from pigrocrm.core.contracts.service import (
     RateCardService,
     RenewalAssumptionService,
 )
-from pigrocrm.core.db import CURSOR_MAX_LENGTH, SortDirection
 from pigrocrm.core.validation import SafeStr
-from pigrocrm_api.deps import ActorDep, SessionDep
+from pigrocrm_api.deps import ActorDep, SessionDep, get_actor
 from pigrocrm_api.errors import PROBLEM_RESPONSES
+from pigrocrm_api.query_params import AZIENDA_QUERY_DESCRIPTION, SortedParams, sort_field
+from pigrocrm_api.timeline import timeline_router
 
-router = APIRouter(prefix="/api/contracts", tags=["contracts"], responses=PROBLEM_RESPONSES)
+router = APIRouter(
+    prefix="/api/contracts",
+    tags=["contracts"],
+    responses=PROBLEM_RESPONSES,
+    dependencies=[Depends(get_actor)],
+)
 
 
 @router.post("", response_model=ContractRead, status_code=status.HTTP_201_CREATED)
@@ -47,30 +54,18 @@ def create(data: ContractCreate, session: SessionDep, actor: ActorDep) -> Contra
     return ContractService(session).create(data, actor)
 
 
+class ContractListParams(SortedParams):
+    customer_id: UUID | None = None
+    stato: str | None = None
+    azienda_id: UUID | None = Field(default=None, description=AZIENDA_QUERY_DESCRIPTION)
+    sort: SafeStr | None = sort_field("created_at", "updated_at", "titolo")
+
+
 @router.get("", response_model=ContractPage)
 def list_contracts(
-    session: SessionDep,
-    actor: ActorDep,
-    customer_id: Annotated[UUID | None, Query()] = None,
-    stato: Annotated[str | None, Query()] = None,
-    azienda_id: Annotated[
-        UUID | None, Query(description="Solo le righe di questa azienda; omesso, tutte")
-    ] = None,
-    limit: Annotated[int, Query(ge=1, le=200)] = 50,
-    cursor: Annotated[str | None, Query(max_length=CURSOR_MAX_LENGTH)] = None,
-    sort: Annotated[SafeStr | None, Query(description="created_at | updated_at | titolo")] = None,
-    dir: Annotated[SortDirection, Query()] = "asc",
+    session: SessionDep, actor: ActorDep, params: Annotated[ContractListParams, Query()]
 ) -> ContractPage:
-    query = ContractListQuery(
-        customer_id=customer_id,
-        stato=stato,
-        azienda_id=azienda_id,
-        limit=limit,
-        cursor=cursor,
-        sort=sort,
-        dir=dir,
-    )
-    return ContractService(session).list(query, actor)
+    return ContractService(session).list(params.to_query(ContractListQuery), actor)
 
 
 @router.get("/{contract_id}", response_model=ContractDetail)
@@ -107,15 +102,11 @@ def renew(
     return ContractService(session).renew(contract_id, data, actor)
 
 
-@router.get("/{contract_id}/timeline", response_model=list[ActivityRead])
-def timeline(
-    contract_id: UUID,
-    session: SessionDep,
-    actor: ActorDep,
-    limit: Annotated[int, Query(ge=1, le=200)] = 50,
-) -> list[ActivityRead]:
+def _contract_exists(session: Session, contract_id: UUID, actor: Actor) -> None:
     ContractService(session).get(contract_id, actor)
-    return ActivityService(session).timeline("contract", contract_id, limit)
+
+
+router.include_router(timeline_router("contract", id_param="contract_id", guard=_contract_exists))
 
 
 @router.get("/{contract_id}/concentration", response_model=ContractConcentrationCap)

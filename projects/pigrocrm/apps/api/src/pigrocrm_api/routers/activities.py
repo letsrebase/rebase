@@ -2,7 +2,7 @@ from datetime import date
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Depends, Query, status
 
 from pigrocrm.core.attivita.schemas import (
     AttivitaCreate,
@@ -17,10 +17,15 @@ from pigrocrm.core.attivita.schemas import (
 from pigrocrm.core.attivita.service import AttivitaService
 from pigrocrm.core.db import CURSOR_MAX_LENGTH, SortDirection
 from pigrocrm.core.validation import SafeStr
-from pigrocrm_api.deps import ActorDep, SessionDep
+from pigrocrm_api.deps import ActorDep, SessionDep, get_actor
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 
-router = APIRouter(prefix="/api/activities", tags=["attivita"], responses=PROBLEM_RESPONSES)
+router = APIRouter(
+    prefix="/api/activities",
+    tags=["attivita"],
+    responses=PROBLEM_RESPONSES,
+    dependencies=[Depends(get_actor)],
+)
 
 
 @router.post("", response_model=AttivitaRead, status_code=status.HTTP_201_CREATED)

@@ -5,3 +5,12 @@ extend = "../../ruff.toml"
 # import itself freely, but must not reach into apps/mcp.
 [lint.flake8-tidy-imports.banned-api]
 "pigrocrm_mcp".msg = "apps/api must not import from apps/mcp"
+
+# An argument a handler never reads is a dependency declared to force something: the
+# routers authenticate with `dependencies=[Depends(get_actor)]`, so none is needed. Test
+# arguments are pytest fixtures, requested for their side effects.
+[lint]
+extend-select = ["ARG"]
+
+[lint.per-file-ignores]
+"tests/**" = ["ARG"]

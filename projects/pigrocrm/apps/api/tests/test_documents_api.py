@@ -1,6 +1,7 @@
 import sys
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -19,7 +20,9 @@ from fakes.fake_gmail import FakeGmail  # noqa: E402
 from fakes.gmail_fixtures import TOKEN_KEY, gmail_settings  # noqa: E402
 from sqlalchemy.orm import Session, sessionmaker  # noqa: E402
 
+import pigrocrm.core.documents.service as document_service  # noqa: E402
 import pigrocrm_api.deps as deps  # noqa: E402
+import pigrocrm_api.routers.documents as documents_router  # noqa: E402
 from pigrocrm.core.auth.models import User  # noqa: E402
 from pigrocrm.core.config import Settings, get_settings  # noqa: E402
 from pigrocrm.core.drive.models import GoogleDriveAccount  # noqa: E402
@@ -103,6 +106,52 @@ def test_upload_a_version_and_download_it_back(logged_in: TestClient) -> None:
     assert download.content == b"%PDF-1.7\nfinto\n"
     assert download.headers["content-type"] == "application/pdf"
     assert "attachment" in download.headers["content-disposition"]
+
+
+def test_a_readonly_actor_is_refused_before_the_upload_is_read(
+    readonly_client: TestClient,
+) -> None:
+    """The role is checked ahead of the multipart parser, so a caller who may not write
+    cannot make the server spool a body: a body that is not multipart at all still
+    answers 403, where a parser that ran first would answer 400."""
+    response = readonly_client.post(
+        "/api/documents/00000000-0000-0000-0000-000000000000/versions",
+        content=b"not multipart",
+        headers={"content-type": "multipart/form-data; boundary=x"},
+    )
+    assert response.status_code == 403
+
+
+def test_an_upload_is_read_one_byte_past_the_limit_and_no_more(
+    logged_in: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The service refuses a file over `DIMENSIONE_MAX` with its own sentence, so the
+    route reads `DIMENSIONE_MAX + 1` bytes of it -- enough to see it is too big, never
+    the whole body."""
+    limit = 1024
+    monkeypatch.setattr(documents_router, "DIMENSIONE_MAX", limit)
+    monkeypatch.setattr(document_service, "DIMENSIONE_MAX", limit)
+    seen: list[int] = []
+    add_version = document_service.DocumentService.add_version
+
+    def spy(self: Any, document_id: Any, data: bytes, *args: Any, **kwargs: Any) -> Any:
+        seen.append(len(data))
+        return add_version(self, document_id, data, *args, **kwargs)
+
+    monkeypatch.setattr(document_service.DocumentService, "add_version", spy)
+    customer_id = _customer(logged_in)
+    document_id = logged_in.post(
+        "/api/documents", json={"customer_id": customer_id, "tipo": "documento", "titolo": "Doc"}
+    ).json()["id"]
+
+    response = logged_in.post(
+        f"/api/documents/{document_id}/versions",
+        files={"file": ("grande.pdf", b"%PDF-1.7\n" + b"0" * 10 * limit, "application/pdf")},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "validation_failed"
+    assert seen == [limit + 1]
 
 
 def test_an_unallowed_upload_type_is_refused(logged_in: TestClient) -> None:
@@ -584,7 +633,7 @@ def test_the_api_builds_one_storage_for_the_whole_process_and_opens_nothing_to_d
     engine, without a connection and without the `google_drive_accounts` row that may
     not exist yet -- which is the entire reason this storage resolves late. The registry
     staying unbuilt is that, asserted: `_fresh_session` would have to run to reach
-    `_get_session_factory`, and nothing here ever calls it.
+    `space_session_factory`, and nothing here ever calls it.
 
     The storage cache is cleared through the module's own `reset_storage_cache`
     (`fresh_storage_cache`, above); `_registry` is still monkeypatched, which `pytest`

@@ -2,7 +2,7 @@ from datetime import date
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Query, Response, status
+from fastapi import APIRouter, Depends, Query, Response, status
 
 from pigrocrm.core.documents.schemas import DocumentRead
 from pigrocrm.core.invoices.schemas import InvoiceRead
@@ -16,10 +16,16 @@ from pigrocrm.core.work_units.register import (
     ContractRegister,
     ContractRegisterService,
 )
-from pigrocrm_api.deps import ActorDep, SessionDep, StorageDep
+from pigrocrm_api.deps import ActorDep, SessionDep, StorageDep, get_actor
+from pigrocrm_api.downloads import attachment_response
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 
-router = APIRouter(prefix="/api/contracts", tags=["contract-billing"], responses=PROBLEM_RESPONSES)
+router = APIRouter(
+    prefix="/api/contracts",
+    tags=["contract-billing"],
+    responses=PROBLEM_RESPONSES,
+    dependencies=[Depends(get_actor)],
+)
 
 Da = Annotated[date, Query(description="Dal giorno, YYYY-MM-DD, incluso")]
 A = Annotated[date, Query(description="Al giorno, YYYY-MM-DD, incluso")]
@@ -29,7 +35,6 @@ A = Annotated[date, Query(description="Al giorno, YYYY-MM-DD, incluso")]
 def get_billable_days(
     contract_id: UUID,
     session: SessionDep,
-    actor: ActorDep,
     da: Annotated[date | None, Query(description="Dal giorno, incluso")] = None,
     a: Annotated[date | None, Query(description="Al giorno, incluso")] = None,
 ) -> BillableDays:
@@ -74,10 +79,8 @@ def get_register_csv(
     cliente filtra: si ricalcola a ogni richiesta e non si archivia, come l'XLSX delle ore."""
     service = ContractRegisterService(session)
     register = service.build(contract_id, da, a, actor)
-    return Response(
-        content=service.build_csv(register),
-        media_type=CSV_CONTENT_TYPE,
-        headers={"Content-Disposition": f'attachment; filename="{service.csv_filename(register)}"'},
+    return attachment_response(
+        service.build_csv(register), CSV_CONTENT_TYPE, service.csv_filename(register)
     )
 
 
