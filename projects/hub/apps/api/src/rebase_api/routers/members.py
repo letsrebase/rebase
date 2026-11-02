@@ -32,7 +32,6 @@ the address in the body, so no access log on either host writes it.
 
 import logging
 import secrets
-from datetime import UTC, datetime, timedelta
 from typing import Annotated
 from uuid import UUID
 
@@ -81,19 +80,11 @@ from rebase_core.perks import GUIDE_FILENAME, PerkService, guide_bytes
 from rebase_core.referral_schemas import MemberReferral
 from rebase_core.referrals import ReferralService
 from rebase_core.schema_common import Ack
-from rebase_core.team_caps import rome_midnight
-from rebase_core.users import UserService
+from rebase_core.users import VIA_LOGIN, UserService
 
 router = APIRouter(prefix="/api/hub", tags=["hub-member"])
 
 _log = logging.getLogger(__name__)
-
-
-def _seconds_until_tomorrow() -> int:
-    """Until the next midnight in Rome: when the day's mail budget is new again."""
-    now = datetime.now(UTC)
-    tomorrow = rome_midnight(now) + timedelta(days=1)
-    return max(int((tomorrow - now).total_seconds()), 1)
 
 
 @router.post("/auth/link", response_model=Ack, status_code=status.HTTP_202_ACCEPTED)
@@ -112,20 +103,7 @@ def request_link(
             "L'accesso via email non è ancora attivo. Riprova più avanti.",
         )
     users = UserService(session, settings)
-    if users.public_links_left() == 0:
-        # The circuit breaker of the public mail budget (`config.py`): refused for
-        # everybody alike, so it says nothing about any address, and logged so the
-        # operator sees the door closing rather than finding out from Resend's 429.
-        _log.warning(
-            "public mail budget of %s links a day spent: /auth/link refused until tomorrow",
-            settings.public_mail_daily_budget,
-        )
-        raise HTTPException(
-            status.HTTP_429_TOO_MANY_REQUESTS,
-            "Oggi abbiamo inviato troppi link di accesso. Riprova domani.",
-            headers={"Retry-After": str(_seconds_until_tomorrow())},
-        )
-    mail = users.request_link(payload.email, utm=payload.utm)
+    mail = users.request_link(payload.email, utm=payload.utm, via=VIA_LOGIN)
     if mail is not None:
         background.add_task(send_after_response, sender, mail, "the magic link mail")
     return Ack()

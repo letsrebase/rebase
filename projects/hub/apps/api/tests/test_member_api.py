@@ -196,10 +196,17 @@ def test_the_link_request_answers_the_same_whether_the_address_applied_or_not(
 
 
 def _tight_budget(client: TestClient, api_session: Session, room: int) -> None:
-    """The settings of an installation whose public mail budget has `room` links left today:
-    the shared database keeps every test's tokens, so the budget is the day's count plus
-    `room`."""
-    used = api_session.scalar(select(func.count()).select_from(MagicLinkToken)) or 0
+    """The settings of an installation whose wizard mail budget has `room` links left today:
+    the shared database keeps every test's tokens, so the budget is the day's wizard count
+    plus `room`."""
+    used = (
+        api_session.scalar(
+            select(func.count())
+            .select_from(MagicLinkToken)
+            .where(MagicLinkToken.asked_via == "wizard")
+        )
+        or 0
+    )
     client.app.dependency_overrides[get_settings] = lambda: Settings(  # type: ignore[attr-defined,call-arg]
         _env_file=None,
         resend_daily_quota=100_000,
@@ -208,33 +215,70 @@ def _tight_budget(client: TestClient, api_session: Session, room: int) -> None:
     )
 
 
-def test_the_public_mail_budget_closes_the_link_request_for_everybody_alike(
+def test_sign_in_is_never_closed_by_the_wizards_budget_or_by_other_peoples_logins(
+    client: TestClient, sender: RecordingSender, api_session: Session, clean: None
+) -> None:
+    """The review's blocker: 16 members each ask for their link on one day, with the
+    wizard's budget already spent, and every one gets it."""
+    addresses = [f"m{index}@studio.it" for index in range(16)]
+    for address in addresses:
+        _apply(client, address)
+    _tight_budget(client, api_session, room=0)
+
+    for address in addresses:
+        assert client.post("/api/hub/auth/link", json={"email": address}).status_code == 202
+
+    assert sorted(mail.to for mail in sender.sent) == sorted(addresses)
+
+
+def test_one_person_asking_again_and_again_stops_at_their_own_cap_in_silence(
     client: TestClient,
     sender: RecordingSender,
     api_session: Session,
     clean: None,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """A stranger typing other people's addresses must not burn the Resend quota the
-    members' own links and the campaigns share: once the day's budget is spent the door
-    refuses with a sentence and a `Retry-After`, whoever asks and whatever they type, and
-    says so in the log."""
-    logging.getLogger("rebase_api.routers.members").disabled = False
+    """A person has a daily cap of their own: past it no mail is sent and the answer is the
+    one every other request gets (it must not say whether the address exists), and the log
+    says so without the address. Nobody else is affected."""
+    logging.getLogger("rebase_core.users").disabled = False
     _apply(client, "ada@studio.it")
     _apply(client, "grace@studio.it")
-    _tight_budget(client, api_session, room=1)
+    cap = Settings(_env_file=None).magic_link_daily_per_user  # type: ignore[call-arg]
 
-    assert client.post("/api/hub/auth/link", json={"email": "ada@studio.it"}).status_code == 202
     with caplog.at_level(logging.WARNING):
-        refused = client.post("/api/hub/auth/link", json={"email": "grace@studio.it"})
-        unknown = client.post("/api/hub/auth/link", json={"email": "nessuno@studio.it"})
+        for _ in range(cap + 2):
+            assert (
+                client.post("/api/hub/auth/link", json={"email": "ada@studio.it"}).status_code
+                == 202
+            )
+            # Past the per-address minute throttle, still today.
+            api_session.execute(
+                text("UPDATE magic_link_tokens SET created_at = created_at - interval '90 s'")
+            )
+            api_session.commit()
+        assert (
+            client.post("/api/hub/auth/link", json={"email": "grace@studio.it"}).status_code == 202
+        )
 
-    assert refused.status_code == unknown.status_code == 429
-    assert refused.json() == unknown.json()
-    assert "Riprova domani" in refused.json()["detail"]
-    assert 0 < int(refused.headers["Retry-After"]) <= 86400
-    assert [mail.to for mail in sender.sent] == ["ada@studio.it"]
-    assert "public mail budget" in caplog.text and "grace@studio.it" not in caplog.text
+    assert [mail.to for mail in sender.sent].count("ada@studio.it") == cap
+    assert [mail.to for mail in sender.sent].count("grace@studio.it") == 1
+    assert "daily cap" in caplog.text and "ada@studio.it" not in caplog.text
+
+
+def _reapply(client: TestClient, email: str, nome: str) -> int:
+    """An application, without a CV, from an address that is already on file."""
+    return client.post(
+        "/api/hub/freelancers",
+        data={
+            "nome": nome,
+            "cognome": "Lovelace",
+            "email": email,
+            "tariffa_giornaliera": "450",
+            "posizione": "Backend developer",
+            "remoto": "remoto",
+        },
+    ).status_code
 
 
 def test_an_application_for_an_address_on_file_sends_no_mail_once_the_budget_is_spent(
@@ -242,22 +286,11 @@ def test_an_application_for_an_address_on_file_sends_no_mail_once_the_budget_is_
 ) -> None:
     _apply(client, "ada@studio.it")
     _apply(client, "grace@studio.it")
-    assert client.post("/api/hub/auth/link", json={"email": "ada@studio.it"}).status_code == 202
-    _tight_budget(client, api_session, room=0)  # that one link spent the day's budget
+    assert _reapply(client, "ada@studio.it", "Ada") == 201  # the wizard's one mail
+    _tight_budget(client, api_session, room=0)  # that spent the wizard's budget
 
-    again = client.post(
-        "/api/hub/freelancers",
-        data={
-            "nome": "Grace",
-            "cognome": "Hopper",
-            "email": "grace@studio.it",
-            "tariffa_giornaliera": "450",
-            "posizione": "Backend developer",
-            "remoto": "remoto",
-        },
-    )
-
-    assert again.status_code == 201  # the same answer as always: nothing says what happened
+    # The same answer as always: nothing says what happened.
+    assert _reapply(client, "grace@studio.it", "Grace") == 201
     assert [mail.to for mail in sender.sent] == ["ada@studio.it"]
 
 

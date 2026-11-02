@@ -124,13 +124,17 @@ class Settings(BaseSettings):
     # mails and the campaign test mails (not rows, so not counted) all share the key. A
     # campaign may send `resend_daily_quota - campaign_daily_reserve` a day.
     campaign_daily_reserve: int = Field(default=20, ge=0)
-    # What the public doors together may spend of that reserve in a day: the magic links
-    # asked from `/auth/link` and the «you already have a card» mail of the wizard, one
-    # token row each, counted since midnight in Rome. A stranger typing other people's
-    # addresses could otherwise burn the whole key and leave the real members locked
-    # out; once the budget is spent the routes refuse until tomorrow and log it. It must
-    # fit the reserve, so the campaigns keep their room.
-    public_mail_daily_budget: int = Field(default=15, ge=1)
+    # What the wizard's unsolicited «you already have a card» mails may spend of that
+    # reserve in a day, one token row each, counted since midnight in Rome: a stranger
+    # typing other people's addresses could otherwise burn the whole key. Once spent the
+    # wizard sends no such mail until tomorrow and logs it. Sign-in is never closed by
+    # it: a login link is asked for by its owner and capped per person
+    # (`magic_link_daily_per_user`). It must fit the reserve.
+    public_mail_daily_budget: int = Field(default=10, ge=1)
+    # Login links one person may ask for in a Rome day, from the login page or the wizard
+    # (an admin is never refused, and an admin's promotion or the command line are not
+    # counted). Past it the request is answered like any other and no mail is sent.
+    magic_link_daily_per_user: int = Field(default=5, ge=1)
     # The wizard's applications that carry a CV, the whole world together, in the last
     # hour (`Freelancer.created_at`): each one stores up to 5 MB and may start a model
     # call, and the per-client speed bump alone is no ceiling against many addresses.

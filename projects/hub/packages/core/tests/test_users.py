@@ -16,7 +16,7 @@ from rebase_core.freelancers import FreelancerService
 from rebase_core.logins import LoginService
 from rebase_core.models import AdminAction, Login, MagicLinkToken, User, UserSession
 from rebase_core.signup_schemas import SignupUtm
-from rebase_core.users import UserService
+from rebase_core.users import VIA_LOGIN, VIA_WIZARD, UserService
 
 PDF = b"%PDF-1.7\n1 0 obj<<>>endobj\n%%EOF\n"
 
@@ -479,29 +479,30 @@ def test_a_request_inside_the_hour_writes_nothing_and_a_later_one_slides(
     assert row.expires_at > behind + timedelta(hours=1)
 
 
-# ---- the public mail budget -----------------------------------------------------------
+# ---- the wizard's mail budget and a person's own daily cap ------------------------------
 
 
-def test_the_days_links_are_counted_and_todays_rows_survive_the_sweep(
+def _age_the_tokens(session: Session) -> None:
+    """Past the per-address minute throttle, still today."""
+    session.execute(text("UPDATE magic_link_tokens SET created_at = created_at - interval '90 s'"))
+    session.commit()
+
+
+def test_only_the_wizards_links_count_against_the_wizards_budget(
     users: UserService, hub_session: Session, settings: Settings
 ) -> None:
     for index in range(3):
         email = f"p{index}@studio.it"
         users.get_or_create(email, "Ada", "Lovelace")
-        assert users.request_link(email) is not None
-    assert users.public_links_left() == settings.public_mail_daily_budget - 3
+        assert users.request_link(email, via=VIA_LOGIN) is not None
+    assert users.wizard_links_left() == settings.public_mail_daily_budget  # logins never count
 
-    # A spent link of the same person, asked for again, is not swept while today lasts:
-    # it is part of the day's count.
-    token = hub_session.scalars(select(MagicLinkToken)).first()
-    assert token is not None
-    token.used_at = datetime.now(UTC)
-    hub_session.commit()
-    users.request_link("p0@studio.it")
-    assert users.public_links_left() <= settings.public_mail_daily_budget - 3
+    users.get_or_create("w@studio.it", "Ada", "Lovelace")
+    assert users.request_link("w@studio.it", via=VIA_WIZARD) is not None
+    assert users.wizard_links_left() == settings.public_mail_daily_budget - 1
 
 
-def test_the_budget_runs_out_at_zero_and_starts_again_tomorrow(
+def test_the_wizards_budget_runs_out_at_zero_and_starts_again_tomorrow(
     users: UserService, hub_session: Session, settings: Settings
 ) -> None:
     tight = settings.model_copy(update={"public_mail_daily_budget": 2})
@@ -509,7 +510,58 @@ def test_the_budget_runs_out_at_zero_and_starts_again_tomorrow(
     for index in range(2):
         email = f"p{index}@studio.it"
         limited.get_or_create(email, "Ada", "Lovelace")
-        assert limited.request_link(email) is not None
+        assert limited.request_link(email, via=VIA_WIZARD) is not None
 
-    assert limited.public_links_left() == 0
-    assert limited.public_links_left(datetime.now(UTC) + timedelta(days=1)) == 2
+    assert limited.wizard_links_left() == 0
+    assert limited.wizard_links_left(datetime.now(UTC) + timedelta(days=1)) == 2
+
+
+def test_sixteen_members_each_get_their_link_whatever_the_wizards_budget_says(
+    users: UserService, hub_session: Session, settings: Settings
+) -> None:
+    """The regression of the review: the budget used to count every link of the day, so the
+    sixteenth login of a busy day was refused for everybody."""
+    spent = UserService(hub_session, settings.model_copy(update={"public_mail_daily_budget": 1}))
+    spent.get_or_create("w@studio.it", "Ada", "Lovelace")
+    assert spent.request_link("w@studio.it", via=VIA_WIZARD) is not None
+    assert spent.wizard_links_left() == 0
+
+    for index in range(16):
+        email = f"m{index}@studio.it"
+        users.get_or_create(email, "Ada", "Lovelace")
+        assert users.request_link(email, via=VIA_LOGIN) is not None
+
+
+def test_one_person_stops_at_their_own_daily_cap_and_nobody_else_does(
+    users: UserService, hub_session: Session, settings: Settings
+) -> None:
+    users.get_or_create("busy@studio.it", "Ada", "Lovelace")
+    users.get_or_create("other@studio.it", "Grace", "Hopper")
+    for _ in range(settings.magic_link_daily_per_user):
+        assert users.request_link("busy@studio.it", via=VIA_LOGIN) is not None
+        _age_the_tokens(hub_session)
+
+    assert users.request_link("busy@studio.it", via=VIA_LOGIN) is None  # no mail, no token
+    assert users.request_link("busy@studio.it", via=VIA_WIZARD) is None  # the doors share it
+    assert users.request_link("other@studio.it", via=VIA_LOGIN) is not None
+
+
+def test_an_admin_is_never_refused_and_an_admins_or_the_command_lines_links_do_not_count(
+    users: UserService, hub_session: Session, settings: Settings
+) -> None:
+    admin = users.get_or_create("ivan@rebase.it", "Ivan", "Fiore")
+    admin.role = "admin"
+    users.get_or_create("ada@studio.it", "Ada", "Lovelace")
+    hub_session.commit()
+    for _ in range(settings.magic_link_daily_per_user + 2):
+        assert users.request_link("ivan@rebase.it", via=VIA_LOGIN) is not None
+        _age_the_tokens(hub_session)
+
+    # A promotion's or the command line's link (no door) is outside the cap: the person can
+    # still ask for all of their own.
+    assert users.request_link("ada@studio.it") is not None
+    _age_the_tokens(hub_session)
+    for _ in range(settings.magic_link_daily_per_user):
+        assert users.request_link("ada@studio.it", via=VIA_LOGIN) is not None
+        _age_the_tokens(hub_session)
+    assert users.request_link("ada@studio.it", via=VIA_LOGIN) is None

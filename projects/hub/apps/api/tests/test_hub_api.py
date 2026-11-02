@@ -413,6 +413,9 @@ def test_applications_with_a_cv_stop_at_an_hourly_ceiling_the_whole_world_shares
     assert apply("a@studio.it", "203.0.113.1").status_code == 201
     assert apply("b@studio.it", "203.0.113.2").status_code == 201
 
+    # A resubmission that replaces an existing card's CV stores as much as a new card.
+    assert apply("a@studio.it", "203.0.113.5").status_code == 429
+
     refused = apply("c@studio.it", "203.0.113.3")
     assert refused.status_code == 429
     assert refused.headers["Retry-After"] == "3600"
@@ -423,7 +426,7 @@ def test_applications_with_a_cv_stop_at_an_hourly_ceiling_the_whole_world_shares
     assert apply("d@studio.it", "203.0.113.4", with_cv=False).status_code == 201
 
     # An hour later the first two no longer count.
-    api_session.execute(text("UPDATE freelancers SET created_at = now() - interval '2 hours'"))
+    api_session.execute(text("UPDATE freelancers SET cv_uploaded_at = now() - interval '2 hours'"))
     api_session.commit()
     assert apply("c@studio.it", "203.0.113.3").status_code == 201
 

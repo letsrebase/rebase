@@ -61,7 +61,7 @@ from rebase_core.mail import send_after_response
 from rebase_core.models import CV_MAX_BYTES
 from rebase_core.schema_common import DISTINCT_ID_MAX_LENGTH, Ack
 from rebase_core.signup_schemas import SignupUtm
-from rebase_core.users import UserService
+from rebase_core.users import VIA_WIZARD, UserService
 
 router = APIRouter(prefix="/api/hub", tags=["hub"])
 
@@ -189,8 +189,8 @@ def apply(
         )
     if not created and sender is not None:
         users = UserService(session, settings)
-        if users.public_links_left() == 0:
-            # The circuit breaker of the public mail budget (`config.py`): the person is
+        if users.wizard_links_left() == 0:
+            # The circuit breaker of the wizard's mail budget (`config.py`): the person is
             # told nothing different, since the answer never says whether the address
             # was new; they can still ask for a link from the login page tomorrow.
             _log.warning("public mail budget spent: the existing-card mail was not sent")
@@ -200,9 +200,11 @@ def apply(
         # the address on file, which the person controls and the form never reveals.
         typed = users.person(data.email)
         if typed is not None and typed.email.lower() == read.email.lower():
-            mail = users.request_link(data.email, note=ALREADY_HAS_CARD_NOTE)
+            mail = users.request_link(data.email, note=ALREADY_HAS_CARD_NOTE, via=VIA_WIZARD)
         else:
-            mail = users.request_link(read.email, note=ALREADY_HAS_CARD_BY_LINKEDIN_NOTE)
+            mail = users.request_link(
+                read.email, note=ALREADY_HAS_CARD_BY_LINKEDIN_NOTE, via=VIA_WIZARD
+            )
         if mail is not None:
             background.add_task(send_after_response, sender, mail, "the existing-card mail")
     if created and tracker is not None:

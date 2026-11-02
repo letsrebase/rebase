@@ -1209,22 +1209,25 @@ the cap, and all of them are per process:
   as the IPv4 it wraps; the table is bounded and forgets the least recently seen client, so
   it can only become too lenient, never lock anybody out.
 - **Applications with a CV, the whole world** (`REBASE_APPLICATIONS_WITH_CV_PER_HOUR`, 30):
-  the cards the wizard created in the last hour with a CV (`Freelancer.created_at`,
-  `compilata_da = 'persona'`); past it `POST /api/hub/freelancers` answers 429 «Stiamo
-  ricevendo molte candidature…» with `Retry-After: 3600`, for a post that carries a CV
-  only. The card's model write after the answer needs no extra gate: the seam refuses
-  before any network call once the task's daily cap is spent (`AiConfigService.can_call`),
-  and `cards-refresh` writes whatever the seam turned away.
-- **Public mail, the whole world** (`REBASE_PUBLIC_MAIL_DAILY_BUDGET`, 15, never above
-  `REBASE_CAMPAIGN_DAILY_RESERVE`): the magic links the public doors may mail in a day,
-  counted as the `magic_link_tokens` created since midnight in Rome (`request_link` keeps
-  the day's spent rows until the day is over, which is why the count is the real mail
-  count). Spent, `/auth/link` answers 429 «Oggi abbiamo inviato troppi link di accesso.
-  Riprova domani.» with `Retry-After` to the next midnight in Rome, the same for every
-  address, and the wizard's «you already have a card» mail is not sent; both log «public
-  mail budget … spent». The budget plus the campaigns' ceiling stay inside Resend's 100 a
-  day. `ResendSender.send` logs the provider's status (401/403 key or domain, 429 quota,
-  5xx outage) and never the address or the key.
+  the CVs people themselves stored in the last hour (`Freelancer.cv_uploaded_at`,
+  `compilata_da = 'persona'`, so a resubmission that replaces a card's CV counts like a new
+  card); past it `POST /api/hub/freelancers` answers 429 «Stiamo ricevendo molte
+  candidature…» with `Retry-After: 3600`, for a post that carries a CV only. The card's
+  model write after the answer needs no extra gate: the seam refuses before any network call
+  once the task's daily cap is spent (`AiConfigService.can_call`), and `cards-refresh` writes
+  whatever the seam turned away.
+- **Sign-in is never closed by a budget.** A login link is asked for by its owner, so it is
+  capped **per person**, not per world: `REBASE_MAGIC_LINK_DAILY_PER_USER` (5) links per
+  Rome day, counted on `magic_link_tokens.asked_via` (`login`, `wizard`; `NULL` for an
+  admin's promotion or the command line, which are not counted). Past it `request_link`
+  sends no mail and answers like any other request (it must not say whether the address
+  exists); the log says «a person is past the daily cap» and never the address. An admin is
+  never refused. Only the mail nobody asked for, the wizard's «you already have a card»
+  (`asked_via = 'wizard'`), has a global circuit breaker: `REBASE_PUBLIC_MAIL_DAILY_BUDGET`
+  (10, never above `REBASE_CAMPAIGN_DAILY_RESERVE`) a day; spent, that mail is not sent and
+  the log says «public mail budget spent». The budget plus the campaigns' ceiling stay inside
+  Resend's 100 a day. `ResendSender.send` logs the provider's status (401/403 key or domain,
+  429 quota, 5xx outage) and never the address or the key.
 - **The server half of the ad conversion** is sent only when the signup body says
   `pixel_consent: true`, the same «granted» decision (`localStorage["rebase.consent"]`)
   that loads the browser pixel; absent means no.

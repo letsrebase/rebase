@@ -9,6 +9,7 @@ everything else that means the person.
 """
 
 import hashlib
+import logging
 import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -40,7 +41,12 @@ from rebase_core.search import matches_any, similarity_score
 from rebase_core.signup_schemas import SignupUtm
 from rebase_core.team_caps import rome_midnight
 
+logger = logging.getLogger(__name__)
+
 ENTITY = "user"
+# The public doors that ask for a login link (`MagicLinkToken.asked_via`).
+VIA_LOGIN = "login"
+VIA_WIZARD = "wizard"
 LAST_ADMIN = "Questo è l'ultimo amministratore: promuovine un altro prima di togliergli il ruolo."
 # A session's deadline is pushed forward on use, but only once it has fallen this far
 # behind the deadline a fresh request would set: every authenticated call used to write
@@ -343,23 +349,31 @@ class UserService:
 
     # ---- the way in ----------------------------------------------------------------
 
-    def public_links_left(self, now: datetime | None = None) -> int:
-        """How many more magic links the public doors may mail today (REB-889): the
-        budget (`public_mail_daily_budget`) less the tokens created since midnight in
-        Rome. A token is one mail, and `request_link` keeps the day's rows until the
-        day is over, so the count is the day's real mail count, spent or not. Zero is
-        the circuit breaker: the doors refuse until tomorrow instead of burning the
-        Resend quota the real members' links and the campaigns share."""
+    def wizard_links_left(self, now: datetime | None = None) -> int:
+        """How many more «you already have a card» mails the wizard may send today (REB-889):
+        the budget (`public_mail_daily_budget`) less the links the wizard asked for since
+        midnight in Rome. That mail goes to an address its owner did not ask to be mailed,
+        so it is the one a stranger can use to burn the Resend quota: zero is the circuit
+        breaker for it, and only for it. A login link is never counted here, so no number of
+        logins can close sign-in."""
         moment = now or datetime.now(UTC)
         sent = self.session.scalar(
             select(func.count())
             .select_from(MagicLinkToken)
-            .where(MagicLinkToken.created_at >= rome_midnight(moment))
+            .where(
+                MagicLinkToken.asked_via == VIA_WIZARD,
+                MagicLinkToken.created_at >= rome_midnight(moment),
+            )
         )
         return max(self._config.public_mail_daily_budget - (sent or 0), 0)
 
     def request_link(
-        self, email: str, note: str | None = None, utm: SignupUtm | None = None
+        self,
+        email: str,
+        note: str | None = None,
+        utm: SignupUtm | None = None,
+        *,
+        via: str | None = None,
     ) -> Mail | None:
         """The mail to send, or `None` when nobody with that address exists, or when
         the address already holds a live link younger than a minute (REB-100): no new
@@ -367,7 +381,13 @@ class UserService:
         per address, not per client, and sits beside the per-client bucket `spend_one`
         already charges in the router. Sweeps the person's spent and expired tokens
         from before today first: nothing needs a cron, and today's rows stay, since
-        they are what `public_links_left` counts.
+        they are what the daily cap and `wizard_links_left` count.
+
+        `via` says which public door asked (`VIA_LOGIN`, `VIA_WIZARD`; `None` for an admin's
+        promotion or the command line). A public ask counts toward the person's own daily
+        cap (`magic_link_daily_per_user`): past it no token and no mail, the same silence as
+        any other refusal, and the log says so without the address. An admin is never
+        refused, so no stranger and no busy day can shut an admin out.
 
         `utm` is what the login page's URL said (REB-426), kept on the token for the
         `Login` it will open; an empty one is no attribution at all."""
@@ -396,6 +416,13 @@ class UserService:
         )
         if recent is not None:
             return None
+        if (
+            via is not None
+            and row.role != "admin"
+            and self._asked_today(row.id, now) >= (settings.magic_link_daily_per_user)
+        ):
+            logger.warning("a person is past the daily cap of %s login links", via)
+            return None
         raw = secrets.token_urlsafe(32)
         attribution = utm.model_dump() if utm is not None and not utm.is_empty() else {}
         self.session.add(
@@ -403,12 +430,28 @@ class UserService:
                 user_id=row.id,
                 token_hash=_hash(raw),
                 expires_at=now + timedelta(minutes=settings.magic_link_minutes),
+                asked_via=via,
                 **attribution,
             )
         )
         self.session.commit()
         link = f"{settings.hub_url.rstrip('/')}/entra?t={raw}"
         return magic_link_mail(typed.email, link, settings.magic_link_minutes, note)
+
+    def _asked_today(self, user_id: UUID, now: datetime) -> int:
+        """The links this person asked for from a public door since midnight in Rome."""
+        return (
+            self.session.scalar(
+                select(func.count())
+                .select_from(MagicLinkToken)
+                .where(
+                    MagicLinkToken.user_id == user_id,
+                    MagicLinkToken.asked_via.is_not(None),
+                    MagicLinkToken.created_at >= rome_midnight(now),
+                )
+            )
+            or 0
+        )
 
     def enter(self, raw_token: str) -> tuple[User, str] | None:
         """The person and the raw session token for the cookie, or `None` for a wrong,
