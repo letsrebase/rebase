@@ -338,7 +338,7 @@ def test_to_and_cc_together_may_not_pass_the_cap(db_session: Session) -> None:
     can express that, so the service re-enforces it -- on creation, and on an update that
     touches only one of the lists, against what the draft already holds."""
     account = connected_account(db_session)
-    customer = _customer(db_session)
+    customer = make_customer(db_session, email="info@acme.it")
     service = _service(db_session)
     half = MAX_RECIPIENTS // 2
     to = [f"to{i}@acme.it" for i in range(half + 1)]

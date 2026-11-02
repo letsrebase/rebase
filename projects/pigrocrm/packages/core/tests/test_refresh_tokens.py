@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, delete, select
 from sqlalchemy.orm import Session
 
 import pigrocrm.core.auth.refresh_service as refresh_service_module
@@ -271,7 +271,7 @@ def test_get_active_rejects_a_deactivated_user(db_session: Session) -> None:
 
 
 def test_two_concurrent_consumes_of_the_same_jti_do_not_both_succeed(
-    db_engine: Engine, monkeypatch: pytest.MonkeyPatch
+    db_engine: Engine, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
 ) -> None:
     """The exact race the review reproduced: two real sessions, two threads, both
     racing to consume the *same* jti for the first time -- e.g. an attacker replaying
@@ -307,6 +307,20 @@ def test_two_concurrent_consumes_of_the_same_jti_do_not_both_succeed(
         token_b = setup_service.issue(user.id, SETTINGS)  # sibling, never touched directly
     finally:
         setup_session.close()
+
+    def forget_the_user() -> None:
+        # The rows are committed outside the savepoint fixture, so they would outlive
+        # this test and change what later tests in the same worker count.
+        from pigrocrm.core.activities.models import Activity
+        from pigrocrm.core.auth.models import User
+
+        with factory() as session:
+            session.execute(delete(RefreshToken).where(RefreshToken.user_id == user.id))
+            session.execute(delete(Activity).where(Activity.entity_id == user.id))
+            session.execute(delete(User).where(User.id == user.id))
+            session.commit()
+
+    request.addfinalizer(forget_the_user)
 
     jti_a = decode_token(token_a, SETTINGS, expected_type="refresh").jti
     jti_b = decode_token(token_b, SETTINGS, expected_type="refresh").jti
