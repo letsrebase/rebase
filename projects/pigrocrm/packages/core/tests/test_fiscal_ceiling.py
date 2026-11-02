@@ -11,11 +11,10 @@ export, is `test_invoice_rivalsa_line.py`.
 
 from datetime import date
 from decimal import Decimal
-from uuid import uuid4
 
+from fakes.customer_fixtures import make_customer
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.fiscal.ceiling import (
     evaluate_ceiling,
     evaluate_pack,
@@ -35,13 +34,6 @@ assert FUORIUSCITA_CEILING.id == "soglia_fuoriuscita_immediata"
 ANNO = 2024
 
 
-def _customer(session: Session) -> Customer:
-    customer = Customer(ragione_sociale=f"Cliente {uuid4().hex[:8]}")
-    session.add(customer)
-    session.flush()
-    return customer
-
-
 def _invoice(
     session: Session,
     *,
@@ -56,7 +48,7 @@ def _invoice(
     the forfettario already carries (`fiscal/regime.py::_Forfettario`)."""
     imponibile = sum((prezzo for _, prezzo in lines), start=Decimal("0.00"))
     invoice = Invoice(
-        customer_id=_customer(session).id,
+        customer_id=make_customer(session).id,
         tipo="fattura",
         stato="emessa",
         anno=anno,

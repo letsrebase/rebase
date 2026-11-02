@@ -11,9 +11,10 @@ import hashlib
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import pytest
+from fakes.customer_fixtures import make_customer_with_address
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -67,22 +68,6 @@ def _emitter(session: Session, **overrides: object) -> LegalEntity:
     return profile
 
 
-def _customer(session: Session, **overrides: object) -> Customer:
-    base: dict[str, object] = {
-        "ragione_sociale": f"Cliente {uuid4()}",
-        "indirizzo": "Piazza dei Modelli 4",
-        "cap": "00187",
-        "comune": "Roma",
-        "provincia": "RM",
-        "nazione": "IT",
-    }
-    base.update(overrides)
-    customer = Customer(**base)
-    session.add(customer)
-    session.flush()
-    return customer
-
-
 def _document(
     session: Session,
     storage: LocalFileStorage,
@@ -94,7 +79,7 @@ def _document(
     """A `documents` row carrying `content` as its current version -- the same door
     (`POST /api/documents/upload`, in production) the design record names as the
     only way a caller ever gets a `document_id` to hand this tool."""
-    owner = owner if owner is not None else _customer(session)
+    owner = owner if owner is not None else make_customer_with_address(session)
     service = DocumentService(session, storage)
     document = service.create(
         DocumentCreate(customer_id=owner.id, titolo="Fattura ricevuta"), ADMIN
@@ -111,7 +96,7 @@ def _seed_register_row(session: Session, *, xml_hash_sha256: str | None) -> None
     """A register row at the fixture's own natural key (2026/6), so `_natural_key`
     finds it through `InvoiceRepository.existing_by_number`."""
     row = Invoice(
-        customer_id=_customer(session).id,
+        customer_id=make_customer_with_address(session).id,
         tipo="fattura",
         stato="emessa",
         anno=2026,
@@ -132,7 +117,7 @@ def test_reviewing_the_same_document_twice_never_changes_state_and_returns_the_s
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     _emitter(db_session)
-    customer = _customer(db_session, partita_iva=CLIENTE_PIVA)
+    customer = make_customer_with_address(db_session, partita_iva=CLIENTE_PIVA)
     document_id = _document(db_session, local_storage, _fixture(CONSULENZA), owner=customer)
     service = InvoiceService(db_session, local_storage)
 
@@ -157,7 +142,7 @@ def test_review_never_adds_dirties_or_deletes_anything_in_the_session(
     """The stronger form of "no database write of any kind": the session's own
     pending-write state is empty right after the call, not merely unflushed."""
     _emitter(db_session)
-    customer = _customer(db_session, partita_iva=CLIENTE_PIVA)
+    customer = make_customer_with_address(db_session, partita_iva=CLIENTE_PIVA)
     document_id = _document(db_session, local_storage, _fixture(CONSULENZA), owner=customer)
     db_session.flush()
 
@@ -286,7 +271,7 @@ def test_multiple_document_ids_in_one_call_produce_one_row_each(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     _emitter(db_session)
-    customer = _customer(db_session, partita_iva=CLIENTE_PIVA)
+    customer = make_customer_with_address(db_session, partita_iva=CLIENTE_PIVA)
     ready_id = _document(db_session, local_storage, _fixture(CONSULENZA), owner=customer)
     unclaimed_id = _document(db_session, local_storage, b"garbage", content_type="text/plain")
 

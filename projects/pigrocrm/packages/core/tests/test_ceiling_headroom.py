@@ -11,15 +11,14 @@ than a `deal_id`, per this issue's own "no persistence required".
 
 from datetime import date
 from decimal import Decimal
-from uuid import uuid4
 
 import pytest
+from fakes.customer_fixtures import make_customer
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.analytics.schemas import CeilingSimulationQuery
 from pigrocrm.core.analytics.service import AnalyticsService
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.errors import NotFound, ValidationFailed
 from pigrocrm.core.fiscal.pack import IT_FLAT_RATE_PACK
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
@@ -37,18 +36,11 @@ assert FUORIUSCITA_CEILING.id == "soglia_fuoriuscita_immediata"
 ANNO = 2024
 
 
-def _customer(session: Session) -> Customer:
-    customer = Customer(ragione_sociale=f"Cliente {uuid4().hex[:8]}")
-    session.add(customer)
-    session.flush()
-    return customer
-
-
 def _paid_invoice(session: Session, *, numero: int, anno: int, imponibile: Decimal) -> Invoice:
     """A paid `fattura` of exactly `imponibile`, on one zero-rate line -- enough to
     move `paid_revenue_for_calendar_year`, the same basis `evaluate_pack` reads."""
     invoice = Invoice(
-        customer_id=_customer(session).id,
+        customer_id=make_customer(session).id,
         tipo="fattura",
         stato="emessa",
         anno=anno,
