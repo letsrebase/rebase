@@ -4,8 +4,8 @@ import re
 from datetime import UTC, datetime
 from uuid import UUID
 
+from admins import an_admin
 from campaign_api_flow import (  # noqa: F401  (fixture)
-    admin_user,
     recipient_row,
     recipient_rows,
     tidy,
@@ -80,7 +80,7 @@ def test_seven_one_click_posts_in_a_row_from_one_client_all_opt_out(
 
 
 def login_admin(client: TestClient, sender: RecordingSender, session: Session) -> None:
-    admin_user(session)
+    an_admin(session, cognome="Sala")
     assert client.post("/api/hub/auth/link", json={"email": "ivan@rebase.it"}).status_code == 202
     token = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text).group(1)  # type: ignore[union-attr]
     assert client.post("/api/hub/auth/enter", json={"token": token}).status_code == 200

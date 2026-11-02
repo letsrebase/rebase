@@ -3,7 +3,8 @@ the campaign that carries it, and the test mail that leads there untouched."""
 
 import re
 
-from campaign_api_flow import admin_user, tidy  # noqa: F401  (fixture)
+from admins import an_admin
+from campaign_api_flow import tidy  # noqa: F401  (fixture)
 from campaign_fixtures import RESEND_TEST_SECRET
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
@@ -29,7 +30,7 @@ BODY = {
 
 
 def signed_in(client: TestClient, sender: RecordingSender, session: Session) -> None:
-    admin_user(session)
+    an_admin(session, cognome="Sala")
     assert client.post("/api/hub/auth/link", json={"email": "ivan@rebase.it"}).status_code == 202
     token = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text).group(1)  # type: ignore[union-attr]
     assert client.post("/api/hub/auth/enter", json={"token": token}).status_code == 200

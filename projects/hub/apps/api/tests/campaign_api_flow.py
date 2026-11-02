@@ -5,12 +5,11 @@ from collections.abc import Iterator
 from datetime import UTC, datetime
 
 import pytest
+from admins import an_admin
 from hub_tables import wipe_hub
 from sqlalchemy.orm import Session
 
-from rebase_core.models import Campaign, CampaignRecipient, User
-
-ADMIN_EMAIL = "ivan@rebase.it"
+from rebase_core.models import Campaign, CampaignRecipient
 
 
 @pytest.fixture
@@ -20,24 +19,14 @@ def tidy(api_session: Session) -> Iterator[Session]:
     wipe_hub(api_session)
 
 
-def admin_user(session: Session) -> User:
-    user = session.query(User).filter(User.email == ADMIN_EMAIL).one_or_none()
-    if user is None:
-        user = User(email=ADMIN_EMAIL, nome="Ivan", cognome="Sala", role="admin")
-        session.add(user)
-        session.commit()
-    return user
-
-
 def recipient_row(session: Session, token: str) -> None:
     recipient_rows(session, {token: "ada@studio.it"})
 
 
 def recipient_rows(session: Session, addresses: dict[str, str]) -> None:
     """One campaign with one recipient per `token: address` pair."""
-    admin = admin_user(session)
     campaign = Campaign(
-        created_by=admin.id,
+        created_by=an_admin(session, cognome="Sala"),
         nome="n",
         slug="c-n",
         fonte="stato",
