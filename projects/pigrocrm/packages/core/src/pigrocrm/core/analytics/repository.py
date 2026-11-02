@@ -12,95 +12,31 @@ this file is the structural counterpart of that.
 
 from collections import defaultdict
 from collections.abc import Collection
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import date
 from decimal import Decimal
 from typing import Any, NamedTuple
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, Select, SQLColumnExpression, and_, case, func, or_, select
+from sqlalchemy import Select, and_, case, func, or_, select
 from sqlalchemy.orm import InstrumentedAttribute, Session
 
+from pigrocrm.core.analytics.filters import (
+    cash_date,
+    day_after,
+    in_year,
+    invoice_azienda,
+    revenue_date,
+    revenue_filter,
+)
 from pigrocrm.core.analytics.schemas import CashBase, RevenueBase
 from pigrocrm.core.contracts.models import Contract, RateCard
 from pigrocrm.core.customers.models import Customer
-from pigrocrm.core.db.clock import month_bounds
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.emitter.models import LegalEntity
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
 from pigrocrm.core.money import ZERO_MONEY, line_value, round_money, share, sum_hours, sum_money
 from pigrocrm.core.timetracking.models import Cost, TimeEntry
 from pigrocrm.core.work_units.models import WORK_UNIT_COMMITTED_STATI, WorkUnit
-
-
-def revenue_filter() -> tuple[ColumnElement[bool], ...]:
-    """The one definition of "an invoice that is revenue" (§7.1).
-
-    `fattura`, never `proforma`: a proforma does not touch the register (slice 3 §5).
-    `emessa`, never `annullata`: an annulled invoice keeps its number but not its revenue
-    -- the struck-through page of a paper register. And `deleted_at IS NULL`, which on an
-    issued invoice is guaranteed by `ck_invoices_no_delete_once_consumed` anyway: the
-    filter is here so that the query and the constraint cannot drift apart.
-
-    A function rather than a module-level tuple only because a shared expression object
-    reused across statements is a subtlety nobody should have to think about at the call
-    site; the three comparisons cost nothing to rebuild.
-    """
-    return (
-        Invoice.tipo == "fattura",
-        Invoice.stato == "emessa",
-        Invoice.deleted_at.is_(None),
-    )
-
-
-def _invoice_azienda(azienda_id: UUID | None) -> tuple[ColumnElement[bool], ...]:
-    """One azienda's invoices, or every azienda's (REB-630, spec 2026-10-03 §1.9):
-    the one extra predicate the sums below take, so an azienda's figure reads that
-    azienda's register alone and «tutte» stays the unfiltered sum."""
-    return () if azienda_id is None else (Invoice.azienda_id == azienda_id,)
-
-
-def _in_year(when: SQLColumnExpression[date | None], anno: int) -> tuple[ColumnElement[bool], ...]:
-    """`when` within the calendar year `anno`, as a range a plain index on the column can
-    serve (an `extract(year ...)` over it cannot)."""
-    first, _ = month_bounds(anno, 1)
-    _, last = month_bounds(anno, 12)
-    return (when >= first, when <= last)
-
-
-def _day_after(day: date) -> datetime:
-    """The first instant after `day`, in UTC: `created_at > day` read as a day comparison
-    (`date(created_at) > day`) without wrapping the column in a function."""
-    return datetime.combine(day + timedelta(days=1), time.min, tzinfo=UTC)
-
-
-def _accrual_date() -> SQLColumnExpression[date | None]:
-    """The one definition of "the month a document's period names":
-    `coalesce(competenza_da, data_emissione)`, so a document that never declared a
-    period is read by the one date it has and a register with no periods reads the same
-    under either base. Shared by the period P&L (ORB-61) and the cash view (ORB-133), so
-    the two screens cannot put the same invoice in two different months."""
-    return func.coalesce(Invoice.competenza_da, Invoice.data_emissione)
-
-
-def _revenue_date(base: RevenueBase) -> SQLColumnExpression[date | None]:
-    """The date that puts an invoice's revenue in a period, for the two readings the
-    period P&L offers (ORB-61). `emissione` is the recorded default (§7.1);
-    `competenza` is `_accrual_date`. The fiscal figures take no base and stay by
-    emission; the cash view has a base of its own (`CashBase`, `_cash_date`)."""
-    if base == "competenza":
-        return _accrual_date()
-    return Invoice.data_emissione
-
-
-def _cash_date(
-    base: CashBase, by_money: SQLColumnExpression[date | None]
-) -> SQLColumnExpression[date | None]:
-    """The date that puts a document's money in a month of the cash view (ORB-133).
-    Under `competenza` it is `_accrual_date` for every series; under `incasso` it is
-    whatever the money's own reading is for that series, which the caller names."""
-    if base == "competenza":
-        return _accrual_date()
-    return by_money
 
 
 class RevenueByCustomerRow(NamedTuple):
@@ -198,7 +134,7 @@ class AnalyticsRepository:
         reading (ORB-61): the accrual period the document declares, falling back to the
         emission date for a document that declared none. Same filter, same figure,
         different month."""
-        when = _revenue_date(base)
+        when = revenue_date(base)
         stmt = (
             select(Invoice.deal_id, func.coalesce(func.sum(Invoice.imponibile), 0))
             .where(Invoice.deal_id.isnot(None), when >= da, when <= a, *revenue_filter())
@@ -464,7 +400,7 @@ class AnalyticsRepository:
                 TimeEntry.data >= da,
                 TimeEntry.data <= a,
                 TimeEntry.deleted_at.is_(None),
-                TimeEntry.created_at >= _day_after(a),
+                TimeEntry.created_at >= day_after(a),
             )
         )
         ore = self._azienda_scope(ore, azienda_id, TimeEntry.deal_id)
@@ -475,7 +411,7 @@ class AnalyticsRepository:
                 Cost.data >= da,
                 Cost.data <= a,
                 Cost.deleted_at.is_(None),
-                Cost.created_at >= _day_after(a),
+                Cost.created_at >= day_after(a),
             )
         )
         if azienda_id is not None:
@@ -491,15 +427,15 @@ class AnalyticsRepository:
         so `totale`, as `sum_da_incassare` reasons. By the accrual period the invoice
         declares, or under `incasso` by `data_incasso`, where an invoice marked paid with
         no date falls back to its issue date rather than vanishing."""
-        when = _cash_date(base, func.coalesce(Invoice.data_incasso, Invoice.data_emissione))
+        when = cash_date(base, func.coalesce(Invoice.data_incasso, Invoice.data_emissione))
         month = func.extract("month", when)
         rows = self.session.execute(
             select(month, func.sum(Invoice.totale))
             .where(
                 *revenue_filter(),
-                *_invoice_azienda(azienda_id),
+                *invoice_azienda(azienda_id),
                 Invoice.stato_pagamento == "incassato",
-                *_in_year(when, anno),
+                *in_year(when, anno),
             )
             .group_by(month)
         ).all()
@@ -511,15 +447,15 @@ class AnalyticsRepository:
         """`Σ totale` of revenue invoices still unpaid, per month. By the accrual period
         the invoice declares, or under `incasso` by the month it falls due (issue date
         when no due date was set): the month the money is expected."""
-        when = _cash_date(base, func.coalesce(Invoice.data_scadenza, Invoice.data_emissione))
+        when = cash_date(base, func.coalesce(Invoice.data_scadenza, Invoice.data_emissione))
         month = func.extract("month", when)
         rows = self.session.execute(
             select(month, func.sum(Invoice.totale))
             .where(
                 *revenue_filter(),
-                *_invoice_azienda(azienda_id),
+                *invoice_azienda(azienda_id),
                 Invoice.stato_pagamento == "da_incassare",
-                *_in_year(when, anno),
+                *in_year(when, anno),
             )
             .group_by(month)
         ).all()
@@ -540,16 +476,14 @@ class AnalyticsRepository:
         `fattura` draft still has no date until `issue` and stays bucketed by the day it
         was created when it declares no period; `created_at` is the fallback for it alone.
         """
-        when = func.coalesce(
-            _cash_date(base, Invoice.data_emissione), func.date(Invoice.created_at)
-        )
+        when = func.coalesce(cash_date(base, Invoice.data_emissione), func.date(Invoice.created_at))
         month = func.extract("month", when)
         rows = self.session.execute(
             select(month, func.sum(Invoice.totale))
             .where(
                 Invoice.deleted_at.is_(None),
-                *_invoice_azienda(azienda_id),
-                *_in_year(when, anno),
+                *invoice_azienda(azienda_id),
+                *in_year(when, anno),
                 (
                     ((Invoice.tipo == "fattura") & (Invoice.stato == "bozza"))
                     | (
@@ -569,7 +503,7 @@ class AnalyticsRepository:
         month = func.extract("month", Cost.data)
         stmt = (
             select(month, func.sum(Cost.importo))
-            .where(Cost.deleted_at.is_(None), *_in_year(Cost.data, anno))
+            .where(Cost.deleted_at.is_(None), *in_year(Cost.data, anno))
             .group_by(month)
         )
         if azienda_id is not None:
@@ -586,7 +520,7 @@ class AnalyticsRepository:
             Decimal(
                 self.session.execute(
                     select(func.coalesce(func.sum(Invoice.imponibile), 0)).where(
-                        Invoice.anno == anno, *revenue_filter(), *_invoice_azienda(azienda_id)
+                        Invoice.anno == anno, *revenue_filter(), *invoice_azienda(azienda_id)
                     )
                 ).scalar_one()
             )
@@ -600,7 +534,7 @@ class AnalyticsRepository:
         revenue is a share of one azienda's revenue."""
         rows = self.session.execute(
             select(Invoice.azienda_id, func.coalesce(func.sum(Invoice.imponibile), 0))
-            .where(Invoice.anno == anno, *revenue_filter(), *_invoice_azienda(azienda_id))
+            .where(Invoice.anno == anno, *revenue_filter(), *invoice_azienda(azienda_id))
             .group_by(Invoice.azienda_id)
         ).all()
         return {azienda: round_money(Decimal(total)) for azienda, total in rows}
@@ -644,7 +578,7 @@ class AnalyticsRepository:
             )
             .join(Customer, Customer.id == Invoice.customer_id)
             .join(LegalEntity, LegalEntity.id == Invoice.azienda_id)
-            .where(Invoice.anno == anno, *revenue_filter(), *_invoice_azienda(azienda_id))
+            .where(Invoice.anno == anno, *revenue_filter(), *invoice_azienda(azienda_id))
             .group_by(
                 Invoice.azienda_id,
                 LegalEntity.predefinita,
@@ -725,7 +659,7 @@ class AnalyticsRepository:
         accrual reading puts in August makes its deal active in August, and a deal
         absent from this list is revenue the report silently drops.
         """
-        when = _revenue_date(base)
+        when = revenue_date(base)
         active = (
             select(Invoice.deal_id.label("deal_id"))
             .where(Invoice.deal_id.isnot(None), when >= da, when <= a, *revenue_filter())
@@ -776,14 +710,14 @@ class AnalyticsRepository:
         currencies is not an amount in any of them. Ordered by currency code, so the
         answer does not depend on how Postgres happened to group.
         """
-        when = _revenue_date(base)
+        when = revenue_date(base)
         cliente = func.coalesce(
             func.sum(case((Invoice.customer_id == customer_id, Invoice.imponibile), else_=0)), 0
         )
         totale = func.coalesce(func.sum(Invoice.imponibile), 0)
         rows = self.session.execute(
             select(Invoice.divisa, cliente, totale)
-            .where(when >= da, when <= a, *revenue_filter(), *_invoice_azienda(azienda_id))
+            .where(when >= da, when <= a, *revenue_filter(), *invoice_azienda(azienda_id))
             .group_by(Invoice.divisa)
             .order_by(Invoice.divisa)
         ).all()
@@ -801,7 +735,7 @@ class AnalyticsRepository:
         rows = self.session.execute(
             select(Invoice, Customer)
             .outerjoin(Customer, Customer.id == Invoice.customer_id)
-            .where(Invoice.anno == anno, *revenue_filter(), *_invoice_azienda(azienda_id))
+            .where(Invoice.anno == anno, *revenue_filter(), *invoice_azienda(azienda_id))
             .order_by(Invoice.numero)
         ).all()
         return [(invoice, customer) for invoice, customer in rows]
@@ -830,7 +764,7 @@ class AnalyticsRepository:
                     Invoice.tipo == "fattura",
                     Invoice.stato == "annullata",
                     Invoice.deleted_at.is_(None),
-                    *_invoice_azienda(azienda_id),
+                    *invoice_azienda(azienda_id),
                 )
             ).scalar_one()
         )

@@ -29,7 +29,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.analytics.repository import revenue_filter
+from pigrocrm.core.analytics.filters import revenue_filter
 from pigrocrm.core.analytics.schemas import DaysMonth, DaysRate, DaysStateShare
 from pigrocrm.core.contracts.models import Contract, RateCard
 from pigrocrm.core.customers.models import Customer
