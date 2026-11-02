@@ -179,6 +179,26 @@ class InvoiceRepository:
             return None
         return invoice
 
+    def get_for_update(self, invoice_id: UUID, *, include_deleted: bool = False) -> Invoice | None:
+        """`get`, with the row locked until this transaction ends and re-read from the
+        database whatever the identity map held.
+
+        `populate_existing` is the half that matters: a plain `SELECT ... FOR UPDATE`
+        returns the already-loaded object untouched, so the state check that follows
+        would still run against a read taken before the lock and miss the commit the lock
+        just waited for. Lock order is counter first, then the row (see `lock_counter`):
+        only `issue` takes both, and it takes them in that order.
+        """
+        stmt = select(Invoice).where(Invoice.id == invoice_id).with_for_update()
+        invoice = self.session.execute(
+            stmt.execution_options(populate_existing=True)
+        ).scalar_one_or_none()
+        if invoice is None:
+            return None
+        if invoice.deleted_at is not None and not include_deleted:
+            return None
+        return invoice
+
     def add(self, invoice: Invoice) -> Invoice:
         self.session.add(invoice)
         self.session.flush()

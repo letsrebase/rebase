@@ -6,6 +6,7 @@ to `issue`, `annul` and the artefact methods added by the following tasks.
 """
 
 import hashlib
+import logging
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
@@ -42,14 +43,14 @@ from pigrocrm.core.fiscal.regime import RegimeStrategy, resolve_regime
 from pigrocrm.core.fiscal.schemas import FiscalSnapshot
 from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.invoices import pdf as invoice_pdf
-from pigrocrm.core.invoices.fatturapa import (
-    FatturaPAExporter,
+from pigrocrm.core.invoices.fatturapa.checks import (
     check_document_text_exportable,
     check_party_exportable,
     check_recipient_identity,
     check_recipient_routing,
-    normalise_fiscal_id,
 )
+from pigrocrm.core.invoices.fatturapa.exporter import FatturaPAExporter
+from pigrocrm.core.invoices.fatturapa.normalise import normalise_fiscal_id
 from pigrocrm.core.invoices.import_classification import classify_parsed_invoice
 from pigrocrm.core.invoices.import_confirm import (
     ConfirmedInvoice,
@@ -129,6 +130,8 @@ from pigrocrm.core.work_units.release import (
     count_days_billed_on,
     release_days_of_invoice,
 )
+
+logger = logging.getLogger(__name__)
 
 ENTITY: EntityType = "invoice"
 ZERO = Decimal("0.00")
@@ -521,7 +524,12 @@ class InvoiceService:
     # ---- writes ---------------------------------------------------------------
 
     def create(
-        self, data: InvoiceCreate, actor: Actor, *, azienda_id: UUID | None = None
+        self,
+        data: InvoiceCreate,
+        actor: Actor,
+        *,
+        azienda_id: UUID | None = None,
+        commit: bool = True,
     ) -> InvoiceRead:
         """A draft or a proforma. Neither has a number, which is why a failed creation
         cannot burn one -- not as a matter of care, but because there is nothing to
@@ -530,7 +538,10 @@ class InvoiceService:
         `azienda_id` names the azienda the draft is issued under when it is not its
         parent's: a contract's days are billed under the contract's own azienda, which a
         customer moved since no longer shares. In-process only, never on `InvoiceCreate`,
-        so the REST surface keeps taking its azienda from the customer or the deal."""
+        so the REST surface keeps taking its azienda from the customer or the deal.
+
+        `commit=False` only flushes, for a caller that composes the draft with its own
+        writes in one transaction (`assembly.assemble_draft`)."""
         actor.require_write("create_invoice")
         customer = self._check_owner(data.customer_id, data.deal_id)
         azienda_id = (
@@ -600,7 +611,10 @@ class InvoiceService:
             actor,
             {"tipo": invoice.tipo, "righe": len(computed), "totale": str(invoice.totale)},
         )
-        self.session.commit()
+        if commit:
+            self.session.commit()
+        else:
+            self.session.flush()
         return self._read(invoice)
 
     def update(self, invoice_id: UUID, data: InvoiceUpdate, actor: Actor) -> InvoiceRead:
@@ -1255,6 +1269,27 @@ class InvoiceService:
         # snapshot, so a crash between the two leaves an invoice that is fiscally
         # complete and merely unprinted.
         return self._read(target)
+
+    def issue_and_render(self, invoice_id: UUID, data: InvoiceIssue, actor: Actor) -> InvoiceRead:
+        """`issue`, then the artefacts in the second transaction `issue` leaves to its
+        caller, then the row as it stands.
+
+        Once `issue` has committed the number is consumed and the invoice is a fiscal
+        fact, so the answer is the issued row whatever the render does (REB-143): an
+        error here would tell the person (or the agent, which would then issue it again)
+        that the emission failed. A render that raises -- anything, a Typst crash or a
+        storage backend that refused the bytes as much as a `DomainError` -- is logged
+        and rolled back, which clears what it left half-flushed so the read below starts
+        on a clean session. `pdf_document_id`/`xml_document_id` on the answer say which
+        file exists, and `produce_artifacts` is the retry. The rollback is safe because
+        the emission it follows is already committed."""
+        issued = self.issue(invoice_id, data, actor)
+        try:
+            self.produce_artifacts(issued.id, actor)
+        except Exception:
+            logger.exception("invoice %s issued, its PDF/XML were not produced", issued.id)
+            self.session.rollback()
+        return self.get(issued.id, actor)
 
     def review_import(
         self, document_ids: Sequence[UUID], actor: Actor
