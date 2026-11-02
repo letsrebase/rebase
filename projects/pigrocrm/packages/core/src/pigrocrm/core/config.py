@@ -68,6 +68,12 @@ class Settings(BaseSettings):
     # routes do not exist -- the same shape as `registry_token` above. Read from the
     # environment only, never from `space_settings`, and `repr=False` for the same reason.
     engagements_token: str = Field(default="", repr=False)
+    # The slug of rebase's own space, the only one the leads route
+    # (`PUT /api/rebase/leads/{request_id}`, REB-866, under `engagements_token`) writes to:
+    # the hub files each completed company request there as customer, contact and deal.
+    # The route never takes a slug from the caller. Empty, the default, means the route
+    # answers 503 «Spazio dei lead non configurato».
+    leads_space: str = ""
     # Where the rebase hub answers, for the one question the signup asks it: whether an
     # address belongs to a community member (`tenants/hub.py`, ORB-173). The bearer is
     # `registry_token` above, the same value the hub reads as

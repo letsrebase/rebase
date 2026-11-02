@@ -151,6 +151,10 @@ def create_app() -> FastAPI:
     ):
         app.include_router(module.router)
 
+    # The leads route of rebase's engagements door (spec 2026-10-30 § 2): its own prefix,
+    # beside the engagements router above, never inside it.
+    app.include_router(engagements.leads_router)
+
     # PROBLEM_RESPONSES (attached to every router above) declares a 422 that
     # `$ref`s HTTPValidationError alongside ProblemDetail -- see
     # ensure_validation_error_schemas_are_declared's docstring for why that
