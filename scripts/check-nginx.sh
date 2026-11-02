@@ -75,7 +75,8 @@ check origin-default infra/origin/nginx/*.conf
 shopt -s nullglob
 for conf in projects/*/deploy/*.conf projects/*/deploy/nginx/*.conf; do
   is_snippet "$conf" && continue
-  check "$(printf '%s' "$conf" | tr '/' '_')" "$conf"
+  # A vhost names the rate-limit zones that live in the origin's shared file.
+  check "$(printf '%s' "$conf" | tr '/' '_')" "$conf" infra/origin/nginx/rate-limits.conf
 done
 
 exit "$fail"

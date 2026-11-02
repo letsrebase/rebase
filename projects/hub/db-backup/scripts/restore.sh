@@ -60,7 +60,7 @@ fi
 # against it; any other holds exactly one `.dump`, whatever the backup is called, checked
 # against the SHA-256 its MANIFEST recorded.
 if [ -f "$target/SHA256SUMS" ]; then
-  (cd "$target" && sha256sum --check --quiet SHA256SUMS) || {
+  (cd "$target" && sha256sum --check --quiet SHA256SUMS >&2) || {
     echo "restore: a file does not match the SHA-256 in SHA256SUMS" >&2
     exit 1
   }
