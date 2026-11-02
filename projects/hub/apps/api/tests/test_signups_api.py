@@ -206,7 +206,7 @@ def test_the_rate_limit_key_is_the_address_nginx_saw_not_the_one_the_client_wrot
     assert _client_key(req({"X-Forwarded-For": "1.1.1.1, 203.0.113.9"})) == "203.0.113.9"
     assert _client_key(req({"X-Forwarded-For": "forged-value, 203.0.113.9"})) == "203.0.113.9"
     assert _client_key(req({})) == "127.0.0.1"
-    assert _client_key(req({}, client=None)) == "sconosciuto"
+    assert _client_key(req({}, client=None)) == "unknown"
 
 
 # --- the ad conversion ------------------------------------------------------------------
@@ -318,7 +318,7 @@ def test_the_click_identifier_and_the_browser_cookie_reach_the_event(
 def test_an_address_the_proxy_could_not_name_is_left_out_rather_than_invented(
     client: TestClient, pixel: RecordingHttp
 ) -> None:
-    """`_client_key` answers `"sconosciuto"` when there is no address to be had, which
+    """`client_key` answers `"unknown"` when there is no address to be had, which
     is fine for a rate-limit bucket and is not an IP. Forwarding it would put a word
     where a third party expects an address."""
     response = client.post(
