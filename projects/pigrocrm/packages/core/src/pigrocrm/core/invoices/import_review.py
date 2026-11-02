@@ -28,7 +28,7 @@ from pigrocrm.core.contracts.models import Contract
 from pigrocrm.core.contracts.repository import ContractRepository, RateCardRepository
 from pigrocrm.core.customers.repository import CustomerRepository
 from pigrocrm.core.emitter.models import LegalEntity
-from pigrocrm.core.invoices.fatturapa import normalise_fiscal_id
+from pigrocrm.core.invoices.fatturapa.normalise import normalise_fiscal_id
 from pigrocrm.core.invoices.fatturapa_import import fattura_pa_fpr12_adapter
 from pigrocrm.core.invoices.import_adapter import InvoiceFormatAdapter
 from pigrocrm.core.invoices.import_classification import classify_parsed_invoice

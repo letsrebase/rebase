@@ -22,7 +22,7 @@ from typing import Literal
 
 from pigrocrm.core.emitter.models import LegalEntity
 from pigrocrm.core.errors import ValidationFailed
-from pigrocrm.core.invoices.fatturapa import normalise_fiscal_id
+from pigrocrm.core.invoices.fatturapa.normalise import normalise_fiscal_id
 from pigrocrm.core.invoices.import_schemas import ParsedInvoice, ParsedInvoiceParty
 
 InvoiceDirection = Literal["outgoing", "incoming"]
@@ -51,7 +51,7 @@ def match_azienda(
     code, or both, and the two rows being compared are free to have populated a
     different one of the two.
 
-    `normalise_fiscal_id` (`fatturapa.py`) does the comparison-shape work already
+    `normalise_fiscal_id` (`fatturapa/normalise.py`) does the comparison-shape work already
     written and tested for the export path -- strips the `IT` prefix and punctuation,
     upper-cases, and validates the two shapes FPR12 recognises -- reused here rather
     than re-implemented, so a VAT number stored as `"01234567890"` on `LegalEntity` and
@@ -66,8 +66,8 @@ def match_azienda(
     Raises `ValidationFailed` if no azienda carries either identifier in a
     recognisable shape: there is then no fact to classify against, and guessing
     would be worse than refusing. Deliberately a looser condition than
-    `fatturapa.py`'s own `_cedente`, which refuses to *emit* whenever `partita_iva`
-    alone is missing (mandatory for a `CedentePrestatore`, `fatturapa.py:913-919`):
+    `fatturapa/exporter.py`'s own `_cedente`, which refuses to *emit* whenever `partita_iva`
+    alone is missing (mandatory for a `CedentePrestatore`, `fatturapa/exporter.py`):
     this classifier only needs *some* fact to compare against, so an azienda
     configured with only a `codice_fiscale` still classifies, even though the same
     row could not itself emit a FatturaPA document.

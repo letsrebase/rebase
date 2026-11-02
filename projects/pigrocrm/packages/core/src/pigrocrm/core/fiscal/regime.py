@@ -96,7 +96,7 @@ class _Forfettario:
                 f"il regime {self.codice} non applica IVA, quindi l'aliquota deve essere zero",
                 expected="0.00",
             )
-        # Normalised the way `_cessionario` reads it in `fatturapa.py`: `customers.nazione`
+        # Normalised the way `_cessionario` reads it in `fatturapa/exporter.py`: `customers.nazione`
         # is stored as typed, a lowercase `it` is still Italy, and an empty value is
         # Italy too -- the column's own default -- rather than a foreign customer.
         paese = (nazione_cliente or "").strip().upper() or "IT"
