@@ -323,7 +323,7 @@ def test_declared_variables_is_a_public_method_that_drops_options(db_session: Se
 # --- the default offer (spec 2026-09-12 §6.5) --------------------------------------
 
 # What the body may read without the form asking for it: `cliente` and `emittente`
-# come from `DocumentService._template_scope`, and so does `oggi`.
+# come from `DocumentTemplating.template_scope`, and so does `oggi`.
 _SCOPE_PREFIXES = ("cliente.", "emittente.")
 _SCOPE_KEYS = {"oggi"}
 

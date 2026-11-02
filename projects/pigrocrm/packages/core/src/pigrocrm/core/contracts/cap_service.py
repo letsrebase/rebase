@@ -27,15 +27,6 @@ from pigrocrm.core.money import percent_to_share, round_money, share
 SIMULATION_DIVISA = "EUR"
 
 
-def _reaches_cap(ricavi_cliente: Decimal, ricavi_totali: Decimal, tetto_percent: Decimal) -> bool:
-    """Whether the customer's share of the total is at or over a cap stored as a percentage
-    (`50.00`), compared as the exact Decimals they are: through `float` a share a hair under
-    the cap can round up to it. With no revenue the share is `0.0`, as `share` reads it."""
-    if ricavi_totali <= 0:
-        return tetto_percent <= 0
-    return ricavi_cliente * 100 >= tetto_percent * ricavi_totali
-
-
 class ContractCapService:
     def __init__(self, session: Session) -> None:
         self.repo = ContractRepository(session)
@@ -74,12 +65,7 @@ class ContractCapService:
         valute = []
         for divisa, ricavi_cliente, ricavi_totali in revenue:
             quota = share(ricavi_cliente, ricavi_totali)
-            if soglia_da_contratto and contract.tetto_quota_cliente is not None:
-                superata: bool | None = _reaches_cap(
-                    ricavi_cliente, ricavi_totali, contract.tetto_quota_cliente
-                )
-            else:
-                superata = (quota >= soglia) if soglia is not None else None
+            superata = (quota >= soglia) if soglia is not None else None
             valute.append(
                 ConcentrationFigures(
                     divisa=divisa,
@@ -142,9 +128,8 @@ class ContractCapService:
             ((c, t) for divisa, c, t in revenue if divisa == contract.divisa),
             (Decimal("0.00"), Decimal("0.00")),
         )
-        tetto = contract.tetto_quota_cliente
-        simulati_cliente = cliente + aggiunta
-        simulati_totale = totale + aggiunta
+        tetto = percent_to_share(contract.tetto_quota_cliente)
+        quota_simulata = share(cliente + aggiunta, totale + aggiunta)
         return ContractCapSimulation(
             contract_id=contract.id,
             titolo=contract.titolo,
@@ -152,16 +137,14 @@ class ContractCapService:
             divisa=contract.divisa,
             periodo_da=periodo_da,
             periodo_a=periodo_a,
-            tetto=percent_to_share(tetto),
+            tetto=tetto,
             ricavi_cliente_attuali=cliente,
             ricavi_totali_attuali=totale,
             quota_attuale=share(cliente, totale),
-            ricavi_cliente_simulati=round_money(simulati_cliente),
-            ricavi_totali_simulati=round_money(simulati_totale),
-            quota_simulata=share(simulati_cliente, simulati_totale),
-            rientra=not _reaches_cap(
-                simulati_cliente, simulati_totale, contract.tetto_quota_cliente
-            ),
+            ricavi_cliente_simulati=round_money(cliente + aggiunta),
+            ricavi_totali_simulati=round_money(totale + aggiunta),
+            quota_simulata=quota_simulata,
+            rientra=quota_simulata < tetto,
         )
 
     @staticmethod

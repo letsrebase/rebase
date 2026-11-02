@@ -1,6 +1,6 @@
 """The one window the P&L fixtures and the reports that read them both name.
 
-`InvoiceService._check_issue_date` refuses a `data_emissione` that is in the future, and
+`invoices.checks.check_issue_date` refuses a `data_emissione` that is in the future, and
 refuses one before 1 January of the current year. Both refusals are right: an invoice
 belongs to a fiscal year, and a year that has ended is closed to new entries. So a
 fixture issuing on a literal `2026-03-20` was a suite with an expiry date on it -- every

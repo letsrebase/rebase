@@ -795,7 +795,7 @@ async def test_import_drive_file_refuses_a_type_the_crm_does_not_store_before_do
     connected_drive: GoogleDriveAccount,
     fake_drive: FakeDrive,
 ) -> None:
-    """`DocumentService._check_upload` would refuse the same file a moment later, and
+    """`DocumentUploads.check_upload` would refuse the same file a moment later, and
     that is not good enough: by then a video has been pulled through this process and
     buffered whole in memory, spending the titolare's Drive quota and bandwidth to reach
     a refusal that one `files.get` had already decided.

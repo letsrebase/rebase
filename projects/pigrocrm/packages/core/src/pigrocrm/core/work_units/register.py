@@ -261,7 +261,7 @@ class ContractRegisterService:
             # A savepoint of its own: two first requests can both find no row, and the loser's
             # insert is refused by the unique name. It rolls back to here and reads the winner's.
             with self.session.begin_nested():
-                return self.templates.add(
+                template = self.templates.add(
                     Template(
                         nome=REGISTER_TEMPLATE_NOME,
                         tipo="rapporto_ore",
@@ -272,6 +272,10 @@ class ContractRegisterService:
                         attivo=True,
                     )
                 )
+            # Committed on purpose: `create_from_template` commits the session before it
+            # renders, so the seed is filed here, deliberately, as the seed command would.
+            self.session.commit()
+            return template
         except IntegrityError:
             existing = self.templates.get_by_nome(REGISTER_TEMPLATE_NOME)
             if existing is None:

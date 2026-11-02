@@ -341,7 +341,7 @@ class DriveReader:
         written for -- `GDriveStorage` reaches Drive for the bytes of a CRM document --
         and wrong for every caller of this class. A Google 500 while listing a folder the
         titolare named arrived as «document_blob: elenco fallito (500)»: there is no CRM
-        document in that operation, `_resolve_original_pdf` documents the opposite, and an
+        document in that operation, `OriginalPdfResolver.resolve` documents the opposite, and an
         adapter routing on the entity would send somebody to the documents screen. So the
         transport's entity, and *only* it, is re-stamped as `ENTITY` on the way out.
 
@@ -524,7 +524,7 @@ class _AlreadyAuthorized:
 # What a caller passes as `action` to say "the agent ban for this operation has already
 # been applied, under a name this call cannot know".
 #
-# There is exactly one such caller -- `InvoiceService._drive_reader`, whose operation is
+# There is exactly one such caller -- `OriginalPdfResolver._drive_reader`, whose operation is
 # `import_issued_invoice`, checked by `import_issued` under that name before any of this
 # runs. Passing the name again here would check the same ban twice; passing anything else
 # would check the wrong one.
@@ -579,7 +579,7 @@ def drive_reader_for(
     composes a reader inherits the ban by passing its action.
 
     It is **required**, and one caller must not pass a real one:
-    `InvoiceService._drive_reader`, whose operation is `import_issued_invoice` -- already
+    `OriginalPdfResolver._drive_reader`, whose operation is `import_issued_invoice` -- already
     on the list, and already checked by `import_issued` under that name. Passing it here
     too would check the same ban twice, and passing anything else would check the wrong
     one. That caller passes `ALREADY_AUTHORIZED` instead, by name.

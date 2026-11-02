@@ -1167,7 +1167,7 @@ def test_an_empty_pdf_on_drive_is_refused_among_the_pure_checks(
     db_session: Session, tmp_path
 ) -> None:  # noqa: ANN001
     """A zero-byte file inside the configured roots: readable, `application/pdf`, and
-    not a document. `DocumentService._check_upload` would refuse it too -- but only
+    not a document. `DocumentUploads.check_upload` would refuse it too -- but only
     from *inside* `import_bytes`, which runs after the `Invoice` has been flushed, and
     the SAVEPOINT `import_issued` writes in starts after the pure checks. So the refusal is
     hoisted here, among the pure checks, where it belongs: it is a fact about the file

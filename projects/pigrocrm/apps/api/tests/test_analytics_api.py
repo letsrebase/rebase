@@ -26,7 +26,7 @@ from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.work_units.models import WorkUnit
 
-# Never a literal year: `_check_issue_date` refuses a `data_emissione` outside the
+# Never a literal year: `check_issue_date` refuses a `data_emissione` outside the
 # current year, so a hard-coded 2026 would be a suite that starts failing on the first
 # of January. The window below is the whole of the current year, which always contains
 # both today's hours and today's issued invoices.

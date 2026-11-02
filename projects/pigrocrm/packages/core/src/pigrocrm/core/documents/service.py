@@ -69,10 +69,18 @@ class DocumentService:
     # ---- documents ------------------------------------------------------------
 
     def create(
-        self, data: DocumentCreate, actor: Actor, *, azienda_id: UUID | None = None
+        self,
+        data: DocumentCreate,
+        actor: Actor,
+        *,
+        azienda_id: UUID | None = None,
+        commit: bool = True,
     ) -> DocumentRead:
+        """`commit=False` leaves the row flushed in the caller's transaction, for a caller
+        that holds a lock (an invoice's row) that must outlive this write."""
         document = self._context.create_row(data, actor, azienda_id=azienda_id)
-        self.session.commit()
+        if commit:
+            self.session.commit()
         return DocumentRead.model_validate(document)
 
     def update(self, document_id: UUID, data: DocumentUpdate, actor: Actor) -> DocumentRead:
@@ -135,8 +143,10 @@ class DocumentService:
         template_id: UUID | None = None,
         variabili: dict[str, Any] | None = None,
         storage_prefix: str | None = None,
+        commit: bool = True,
     ) -> DocumentVersionRead:
-        """A new version of a document, committed. See `DocumentUploads.add_version`."""
+        """A new version of a document, committed unless `commit=False`. See
+        `DocumentUploads.add_version`."""
         return self._uploads.add_version(
             document_id,
             data,
@@ -146,6 +156,7 @@ class DocumentService:
             template_id=template_id,
             variabili=variabili,
             storage_prefix=storage_prefix,
+            commit=commit,
         )
 
     def import_bytes(

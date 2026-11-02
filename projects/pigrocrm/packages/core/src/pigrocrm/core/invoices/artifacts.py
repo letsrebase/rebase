@@ -221,7 +221,9 @@ class InvoiceArtifacts:
 
         Creating it is only safe under the invoice's row lock (see
         `InvoiceContext.require_locked`): two unlocked callers would each create a
-        `Document` and overwrite the pointer, orphaning one.
+        `Document` and overwrite the pointer, orphaning one. The row is created without
+        committing, so the lock is held until the caller has written the pointer (and the
+        version, and the XML hash) and commits them together.
         """
         documents = self.ctx.documents
         existing_id = invoice.xml_document_id if tipo == "fattura_xml" else invoice.pdf_document_id
@@ -236,6 +238,7 @@ class InvoiceArtifacts:
             DocumentCreate(customer_id=invoice.customer_id, tipo=tipo, titolo=titolo),
             actor,
             azienda_id=invoice.azienda_id,
+            commit=False,
         )
         document = documents.repo.get(created.id)
         if document is None:  # pragma: no cover - just created in this transaction
@@ -321,6 +324,7 @@ class InvoiceArtifacts:
             content_type,
             actor,
             storage_prefix=self._storage_prefix(invoice),
+            commit=False,
         )
         return InvoiceArtifact(
             kind=kind,

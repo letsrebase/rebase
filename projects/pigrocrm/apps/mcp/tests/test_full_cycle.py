@@ -69,7 +69,7 @@ from pigrocrm.core.timetracking.service import TimeEntryService
 # hands every tool call.
 AGENTE = Actor(id=None, type="mcp", role="admin")
 
-# Never a literal year: `InvoiceService._check_issue_date` refuses a `data_emissione`
+# Never a literal year: `invoices.checks.check_issue_date` refuses a `data_emissione`
 # outside the current one, so a hard-coded date would be a test that starts failing on the
 # first of January -- the same reason `apps/api/tests/test_analytics_api.py` derives its
 # own window at runtime.
@@ -158,7 +158,7 @@ def cycle(mcp_session: Session, tmp_path: Path) -> dict[str, Any]:
         # login, and the only reason the timeline assertion at the end can tell the two
         # halves of this test apart at all.
         "umano": Actor(id=umano.id, type="user", role="admin"),
-        # `bind_time_to_invoice` reaches `InvoiceService`, whose constructor takes a
+        # `bind_to_invoice` reaches `InvoiceService`, whose constructor takes a
         # backend because a *later* emission renders artefacts through it. A tmp-dir
         # backend for the same reason the `server` fixture builds one: the default root is
         # this repository's own working tree.

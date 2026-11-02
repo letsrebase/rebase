@@ -107,9 +107,12 @@ class DocumentTemplating:
         transaction is ended, and only then are Pandoc and Typst run: a compile takes
         seconds and must not hold a pooled connection while it does.
 
-        The `commit` writes nothing of its own. It runs before the caller has written
-        anything of its own for the document, and the caller commits at the end of its
-        own method anyway.
+        **This commits the session.** The commit writes nothing of its own, but it ends the
+        caller's transaction: anything the caller has pending when it calls
+        `create_from_template` or `regenerate` is committed here, before the render, and
+        is no longer undone if the render fails. A caller that needs such a write to
+        survive deliberately commits it itself first (`ContractRegisterService` does, for
+        the template it seeds).
         """
         markdown = render_template(
             template.corpo_markdown, scope, self.ctx.templates.declared_variables(template)
@@ -126,7 +129,8 @@ class DocumentTemplating:
         Consulenza CTO" (spec 7) and behind the UI's Genera button. One transaction:
         the document, its first version and the timeline entry commit together. The
         render comes first and writes nothing, so a render failure leaves nothing
-        behind."""
+        behind. It commits the caller's pending writes before the render: see
+        `render_to_pdf`."""
         actor.require_write("create_document_from_template")
         template = self.require_template(data.template_id)
         owner = self.ctx.check_owner(data.customer_id, data.deal_id)

@@ -10,7 +10,7 @@ stage the upload on before the review has run, so the page sends the files twice
 instead, once to be reviewed and once to be written, and nothing is stored between the
 two calls. The server never trusts the first for the second: `InvoiceService.
 confirm_upload` re-parses and re-classifies exactly as `confirm_import` does, because
-it is the same function (`InvoiceService._confirm_content`), and a single-invoice file
+it is the same function (`InvoiceImporter._confirm_content`), and a single-invoice file
 is archived only then, under the customer the invoice was written for, in the same
 transaction as the invoice.
 

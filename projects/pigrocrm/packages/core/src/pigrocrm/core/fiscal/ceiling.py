@@ -17,7 +17,7 @@ is why none of them belong in `pack.py` (pure data, no database access at all):
    §9 describes for whatever assembles a contract-linked invoice's lines: given the
    contract's own election (`contracts.applies_social_charge`) and the fee subtotal
    already assembled, it returns the ordinary `InvoiceLineIn` to append, or `None`.
-   No new schema: the line goes through the exact same `_computed_lines`/
+   No new schema: the line goes through the exact same `compute_lines`/
    `RegimeStrategy.resolve_line_vat` path every other line does, so its `natura`/
    `riferimento_normativo` are whatever the regime already computes for a zero-rate
    domestic or foreign line -- identical to a fee line's own. What marks it as *this*

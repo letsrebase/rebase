@@ -161,6 +161,7 @@ class InvoiceRepository:
             select(InvoiceCounter)
             .where(InvoiceCounter.azienda_id == azienda_id, InvoiceCounter.anno == anno)
             .with_for_update()
+            .execution_options(populate_existing=True)
         )
         return self.session.execute(stmt).scalars().one()
 

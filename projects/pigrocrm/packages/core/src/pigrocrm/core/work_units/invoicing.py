@@ -7,13 +7,13 @@ No schema change to `Invoice`/`InvoiceLine`: an approved, worked day becomes an
 ordinary `InvoiceLine` on a draft that `invoices.assembly.assemble_draft` creates, the
 same lines every other draft carries.
 
-Mirrors `AnalyticsService.bind_time_to_invoice` (`analytics/service.py`) in shape --
+Mirrors `TimeBilling.bind_to_invoice` (`timetracking/billing.py`) in shape --
 one line per rate card per month, for legibility, with the resulting line ids bound
 back positionally -- but gathers automatically (`stato = 'lavorato' AND
 invoice_line_id IS NULL`), the same predicate shape `won_with_unbilled_hours_predicate`
 (`timetracking/repository.py`) already gives `TimeEntry`, rather than an explicit
 caller-chosen id list: an approved, worked day is billable by definition the moment
-nothing already covers it -- unlike an hour, invoicing which is `bind_time_to_invoice`'s
+nothing already covers it -- unlike an hour, invoicing which is `bind_to_invoice`'s
 own commercial choice, a day was already the commercial decision when it moved to
 `'lavorato'`.
 
@@ -139,13 +139,13 @@ def unbilled_work_unit_lines(
     """`(righe, gruppi)`: one `InvoiceLineIn` per `(rate_card, month)` group of
     unbilled, worked days, and the ids each line prices, in the same order --
     positionally zippable with the line ids `replace_lines` produces
-    (`bind_work_units`), the same mechanism `bind_time_to_invoice` uses for
-    `TimeEntry` since `InvoiceService._computed_lines` numbers `numero_linea` from
+    (`bind_work_units`), the same mechanism `bind_to_invoice` uses for
+    `TimeEntry` since ``invoices.lines.compute_lines`` numbers `numero_linea` from
     the order `righe` was built in. `da`/`a` (inclusive) take only the days of a period.
 
     Raises `ValidationFailed` if any gathered day has no rate card covering its own
     `data` -- inventing a price here would be a commercial decision this step does
-    not own, the same refusal `bind_time_to_invoice` gives an unpriced `TimeEntry`.
+    not own, the same refusal `bind_to_invoice` gives an unpriced `TimeEntry`.
     """
     groups, uncovered, cards = _gather(session, contract_id, da, a)
     if uncovered:
@@ -261,7 +261,7 @@ def assemble_unbilled_work_units_into_new_invoice(
     whole thing and no draft is left behind.
 
     `admin` and never an agent (`actor.py`'s ban list, `test_mcp_invoice_ban.py`), the
-    rung `bind_time_to_invoice` sits on: choosing what goes on a draft decides what an
+    rung `bind_to_invoice` sits on: choosing what goes on a draft decides what an
     issue will freeze. It issues nothing.
     """
     actor.require_admin(BILL_ACTION)

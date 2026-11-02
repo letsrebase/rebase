@@ -112,7 +112,7 @@ class OriginalPdfResolver:
     def _read_from_drive(self, drive_file_id: str, actor: Actor) -> FetchedPdf:
         """The bytes of the original, with every refusal that is a fact about the file.
 
-        Empty bytes are checked *here* and not left to `DocumentService._check_upload`:
+        Empty bytes are checked *here* and not left to `DocumentUploads.check_upload`:
         that check runs inside `import_bytes`, after the `Invoice` has been flushed,
         whereas "the file on Drive has no bytes" belongs among the pure checks with the
         mime. A zero-byte PDF is not exotic (a sync that died half way) and Drive serves

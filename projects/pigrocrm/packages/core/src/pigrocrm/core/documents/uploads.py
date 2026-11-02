@@ -79,6 +79,7 @@ class DocumentUploads:
         template_id: UUID | None = None,
         variabili: dict[str, Any] | None = None,
         storage_prefix: str | None = None,
+        commit: bool = True,
     ) -> DocumentVersionRead:
         """Every change makes a version; nothing is ever overwritten (spec 4.2).
 
@@ -123,7 +124,8 @@ class DocumentUploads:
             variabili=variabili,
             storage_prefix=storage_prefix,
         )
-        self.ctx.session.commit()
+        if commit:
+            self.ctx.session.commit()
         return DocumentVersionRead.model_validate(version)
 
     def check_upload(self, data: bytes, content_type: str) -> None:

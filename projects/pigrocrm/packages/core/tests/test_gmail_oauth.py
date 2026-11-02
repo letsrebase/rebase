@@ -300,7 +300,7 @@ def test_a_state_refused_for_the_wrong_user_is_burned_and_not_returned_to_its_ow
 
 def test_an_expired_state_is_refused(db_session: Session) -> None:
     """The TTL is a wall-clock interval, not a calendar date, so there is no year to
-    hard-code and nothing for `oggi_in_italia` to project."""
+    hard-code and nothing for `today_local` to project."""
     user = _user(db_session)
     service = _service(db_session, _fake())
     state = _state_of(service, _actor(user))

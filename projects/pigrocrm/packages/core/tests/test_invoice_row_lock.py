@@ -234,3 +234,71 @@ def test_annul_and_mark_transmitted_racing_on_one_invoice_leave_exactly_one_winn
         stored = reader.get(Invoice, invoice_id)
         assert stored is not None
         assert (stored.stato == "annullata") != (stored.trasmessa_esternamente_il is not None)
+
+
+def test_two_xml_exports_racing_on_one_invoice_file_one_document(
+    db_engine: Engine, committed_draft: tuple[sessionmaker[Session], UUID], tmp_path
+) -> None:  # type: ignore[no-untyped-def]
+    """The row lock has to outlive the write of the document and of the pointer to it: a
+    second export that waited on the row and then found no pointer would create a second
+    `Document` and orphan the first. Both exports are provably queued on the row before
+    either runs."""
+    factory, invoice_id = committed_draft
+    with factory() as setup:
+        _service(setup, tmp_path).issue(invoice_id, InvoiceIssue(), ADMIN)
+
+    holder = factory()
+    InvoiceRepository(holder).get_for_update(invoice_id)
+
+    def export() -> bool:
+        with factory() as session:
+            try:
+                _service(session, tmp_path).export_xml(invoice_id, ADMIN)
+            except Exception:
+                return False
+            return True
+
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [pool.submit(export), pool.submit(export)]
+            deadline = time.monotonic() + 30
+            while _waiting_on_row_locks(db_engine) < 2:
+                assert time.monotonic() < deadline, "the two exports never queued on the row"
+                time.sleep(0.1)
+            holder.rollback()
+            outcomes = [future.result(timeout=60) for future in futures]
+    finally:
+        holder.close()
+
+    try:
+        with factory() as reader:
+            stored = reader.get(Invoice, invoice_id)
+            assert stored is not None
+            documents = (
+                reader.execute(text("SELECT id FROM documents WHERE tipo = 'fattura_xml'"))
+                .scalars()
+                .all()
+            )
+            assert outcomes == [True, True]
+            assert documents == [stored.xml_document_id]
+            assert stored.xml_hash_sha256 is not None
+    finally:
+        with factory() as cleaner:
+            cleaner.execute(
+                text("DELETE FROM invoice_lines WHERE invoice_id = :id"), {"id": invoice_id}
+            )
+            cleaner.execute(text("DELETE FROM invoices WHERE id = :id"), {"id": invoice_id})
+            cleaner.execute(
+                text(
+                    "DELETE FROM activities WHERE entity_type = 'document' AND entity_id IN "
+                    "(SELECT id FROM documents WHERE tipo = 'fattura_xml')"
+                )
+            )
+            cleaner.execute(
+                text(
+                    "DELETE FROM document_versions WHERE document_id IN "
+                    "(SELECT id FROM documents WHERE tipo = 'fattura_xml')"
+                )
+            )
+            cleaner.execute(text("DELETE FROM documents WHERE tipo = 'fattura_xml'"))
+            cleaner.commit()

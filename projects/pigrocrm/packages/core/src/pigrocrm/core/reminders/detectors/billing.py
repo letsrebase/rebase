@@ -14,7 +14,7 @@ Due today is not late. The measure is the days past the due date.
 **`invoice_not_transmitted`** applies where the space exports FatturaPA: at least one
 azienda whose fiscal profile is not the `non-it` pack. It leaves out what this CRM never
 produced an XML for, the invoices of an azienda that was abroad when they were issued (the
-frozen snapshot's `fiscale.pack_id`, as `InvoiceService._frozen_abroad` reads it) and the
+frozen snapshot's `fiscale.pack_id`, as `InvoiceArtifacts.frozen_abroad` reads it) and the
 imported ones (`importata_da`). The measure is the days since `data_emissione`, and what
 clears it is `trasmessa_esternamente_il`.
 

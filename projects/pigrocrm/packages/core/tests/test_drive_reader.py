@@ -669,7 +669,7 @@ def test_a_google_failure_mid_read_is_about_the_drive_file_and_not_a_crm_documen
 
     A Google 500 while listing a folder the titolare named used to arrive as
     «document_blob: elenco fallito (500)». There is no CRM document anywhere in that
-    operation: `InvoiceService._resolve_original_pdf`'s docstring documents the
+    operation: `OriginalPdfResolver.resolve`'s docstring documents the
     opposite ("each already arrive as a `Conflict` under the entity `drive_file`"), and
     an adapter routing on the entity -- which is what `details["entity"]` is *for* --
     would send somebody to the documents screen to look for a row that was never
@@ -901,7 +901,7 @@ def test_already_authorized_is_the_only_way_past_that_gate(
     """`ALREADY_AUTHORIZED` replaced an `action=None` default, and the difference is the
     point of it: the exemption now has to be *written* at the call site.
 
-    Its one legitimate user is `InvoiceService._drive_reader`, whose operation
+    Its one legitimate user is `OriginalPdfResolver._drive_reader`, whose operation
     (`import_issued_invoice`) is itself on the ban list and was checked by `import_issued`
     under that name before this is reached -- so the same agent credential that is
     refused above composes a reader here, having already been refused, or allowed, once.

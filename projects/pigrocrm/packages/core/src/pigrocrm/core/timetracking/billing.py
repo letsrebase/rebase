@@ -129,7 +129,7 @@ class TimeBilling:
             )
 
         def bind(line_ids: list[UUID]) -> None:
-            # The line ids arrive in `numero_linea` order, which `_computed_lines`
+            # The line ids arrive in `numero_linea` order, which `compute_lines`
             # assigns from the order `righe` was built in -- so the group-to-line mapping
             # is positional and deterministic, rather than matched on a description
             # string that two groups could share.

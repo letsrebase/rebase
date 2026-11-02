@@ -67,7 +67,7 @@ def _conflicting_nome(nome: str) -> Conflict:
 # The default offer a space is born with (spec 2026-09-12 §6.5). Flat variables on
 # purpose: a declared variable is one field of the compilation form, so the body cannot
 # iterate a list the way `render/assets/template-offer.md` does with `offerta.righe`.
-# `cliente.*`, `emittente.*` and `oggi` come from `DocumentService._template_scope`.
+# `cliente.*`, `emittente.*` and `oggi` come from `DocumentTemplating.template_scope`.
 OFFERTA_TEMPLATE_NOME = "Offerta"
 OFFERTA_TEMPLATE_VARIABLES: tuple[dict[str, Any], ...] = (
     {"nome": "oggetto", "etichetta": "Oggetto", "tipo": "text", "obbligatoria": True},
