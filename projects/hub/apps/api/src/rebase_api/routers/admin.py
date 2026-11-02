@@ -56,6 +56,7 @@ from rebase_core.models import NAME_MAX_LENGTH, User
 from rebase_core.notes import NoteService
 from rebase_core.pagination import CURSOR_MAX_LENGTH
 from rebase_core.perks import PerkService
+from rebase_core.referral_ledger import ReferralLedgerService
 from rebase_core.referral_schemas import (
     ReferralLedgerItem,
     ReferralLedgerList,
@@ -64,7 +65,7 @@ from rebase_core.referral_schemas import (
     ReferralSettingsRead,
     ReferralSettingsUpdate,
 )
-from rebase_core.referrals import ReferralService
+from rebase_core.referral_settings import ReferralSettingsService
 from rebase_core.schemas import (
     CompanyAdminCreate,
     CompanyList,
@@ -718,16 +719,16 @@ def list_referrals(
     stato: str | None = None,
     cursor: Cursor = None,
 ) -> ReferralLedgerList:
-    return ReferralService(session).list_rewards(limit=limit, stato=stato, cursor=cursor)
+    return ReferralLedgerService(session).list_rewards(limit=limit, stato=stato, cursor=cursor)
 
 
 @router.post("/referrals/{reward_id}/state", response_model=ReferralLedgerItem)
 def set_referral_state(
     admin: AdminDep, session: SessionDep, reward_id: UUID, payload: ReferralRewardStateChange
 ) -> ReferralLedgerItem:
-    """`da_confermare` to `confermato` to `pagato`, one step at a time (`ReferralService.
+    """`da_confermare` to `confermato` to `pagato`, one step at a time (`ReferralLedgerService.
     set_state`). Tracking only: nothing here pays anyone."""
-    service = ReferralService(session)
+    service = ReferralLedgerService(session)
     service.set_state(reward_id, payload.stato, admin.id)
     return service.get_ledger_item(reward_id)
 
@@ -738,14 +739,14 @@ def set_referral_price(
 ) -> ReferralLedgerItem:
     """What an admin prices by hand for a reward `record_reward_if_signed` left with
     no figure (an `a corpo` letter with no `giorni_previsti` estimate)."""
-    service = ReferralService(session)
+    service = ReferralLedgerService(session)
     service.set_price(reward_id, payload.base_amount, payload.reward_amount)
     return service.get_ledger_item(reward_id)
 
 
 @router.get("/referral-settings", response_model=ReferralSettingsRead)
 def get_referral_settings(_: AdminDep, session: SessionDep) -> ReferralSettingsRead:
-    row = ReferralService(session).get_settings()
+    row = ReferralSettingsService(session).get_settings()
     updated_by = session.get(User, row.updated_by) if row.updated_by is not None else None
     return ReferralSettingsRead(
         rate_freelancer=row.rate_freelancer,
@@ -761,7 +762,7 @@ def save_referral_settings(
 ) -> ReferralSettingsRead:
     """Both rates together (`ReferralSettingsUpdate`'s own reasoning): a ledger open
     on stale numbers is a worse mistake than asking for the pair every time."""
-    row = ReferralService(session).save_settings(
+    row = ReferralSettingsService(session).save_settings(
         payload.rate_freelancer, payload.rate_company, admin.id
     )
     return ReferralSettingsRead(

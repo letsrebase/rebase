@@ -55,6 +55,8 @@ from rebase_core.models import (
     User,
 )
 from rebase_core.referral_evidence import domains_match, email_domain
+from rebase_core.referral_ledger import ReferralLedgerService
+from rebase_core.referral_settings import ReferralSettingsService
 from rebase_core.referrals import ReferralService, reward_base
 from rebase_core.schemas import (
     CompanyCreate,
@@ -223,6 +225,36 @@ def test_code_for_is_issued_once_and_stable(clean: Session) -> None:
     assert first == second
     assert 6 <= len(first) <= 10
     assert set(first) <= set("ABCDEFGHJKLMNPQRSTUVWXYZ23456789")
+
+
+def test_a_rolled_back_transaction_drops_the_code_it_issued(clean: Session) -> None:
+    """`code_for` stages the code in the caller's transaction (REB-892): the caller's
+    commit persists it, and a rollback leaves the member without one."""
+    user_id = _member(clean)
+
+    ReferralService(clean).code_for(user_id)
+    clean.rollback()
+
+    user = clean.get(User, user_id)
+    assert user is not None and user.referral_code is None
+
+
+def test_a_code_clash_retries_without_losing_the_callers_staged_work(
+    clean: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    taken = ReferralService(clean).code_for(_member(clean, "taken@community.it"))
+    clean.commit()
+    user_id = _member(clean, "second@community.it")
+    staged = User(email="staged@community.it", nome="Staged", cognome="Row", role="member")
+    clean.add(staged)
+    offered = iter([taken, "FRESHCODE2"])
+    monkeypatch.setattr("rebase_core.referrals._generate_code", lambda: next(offered))
+
+    code = ReferralService(clean).code_for(user_id)
+    clean.commit()
+
+    assert code == "FRESHCODE2"
+    assert clean.scalar(select(User.id).where(User.email == "staged@community.it")) is not None
 
 
 def test_resolve_referrer_is_case_insensitive_and_mute_on_unknown(clean: Session) -> None:
@@ -723,7 +755,7 @@ def test_a_referral_is_pending_when_it_is_made_and_has_nothing_to_confirm(clean:
             None,
             None,
         )
-    items = ReferralService(clean).list_rewards().items
+    items = ReferralLedgerService(clean).list_rewards().items
     assert {(i.kind, i.referral_stato, i.reward_id, i.stato) for i in items} == {
         ("freelancer", "da_verificare", None, None),
         ("company", "da_verificare", None, None),
@@ -790,7 +822,7 @@ def test_a_squatted_company_earns_nothing_until_its_referente_logs_in_then_pays_
     listed = {r.kind: r for r in _match_list(clean)[0].referrals}
     assert listed["company"].stato == "da_verificare"
     assert (listed["company"].rate, listed["company"].amount) == (None, None)
-    (ledger,) = ReferralService(clean).list_rewards().items
+    (ledger,) = ReferralLedgerService(clean).list_rewards().items
     assert (ledger.referral_stato, ledger.match_id, ledger.projected_amount) == (
         "da_verificare",
         None,
@@ -806,7 +838,7 @@ def test_a_squatted_company_earns_nothing_until_its_referente_logs_in_then_pays_
 
     _log_in(clean, "prospect@acme.it")
 
-    (item,) = ReferralService(clean).list_rewards().items
+    (item,) = ReferralLedgerService(clean).list_rewards().items
     assert item.referral_stato == "verificato" and item.verified_via == "accesso"
     assert item.referrer_email == "accomplice@community.it"
     assert (item.stato, item.base_amount, item.reward_amount) == (
@@ -832,7 +864,7 @@ def test_a_referred_freelancers_own_signature_verifies_them_and_writes_the_rewar
     match = _sent_with_body(clean, renderer, fake, freelancer_id, company_id, admin_id)
     # Before the signature the pending freelancer's reward is still projected: signing
     # is what verifies them. The pending company's is not.
-    by_kind = {i.kind: i for i in ReferralService(clean).list_rewards().items}
+    by_kind = {i.kind: i for i in ReferralLedgerService(clean).list_rewards().items}
     assert by_kind["freelancer"].projected_amount == Decimal("700.00")
     assert by_kind["company"].projected_amount is None and by_kind["company"].match_id is None
 
@@ -1009,7 +1041,7 @@ def test_a_referred_companys_letter_names_the_referrer_and_an_unreferred_one_pri
 
 
 def test_get_settings_seeds_the_documented_defaults(clean: Session) -> None:
-    settings = ReferralService(clean).get_settings()
+    settings = ReferralSettingsService(clean).get_settings()
     assert (settings.rate_freelancer, settings.rate_company) == (
         Decimal("0.1000"),
         Decimal("0.3000"),
@@ -1018,7 +1050,7 @@ def test_get_settings_seeds_the_documented_defaults(clean: Session) -> None:
 
 def test_save_settings_updates_the_one_row(clean: Session) -> None:
     admin_id = _admin(clean)
-    service = ReferralService(clean)
+    service = ReferralSettingsService(clean)
     before = service.get_settings()
 
     after = service.save_settings(Decimal("0.12"), Decimal("0.35"), admin_id)
@@ -1041,7 +1073,7 @@ def test_set_state_moves_one_step_at_a_time(clean: Session) -> None:
     _sign_the_letter(clean, renderer, fake, match)
     reward = clean.scalar(select(ReferralReward))
     assert reward is not None
-    service = ReferralService(clean)
+    service = ReferralLedgerService(clean)
 
     with pytest.raises(ValidationFailed, match="si passa solo a"):
         service.set_state(reward.id, "pagato", admin_id)
@@ -1069,7 +1101,7 @@ def test_set_price_only_before_confirmation(clean: Session) -> None:
     _sign_the_letter(clean, renderer, fake, match)
     reward = clean.scalar(select(ReferralReward))
     assert reward is not None
-    service = ReferralService(clean)
+    service = ReferralLedgerService(clean)
 
     priced = service.set_price(reward.id, Decimal("100.00"), Decimal("10.00"))
     assert (priced.base_amount, priced.reward_amount) == (Decimal("100.00"), Decimal("10.00"))
@@ -1111,10 +1143,10 @@ def test_a_stale_writer_cannot_reprice_a_reward_another_admin_just_confirmed(
         loaded = stale.get(ReferralReward, reward_id)
         assert loaded is not None and loaded.stato == "da_confermare"
 
-        ReferralService(clean).set_state(reward_id, "confermato", admin_id)
+        ReferralLedgerService(clean).set_state(reward_id, "confermato", admin_id)
 
         with pytest.raises(ValidationFailed, match="prima della conferma"):
-            ReferralService(stale).set_price(reward_id, Decimal("1.00"), Decimal("0.10"))
+            ReferralLedgerService(stale).set_price(reward_id, Decimal("1.00"), Decimal("0.10"))
 
     clean.expire_all()
     stored = clean.get(ReferralReward, reward_id)
@@ -1137,10 +1169,10 @@ def test_a_stale_writer_cannot_confirm_a_reward_twice(clean: Session) -> None:
         loaded = stale.get(ReferralReward, reward_id)
         assert loaded is not None and loaded.stato == "da_confermare"
 
-        ReferralService(clean).set_state(reward_id, "confermato", admin_id)
+        ReferralLedgerService(clean).set_state(reward_id, "confermato", admin_id)
 
         with pytest.raises(ValidationFailed, match="si passa solo a pagato"):
-            ReferralService(stale).set_state(reward_id, "confermato", other_admin.id)
+            ReferralLedgerService(stale).set_state(reward_id, "confermato", other_admin.id)
 
     clean.expire_all()
     stored = clean.get(ReferralReward, reward_id)
@@ -1176,7 +1208,7 @@ def test_a_price_waits_for_the_confirmation_in_flight_then_is_refused(clean: Ses
             try:
                 backend.append(other.execute(text("SELECT pg_backend_pid()")).scalar_one())
                 started.set()
-                ReferralService(other).set_price(reward_id, Decimal("1.00"), Decimal("0.10"))
+                ReferralLedgerService(other).set_price(reward_id, Decimal("1.00"), Decimal("0.10"))
             except ValidationFailed as exc:
                 outcome.append(exc)
             finally:
@@ -1226,7 +1258,7 @@ def test_list_rewards_shows_a_referral_before_any_letter_is_signed(clean: Sessio
     referrer_id = _member(clean)
     code = ReferralService(clean).code_for(referrer_id)
     _card(clean, rif=code)
-    service = ReferralService(clean)
+    service = ReferralLedgerService(clean)
 
     page = service.list_rewards()
 
@@ -1263,7 +1295,7 @@ def test_set_state_refuses_to_confirm_an_unpriced_reward(clean: Session) -> None
     _sign_the_letter(clean, renderer, fake, match)
     reward = clean.scalar(select(ReferralReward))
     assert reward is not None and reward.reward_amount is None
-    service = ReferralService(clean)
+    service = ReferralLedgerService(clean)
 
     with pytest.raises(ValidationFailed, match="prezzato prima di confermarlo"):
         service.set_state(reward.id, "confermato", admin_id)
@@ -1390,8 +1422,8 @@ def test_the_match_list_shows_a_referral_projected_then_real_then_by_state(
 
     _sign_the_letter(clean, renderer, fake, match)
     # A rate edited after the signature never moves what the signature already earned.
-    ReferralService(clean).save_settings(Decimal("0.5"), Decimal("0.5"), admin_id)
-    service = ReferralService(clean)
+    ReferralSettingsService(clean).save_settings(Decimal("0.5"), Decimal("0.5"), admin_id)
+    service = ReferralLedgerService(clean)
     company_reward = clean.scalar(
         select(ReferralReward)
         .join(Referral, Referral.id == ReferralReward.referral_id)
@@ -1495,7 +1527,7 @@ def test_a_referrer_with_a_card_of_his_own_is_named_with_it(clean: Session) -> N
 
     (row,) = _match_list(clean)
     (side,) = row.referrals
-    (ledger,) = ReferralService(clean).list_rewards().items
+    (ledger,) = ReferralLedgerService(clean).list_rewards().items
 
     assert side.referrer_freelancer_id == referrer_card
     assert ledger.referrer_freelancer_id == referrer_card
@@ -1547,7 +1579,7 @@ def test_the_ledger_projects_a_pending_referral_from_its_live_match_and_keeps_re
     clean.get(Match, past.id).stato = "attivo"  # type: ignore[union-attr]
     clean.commit()
 
-    pending = {item.kind: item for item in ReferralService(clean).list_rewards().items}
+    pending = {item.kind: item for item in ReferralLedgerService(clean).list_rewards().items}
 
     freelancer, company = pending["freelancer"], pending["company"]
     assert (freelancer.referred_id, company.referred_id) == (freelancer_id, company_id)
@@ -1569,8 +1601,8 @@ def test_the_ledger_projects_a_pending_referral_from_its_live_match_and_keeps_re
     # Once signed the real figures stand, the projection is gone, even at another rate.
     signed = _sent_with_body(clean, renderer, fake, freelancer_id, company_id, admin_id)
     _sign_the_letter(clean, renderer, fake, signed)
-    ReferralService(clean).save_settings(Decimal("0.5"), Decimal("0.5"), admin_id)
-    real = {item.kind: item for item in ReferralService(clean).list_rewards().items}
+    ReferralSettingsService(clean).save_settings(Decimal("0.5"), Decimal("0.5"), admin_id)
+    real = {item.kind: item for item in ReferralLedgerService(clean).list_rewards().items}
     assert real["freelancer"].reward_amount == Decimal("700.00")
     assert real["freelancer"].match_id == signed.id
     assert (real["freelancer"].projected_rate, real["freelancer"].projected_amount) == (None, None)
@@ -1589,13 +1621,13 @@ def test_the_ledger_reads_a_page_in_a_row_independent_number_of_queries(clean: S
         _active_framework(clean, freelancer_id, admin_id)
         service.create(freelancer_id, _match_body(company_id), admin_id)
 
-    ReferralService(clean).list_rewards(limit=2)  # warm the session's own caches
+    ReferralLedgerService(clean).list_rewards(limit=2)  # warm the session's own caches
     seen, stop = _statements(clean)
     try:
-        two = ReferralService(clean).list_rewards(limit=2)
+        two = ReferralLedgerService(clean).list_rewards(limit=2)
         for_two = len(seen)
         seen.clear()
-        many = ReferralService(clean).list_rewards(limit=100)
+        many = ReferralLedgerService(clean).list_rewards(limit=100)
         for_many = len(seen)
     finally:
         stop()
@@ -1623,7 +1655,7 @@ def test_a_deleted_request_or_card_is_flagged_so_no_page_links_to_it(clean: Sess
     FreelancerService(clean).soft_delete(other, admin_id)
 
     (row,) = _match_list(clean)
-    ledger = {item.referred_id: item for item in ReferralService(clean).list_rewards().items}
+    ledger = {item.referred_id: item for item in ReferralLedgerService(clean).list_rewards().items}
 
     assert row.company_deleted is True
     assert ledger[company_id].referred_deleted is True
@@ -1632,7 +1664,7 @@ def test_a_deleted_request_or_card_is_flagged_so_no_page_links_to_it(clean: Sess
     assert ledger[freelancer_id].match_freelancer_deleted is False
 
     FreelancerService(clean).soft_delete(freelancer_id, admin_id)
-    after = {item.referred_id: item for item in ReferralService(clean).list_rewards().items}
+    after = {item.referred_id: item for item in ReferralLedgerService(clean).list_rewards().items}
     assert after[freelancer_id].referred_deleted is True
     assert after[company_id].match_freelancer_deleted is True
 
@@ -1640,7 +1672,7 @@ def test_a_deleted_request_or_card_is_flagged_so_no_page_links_to_it(clean: Sess
 def _evidence(session: Session, entity_id: UUID):  # type: ignore[no-untyped-def]
     (item,) = [
         item
-        for item in ReferralService(session).list_rewards().items
+        for item in ReferralLedgerService(session).list_rewards().items
         if item.referred_id == entity_id
     ]
     return item.evidence
@@ -1773,4 +1805,4 @@ def test_the_evidence_says_a_referred_person_has_logged_in_once_a_login_exists(
     assert _evidence(clean, card_id).ever_logged_in is True
     assert _evidence(clean, company_id).ever_logged_in is True
     assert _evidence(clean, other_id).ever_logged_in is False
-    assert len(ReferralService(clean).list_rewards().items) == 3
+    assert len(ReferralLedgerService(clean).list_rewards().items) == 3

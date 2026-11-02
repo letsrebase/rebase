@@ -247,7 +247,9 @@ def my_referral(me: MeDep, session: SessionDep) -> MemberReferral:
     force now (REB-610), read live on every call. Never a euro figure of a real
     engagement -- rebase's own margin is an admin-only number the member area never
     shows, the same isolation `budget_giornaliero` already keeps."""
-    return ReferralService(session).for_user(me.id)
+    referral = ReferralService(session).for_user(me.id)
+    session.commit()  # `code_for` only flushes the code it issues
+    return referral
 
 
 @router.post("/members/lookup", response_model=MemberLookup)
