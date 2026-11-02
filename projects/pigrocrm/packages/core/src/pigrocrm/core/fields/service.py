@@ -94,17 +94,17 @@ class FieldDefinitionService:
         # module scope: `schema_registry` imports this class
         # (`schema_registry.py:19`), so a top-level import is a real cycle -- the
         # same call-time resolution `server.py` uses for `register_entity_tools`.
-        from pigrocrm.core.schema_registry import native_fields
+        from pigrocrm.core.schema_registry import reserved_field_names
 
-        native = native_fields(data.entity_type)
-        if data.key in native:
+        reserved = reserved_field_names(data.entity_type)
+        if data.key in reserved:
             raise ValidationFailed(
                 "field_definition",
                 "key",
                 "collide con una colonna nativa dell'entità",
                 expected=(
                     f"una chiave diversa da {data.key!r}: è già una colonna nativa di "
-                    f"{data.entity_type}. Colonne native: {', '.join(sorted(native))}"
+                    f"{data.entity_type}. Nomi riservati: {', '.join(sorted(reserved))}"
                 ),
             )
 

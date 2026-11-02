@@ -13,6 +13,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
+from pigrocrm.core.notes.schemas import NOTE_MAX_LENGTH
 from pigrocrm.core.validation import SafeStr
 
 NAME_MAX_LENGTH = 120  # the hub's NAME_MAX_LENGTH
@@ -170,7 +171,9 @@ class LeadDeal(BaseModel):
     nome: SafeStr = Field(min_length=1, max_length=LEAD_DEAL_NAME_MAX_LENGTH)
     valore_previsto: Decimal | None = Field(default=None, ge=0, max_digits=12, decimal_places=2)
     data_chiusura_prevista: date | None = None
-    note: SafeStr | None = None
+    # The hub's longest note is about 6,000 characters (its fields are bounded); a sentence
+    # is added to it, so the room under the note's own bound is kept.
+    note: SafeStr | None = Field(default=None, max_length=NOTE_MAX_LENGTH - 1_000)
 
 
 class LeadUpsert(BaseModel):

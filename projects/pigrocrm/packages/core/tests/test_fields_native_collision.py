@@ -38,6 +38,11 @@ def admin() -> Actor:
         ("cost", "Data", "data"),
         ("deal", "Nome", "nome"),
         ("customer", "Ragione sociale", "ragione_sociale"),
+        # `note` is no column since the notes thread (REB-879), but a Create takes it as the
+        # first note, so a custom field may not take the name.
+        ("deal", "Note", "note"),
+        ("customer", "Note", "note"),
+        ("person", "Note", "note"),
         # Slugification is what makes this reachable by accident: nobody types
         # `ore_preventivate`, they type "Ore preventivate".
         ("deal", "Ore  preventivate", "ore_preventivate"),

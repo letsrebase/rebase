@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from pigrocrm.core.db import CURSOR_MAX_LENGTH, SortDirection, SortSpec, SortWhitelist
 from pigrocrm.core.deals.models import Deal
+from pigrocrm.core.notes.schemas import NOTE_MAX_LENGTH
 from pigrocrm.core.validation import SafeStr
 
 # Mirrors Deal's column width (models.py). Without this, an over-length value sails
@@ -17,8 +18,8 @@ from pigrocrm.core.validation import SafeStr
 # schemas.py) close -- this project has hit the class of bug often enough that it is
 # now a standing global constraint, not a one-off fix.
 #
-# `note` is deliberately absent: it is `Text` in models.py, which has no column
-# width to mirror.
+# `note` is deliberately absent: it is the text of the deal's first note (bounded by
+# `NOTE_MAX_LENGTH`), a row of the `notes` thread, not a column.
 NOME_MAX_LENGTH = 255
 
 # Mirror Deal's Numeric(p, s) column widths (models.py): valore_previsto and
@@ -77,7 +78,7 @@ class DealCreate(BaseModel):
     # validated against `customers`: a real foreign key with no schema-level way to bound
     # it further than "a UUID".
     owner_id: UUID | None = None
-    note: SafeStr | None = None
+    note: SafeStr | None = Field(default=None, max_length=NOTE_MAX_LENGTH)
     ore_preventivate: Decimal | None = Field(
         default=None, max_digits=ORE_MAX_DIGITS, decimal_places=DECIMAL_PLACES
     )
@@ -105,7 +106,6 @@ class DealUpdate(BaseModel):
     probabilita: int | None = None
     data_chiusura_prevista: date | None = None
     owner_id: UUID | None = None
-    note: SafeStr | None = None
     ore_preventivate: Decimal | None = Field(
         default=None, max_digits=ORE_MAX_DIGITS, decimal_places=DECIMAL_PLACES
     )
@@ -131,7 +131,6 @@ class DealRead(BaseModel):
     probabilita: int
     data_chiusura_prevista: date | None
     owner_id: UUID | None
-    note: str | None
     ore_preventivate: Decimal | None
     valore_preventivato: Decimal | None
     # Bare `Decimal | None`, no bound: a Read schema validates values the database

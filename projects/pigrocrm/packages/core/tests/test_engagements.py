@@ -22,6 +22,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
+from fakes.notes import notes_of, texts
 from sqlalchemy import Engine, create_engine, func, inspect, select, text, update
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import NullPool
@@ -289,7 +290,8 @@ def test_first_call_creates_space_customer_and_deal(door: Door) -> None:
         assert customer.indirizzo == "Via Roma 1, 20121 Milano"
         assert customer.pec == "rebase@pec.it"
         assert customer.codice_sdi == "M5UXCR1"
-        assert customer.note == CUSTOMER_NOTE
+        first = notes_of(space, "customer", customer.id)
+        assert [(n.testo, n.fonte, n.autore_id) for n in first] == [(CUSTOMER_NOTE, "rebase", None)]
 
         deal = space.get(Deal, answer.deal_id)
         assert deal is not None
@@ -299,17 +301,22 @@ def test_first_call_creates_space_customer_and_deal(door: Door) -> None:
         assert str(deal.tariffa_oraria) == "50.000000"
         assert str(deal.ore_preventivate) == "320.00"
         assert deal.data_chiusura_prevista == date(2026, 12, 31)
-        # The sentence, then the marker a retry finds the deal by.
+        # The sentence is the deal's first note, written by rebase; the marker a retry
+        # finds the deal by is a reference of its own, in no note.
         assert deal_marker(match_id) == f"rebase:match={match_id}"
-        assert deal.note == f"{DEAL_NOTE}\n{deal_marker(match_id)}"
+        assert [(n.testo, n.fonte) for n in notes_of(space, "deal", deal.id)] == [
+            (DEAL_NOTE, "rebase")
+        ]
+        assert deal.rebase_refs == [deal_marker(match_id)]
         assert deal.pipeline_stage_id == PipelineService(space).default_stage().id
         admin = UserRepository(space).get_by_email(ADA)
         assert admin is not None and deal.owner_id == admin.id
 
+        # The two creations and the first note of each, all by rebase.
         actors = space.scalars(
             select(Activity.actor_type).where(Activity.entity_id.in_([customer.id, deal.id]))
         ).all()
-        assert actors == ["rebase", "rebase"]
+        assert actors == ["rebase"] * 4
 
     row = _row(door, match_id)
     assert row is not None
@@ -658,9 +665,10 @@ def test_retry_after_deal_created_but_unrecorded_reuses_it(door: Door) -> None:
             DealCreate(
                 nome="Acme, il backend",
                 customer_id=customer.id,
-                note=f"{DEAL_NOTE}\n{deal_marker(match_id)}",
+                note=DEAL_NOTE,
             ),
             Actor.rebase(),
+            rebase_ref=deal_marker(match_id),
         )
     with session_factory(door.registry)() as registry:
         registry.add(RebaseEngagement(match_id=match_id, tenant_id=tenant_id))
@@ -733,7 +741,8 @@ def test_same_named_deal_without_marker_is_not_reused(door: Door) -> None:
     with _space(door, "ada-lovelace") as space:
         assert _count(space, Deal, Deal.nome == DEAL_NAME) == 2
         untouched = space.get(Deal, theirs.id)
-        assert untouched is not None and untouched.note == "La mia lettera."
+        assert untouched is not None and untouched.rebase_refs == []
+        assert texts(space, "deal", theirs.id) == ["La mia lettera."]
 
 
 def test_a_vat_number_that_finds_nothing_falls_back_to_the_name(door: Door) -> None:
@@ -770,11 +779,11 @@ def test_longest_role_and_company_still_make_a_valid_name(door: Door) -> None:
         assert deal is not None and deal.nome == name
         # The note is a `Text`: it keeps the whole company, and a name with no full stop
         # of its own gets one.
-        assert deal.note == (
+        assert texts(space, "deal", deal.id) == [
             f"Creato da rebase per la lettera n. {numero} con {azienda}. rebase legge le "
-            "ore di questo deal per la rendicontazione al cliente.\n"
-            f"{deal_marker(match_id)}"
-        )
+            "ore di questo deal per la rendicontazione al cliente."
+        ]
+        assert deal.rebase_refs == [deal_marker(match_id)]
 
 
 def test_deleted_deal_answers_409(door: Door) -> None:

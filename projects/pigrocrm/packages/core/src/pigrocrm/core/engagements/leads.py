@@ -9,9 +9,9 @@ did it. Imported by its full path, like `engagements.service` (see the package d
 
 Three rules decide what a call writes:
 
-- A request is filed once. The deal carries `rebase:request=<request_id>` in its note and
-  a retry finds it first (`DealRepository.find_by_marker`), so a second `PUT`, or one after
-  a crash, writes nothing.
+- A request is filed once. The deal carries `rebase:request=<request_id>` among its
+  `rebase_refs` and a retry finds it first (`DealRepository.find_by_rebase_ref`), so a
+  second `PUT`, or one after a crash, writes nothing.
 - A customer is reused only through the referente's email: the oldest live person with
   that address whose customer is live. Never by name: «Rossi» and «Rossi S.r.l.» are the
   same company to a person and two strings to a query, and a wrong merge is worse than a
@@ -41,7 +41,7 @@ from pigrocrm.core.customers.schemas import CustomerCreate
 from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.db import session_factory, today_local
 from pigrocrm.core.deals.repository import DealRepository
-from pigrocrm.core.deals.schemas import DealCreate, DealUpdate
+from pigrocrm.core.deals.schemas import DealCreate
 from pigrocrm.core.deals.service import DealService
 from pigrocrm.core.engagements.schemas import LeadRead, LeadUpsert
 from pigrocrm.core.engagements.service import (
@@ -91,7 +91,7 @@ class LeadBusy(Exception):
 
 
 def lead_marker(request_id: UUID) -> str:
-    """`rebase:request=<request_id>`, the last line of the deal's note and the key a
+    """`rebase:request=<request_id>`, written to the deal's `rebase_refs` and the key a
     retry recovers the deal by."""
     return f"rebase:request={request_id}"
 
@@ -153,7 +153,7 @@ class LeadService:
         with self.door._space_session(tenant) as space:
             if data.deal_id is not None:
                 return self._link(space, tenant.slug, request_id, data, email, data.deal_id)
-            recorded = DealRepository(space).find_by_marker(lead_marker(request_id))
+            recorded = DealRepository(space).find_by_rebase_ref(lead_marker(request_id))
             if recorded is not None:
                 return self._answer(
                     tenant.slug,
@@ -181,11 +181,10 @@ class LeadService:
             raise ValidationFailed(ENTITY, "deal_id", NO_SUCH_DEAL)
         marker = lead_marker(request_id)
         person_id = self._person_id(space, email, deal.customer_id)
-        if deal.note is not None and marker in deal.note:
+        if marker in deal.rebase_refs:
             return self._answer(slug, deal.customer_id, person_id, deal.id, creato=False)
-        note = f"{deal.note.rstrip()}\n{marker}" if deal.note else marker
-        # Recorded first and left to the update's commit: the entry survives only with
-        # the marker it is about (`ActivityService.record` joins the caller's transaction).
+        # Recorded first and left to the reference's commit: the entry survives only with
+        # the reference it is about (`ActivityService.record` joins the caller's transaction).
         ActivityService(space).record(
             "deal",
             deal.id,
@@ -193,7 +192,7 @@ class LeadService:
             Actor.rebase(),
             {"richiesta": str(request_id), "azienda": data.azienda, "nota": data.deal.note},
         )
-        DealService(space).update(deal.id, DealUpdate(note=note), Actor.rebase())
+        DealService(space).attach_rebase_ref(deal.id, marker, Actor.rebase())
         return self._answer(slug, deal.customer_id, person_id, deal.id, creato=False)
 
     def _create(
@@ -269,7 +268,6 @@ class LeadService:
                 f"Nome indicato nella richiesta: {data.azienda}. "
                 f"Cliente già presente nel CRM: {known_name}."
             )
-        notes.append(lead_marker(request_id))
         deal = DealService(space).create(
             DealCreate(
                 nome=data.deal.nome,
@@ -279,6 +277,7 @@ class LeadService:
                 note="\n".join(notes),
             ),
             actor,
+            rebase_ref=lead_marker(request_id),
         )
         ActivityService(space).record(
             "deal", deal.id, KIND_FILED, actor, {"richiesta": str(request_id)}

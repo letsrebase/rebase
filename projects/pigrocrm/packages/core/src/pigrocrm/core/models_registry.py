@@ -42,6 +42,7 @@ from pigrocrm.core.invoices.models import (  # noqa: F401
     InvoiceLine,
     InvoiceRegisterGap,
 )
+from pigrocrm.core.notes.models import Note, NoteRevision  # noqa: F401
 from pigrocrm.core.people.models import Person  # noqa: F401
 from pigrocrm.core.pipeline.models import PipelineStage  # noqa: F401
 from pigrocrm.core.proposals.models import Proposal  # noqa: F401

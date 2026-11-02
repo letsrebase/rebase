@@ -52,9 +52,11 @@ def test_native_fields_for_an_invoice_covers_the_derived_fiscal_columns() -> Non
 
 def test_native_fields_for_the_older_entities_is_unchanged() -> None:
     """EXTRA_NATIVE_FIELDS is empty for them, so the derivation is still the whole
-    answer and no existing behaviour moved."""
+    answer, less `note`, the text of a first note and no column (REB-879)."""
     assert native_fields("customer") == [
-        name for name in CREATE_MODELS["customer"].model_fields if name != "custom_fields"
+        name
+        for name in CREATE_MODELS["customer"].model_fields
+        if name not in {"custom_fields", "note"}
     ]
 
 

@@ -4,7 +4,7 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import Date, ForeignKey, Index, Integer, Numeric, String, Text, text
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from pigrocrm.core.db import Base, PrimaryKeyMixin, SoftDeleteMixin, TimestampMixin
@@ -60,6 +60,9 @@ class Deal(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
         # migration: `Base.metadata.create_all` builds the test schema, so an index
         # declared only in a migration is one no test ever sees.
         Index("ix_deals_chiuso_il", "chiuso_il"),
+        # `find_by_rebase_ref`'s containment lookup, run on every retry of the leads route
+        # and of the letters door.
+        Index("ix_deals_rebase_refs", "rebase_refs", postgresql_using="gin"),
     )
 
     nome: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -82,7 +85,14 @@ class Deal(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     probabilita: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     data_chiusura_prevista: Mapped[date | None] = mapped_column(Date, default=None)
     owner_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
-    note: Mapped[str | None] = mapped_column(Text, default=None)
+    # The references a request or a match of rebase's engagements door left on this deal
+    # (`rebase:request=<uuid>`, `rebase:match=<uuid>`): the keys a retry finds the deal
+    # again by (`DealRepository.find_by_rebase_ref`). They were the last line of the free
+    # `note` text, where an edit could remove them; a deal linked to two requests carries
+    # both, as it did then. Written by the two doors only, never by a Create or Update.
+    rebase_refs: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), nullable=False, default=list, server_default=text("'{}'::text[]")
+    )
     # Written now, consumed by the slice 4 estimate-vs-actual report. Costs nothing
     # today. ore_preventivate is Numeric(8,2) -- hours, not money -- valore_preventivato
     # is money and shares valore_previsto's Numeric(12,2).

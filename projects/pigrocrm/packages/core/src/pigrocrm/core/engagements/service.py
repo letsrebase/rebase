@@ -124,8 +124,8 @@ def deal_name(numero: str, ruolo: str, azienda: str) -> str:
 
 
 def deal_marker(match_id: UUID) -> str:
-    """`rebase:match=<match_id>`, the last line of the deal's note and the key a retry
-    recovers the deal by (`DealRepository.find_by_marker`). The name is not: a
+    """`rebase:match=<match_id>`, written to the deal's `rebase_refs` and the key a retry
+    recovers the deal by (`DealRepository.find_by_rebase_ref`). The name is not: a
     freelancer may have a deal of their own with the same label, or rename ours."""
     return f"rebase:match={match_id}"
 
@@ -151,13 +151,13 @@ def _customer_note(numero: str) -> str:
     )
 
 
-def _deal_note(numero: str, azienda: str, match_id: UUID) -> str:
+def _deal_note(numero: str, azienda: str) -> str:
     # «con Acme S.r.l. rebase legge»: a company whose name ends in a full stop ends the
     # sentence with it, and a second one would read as a typo.
     sentence = azienda if azienda.endswith(".") else f"{azienda}."
     return (
         f"Creato da rebase per la lettera n. {numero} con {sentence} rebase legge le ore "
-        f"di questo deal per la rendicontazione al cliente.\n{deal_marker(match_id)}"
+        "di questo deal per la rendicontazione al cliente."
     )
 
 
@@ -566,7 +566,7 @@ class EngagementService:
         failed to record, and its customer is the one that call found or created, even
         after the freelancer renamed it or changed its VAT number. Only without it is
         the customer looked up, or created, and the deal created under it."""
-        recorded = DealRepository(space).find_by_marker(deal_marker(match_id))
+        recorded = DealRepository(space).find_by_rebase_ref(deal_marker(match_id))
         if recorded is not None:
             return recorded.customer_id, recorded.id
         customer_id = self._customer(space, data)
@@ -650,8 +650,9 @@ class EngagementService:
                 ),
                 data_chiusura_prevista=lettera.data_fine,
                 owner_id=owner.id if owner is not None and owner.attivo else None,
-                note=_deal_note(lettera.numero, lettera.azienda, match_id),
+                note=_deal_note(lettera.numero, lettera.azienda),
             ),
             Actor.rebase(),
+            rebase_ref=deal_marker(match_id),
         )
         return created.id

@@ -5,6 +5,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from pigrocrm.core.db import CURSOR_MAX_LENGTH, SortDirection, SortSpec, SortWhitelist
+from pigrocrm.core.notes.schemas import NOTE_MAX_LENGTH
 from pigrocrm.core.people.models import Person
 from pigrocrm.core.validation import SafeStr
 
@@ -15,8 +16,8 @@ from pigrocrm.core.validation import SafeStr
 # constants close on Customer (customers/schemas.py); this project has hit the class of
 # bug often enough that it is now a standing global constraint, not a one-off fix.
 #
-# `note` is deliberately absent: it is `Text` in models.py, which has no column width to
-# mirror.
+# `note` is deliberately absent: it is the text of the person's first note, a row of the
+# `notes` thread, not a column.
 NOME_MAX_LENGTH = 120
 COGNOME_MAX_LENGTH = 120
 EMAIL_MAX_LENGTH = 320
@@ -39,7 +40,7 @@ class PersonCreate(BaseModel):
     telefono: SafeStr | None = Field(default=None, max_length=TELEFONO_MAX_LENGTH)
     ruolo: SafeStr | None = Field(default=None, max_length=RUOLO_MAX_LENGTH)
     linkedin: SafeStr | None = Field(default=None, max_length=LINKEDIN_MAX_LENGTH)
-    note: SafeStr | None = None
+    note: SafeStr | None = Field(default=None, max_length=NOTE_MAX_LENGTH)
     customer_id: UUID | None = None
     custom_fields: dict[str, Any] = {}
 
@@ -63,7 +64,6 @@ class PersonUpdate(BaseModel):
     telefono: SafeStr | None = Field(default=None, max_length=TELEFONO_MAX_LENGTH)
     ruolo: SafeStr | None = Field(default=None, max_length=RUOLO_MAX_LENGTH)
     linkedin: SafeStr | None = Field(default=None, max_length=LINKEDIN_MAX_LENGTH)
-    note: SafeStr | None = None
     customer_id: UUID | None = None
     custom_fields: dict[str, Any] | None = None
     # Detaching is its own explicit flag rather than an overloaded `customer_id=None`.
@@ -102,7 +102,6 @@ class PersonRead(BaseModel):
     telefono: str | None
     ruolo: str | None
     linkedin: str | None
-    note: str | None
     customer_id: UUID | None
     # The person's "azienda di riferimento", denormalised onto the read shape: it is not
     # a column on `people` and never becomes one -- the name lives on `customers` and

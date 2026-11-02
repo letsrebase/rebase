@@ -1,7 +1,7 @@
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import ForeignKey, Index, String, Text, column, desc, nullslast, text
+from sqlalchemy import ForeignKey, Index, String, column, desc, nullslast, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -85,5 +85,4 @@ class Person(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     telefono: Mapped[str | None] = mapped_column(String(40), default=None)
     ruolo: Mapped[str | None] = mapped_column(String(120), default=None)
     linkedin: Mapped[str | None] = mapped_column(String(255), default=None)
-    note: Mapped[str | None] = mapped_column(Text, default=None)
     custom_fields: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)

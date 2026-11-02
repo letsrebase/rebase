@@ -91,23 +91,23 @@ class DealRepository:
         self.session.flush()
         return deal
 
-    def find_by_marker(self, marker: str) -> Deal | None:
-        """The live deal whose `note` contains `marker`, as an exact substring, under
+    def find_by_rebase_ref(self, ref: str) -> Deal | None:
+        """The live deal carrying `ref` among its `rebase_refs`, an exact element, under
         whichever customer it sits now: how the engagements door finds again a deal it
         created and failed to record (`rebase:match=<id>`, spec 2026-09-25 § 2.3 step
         5), and with it the customer that call used, even after the freelancer renamed
         that customer or moved the deal. Not `list`'s search, which is a trigram `ilike`
         answered a page at a time: a first page is not the set, and a wildcard or a
-        case fold is not the same marker.
+        case fold is not the same reference.
 
-        `strpos` rather than `LIKE`: no character of the marker is a pattern. At most one
-        by construction (one marker per match, written once); oldest first all the same,
-        so the answer never depends on the plan."""
+        Array containment, answered by the GIN index on the column. At most one by
+        construction (one reference per request or match, written once); oldest first all
+        the same, so the answer never depends on the plan."""
         return self.session.scalars(
             select(Deal)
             .where(
                 Deal.deleted_at.is_(None),
-                func.strpos(Deal.note, marker) > 0,
+                Deal.rebase_refs.contains([ref]),
             )
             .order_by(Deal.created_at, Deal.id)
             .limit(1)

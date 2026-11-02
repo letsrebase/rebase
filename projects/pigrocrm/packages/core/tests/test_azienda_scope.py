@@ -37,7 +37,7 @@ from pigrocrm.core.customers.schemas import CustomerListQuery
 from pigrocrm.core.db import Base, session_factory
 from pigrocrm.core.db.base import uuid7
 from pigrocrm.core.db.role import ensure_application_role
-from pigrocrm.core.db.scope import bind_scope
+from pigrocrm.core.db.scope import bind_scope, is_policy_refusal
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.deals.repository import DealRepository
 from pigrocrm.core.deals.schemas import DealListQuery
@@ -46,9 +46,13 @@ from pigrocrm.core.documents.repository import DocumentRepository
 from pigrocrm.core.documents.schemas import DocumentListQuery
 from pigrocrm.core.emitter.models import LegalEntity
 from pigrocrm.core.emitter.repository import LegalEntityRepository
+from pigrocrm.core.errors import NotFound
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
 from pigrocrm.core.invoices.repository import InvoiceRepository
 from pigrocrm.core.invoices.schemas import InvoiceListQuery
+from pigrocrm.core.notes.models import Note, NoteRevision
+from pigrocrm.core.notes.schemas import NoteCreate, NoteUpdate
+from pigrocrm.core.notes.service import NoteService
 from pigrocrm.core.people.models import Person
 from pigrocrm.core.people.repository import PersonRepository
 from pigrocrm.core.people.schemas import PersonListQuery
@@ -87,6 +91,8 @@ POLICIED = {
     "contract_expenses",
     "contract_email_templates",
     "clause_notes",
+    "notes",
+    "note_revisions",
     "work_units",
     "approvals",
     "work_unit_transitions",
@@ -159,9 +165,10 @@ def world(db_engine: Engine) -> Iterator[World]:
             )
             session.add(customer)
             session.flush()
-            session.add(
-                Person(nome=f"{_PREFIX} {tag} contatto", customer_id=customer.id, custom_fields={})
+            person = Person(
+                nome=f"{_PREFIX} {tag} contatto", customer_id=customer.id, custom_fields={}
             )
+            session.add(person)
             deal = Deal(
                 nome=f"{_PREFIX} {tag} deal",
                 customer_id=customer.id,
@@ -172,6 +179,17 @@ def world(db_engine: Engine) -> Iterator[World]:
             )
             session.add(deal)
             session.flush()
+            session.flush()
+            # One note on each of the three records a thread hangs on, written by hand.
+            for kind, record in (("customer", customer), ("person", person), ("deal", deal)):
+                session.add(
+                    Note(
+                        entity_type=kind,
+                        entity_id=record.id,
+                        testo=f"{_PREFIX} {tag} {kind}",
+                        fonte="web",
+                    )
+                )
             session.add(
                 Contract(
                     customer_id=customer.id,
@@ -316,6 +334,7 @@ def world(db_engine: Engine) -> Iterator[World]:
                 "deals": 1,
                 "contracts": 1,
                 "documents": 1,
+                "notes": 3,
                 "invoices": 1,
                 "invoice_lines": 1,
                 "time_entries": 1,
@@ -335,6 +354,24 @@ def world(db_engine: Engine) -> Iterator[World]:
             session.execute(
                 delete(TimeEntry).where(
                     TimeEntry.deal_id.in_(select(Deal.id).where(Deal.nome.like(f"{_PREFIX} %")))
+                )
+            )
+            # The notes this file seeded and the ones its tests wrote as the operator, with
+            # the timeline entries they left on this file's deals.
+            session.execute(
+                delete(NoteRevision).where(
+                    NoteRevision.note_id.in_(select(Note.id).where(Note.autore_id == ids.user_id))
+                )
+            )
+            session.execute(
+                delete(Note).where(
+                    Note.testo.like(f"{_PREFIX} %") | (Note.autore_id == ids.user_id)
+                )
+            )
+            session.execute(
+                delete(Activity).where(
+                    Activity.kind.like("note\\_%"),
+                    Activity.entity_id.in_(select(Deal.id).where(Deal.nome.like(f"{_PREFIX} %"))),
                 )
             )
             session.execute(delete(Cost).where(Cost.descrizione.like(f"{_PREFIX} %")))
@@ -401,6 +438,7 @@ def test_a_raw_select_on_every_policied_table_agrees_with_the_lists(world: World
     # Both aziende in scope: everything but what belongs to neither.
     with _scoped(world, world.studio, world.estero) as session:
         assert _count(session, "customers") == 2
+        assert _count(session, "notes") == 6
         assert _count(session, "invoices") == 3
         assert _count(session, "costs") == 2  # the shared one is still «tutte»'s alone
         assert _count(session, "activities") == 5
@@ -430,6 +468,68 @@ def test_a_scope_with_no_azienda_left_sees_nothing_either(world: World) -> None:
     with _scoped(world) as session:
         assert _count(session, "customers") == 0
         assert _count(session, "activities") == 1  # the space-level row is everyone's
+
+
+def test_a_scoped_member_reads_and_writes_the_notes_of_their_aziende_alone(world: World) -> None:
+    """REB-879: the notes table follows its parent's visibility through `entita_visibile`.
+    Through the service a record of the other azienda is simply not there (a note cannot
+    be listed, added, edited or deleted on it); through a raw `INSERT` the policy itself
+    refuses the line being crossed."""
+    with session_factory(world.engine)() as session:
+        studio_deal = session.scalars(
+            select(Deal.id).where(Deal.nome == f"{_PREFIX} studio deal")
+        ).one()
+        estero_deal = session.scalars(
+            select(Deal.id).where(Deal.nome == f"{_PREFIX} estero deal")
+        ).one()
+        studio_note = session.scalars(
+            select(Note.id).where(Note.testo == f"{_PREFIX} studio deal")
+        ).one()
+    actor = Actor(id=world.user_id, type="user", role="collaboratore", aziende=(world.estero,))
+    with _scoped(world, world.estero) as session:
+        service = NoteService(session)
+        assert [n.testo for n in service.list_for_entity("deal", estero_deal, actor)] == [
+            f"{_PREFIX} estero deal"
+        ]
+        with pytest.raises(NotFound):
+            service.list_for_entity("deal", studio_deal, actor)
+        with pytest.raises(NotFound):
+            service.add("deal", studio_deal, NoteCreate(testo="fuori ambito"), actor)
+
+        mine = service.add("deal", estero_deal, NoteCreate(testo="nel mio ambito"), actor)
+        assert mine.fonte == "web" and mine.modificabile is True
+        assert service.update(mine.id, NoteUpdate(testo="cambiata"), actor).testo == "cambiata"
+        assert [r.testo for r in service.revisions(mine.id, actor)] == ["nel mio ambito"]
+        service.delete(mine.id, actor)
+        assert len(service.list_for_entity("deal", estero_deal, actor)) == 1
+
+        # A note of the other azienda is not there to edit or delete either.
+        with pytest.raises(NotFound):
+            service.update(studio_note, NoteUpdate(testo="no"), actor)
+        with pytest.raises(NotFound):
+            service.delete(studio_note, actor)
+        with pytest.raises(NotFound):
+            service.revisions(studio_note, actor)
+
+        # The raw line the policy itself guards.
+        with pytest.raises(DBAPIError) as refused:
+            session.execute(
+                text(
+                    "INSERT INTO notes (id, entity_type, entity_id, testo) "
+                    "VALUES (gen_random_uuid(), 'deal', :deal, 'fuori ambito')"
+                ),
+                {"deal": studio_deal},
+            )
+        assert is_policy_refusal(refused.value)
+    with _scoped(world, world.studio) as session:
+        assert [
+            n.testo
+            for n in NoteService(session).list_for_entity(
+                "deal",
+                studio_deal,
+                Actor(id=world.user_id, type="user", role="collaboratore", aziende=(world.studio,)),
+            )
+        ] == [f"{_PREFIX} studio deal"]
 
 
 def test_the_register_s_timeline_rows_follow_their_azienda(world: World) -> None:
@@ -1013,6 +1113,8 @@ FAST_PATH = {
     "contract_expenses",
     "contract_email_templates",
     "clause_notes",
+    "notes",
+    "note_revisions",
     "work_units",
     "approvals",
     "work_unit_transitions",
