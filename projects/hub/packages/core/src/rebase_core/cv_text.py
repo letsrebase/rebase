@@ -6,27 +6,47 @@ are a few dozen, so the work is cheap, and a text computed on the way out can ne
 behind the bytes it came from. No OCR: a scanned CV answers empty text and says so
 through `pagine`, so the caller can tell a scan from a card without a file.
 
+The parse runs in a child process (`cv_text_worker`), never in the caller's (REB-889): the
+file is whatever a stranger uploaded, and `pypdf` has no time or memory bound of its own.
+The parent waits `PARSE_TIMEOUT_SECONDS` and then kills the child; the child has an
+address-space limit, and applies the page and character ceilings while it reads. The
+choice over a thread with a deadline: a thread cannot be stopped, and one stuck in the
+parser holds the interpreter's lock for everybody else's requests. The cost is a fresh
+interpreter per CV (a fraction of a second), paid on a path that is a few dozen CVs, after
+the response or on an agent's request.
+
 Every failure of the PDF itself is the same answer, empty text with the pages it managed
 to count, never an exception: an encrypted file, a truncated one, a `%PDF` header on
-something that is not a PDF. `pypdf` raises its own `PdfReadError` for some
-malformations and plain `KeyError`/`ValueError`/`struct.error` for others, and a list
-of them is a list the next release breaks, which is why the `except` is that broad.
-The shape follows the one PigroCRM measured for its documents; it is written again here
-because the hub imports nothing from the CRM.
+something that is not a PDF. A parse that overruns its deadline, runs out of memory or
+dies is the same answer: the card writer then fails the CV as one with no readable text,
+and does not try the same bytes again. The shape follows the one PigroCRM measured for its
+documents; it is written again here because the hub imports nothing from the CRM.
 """
 
-from io import BytesIO
+import json
+import logging
+import subprocess
+import sys
 
 from pydantic import BaseModel
-from pypdf import PdfReader
 
-# A CV is two pages and a designer's portfolio-as-CV ten; twenty is past both, and it
-# keeps a mis-uploaded book from being read to the end for nothing.
-MAX_PAGES = 20
-# Characters, not tokens: two hundred thousand is fifty pages of dense prose, and an
-# MCP client that has to carry the answer in a context window has to stop somewhere.
-MAX_CHARS = 200_000
-TRUNCATION_MARKER = "\n\n[…] testo troncato"
+from rebase_core.cv_text_worker import MAX_CHARS, MAX_PAGES, TRUNCATION_MARKER
+
+__all__ = [
+    "MAX_CHARS",
+    "MAX_PAGES",
+    "PARSE_TIMEOUT_SECONDS",
+    "TRUNCATION_MARKER",
+    "CvText",
+    "extract_text",
+]
+
+logger = logging.getLogger(__name__)
+
+# Twenty pages of a normal CV read in a second or two; a file that takes twenty seconds is
+# not one. The card is written after the response and the MCP tool is an agent's call, so
+# the deadline can be generous without a visitor waiting on it.
+PARSE_TIMEOUT_SECONDS = 20.0
 
 
 class CvText(BaseModel):
@@ -40,28 +60,34 @@ class CvText(BaseModel):
     troncato: bool
 
 
-def extract_text(content: bytes, filename: str) -> CvText:
-    pages: list[str] = []
-    held = 0
-    total = 0
-    truncated = False
+def extract_text(
+    content: bytes, filename: str, *, timeout: float = PARSE_TIMEOUT_SECONDS
+) -> CvText:
+    unreadable = CvText(filename=filename, pagine=0, testo="", troncato=False)
     try:
-        reader = PdfReader(BytesIO(content))
-        total = len(reader.pages)
-        truncated = total > MAX_PAGES
-        for page in reader.pages[:MAX_PAGES]:
-            text = (page.extract_text() or "").strip()
-            if text:
-                pages.append(text)
-            held += len(text)
-            if held > MAX_CHARS:
-                truncated = True
-                break
-    except Exception:  # noqa: BLE001 - see the module docstring
-        return CvText(filename=filename, pagine=total, testo="", troncato=False)
-    joined = "\n".join(pages)
-    if len(joined) > MAX_CHARS:
-        joined = joined[:MAX_CHARS] + TRUNCATION_MARKER
-    elif truncated:
-        joined = joined + TRUNCATION_MARKER
-    return CvText(filename=filename, pagine=total, testo=joined, troncato=truncated)
+        done = subprocess.run(
+            [sys.executable, "-m", "rebase_core.cv_text_worker"],
+            input=content,
+            capture_output=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:  # `run` has killed the child
+        logger.warning("CV text not read: the parse took longer than %s seconds", timeout)
+        return unreadable
+    except OSError as error:
+        logger.warning("CV text not read: the parser did not start (%s)", type(error).__name__)
+        return unreadable
+    if done.returncode != 0:
+        logger.warning("CV text not read: the parser ended with status %s", done.returncode)
+        return unreadable
+    try:
+        read = json.loads(done.stdout)
+        return CvText(
+            filename=filename,
+            pagine=read["pagine"],
+            testo=read["testo"],
+            troncato=read["troncato"],
+        )
+    except (ValueError, KeyError, TypeError):
+        logger.warning("CV text not read: the parser's answer was not the shape")
+        return unreadable
