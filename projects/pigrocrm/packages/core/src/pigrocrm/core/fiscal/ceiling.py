@@ -60,14 +60,10 @@ from pigrocrm.core.money import ZERO_MONEY, round_money
 
 
 # The one definition of "an invoice that is revenue", duplicated rather than imported
-# from `analytics/repository.py`'s own `_revenue_filter`: that function is a private,
-# underscore-prefixed detail of a package `fiscal` should not reach across (`analytics`
-# already imports `fiscal`'s `FiscalProfileService`, and importing its *service*
-# module back from here would be the real cycle -- reaching only into
-# `analytics.repository` happens not to cycle today, but a private helper in another
-# package's repository is not a contract this module should depend on regardless).
-# Three comparisons cost nothing to rebuild -- the same reasoning `_revenue_filter`'s
-# own docstring gives for not sharing a module-level tuple either.
+# from `analytics/filters.py`'s `revenue_filter`: `analytics` already imports `fiscal`'s
+# `FiscalProfileService`, so reaching back into it from here is a package cycle waiting to
+# happen. Three comparisons cost nothing to rebuild, and `revenue_filter` says the same
+# about not sharing a module-level tuple.
 def _azienda_filter(azienda_id: UUID | None) -> tuple[ColumnElement[bool], ...]:
     """One azienda's register, or every one (REB-630, spec 2026-10-03 §1.9). A ceiling
     exists on one pack and a pack is one azienda's, so every caller on the service side

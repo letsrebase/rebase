@@ -21,7 +21,7 @@ from pigrocrm.core.pipeline.models import PipelineStage
 def _issued_filter() -> tuple[ColumnElement[bool], ...]:
     """The one definition of "an invoice that exists as a fiscal document".
 
-    Identical to `AnalyticsRepository._revenue_filter` on purpose and not imported from it:
+    Identical to `analytics.filters.revenue_filter` on purpose and not imported from it:
     that function answers "which invoices are revenue" and this one answers "which invoices
     are documents somebody owes on". They coincide today because both mean "a `fattura`
     that was issued and not annulled", and the day they stop coinciding a shared alias
