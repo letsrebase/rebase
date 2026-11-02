@@ -28,7 +28,7 @@ from rebase_core.http import urllib_call, urllib_engagements_call
 from rebase_core.mail import RecordingSender
 from rebase_core.match_words import PIGRO_NOT_CONFIGURED
 from rebase_core.models import AdminAction, Company, ContractDocument, Match, User
-from rebase_core.pigro import NOT_ANSWERING
+from rebase_core.pigro_door import NOT_ANSWERING
 from rebase_core.referrals import ReferralService
 
 PDF = b"%PDF-1.7\n1 0 obj<<>>endobj\n%%EOF\n"
@@ -1075,9 +1075,9 @@ def test_the_link_reads_through_the_long_seam_in_production(api_session: Session
     for http, expected in ((urllib_call, urllib_engagements_call), (fake, fake)):
         engagements = get_engagements(api_session, settings, http, None)
         signing = get_signing_factory(settings, FakeRenderer(), None, None, http)(api_session)
-        assert engagements.http is expected
+        assert engagements.door.http is expected
         assert signing.engagements is not None
-        assert signing.engagements.http is expected
+        assert signing.engagements.door.http is expected
 
 
 @pytest.mark.parametrize("partita_iva", [None, "", "   "])

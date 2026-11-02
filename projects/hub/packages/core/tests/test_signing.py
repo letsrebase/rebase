@@ -43,7 +43,7 @@ from rebase_core.documenso import (
     WebhookBody,
     outcome_from_webhook,
 )
-from rebase_core.engagements import CAUSE_REFUSED, CAUSE_TIMEOUT, EngagementService
+from rebase_core.engagements import EngagementService
 from rebase_core.errors import (
     DocumensoFailed,
     InvalidState,
@@ -56,8 +56,10 @@ from rebase_core.http import urllib_engagements_call
 from rebase_core.mail import EmailSender, Mail, RecordingSender, ResendSender
 from rebase_core.matches import MatchService
 from rebase_core.models import ContractDocument, Freelancer, Match
+from rebase_core.pigro_door import CAUSE_REFUSED, CAUSE_TIMEOUT
 from rebase_core.regimes import text_name
-from rebase_core.signing import SigningService, SweepResult, signing_from_settings
+from rebase_core.signing import SigningService, signing_from_settings
+from rebase_core.signing_recovery import SweepResult
 
 # 23:30 UTC on 30 September is already 1 October in Rome.
 SIGNED_AT = datetime(2026, 9, 30, 23, 30, tzinfo=UTC)
@@ -345,7 +347,7 @@ def test_a_draft_text_never_leaves(clean: Session) -> None:
     # The way out is named too (REB-406).
     assert "REBASE_CONTRACTS_ALLOW_DRAFT" in caught.value.message
     assert fake.calls == [] and sender.sent == []
-    assert _matches(clean, renderer).get(match.id).stato == "bozza"
+    assert _matches(clean, renderer).reads.get(match.id).stato == "bozza"
     assert _framework_of(clean, freelancer_id).stato == "generato"
 
 
@@ -404,7 +406,7 @@ def test_documenso_refusing_the_distribution_marks_nothing_sent(clean: Session) 
         None,
         None,
     )
-    assert _matches(clean, renderer).get(match.id).stato == "bozza"
+    assert _matches(clean, renderer).reads.get(match.id).stato == "bozza"
     assert sender.sent == []
     again = signing.send_match(match.id, admin_id)
     assert again.inviato == "quadro"
@@ -433,7 +435,7 @@ def test_without_documenso_or_without_mail_the_send_says_why(clean: Session) -> 
         _signing(clean, renderer, None, RecordingSender()).send_match(match.id, admin_id)
     with pytest.raises(SigningUnavailable, match="email"):
         _signing(clean, renderer, FakeDocumenso(), None).send_match(match.id, admin_id)
-    assert _matches(clean, renderer).get(match.id).stato == "bozza"
+    assert _matches(clean, renderer).reads.get(match.id).stato == "bozza"
 
 
 def test_a_cancelled_match_has_nothing_to_send(clean: Session) -> None:
@@ -567,7 +569,7 @@ def test_a_malformed_signer_setting_does_not_break_construction_or_a_read(clean:
         now=lambda: NOW,
     )
 
-    assert signing.matches.get(match.id).stato == "bozza"
+    assert signing.matches.reads.get(match.id).stato == "bozza"
 
 
 def test_a_malformed_signer_setting_503s_only_the_send_it_breaks(clean: Session) -> None:
@@ -759,7 +761,7 @@ def test_a_forged_completion_for_an_envelope_still_pending_leaves_it_inviato_and
     assert signed is not None
     before = len(sender.sent)
 
-    signing.finish(signed)
+    signing.recovery.finish(signed)
 
     quadro = _framework_of(clean, freelancer_id)
     assert (quadro.stato, quadro.signed_at, quadro.signed_pdf) == ("inviato", None, None)
@@ -779,11 +781,11 @@ def test_the_next_finish_after_the_fake_is_actually_signed_confirms_and_signs_it
     signing = _signing(clean, renderer, fake, sender)
     signed = signing.apply(_webhook(fake, envelope, "DOCUMENT_COMPLETED"))
     assert signed is not None
-    signing.finish(signed)
+    signing.recovery.finish(signed)
     assert _framework_of(clean, freelancer_id).stato == "inviato"
 
     fake.sign(envelope, SIGNED_AT)
-    signing.finish(signed)
+    signing.recovery.finish(signed)
 
     quadro = _framework_of(clean, freelancer_id)
     assert (quadro.stato, quadro.signed_at) == ("firmato", SIGNED_AT)
@@ -801,7 +803,7 @@ def test_the_sweep_picks_up_an_inviato_document_whose_envelope_is_completed(
     envelope = _envelope_of(_framework_of(clean, freelancer_id))
     fake.sign(envelope, SIGNED_AT)
 
-    result = _signing(clean, renderer, fake, sender).sweep()
+    result = _signing(clean, renderer, fake, sender).recovery.sweep()
 
     assert result == SweepResult(touched=1, unconfirmed=0)
     quadro = _framework_of(clean, freelancer_id)
@@ -820,7 +822,7 @@ def test_the_sweep_recovers_a_rejection_the_webhook_never_delivered(clean: Sessi
     envelope = _envelope_of(_framework_of(clean, freelancer_id))
     fake.reject(envelope, "La PEC indicata non è la mia")
 
-    result = _signing(clean, renderer, fake, sender).sweep()
+    result = _signing(clean, renderer, fake, sender).recovery.sweep()
 
     assert result == SweepResult(touched=1, unconfirmed=0)
     quadro = _framework_of(clean, freelancer_id)
@@ -838,7 +840,7 @@ def test_the_sweep_recovers_a_cancellation_the_webhook_never_delivered(clean: Se
     envelope = _envelope_of(_framework_of(clean, freelancer_id))
     fake.client().cancel(envelope, "Annullato a mano.")
 
-    result = _signing(clean, renderer, fake, sender).sweep()
+    result = _signing(clean, renderer, fake, sender).recovery.sweep()
 
     assert result == SweepResult(touched=1, unconfirmed=0)
     quadro = _framework_of(clean, freelancer_id)
@@ -861,7 +863,7 @@ def test_documenso_unreachable_during_the_confirmation_leaves_it_inviato_and_rai
     assert signed is not None
     fake.down("get")
 
-    moved = signing.finish(signed)
+    moved = signing.recovery.finish(signed)
 
     assert moved is False
     quadro = _framework_of(clean, freelancer_id)
@@ -885,7 +887,7 @@ def test_no_documenso_configured_during_the_confirmation_leaves_it_inviato_and_r
     )
     assert signed is not None
 
-    moved = _signing(clean, renderer, None, sender).finish(signed)
+    moved = _signing(clean, renderer, None, sender).recovery.finish(signed)
 
     assert moved is False
     quadro = _framework_of(clean, freelancer_id)
@@ -985,7 +987,7 @@ def test_apply_locks_the_freelancer_row_before_the_document(
     clean.expire_all()
     assert _letter_of(clean, match.id).stato == "inviato"
 
-    _signing(clean, renderer, fake, sender).finish(letter.id)
+    _signing(clean, renderer, fake, sender).recovery.finish(letter.id)
 
     clean.expire_all()
     assert _letter_of(clean, match.id).stato == "firmato"
@@ -1015,7 +1017,7 @@ def test_finish_confirms_only_after_locking_the_freelancer_row(
     gate, worker_session, probe = factory(), factory(), factory()
 
     def run_finish() -> None:
-        _signing(worker_session, renderer, fake, sender).finish(signed)
+        _signing(worker_session, renderer, fake, sender).recovery.finish(signed)
 
     try:
         gate.execute(select(Freelancer.id).where(Freelancer.id == freelancer_id).with_for_update())
@@ -1068,7 +1070,7 @@ def test_finish_releases_a_waiting_letter_only_after_locking_the_freelancer_row(
     gate, worker_session, probe = factory(), factory(), factory()
 
     def run_finish() -> None:
-        _signing(worker_session, renderer, fake, sender).finish(signed)
+        _signing(worker_session, renderer, fake, sender).recovery.finish(signed)
 
     try:
         gate.execute(select(Freelancer.id).where(Freelancer.id == freelancer_id).with_for_update())
@@ -1164,8 +1166,8 @@ def test_finish_downloads_and_mails_the_signed_copy_once(clean: Session) -> None
     assert signed is not None
     before = len(sender.sent)
 
-    signing.finish(signed)
-    signing.finish(signed)
+    signing.recovery.finish(signed)
+    signing.recovery.finish(signed)
 
     quadro = _framework_of(clean, freelancer_id)
     assert quadro.signed_pdf == fake.signed_pdf(envelope)
@@ -1194,10 +1196,10 @@ def test_a_download_that_fails_is_done_by_the_next_finish(clean: Session) -> Non
     assert signed is not None
     fake.fail("download", 500, "Internal server error")
 
-    signing.finish(signed)
+    signing.recovery.finish(signed)
     assert _framework_of(clean, freelancer_id).signed_pdf is None
 
-    signing.finish(signed)
+    signing.recovery.finish(signed)
     assert _framework_of(clean, freelancer_id).signed_pdf == fake.signed_pdf(envelope)
 
 
@@ -1216,7 +1218,7 @@ def test_a_framework_signed_late_at_night_releases_its_letter_with_the_rome_date
     signed = signing.apply(_webhook(fake, envelope, "DOCUMENT_COMPLETED"))
     assert signed is not None
 
-    signing.finish(signed)
+    signing.recovery.finish(signed)
 
     letter = _letter_of(clean, match.id)
     assert letter.stato == "inviato"
@@ -1242,7 +1244,7 @@ def test_a_released_letters_refused_mail_still_names_it_in_the_trail(clean: Sess
     signed = signing.apply(_webhook(fake, envelope, "DOCUMENT_COMPLETED"))
     assert signed is not None
 
-    signing.finish(signed)
+    signing.recovery.finish(signed)
 
     letter = _letter_of(clean, match.id)
     assert letter.stato == "inviato"
@@ -1261,10 +1263,10 @@ def test_a_release_documenso_refuses_waits_for_the_next_finish(clean: Session) -
     assert signed is not None
     fake.fail("create", 500, "Internal server error")
 
-    signing.finish(signed)
+    signing.recovery.finish(signed)
     assert _letter_of(clean, match.id).stato == "in_attesa"
 
-    signing.finish(signed)
+    signing.recovery.finish(signed)
     assert _letter_of(clean, match.id).stato == "inviato"
 
 
@@ -1280,7 +1282,7 @@ def test_a_draft_matchs_letter_is_not_released(clean: Session) -> None:
     signed = signing.apply(_webhook(fake, envelope, "DOCUMENT_COMPLETED"))
     assert signed is not None
 
-    signing.finish(signed)
+    signing.recovery.finish(signed)
 
     assert _letter_of(clean, sent.id).stato == "inviato"
     assert _letter_of(clean, draft.id).stato == "in_attesa"
@@ -1297,7 +1299,7 @@ def test_a_signed_letter_turns_its_match_active(clean: Session) -> None:
     signed = signing.apply(_webhook(fake, envelope, "DOCUMENT_COMPLETED"))
     assert signed is not None
 
-    signing.finish(signed)
+    signing.recovery.finish(signed)
 
     clean.expire_all()
     assert clean.get(Match, match.id).stato == "attivo"  # type: ignore[union-attr]
@@ -1357,7 +1359,7 @@ def test_a_release_with_no_mail_sender_leaves_the_letters_waiting(clean: Session
     assert signed is not None
     envelopes_before = len(fake.envelopes)
 
-    _signing(clean, renderer, fake, None).finish(signed)
+    _signing(clean, renderer, fake, None).recovery.finish(signed)
 
     assert _letter_of(clean, match.id).stato == "in_attesa"
     assert len(fake.envelopes) == envelopes_before
@@ -1379,7 +1381,7 @@ def test_a_refused_signed_copy_mail_is_retried_by_the_next_finish_and_then_not_a
     signed = refused_signing.apply(_webhook(fake, envelope, "DOCUMENT_COMPLETED"))
     assert signed is not None
 
-    refused_signing.finish(signed)
+    refused_signing.recovery.finish(signed)
 
     quadro = _framework_of(clean, freelancer_id)
     assert quadro.signed_pdf == fake.signed_pdf(envelope)
@@ -1389,7 +1391,7 @@ def test_a_refused_signed_copy_mail_is_retried_by_the_next_finish_and_then_not_a
 
     recording = RecordingSender()
     working_signing = _signing(clean, renderer, fake, recording)
-    working_signing.finish(signed)
+    working_signing.recovery.finish(signed)
 
     quadro = _framework_of(clean, freelancer_id)
     assert (quadro.signed_copy_to_freelancer_at, quadro.signed_copy_to_rebase_at) == (NOW, NOW)
@@ -1401,7 +1403,7 @@ def test_a_refused_signed_copy_mail_is_retried_by_the_next_finish_and_then_not_a
         (CONTRACTS_MAIL, "Firmato da Ada Lovelace: contratto quadro rebase"),
     ]
 
-    working_signing.finish(signed)
+    working_signing.recovery.finish(signed)
 
     assert [mail for mail in recording.sent if mail.attachments] == retried
 
@@ -1420,9 +1422,9 @@ def test_one_recipient_refusing_forever_does_not_stop_the_others_mail(clean: Ses
     signed = signing.apply(_webhook(fake, envelope, "DOCUMENT_COMPLETED"))
     assert signed is not None
 
-    signing.finish(signed)
-    signing.finish(signed)
-    signing.finish(signed)
+    signing.recovery.finish(signed)
+    signing.recovery.finish(signed)
+    signing.recovery.finish(signed)
 
     quadro = _framework_of(clean, freelancer_id)
     assert quadro.signed_copy_to_freelancer_at is None
@@ -1448,14 +1450,14 @@ def test_the_retry_mails_only_the_recipient_that_had_failed(clean: Session) -> N
     refused_signing = _signing(clean, renderer, fake, refusing)
     signed = refused_signing.apply(_webhook(fake, envelope, "DOCUMENT_COMPLETED"))
     assert signed is not None
-    refused_signing.finish(signed)
+    refused_signing.recovery.finish(signed)
     quadro = _framework_of(clean, freelancer_id)
     assert quadro.signed_copy_to_freelancer_at is None
     assert quadro.signed_copy_to_rebase_at == NOW
 
     recording = RecordingSender()
     working_signing = _signing(clean, renderer, fake, recording)
-    working_signing.finish(signed)
+    working_signing.recovery.finish(signed)
 
     retried = [mail for mail in recording.sent if mail.attachments]
     assert [mail.to for mail in retried] == ["ada@studio.it"]
@@ -1496,7 +1498,7 @@ def test_two_concurrent_finishes_download_and_mail_the_signed_copy_once(
     before = len(sender.sent)
 
     def call_finish(session: Session) -> None:
-        _signing(session, renderer, fake, sender).finish(signed)
+        _signing(session, renderer, fake, sender).recovery.finish(signed)
 
     try:
         gate.execute(
@@ -1551,7 +1553,7 @@ def test_sweep_finishes_a_signature_a_crashed_background_task_left_undone(
     assert _framework_of(clean, freelancer_id).signed_pdf is None
     assert _letter_of(clean, match.id).stato == "in_attesa"
 
-    result = signing.sweep()
+    result = signing.recovery.sweep()
 
     assert result == SweepResult(touched=1, unconfirmed=0)
     quadro = _framework_of(clean, freelancer_id)
@@ -1577,7 +1579,7 @@ def test_sweep_releases_a_waiting_letter_of_an_already_finished_framework(
     signing = _signing(clean, renderer, fake, sender)
     signed = signing.apply(_webhook(fake, envelope, "DOCUMENT_COMPLETED"))
     assert signed is not None
-    signing.finish(signed)
+    signing.recovery.finish(signed)
     quadro = _framework_of(clean, freelancer_id)
     assert quadro.signed_pdf == fake.signed_pdf(envelope)
     assert (quadro.signed_copy_to_freelancer_at, quadro.signed_copy_to_rebase_at) == (NOW, NOW)
@@ -1594,7 +1596,7 @@ def test_sweep_releases_a_waiting_letter_of_an_already_finished_framework(
     second_match.stato = "in_firma"
     clean.commit()
 
-    result = signing.sweep()
+    result = signing.recovery.sweep()
 
     # 1, not 2: the first match's own letter, released by the `finish` above, is
     # itself `inviato` with an envelope still pending on Documenso, so REB-431's wider
@@ -1613,7 +1615,9 @@ def test_sweep_with_nothing_left_to_do_returns_zero(clean: Session) -> None:
     renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
     _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
 
-    assert _signing(clean, renderer, fake, sender).sweep() == SweepResult(touched=0, unconfirmed=0)
+    assert _signing(clean, renderer, fake, sender).recovery.sweep() == SweepResult(
+        touched=0, unconfirmed=0
+    )
     assert _framework_of(clean, freelancer_id).stato == "inviato"
 
 
@@ -1632,7 +1636,7 @@ def test_sweep_does_not_keep_counting_a_document_stuck_on_a_failing_download(
     signing = _signing(clean, renderer, fake, sender)
     fake.fail("download", 500, "Internal server error")
 
-    first = signing.sweep()
+    first = signing.recovery.sweep()
 
     # the confirmation to `firmato` itself moved something, and it succeeded, so
     # unconfirmed stays zero even though the download that follows keeps failing.
@@ -1642,7 +1646,7 @@ def test_sweep_does_not_keep_counting_a_document_stuck_on_a_failing_download(
 
     fake.fail("download", 500, "Internal server error")
 
-    second = signing.sweep()
+    second = signing.recovery.sweep()
 
     # already confirmed; only the still-failing download was tried, and that is not a
     # confirmation failure, so unconfirmed stays zero too.
@@ -1665,7 +1669,7 @@ def test_sweep_counts_an_unreachable_documenso_as_unconfirmed_not_touched(
     fake.sign(envelope, SIGNED_AT)
     fake.down("get")
 
-    result = _signing(clean, renderer, fake, sender).sweep()
+    result = _signing(clean, renderer, fake, sender).recovery.sweep()
 
     assert result == SweepResult(touched=0, unconfirmed=1)
     assert _framework_of(clean, freelancer_id).stato == "inviato"
@@ -1682,7 +1686,7 @@ def test_sweep_counts_a_refused_token_as_unconfirmed_not_touched(clean: Session)
     fake.sign(envelope, SIGNED_AT)
     fake.fail("get", 401, "Invalid session or API token.")
 
-    result = _signing(clean, renderer, fake, sender).sweep()
+    result = _signing(clean, renderer, fake, sender).recovery.sweep()
 
     assert result == SweepResult(touched=0, unconfirmed=1)
     assert _framework_of(clean, freelancer_id).stato == "inviato"
@@ -1698,7 +1702,7 @@ def test_sweep_on_an_environment_with_no_documenso_configured_counts_nothing(
     renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
     _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
 
-    result = _signing(clean, renderer, None, sender).sweep()
+    result = _signing(clean, renderer, None, sender).recovery.sweep()
 
     assert result == SweepResult(touched=0, unconfirmed=0)
 
@@ -1764,7 +1768,7 @@ def test_confirm_completion_marks_the_match_da_collegare(clean: Session) -> None
     match_id, letter, envelope = _letter_out(clean, renderer, fake, sender)
     fake.sign(envelope, SIGNED_AT)
 
-    assert _signing(clean, renderer, fake, sender)._confirm_completion(letter.id) is True
+    assert _signing(clean, renderer, fake, sender).recovery._confirm_completion(letter.id) is True
 
     match = _match_row(clean, match_id)
     assert (match.stato, match.pigro_stato, match.pigro_attempted_at) == (
@@ -1784,7 +1788,7 @@ def test_finish_links_a_match_that_just_turned_active(clean: Session) -> None:
     engagements = SpyEngagements(clean, http)
     signing = _signing(clean, renderer, fake, sender, engagements=engagements)
 
-    assert signing.finish(letter.id) is True
+    assert signing.recovery.finish(letter.id) is True
 
     match = _match_row(clean, match_id)
     assert (match.stato, match.pigro_stato, match.pigro_url) == ("attivo", "collegato", DEAL_URL)
@@ -1794,7 +1798,7 @@ def test_finish_links_a_match_that_just_turned_active(clean: Session) -> None:
     stored = _letter_of(clean, match_id)
     assert (stored.stato, stored.signed_pdf) == ("firmato", fake.signed_pdf(envelope))
 
-    signing.finish(letter.id)
+    signing.recovery.finish(letter.id)
 
     assert engagements.asked == [match_id]
     assert len(http.calls) == 1
@@ -1809,7 +1813,9 @@ def test_finish_does_not_link_a_refused_letter(clean: Session) -> None:
     http = RecordedPigro([(201, linked_body())])
     engagements = SpyEngagements(clean, http)
 
-    assert _signing(clean, renderer, fake, sender, engagements=engagements).finish(letter.id)
+    assert _signing(clean, renderer, fake, sender, engagements=engagements).recovery.finish(
+        letter.id
+    )
 
     match = _match_row(clean, match_id)
     assert (match.stato, match.pigro_stato) == ("in_firma", None)
@@ -1828,7 +1834,7 @@ def test_refresh_does_not_link(clean: Session) -> None:
     http = RecordedPigro([(201, linked_body())])
     engagements = SpyEngagements(clean, http)
 
-    read = _signing(clean, renderer, fake, sender, engagements=engagements).refresh(letter.id)
+    read = _signing(clean, renderer, fake, sender, engagements=engagements).admin.refresh(letter.id)
 
     assert read.stato == "firmato"
     match = _match_row(clean, match_id)
@@ -1854,7 +1860,9 @@ def test_finish_survives_any_exception_from_the_link(clean: Session) -> None:
     fake.sign(envelope, SIGNED_AT)
     engagements = RaisingEngagements(clean, RecordedPigro([(201, linked_body())]))
 
-    assert _signing(clean, renderer, fake, sender, engagements=engagements).finish(letter.id)
+    assert _signing(clean, renderer, fake, sender, engagements=engagements).recovery.finish(
+        letter.id
+    )
 
     assert engagements.asked == [match_id]
     match = _match_row(clean, match_id)
@@ -1870,7 +1878,9 @@ def test_finish_leaves_a_link_that_fails_for_the_sweep(clean: Session) -> None:
     fake.sign(envelope, SIGNED_AT)
     engagements = FailingEngagements(clean, RecordedPigro([(201, linked_body())]))
 
-    assert _signing(clean, renderer, fake, sender, engagements=engagements).finish(letter.id)
+    assert _signing(clean, renderer, fake, sender, engagements=engagements).recovery.finish(
+        letter.id
+    )
 
     assert engagements.asked == [match_id]
     match = _match_row(clean, match_id)
@@ -1884,7 +1894,7 @@ def test_sweep_retries_errore_matches(clean: Session) -> None:
     renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
     match_id, letter, envelope = _letter_out(clean, renderer, fake, sender)
     fake.sign(envelope, SIGNED_AT)
-    _signing(clean, renderer, fake, sender).finish(letter.id)
+    _signing(clean, renderer, fake, sender).recovery.finish(letter.id)
     match = _match_row(clean, match_id)
     match.pigro_stato, match.pigro_errore = "errore", CAUSE_TIMEOUT
     clean.commit()
@@ -1892,7 +1902,7 @@ def test_sweep_retries_errore_matches(clean: Session) -> None:
 
     result = _signing(
         clean, renderer, fake, sender, engagements=SpyEngagements(clean, http)
-    ).sweep()
+    ).recovery.sweep()
 
     assert result == SweepResult(touched=0, unconfirmed=0, linked=1, link_failed=0)
     match = _match_row(clean, match_id)
@@ -1913,7 +1923,7 @@ def test_sweep_links_a_signature_it_confirms_once_and_counts_a_failure(clean: Se
     http = RecordedPigro([ConnectionRefusedError("refused")])
     engagements = SpyEngagements(clean, http)
 
-    result = _signing(clean, renderer, fake, sender, engagements=engagements).sweep()
+    result = _signing(clean, renderer, fake, sender, engagements=engagements).recovery.sweep()
 
     assert result == SweepResult(touched=1, unconfirmed=0, linked=0, link_failed=1)
     assert engagements.asked == [match_id]
@@ -1933,7 +1943,7 @@ def test_sweep_without_engagements_links_nothing(clean: Session) -> None:
     match_id, _letter, envelope = _letter_out(clean, renderer, fake, sender)
     fake.sign(envelope, SIGNED_AT)
 
-    result = _signing(clean, renderer, fake, sender).sweep()
+    result = _signing(clean, renderer, fake, sender).recovery.sweep()
 
     assert result == SweepResult(touched=1, unconfirmed=0, linked=0, link_failed=0)
     match = _match_row(clean, match_id)
@@ -1964,7 +1974,9 @@ def test_refresh_applies_a_signature_the_webhook_never_delivered(clean: Session)
     renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
     _admin_id, freelancer_id, match, envelope = _signed_framework(clean, renderer, fake, sender)
 
-    read = _signing(clean, renderer, fake, sender).refresh(_framework_of(clean, freelancer_id).id)
+    read = _signing(clean, renderer, fake, sender).admin.refresh(
+        _framework_of(clean, freelancer_id).id
+    )
 
     assert (read.stato, read.attivo, read.ha_pdf_firmato, read.signed_at) == (
         "firmato",
@@ -1990,11 +2002,11 @@ def test_refresh_of_a_firmato_document_with_no_stored_copy_downloads_and_stores_
     signed = signing.apply(_webhook(fake, envelope, "DOCUMENT_COMPLETED"))
     assert signed is not None
     fake.fail("download", 500, "Internal server error")
-    signing.finish(signed)
+    signing.recovery.finish(signed)
     quadro = _framework_of(clean, freelancer_id)
     assert (quadro.stato, quadro.signed_pdf) == ("firmato", None)
 
-    read = signing.refresh(quadro.id)
+    read = signing.admin.refresh(quadro.id)
 
     assert (read.stato, read.ha_pdf_firmato) == ("firmato", True)
     assert _framework_of(clean, freelancer_id).signed_pdf == fake.signed_pdf(envelope)
@@ -2006,7 +2018,9 @@ def test_refresh_of_a_document_still_waiting_changes_nothing(clean: Session) -> 
     _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
     mails = len(sender.sent)
 
-    read = _signing(clean, renderer, fake, sender).refresh(_framework_of(clean, freelancer_id).id)
+    read = _signing(clean, renderer, fake, sender).admin.refresh(
+        _framework_of(clean, freelancer_id).id
+    )
 
     assert read.stato == "inviato"
     assert len(sender.sent) == mails
@@ -2017,7 +2031,7 @@ def test_refresh_of_a_document_that_never_left_says_so(clean: Session) -> None:
     renderer = FakeRenderer(draft=False)
     _draft(clean, renderer, freelancer_id, company_id, admin_id)
     with pytest.raises(InvalidState, match="mai partito"):
-        _signing(clean, renderer, FakeDocumenso(), RecordingSender()).refresh(
+        _signing(clean, renderer, FakeDocumenso(), RecordingSender()).admin.refresh(
             _framework_of(clean, freelancer_id).id
         )
 
@@ -2028,7 +2042,7 @@ def test_resend_mails_the_same_link_again_and_leaves_a_trace(clean: Session) -> 
     _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
     quadro = _framework_of(clean, freelancer_id)
 
-    _signing(clean, renderer, fake, sender).resend_mail(quadro.id, admin_id)
+    _signing(clean, renderer, fake, sender).admin.resend_mail(quadro.id, admin_id)
 
     first, again = sender.sent[-2:]
     assert first.subject == again.subject == "Da firmare: contratto quadro rebase"
@@ -2044,7 +2058,7 @@ def test_resend_with_a_refusing_sender_raises_and_records_no_trail(clean: Sessio
     quadro = _framework_of(clean, freelancer_id)
 
     with pytest.raises(SigningUnavailable, match="non è partita"):
-        _signing(clean, renderer, fake, RefusingSender()).resend_mail(quadro.id, admin_id)
+        _signing(clean, renderer, fake, RefusingSender()).admin.resend_mail(quadro.id, admin_id)
 
     assert AdminActionService(clean).timeline("freelancer", freelancer_id) == []
 
@@ -2054,7 +2068,7 @@ def test_resend_refuses_a_document_that_is_not_waiting(clean: Session) -> None:
     renderer = FakeRenderer(draft=False)
     _draft(clean, renderer, freelancer_id, company_id, admin_id)
     with pytest.raises(InvalidState, match="aspetta la firma"):
-        _signing(clean, renderer, FakeDocumenso(), RecordingSender()).resend_mail(
+        _signing(clean, renderer, FakeDocumenso(), RecordingSender()).admin.resend_mail(
             _framework_of(clean, freelancer_id).id, admin_id
         )
 
@@ -2067,7 +2081,7 @@ def test_cancelling_a_framework_out_for_signature_cancels_its_envelope_first(
     match = _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
     envelope = _envelope_of(_framework_of(clean, freelancer_id))
 
-    read = _signing(clean, renderer, fake, sender).cancel_document(
+    read = _signing(clean, renderer, fake, sender).admin.cancel_document(
         _framework_of(clean, freelancer_id).id, admin_id
     )
 
@@ -2085,7 +2099,7 @@ def test_a_cancel_documenso_refuses_leaves_the_document_as_it_was(clean: Session
     renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
     admin_id, freelancer_id, _match, _envelope = _signed_framework(clean, renderer, fake, sender)
     with pytest.raises(DocumensoFailed, match="«Aggiorna stato»") as raised:
-        _signing(clean, renderer, fake, sender).cancel_document(
+        _signing(clean, renderer, fake, sender).admin.cancel_document(
             _framework_of(clean, freelancer_id).id, admin_id
         )
     assert "Only pending documents can be cancelled" in raised.value.detail
@@ -2104,7 +2118,7 @@ def test_a_cancel_when_documenso_is_unreachable_keeps_its_own_sentence(clean: Se
     fake.down("cancel")
 
     with pytest.raises(DocumensoFailed) as raised:
-        _signing(clean, renderer, fake, sender).cancel_document(
+        _signing(clean, renderer, fake, sender).admin.cancel_document(
             _framework_of(clean, freelancer_id).id, admin_id
         )
 
@@ -2125,7 +2139,7 @@ def test_cancelling_a_matchs_letter_documenso_refuses_leaves_it_as_it_was(
     fake.sign(envelope, SIGNED_AT)
 
     with pytest.raises(DocumensoFailed, match="«Aggiorna stato»") as raised:
-        _signing(clean, renderer, fake, sender).cancel_match(match.id, admin_id)
+        _signing(clean, renderer, fake, sender).admin.cancel_match(match.id, admin_id)
 
     assert "Only pending documents can be cancelled" in raised.value.detail
     assert _letter_of(clean, match.id).stato == "inviato"
@@ -2140,7 +2154,7 @@ def test_a_letter_is_cancelled_with_its_match_not_alone(clean: Session) -> None:
     renderer = FakeRenderer(draft=False)
     match = _draft(clean, renderer, freelancer_id, company_id, admin_id)
     with pytest.raises(InvalidState, match="con il suo match"):
-        _signing(clean, renderer, FakeDocumenso(), RecordingSender()).cancel_document(
+        _signing(clean, renderer, FakeDocumenso(), RecordingSender()).admin.cancel_document(
             _letter_of(clean, match.id).id, admin_id
         )
 
@@ -2152,7 +2166,7 @@ def test_cancelling_a_match_in_signature_cancels_its_letters_envelope(clean: Ses
     match = _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
     envelope = _envelope_of(_letter_of(clean, match.id))
 
-    read = _signing(clean, renderer, fake, sender).cancel_match(match.id, admin_id)
+    read = _signing(clean, renderer, fake, sender).admin.cancel_match(match.id, admin_id)
 
     assert (read.stato, read.lettera.stato) == ("annullato", "annullato")
     assert _letter_of(clean, match.id).cancel_reason == "Annullato da rebase con il suo match."
@@ -2164,7 +2178,7 @@ def test_cancelling_a_draft_match_needs_no_documenso(clean: Session) -> None:
     admin_id, freelancer_id, company_id = _setup(clean)
     renderer = FakeRenderer(draft=False)
     match = _draft(clean, renderer, freelancer_id, company_id, admin_id)
-    read = _signing(clean, renderer, None, RecordingSender()).cancel_match(match.id, admin_id)
+    read = _signing(clean, renderer, None, RecordingSender()).admin.cancel_match(match.id, admin_id)
     assert read.stato == "annullato"
 
 
@@ -2176,14 +2190,17 @@ def test_a_notice_ends_the_active_framework_and_the_next_match_writes_a_new_one(
     renderer = FakeRenderer(draft=False)
     signing = _signing(clean, renderer, FakeDocumenso(), RecordingSender())
 
-    read = signing.record_notice(active.id, admin_id)
+    read = signing.admin.record_notice(active.id, admin_id)
 
     assert (read.stato, read.attivo, read.notice_at) == ("disdetto", False, NOW)
-    assert _matches(clean, renderer).prefill(freelancer_id, company_id).quadro_necessario is True
+    assert (
+        _matches(clean, renderer).drafts.prefill(freelancer_id, company_id).quadro_necessario
+        is True
+    )
     with pytest.raises(InvalidState, match="attivo"):
-        signing.record_notice(active.id, admin_id)
+        signing.admin.record_notice(active.id, admin_id)
     with pytest.raises(NotFound):
-        signing.record_notice(UUID("00000000-0000-7000-8000-000000000000"), admin_id)
+        signing.admin.record_notice(UUID("00000000-0000-7000-8000-000000000000"), admin_id)
 
 
 # ---- the cancellation mail (REB-407) ------------------------------------------------------
@@ -2196,7 +2213,7 @@ def test_cancelling_a_sent_framework_tells_the_freelancer_by_mail(clean: Session
     quadro = _framework_of(clean, freelancer_id)
     before = len(sender.sent)
 
-    _signing(clean, renderer, fake, sender).cancel_document(quadro.id, admin_id)
+    _signing(clean, renderer, fake, sender).admin.cancel_document(quadro.id, admin_id)
 
     cancellations = [mail for mail in sender.sent[before:] if "annullat" in mail.subject.lower()]
     assert len(cancellations) == 1
@@ -2210,7 +2227,7 @@ def test_cancelling_a_document_never_sent_mails_nobody(clean: Session) -> None:
     quadro = _framework_of(clean, freelancer_id)
     sender = RecordingSender()
 
-    _signing(clean, renderer, None, sender).cancel_document(quadro.id, admin_id)
+    _signing(clean, renderer, None, sender).admin.cancel_document(quadro.id, admin_id)
 
     assert sender.sent == []
 
@@ -2222,7 +2239,7 @@ def test_a_refused_cancellation_mail_does_not_undo_the_cancel(clean: Session) ->
     quadro = _framework_of(clean, freelancer_id)
     sender = RefusingSender()
 
-    read = _signing(clean, renderer, fake, sender).cancel_document(quadro.id, admin_id)
+    read = _signing(clean, renderer, fake, sender).admin.cancel_document(quadro.id, admin_id)
 
     assert read.stato == "annullato"
     assert len(sender.sent) == 1
@@ -2235,7 +2252,7 @@ def test_cancelling_a_match_mails_only_a_letter_that_had_already_left(clean: Ses
     match = _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
     before = len(sender.sent)
 
-    _signing(clean, renderer, fake, sender).cancel_match(match.id, admin_id)
+    _signing(clean, renderer, fake, sender).admin.cancel_match(match.id, admin_id)
 
     cancellations = [mail for mail in sender.sent[before:] if "annullat" in mail.subject.lower()]
     assert len(cancellations) == 1
@@ -2247,7 +2264,7 @@ def test_cancelling_a_match_whose_letter_still_waits_mails_nobody(clean: Session
     match = _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
     before = len(sender.sent)
 
-    read = _signing(clean, renderer, fake, sender).cancel_match(match.id, admin_id)
+    read = _signing(clean, renderer, fake, sender).admin.cancel_match(match.id, admin_id)
 
     assert read.lettera.stato == "annullato"
     assert len(sender.sent) == before
@@ -2296,7 +2313,7 @@ def test_a_send_and_a_cancel_of_the_same_draft_never_leave_a_letter_annulled_wit
         try:
             results["cancel"] = _signing(
                 canceller_session, renderer, fake, RecordingSender()
-            ).cancel_match(match.id, admin_id)
+            ).admin.cancel_match(match.id, admin_id)
         except InvalidState as exc:
             results["cancel"] = exc
         except BaseException as exc:  # noqa: BLE001 -- surfaced on the main thread below
@@ -2371,13 +2388,13 @@ def test_signing_from_settings_builds_the_service_this_environment_configures(
     assert service.documenso.api.startswith("http://documenso.test")
     assert isinstance(service.sender, ResendSender)
     assert (service.contracts_mail, service.allow_draft) == (CONTRACTS_MAIL, True)
-    assert service._signer() == {"rebase-sede": "Milano"}
+    assert service.require_signer() == {"rebase-sede": "Milano"}
     # The link to Pigro (REB-499): the same session and mail sender, and the seam with
     # time for a new space to be provisioned.
     engagements = service.engagements
     assert isinstance(engagements, EngagementService)
     assert (engagements.session, engagements.settings) == (clean, configured)
-    assert (engagements.http, engagements.sender) == (urllib_engagements_call, service.sender)
+    assert (engagements.door.http, engagements.sender) == (urllib_engagements_call, service.sender)
 
     # What the API injects wins, `None` included: signing off stays off.
     sender = RecordingSender()
@@ -2387,7 +2404,7 @@ def test_signing_from_settings_builds_the_service_this_environment_configures(
     )(clean)
     assert (overridden.documenso, overridden.sender) == (None, sender)
     assert overridden.engagements is not None
-    assert (overridden.engagements.http, overridden.engagements.sender) == (http, sender)
+    assert (overridden.engagements.door.http, overridden.engagements.sender) == (http, sender)
 
     bare = signing_from_settings(Settings(_env_file=None))(clean)  # type: ignore[call-arg]
     assert isinstance(bare.renderer, ContractRenderer)
@@ -2427,7 +2444,7 @@ def _sign(signing: SigningService, fake: FakeDocumenso, document: ContractDocume
     fake.sign(envelope, SIGNED_AT)
     signed = signing.apply(_webhook(fake, envelope, "DOCUMENT_COMPLETED"))
     assert signed is not None
-    signing.finish(signed)
+    signing.recovery.finish(signed)
 
 
 @pytest.mark.parametrize(
@@ -2475,8 +2492,8 @@ def test_an_occasional_letter_waits_while_only_the_ordinary_framework_is_active(
     ordinary.signed_copy_to_rebase_at = NOW
     clean.commit()
     # The sweep never takes the ordinary agreement for this letter's own.
-    assert ordinary.id not in signing._to_finish()
-    signing.finish(ordinary.id)
+    assert ordinary.id not in signing.recovery._to_finish()
+    signing.recovery.finish(ordinary.id)
     assert _letter_of(clean, match.id).stato == "in_attesa"
 
 
@@ -2604,7 +2621,7 @@ def test_a_waiting_ordinary_letter_is_not_released_once_its_partita_iva_is_gone(
     assert signed is not None
 
     with caplog.at_level(logging.WARNING, logger="rebase_core.signing"):
-        signing.finish(signed)
+        signing.recovery.finish(signed)
 
     assert _letter_of(clean, match.id).stato == "in_attesa"
     assert len(fake.envelopes) == envelopes

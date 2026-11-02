@@ -80,7 +80,7 @@ class Referral(Base, PrimaryKeyMixin, TimestampMixin):
 class ReferralReward(Base, PrimaryKeyMixin, TimestampMixin):
     """One reward, once per referral (`uq_referral_rewards_referral_id`): written the
     moment the referred entity's first `lettera` is signed
-    (`rebase_core.signing.SigningService._confirm_completion`), with the rate and the
+    (`rebase_core.signing_recovery.SigningRecovery._confirm_completion`), with the rate and the
     base that letter's numbers printed at that moment, so a rate an admin edits later
     (`ReferralSettings`) never re-prices a reward already recorded -- the one-time
     maturity design record 2026-09-26 asks for. `base_amount` is rebase's own margin on

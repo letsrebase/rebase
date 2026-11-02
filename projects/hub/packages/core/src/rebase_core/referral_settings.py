@@ -20,7 +20,7 @@ class ReferralSettingsService:
         """The one settings row, seeded by migration 0024; a second call in the same
         process never inserts again, `ReferralSettings.__doc__`'s own promise. Flushed,
         never committed: `record_reward_if_signed` calls this inside the row locks
-        `SigningService._confirm_completion` already holds, and a commit here would
+        `SigningRecovery._confirm_completion` already holds, and a commit here would
         release them and close that transaction early, ahead of the reward and the
         signature it belongs to (CodeRabbit) -- the same reason `write_framework`
         never commits either."""

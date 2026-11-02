@@ -18,6 +18,7 @@ from sqlalchemy import Engine, event, func, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from rebase_core import match_reads as match_reads_module
 from rebase_core import matches as matches_module
 from rebase_core.admin_schemas import StatusChange
 from rebase_core.audit import AdminActionService
@@ -518,7 +519,7 @@ def test_a_repeated_id_with_changed_data_is_refused_not_returned(clean: Session)
         service.create(freelancer_id, changed, admin_id)
 
     assert len(_documents(clean, freelancer_id, "lettera")) == 1
-    assert service.get(first.id).lettera.numero == first.lettera.numero
+    assert service.reads.get(first.id).lettera.numero == first.lettera.numero
 
 
 def test_a_repeated_id_with_no_fingerprint_stored_is_refused(clean: Session) -> None:
@@ -631,7 +632,7 @@ def test_a_stale_draft_framework_that_never_left_stays_hidden_from_the_page(
     stale, current = _documents(clean, freelancer_id, "quadro")
     assert (stale.stato, stale.sent_at) == ("annullato", None)
 
-    quadro = service.for_freelancer(freelancer_id).quadro
+    quadro = service.reads.for_freelancer(freelancer_id).quadro
 
     assert quadro is not None and quadro.id == current.id
 
@@ -675,7 +676,7 @@ def test_the_client_budget_reaches_neither_the_prefill_nor_the_letter(clean: Ses
     # timestamp's microseconds and fail this test for nothing.
     admin_id, freelancer_id, company_id = _setup(clean)
     service = _service(clean)
-    assert "777.77" not in service.prefill(freelancer_id, company_id).model_dump_json()
+    assert "777.77" not in service.drafts.prefill(freelancer_id, company_id).model_dump_json()
     match = service.create(freelancer_id, _body(company_id), admin_id)
     letter = clean.get(ContractDocument, match.lettera.id)
     assert letter is not None
@@ -687,7 +688,7 @@ def test_the_prefill_suggests_from_the_request_the_card_and_rebases_defaults(
     clean: Session,
 ) -> None:
     admin_id, freelancer_id, company_id = _setup(clean)
-    prefill = _service(clean).prefill(freelancer_id, company_id)
+    prefill = _service(clean).drafts.prefill(freelancer_id, company_id)
     lettera = prefill.lettera
     assert (lettera.ruolo, lettera.attivita) == (
         "Backend developer",
@@ -716,7 +717,7 @@ def test_a_card_without_a_day_rate_prefills_no_fee_and_the_letter_needs_one(clea
     assert card is not None
     card.tariffa_giornaliera = None
     clean.commit()
-    assert _service(clean).prefill(freelancer_id, company_id).lettera.compenso is None
+    assert _service(clean).drafts.prefill(freelancer_id, company_id).lettera.compenso is None
     with pytest.raises(PydanticValidationError, match="compenso"):
         LetteraFields(
             ruolo="Backend developer",
@@ -732,7 +733,7 @@ def test_the_client_data_come_back_from_the_same_company_users_last_match(clean:
     _service(clean).create(freelancer_id, _body(company_id), admin_id)
     # The same referente files a second request: another row, the same client.
     second = _request(clean, nome_azienda="ACME", figura_richiesta="Frontend developer")
-    cliente = _service(clean).prefill(freelancer_id, second).cliente
+    cliente = _service(clean).drafts.prefill(freelancer_id, second).cliente
     assert (cliente.cliente_ragione_sociale, cliente.cliente_piva, cliente.cliente_sede) == (
         "ACME S.r.l.",
         "01234567890",
@@ -746,7 +747,7 @@ def test_a_cancelled_matchs_client_is_never_prefilled(clean: Session) -> None:
     _service(clean).cancel(match.id, admin_id)
     # The same referente files a second request: another row, the same user.
     second = _request(clean, nome_azienda="ACME", figura_richiesta="Frontend developer")
-    cliente = _service(clean).prefill(freelancer_id, second).cliente
+    cliente = _service(clean).drafts.prefill(freelancer_id, second).cliente
     assert (cliente.cliente_ragione_sociale, cliente.cliente_piva, cliente.cliente_sede) == (
         "ACME",
         None,
@@ -762,7 +763,7 @@ def test_a_closed_request_can_be_neither_previewed_nor_matched(clean: Session) -
     service = _service(clean)
     for call in (
         lambda: service.create(freelancer_id, _body(company_id), admin_id),
-        lambda: service.preview(freelancer_id, _body(company_id), "lettera"),
+        lambda: service.drafts.preview(freelancer_id, _body(company_id), "lettera"),
     ):
         with pytest.raises(ValidationFailed) as refused:
             call()
@@ -780,10 +781,10 @@ def test_a_deleted_card_or_request_is_not_found(clean: Session) -> None:
     admin_id, freelancer_id, company_id = _setup(clean)
     CompanyService(clean).soft_delete(company_id, admin_id)
     with pytest.raises(NotFound):
-        _service(clean).prefill(freelancer_id, company_id)
+        _service(clean).drafts.prefill(freelancer_id, company_id)
     FreelancerService(clean).soft_delete(freelancer_id, admin_id)
     with pytest.raises(NotFound):
-        _service(clean).for_freelancer(freelancer_id)
+        _service(clean).reads.for_freelancer(freelancer_id)
 
 
 def test_a_document_is_not_found_once_its_freelancer_is_deleted(clean: Session) -> None:
@@ -861,15 +862,15 @@ def test_an_active_matchs_situazione_says_where_its_hours_stand_on_pigro(clean: 
     row.pigro_stato = "da_collegare"
     clean.commit()
 
-    read = service.get(match.id)
+    read = service.reads.get(match.id)
     assert read.situazione.endswith(" Pigro non ha ancora il deal: riprova o aspetta lo sweep.")
     assert read.altre_azioni == ["chiudi", "riprova_pigro"]
-    listed = service.list_all(stato=None, q=None, limit=100, offset=0).items[0]
+    listed = service.reads.list_all(stato=None, q=None, limit=100, offset=0).items[0]
     assert listed.situazione == read.situazione
 
     row.pigro_stato = "collegato"
     clean.commit()
-    read = service.get(match.id)
+    read = service.reads.get(match.id)
     assert read.situazione.endswith(" Le ore si consuntivano su Pigro.")
     assert read.altre_azioni == ["chiudi"]
 
@@ -882,7 +883,7 @@ def test_the_contracts_page_reads_the_active_framework_its_dates_and_the_matches
     service = _service(clean, today=date(2026, 12, 1))
     first = service.create(freelancer_id, _body(company_id), admin_id)
     second = service.create(freelancer_id, _body(company_id), admin_id)
-    page = service.for_freelancer(freelancer_id)
+    page = service.reads.for_freelancer(freelancer_id)
     assert page.quadro is not None and page.quadro.attivo
     assert (page.quadro.rinnovo, page.quadro.ultimo_giorno_disdetta) == (
         date(2027, 10, 1),
@@ -899,10 +900,10 @@ def test_a_match_stays_on_the_page_after_its_request_is_deleted(clean: Session) 
     service = _service(clean)
     match = service.create(freelancer_id, _body(company_id), admin_id)
     CompanyService(clean).soft_delete(company_id, admin_id)
-    assert [(m.id, m.nome_azienda) for m in service.for_freelancer(freelancer_id).matches] == [
-        (match.id, "ACME Srl")
-    ]
-    assert service.get(match.id).nome_azienda == "ACME Srl"
+    assert [
+        (m.id, m.nome_azienda) for m in service.reads.for_freelancer(freelancer_id).matches
+    ] == [(match.id, "ACME Srl")]
+    assert service.reads.get(match.id).nome_azienda == "ACME Srl"
 
 
 def test_a_preview_renders_without_saving_numbering_or_replacing_anything(clean: Session) -> None:
@@ -910,11 +911,11 @@ def test_a_preview_renders_without_saving_numbering_or_replacing_anything(clean:
     renderer = FakeRenderer()
     service = _service(clean, renderer)
     service.create(freelancer_id, _body(company_id), admin_id)
-    letter = service.preview(freelancer_id, _body(company_id), "lettera")
+    letter = service.drafts.preview(freelancer_id, _body(company_id), "lettera")
     assert letter.content.startswith(b"%PDF-")
     assert renderer.calls[-1][0] == "lettera-di-incarico"
     assert renderer.calls[-1][1]["numero"] is None
-    service.preview(freelancer_id, _body(company_id), "quadro")
+    service.drafts.preview(freelancer_id, _body(company_id), "quadro")
     assert renderer.calls[-1][0] == "contratto-quadro"
     assert clean.scalar(select(func.count()).select_from(Match)) == 1
     assert [d.stato for d in _documents(clean, freelancer_id, "quadro")] == ["generato"]
@@ -927,12 +928,14 @@ def test_a_document_downloads_as_its_own_pdf_and_a_missing_signed_copy_is_not_fo
     admin_id, freelancer_id, company_id = _setup(clean)
     service = _service(clean)
     match = service.create(freelancer_id, _body(company_id), admin_id)
-    pdf = service.document_pdf(match.lettera.id)
+    pdf = service.reads.document_pdf(match.lettera.id)
     assert (pdf.filename, pdf.content[:5]) == ("lettera-di-incarico-2026-001.pdf", b"%PDF-")
     quadro = _documents(clean, freelancer_id, "quadro")[0]
-    assert service.document_pdf(quadro.id).filename == f"contratto-quadro-v{QUADRO_VERSION}.pdf"
+    assert (
+        service.reads.document_pdf(quadro.id).filename == f"contratto-quadro-v{QUADRO_VERSION}.pdf"
+    )
     with pytest.raises(NotFound):
-        service.document_pdf(match.lettera.id, signed=True)
+        service.reads.document_pdf(match.lettera.id, signed=True)
 
 
 def test_two_admins_matching_the_same_freelancer_at_once_never_leave_two_open_frameworks(
@@ -1032,7 +1035,7 @@ def test_a_create_waiting_for_the_freelancers_lock_reads_the_request_and_tax_dat
     holder, creator = factory(), factory()
     outcome: list[object] = []
     service = MatchService(creator, FakeRenderer(), SIGNER, today=lambda: TODAY)
-    service.prefill(freelancer_id, company_id)
+    service.drafts.prefill(freelancer_id, company_id)
 
     def run() -> None:
         try:
@@ -1174,7 +1177,7 @@ def test_the_match_list_is_newest_first_with_its_letter_and_period(clean: Sessio
     service = _service(clean, today=date(2026, 12, 1))
     first = service.create(freelancer_id, _body(company_id), admin_id)
     second = service.create(freelancer_id, _body(company_id), admin_id)
-    page = service.list_all(stato=None, q=None, limit=100, offset=0)
+    page = service.reads.list_all(stato=None, q=None, limit=100, offset=0)
     assert page.totale == 2
     assert [item.id for item in page.items] == [second.id, first.id]
     row = page.items[0]
@@ -1200,12 +1203,12 @@ def test_the_match_list_filters_by_state_and_refuses_an_unknown_one(clean: Sessi
     service.cancel(cancelled.id, admin_id)
     draft = service.create(freelancer_id, _body(company_id), admin_id)
 
-    page = service.list_all(stato="bozza", q=None, limit=100, offset=0)
+    page = service.reads.list_all(stato="bozza", q=None, limit=100, offset=0)
     assert [item.id for item in page.items] == [draft.id]
     assert page.totale == 1
 
     with pytest.raises(ValidationFailed) as refused:
-        service.list_all(stato="chissà", q=None, limit=100, offset=0)
+        service.reads.list_all(stato="chissà", q=None, limit=100, offset=0)
     assert refused.value.details["field"] == "stato"
 
 
@@ -1237,13 +1240,13 @@ def test_the_match_list_search_matches_the_freelancer_and_the_company(clean: Ses
         admin_id,
     )
 
-    by_surname = service.list_all(stato=None, q="lovelace", limit=100, offset=0)
+    by_surname = service.reads.list_all(stato=None, q="lovelace", limit=100, offset=0)
     assert [item.freelancer_email for item in by_surname.items] == ["ada@studio.it"]
 
-    by_email = service.list_all(stato=None, q="GRACE@studio.it", limit=100, offset=0)
+    by_email = service.reads.list_all(stato=None, q="GRACE@studio.it", limit=100, offset=0)
     assert [item.freelancer_email for item in by_email.items] == ["grace@studio.it"]
 
-    by_company = service.list_all(stato=None, q="bianchi", limit=100, offset=0)
+    by_company = service.reads.list_all(stato=None, q="bianchi", limit=100, offset=0)
     assert [item.nome_azienda for item in by_company.items] == ["Bianchi Srl"]
 
 
@@ -1253,7 +1256,7 @@ def test_the_match_list_still_names_a_soft_deleted_requests_company(clean: Sessi
     match = service.create(freelancer_id, _body(company_id), admin_id)
     CompanyService(clean).soft_delete(company_id, admin_id)
 
-    page = service.list_all(stato=None, q=None, limit=100, offset=0)
+    page = service.reads.list_all(stato=None, q=None, limit=100, offset=0)
     assert [(item.id, item.nome_azienda) for item in page.items] == [(match.id, "ACME Srl")]
 
 
@@ -1263,7 +1266,7 @@ def test_the_match_list_hides_a_soft_deleted_freelancers_match(clean: Session) -
     service.create(freelancer_id, _body(company_id), admin_id)
     FreelancerService(clean).soft_delete(freelancer_id, admin_id)
 
-    page = service.list_all(stato=None, q=None, limit=100, offset=0)
+    page = service.reads.list_all(stato=None, q=None, limit=100, offset=0)
     assert page.items == []
     assert page.totale == 0
 
@@ -1274,11 +1277,11 @@ def test_the_match_list_paginates_with_a_total(clean: Session) -> None:
     ids = [service.create(freelancer_id, _body(company_id), admin_id).id for _ in range(3)]
     newest_first = list(reversed(ids))
 
-    first_page = service.list_all(stato=None, q=None, limit=2, offset=0)
+    first_page = service.reads.list_all(stato=None, q=None, limit=2, offset=0)
     assert first_page.totale == 3
     assert [item.id for item in first_page.items] == newest_first[:2]
 
-    second_page = service.list_all(stato=None, q=None, limit=2, offset=2)
+    second_page = service.reads.list_all(stato=None, q=None, limit=2, offset=2)
     assert [item.id for item in second_page.items] == newest_first[2:]
 
 
@@ -1312,7 +1315,7 @@ def test_the_match_list_shows_a_match_with_two_letters_once_with_its_current_let
     )
     clean.commit()
 
-    page = service.list_all(stato=None, q=None, limit=100, offset=0)
+    page = service.reads.list_all(stato=None, q=None, limit=100, offset=0)
     assert page.totale == 2
     assert [item.id for item in page.items] == [newer.id, match.id]
     row = page.items[1]
@@ -1321,10 +1324,10 @@ def test_the_match_list_shows_a_match_with_two_letters_once_with_its_current_let
         "generato",
         "2 novembre 2026",
     )
-    assert service.get(match.id).lettera.numero == row.lettera_numero
+    assert service.reads.get(match.id).lettera.numero == row.lettera_numero
 
-    first_page = service.list_all(stato=None, q=None, limit=1, offset=0)
-    second_page = service.list_all(stato=None, q=None, limit=1, offset=1)
+    first_page = service.reads.list_all(stato=None, q=None, limit=1, offset=0)
+    second_page = service.reads.list_all(stato=None, q=None, limit=1, offset=1)
     assert [item.id for item in first_page.items + second_page.items] == [newer.id, match.id]
 
 
@@ -1362,7 +1365,7 @@ def test_the_contracts_page_says_what_each_document_is_doing(clean: Session) -> 
     admin_id, freelancer_id, company_id = _setup(clean)
     service = _service(clean)
     match = service.create(freelancer_id, _body(company_id), admin_id)
-    page = service.for_freelancer(freelancer_id)
+    page = service.reads.for_freelancer(freelancer_id)
     assert page.quadro is not None
     # `FakeRenderer` writes texts in draft, as the preview's would be.
     assert (page.quadro.situazione, page.quadro.prossima_azione, page.quadro.altre_azioni) == (
@@ -1379,14 +1382,14 @@ def test_the_contracts_page_says_what_each_document_is_doing(clean: Session) -> 
     )
     assert read.lettera.situazione == "Parte da sola dopo la firma del contratto quadro."
     assert (read.lettera.prossima_azione, read.lettera.altre_azioni) == (None, [])
-    listed = service.list_all(stato=None, q=None, limit=100, offset=0).items[0]
+    listed = service.reads.list_all(stato=None, q=None, limit=100, offset=0).items[0]
     assert listed.situazione == read.situazione
 
 
 def test_a_signed_framework_reads_its_signature_day_in_rome(clean: Session) -> None:
     admin_id, freelancer_id, _company_id = _setup(clean)
     _framework(clean, freelancer_id, admin_id, signed_at=datetime(2026, 9, 30, 23, 30, tzinfo=UTC))
-    quadro = _service(clean, today=date(2026, 12, 1)).for_freelancer(freelancer_id).quadro
+    quadro = _service(clean, today=date(2026, 12, 1)).reads.for_freelancer(freelancer_id).quadro
     assert quadro is not None
     assert (quadro.situazione, quadro.prossima_azione, quadro.altre_azioni) == (
         "Firmato il 1° ottobre 2026; la copia firmata non è ancora arrivata.",
@@ -1405,8 +1408,8 @@ def test_a_waiting_letter_reads_its_freelancers_framework_wherever_the_match_is_
     numero = match.lettera.numero
 
     def everywhere() -> tuple[str, str | None]:
-        got, page = service.get(match.id), service.for_freelancer(freelancer_id)
-        listed = service.list_all(stato=None, q=None, limit=100, offset=0).items[0]
+        got, page = service.reads.get(match.id), service.reads.for_freelancer(freelancer_id)
+        listed = service.reads.list_all(stato=None, q=None, limit=100, offset=0).items[0]
         assert got.situazione == page.matches[0].situazione == listed.situazione
         assert got.prossima_azione == page.matches[0].prossima_azione
         return got.situazione, got.prossima_azione
@@ -1465,10 +1468,10 @@ def test_list_all_reads_frameworks_in_one_query(clean: Session) -> None:
     engine = clean.get_bind()
     event.listen(engine, "before_cursor_execute", record)
     try:
-        service.list_all(stato=None, q=None, limit=1, offset=0)
+        service.reads.list_all(stato=None, q=None, limit=1, offset=0)
         for_one = len(statements)
         statements.clear()
-        page = service.list_all(stato=None, q=None, limit=100, offset=0)
+        page = service.reads.list_all(stato=None, q=None, limit=100, offset=0)
         for_three = len(statements)
     finally:
         event.remove(engine, "before_cursor_execute", record)
@@ -1494,7 +1497,7 @@ def test_a_match_listed_with_no_letter_at_all_reads_as_its_state(clean: Session)
     match = _service(clean).create(freelancer_id, _body(company_id), admin_id)
     clean.execute(text("DELETE FROM contract_documents WHERE match_id = :id"), {"id": match.id})
     clean.commit()
-    (row,) = _service(clean).list_all(stato=None, q=None, limit=100, offset=0).items
+    (row,) = _service(clean).reads.list_all(stato=None, q=None, limit=100, offset=0).items
     assert (row.situazione, row.lettera_numero, row.lettera_stato) == ("Da inviare.", None, None)
 
 
@@ -1515,7 +1518,9 @@ def test_check_writes_nothing(clean: Session) -> None:
     _service(clean).create(freelancer_id, _body(company_id), admin_id)
     before = _rows(clean)
     # No renderer: a check typesets nothing.
-    checked = MatchService(clean, today=lambda: TODAY).check(freelancer_id, _body(company_id))
+    checked = MatchService(clean, today=lambda: TODAY).drafts.check(
+        freelancer_id, _body(company_id)
+    )
     clean.commit()
     assert checked.quadro_necessario is True
     assert _rows(clean) == before
@@ -1531,7 +1536,7 @@ def test_check_says_what_saving_would_do_and_which_document_leaves_first(clean: 
         "Ada Lovelace lavorerà per ACME S.r.l. come Backend developer, dal 1° ottobre 2026.",
         "Compenso: 450,00 € a giornata, IVA esclusa, pagato a 30 giorni fine mese.",
     ]
-    assert service.check(freelancer_id, _body(company_id)) == MatchCheck(
+    assert service.drafts.check(freelancer_id, _body(company_id)) == MatchCheck(
         riepilogo=riepilogo,
         cosa_succede=(
             "Prima parte il contratto quadro; la lettera di incarico parte da sola dopo la sua "
@@ -1543,14 +1548,14 @@ def test_check_says_what_saving_would_do_and_which_document_leaves_first(clean: 
     )
     service.create(freelancer_id, _body(company_id), admin_id)
     _framework_now(clean, freelancer_id, "inviato")
-    in_signature = service.check(freelancer_id, _body(company_id))
+    in_signature = service.drafts.check(freelancer_id, _body(company_id))
     assert (in_signature.quadro_necessario, in_signature.cosa_succede) == (
         False,
         "Il contratto quadro è già in firma: la lettera di incarico parte da sola dopo la sua "
         "firma.",
     )
     _framework(clean, freelancer_id, admin_id)
-    active = service.check(freelancer_id, _body(company_id))
+    active = service.drafts.check(freelancer_id, _body(company_id))
     assert (active.quadro_necessario, active.cosa_succede) == (
         False,
         "Il contratto quadro è già attivo: parte subito la lettera di incarico.",
@@ -1566,7 +1571,7 @@ def test_check_refuses_what_create_refuses(clean: Session, action: str) -> None:
     def attempt(freelancer: UUID, body: MatchCreate) -> object:
         if action == "create":
             return service.create(freelancer, body, admin_id)
-        return service.check(freelancer, body)
+        return service.drafts.check(freelancer, body)
 
     with pytest.raises(NotFound):
         attempt(freelancer_id, _body(uuid4()))
@@ -1583,7 +1588,7 @@ def test_check_refuses_what_create_refuses(clean: Session, action: str) -> None:
 def test_check_reports_missing_tax_data_that_create_still_refuses(clean: Session) -> None:
     admin_id, freelancer_id, company_id = _admin(clean), _card(clean), _request(clean)
     service = _service(clean)
-    checked = service.check(freelancer_id, _body(company_id))
+    checked = service.drafts.check(freelancer_id, _body(company_id))
     assert checked.dati_fiscali_mancanti is True
     assert checked.riepilogo[-1] == (
         "Mancano i dati fiscali del freelance: servono prima di salvare."
@@ -1592,7 +1597,7 @@ def test_check_reports_missing_tax_data_that_create_still_refuses(clean: Session
         service.create(freelancer_id, _body(company_id), admin_id)
     assert refused.value.details["field"] == "fiscale"
     _fiscal(clean, freelancer_id, admin_id)
-    assert service.check(freelancer_id, _body(company_id)).dati_fiscali_mancanti is False
+    assert service.drafts.check(freelancer_id, _body(company_id)).dati_fiscali_mancanti is False
 
 
 CLIENTE_REST = {"cliente_piva": "01234567890", "cliente_sede": "Milano"}
@@ -1601,8 +1606,8 @@ CLIENTE_REST = {"cliente_piva": "01234567890", "cliente_sede": "Milano"}
 def test_the_proposal_keeps_the_prefill(clean: Session) -> None:
     _admin_id, freelancer_id, company_id = _setup(clean)
     service = _service(clean)
-    proposal = service.proposal(freelancer_id, company_id, cliente=CLIENTE_REST)
-    prefill = service.prefill(freelancer_id, company_id)
+    proposal = service.drafts.proposal(freelancer_id, company_id, cliente=CLIENTE_REST)
+    prefill = service.drafts.prefill(freelancer_id, company_id)
     assert (proposal.id, proposal.company_id) == (None, company_id)
     assert proposal.cliente == ClienteData(cliente_ragione_sociale="ACME Srl", **CLIENTE_REST)
     assert proposal.lettera.model_dump(exclude_none=True) == prefill.lettera.model_dump(
@@ -1613,7 +1618,7 @@ def test_the_proposal_keeps_the_prefill(clean: Session) -> None:
 def test_the_proposal_lays_the_given_fields_over_the_prefill(clean: Session) -> None:
     _admin_id, freelancer_id, company_id = _setup(clean)
     match_id = uuid4()
-    proposal = _service(clean).proposal(
+    proposal = _service(clean).drafts.proposal(
         freelancer_id,
         company_id,
         cliente={**CLIENTE_REST, "cliente_ragione_sociale": "ACME S.r.l."},
@@ -1648,7 +1653,7 @@ def test_the_proposal_reads_a_fee_typed_the_italian_way(
 ) -> None:
     """REB-485: «1.500» is fifteen hundred, where Pydantic alone reads one and a half."""
     _admin_id, freelancer_id, company_id = _setup(clean)
-    proposal = _service(clean).proposal(
+    proposal = _service(clean).drafts.proposal(
         freelancer_id, company_id, cliente=CLIENTE_REST, lettera={"compenso": typed}
     )
     assert proposal.lettera.compenso == fee
@@ -1664,7 +1669,7 @@ def test_the_proposal_refuses_a_fee_that_is_not_an_amount_by_name(
     refused as the web refuses it, and English notation is never read as cents."""
     _admin_id, freelancer_id, company_id = _setup(clean)
     with pytest.raises(ValidationFailed) as refused:
-        _service(clean).proposal(
+        _service(clean).drafts.proposal(
             freelancer_id, company_id, cliente=CLIENTE_REST, lettera={"compenso": typed}
         )
     assert (refused.value.details["field"], refused.value.details["reason"]) == (
@@ -1685,7 +1690,7 @@ def test_the_proposal_refuses_an_unknown_key_by_name(
 ) -> None:
     _admin_id, freelancer_id, company_id = _setup(clean)
     with pytest.raises(ValidationFailed) as refused:
-        _service(clean).proposal(freelancer_id, company_id, cliente=cliente, lettera=lettera)
+        _service(clean).drafts.proposal(freelancer_id, company_id, cliente=cliente, lettera=lettera)
     assert refused.value.details["field"] == field
 
 
@@ -1730,7 +1735,7 @@ def test_the_proposal_refuses_a_field_left_empty_or_invalid_by_name(
 ) -> None:
     _admin_id, freelancer_id, company_id = _setup(clean)
     with pytest.raises(ValidationFailed) as refused:
-        _service(clean).proposal(freelancer_id, company_id, cliente=cliente, lettera=lettera)
+        _service(clean).drafts.proposal(freelancer_id, company_id, cliente=cliente, lettera=lettera)
     assert (refused.value.details["field"], refused.value.details["reason"]) == (field, reason)
 
 
@@ -1751,7 +1756,7 @@ def test_an_occasional_document_downloads_under_its_own_texts_name(clean: Sessio
     )
     clean.add(quadro)
     clean.commit()
-    assert _service(clean).document_pdf(quadro.id).filename == (
+    assert _service(clean).reads.document_pdf(quadro.id).filename == (
         "contratto-quadro-occasionale-v1.0.pdf"
     )
 
@@ -1790,8 +1795,8 @@ def test_a_new_version_is_announced_against_the_quadros_own_text(
     _framework(clean, freelancer_id, admin_id, text_version="1.0")
     _framework(clean, freelancer_id, admin_id, text_version="1.0", regime="occasionale")
     versions = {"partita_iva": "1.1", "occasionale": "1.0"}
-    monkeypatch.setattr(matches_module, "current_quadro_version", versions.__getitem__)
-    quadri = _service(clean).for_freelancer(freelancer_id).quadri
+    monkeypatch.setattr(match_reads_module, "current_quadro_version", versions.__getitem__)
+    quadri = _service(clean).reads.for_freelancer(freelancer_id).quadri
     assert {(quadro.regime, quadro.nuova_versione) for quadro in quadri} == {
         ("partita_iva", True),
         ("occasionale", False),
@@ -1804,7 +1809,7 @@ def test_the_documents_of_an_ordinary_match_say_their_regime_and_type(clean: Ses
     match = service.create(freelancer_id, _body(company_id), admin_id)
     assert (match.lettera.regime, match.lettera.tipo) == ("partita_iva", "Lettera di incarico")
     assert {document.regime for document in _documents(clean, freelancer_id)} == {"partita_iva"}
-    page = service.for_freelancer(freelancer_id)
+    page = service.reads.for_freelancer(freelancer_id)
     assert page.quadro is not None
     assert (page.quadro.regime, page.quadro.tipo) == ("partita_iva", "Contratto quadro")
 
@@ -1820,15 +1825,17 @@ REFUSED_WITHOUT_PARTITA_IVA = (
 def test_the_prefill_proposes_the_letter_type_from_the_tax_data(clean: Session) -> None:
     admin_id, freelancer_id, company_id = _admin(clean), _card(clean), _request(clean)
     service = _service(clean)
-    assert service.prefill(freelancer_id, company_id).regime == "partita_iva"  # none saved
+    assert service.drafts.prefill(freelancer_id, company_id).regime == "partita_iva"  # none saved
     _fiscal(clean, freelancer_id, admin_id)
-    assert service.prefill(freelancer_id, company_id).regime == "partita_iva"
+    assert service.drafts.prefill(freelancer_id, company_id).regime == "partita_iva"
     _fiscal(clean, freelancer_id, admin_id, partita_iva=None)
-    prefill = service.prefill(freelancer_id, company_id)
+    prefill = service.drafts.prefill(freelancer_id, company_id)
     assert (prefill.regime, prefill.quadro_necessario) == ("occasionale", True)
-    proposed = service.proposal(freelancer_id, company_id, cliente=CLIENTE_REST)
+    proposed = service.drafts.proposal(freelancer_id, company_id, cliente=CLIENTE_REST)
     assert proposed.regime == "occasionale"
-    chosen = service.proposal(freelancer_id, company_id, cliente=CLIENTE_REST, regime="partita_iva")
+    chosen = service.drafts.proposal(
+        freelancer_id, company_id, cliente=CLIENTE_REST, regime="partita_iva"
+    )
     assert chosen.regime == "partita_iva"
 
 
@@ -1840,8 +1847,8 @@ def test_an_ordinary_letter_without_a_partita_iva_is_refused_with_the_sentence(
     service = _service(clean)
     attempts = {
         "create": lambda: service.create(freelancer_id, _body(company_id), admin_id),
-        "check": lambda: service.check(freelancer_id, _body(company_id)),
-        "preview": lambda: service.preview(freelancer_id, _body(company_id), "lettera"),
+        "check": lambda: service.drafts.check(freelancer_id, _body(company_id)),
+        "preview": lambda: service.drafts.preview(freelancer_id, _body(company_id), "lettera"),
     }
     with pytest.raises(ValidationFailed) as refused:
         attempts[action]()
@@ -1858,7 +1865,7 @@ def test_an_occasional_letter_for_a_partita_iva_holder_is_allowed_and_warned(
 ) -> None:
     admin_id, freelancer_id, company_id = _setup(clean)
     service = _service(clean)
-    checked = service.check(freelancer_id, _body(company_id, regime="occasionale"))
+    checked = service.drafts.check(freelancer_id, _body(company_id, regime="occasionale"))
     assert checked.regime == "occasionale"
     assert checked.riepilogo[-2:] == [
         "Compenso: 450,00 € a giornata, lordi, senza IVA, pagato a 30 giorni fine mese.",
@@ -1966,10 +1973,10 @@ def test_the_stale_framework_cleanup_leaves_the_other_regimes_frameworks_alone(
 def test_the_contracts_page_shows_one_framework_per_regime(clean: Session) -> None:
     admin_id, freelancer_id, company_id = _setup(clean)
     service = _service(clean)
-    assert service.for_freelancer(freelancer_id).quadro_occasionale is None
+    assert service.reads.for_freelancer(freelancer_id).quadro_occasionale is None
     service.create(freelancer_id, _body(company_id), admin_id)
     service.create(freelancer_id, _body(company_id, regime="occasionale"), admin_id)
-    page = service.for_freelancer(freelancer_id)
+    page = service.reads.for_freelancer(freelancer_id)
     assert page.quadro is not None and page.quadro_occasionale is not None
     assert (page.quadro.regime, page.quadro.tipo) == ("partita_iva", "Contratto quadro")
     assert (page.quadro_occasionale.regime, page.quadro_occasionale.tipo) == (
@@ -1995,10 +2002,10 @@ def test_an_occasional_matchs_sentence_reads_its_own_framework_not_the_ordinary_
         f"La lettera n. {match.lettera.numero} parte dopo il contratto quadro: «Invia per la "
         "firma» lo manda al freelance."
     )
-    assert service.get(match.id).situazione == expected
-    [row] = service.list_all(stato=None, q=None).items
+    assert service.reads.get(match.id).situazione == expected
+    [row] = service.reads.list_all(stato=None, q=None).items
     assert row.situazione == expected
-    [card] = service.for_freelancer(freelancer_id).matches
+    [card] = service.reads.for_freelancer(freelancer_id).matches
     assert card.situazione == expected
 
 
@@ -2018,8 +2025,12 @@ def test_an_occasional_preview_renders_the_occasional_texts(clean: Session) -> N
     admin_id, freelancer_id, company_id = _setup_occasional(clean)
     renderer = FakeRenderer()
     service = _service(clean, renderer)
-    letter = service.preview(freelancer_id, _body(company_id, regime="occasionale"), "lettera")
-    quadro = service.preview(freelancer_id, _body(company_id, regime="occasionale"), "quadro")
+    letter = service.drafts.preview(
+        freelancer_id, _body(company_id, regime="occasionale"), "lettera"
+    )
+    quadro = service.drafts.preview(
+        freelancer_id, _body(company_id, regime="occasionale"), "quadro"
+    )
     assert (letter.filename, quadro.filename) == (
         "anteprima-lettera-di-incarico-occasionale.pdf",
         "anteprima-contratto-quadro-occasionale.pdf",
@@ -2045,14 +2056,14 @@ def test_prefill_check_and_letter_preview_read_only_their_own_regimes_framework(
     renderer = FakeRenderer()
     service = _service(clean, renderer)
 
-    prefill = service.prefill(freelancer_id, company_id)
+    prefill = service.drafts.prefill(freelancer_id, company_id)
     assert (prefill.regime, prefill.quadro_attivo, prefill.quadro_necessario) == (
         letter_regime,
         None,
         True,
     )
     body = _body(company_id, regime=letter_regime)
-    assert service.check(freelancer_id, body).quadro_necessario is True
-    service.preview(freelancer_id, body, "lettera")
+    assert service.drafts.check(freelancer_id, body).quadro_necessario is True
+    service.drafts.preview(freelancer_id, body, "lettera")
     [(_text, fields)] = renderer.calls
     assert fields["data-contratto-quadro"] is None

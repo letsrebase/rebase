@@ -682,7 +682,7 @@ def _sign_the_letter(
     signing = _signing(session, renderer, fake, RecordingSender())
     signed = signing.apply(_webhook(fake, envelope, "DOCUMENT_COMPLETED"))
     assert signed is not None
-    signing.finish(signed)
+    signing.recovery.finish(signed)
 
 
 def test_a_referred_freelancer_and_a_referred_company_each_earn_a_reward_once(
@@ -1369,7 +1369,7 @@ def _referred_pair(clean: Session) -> tuple[UUID, UUID, UUID, UUID]:
 
 def _match_list(session: Session) -> list[MatchListItem]:
     service = MatchService(session, FakeRenderer(draft=False), SIGNER, today=lambda: TODAY)
-    return service.list_all(stato=None, q=None, limit=100, offset=0).items
+    return service.reads.list_all(stato=None, q=None, limit=100, offset=0).items
 
 
 @pytest.mark.parametrize(
@@ -1544,13 +1544,13 @@ def test_the_match_list_reads_its_referrals_in_a_page_wide_handful_of_queries(
         _active_framework(clean, freelancer_id, admin_id)
         service.create(freelancer_id, _match_body(company_id), admin_id)
 
-    service.list_all(stato=None, q=None, limit=1, offset=0)  # warm the session's own caches
+    service.reads.list_all(stato=None, q=None, limit=1, offset=0)  # warm the session's own caches
     seen, stop = _statements(clean)
     try:
-        one = service.list_all(stato=None, q=None, limit=1, offset=0)
+        one = service.reads.list_all(stato=None, q=None, limit=1, offset=0)
         for_one = len(seen)
         seen.clear()
-        four = service.list_all(stato=None, q=None, limit=100, offset=0)
+        four = service.reads.list_all(stato=None, q=None, limit=100, offset=0)
         for_four = len(seen)
     finally:
         stop()

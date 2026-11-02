@@ -28,23 +28,16 @@ from test_matches import SIGNER, TABLES, TODAY, _body, _framework, _setup
 from rebase_core.audit import AdminActionService
 from rebase_core.config import Settings
 from rebase_core.db import session_factory
+from rebase_core.engagement_report import HOURS_PER_DAY, REPORT_MAX_DAYS, group_report
 from rebase_core.engagements import (
-    CAUSE_NOT_THE_SHAPE,
-    CAUSE_REFUSED,
-    CAUSE_TIMEOUT,
-    CAUSE_TOO_LONG,
-    CAUSE_UNREACHABLE,
-    HOURS_PER_DAY,
-    REPORT_MAX_DAYS,
     REPORT_NOT_ACTIVE,
     EngagementService,
-    PigroLinkResult,
-    group_report,
     normalise_fiscal_code,
     normalise_vat,
 )
 from rebase_core.errors import InvalidState, ValidationFailed
-from rebase_core.mail import Mail, RecordingSender, engagement_ready_mail
+from rebase_core.mail import Mail, RecordingSender
+from rebase_core.mail_contracts import engagement_ready_mail
 from rebase_core.match_words import (
     HTTPS_ONLY,
     PIGRO_NOT_CONFIGURED,
@@ -53,12 +46,18 @@ from rebase_core.match_words import (
 )
 from rebase_core.matches import MatchService
 from rebase_core.models import Company, ContractDocument, Freelancer, Match, User
-from rebase_core.pigro import (
+from rebase_core.pigro_door import (
     ANSWERED_STATUS,
+    CAUSE_NOT_THE_SHAPE,
+    CAUSE_REFUSED,
+    CAUSE_TIMEOUT,
+    CAUSE_TOO_LONG,
+    CAUSE_UNREACHABLE,
     NOT_ANSWERING,
     NOT_THE_SHAPE,
     TOO_LONG,
     PigroUnavailable,
+    SweepCount,
 )
 
 DEAL_GONE_SENTENCE = (
@@ -626,7 +625,7 @@ def test_link_on_409_turns_a_linked_match_rifiutato_until_riprova(clean: Session
     # The registry row still points at the deal: the link is kept for «Riprova».
     assert (refused.pigro_url, refused.pigro_deal_id) == (DEAL_URL, DEAL)
     assert pigro_state_sentence(refused.pigro_stato, refused.pigro_errore) == DEAL_GONE_SENTENCE
-    assert service.link_pending() == PigroLinkResult(0, 0)
+    assert service.link_pending() == SweepCount(0, 0)
     assert len(http.calls) == 2
 
     again = service.link(match_id)
@@ -952,7 +951,7 @@ def test_link_pending_counts(clean: Session) -> None:
         clean, _settings(), crm, sender=sender, now=lambda: NOW, today=lambda: TODAY
     )
 
-    assert service.link_pending() == PigroLinkResult(linked=1, failed=2)
+    assert service.link_pending() == SweepCount(linked=1, failed=2)
 
     assert sorted(asked, key=str) == sorted([waiting, failing, unmailed], key=str)
     assert _match(clean, waiting).pigro_stato == "collegato"
@@ -975,7 +974,7 @@ def test_link_pending_skips_rifiutato(clean: Session) -> None:
     clean.commit()
     http = RecordedPigro([(201, linked_body())])
 
-    assert _service(clean, http, sender=RecordingSender()).link_pending() == PigroLinkResult(0, 0)
+    assert _service(clean, http, sender=RecordingSender()).link_pending() == SweepCount(0, 0)
     assert http.calls == []
     assert _match(clean, draft).pigro_stato is None
 
@@ -988,8 +987,8 @@ def test_link_pending_without_token_or_mail_sender(clean: Session) -> None:
 
     assert _service(
         clean, http, sender=RecordingSender(), settings=_settings(token="")
-    ).link_pending() == (PigroLinkResult(0, 0))
-    assert _service(clean, http).link_pending() == PigroLinkResult(0, 0)
+    ).link_pending() == (SweepCount(0, 0))
+    assert _service(clean, http).link_pending() == SweepCount(0, 0)
     assert http.calls == []
 
 
@@ -1360,7 +1359,7 @@ def test_report_on_409_files_the_match_rifiutato(clean: Session) -> None:
 
     http = RecordedPigro([(200, linked_body(spazio_creato=False, creato=False))])
     service = _service(clean, http, sender=RecordingSender())
-    assert service.link_pending() == PigroLinkResult(0, 0)
+    assert service.link_pending() == SweepCount(0, 0)
     with pytest.raises(InvalidState) as still:
         service.report(match_id)
     assert still.value.message == "Pigro ha rifiutato il collegamento: HTTP 409."

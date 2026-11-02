@@ -23,7 +23,6 @@ which makes the door link that deal and create nothing. A request changed after 
 linked changes nothing in the CRM, and a soft-deleted one is not linked.
 """
 
-import json
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -32,36 +31,30 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, NamedTuple
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from rebase_core.audit import AdminActionService, utcnow
 from rebase_core.config import Settings
 from rebase_core.crm_lead import LeadDraft, draft_lead
-from rebase_core.crm_words import (
-    COLLEGATO,
-    DA_COLLEGARE,
-    ERRORE,
-    REFERENTE_WITHOUT_NAME,
-    RIFIUTATO,
-    crm_state_sentence,
-)
+from rebase_core.crm_words import REFERENTE_WITHOUT_NAME, crm_state_sentence
 from rebase_core.db import SessionOpener
-from rebase_core.engagements import (
-    CAUSE_NOT_THE_SHAPE,
-    CAUSE_STATUS,
-    CAUSE_TOO_LONG,
-    _cause,
-    _failure,
-    speaks_https,
-)
 from rebase_core.errors import InvalidState, NotFound
 from rebase_core.framework import rome_today
-from rebase_core.http import MAX_BODY_BYTES, HttpCall
+from rebase_core.http import HttpCall
 from rebase_core.llm import LlmCall
-from rebase_core.match_words import HTTPS_ONLY
+from rebase_core.match_words import COLLEGATO, DA_COLLEGARE, ERRORE, HTTPS_ONLY
 from rebase_core.models import Company, User
+from rebase_core.pigro_door import (
+    Outcome,
+    PigroDoor,
+    SweepCount,
+    committed,
+    speaks_https,
+    sweep_round,
+    write,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -117,12 +110,6 @@ class _Lead(BaseModel):
         return value
 
 
-class _Outcome(NamedTuple):
-    stato: str
-    errore: str | None = None
-    lead: _Lead | None = None
-
-
 class _Sent(NamedTuple):
     """What the request says, read under the first lock as plain values."""
 
@@ -160,14 +147,6 @@ class CrmLinkResult:
     asked: bool = True
 
 
-class CrmLinkCount(NamedTuple):
-    """`link_pending`'s count, for the sweep's line: `linked` is how many requests this
-    round took to `collegato`, `failed` how many it tried and left otherwise."""
-
-    linked: int
-    failed: int
-
-
 class CrmLeadService:
     def __init__(
         self,
@@ -184,7 +163,7 @@ class CrmLeadService:
         needed and never earlier; without one every request is filed with no draft."""
         self.session = session
         self.settings = settings
-        self.http = http
+        self.door = PigroDoor(settings.pigro_api_url, settings.pigro_engagements_token, http)
         self.llm = llm
         self.now = now
         self.today = today
@@ -317,21 +296,21 @@ class CrmLeadService:
 
         draft: LeadDraft | None = None
         body: dict[str, Any] = {}
-        unasked: _Outcome | None = None
-        if not speaks_https(self.settings.pigro_api_url):
-            unasked = _Outcome(ERRORE, HTTPS_ONLY)
+        unasked: Outcome[_Lead] | None = None
+        if not speaks_https(self.door.api_url):
+            unasked = Outcome(ERRORE, HTTPS_ONLY)
         else:
             if deal_id is None:
                 draft = self._draft(sent)
             try:
                 body = self.payload(sent, draft, deal_id)
             except _NotAsked as missing:
-                unasked = _Outcome(ERRORE, missing.sentence)
+                unasked = Outcome(ERRORE, missing.sentence)
         outcome = unasked if unasked is not None else self._put(company_id, body)
 
         try:
             row = self._lock(company_id)
-            if deal_id is not None and not inherited and outcome.lead is None:
+            if deal_id is not None and not inherited and outcome.answer is None:
                 refusal = crm_state_sentence(outcome.stato, outcome.errore)
                 self.session.rollback()
                 self._record(admin_id, company_id, outcome, deal_id)
@@ -347,19 +326,19 @@ class CrmLeadService:
         except Exception:
             self.session.rollback()
             raise
-        if outcome.lead is None:
+        if outcome.answer is None:
             _log.warning("request %s is not filed in the CRM: %s", company_id, outcome.stato)
         self._record(admin_id, company_id, outcome, deal_id)
         return self._result(company_id)
 
-    def link_pending(self) -> CrmLinkCount:
+    def link_pending(self) -> SweepCount:
         """The sweep's round: `link` on every live request waiting (`da_collegare`) or
         failed (`errore`) that nothing is attempting right now, each on its own, a failure
         logged without stopping the rest. A `rifiutato` request is not asked again, nor a
         row with no state. Without a token nothing is asked."""
         if not self.configured:
             _log.info("no REBASE_PIGRO_ENGAGEMENTS_TOKEN on this environment: no request filed")
-            return CrmLinkCount(linked=0, failed=0)
+            return SweepCount(linked=0, failed=0)
         cutoff = self.now() - GRACE
         rows = self.session.scalars(
             select(Company.id)
@@ -371,23 +350,12 @@ class CrmLeadService:
             )
             .order_by(Company.created_at, Company.id)
         ).all()
-        self.session.rollback()
-        linked = failed = 0
-        for company_id in rows:
-            try:
-                result = self.link(company_id, sweep=True)
-            except Exception:
-                self.session.rollback()
-                _log.warning("request %s could not be filed in the CRM", company_id, exc_info=True)
-                failed += 1
-                continue
-            if not result.asked:
-                continue
-            if result.stato == COLLEGATO:
-                linked += 1
-            else:
-                failed += 1
-        return CrmLinkCount(linked=linked, failed=failed)
+
+        def link(company_id: UUID) -> bool | None:
+            result = self.link(company_id, sweep=True)
+            return None if not result.asked else result.stato == COLLEGATO
+
+        return sweep_round(self.session, rows, link, what="request")
 
     # ---- the steps ---------------------------------------------------------------------
 
@@ -408,21 +376,18 @@ class CrmLeadService:
         leave the row out of the sweep), then committed and released. `None` when nothing is
         to be asked: a soft-deleted request, which is not linked, a sweep that finds the row
         taken care of, or no token (the request waits)."""
-        try:
+        with committed(self.session):
             row = self._lock(company_id)
             if row.deleted_at is not None:
-                self.session.rollback()
                 return None
             if sweep:
                 cutoff = self.now() - GRACE
                 busy = row.crm_attempted_at is not None and row.crm_attempted_at > cutoff
                 if row.crm_stato not in PENDING or busy or row.created_at > cutoff:
-                    self.session.rollback()
                     return None
             if row.crm_stato is None and deal_id is None:
                 row.crm_stato = DA_COLLEGARE
             if not self.configured:
-                self.session.commit()
                 _log.info(
                     "no REBASE_PIGRO_ENGAGEMENTS_TOKEN on this environment: request %s waits "
                     "as da_collegare",
@@ -453,10 +418,6 @@ class CrmLeadService:
                 deal_id=row.crm_deal_id if row.crm_stato != COLLEGATO else None,
             )
             row.crm_attempted_at = self.now()
-            self.session.commit()
-        except Exception:
-            self.session.rollback()
-            raise
         return sent
 
     def _draft(self, sent: _Sent) -> LeadDraft | None:
@@ -474,61 +435,26 @@ class CrmLeadService:
         )
         if draft is None:
             return None
-        try:
+        with committed(self.session):
             row = self._lock(sent.company_id)
             if row.crm_bozza is None:
                 row.crm_bozza = draft.to_json()
             else:  # another caller kept one first: that is the draft
                 draft = LeadDraft.from_json(row.crm_bozza)
-            self.session.commit()
-        except Exception:
-            self.session.rollback()
-            raise
         return draft
 
-    def _put(self, company_id: UUID, body: dict[str, Any]) -> _Outcome:
-        """The one call, with no row lock held and only over HTTPS. Never raises: whatever
-        happens is an outcome to write."""
-        url = f"{self.settings.pigro_api_url.rstrip('/')}{LEADS_PATH}/{company_id}"
-        headers = {
-            "Authorization": f"Bearer {self.settings.pigro_engagements_token}",
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-        }
-        try:
-            status, raw = self.http("PUT", url, headers, json.dumps(body).encode())
-        except Exception as exc:  # noqa: BLE001 - a refused connection, a DNS miss, a timeout
-            _log.warning(
-                "the CRM did not answer the request %s (%s)", company_id, type(exc).__name__
-            )
-            return _Outcome(ERRORE, _failure(exc))
-        if status in (200, 201):
-            if len(raw) > MAX_BODY_BYTES:
-                return _Outcome(ERRORE, CAUSE_TOO_LONG)
-            try:
-                return _Outcome(COLLEGATO, lead=_Lead.model_validate_json(raw))
-            except ValidationError:
-                return _Outcome(ERRORE, CAUSE_NOT_THE_SHAPE)
-        if status == 422:
-            return _Outcome(RIFIUTATO, _cause(raw, status))
-        if status == 503:
-            # The door's «not now» (its lock busy, the space unreachable), in its words.
-            return _Outcome(ERRORE, _cause(raw, status))
-        return _Outcome(ERRORE, CAUSE_STATUS.format(status=status))
+    def _put(self, company_id: UUID, body: dict[str, Any]) -> Outcome[_Lead]:
+        """The one call, through the door: a `422` is a refusal."""
+        return self.door.put(
+            f"{LEADS_PATH}/{company_id}", body, _Lead, subject=f"the request {company_id}"
+        )
 
     @staticmethod
-    def _write(row: Company, outcome: _Outcome) -> None:
-        row.crm_stato = outcome.stato
-        if outcome.lead is None:
-            row.crm_errore = outcome.errore
-            return
-        row.crm_customer_id = outcome.lead.customer_id
-        row.crm_deal_id = outcome.lead.deal_id
-        row.crm_deal_url = outcome.lead.deal_url
-        row.crm_errore = None
+    def _write(row: Company, outcome: Outcome[_Lead]) -> None:
+        write(row, outcome, state="crm_stato", error="crm_errore", copy=_copy_lead)
 
     def _record(
-        self, admin_id: UUID | None, company_id: UUID, outcome: _Outcome, deal_id: UUID | None
+        self, admin_id: UUID | None, company_id: UUID, outcome: Outcome[_Lead], deal_id: UUID | None
     ) -> None:
         if admin_id is None:
             return
@@ -546,6 +472,12 @@ class CrmLeadService:
         result = CrmLinkResult(row.crm_stato, row.crm_errore, row.crm_deal_url, asked)
         self.session.rollback()
         return result
+
+
+def _copy_lead(row: Company, lead: _Lead) -> None:
+    row.crm_customer_id = lead.customer_id
+    row.crm_deal_id = lead.deal_id
+    row.crm_deal_url = lead.deal_url
 
 
 class _NotAsked(Exception):

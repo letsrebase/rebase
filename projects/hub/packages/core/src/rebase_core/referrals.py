@@ -6,7 +6,7 @@ never on signup): there is no anonymous link. `link_signup` is the public, mute 
 every signup already has (`FreelancerService.apply`, `CompanyService.request`) --
 an unknown code, an empty one, or a member naming themselves is never an error, only a
 referral that quietly does not happen. `record_reward_if_signed` is the one paid door,
-called once from `SigningService._confirm_completion` the moment a letter (never a
+called once from `SigningRecovery._confirm_completion` the moment a letter (never a
 framework agreement, which carries no match) turns `firmato`: each side of the match
 that was referred, freelancer and company independently, gets a reward inserted once
 and never again, on the `INSERT ... ON CONFLICT DO NOTHING` idiom
@@ -333,7 +333,7 @@ class ReferralService:
             self._write_reward(referral_id, kind, first[0], first[1])
 
     def record_reward_if_signed(self, document: ContractDocument, match: Match) -> None:
-        """Called once, from `SigningService._confirm_completion`, under the row locks
+        """Called once, from `SigningRecovery._confirm_completion`, under the row locks
         that call already holds, staged into that same transaction and never committed
         here -- `write_framework`'s own convention, one commit at the end of the
         caller's unit of work, so a reward and the signature that earned it land

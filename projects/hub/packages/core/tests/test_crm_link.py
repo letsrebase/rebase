@@ -23,12 +23,12 @@ from rebase_core.company_schemas import CompanyCreate, CompanyFields
 from rebase_core.config import Settings
 from rebase_core.crm_lead import LeadDraftOut
 from rebase_core.crm_link import CrmLeadService, link_after_response
-from rebase_core.engagements import CAUSE_TIMEOUT
 from rebase_core.errors import InvalidState, LlmCapReached, NotFound
 from rebase_core.llm import LlmCall, LlmRequest, LlmResponse, RecordingCall
 from rebase_core.match_words import HTTPS_ONLY
 from rebase_core.members import MemberService
 from rebase_core.models import AdminAction, Company, User
+from rebase_core.pigro_door import CAUSE_TIMEOUT
 
 NOW = datetime(2026, 11, 2, 9, 0, tzinfo=UTC)
 TODAY = date(2026, 11, 2)

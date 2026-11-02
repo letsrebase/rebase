@@ -28,22 +28,28 @@ from rebase_core.card_batch import BatchPolled, CardBatches
 from rebase_core.card_judge import JUDGE_MAX_OUTPUT_TOKENS
 from rebase_core.cli import main
 from rebase_core.config import Settings
-from rebase_core.crm_link import CrmLinkCount
 from rebase_core.db import session_factory
 from rebase_core.engagements import EngagementService
 from rebase_core.errors import LlmCapReached
 from rebase_core.freelancer_schemas import FreelancerCreate
 from rebase_core.freelancers import FreelancerService
 from rebase_core.http import urllib_engagements_call
-from rebase_core.llm import LlmResponse, RecordingBatch, RecordingCall, TaskOverride
+from rebase_core.llm import LlmResponse, RecordingCall, TaskOverride
+from rebase_core.llm_batch import RecordingBatch
 from rebase_core.models import CardEvalProfile, CardEvalRun, FreelancerCard, User
-from rebase_core.signing import SweepResult
+from rebase_core.pigro_door import SweepCount
+from rebase_core.signing_recovery import SweepResult
 from rebase_core.team_schemas import Card, CardsRefreshed
+
+
+class _FakeRecovery:
+    def sweep(self) -> SweepResult:
+        return _FakeSigningService.result
 
 
 class _FakeSigningService:
     """Records the session and the collaborators `contracts_sweep` built it with, and
-    answers `sweep()` with a canned result."""
+    answers `recovery.sweep()` with a canned result."""
 
     instances: list["_FakeSigningService"] = []
     result = SweepResult(touched=3, unconfirmed=0)
@@ -51,24 +57,22 @@ class _FakeSigningService:
     def __init__(self, session: object, **kwargs: Any) -> None:
         self.session = session
         self.kwargs = kwargs
+        self.recovery = _FakeRecovery()
         _FakeSigningService.instances.append(self)
-
-    def sweep(self) -> SweepResult:
-        return _FakeSigningService.result
 
 
 class _FakeCrmLeadService:
     """What `contracts_sweep`'s CRM round (REB-868) is built with, and a canned count."""
 
     instances: list["_FakeCrmLeadService"] = []
-    count = CrmLinkCount(linked=0, failed=0)
+    count = SweepCount(linked=0, failed=0)
 
     def __init__(self, session: object, settings: Settings, http: object, llm: object) -> None:
         self.http = http
         self.llm = llm
         _FakeCrmLeadService.instances.append(self)
 
-    def link_pending(self) -> CrmLinkCount:
+    def link_pending(self) -> SweepCount:
         return _FakeCrmLeadService.count
 
 
@@ -77,7 +81,7 @@ def _reset(monkeypatch: pytest.MonkeyPatch) -> None:
     _FakeSigningService.instances = []
     _FakeSigningService.result = SweepResult(touched=3, unconfirmed=0)
     _FakeCrmLeadService.instances = []
-    _FakeCrmLeadService.count = CrmLinkCount(linked=0, failed=0)
+    _FakeCrmLeadService.count = SweepCount(linked=0, failed=0)
     monkeypatch.setattr(cli, "CrmLeadService", _FakeCrmLeadService)
 
 
@@ -95,7 +99,7 @@ def test_the_contracts_sweep_command_builds_the_signing_service_and_prints_the_c
     assert (kwargs["documenso"], kwargs["sender"]) == (None, None)
     # And with the link to Pigro, over the seam that waits for a new space (REB-499).
     assert isinstance(kwargs["engagements"], EngagementService)
-    assert kwargs["engagements"].http is urllib_engagements_call
+    assert kwargs["engagements"].door.http is urllib_engagements_call
     out = capsys.readouterr().out
     assert out.strip().splitlines() == [
         "3 documenti ripresi, 0 match collegati a Pigro",
@@ -156,7 +160,7 @@ def test_contracts_sweep_files_the_requests_in_a_round_of_its_own(
     its own line: the count it filed, and the ones it left only when there are any."""
     monkeypatch.setattr(cli, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
     monkeypatch.setattr(signing, "SigningService", _FakeSigningService)
-    _FakeCrmLeadService.count = CrmLinkCount(linked=4, failed=2)
+    _FakeCrmLeadService.count = SweepCount(linked=4, failed=2)
 
     assert main(["contracts-sweep"]) == 0
 
