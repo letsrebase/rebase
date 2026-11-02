@@ -47,6 +47,8 @@ from rebase_core.config import Settings
 from rebase_core.contract_schemas import FiscalData, MatchCreate
 from rebase_core.contracts.fields import signer_data
 from rebase_core.contracts.render import Renderer
+from rebase_core.crm_link import NOT_CONFIGURED as CRM_NOT_CONFIGURED
+from rebase_core.crm_link import CrmLeadService
 from rebase_core.duplicates import duplicate_list
 from rebase_core.engagements import EngagementService
 from rebase_core.errors import DomainError, NotFound, ValidationFailed
@@ -106,6 +108,8 @@ AdminProvider = Callable[[], AdminRead]
 # the way `SigningFactory` builds the signing one: real from settings in production, a
 # recorded `HttpCall` in a test.
 EngagementsFactory = Callable[[Session], EngagementService]
+# The same for `link_company_to_pigro` (REB-869): the service that files a request in the CRM.
+CrmLeadsFactory = Callable[[Session], CrmLeadService]
 
 INSTRUCTIONS = (
     "rebase, la community di freelance di letsrebase.com. Gli strumenti leggono chi "
@@ -280,6 +284,7 @@ def build_server(
     card_llm: LlmSource | None = None,
     sender: EmailSender | None = None,
     engagements: EngagementsFactory | None = None,
+    crm_leads: CrmLeadsFactory | None = None,
 ) -> MCPServer:
     """`admin` answers the admin behind the current call; `settings` and `http` are what
     reaches the CRM, for `list_pigro_spaces` and for the `pigro_slug` of `get_talento`,
@@ -308,7 +313,10 @@ def build_server(
     `link_match_to_pigro` (REB-501), with `urllib_engagements_call` in production, the
     way `__main__.py` and `http.py` build `signing` too. Without it, or without
     `settings.pigro_engagements_token`, both tools answer that Pigro is not configured
-    here, the same sentence an empty token answers from inside the service."""
+    here, the same sentence an empty token answers from inside the service.
+
+    `crm_leads` builds the `CrmLeadService` behind `link_company_to_pigro` (REB-869), over
+    the same seam; without it or without the token the tool answers `CRM_NOT_CONFIGURED`."""
     mcp = MCPServer("rebase", instructions=INSTRUCTIONS, middleware=middleware)
     signer_json = settings.signer_json if settings is not None else ""
     # Whether the CRM's engagements door has a token here: without one an active match's
@@ -837,7 +845,8 @@ def build_server(
         `creato_a` sulla data di creazione (ISO 8601, anche solo `AAAA-MM-GG`).
         `next_cursor` è il cursore opaco della pagina successiva, `None` all'ultima:
         ripassalo in `cursor` insieme agli stessi parametri, un cursore nato con
-        un'altra `q` è rifiutato. Solo lettura."""
+        un'altra `q` è rifiutato. Ogni riga porta lo stato del collegamento al CRM
+        (`crm_stato`, `crm_situazione`, `crm_deal_url`). Solo lettura."""
         term = _search_term(q)
         budget_from = _number(budget_min, "budget_min")
         budget_to = _number(budget_max, "budget_max")
@@ -864,7 +873,10 @@ def build_server(
         """Una richiesta di un'azienda, per id, con `note`: il thread di chi l'ha
         seguita, dal più recente, ognuna con `id`, autore, data, `fonte` (`web`, `mcp`,
         `persona`, `sistema`), l'ultima modifica e `modificabile`. Le note cancellate non
-        ci sono."""
+        ci sono. Porta anche dove sta il collegamento al CRM di rebase: `crm_stato`
+        (`da_collegare`, `collegato`, `errore`, `rifiutato`; vuoto per una richiesta nata
+        prima del collegamento), `crm_situazione` con la frase del CRM quando non è
+        collegata, `crm_deal_url` con l'indirizzo del deal e `crm_attempted_at`."""
         return _run(lambda s: CompanyService(s).get(UUID(company_id)))
 
     @mcp.tool()
@@ -1523,6 +1535,30 @@ def build_server(
             )
         except PigroUnavailable as exc:
             raise ToolError(str(exc)) from exc
+
+    @mcp.tool()
+    def link_company_to_pigro(company_id: str, deal_id: str | None = None) -> dict[str, Any]:
+        """«Riprova» sulla richiesta di un'azienda: la registra ora nel CRM di rebase (cliente,
+        contatto e deal con la bozza AI), a nome dell'admin dietro il token, e risponde la
+        richiesta com'è: `crm_stato` (`collegato`, o `errore`/`rifiutato` con la frase del
+        CRM in `crm_situazione`) e `crm_deal_url`. Registra anche una richiesta nata prima del
+        collegamento. Con `deal_id` (l'id di un deal che il CRM ha già) è «Collega a un altro
+        deal»: il CRM collega quel deal e non crea nulla, e un rifiuto lascia il collegamento
+        com'era. Rifiutato per una richiesta non trovata o cancellata e quando il CRM non è
+        configurato su questo ambiente."""
+        if crm_leads is None or settings is None or not settings.pigro_engagements_token:
+            raise ToolError(CRM_NOT_CONFIGURED)
+        build = crm_leads
+        key = UUID(company_id)
+        deal = UUID(deal_id) if deal_id is not None else None
+
+        def call(session: Session) -> dict[str, Any]:
+            service = CompanyService(session)
+            service.get(key)
+            build(session).link(key, admin().id, deal)
+            return service.get(key).model_dump(mode="json")
+
+        return _call(call)
 
     @mcp.tool()
     def get_match_report(

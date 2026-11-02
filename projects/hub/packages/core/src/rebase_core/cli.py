@@ -32,12 +32,13 @@ from rebase_core.contracts.render import (
     signature_blanks,
 )
 from rebase_core.conversions import pixel_from_settings
+from rebase_core.crm_link import CrmLeadService
 from rebase_core.db import create_engine_from_settings, session_factory
 from rebase_core.documenso import client_from_settings
 from rebase_core.duplicates import UNIQUE_INDEXES, ensure_unique_indexes, find_duplicates
 from rebase_core.errors import DocumensoFailed, DomainError
 from rebase_core.freelancers import freelancer_read
-from rebase_core.http import HttpCall
+from rebase_core.http import HttpCall, urllib_engagements_call
 from rebase_core.llm import AiBatch, AiCall, TaskOverride, batch_for_task, call_for_task
 from rebase_core.mail import CardSummary, EmailSender, sender_from_settings, welcome_mail
 from rebase_core.merge import MergeRead, PersonMergeService
@@ -195,7 +196,8 @@ def contracts_sweep() -> int:
     otherwise failed silently, leaving a document `inviato` and «0 documenti ripresi»
     printed every ten minutes with nothing to say why. Then the round that links active
     matches to their deal on Pigro (REB-499): how many it linked, always, and how many
-    it tried and left unlinked, only when there are any."""
+    it tried and left unlinked, only when there are any. Then, on a line of its own, the
+    round that files company requests in the CRM (`crm_sweep`, REB-868)."""
     settings = get_settings()
     session = session_factory(create_engine_from_settings(settings))()
     try:
@@ -209,7 +211,32 @@ def contracts_sweep() -> int:
     if result.link_failed:
         line += f", {result.link_failed} non collegati"
     print(line)
+    print(crm_sweep(settings))
     return 0
+
+
+def crm_sweep(settings: Settings) -> str:
+    """The round of `rebase contracts-sweep` that files company requests in rebase's CRM
+    (REB-868): every live request still `da_collegare` or in `errore`, in a session of its
+    own and wired outside `SigningService`, whose round returns early without an
+    engagement service. Its line says how many it filed, and how many it tried and left
+    unfiled only when there are any. The draft's model is asked for only when a request
+    has none yet (`crm_lead` in «Modelli AI»)."""
+    open_session = session_factory(create_engine_from_settings(settings))
+    session = open_session()
+    try:
+        counts = CrmLeadService(
+            session,
+            settings,
+            urllib_engagements_call,
+            lambda: call_for_task(lambda: closing(open_session()), settings, "crm_lead"),
+        ).link_pending()
+    finally:
+        session.close()
+    line = f"{counts.linked} richieste collegate al CRM"
+    if counts.failed:
+        line += f", {counts.failed} non collegate"
+    return line
 
 
 def campaigns_tick() -> int:

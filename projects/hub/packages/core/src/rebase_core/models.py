@@ -375,6 +375,17 @@ class Company(Base, PrimaryKeyMixin, TimestampMixin, UtmMixin):
     # Same soft-delete as `Freelancer.deleted_at`, same reason: several requests per
     # company, and a wrongly-deleted one is a click away from being live again.
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    # Where this request stands in rebase's own CRM (REB-868, spec 2026-10-30 § 4): the
+    # states are a match's `pigro_stato` (`PIGRO_STATES`), `NULL` for a row written before
+    # the link existed, which the sweep never picks up. `crm_bozza` is the AI's draft of the
+    # first successful call, kept so a retry never asks again.
+    crm_stato: Mapped[str | None] = mapped_column(String(20), default=None)
+    crm_customer_id: Mapped[UUID | None] = mapped_column(default=None)
+    crm_deal_id: Mapped[UUID | None] = mapped_column(default=None)
+    crm_deal_url: Mapped[str | None] = mapped_column(Text, default=None)
+    crm_errore: Mapped[str | None] = mapped_column(Text, default=None)
+    crm_attempted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    crm_bozza: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True), default=None)
 
     __table_args__ = (
         Index("ix_companies_created_at", "created_at"),
@@ -410,6 +421,11 @@ class Company(Base, PrimaryKeyMixin, TimestampMixin, UtmMixin):
             name="ck_companies_giorni_presenza_together",
         ),
         CheckConstraint("numero_risorse >= 1", name="ck_companies_numero_risorse_positive"),
+        CheckConstraint(
+            "crm_stato IS NULL OR crm_stato IN "
+            "('da_collegare', 'collegato', 'errore', 'rifiutato')",
+            name="ck_companies_crm_stato",
+        ),
     )
 
 
@@ -710,7 +726,9 @@ ADMIN_ACTION_ENTITY_TYPES = (
 # the entity is the configuration, not a row): `ai_key` (its payload says «chiave
 # sostituita» and the last four characters, never the key), `ai_task`, `ai_price` and
 # `ai_switch` (a provider turned on or off), the last three with the before and after.
-# REB-498 adds `pigro_link` on `match`: an admin's «Riprova su Pigro», its payload the
+# REB-868 adds `crm_link` on `company`: an admin's «Riprova» or «Collega a un altro deal»,
+# its payload the outcome (`esito`), the CRM's sentence (`errore`) and, for the second,
+# `deal_id`. REB-498 adds `pigro_link` on `match`: an admin's «Riprova su Pigro», its payload the
 # outcome (`esito`) and the CRM's sentence (`errore`). REB-517 adds `talents_contacted`,
 # on entity type `team_request`: «Contatta i talenti» and «Rimanda», with how many talents
 # were mailed. No `CHECK` holds this list: it is the record of what the code writes.
@@ -764,6 +782,7 @@ ADMIN_ACTION_KINDS = (
     "note_deleted",
     "status_changed",
     "anon_cv_downloaded",
+    "crm_link",
 )
 
 
@@ -1492,7 +1511,7 @@ class ReferralSettings(Base, PrimaryKeyMixin, TimestampMixin):
 # of these three; the database repeats both lists as `CHECK`s. The efforts are the one
 # reasoning knob every provider maps in its own words (`llm.build_model`).
 AI_PROVIDERS = ("anthropic", "openai", "google")
-AI_TASKS = ("card", "team_proposal", "cv_anonimo")
+AI_TASKS = ("card", "team_proposal", "cv_anonimo", "crm_lead")
 AI_EFFORTS = ("low", "medium", "high")
 # Why a call ran (`ai_usage.purpose`): a real one, an admin's «Prova», an evaluation run.
 # All three consume the cap of the task they ran as.
@@ -1527,11 +1546,11 @@ class AiProvider(Base):
 
 
 class AiTask(Base):
-    """What answers one task (`card`, `team_proposal`, `cv_anonimo`): provider, free-text
-    model name, reasoning effort where the provider has one, the output ceiling, and an optional
-    daily cap in euros that stops the task's calls for the rest of the day. The rows
-    are seeded by migrations 0036 and 0044; `rebase ai-seed` points them at the old Anthropic
-    settings."""
+    """What answers one task (`card`, `team_proposal`, `cv_anonimo`, `crm_lead`): provider,
+    free-text model name, reasoning effort where the provider has one, the output ceiling, and
+    an optional daily cap in euros that stops the task's calls for the rest of the day. The
+    rows are seeded by migrations 0036, 0044 and 0045; `rebase ai-seed` points them at the old
+    Anthropic settings."""
 
     __tablename__ = "ai_tasks"
 
@@ -1550,7 +1569,9 @@ class AiTask(Base):
     )
 
     __table_args__ = (
-        CheckConstraint("task IN ('card', 'team_proposal', 'cv_anonimo')", name="ck_ai_tasks_task"),
+        CheckConstraint(
+            "task IN ('card', 'team_proposal', 'cv_anonimo', 'crm_lead')", name="ck_ai_tasks_task"
+        ),
         CheckConstraint("max_output_tokens > 0", name="ck_ai_tasks_max_output_tokens"),
         CheckConstraint(
             "daily_cap_eur IS NULL OR daily_cap_eur >= 0", name="ck_ai_tasks_daily_cap"
@@ -1622,7 +1643,9 @@ class AiUsage(Base, PrimaryKeyMixin):
 
     __table_args__ = (
         Index("ix_ai_usage_task_at", "task", "at"),
-        CheckConstraint("task IN ('card', 'team_proposal', 'cv_anonimo')", name="ck_ai_usage_task"),
+        CheckConstraint(
+            "task IN ('card', 'team_proposal', 'cv_anonimo', 'crm_lead')", name="ck_ai_usage_task"
+        ),
         CheckConstraint("purpose IN ('run', 'prova', 'eval')", name="ck_ai_usage_purpose"),
         CheckConstraint("priced = (cost_eur IS NOT NULL)", name="ck_ai_usage_priced"),
     )

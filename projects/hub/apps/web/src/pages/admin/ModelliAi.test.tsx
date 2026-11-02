@@ -42,7 +42,7 @@ const CONFIG = {
     provider('openai'),
     provider('google'),
   ],
-  tasks: [task('card'), task('team_proposal'), task('cv_anonimo')],
+  tasks: [task('card'), task('team_proposal'), task('cv_anonimo'), task('crm_lead')],
   sources: [
     { kind: 'github', enabled: false, updated_at: null, updated_by_name: null },
     { kind: 'links', enabled: false, updated_at: null, updated_by_name: null },

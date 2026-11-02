@@ -4,6 +4,7 @@ import hashlib
 import logging
 import re
 from collections.abc import Iterator
+from uuid import UUID
 
 import httpx
 import pytest
@@ -1011,3 +1012,26 @@ def test_the_member_lookup_names_a_member_and_says_no_to_anyone_else(
         ).status_code
         == 422
     )
+
+
+def test_a_second_request_from_the_member_area_is_queued_for_the_crm(
+    client: TestClient,
+    sender: RecordingSender,
+    api_session: Session,
+    clean: None,
+    crm_filings: list[UUID],
+) -> None:
+    """REB-868: the member's additional request is written `da_collegare` with its row and
+    handed to the CRM filing after the response, as the wizard's is."""
+    _request_company(client)
+    _enter(client, sender, "wile@acme.it")
+    first = crm_filings.copy()
+
+    created = client.post("/api/hub/me/company", json=_company_answers(durata="6 mesi"))
+
+    assert created.status_code == 201, created.text
+    assert len(crm_filings) == len(first) + 1
+    row = api_session.execute(
+        text("SELECT crm_stato FROM companies WHERE id = :id"), {"id": crm_filings[-1]}
+    ).scalar_one()
+    assert row == "da_collegare"

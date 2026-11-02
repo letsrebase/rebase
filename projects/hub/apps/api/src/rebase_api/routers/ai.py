@@ -39,6 +39,15 @@ from rebase_core.ai_schemas import (
 from rebase_core.audit import AdminActionRead
 from rebase_core.card_batch import active_batch
 from rebase_core.cards import CardWriter, regenerate_after_response
+from rebase_core.crm_lead import (
+    SAMPLE_DURATA,
+    SAMPLE_FIGURA,
+    SAMPLE_PERIODO_DA,
+    SAMPLE_PROGETTO,
+    LeadDraft,
+    LeadDraftOut,
+    lead_request,
+)
 from rebase_core.errors import LlmUnavailable, NotFound, TeamBuilderOff
 from rebase_core.llm import LlmMessage, LlmRequest
 from rebase_core.models import AI_TASKS, AiUsage
@@ -240,15 +249,20 @@ def prova(
     if task not in AI_TASKS:
         raise NotFound("ai_task", task)
     started = time.monotonic()
-    try:
-        response = make_call(task).complete(
-            LlmRequest(
-                system=PROVA_SYSTEM,
-                messages=[LlmMessage(role="user", text=PROVA_PROMPT)],
-                output_model=_Probe,
-                max_tokens=PROVA_MAX_TOKENS,
-            )
+    # The CRM draft's probe is the task itself on an invented request, so the page shows a
+    # real draft; the others send the fixed one-word prompt.
+    request = (
+        lead_request(SAMPLE_FIGURA, SAMPLE_PROGETTO, SAMPLE_DURATA, SAMPLE_PERIODO_DA)
+        if task == "crm_lead"
+        else LlmRequest(
+            system=PROVA_SYSTEM,
+            messages=[LlmMessage(role="user", text=PROVA_PROMPT)],
+            output_model=_Probe,
+            max_tokens=PROVA_MAX_TOKENS,
         )
+    )
+    try:
+        response = make_call(task).complete(request)
     except LlmUnavailable as exc:
         return ProvaRead(
             answer="",
@@ -265,7 +279,13 @@ def prova(
         .limit(1)
     ).first()
     cost = usage.cost_eur if usage is not None and usage.cost_eur is not None else None
-    answer = response.parsed.answer if isinstance(response.parsed, _Probe) else response.text
+    answer: str | None
+    if isinstance(response.parsed, _Probe):
+        answer = response.parsed.answer
+    elif isinstance(response.parsed, LeadDraftOut):
+        answer = LeadDraft.from_output(response.parsed).text()
+    else:
+        answer = response.text
     return ProvaRead(
         answer=answer or "",
         latency_ms=latency,

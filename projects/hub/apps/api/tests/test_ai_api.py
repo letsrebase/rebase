@@ -296,6 +296,49 @@ def test_prova_returns_answer_latency_cost_with_stub_model(
     assert Decimal(body["cost_eur"]) > 0
 
 
+def test_prova_of_the_crm_draft_answers_a_draft_and_drops_an_out_of_bounds_value(
+    client: TestClient, admin: User, api_session: Session
+) -> None:
+    """REB-867: «Prova» on `crm_lead` sends an invented request and shows the draft as the
+    deal would take it: the days a week the model put outside 0.5 to 5 are gone."""
+    seen: list[LlmRequest] = []
+
+    class DraftCall:
+        def complete(self, request: LlmRequest) -> LlmResponse:
+            seen.append(request)
+            return LlmResponse(
+                text="{}",
+                stop_reason="end_turn",
+                refusal_category=None,
+                model="claude-opus-5",
+                provider="anthropic",
+                input_tokens=10,
+                output_tokens=2,
+                cache_read_tokens=0,
+                parsed=request.output_model.model_validate(
+                    {
+                        "ruolo": "Sviluppatrice backend",
+                        "giorni_settimana": 9,
+                        "durata_settimane": 12,
+                        "competenze": ["Python", "Docker"],
+                        "sintesi": "Serve una persona per migrare un gestionale.",
+                    }
+                ),
+            )
+
+    client.app.dependency_overrides[get_prova_call] = lambda: lambda task: DraftCall()  # type: ignore[attr-defined]
+    body = client.post(f"{BASE}/tasks/crm_lead/prova").json()
+    assert body["error"] is None
+    assert body["answer"].splitlines() == [
+        "Ruolo: Sviluppatrice backend",
+        "Giorni a settimana: -",
+        "Durata in settimane: 12",
+        "Competenze: Python, Docker",
+        "Sintesi: Serve una persona per migrare un gestionale.",
+    ]
+    assert "sviluppatrice backend Python" in seen[0].messages[0].text
+
+
 def test_prova_error_message_has_no_key(
     client: TestClient, admin: User, stub: dict[str, Any]
 ) -> None:

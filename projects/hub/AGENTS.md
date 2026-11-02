@@ -74,6 +74,7 @@ a `SigningService` over `FakeDocumenso`.
 - `record_notice`: «Registra disdetta» on an active framework agreement.
 - `cancel_match`: «Annulla» on a match in draft or in signature.
 - `close_match`: «Chiudi match», the engagement ends.
+- `link_company_to_pigro`: «Riprova» on a company request (REB-869), the way `link_match_to_pigro` is for matches: files it in the CRM now as the calling admin and answers the request with `crm_stato`, `crm_situazione` and `crm_deal_url`; with `deal_id` it is «Collega a un altro deal». `get_company` and `list_aziende` carry the same three fields.
 - `set_freelancer_tax_data`: saves the tax data, the partita IVA optional; answers that they are saved, never the values.
 
 The team builder and the talent cloud are thirteen tools more (REB-520, spec § 8 of
@@ -106,7 +107,8 @@ where an admin replaces a provider's key (write-only: the answer is «configurat
 …abcd»), picks each task's provider, model, effort, token and daily euro cap, edits the price
 table and reads the month's spend. «Prova» sends one fixed non-personal prompt through the
 task's own seam, recorded as `purpose="prova"`, so it spends the task's cap. The tasks are
-`card`, `team_proposal` and, since REB-862, `cv_anonimo`.
+`card`, `team_proposal`, since REB-862 `cv_anonimo` and, since REB-867, `crm_lead`. «Prova» of
+`crm_lead` sends an invented request and shows the draft as the deal would take it.
 
 There is no «Valutazione» page: the evaluation is the command `rebase cards-eval` (REB-842, below),
 which an operator runs and reads, and the admin API has no `card-eval` route.
@@ -195,6 +197,43 @@ Spec: `docs/superpowers/specs/2026-10-30-anonymous-cv-pdf-design.md`.
   `_TASK_HTTP_LIMITS`); the host vhost gives the route 330 seconds, a by-hand change on the
   installed copies (below, after the team builder's 90 seconds).
 - **Logs.** Nothing here logs the CV, the answer or a name.
+
+## The CRM draft task (REB-867)
+
+`crm_lead` (`rebase_core.crm_lead`, migration 0045, seeded from the `team_proposal` row, effort
+`low`, 1500 tokens, 1 euro a day, **off**) drafts a CRM deal from a company request. Spec:
+`docs/superpowers/specs/2026-10-30-company-requests-into-the-rebase-crm-design.md` § 3. The model
+reads `figura_richiesta`, `progetto`, `durata` and `periodo_da` and nothing else: never the
+company's name, the referente or the budget (`draft_lead` takes no such argument). Its answer's
+schema is lenient on purpose and `LeadDraft.from_output` holds each field to its bound (ruolo 80
+characters, days 0.5 to 5, weeks 1 to 104 whole, ten skills of 40, sintesi 800): a value outside
+is dropped, never clamped. A call that cannot answer gives `None` and the filing goes ahead with
+no draft. Switch it on in «Modelli AI» only once `privacy.html` names what it sends.
+
+## A request filed in the CRM (REB-868)
+
+Every request written by `CompanyService.request` (the wizard) or
+`MemberService.create_additional_request` (a member's second one) is `crm_stato =
+da_collegare` in the transaction of its row; a row written before migration 0046 has `NULL`
+and the sweep never picks it up (no backfill: it reaches the CRM only by an admin's «Riprova»
+or «Collega a un altro deal»). `rebase_core.crm_link.CrmLeadService` is `EngagementService`'s
+twin: `link(company_id, admin_id, deal_id)` locks the row to read what is sent and stamp the
+attempt, **releases it before the AI call and the HTTP call**, and locks again to write the
+answer; the draft of `crm_lead` is made once and kept in `crm_bozza`, so a CRM that is down
+is retried without spending the cap again. The call is `PUT {pigro_api_url}/api/rebase/leads/
+{id}` under `REBASE_PIGRO_ENGAGEMENTS_TOKEN` (no token: the request waits as `da_collegare`);
+`201`/`200` is `collegato`, `422` is `rifiutato` (only a person asks again), anything else
+`errore` (the sweep retries). The deal is built in code and every value is cut to the CRM's
+limits; `tariffa_oraria` and `ore_preventivate` are never sent. The first attempt is a
+`BackgroundTasks` job (`deps.get_crm_filing`); the sweep is `crm_sweep` in `rebase
+contracts-sweep`, its own round and its own line, outside `SigningService`, and leaves a row
+alone for five minutes after it was written or attempted so it never races that job.
+`POST /api/hub/companies/{id}/crm/link` is «Riprova»; with `{"deal_id"}` it is «Collega a un
+altro deal»: no draft, and a refusal is a 409 that changes nothing stored (the sweep would
+otherwise file the request by its address and make the second customer being corrected).
+The trail entry is `crm_link`. The admin company page shows the state, the CRM's sentence and
+the deal's link in `pages/admin/CrmLink.tsx`, with «Riprova» and «Collega a un altro deal»;
+`link_company_to_pigro` is the same for agents (REB-869).
 
 ## One person, once (REB-800)
 

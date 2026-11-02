@@ -853,6 +853,14 @@ class CompanyRead(BaseModel):
     giorni_presenza: int | None
     numero_risorse: int
     stato: str
+    # The request's place in rebase's CRM (REB-868): the state (`PIGRO_STATES`; `None` for a
+    # request from before the link), the cause of the last failure, the page's sentence for
+    # it, the deal's address and the time of the last attempt.
+    crm_stato: str | None = None
+    crm_errore: str | None = None
+    crm_situazione: str | None = None
+    crm_deal_url: str | None = None
+    crm_attempted_at: datetime | None = None
     origine: str | None = None
     utm_source: str | None = None
     utm_medium: str | None = None
@@ -869,6 +877,16 @@ class CompanyRead(BaseModel):
     # The talent cloud this request's referente holds for it, while it is open
     # (REB-518): filled by `get` only, for «Apri il talent cloud» and «Revoca».
     talent_cloud_grant: TalentCloudGrantRead | None = None
+
+
+class CrmLinkBody(BaseModel):
+    """`POST /api/hub/companies/{id}/crm/link` (REB-868): «Riprova» sends nothing; «Collega a
+    un altro deal» sends the CRM deal's id, and the door links that deal and creates
+    nothing."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    deal_id: UUID | None = None
 
 
 class CompanyList(BaseModel):

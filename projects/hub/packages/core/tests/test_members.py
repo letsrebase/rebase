@@ -423,7 +423,7 @@ def test_an_additional_request_carries_the_name_forward_as_a_new_row(
     user = UserService(hub_session).by_email("wile@acme.it")
     assert user is not None
 
-    created = members.create_additional_request(
+    created, created_id = members.create_additional_request(
         user.id,
         CompanyFields(**{**GOOD_COMPANY, "durata": "6 mesi", "figura_richiesta": "Data engineer"}),
     )
@@ -432,7 +432,8 @@ def test_an_additional_request_carries_the_name_forward_as_a_new_row(
     assert created.richieste[0].figura_richiesta == "Data engineer"
 
     newest = members.require_company(user.id)
-    assert newest.id != first_id
+    assert newest.id == created_id != first_id
+    assert newest.crm_stato == "da_collegare"  # REB-868: queued in the same transaction
     assert newest.nome_azienda == "ACME Srl"  # carried forward, never asked again
     assert newest.utm_source is None and newest.utm_campaign is None  # never carried forward
 
