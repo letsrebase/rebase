@@ -24,7 +24,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.contracts.models import Contract
+from pigrocrm.core.contracts.models import Contract, RateCard
 from pigrocrm.core.contracts.repository import ContractRepository, RateCardRepository
 from pigrocrm.core.customers.repository import CustomerRepository
 from pigrocrm.core.emitter.models import LegalEntity
@@ -189,9 +189,26 @@ def match_customer(
     return customer.id if customer is not None else None
 
 
+# A customer's contracts with their rate cards, read once per `review_invoices` call:
+# several invoices of one upload usually belong to the same customer.
+CustomerContracts = dict[UUID, list[tuple[Contract, list[RateCard]]]]
+
+
+def _contracts_of(
+    session: Session, cache: CustomerContracts, customer_id: UUID
+) -> list[tuple[Contract, list[RateCard]]]:
+    if customer_id not in cache:
+        rate_card_repo = RateCardRepository(session)
+        cache[customer_id] = [
+            (contract, rate_card_repo.list_for_contract(contract.id))
+            for contract in ContractRepository(session).list_for_customer(customer_id)
+        ]
+    return cache[customer_id]
+
+
 def _day_rate_contract_for_customer(
-    session: Session, customer_id: UUID, data_emissione: date
-) -> Contract | None:
+    session: Session, cache: CustomerContracts, customer_id: UUID, data_emissione: date
+) -> tuple[Contract, list[RateCard]] | None:
     """The one contract, among `customer_id`'s, whose own rate card is a day-rate
     one on the invoice's own `data_emissione` -- mastro's `resolveActiveContractId`
     (`analyze/+server.ts:37-46`), translated onto a schema with no contract
@@ -202,39 +219,34 @@ def _day_rate_contract_for_customer(
     exactly: the tax id already proved whose invoice this is, but nothing on the
     document says which of several concurrent engagements its days belong to.
 
-    Reads `list_active()`, not the paginated, caller-facing `list()`: this is an
-    internal "read everything this owner has" computation, the same shape
-    `WorkUnitRepository.unbilled_for_contract` and `list_active()` itself already
-    are, and `list()`'s own default page (50 rows, independent reviewer's own
-    finding) would silently drop a candidate past the first page instead of
-    genuinely seeing every contract this customer has.
+    Returned with that contract's rate cards. Reads `list_for_customer`, not the
+    paginated, caller-facing `list()`, whose default page would silently drop a
+    candidate past the first page.
     """
-    rate_card_repo = RateCardRepository(session)
-    candidates = []
-    for contract in ContractRepository(session).list_active():
-        if contract.customer_id != customer_id:
-            continue
-        card = resolve_rate_card(rate_card_repo.list_for_contract(contract.id), data_emissione)
-        if card is not None and card.tipo == "giornaliero":
-            candidates.append(contract)
+    candidates = [
+        (contract, cards)
+        for contract, cards in _contracts_of(session, cache, customer_id)
+        if (card := resolve_rate_card(cards, data_emissione)) is not None
+        and card.tipo == "giornaliero"
+    ]
     return candidates[0] if len(candidates) == 1 else None
 
 
 def _propose_day_mappings(
-    session: Session, invoice: ParsedInvoice, customer_id: UUID
+    session: Session, cache: CustomerContracts, invoice: ParsedInvoice, customer_id: UUID
 ) -> list[WorkUnitDayMappingProposal | None]:
     """REB-369: one entry per `invoice.righe`, `None` where the customer resolves
     to no single day-rate contract, that contract has no recorded, unbilled days,
     or `propose_day_mapping` itself found no complete match for that particular
     line."""
     none_per_line: list[WorkUnitDayMappingProposal | None] = [None] * len(invoice.righe)
-    contract = _day_rate_contract_for_customer(session, customer_id, invoice.data_emissione)
-    if contract is None:
+    found = _day_rate_contract_for_customer(session, cache, customer_id, invoice.data_emissione)
+    if found is None:
         return none_per_line
+    contract, rate_cards = found
     eligible_days = WorkUnitRepository(session).unbilled_for_contract(contract.id)
     if not eligible_days:
         return none_per_line
-    rate_cards = RateCardRepository(session).list_for_contract(contract.id)
     return [
         propose_day_mapping(
             riga.quantita, riga.prezzo_totale, invoice.data_emissione, eligible_days, rate_cards
@@ -281,6 +293,7 @@ def review_invoices(
     except ValueError as exc:
         return [ReviewedInvoice(outcome="unclaimed", note=str(exc))]
 
+    contracts: CustomerContracts = {}
     rows: list[ReviewedInvoice] = []
     for invoice in parsed:
         classification, azienda = classify_parsed_invoice(
@@ -296,7 +309,9 @@ def review_invoices(
             if matched_customer_id is None:
                 outcome = "needs_customer_confirmation"
             else:
-                mappature_giorni = _propose_day_mappings(session, invoice, matched_customer_id)
+                mappature_giorni = _propose_day_mappings(
+                    session, contracts, invoice, matched_customer_id
+                )
         rows.append(
             ReviewedInvoice(
                 outcome=outcome,
