@@ -6,8 +6,9 @@ import tempfile
 from datetime import timedelta
 from pathlib import Path
 
-from pigrocrm.core.errors import NotFound, ValidationFailed
+from pigrocrm.core.errors import NotFound
 from pigrocrm.core.storage.base import validate_storage_key
+from pigrocrm.core.storage.errors import STORAGE_ENTITY, unusable_storage_key
 
 
 class LocalFileStorage:
@@ -43,11 +44,9 @@ class LocalFileStorage:
         except FileNotFoundError:
             return candidate.resolve(strict=False)
         except OSError as exc:
-            raise ValidationFailed(
-                "document_version",
-                "storage_key",
+            raise unusable_storage_key(
                 "impossibile risolvere il percorso di storage",
-                expected="una chiave la cui destinazione sia risolvibile e resti nella radice",
+                "una chiave la cui destinazione sia risolvibile e resti nella radice",
             ) from exc
 
     def _ensure_contained(self, candidate: Path) -> Path:
@@ -65,11 +64,9 @@ class LocalFileStorage:
         until `put` started routing its temp path through this same check too.
         """
         if not self._resolve_or_refuse(candidate).is_relative_to(self.root.resolve()):
-            raise ValidationFailed(
-                "document_version",
-                "storage_key",
+            raise unusable_storage_key(
                 "il percorso risolto punta fuori dalla radice di storage",
-                expected="una chiave la cui destinazione reale resti dentro la radice",
+                "una chiave la cui destinazione reale resti dentro la radice",
             )
         return candidate
 
@@ -89,41 +86,14 @@ class LocalFileStorage:
         -- which is where every reader already looks. Storing it in a sidecar file
         would create a second answer that can disagree with the first.
 
-        The temporary file's name must never be a predictable function of `key`. An
-        earlier version derived it as `key + ".tmp"` -- a name that is itself an
-        ordinary-looking storage key, reachable three distinct ways, each reproduced by
-        writing through this method and inspecting the actual bytes on disk afterward,
-        not reasoned about in the abstract:
-
-        1. An unrelated real upload already sitting at that literal key (nothing
-           adversarial needed -- just an ordinary document whose key happens to end in
-           ``.tmp``) is silently destroyed the moment this method runs, with no
-           exception on either call.
-        2. A symlink planted at that exact name before the call makes `os.replace` move
-           the *symlink itself* onto the real key -- `rename(2)` retargets the
-           directory entry, it does not follow the link -- so the uploaded bytes land
-           on whatever the symlink pointed at, outside root, and the real key itself
-           becomes a symlink pointing there too.
-        3. A hard link planted at that name shares the same inode as some unrelated
-           file elsewhere on the same filesystem, so writing to it (open-with-truncate,
-           not unlink-then-create) overwrites that other file's content directly,
-           confirmed by the two paths sharing `st_ino` before and after.
-
-        A deterministic name also means two concurrent `put()` calls to the *same* key
-        share it: the loser's own `os.replace` fails once the winner's has already
-        consumed the file out from under it -- a raw `FileNotFoundError`, reproduced
-        with real threads, not merely plausible in theory.
-
-        `tempfile.mkstemp` closes all four at once: one syscall creates a randomly
-        named file with `O_CREAT|O_EXCL`, which POSIX guarantees fails outright if
-        *anything* -- file, symlink, or the pre-existing target of a hard link -- is
-        already sitting at the chosen name, rather than following or truncating it; and
-        every concurrent caller gets its own distinct name, so there is nothing left
-        for two writers to race over. The resulting path is still routed through
-        `_ensure_contained` before being written to -- not because `mkstemp` can be
-        tricked into escaping an already-verified directory (it cannot: the name it
-        generates has no path separators), but so that no filesystem path this class
-        acts on ever bypasses the same check as any other.
+        The temporary file's name is never a function of `key`: a derived name
+        (`key + ".tmp"`) is itself an ordinary storage key, so an unrelated upload at
+        that key would be destroyed, a symlink or hard link planted at it would redirect
+        the write outside root or onto another file, and two concurrent puts to one key
+        would race over it. `tempfile.mkstemp` creates a randomly named file with
+        `O_CREAT|O_EXCL`, which fails outright if anything already sits at the name. The
+        path still goes through `_ensure_contained`, so no path this class acts on
+        bypasses the containment check.
         """
         path = self._path(key)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -153,7 +123,7 @@ class LocalFileStorage:
             # much "no such document blob" as a key nothing was ever written under --
             # neither is the raw OSError this project has already let reach a caller
             # six times for other input shapes.
-            raise NotFound("document_blob", key) from exc
+            raise NotFound(STORAGE_ENTITY, key) from exc
 
     def delete(self, key: str) -> None:
         """Idempotent: a retried request must not fail because the first one worked.
@@ -168,11 +138,9 @@ class LocalFileStorage:
         """
         path = self._path(key)
         if path.is_dir():
-            raise ValidationFailed(
-                "document_version",
-                "storage_key",
+            raise unusable_storage_key(
                 "la chiave indica una directory, non un singolo blob",
-                expected="una chiave che identifica un unico file",
+                "una chiave che identifica un unico file",
             )
         path.unlink(missing_ok=True)
 
