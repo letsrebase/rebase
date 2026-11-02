@@ -128,8 +128,6 @@ x-api-environment: &api-environment
   # Browser origins allowed to call the API cross-origin, comma-separated. Empty: none,
   # the SPA is served from the API's own origin.
   PIGROCRM_CORS_ORIGINS: ${PIGROCRM_CORS_ORIGINS:-}
-  # The most spaces (databases) this installation will open: a global ceiling.
-  PIGROCRM_MAX_SPACES: ${PIGROCRM_MAX_SPACES:-1000}
   # The MCP server, on both transports (the `mcp` service and the on-demand stdio
   # run), reports its tool calls to PostHog when the key is set (ORB-186). Empty:
   # it measures nothing.
@@ -153,7 +151,7 @@ x-api-environment: &api-environment
 
 services:
   db:
-    image: postgres:17-alpine
+    image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
     restart: unless-stopped
     # Postgres's own entrypoint starts as root to take the data directory over and then
     # drops to `postgres`: the capabilities it needs for that, and no others.
@@ -320,10 +318,13 @@ services:
     restart: unless-stopped
     <<: *hardening
     read_only: true
-    # nginx-unprivileged keeps its pid file, temp files and cache under /tmp.
+    # nginx-unprivileged keeps its pid file, temp files and cache under /tmp, and buffers a
+    # request body or a response there: spa.conf allows 105 MiB uploads (documents, the invoice
+    # import) and the same size of download, so the tmpfs holds one of them with room, and its
+    # pages count against the memory limit.
     tmpfs:
-      - /tmp:size=64m,mode=1777
-    mem_limit: 128m
+      - /tmp:size=256m,mode=1777
+    mem_limit: 384m
     pids_limit: 128
     depends_on:
       api:

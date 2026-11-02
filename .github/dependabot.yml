@@ -146,10 +146,12 @@ updates:
       - dependency-name: node
         update-types: [version-update:semver-major]
 
-  # The images the compose files run as published. Today this opens nothing: the only
-  # one is `postgres:17-alpine`, which is only ever offered the next major. It is here
-  # so the next image a compose file runs is covered, and so the PostgreSQL rule is
-  # written where the bot reads it.
+  # The images the compose files run as published. `postgres:17-alpine` is pinned by tag and
+  # digest in the three compose files (and in db-backup/Dockerfile): a minor or patch image is
+  # offered here as a digest bump, so a database container is only ever recreated on a pull
+  # request that was merged, never by the deploy's `pull`. The same bump has to reach the
+  # four places (`test_documenso_compose.py` and the backup drill fail when they differ).
+  # The PostgreSQL rule is written where the bot reads it.
   - package-ecosystem: docker-compose
     directories:
       - /projects/pigrocrm

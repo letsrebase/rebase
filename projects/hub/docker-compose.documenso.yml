@@ -82,7 +82,7 @@ x-db-backup-environment: &db-backup-environment
 
 services:
   documenso-db:
-    image: postgres:17-alpine
+    image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
     restart: unless-stopped
     # Postgres's own entrypoint starts as root to take the data directory over and then drops
     # to `postgres`: the capabilities it needs for that, and no others. A ceiling on memory,

@@ -30,10 +30,14 @@ set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 backup_dir=$(dirname "$here")
 hub_dir=$(dirname "$backup_dir")
-postgres_image=$(sed -n 's/^ *image: \(postgres:[^ ]*\)$/\1/p' "$hub_dir/docker-compose.documenso.yml" | head -n 1)
-[ -n "$postgres_image" ] || { echo "FAIL: no postgres image in docker-compose.documenso.yml" >&2; exit 1; }
-[ "$(sed -n 's/^ *image: \(postgres:[^ ]*\)$/\1/p' "$hub_dir/docker-compose.yml")" = "$postgres_image" ] \
+# The databases' image as the compose files name it: tag and digest, the same in all three.
+postgres_ref=$(sed -n 's/^ *image: \(postgres:[^ ]*\)$/\1/p' "$hub_dir/docker-compose.documenso.yml" | head -n 1)
+[ -n "$postgres_ref" ] || { echo "FAIL: no postgres image in docker-compose.documenso.yml" >&2; exit 1; }
+[ "$(sed -n 's/^ *image: \(postgres:[^ ]*\)$/\1/p' "$hub_dir/docker-compose.yml")" = "$postgres_ref" ] \
   || { echo "FAIL: the hub's db and Documenso's run different Postgres images" >&2; exit 1; }
+[ "$(sed -n 's/^ *image: \(postgres:[^ ]*\)$/\1/p' "$hub_dir/../pigrocrm/docker-compose.yml")" = "$postgres_ref" ] \
+  || { echo "FAIL: the CRM's db runs another Postgres image than the hub's" >&2; exit 1; }
+postgres_image=${postgres_ref%@*}
 tmp=$(mktemp -d)
 suffix=$(date +%s)-$$
 export COMPOSE_PROJECT_NAME="dbdrill-$suffix"
@@ -95,8 +99,8 @@ assert services["documenso-backup"]["environment"]["BACKUP_PING_URL"] != service
 '
 from=$(sed -n 's/^FROM //p' "$backup_dir/Dockerfile")
 case "$from" in
-  "$postgres_image"@sha256:*) ;;
-  *) echo "FAIL: the backup image is built FROM $from, the databases run $postgres_image (and the base is pinned by digest)" >&2; exit 1 ;;
+  "$postgres_ref") ;;
+  *) echo "FAIL: the backup image is built FROM $from, the databases run $postgres_ref" >&2; exit 1 ;;
 esac
 compose build documenso-backup hub-backup
 echo "services, no port, a healthy database first, and pg_dump from the same image as the servers"

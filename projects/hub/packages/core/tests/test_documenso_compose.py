@@ -215,17 +215,18 @@ def test_the_nightly_backups_are_loops_with_no_port_in_productions_file_only() -
 
 def test_the_backups_dump_with_the_same_postgres_the_databases_run_pinned_by_digest() -> None:
     """A `pg_dump` older than its server refuses to run; a newer one writes an archive an
-    older `pg_restore` cannot read. The backup image is built FROM the databases' tag,
-    which is the same for both, and by digest as well: `build --pull` on the deploy would
-    otherwise move the host's tag and recreate every database container that names it."""
-    documenso = re.search(r"\n  documenso-db:\n    image: (postgres:\S+)\n", _documenso())
-    hub = re.search(r"\n  db:\n    image: (postgres:\S+)\n", _compose())
-    assert documenso is not None and hub is not None
-    assert documenso.group(1) == hub.group(1)
-    dockerfile = BACKUP_DOCKERFILE.read_text(encoding="utf-8")
-    assert re.search(
-        rf"^FROM {re.escape(documenso.group(1))}@sha256:[0-9a-f]{{64}}$", dockerfile, re.MULTILINE
+    older `pg_restore` cannot read. The backup image is built FROM the databases' tag and
+    digest, the same for both and for the CRM's: the databases are pinned by digest so that
+    neither `build --pull` nor the deploy's `pull` moves a database to a patch release nobody
+    chose, which would recreate its container."""
+    documenso = re.search(
+        r"\n  documenso-db:\n    image: (postgres:[^\s@]+)@(sha256:[0-9a-f]{64})\n", _documenso()
     )
+    hub = re.search(r"\n  db:\n    image: (postgres:[^\s@]+)@(sha256:[0-9a-f]{64})\n", _compose())
+    assert documenso is not None and hub is not None
+    assert documenso.groups() == hub.groups()
+    dockerfile = BACKUP_DOCKERFILE.read_text(encoding="utf-8")
+    assert f"\nFROM {documenso.group(1)}@{documenso.group(2)}\n" in dockerfile
 
 
 def test_the_backups_share_a_certificate_a_bucket_and_a_key_pair_and_have_a_monitor_each() -> None:
