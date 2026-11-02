@@ -12,3 +12,9 @@ known-first-party = ["rebase_core", "rebase_api", "rebase_mcp"]
 "pigrocrm".msg = "the hub is a product of its own and imports nothing from PigroCRM"
 "pigrocrm_api".msg = "the hub is a product of its own and imports nothing from PigroCRM"
 "pigrocrm_mcp".msg = "the hub is a product of its own and imports nothing from PigroCRM"
+
+# The split contract test files import the `clean` fixture from their fixtures module and
+# take it as a parameter, which pyflakes reads as a redefinition of an unused import.
+[lint.per-file-ignores]
+"packages/core/tests/test_match_*.py" = ["F811"]
+"packages/core/tests/test_signing_*.py" = ["F811"]

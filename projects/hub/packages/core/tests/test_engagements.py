@@ -20,10 +20,10 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 import pytest
 from fakes_contracts import FakeRenderer
 from fakes_pigro import CUSTOMER, DEAL, DEAL_URL, PIGRO, TOKEN, RecordedPigro, linked_body
+from match_fixtures import SIGNER, TABLES, TODAY, _body, _framework, _setup
 from sqlalchemy import Engine, select, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
-from test_matches import SIGNER, TABLES, TODAY, _body, _framework, _setup
 
 from rebase_core.audit import AdminActionService
 from rebase_core.config import Settings

@@ -9,6 +9,23 @@ from typing import Any
 from uuid import UUID
 
 import pytest
+from contract_api_helpers import (
+    ADMIN_EMAIL,
+    BUDGET,
+    CLIENTE,
+    DAY_RATE_LETTERA,
+    FISCAL,
+    LETTERA,
+    MISSING,
+    PDF,
+    TABLES,
+    apply_freelancer,
+    apply_member,
+    login,
+    login_as,
+    ready,
+    request_company,
+)
 from fakes_contracts import FailingRenderer, FakeRenderer
 from fakes_pigro import DEAL, DEAL_URL, PIGRO, TOKEN, RecordedPigro, linked_body
 from fastapi.testclient import TestClient
@@ -31,48 +48,6 @@ from rebase_core.models import AdminAction, Company, ContractDocument, Match, Us
 from rebase_core.pigro_door import NOT_ANSWERING
 from rebase_core.referrals import ReferralService
 
-PDF = b"%PDF-1.7\n1 0 obj<<>>endobj\n%%EOF\n"
-ADMIN_EMAIL = "ivan@rebase.it"
-MISSING = "00000000-0000-7000-8000-000000000000"
-# What the company would pay rebase a day: it must appear nowhere this flow answers.
-BUDGET = "777.77"
-FISCAL = {
-    "codice_fiscale": "LVLDAA85T50H501Z",
-    "partita_iva": "01234567890",
-    "domicilio": "Via Roma 1, Milano",
-    "pec": None,
-}
-CLIENTE = {
-    "cliente_ragione_sociale": "ACME S.r.l.",
-    "cliente_piva": "01234567890",
-    "cliente_sede": "Milano",
-}
-LETTERA = {
-    "ruolo": "Backend developer",
-    "attivita": "Le API del prodotto.",
-    "data_inizio": "2026-10-01",
-    "modalita": "a corpo",
-    "compenso": "450",
-    "giorni_pagamento": 30,
-    "fine_mese": True,
-}
-# The same letter priced by the day, which is what a reward can project without an estimate.
-DAY_RATE_LETTERA = {**LETTERA, "modalita": "a giornata", "unita": "a giornata"}
-TABLES = (
-    "referral_rewards",
-    "referrals",
-    "admin_actions",
-    "contract_documents",
-    "matches",
-    "contract_letter_counters",
-    "freelancer_fiscal",
-    "notes",
-    "freelancers",
-    "companies",
-    "users",
-    "signups",
-)
-
 
 @pytest.fixture
 def renderer(client: TestClient) -> Iterator[FakeRenderer]:
@@ -90,61 +65,6 @@ def admin(api_session: Session) -> Iterator[None]:
     for table in TABLES:
         api_session.execute(text(f"DELETE FROM {table}"))
     api_session.commit()
-
-
-def _login(client: TestClient, sender: RecordingSender) -> None:
-    assert client.post("/api/hub/auth/link", json={"email": ADMIN_EMAIL}).status_code == 202
-    match = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
-    assert match
-    assert client.post("/api/hub/auth/enter", json={"token": match.group(1)}).status_code == 200
-
-
-def _apply(client: TestClient) -> str:
-    response = client.post(
-        "/api/hub/freelancers",
-        data={
-            "nome": "Ada",
-            "cognome": "Lovelace",
-            "email": "ada@studio.it",
-            "tariffa_giornaliera": "450",
-            "posizione": "Backend developer",
-            "remoto": "remoto",
-        },
-        files={"cv": ("Ada CV.pdf", PDF, "application/pdf")},
-    )
-    assert response.status_code == 201, response.text
-    return str(client.get("/api/hub/freelancers").json()["items"][0]["id"])
-
-
-def _request_company(client: TestClient) -> str:
-    response = client.post(
-        "/api/hub/companies",
-        json={
-            "nome_azienda": "ACME Srl",
-            "referente_nome": "Wile",
-            "referente_cognome": "E.",
-            "email": "wile@acme.it",
-            "telefono": "+39 345 1234567",
-            "figura_richiesta": "Backend developer",
-            "progetto": "Un backend developer per tre mesi.",
-            "periodo_da": "2026-10-01",
-            "durata": "3 mesi",
-            "budget_giornaliero": BUDGET,
-            "remoto": "remoto",
-            "numero_risorse": 1,
-        },
-    )
-    assert response.status_code == 201, response.text
-    return str(client.get("/api/hub/companies").json()["items"][0]["id"])
-
-
-def _ready(client: TestClient, sender: RecordingSender) -> tuple[str, str]:
-    _login(client, sender)
-    freelancer_id, company_id = _apply(client), _request_company(client)
-    assert (
-        client.put(f"/api/hub/freelancers/{freelancer_id}/fiscal", json=FISCAL).status_code == 200
-    )
-    return freelancer_id, company_id
 
 
 def test_without_the_cookie_every_match_route_is_a_401(client: TestClient, admin: None) -> None:
@@ -170,8 +90,8 @@ def test_without_the_cookie_every_match_route_is_a_401(client: TestClient, admin
 def test_an_admin_matches_a_card_with_a_request_and_downloads_both_pdfs(
     client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
 ) -> None:
-    _login(client, sender)
-    freelancer_id, company_id = _apply(client), _request_company(client)
+    login(client, sender)
+    freelancer_id, company_id = apply_freelancer(client), request_company(client)
     assert client.get(f"/api/hub/freelancers/{freelancer_id}/fiscal").json() is None
     saved = client.put(f"/api/hub/freelancers/{freelancer_id}/fiscal", json=FISCAL)
     assert saved.status_code == 200, saved.text
@@ -225,7 +145,7 @@ def test_a_repeated_create_with_the_same_id_writes_the_match_once(
     client-generated id again with «Salva senza inviare» or «Invia per la firma», and
     gets the match already written back, never a second one with another letter
     number."""
-    freelancer_id, company_id = _ready(client, sender)
+    freelancer_id, company_id = ready(client, sender)
     given_id = "01234567-89ab-7cde-8123-456789abcdef"
     body = {"id": given_id, "company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA}
 
@@ -243,7 +163,7 @@ def test_a_repeated_create_with_the_same_id_writes_the_match_once(
 def test_the_same_id_used_by_another_freelancers_match_is_a_409(
     client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
 ) -> None:
-    freelancer_id, company_id = _ready(client, sender)
+    freelancer_id, company_id = ready(client, sender)
     given_id = "01234567-89ab-7cde-8123-456789abcdef"
     created = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches",
@@ -251,7 +171,7 @@ def test_the_same_id_used_by_another_freelancers_match_is_a_409(
     )
     assert created.status_code == 201, created.text
 
-    _apply_member(client, "grace@studio.it")
+    apply_member(client, "grace@studio.it")
     other_freelancer_id = str(client.get("/api/hub/freelancers").json()["items"][0]["id"])
     assert (
         client.put(f"/api/hub/freelancers/{other_freelancer_id}/fiscal", json=FISCAL).status_code
@@ -284,7 +204,7 @@ def test_a_real_id_collision_at_the_flush_is_a_409_not_a_500(
     before the first committed), and the second freelancer's own `INSERT` then hits the
     real `matches_pkey` constraint. The route must still answer 409, not an unhandled
     500."""
-    freelancer_id, company_id = _ready(client, sender)
+    freelancer_id, company_id = ready(client, sender)
     given_id = "01234567-89ab-7cde-8123-456789abcdef"
     committed = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches",
@@ -292,7 +212,7 @@ def test_a_real_id_collision_at_the_flush_is_a_409_not_a_500(
     )
     assert committed.status_code == 201, committed.text
 
-    _apply_member(client, "grace@studio.it")
+    apply_member(client, "grace@studio.it")
     other_freelancer_id = str(client.get("/api/hub/freelancers").json()["items"][0]["id"])
     assert (
         client.put(f"/api/hub/freelancers/{other_freelancer_id}/fiscal", json=FISCAL).status_code
@@ -327,7 +247,7 @@ def test_a_repeated_create_with_the_same_id_and_changed_data_is_a_409(
     """REB-406: a retry that corrects the letter or the client before sending it again
     must not be handed back the stale match under cover of the idempotent id -- the
     request no longer matches what was saved, so this is a 409, not a 201."""
-    freelancer_id, company_id = _ready(client, sender)
+    freelancer_id, company_id = ready(client, sender)
     given_id = "01234567-89ab-7cde-8123-456789abcdef"
     body = {"id": given_id, "company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA}
 
@@ -347,7 +267,7 @@ def test_a_repeated_create_with_the_same_id_and_changed_data_is_a_409(
 def test_the_preview_renders_a_document_without_saving_or_numbering_it(
     client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
 ) -> None:
-    freelancer_id, company_id = _ready(client, sender)
+    freelancer_id, company_id = ready(client, sender)
     body = {"company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA}
     preview = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches/preview",
@@ -371,8 +291,8 @@ def test_the_preview_renders_a_document_without_saving_or_numbering_it(
 def test_a_match_without_tax_data_names_the_step_that_is_missing(
     client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
 ) -> None:
-    _login(client, sender)
-    freelancer_id, company_id = _apply(client), _request_company(client)
+    login(client, sender)
+    freelancer_id, company_id = apply_freelancer(client), request_company(client)
     created = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches",
         json={"company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA},
@@ -384,7 +304,7 @@ def test_a_match_without_tax_data_names_the_step_that_is_missing(
 def test_a_closed_request_and_a_fee_the_law_refuses_are_422s_on_their_field(
     client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
 ) -> None:
-    freelancer_id, company_id = _ready(client, sender)
+    freelancer_id, company_id = ready(client, sender)
     over = {**LETTERA, "giorni_pagamento": 45}
     refused = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches",
@@ -406,7 +326,7 @@ def test_a_closed_request_and_a_fee_the_law_refuses_are_422s_on_their_field(
 def test_an_end_date_before_the_start_names_data_fine(
     client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
 ) -> None:
-    freelancer_id, company_id = _ready(client, sender)
+    freelancer_id, company_id = ready(client, sender)
     backwards = {**LETTERA, "data_fine": "2026-09-01"}
     refused = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches",
@@ -422,7 +342,7 @@ def test_an_end_date_before_the_start_names_data_fine(
 def test_a_payment_mode_outside_the_two_choices_is_refused(
     client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer, mode: str
 ) -> None:
-    freelancer_id, company_id = _ready(client, sender)
+    freelancer_id, company_id = ready(client, sender)
     refused = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches",
         json={
@@ -440,7 +360,7 @@ def test_a_payment_mode_outside_the_two_choices_is_refused(
 def test_a_letter_without_a_payment_mode_is_refused(
     client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
 ) -> None:
-    freelancer_id, company_id = _ready(client, sender)
+    freelancer_id, company_id = ready(client, sender)
     letter = {key: value for key, value in LETTERA.items() if key != "modalita"}
     refused = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches",
@@ -453,7 +373,7 @@ def test_a_letter_without_a_payment_mode_is_refused(
 def test_a_payment_term_past_thirty_days_from_month_end_names_giorni_pagamento(
     client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
 ) -> None:
-    freelancer_id, company_id = _ready(client, sender)
+    freelancer_id, company_id = ready(client, sender)
     over = {**LETTERA, "giorni_pagamento": 45, "fine_mese": True}
     refused = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches",
@@ -471,7 +391,7 @@ def test_a_payment_term_past_thirty_days_from_month_end_names_giorni_pagamento(
 def test_a_draft_is_cancelled_once_and_only_an_active_match_closes(
     client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
 ) -> None:
-    freelancer_id, company_id = _ready(client, sender)
+    freelancer_id, company_id = ready(client, sender)
     match = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches",
         json={"company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA},
@@ -491,7 +411,7 @@ def test_a_draft_is_cancelled_once_and_only_an_active_match_closes(
 def test_a_soft_deleted_freelancer_hides_all_four_match_routes(
     client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
 ) -> None:
-    freelancer_id, company_id = _ready(client, sender)
+    freelancer_id, company_id = ready(client, sender)
     match = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches",
         json={"company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA},
@@ -508,7 +428,7 @@ def test_a_soft_deleted_freelancer_hides_all_four_match_routes(
 def test_a_render_that_fails_is_a_503_with_a_sentence(
     client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
 ) -> None:
-    freelancer_id, company_id = _ready(client, sender)
+    freelancer_id, company_id = ready(client, sender)
     client.app.dependency_overrides[get_renderer] = lambda: FailingRenderer()  # type: ignore[attr-defined]
     created = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches",
@@ -519,29 +439,6 @@ def test_a_render_that_fails_is_a_503_with_a_sentence(
     assert client.get(f"/api/hub/freelancers/{freelancer_id}/matches").json()["matches"] == []
 
 
-def _apply_member(client: TestClient, email: str) -> None:
-    response = client.post(
-        "/api/hub/freelancers",
-        data={
-            "nome": "Bob",
-            "cognome": "Ross",
-            "email": email,
-            "tariffa_giornaliera": "300",
-            "posizione": "Designer",
-            "remoto": "remoto",
-        },
-        files={"cv": ("Bob CV.pdf", PDF, "application/pdf")},
-    )
-    assert response.status_code == 201, response.text
-
-
-def _login_as(client: TestClient, sender: RecordingSender, email: str) -> None:
-    assert client.post("/api/hub/auth/link", json={"email": email}).status_code == 202
-    match = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
-    assert match
-    assert client.post("/api/hub/auth/enter", json={"token": match.group(1)}).status_code == 200
-
-
 def test_without_the_cookie_the_match_list_is_a_401(client: TestClient, admin: None) -> None:
     assert client.get("/api/hub/matches").status_code == 401
 
@@ -549,8 +446,8 @@ def test_without_the_cookie_the_match_list_is_a_401(client: TestClient, admin: N
 def test_a_signed_in_member_hitting_the_match_list_is_403_not_401(
     client: TestClient, admin: None, sender: RecordingSender
 ) -> None:
-    _apply_member(client, "bob@studio.it")
-    _login_as(client, sender, "bob@studio.it")
+    apply_member(client, "bob@studio.it")
+    login_as(client, sender, "bob@studio.it")
     assert client.get("/api/hub/matches").status_code == 403
 
 
@@ -564,7 +461,7 @@ def test_the_match_list_projects_a_referral_without_ever_answering_the_budget(
     """The projection is the first code on this list that reads the client's budget
     (`company_budget_giornaliero`, through `reward_base`): the figure it yields may
     travel, the budget and the base it is a share of may not."""
-    freelancer_id, company_id = _ready(client, sender)
+    freelancer_id, company_id = ready(client, sender)
     referrer = User(email="mario@community.it", nome="Mario", cognome="Rossi", role="member")
     api_session.add(referrer)
     api_session.commit()
@@ -608,7 +505,7 @@ def test_the_match_list_projects_a_referral_without_ever_answering_the_budget(
 def test_the_match_list_answers_200_with_filters_and_carries_no_budget_or_tax_field(
     client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
 ) -> None:
-    freelancer_id, company_id = _ready(client, sender)
+    freelancer_id, company_id = ready(client, sender)
     created = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches",
         json={"company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA},
@@ -642,7 +539,7 @@ def test_the_match_list_answers_200_with_filters_and_carries_no_budget_or_tax_fi
 def test_the_match_list_422s_on_an_unknown_state(
     client: TestClient, admin: None, sender: RecordingSender
 ) -> None:
-    _login(client, sender)
+    login(client, sender)
     refused = client.get("/api/hub/matches", params={"stato": "chissà"})
     assert refused.status_code == 422
 
@@ -650,7 +547,7 @@ def test_the_match_list_422s_on_an_unknown_state(
 def test_a_malformed_signer_setting_is_a_503_not_a_crash(
     client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
 ) -> None:
-    freelancer_id, company_id = _ready(client, sender)
+    freelancer_id, company_id = ready(client, sender)
     client.app.dependency_overrides[get_settings] = lambda: Settings(  # type: ignore[attr-defined]
         _env_file=None,
         signer_json="{non json",  # type: ignore[call-arg]
@@ -669,7 +566,7 @@ def test_a_malformed_signer_setting_is_a_503_not_a_crash(
 def test_a_match_and_its_documents_say_what_they_are_doing_and_what_comes_next(
     client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
 ) -> None:
-    freelancer_id, company_id = _ready(client, sender)
+    freelancer_id, company_id = ready(client, sender)
     match = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches",
         json={"company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA},
@@ -692,7 +589,7 @@ def test_a_match_and_its_documents_say_what_they_are_doing_and_what_comes_next(
 def test_the_check_says_what_saving_would_do_and_writes_nothing(
     client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
 ) -> None:
-    freelancer_id, company_id = _ready(client, sender)
+    freelancer_id, company_id = ready(client, sender)
     checked = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches/check",
         json={"company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA},
@@ -720,8 +617,8 @@ def test_the_check_says_what_saving_would_do_and_writes_nothing(
 def test_the_check_reports_missing_tax_data_instead_of_refusing(
     client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
 ) -> None:
-    _login(client, sender)
-    freelancer_id, company_id = _apply(client), _request_company(client)
+    login(client, sender)
+    freelancer_id, company_id = apply_freelancer(client), request_company(client)
     checked = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches/check",
         json={"company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA},
@@ -736,7 +633,7 @@ def test_the_check_reports_missing_tax_data_instead_of_refusing(
 def test_the_check_is_a_422_naming_the_field_as_create_is(
     client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
 ) -> None:
-    freelancer_id, company_id = _ready(client, sender)
+    freelancer_id, company_id = ready(client, sender)
     over = {**LETTERA, "giorni_pagamento": 45, "fine_mese": True}
     refused = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches/check",
@@ -814,7 +711,7 @@ def _signed_match(
     """A match as a signature leaves it: made over HTTP with 40 expected days, then its
     letter signed and the match active in the database, since how a letter gets signed
     is `test_signing_api.py`'s business."""
-    freelancer_id, company_id = _ready(client, sender)
+    freelancer_id, company_id = ready(client, sender)
     created = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches",
         json={
@@ -894,7 +791,7 @@ def test_post_pigro_link_of_a_draft_is_409(
     renderer: FakeRenderer,
     pigro: RecordedPigro,
 ) -> None:
-    freelancer_id, company_id = _ready(client, sender)
+    freelancer_id, company_id = ready(client, sender)
     draft = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches",
         json={"company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA},
@@ -1085,8 +982,8 @@ def test_tax_data_may_be_saved_without_a_partita_iva(
     client: TestClient, admin: None, sender: RecordingSender, partita_iva: str | None
 ) -> None:
     """REB-687: omitted, null or blank is no partita IVA; given, it still has 11 digits."""
-    _login(client, sender)
-    freelancer_id = _apply(client)
+    login(client, sender)
+    freelancer_id = apply_freelancer(client)
     url = f"/api/hub/freelancers/{freelancer_id}/fiscal"
     saved = client.put(url, json={**FISCAL, "partita_iva": partita_iva})
     assert saved.status_code == 200, saved.text
@@ -1105,7 +1002,7 @@ def test_a_match_for_a_member_without_a_partita_iva_is_occasional_end_to_end(
     """REB-687 over HTTP: the prefill proposes the occasional letter, the ordinary one is a
     422 on `regime` with the spec's sentence, and the occasional match reads and downloads
     as its own type."""
-    freelancer_id, company_id = _ready(client, sender)
+    freelancer_id, company_id = ready(client, sender)
     fiscal = client.put(
         f"/api/hub/freelancers/{freelancer_id}/fiscal", json={**FISCAL, "partita_iva": None}
     )

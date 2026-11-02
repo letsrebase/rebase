@@ -14,11 +14,8 @@ import pytest
 from admins import an_admin
 from fakes_contracts import FakeRenderer
 from fakes_documenso import FakeDocumenso
-from sqlalchemy import event, select, text
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
-from test_matches import PDF, SIGNER, TODAY, _documents, _fiscal
-from test_signing import (
+from match_fixtures import PDF, SIGNER, TODAY, _documents, _fiscal
+from signing_fixtures import (
     SIGNED_AT,
     _active_framework,
     _envelope_of,
@@ -26,6 +23,9 @@ from test_signing import (
     _signing,
     _webhook,
 )
+from sqlalchemy import event, select, text
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
 from rebase_core.cloud import TalentCloudService
 from rebase_core.companies import CompanyService
@@ -197,7 +197,7 @@ def _sent_with_body(
     modalita: str = "a giornata",
 ) -> Match:
     """`test_signing._sent`'s own recipe (`_matches`/`_draft`/`send_match`), with
-    `_match_body`'s explicit day rate and estimate instead of `test_matches._body`'s
+    `_match_body`'s explicit day rate and estimate instead of `match_fixtures._body`'s
     default, so the reward this earns is deterministic."""
     match = MatchService(session, renderer, SIGNER, today=lambda: TODAY).create(
         freelancer_id, _match_body(company_id, modalita=modalita), admin_id

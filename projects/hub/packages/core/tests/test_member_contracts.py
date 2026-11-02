@@ -8,22 +8,20 @@ from uuid import UUID
 import pytest
 from fakes_contracts import FakeRenderer
 from fakes_documenso import FakeDocumenso
-from sqlalchemy import text
-from sqlalchemy.orm import Session
-from test_matches import QUADRO_VERSION, _body, _second_card
-from test_signing import (
+from match_fixtures import QUADRO_VERSION, TABLES, _body, _second_card, _setup
+from signing_fixtures import (
     SIGNED_AT,
-    TABLES,
     _draft,
     _envelope_of,
     _framework_of,
     _letter_of,
     _matches,
-    _setup,
     _sign,
     _signing,
     _webhook,
 )
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from rebase_core.contract_schemas import MemberContracts
 from rebase_core.errors import NotFound
