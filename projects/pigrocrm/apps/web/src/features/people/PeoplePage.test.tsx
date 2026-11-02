@@ -12,7 +12,7 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
-import { PeoplePage, Route } from './index'
+import { PeoplePage, parsePeopleSearch } from './PeoplePage'
 
 const navigate = vi.fn()
 
@@ -77,19 +77,6 @@ function nextSearch(previous: Record<string, unknown>): Record<string, unknown> 
   }
   expect(typeof call.search).toBe('function')
   return call.search(previous)
-}
-
-/** Runs the route's own `validateSearch`, the way the router actually calls it -- not a
- *  copy of the regex re-typed here, which would pass even if the route forgot to wire
- *  it. */
-function validateRouteSearch(search: Record<string, unknown>): {
-  search?: string
-  customer_id?: string
-} {
-  const validateSearch = Route.options.validateSearch as (
-    search: Record<string, unknown>,
-  ) => { search?: string; customer_id?: string }
-  return validateSearch(search)
 }
 
 describe('the people list', () => {
@@ -229,14 +216,14 @@ describe('the trigger label with a customer_id in the URL, before the company li
  */
 describe('validateSearch', () => {
   it('drops a customer_id that is not shaped like a UUID', () => {
-    expect(validateRouteSearch({ customer_id: 'cust-acme' }).customer_id).toBeUndefined()
-    expect(validateRouteSearch({ customer_id: '' }).customer_id).toBeUndefined()
-    expect(validateRouteSearch({ customer_id: 'not-a-uuid' }).customer_id).toBeUndefined()
+    expect(parsePeopleSearch({ customer_id: 'cust-acme' }).customer_id).toBeUndefined()
+    expect(parsePeopleSearch({ customer_id: '' }).customer_id).toBeUndefined()
+    expect(parsePeopleSearch({ customer_id: 'not-a-uuid' }).customer_id).toBeUndefined()
   })
 
   it('keeps a customer_id shaped like a UUID', () => {
     const uuid = '3fa85f64-5717-4562-b3fc-2c963f66afa6'
-    expect(validateRouteSearch({ customer_id: uuid }).customer_id).toBe(uuid)
+    expect(parsePeopleSearch({ customer_id: uuid }).customer_id).toBe(uuid)
   })
 })
 
@@ -244,14 +231,14 @@ describe('validateSearch', () => {
  * The full URL-to-request path for a malformed `customer_id`, end to end:
  * `PeopleRoute` reads `Route.useSearch()` -- already filtered through `validateSearch`
  * above -- and passes its result straight into `PeoplePage` as `customerId`. Feeding
- * `validateRouteSearch`'s own output into `renderPage` is what proves a garbage URL
+ * `parsePeopleSearch`'s own output into `renderPage` is what proves a garbage URL
  * value never reaches the API and never leaves the select looking like nothing is
  * chosen (blank, per the review that raised this: `SelectValue` shows nothing when its
  * `value` matches no `SelectItem`) rather than «Tutte le aziende».
  */
 describe('a garbage customer_id in the URL', () => {
   it('turns into no filter at all, «Tutte le aziende» selected', async () => {
-    const { customer_id } = validateRouteSearch({
+    const { customer_id } = parsePeopleSearch({
       customer_id: 'cust-acme;DROP TABLE customers',
     })
 

@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
 import type { ReactElement } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { PersonDetail } from './$personId'
+import { PersonDetail } from './PersonDetail'
 import { api } from '@/lib/api'
 
 vi.mock('@tanstack/react-router', async (importOriginal) => {

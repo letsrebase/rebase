@@ -3,11 +3,6 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('@tanstack/react-router', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@tanstack/react-router')>()
-  return { ...actual, createFileRoute: () => (options: unknown) => options }
-})
-
 const enterWithInvite = vi.fn()
 vi.mock('@/lib/auth', () => ({ useAuth: () => ({ user: null, enterWithInvite }) }))
 
@@ -17,7 +12,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
 })
 
 import { api } from '@/lib/api'
-import { InvitePage } from './invite'
+import { InvitePage } from './InvitePage'
 import { stripEntraToken, takeEntraToken } from '@/lib/entra-token'
 
 const GET = api.GET as unknown as ReturnType<typeof vi.fn>

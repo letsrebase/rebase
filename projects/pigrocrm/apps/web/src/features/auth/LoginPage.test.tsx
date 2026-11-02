@@ -15,7 +15,6 @@ vi.mock('@tanstack/react-router', async (importOriginal) => {
     ...actual,
     useNavigate: () => navigate,
     useSearch: () => search,
-    createFileRoute: () => (options: unknown) => options,
   }
 })
 
@@ -35,7 +34,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
 
 import { api } from '@/lib/api'
 import { toast } from '@rebase/ui/sonner'
-import { LoginPage } from './login'
+import { LoginPage } from './LoginPage'
 
 const GET = api.GET as unknown as ReturnType<typeof vi.fn>
 const POST = api.POST as unknown as ReturnType<typeof vi.fn>

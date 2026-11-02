@@ -14,7 +14,7 @@ import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
-import { DealsList } from './list'
+import { DealsList } from './DealsList'
 
 const navigate = vi.fn()
 

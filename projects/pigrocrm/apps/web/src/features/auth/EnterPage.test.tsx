@@ -2,11 +2,6 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('@tanstack/react-router', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@tanstack/react-router')>()
-  return { ...actual, createFileRoute: () => (options: unknown) => options }
-})
-
 const enterWithLink = vi.fn()
 vi.mock('@/lib/auth', () => ({ useAuth: () => ({ user: null, enterWithLink }) }))
 
@@ -16,7 +11,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
 })
 
 import { api, unwrap } from '@/lib/api'
-import { EnterPage } from './verify'
+import { EnterPage } from './EnterPage'
 
 const GET = api.GET as unknown as ReturnType<typeof vi.fn>
 const POST = api.POST as unknown as ReturnType<typeof vi.fn>

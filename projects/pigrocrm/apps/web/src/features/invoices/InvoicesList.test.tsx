@@ -17,7 +17,7 @@ import userEvent from '@testing-library/user-event'
 import type { ReactElement, ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
-import { InvoicesList } from './index'
+import { InvoicesList } from './InvoicesList'
 
 // REB-294: the list's «Nuova fattura» is the button that used to answer a readonly
 // press with a 403; it now asks `useCan('create_invoice')`. The suite renders as the
