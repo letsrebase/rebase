@@ -6,7 +6,7 @@ concurrency cap (`team_slots.ProposalSlots`) bounds how much runs at once, and t
 bounds what a day can cost. The count is the
 `team_proposals` rows of `pubblico` and `cloud` origin created since midnight in Rome,
 where the day of the people running rebase begins; a row written with no call (an
-empty catalogue, `team_builder.NO_CALL_MODEL`) cost nothing and is not counted, and nor
+empty catalogue, `team_sentences.NO_CALL_MODEL`) cost nothing and is not counted, and nor
 is an admin's own proposal, which no stranger can repeat.
 
 It is a soft cap: two proposals that read the count at once may both go, and a day can
@@ -24,7 +24,7 @@ from rebase_core.audit import utcnow
 from rebase_core.config import Settings
 from rebase_core.errors import TeamBuilderBusy
 from rebase_core.models import TeamProposal
-from rebase_core.team_builder import BUSY_SENTENCE, NO_CALL_MODEL
+from rebase_core.team_sentences import BUSY_SENTENCE, NO_CALL_MODEL
 
 logger = logging.getLogger(__name__)
 

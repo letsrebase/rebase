@@ -108,22 +108,17 @@ from rebase_core.team_schemas import (
     TeamProposalListMember,
     TeamProposalRead,
 )
+from rebase_core.team_sentences import BUSY_SENTENCE, NO_CALL_MODEL
 
 logger = logging.getLogger(__name__)
 
 ENTITY = "team_proposal"
 OFF_SENTENCE = "Il team builder è spento."
-# The one sentence both caps answer (spec § 3.2, `team_caps.py`), and a task whose daily
-# euro cap is spent (`LlmCapReached`): a visitor does the same thing either way.
-BUSY_SENTENCE = "Troppe richieste in questo momento: riprova tra un minuto."
 # The summary of a proposal with nobody in it, when the hub rather than the model is the
 # one who knows (spec § 3.2: «an empty team and the summary's sentence»): the catalogue
 # is empty, so nobody was asked, or the checks dropped everyone the model chose, so its
 # own summary describes a team that is not there.
 NO_FIT_SENTENCE = "Al momento nessun profilo corrisponde alla richiesta."
-# `TeamProposal.model` when no model was asked: an empty catalogue costs no call, and
-# nor does an attempt the caps refused or Claude did not answer (0028).
-NO_CALL_MODEL = ""
 # How long a proposal can be regenerated (spec § 3.2): the same day a visitor asked it.
 PREVIOUS_MAX_AGE = timedelta(days=1)
 _PREVIOUS_REFUSED = "la proposta da rigenerare non esiste o è scaduta"
