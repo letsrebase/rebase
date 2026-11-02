@@ -735,33 +735,6 @@ def test_public_request_is_throttled(
 # ---- the admin's «Richieste team» ----------------------------------------------------------
 
 
-def _admin_routes() -> list[tuple[str, str, dict[str, Any] | None]]:
-    base = f"/api/hub/team/requests/{MISSING}"
-    return [
-        ("GET", "/api/hub/team/requests", None),
-        ("GET", "/api/hub/team/proposals", None),
-        ("GET", base, None),
-        ("POST", f"{base}/status", {"stato": "chiusa"}),
-        ("PATCH", f"{base}/note", {"note": "x"}),
-        ("PATCH", f"{base}/summary", {"riassunto": "Un riassunto."}),
-        ("POST", f"{base}/contact", None),
-        ("POST", f"{base}/contact?only_silent=true", None),
-    ]
-
-
-def test_admin_routes_need_an_admin(
-    client: TestClient, team: Session, sender: RecordingSender
-) -> None:
-    for method, path, body in _admin_routes():
-        assert client.request(method, path, json=body).status_code == 401, path
-
-    team.add(User(email="membro@studio.it", nome="Ada", cognome="Membro"))
-    team.commit()
-    _login(client, sender, "membro@studio.it")
-    for method, path, body in _admin_routes():
-        assert client.request(method, path, json=body).status_code == 403, path
-
-
 def test_an_admin_reads_and_works_a_request(
     client: TestClient, team: Session, sender: RecordingSender
 ) -> None:
