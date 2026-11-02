@@ -81,12 +81,14 @@ def urllib_call(
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
 ) -> Response:
     request = urllib.request.Request(url, data=body, headers=headers, method=method)
-    limit = -1 if max_bytes is None else max_bytes + 1
+    limit = None if max_bytes is None else max_bytes + 1
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
-            return int(response.status), response.read(limit), dict(response.headers.items())
+            body = response.read() if limit is None else response.read(limit)
+            return int(response.status), body, dict(response.headers.items())
     except urllib.error.HTTPError as exc:
-        return int(exc.code), exc.read(limit), dict(exc.headers.items()) if exc.headers else {}
+        error_body = exc.read() if limit is None else exc.read(limit)
+        return int(exc.code), error_body, dict(exc.headers.items()) if exc.headers else {}
     except (urllib.error.URLError, OSError) as exc:
         # `str(exc)` names the failure reason and possibly the target host -- always a
         # googleapis.com or slack.com address, never sensitive -- but never the request's

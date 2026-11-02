@@ -65,7 +65,7 @@ index it cannot use, which is what makes the answer informative, and the negativ
 below proves exactly that.
 
 *Second:* each plan is measured inside a savepoint in which the **sibling** trigram
-indexes of the same table have been dropped. With sequential scans disabled, every partial
+indexes of the same table (and its partial `lower(email)` index) have been dropped. With sequential scans disabled, every partial
 index on `deleted_at IS NULL` becomes a cheap way to enumerate the live rows, so the
 planner will scan an unrelated trigram index whole and filter -- on `people.email` it
 prefers `ix_people_cognome_trgm` at 653.12 to the correct index at 221.85, and on
@@ -164,6 +164,9 @@ def _isolated_plan(session: Session, index_name: str, predicate: str, table: str
     try:
         for sibling in _SIBLINGS[index_name]:
             session.execute(text(f"DROP INDEX {sibling}"))
+        # The `lower(email)` partial indexes of migration 0067 are one more way to enumerate
+        # the live rows (`WHERE deleted_at IS NULL`), exactly like a sibling trigram index.
+        session.execute(text(f"DROP INDEX IF EXISTS ix_{table}_email_lower"))
         session.execute(text("SET LOCAL enable_seqscan = off"))
         rows = session.execute(
             text(f"EXPLAIN SELECT id FROM {table} WHERE deleted_at IS NULL AND {predicate}")

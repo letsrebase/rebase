@@ -67,4 +67,12 @@ def congela(monkeypatch: pytest.MonkeyPatch, *moduli: object) -> None:
         monkeypatch.setattr(modulo, "date", _DataDiSistema, raising=False)
 
 
-__all__ = ["ISTANTE", "OGGI_DEL_PROCESSO", "OGGI_IN_ITALIA", "congela"]
+def fissa_oggi(monkeypatch: pytest.MonkeyPatch, giorno: date) -> None:
+    """Pin the product clock to midday in Rome on `giorno`, the day a module computed once
+    at import (`TODAY = today_local()`): a run that crosses midnight would otherwise compare
+    the service's new day with the old one."""
+    istante = datetime(giorno.year, giorno.month, giorno.day, 12, 0, tzinfo=ITALY_TZ)
+    monkeypatch.setattr(db_clock, "_now", lambda: istante.astimezone(UTC))
+
+
+__all__ = ["ISTANTE", "fissa_oggi", "OGGI_DEL_PROCESSO", "OGGI_IN_ITALIA", "congela"]

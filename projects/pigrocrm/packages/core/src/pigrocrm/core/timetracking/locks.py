@@ -14,7 +14,7 @@ and do not want a second set: this table governs only `time_entries` and `costs`
 from datetime import UTC, date, datetime
 from uuid import UUID
 
-from sqlalchemy import select, text
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
@@ -74,11 +74,8 @@ class PeriodLockRepository:
         write holds it shared (`assert_writable`), a close or reopen holds it exclusive
         (`close_period`, `reopen_period`): shared ones do not block each other, and the
         locks one session holds never conflict with each other."""
-        function = "pg_advisory_xact_lock" if exclusive else "pg_advisory_xact_lock_shared"
-        self.session.execute(
-            text(f"SELECT {function}(:ns, :key)"),  # noqa: S608 - one of two fixed names
-            {"ns": PERIOD_LOCK_NAMESPACE, "key": anno * 100 + mese},
-        )
+        take = func.pg_advisory_xact_lock if exclusive else func.pg_advisory_xact_lock_shared
+        self.session.execute(select(take(PERIOD_LOCK_NAMESPACE, anno * 100 + mese)))
 
     def get(self, anno: int, mese: int) -> PeriodLock | None:
         """The row as it is now: overwritten from the database, so a lock another

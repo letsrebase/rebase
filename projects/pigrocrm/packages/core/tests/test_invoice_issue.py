@@ -11,6 +11,7 @@ from uuid import UUID
 
 import pytest
 from lxml import etree
+from orologio import fissa_oggi
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -47,6 +48,13 @@ COLLABORATORE = Actor(id=None, type="user", role="collaboratore")
 # suite -- a bare `date.today()` here would only coincidentally match the service if
 # the test machine happened to be configured for Europe/Rome, which nothing enforces.
 TODAY = today_local()
+
+
+@pytest.fixture(autouse=True)
+def _pinned_today(monkeypatch: pytest.MonkeyPatch) -> None:
+    fissa_oggi(monkeypatch, TODAY)
+
+
 # The other end of the legal issue window. `issue()` refuses a `data_emissione` after
 # today *and* one before 1 January, so `CAPODANNO` and `TODAY` are the only pair of dates
 # guaranteed to be accepted whatever day the suite runs on. The obvious "some date in

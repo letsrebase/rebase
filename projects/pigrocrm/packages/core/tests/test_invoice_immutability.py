@@ -9,6 +9,7 @@ from decimal import Decimal
 from uuid import UUID
 
 import pytest
+from orologio import fissa_oggi
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -40,6 +41,11 @@ COLLABORATORE = Actor(id=None, type="user", role="collaboratore")
 # service's (see `db/clock.py` and Task 10's report -- this host runs JST, not
 # Europe/Rome, so the two would silently diverge otherwise).
 TODAY = today_local()
+
+
+@pytest.fixture(autouse=True)
+def _pinned_today(monkeypatch: pytest.MonkeyPatch) -> None:
+    fissa_oggi(monkeypatch, TODAY)
 
 
 @pytest.fixture
