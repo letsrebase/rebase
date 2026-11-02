@@ -530,6 +530,73 @@ def test_accept_giornata_is_atomic_when_the_work_unit_write_conflicts(
     assert reloaded.id_risultato is None
 
 
+def test_a_refused_giornata_accept_keeps_what_the_caller_had_pending(db_session: Session) -> None:
+    """The refusal rolls back to its own SAVEPOINT: a row the caller flushed before calling
+    `accept` is still there afterwards, which a `session.rollback()` would have discarded."""
+    contract = _contract(db_session)
+    document = _document(db_session, contract_id=contract.id)
+    service = ProposalService(db_session)
+    proposal = service.create(
+        _proposal_create(
+            document.id,
+            target_type="giornata",
+            contract_id=contract.id,
+            campi_proposti=_giornata_campi(contract.id, data="2026-03-05"),
+        ),
+        ADMIN,
+    )
+    db_session.add(
+        WorkUnit(
+            contract_id=contract.id,
+            data=date(2026, 3, 5),
+            quantita=Decimal("1.00"),
+            descrizione="Giornata già registrata",
+            stato="proposto",
+        )
+    )
+    db_session.commit()
+    pending = _customer(db_session)
+
+    with pytest.raises(Conflict):
+        service.accept(proposal.id, ProposalAccept(), ADMIN)
+
+    assert db_session.get(Customer, pending.id) is not None
+    assert service.get(proposal.id, ADMIN).stato == "in_attesa"
+
+
+def test_a_second_decision_on_a_proposal_loaded_before_the_first_is_refused(
+    db_session: Session,
+) -> None:
+    """Another transaction accepted the proposal after this session had loaded it: the
+    locked re-read overwrites the loaded copy, so the late accept finds `accettata` and
+    creates no second contract, instead of acting on the stale `in_attesa`."""
+    from sqlalchemy import update
+
+    customer = _customer(db_session)
+    document = _document(db_session, customer_id=customer.id)
+    service = ProposalService(db_session)
+    proposal = service.create(
+        _proposal_create(
+            document.id, target_type="contratto", campi_proposti=_contratto_campi(customer.id)
+        ),
+        ADMIN,
+    )
+    loaded = db_session.get(Proposal, proposal.id)
+    assert loaded is not None and loaded.stato == "in_attesa"
+    db_session.execute(
+        update(Proposal)
+        .where(Proposal.id == proposal.id)
+        .values(stato="accettata")
+        .execution_options(synchronize_session=False)
+    )
+    contracts_before = db_session.query(Contract).count()
+
+    with pytest.raises(Conflict):
+        service.accept(proposal.id, ProposalAccept(), ADMIN)
+
+    assert db_session.query(Contract).count() == contracts_before
+
+
 # ---- the database CHECK, bypassing the service entirely -----------------------------
 
 

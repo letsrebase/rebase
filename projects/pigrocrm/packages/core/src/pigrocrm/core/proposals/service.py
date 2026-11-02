@@ -21,7 +21,6 @@ from typing import Any
 from uuid import UUID
 
 from pydantic import ValidationError as PydanticValidationError
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
@@ -34,6 +33,7 @@ from pigrocrm.core.contracts.service import (
     check_renewal_notice,
 )
 from pigrocrm.core.customers.models import Customer
+from pigrocrm.core.db.transactions import savepoint
 from pigrocrm.core.documents.repository import DocumentRepository
 from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
@@ -174,7 +174,10 @@ class ProposalService:
         return ProposalPage(items=[ProposalRead.model_validate(p) for p in self.repo.list(query)])
 
     def _require_pending(self, proposal_id: UUID) -> Proposal:
-        proposal = self.repo.get(proposal_id)
+        """The proposal, read under a row lock and overwritten from the database
+        (`populate_existing`), so two concurrent decisions queue and the second finds the
+        first one's `stato` instead of acting on a copy loaded before it."""
+        proposal = self.repo.get_for_update(proposal_id)
         if proposal is None:
             raise NotFound(ENTITY, proposal_id)
         if proposal.stato != "in_attesa":
@@ -257,36 +260,38 @@ class ProposalService:
         contract_payload = fields.contract.model_dump()
         check_payment_terms_together(contract_payload)
         check_renewal_notice(contract_payload)
-        # The customer's azienda at acceptance, as `ContractService.create` copies it.
-        contract = Contract(
-            **contract_payload,
-            azienda_id=LegalEntityService(self.session).inherited(customer.azienda_id, "contract"),
-        )
-        self.session.add(contract)
-        self.session.flush()
-        self.activities.record(
-            "contract",
-            contract.id,
-            "created",
-            actor,
-            {"titolo": contract.titolo, "proposal_id": str(proposal.id)},
-        )
-
         rate_card_payload = fields.rate_card.model_dump()
         check_rate_card_shape(rate_card_payload)
-        rate_card_payload["contract_id"] = contract.id
-        rate_card = RateCard(**rate_card_payload)
-        self.session.add(rate_card)
-        try:
-            self.session.flush()
-        except IntegrityError as exc:
-            self.session.rollback()
-            raise Conflict(
+        # The contract and its first card are one SAVEPOINT: the exclusion constraint
+        # refuses an overlapping card, and then no contract is left behind either, while
+        # whatever else the caller has pending stays.
+        with savepoint(
+            self.session,
+            lambda exc: Conflict(
                 "rate_card",
                 "il periodo di validità si sovrappone a un'altra scheda tariffaria "
                 "di questo contratto",
-                contract_id=str(contract.id),
-            ) from exc
+            ),
+        ):
+            # The customer's azienda at acceptance, as `ContractService.create` copies it.
+            contract = Contract(
+                **contract_payload,
+                azienda_id=LegalEntityService(self.session).inherited(
+                    customer.azienda_id, "contract"
+                ),
+            )
+            self.session.add(contract)
+            self.session.flush()
+            self.activities.record(
+                "contract",
+                contract.id,
+                "created",
+                actor,
+                {"titolo": contract.titolo, "proposal_id": str(proposal.id)},
+            )
+            rate_card_payload["contract_id"] = contract.id
+            rate_card = RateCard(**rate_card_payload)
+            self.session.add(rate_card)
         self.activities.record(
             "contract",
             contract.id,
@@ -328,39 +333,41 @@ class ProposalService:
         if self.session.get(Contract, fields.contract_id) is None:
             raise NotFound("contract", fields.contract_id)
 
-        approval = Approval(
-            contract_id=fields.contract_id,
-            canale=fields.approvazione.canale,
-            mittente=fields.approvazione.mittente,
-            ricevuto_il=fields.approvazione.ricevuto_il,
-            message_id=fields.approvazione.message_id,
-            document_id=proposal.document_id,
-            estratto=proposal.estratto,
-            origine={"kind": "agente", "proposal_id": str(proposal.id)},
-        )
-        self.session.add(approval)
-        self.session.flush()
-
-        set_transition_context(self.session, actor, f"proposta {proposal.id} accettata")
-        work_unit = WorkUnit(
-            contract_id=fields.contract_id,
-            data=fields.data,
-            quantita=fields.quantita,
-            descrizione=fields.descrizione,
-            stato="approvato",
-            approval_id=approval.id,
-        )
-        self.session.add(work_unit)
-        try:
-            self.session.flush()
-        except IntegrityError as exc:
-            self.session.rollback()
-            raise Conflict(
+        # The approval and the day are one SAVEPOINT: the live-day unique index refuses a
+        # second day on the date, and then neither row survives (no orphan approval), while
+        # whatever else the caller has pending stays.
+        with savepoint(
+            self.session,
+            lambda exc: Conflict(
                 "work_unit",
                 "esiste già un day non concluso per questo contratto in questa data",
                 contract_id=str(fields.contract_id),
                 data=str(fields.data),
-            ) from exc
+            ),
+        ):
+            approval = Approval(
+                contract_id=fields.contract_id,
+                canale=fields.approvazione.canale,
+                mittente=fields.approvazione.mittente,
+                ricevuto_il=fields.approvazione.ricevuto_il,
+                message_id=fields.approvazione.message_id,
+                document_id=proposal.document_id,
+                estratto=proposal.estratto,
+                origine={"kind": "agente", "proposal_id": str(proposal.id)},
+            )
+            self.session.add(approval)
+            self.session.flush()
+
+            set_transition_context(self.session, actor, f"proposta {proposal.id} accettata")
+            work_unit = WorkUnit(
+                contract_id=fields.contract_id,
+                data=fields.data,
+                quantita=fields.quantita,
+                descrizione=fields.descrizione,
+                stato="approvato",
+                approval_id=approval.id,
+            )
+            self.session.add(work_unit)
         self.activities.record(
             "contract",
             fields.contract_id,
