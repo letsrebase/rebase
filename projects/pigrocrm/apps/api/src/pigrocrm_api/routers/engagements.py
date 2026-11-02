@@ -1,5 +1,6 @@
 """rebase's engagements door (spec 2026-09-25 § 2.3, § 2.4): the two routes the hub
-calls under `PIGROCRM_ENGAGEMENTS_TOKEN`, on the root installation, exactly like
+calls under `PIGROCRM_ENGAGEMENTS_TOKEN` (and, beside them, the leads route of spec
+2026-10-30 § 2, under the same token, on its own prefix), on the root installation, exactly like
 `GET /api/tenants/` under `PIGROCRM_REGISTRY_TOKEN` -- one bearer the whole caller holds,
 checked by `require_service_token` (`service_token.py`) before either route touches
 `EngagementService`.
@@ -19,7 +20,18 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.config import Settings, get_settings
-from pigrocrm.core.engagements.schemas import EngagementRead, EngagementReport, EngagementUpsert
+from pigrocrm.core.engagements.leads import (
+    LeadBusy,
+    LeadService,
+    LeadsSpaceNotConfigured,
+)
+from pigrocrm.core.engagements.schemas import (
+    EngagementRead,
+    EngagementReport,
+    EngagementUpsert,
+    LeadRead,
+    LeadUpsert,
+)
 from pigrocrm.core.engagements.service import (
     EngagementBusy,
     EngagementService,
@@ -37,6 +49,9 @@ logger = logging.getLogger(__name__)
 
 SPAZIO_NON_RAGGIUNGIBILE = (
     "Lo spazio del freelancer non è raggiungibile in questo momento: riprova più tardi."
+)
+SPAZIO_LEAD_NON_RAGGIUNGIBILE = (
+    "Lo spazio dei lead non è raggiungibile in questo momento: riprova più tardi."
 )
 
 
@@ -83,8 +98,9 @@ def _service(
     return EngagementService(bind, settings, sender)
 
 
-def _run[T](match_id: UUID, action: Callable[[], T]) -> T:
-    """Runs one call into `EngagementService` for `match_id`, turning every way the
+def _run[T](match_id: UUID, action: Callable[[], T], *, what: str = "match") -> T:
+    """Runs one call into `EngagementService` for `match_id` (or into `LeadService` for a
+    request id, `what="request"`), turning every way the
     door answers "not now" into a 503 in one place, which the hub retries (a 409 or a
     422 it files as refused, for good): `ValidationFailed` on `public_url` is a missing
     setting, the installation's fault, not the caller's (spec § 2.1); `EngagementBusy`
@@ -104,23 +120,31 @@ def _run[T](match_id: UUID, action: Callable[[], T]) -> T:
         if exc.details.get("field") != "public_url":
             raise
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, exc.message) from exc
-    except EngagementBusy as exc:
+    except (EngagementBusy, LeadBusy, LeadsSpaceNotConfigured) as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
     except SpaceUnreachable as exc:
         logger.warning(
-            "engagements: match %s, space %s not reachable (%s)",
+            "engagements: %s %s, space %s not reachable (%s)",
+            what,
             match_id,
             exc.tenant_id,
             type(exc.__cause__).__name__,
         )
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, SPAZIO_NON_RAGGIUNGIBILE) from exc
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            SPAZIO_LEAD_NON_RAGGIUNGIBILE if what == "request" else SPAZIO_NON_RAGGIUNGIBILE,
+        ) from exc
     except SQLAlchemyError as exc:
         logger.warning(
-            "engagements: match %s, the door's own call failed (%s)",
+            "engagements: %s %s, the door's own call failed (%s)",
+            what,
             match_id,
             type(exc).__name__,
         )
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, SPAZIO_NON_RAGGIUNGIBILE) from exc
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            SPAZIO_LEAD_NON_RAGGIUNGIBILE if what == "request" else SPAZIO_NON_RAGGIUNGIBILE,
+        ) from exc
 
 
 _HTTP_EXCEPTION_SCHEMA: dict[str, Any] = {
@@ -196,3 +220,52 @@ def engagement_report(
     siedono, sotto lo stesso bearer di `PIGROCRM_ENGAGEMENTS_TOKEN` che solo l'hub
     possiede."""
     return _run(match_id, lambda: _service(registry, settings, sender).report(match_id, da=da, a=a))
+
+
+leads_router = APIRouter(
+    prefix="/api/rebase/leads",
+    tags=["engagements"],
+    responses=PROBLEM_RESPONSES,
+    dependencies=[Depends(_require_root_door)],
+)
+
+_LEADS_UNAVAILABLE_RESPONSE = _plain_response(
+    "Spazio dei lead non configurato (PIGROCRM_LEADS_SPACE), PIGROCRM_PUBLIC_URL non è "
+    "configurato, lo spazio non è raggiungibile in questo momento, oppure un'altra "
+    "richiesta della stessa persona è in corso: si riprova più tardi."
+)
+
+
+@leads_router.put(
+    "/{request_id}",
+    response_model=LeadRead,
+    responses={
+        201: {
+            "model": LeadRead,
+            "description": "Il deal della richiesta è stato creato ora.",
+        },
+        503: _LEADS_UNAVAILABLE_RESPONSE,
+    },
+)
+def file_lead(
+    request_id: UUID,
+    data: LeadUpsert,
+    response: Response,
+    registry: TenantsRegistryDep,
+    settings: SettingsDep,
+) -> LeadRead:
+    """Archivia nello spazio di rebase la richiesta di un'azienda dell'hub: cliente,
+    referente e un deal nuovo per ogni richiesta, sotto il bearer di
+    `PIGROCRM_ENGAGEMENTS_TOKEN` che solo l'hub possiede. Una seconda chiamata con lo
+    stesso `request_id` ritrova il deal e non scrive nulla; con `deal_id` la richiesta si
+    collega a un deal già presente e non si crea altro. Lo spazio è quello di
+    `PIGROCRM_LEADS_SPACE`, mai uno scelto da chi chiama."""
+    bind = registry.get_bind()
+    assert isinstance(bind, Engine)
+    answer = _run(
+        request_id,
+        lambda: LeadService(bind, settings).file(request_id, data),
+        what="request",
+    )
+    response.status_code = status.HTTP_201_CREATED if answer.creato else status.HTTP_200_OK
+    return answer

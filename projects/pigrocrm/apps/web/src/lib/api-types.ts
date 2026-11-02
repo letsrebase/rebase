@@ -4693,6 +4693,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/rebase/leads/{request_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * File Lead
+         * @description Archivia nello spazio di rebase la richiesta di un'azienda dell'hub: cliente,
+         *     referente e un deal nuovo per ogni richiesta, sotto il bearer di
+         *     `PIGROCRM_ENGAGEMENTS_TOKEN` che solo l'hub possiede. Una seconda chiamata con lo
+         *     stesso `request_id` ritrova il deal e non scrive nulla; con `deal_id` la richiesta si
+         *     collega a un deal già presente e non si crea altro. Lo spazio è quello di
+         *     `PIGROCRM_LEADS_SPACE`, mai uno scelto da chi chiama.
+         */
+        put: operations["file_lead_api_rebase_leads__request_id__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -9219,6 +9244,79 @@ export interface components {
             custom_fields?: {
                 [key: string]: unknown;
             } | null;
+        };
+        /**
+         * LeadDeal
+         * @description The deal as the hub built it, AI draft included. `tariffa_oraria` and
+         *     `ore_preventivate` are deliberately not here: in the CRM they value the hours logged
+         *     on a deal, and a prospect's typed budget is not that.
+         */
+        LeadDeal: {
+            /** Nome */
+            nome: string;
+            /** Valore Previsto */
+            valore_previsto?: number | string | null;
+            /** Data Chiusura Prevista */
+            data_chiusura_prevista?: string | null;
+            /** Note */
+            note?: string | null;
+        };
+        /**
+         * LeadRead
+         * @description What the door filed for a request. `creato` says whether this call wrote the deal
+         *     (201) or found it by its marker, or linked an explicit one (200). `person_id` is
+         *     `None` only when a retry finds the deal and nobody with the referente's address any
+         *     more, or an explicit deal whose customer has no such person.
+         */
+        LeadRead: {
+            /**
+             * Customer Id
+             * Format: uuid
+             */
+            customer_id: string;
+            /** Person Id */
+            person_id: string | null;
+            /**
+             * Deal Id
+             * Format: uuid
+             */
+            deal_id: string;
+            /** Deal Url */
+            deal_url: string;
+            /** Creato */
+            creato: boolean;
+        };
+        /**
+         * LeadReferente
+         * @description The company's contact person, as the wizard collected them.
+         */
+        LeadReferente: {
+            /** Nome */
+            nome: string;
+            /** Cognome */
+            cognome?: string | null;
+            /**
+             * Email
+             * Format: email
+             */
+            email: string;
+            /** Telefono */
+            telefono?: string | null;
+            /** Linkedin Url */
+            linkedin_url?: string | null;
+        };
+        /**
+         * LeadUpsert
+         * @description The body of `PUT /api/rebase/leads/{request_id}`. `deal_id` is the admin path: it
+         *     links the request to a deal the CRM already has and creates nothing else.
+         */
+        LeadUpsert: {
+            /** Azienda */
+            azienda: string;
+            referente: components["schemas"]["LeadReferente"];
+            deal: components["schemas"]["LeadDeal"];
+            /** Deal Id */
+            deal_id?: string | null;
         };
         /**
          * LegalEntityCreate
@@ -48062,6 +48160,151 @@ export interface operations {
                         [key: string]: unknown;
                     };
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    file_lead_api_rebase_leads__request_id__put: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LeadUpsert"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LeadRead"];
+                };
+            };
+            /** @description Il deal della richiesta è stato creato ora. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LeadRead"];
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Spazio dei lead non configurato (PIGROCRM_LEADS_SPACE), PIGROCRM_PUBLIC_URL non è configurato, lo spazio non è raggiungibile in questo momento, oppure un'altra richiesta della stessa persona è in corso: si riprova più tardi. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: string;
+                    };
                 };
             };
         };

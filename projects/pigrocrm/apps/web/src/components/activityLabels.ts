@@ -55,6 +55,10 @@ const KIND_LABELS: Record<string, string> = {
   // are the same moves with the member's name and the channel.
   day_created: 'Giornata registrata',
   day_state_changed: 'Giornata cambiata di stato',
+  // The hub's company requests (REB-866): a request filed as a new deal, and one linked by
+  // an admin to a deal the CRM already had.
+  'hub.richiesta_ricevuta': "Richiesta dall'hub ricevuta",
+  'hub.richiesta_collegata': "Collegata la richiesta dall'hub",
   // The space's reminder defaults, the only part of the reminder settings that is not one
   // person's own.
   defaults_updated: 'Promemoria: valori predefiniti modificati',

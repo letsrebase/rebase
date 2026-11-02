@@ -108,7 +108,6 @@ class McpHttpApp:
                 renderer=renderer,
                 signing=signing_from_settings(settings, renderer),
                 card_llm=lambda: call_for_task(self._open, settings, "card"),
-                team_llm=lambda: call_for_task(self._open, settings, "team_proposal"),
                 sender=self._sender,
                 engagements=self.engagements,
                 crm_leads=self.crm_leads,

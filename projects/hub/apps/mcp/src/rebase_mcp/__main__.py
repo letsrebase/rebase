@@ -58,7 +58,6 @@ def main() -> int:
         renderer=renderer,
         signing=signing_from_settings(settings, renderer),
         card_llm=lambda: call_for_task(open_session, settings, "card"),
-        team_llm=lambda: call_for_task(open_session, settings, "team_proposal"),
         sender=sender,
         engagements=lambda session: EngagementService(
             session, settings, urllib_engagements_call, sender=sender
