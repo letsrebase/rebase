@@ -97,16 +97,25 @@ def cookie_paths_to_clear(request: Request, root_slug: str = "") -> list[str]:
     return sorted(paths, key=len, reverse=True)
 
 
-def first_cookie(request: Request, name: str) -> str | None:
-    """The value of `name` as the browser ranks it: the first in the header.
+def cookie_values(request: Request, name: str) -> list[str]:
+    """Every value the browser sent under `name`, in header order.
 
-    A browser sends every cookie whose path matches, longer paths first (RFC 6265
-    §5.4), so when a space's `/studio/` jar and the root's `/` jar both hold a session
-    the first value is the space's own. `request.cookies` is `SimpleCookie`, which
-    keeps the *last* -- the root's -- and would hand a space the wrong session. Values
-    are JWTs: no `;`, no `=` beyond the first, nothing quoted."""
+    A browser holds one cookie per (name, domain, path) and sends every one whose path
+    matches, longer paths first (RFC 6265 §5.4): a session opened at `/` and one at
+    `/studio/` arrive as two `pigrocrm_refresh=` pairs in one header. `request.cookies`
+    is a `SimpleCookie` that keeps the *last*, the root's, which would hand a space the
+    wrong session and let a logout leave the other alive. Parsed by hand because the
+    values are JWTs: no `;`, no `=` beyond the first, nothing quoted."""
+    values: list[str] = []
     for pair in request.headers.get("cookie", "").split(";"):
         key, sep, value = pair.strip().partition("=")
         if sep and key.strip() == name and value.strip():
-            return value.strip()
-    return None
+            values.append(value.strip())
+    return values
+
+
+def first_cookie(request: Request, name: str) -> str | None:
+    """The value of `name` as the browser ranks it: the first in the header, which is the
+    most specific path (a space's own jar before the root's)."""
+    values = cookie_values(request, name)
+    return values[0] if values else None

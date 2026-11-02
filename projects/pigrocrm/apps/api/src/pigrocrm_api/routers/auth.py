@@ -2,7 +2,6 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
-from sqlalchemy import create_engine
 from sqlalchemy.exc import SQLAlchemyError
 
 from pigrocrm.core.auth.invitations import InvitationService
@@ -11,26 +10,20 @@ from pigrocrm.core.auth.refresh_service import RefreshTokenService
 from pigrocrm.core.auth.repository import UserRepository
 from pigrocrm.core.auth.schemas import InvitationPeek, MeUpdate, UserRead
 from pigrocrm.core.auth.service import UserService
-from pigrocrm.core.auth.tokens import decode_token, issue_access_token
+from pigrocrm.core.auth.tokens import decode_token
 from pigrocrm.core.config import Settings
-from pigrocrm.core.db.session import session_factory
 from pigrocrm.core.errors import DomainError, NotFound, ValidationFailed
-from pigrocrm.core.identity.service import IdentityService
 from pigrocrm.core.mail import magic_link_mail
 from pigrocrm.core.tenants import TenantService
-from pigrocrm.core.tenants.database import (
-    tenant_database_name,
-    tenant_database_url,
-    tenants_database_url,
-)
 from pigrocrm.core.validation import SafeStr
 from pigrocrm_api.deps import (
     ACCESS_COOKIE,
-    IDENTITY_COOKIE,
     REFRESH_COOKIE,
     ActorDep,
     SessionDep,
     SettingsDep,
+    registry_session_factory,
+    space_session_factory,
 )
 from pigrocrm_api.errors import (
     INVITE_GONE_RESPONSE,
@@ -39,18 +32,23 @@ from pigrocrm_api.errors import (
 )
 from pigrocrm_api.ratelimit import (
     INVITE_PEEK_REQUESTS_PER_MINUTE,
+    REFRESH_REQUESTS_PER_MINUTE,
     TOO_MANY_REQUESTS_RESPONSE,
+    VERIFY_REQUESTS_PER_MINUTE,
+    forget_failures,
+    log_unauthorized,
+    login_key,
+    normalise_address,
+    record_failure,
+    refuse_if_locked,
+    spend_for_recipient,
     spend_one,
+    too_many_mails,
 )
-from pigrocrm_api.sessions import (  # noqa: F401 - get_sender is the override seam
-    SenderDep,
-    get_sender,
-    mail_origin,
-    set_session_cookie,
-)
+from pigrocrm_api.sessions import SenderDep, mail_origin, open_session
 from pigrocrm_api.tenancy import (
-    cookie_path,
     cookie_paths_to_clear,
+    cookie_values,
     first_cookie,
     is_root_name,
     tenant_slug,
@@ -58,25 +56,12 @@ from pigrocrm_api.tenancy import (
 
 router = APIRouter(prefix="/api/auth", tags=["auth"], responses=PROBLEM_RESPONSES)
 
-# STATUS_BY_CODE (pigrocrm_api/errors.py) maps ValidationFailed to 422 for every other
-# endpoint, correctly -- there it means "the body was well-formed but violated a
-# domain rule." Here it would mean something else entirely: UserService.authenticate
-# raises this same exception class for wrong credentials, which is "not authenticated,"
-# the same category refresh (below) and deps.get_actor already answer with 401 for an
-# invalid refresh/access token. Router-level, not a STATUS_BY_CODE change, because this
-# is specific to what ValidationFailed means at this one call site, not a
-# reclassification of the error code everywhere else it is raised.
-#
-# PROBLEM_RESPONSES (attached to the whole router above) has no 401 entry, so
-# without a route-level addition login's OpenAPI documentation would stay silent
-# about a status code it can now actually return, and slice 1B's generated
-# TypeScript client would type this response as `unknown` -- exactly the kind of
-# silent client-generation gap _domain_and_request_validation_response above already
-# had to fix once for 422. FastAPI merges a route's own `responses=` with the
-# router's (see APIRouter.post/_combined_responses in fastapi/routing.py), so this
-# only adds 401 here without touching the shared dict every other route relies on.
-# (`me` and `refresh` need the same treatment, for a different, more load-bearing
-# reason -- see `_UNAUTHENTICATED_RESPONSE` just below.)
+# Two plain `HTTPException` 401s documented per route, because `PROBLEM_RESPONSES` is
+# `application/problem+json` and these are `application/json`, and an undocumented 401
+# would be typed `unknown` in the generated client. (`STATUS_BY_CODE` maps
+# `ValidationFailed` to 422 everywhere else; here `UserService.authenticate` raises it
+# for wrong credentials, which is "not authenticated", so the router translates it.)
+# FastAPI merges a route's own `responses=` with the router's.
 _LOGIN_UNAUTHORIZED_RESPONSE: dict[str, Any] = {
     "description": (
         "Email o password non corrette, oppure l'utente è disattivato -- lo stesso "
@@ -94,23 +79,12 @@ _LOGIN_UNAUTHORIZED_RESPONSE: dict[str, Any] = {
     },
 }
 
-# `me` and `refresh` both reach 401 the same way login does above -- deps.get_actor or
-# this router's own token checks raising a plain HTTPException, never a DomainError --
-# so PROBLEM_RESPONSES (application/problem+json) would misdocument this exactly as
-# _LOGIN_UNAUTHORIZED_RESPONSE above had to fix once already. One shared entry, not one
-# per route: unlike login's single fixed message, these two cover several distinct
-# causes each (get_actor: no cookie at all, an expired/invalid access token, a user
-# deactivated after the token was issued, an unrecognised bearer PAT; refresh: no
-# refresh cookie, an invalid/expired refresh token, a replayed/already-consumed token,
-# a now-inactive user) -- but every one of them means the same thing to a caller: the
-# session is gone, not "you sent something malformed." That is *more* load-bearing for
-# a generated client than login's own 401: this is the routine "session expired" signal
-# a frontend auth layer branches on programmatically (try /refresh once, then redirect
-# to /login), where login's error is hand-written UX regardless of how precisely it is
-# typed. `logout` deliberately has no entry here -- it has no actor dependency and is
-# idempotent by design (see its own docstring), so it cannot structurally produce a 401
-# the way these two can; documenting one anyway would claim a response this route can
-# never send.
+# `me`, `refresh` and `verify` reach 401 through `deps.get_actor` or this router's own
+# token checks, never a `DomainError`. Every cause (no cookie, an expired or invalid
+# token, a replayed refresh token, a deactivated user) means the same thing to a caller:
+# the session is gone. It is the routine signal a frontend auth layer branches on (try
+# /refresh once, then redirect to /login). `logout` has no entry: it is idempotent and
+# cannot answer 401.
 _UNAUTHENTICATED_RESPONSE: dict[str, Any] = {
     "description": (
         "Non autenticato: il cookie di sessione è assente, scaduto o non valido, "
@@ -131,35 +105,11 @@ _UNAUTHENTICATED_RESPONSE: dict[str, Any] = {
 
 
 class LoginRequest(BaseModel):
-    # SafeStr, not EmailStr: UserRepository.get_by_email binds `email` straight
-    # into a SELECT ... WHERE email = :email, and psycopg refuses to adapt any
-    # string parameter containing a NUL byte, insert or not -- the same defect
-    # class as the list routers' search/stato/custom, but reachable with zero
-    # credentials, since login is the one endpoint anyone can call. This is a
-    # request-body field (like every Create schema's own fields), so FastAPI's
-    # normal request-body validation already turns a rejection here into a clean
-    # 422 with no further change needed -- unlike the query-parameter case, where
-    # the parameter itself has to carry the annotation (see routers/customers.py).
+    # SafeStr, not EmailStr: `get_by_email` binds `email` straight into a SELECT, and
+    # psycopg refuses any string parameter containing a NUL byte. Login is the one
+    # endpoint anyone can call, so that must be a clean 422 and not a 500.
     email: SafeStr
     password: str
-
-
-# The cookie writer and the sender dependency live in `pigrocrm_api.sessions`, shared
-# with the signup; the names here are what this module and its tests always used.
-_set_cookie = set_session_cookie
-
-
-def _clear_other_jars(response: Response, request: Request, settings: Settings) -> None:
-    """Deletes the session pair at every path this installation ever set it at, except
-    the one this response is about to set. A stale, more specific pair -- the root's old
-    `/studiorossi/` jar -- would otherwise be sent ahead of the fresh one and shadow it on
-    every request (`cookie_paths_to_clear`). Deleting what is not there is a no-op."""
-    keep = cookie_path(request)
-    for path in cookie_paths_to_clear(request, settings.root_slug):
-        if path == keep:
-            continue
-        response.delete_cookie(ACCESS_COOKIE, path=path)
-        response.delete_cookie(REFRESH_COOKIE, path=path)
 
 
 @router.post(
@@ -174,48 +124,24 @@ def login(
     session: SessionDep,
     settings: SettingsDep,
 ) -> UserRead:
-    # On its own budget (`settings.login_requests_per_minute`), before the argon2 verify below,
-    # not after: unauthenticated and unthrottled otherwise, so a script could run the
-    # library's own 64 MiB, time-cost-3 hash at line rate. Running this first is what
-    # stops that cost from being paid at all past the budget, not merely what
-    # attaches a message to a request already paid for (REB-270).
+    # Two throttles, both before the argon2 verify, which a script could otherwise run at
+    # line rate (64 MiB, time cost 3): the client's own budget (REB-270,
+    # `settings.login_requests_per_minute`), and a backoff on this client trying this
+    # account, so repeated guesses at one password slow down however small each burst is.
     spend_one(request, scope="login", per_minute=settings.login_requests_per_minute)
-    # Same message regardless of which of the three the domain layer detected (unknown
-    # email, wrong password, deactivated user) -- UserService.authenticate already
-    # raises one identical ValidationFailed for all three, on purpose, so there is
-    # nothing here that could distinguish them even if this wanted to.
+    key = login_key(request, payload.email)
+    refuse_if_locked(request, key)
+    # Same message whichever of the three the domain layer detected (unknown email,
+    # wrong password, deactivated user): `authenticate` raises one identical
+    # `ValidationFailed` for all of them, on purpose.
     try:
         user = UserService(session).authenticate(payload.email, payload.password)
     except ValidationFailed as exc:
+        record_failure(key)
+        log_unauthorized(request, "login")
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Credenziali non valide") from exc
-    _clear_other_jars(response, request, settings)
-    _set_cookie(
-        response,
-        ACCESS_COOKIE,
-        issue_access_token(user.id, user.ruolo, settings),
-        settings.access_token_minutes * 60,
-        secure=settings.cookie_secure,
-        path=cookie_path(request),
-    )
-    _set_cookie(
-        response,
-        REFRESH_COOKIE,
-        RefreshTokenService(session).issue(user.id, settings),
-        settings.refresh_token_days * 86400,
-        secure=settings.cookie_secure,
-        path=cookie_path(request),
-    )
-    # Only an address a click has proven gets the durable, cross-space cookie. A
-    # password proves the row's password, not the mailbox, and an admin may set a row
-    # up with any address and a password of their own choosing: with that row's login
-    # minting the identity, one space's admin could enter every other space that
-    # address belongs to, the root included (REB-583's review). `email_verificata_il`
-    # is set only once the mailbox has proven itself: by `enter_with_link` and
-    # `accept_invite`, or by a signup whose browser already held a live identity for
-    # that address (REB-677); `authenticate` answers a `UserRead`, which does not carry it.
-    row = UserRepository(session).get_by_email(user.email)
-    if row is not None and row.email_verificata_il is not None:
-        _issue_identity_cookie(response, settings, user.email)
+    forget_failures(key)
+    open_session(response, request, settings, session, user)
     return user
 
 
@@ -246,63 +172,24 @@ def _entra_url(origin: str, prefix: str, raw: str) -> str:
 
 
 def _owned_slugs(settings: Settings, email: str) -> list[str]:
-    """The spaces the registry says this address opened. A plain read on its own engine,
-    opened and disposed here rather than through `deps`' cached registry: a link
-    request is rare and ORB-170 is moving that registry. No DDL: an installation whose
-    registry database does not exist (a self-hosted CRM that never had a signup) is one
-    with no spaces, and an anonymous request must not create it."""
-    engine = create_engine(tenants_database_url(settings), future=True)
+    """The spaces the registry says this address opened. A registry that cannot be read
+    is one with no spaces: an anonymous request must not turn into a 500."""
     try:
-        with session_factory(engine)() as session:
-            rows = TenantService(session, settings).list()
-            return [t.slug for t in rows if t.owner_email == email]
+        with registry_session_factory(settings)() as registry:
+            return TenantService(registry, settings).slugs_for_owner(email)
     except SQLAlchemyError:
         return []
-    finally:
-        engine.dispose()
 
 
 def _space_link(settings: Settings, slug: str, email: str) -> str | None:
     """A token for `email` in the space `slug`, or `None`: no such user, or a space whose
     database cannot be opened (which must not turn the request into a 500 for the one
     address that owns it)."""
-    engine = create_engine(tenant_database_url(settings, tenant_database_name(slug)), future=True)
     try:
-        with session_factory(engine)() as space:
+        with space_session_factory(slug, settings)() as space:
             return MagicLinkService(space, settings).request(email)
-    except SQLAlchemyError:
+    except (SQLAlchemyError, NotFound):
         return None
-    finally:
-        engine.dispose()
-
-
-def _issue_identity_cookie(response: Response, settings: Settings, email: str) -> None:
-    """The side effect `login`, `enter_with_link` and `accept_invite` each ride on
-    (design 2026-09-23 §2, REB-376): records that this address has proven itself,
-    somewhere, and mints a fresh `pigrocrm_identity` cookie either way, at `path=/`.
-    Never a fourth call site of its own, and never `signup` (§2's own reasoning: an
-    address nobody has proven anything about must not get a durable, cross-space
-    cookie). Follows `_space_link`'s own discipline exactly -- an ephemeral engine
-    against the registry, `SQLAlchemyError` caught rather than raised -- so a
-    registry that is briefly unreachable costs the identity cookie for this one
-    request, never the space session the caller already has."""
-    engine = create_engine(tenants_database_url(settings), future=True)
-    try:
-        with session_factory(engine)() as registry:
-            token = IdentityService(registry, settings).upsert_and_issue(email)
-    except SQLAlchemyError:
-        token = None
-    finally:
-        engine.dispose()
-    if token:
-        _set_cookie(
-            response,
-            IDENTITY_COOKIE,
-            token,
-            settings.identity_token_days * 86400,
-            secure=settings.cookie_secure,
-            path="/",
-        )
 
 
 @router.post(
@@ -334,7 +221,12 @@ def request_link(
     if sender is None:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, NO_SENDER)
     origin = mail_origin(settings)
-    email = payload.email.strip().lower()
+    email = normalise_address(payload.email)
+    # Per recipient, whoever asks: the per-client bucket above does not stop a script that
+    # rotates its source address from filling one inbox. Spent before the lookup, so the
+    # answer is the same for an address that is known and one that is not.
+    if not spend_for_recipient(email):
+        raise too_many_mails()
     links: list[tuple[str, str]] = []
     slug = tenant_slug(request)
     if slug is not None:
@@ -365,7 +257,11 @@ def request_link(
     return Ack()
 
 
-@router.post("/verify", response_model=UserRead, responses={401: _UNAUTHENTICATED_RESPONSE})
+@router.post(
+    "/verify",
+    response_model=UserRead,
+    responses={401: _UNAUTHENTICATED_RESPONSE, 429: TOO_MANY_REQUESTS_RESPONSE},
+)
 def enter_with_link(
     payload: LinkToken,
     request: Request,
@@ -374,49 +270,23 @@ def enter_with_link(
     settings: SettingsDep,
 ) -> UserRead:
     """Spends the link and opens the session, with the cookies `login` sets."""
+    spend_one(request, scope="verify", per_minute=VERIFY_REQUESTS_PER_MINUTE)
     user = MagicLinkService(session, settings).enter(payload.t)
     if user is None:
+        log_unauthorized(request, "verify")
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, INVALID_LINK)
-    _clear_other_jars(response, request, settings)
-    _set_cookie(
-        response,
-        ACCESS_COOKIE,
-        issue_access_token(user.id, user.ruolo, settings),
-        settings.access_token_minutes * 60,
-        secure=settings.cookie_secure,
-        path=cookie_path(request),
-    )
-    _set_cookie(
-        response,
-        REFRESH_COOKIE,
-        RefreshTokenService(session).issue(user.id, settings),
-        settings.refresh_token_days * 86400,
-        secure=settings.cookie_secure,
-        path=cookie_path(request),
-    )
-    # Only an address a click has proven gets the durable, cross-space cookie. A
-    # password proves the row's password, not the mailbox, and an admin may set a row
-    # up with any address and a password of their own choosing: with that row's login
-    # minting the identity, one space's admin could enter every other space that
-    # address belongs to, the root included (REB-583's review). `email_verificata_il`
-    # is set only once the mailbox has proven itself: by `enter_with_link` and
-    # `accept_invite`, or by a signup whose browser already held a live identity for
-    # that address (REB-677); `authenticate` answers a `UserRead`, which does not carry it.
-    row = UserRepository(session).get_by_email(user.email)
-    if row is not None and row.email_verificata_il is not None:
-        _issue_identity_cookie(response, settings, user.email)
+    open_session(response, request, settings, session, user)
     return user
 
 
 # ---- an invitation, accepted (spec 2026-09-17, REB-290) -------------------------------
 #
 # The public half of the invitation flow, beside the link-by-mail routes it shares a
-# shape with: unauthenticated, space-scoped by `TenantPrefixMiddleware` so neither
-# route knows it is under a prefix. Unlike `INVALID_LINK`'s single sentence -- which
-# folds the magic link's failure states together because guessing a password or an
-# email is the oracle there -- an invitation names its three dead states apart (410
-# with `code` = `invitation_expired` / `_revoked` / `_used`): the token is 32 random
-# bytes, nobody can guess their way from one outcome to another's.
+# shape with: unauthenticated, space-scoped by `TenantPrefixMiddleware`. Unlike
+# `INVALID_LINK`'s single sentence -- which folds the magic link's failure states together
+# because guessing a password or an email is the oracle there -- an invitation names its
+# three dead states apart (410 with `code` = `invitation_expired` / `_revoked` / `_used`):
+# the token is 32 random bytes, nobody can guess their way from one outcome to another's.
 
 
 class InviteAccept(BaseModel):
@@ -479,54 +349,8 @@ def accept_invite(
     apart so neither credential can starve the other's."""
     spend_one(request, scope="invite_accept")
     user = InvitationService(session).accept(payload.t, payload.nome)
-    _clear_other_jars(response, request, settings)
-    _set_cookie(
-        response,
-        ACCESS_COOKIE,
-        issue_access_token(user.id, user.ruolo, settings),
-        settings.access_token_minutes * 60,
-        secure=settings.cookie_secure,
-        path=cookie_path(request),
-    )
-    _set_cookie(
-        response,
-        REFRESH_COOKIE,
-        RefreshTokenService(session).issue(user.id, settings),
-        settings.refresh_token_days * 86400,
-        secure=settings.cookie_secure,
-        path=cookie_path(request),
-    )
-    # Only an address a click has proven gets the durable, cross-space cookie. A
-    # password proves the row's password, not the mailbox, and an admin may set a row
-    # up with any address and a password of their own choosing: with that row's login
-    # minting the identity, one space's admin could enter every other space that
-    # address belongs to, the root included (REB-583's review). `email_verificata_il`
-    # is set only once the mailbox has proven itself: by `enter_with_link` and
-    # `accept_invite`, or by a signup whose browser already held a live identity for
-    # that address (REB-677); `authenticate` answers a `UserRead`, which does not carry it.
-    row = UserRepository(session).get_by_email(user.email)
-    if row is not None and row.email_verificata_il is not None:
-        _issue_identity_cookie(response, settings, user.email)
+    open_session(response, request, settings, session, user)
     return user
-
-
-def _every_cookie_value(request: Request, name: str) -> list[str]:
-    """Every value the browser sent under `name`, not only the one `request.cookies`
-    keeps.
-
-    A browser holds one cookie per (name, domain, path), and it sends all of them that
-    match: a session opened at `/` and one opened at `/studiorossi/` arrive as two
-    `refresh_token=` pairs in one header. The `SimpleCookie` parser behind
-    `request.cookies` keeps the last of them, so a logout that read only that one left
-    the other alive. `tenancy.first_cookie` is the single-value sibling. Parsed by hand
-    because the values are JWTs -- no `;`, no `=` beyond the first, nothing to quote."""
-    header = request.headers.get("cookie", "")
-    values: list[str] = []
-    for pair in header.split(";"):
-        key, sep, value = pair.strip().partition("=")
-        if sep and key.strip() == name and value:
-            values.append(value.strip())
-    return values
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
@@ -535,64 +359,64 @@ def logout(
 ) -> None:
     # Logging out must kill the session server-side, not just empty the browser's
     # cookie jar -- otherwise a copy of the refresh token taken before logout stays
-    # valid for the rest of its life, which `refresh_token_days` puts at six months by
-    # default (T1 raised it from thirty days). An already-invalid or already-expired
-    # token has nothing left to invalidate, so that case is not an error here: the
-    # goal state ("no usable session") is already true.
+    # valid for the rest of its life (`refresh_token_days`, six months by default). An
+    # already-invalid or already-expired token has nothing left to invalidate, so that
+    # is not an error here: the goal state ("no usable session") is already true.
     #
-    # Every refresh token the browser presented, not the first: see
-    # `_every_cookie_value`. Consuming one that was already consumed revokes the rest
-    # of this user's tokens as a replay (`RefreshTokenService.consume`), which on a
-    # logout is the right outcome too -- the person asked for no usable session.
+    # Every refresh token the browser presented, not the first (`cookie_values`).
+    # Consuming one that was already consumed revokes the rest of this user's tokens as a
+    # replay (`RefreshTokenService.consume`), which on a logout is the right outcome too.
     refresh_tokens = RefreshTokenService(session)
-    for token in _every_cookie_value(request, REFRESH_COOKIE):
+    for token in cookie_values(request, REFRESH_COOKIE):
         try:
             payload = decode_token(token, settings, expected_type="refresh")
             if payload.jti is not None:
                 refresh_tokens.consume(payload.jti, payload.sub)
         except DomainError:
             pass
-    # Deleted at every path this installation ever set them at -- see
-    # `cookie_paths_to_clear`: a cookie is only ever removed by a Set-Cookie with the
-    # same path, and a pair left in another jar would keep the session the person just
-    # said they do not want.
+    # Deleted at every path this installation ever set them at (`cookie_paths_to_clear`):
+    # a cookie is only removed by a Set-Cookie with the same path, and a pair left in
+    # another jar would keep the session the person just said they do not want.
     for path in cookie_paths_to_clear(request, settings.root_slug):
         response.delete_cookie(ACCESS_COOKIE, path=path)
         response.delete_cookie(REFRESH_COOKIE, path=path)
 
 
-@router.post("/refresh", response_model=UserRead, responses={401: _UNAUTHENTICATED_RESPONSE})
+@router.post(
+    "/refresh",
+    response_model=UserRead,
+    responses={401: _UNAUTHENTICATED_RESPONSE, 429: TOO_MANY_REQUESTS_RESPONSE},
+)
 def refresh(
     request: Request, response: Response, session: SessionDep, settings: SettingsDep
 ) -> UserRead:
+    spend_one(request, scope="refresh", per_minute=REFRESH_REQUESTS_PER_MINUTE)
     # The most specific one, like `get_actor`: a space's own before the root's.
     token = first_cookie(request, REFRESH_COOKIE)
     if not token:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Refresh token assente")
 
-    # A refresh token is a credential, like the access token get_actor checks -- not
-    # user-submitted form data -- so an invalid or expired one reads as 401, the same
-    # way get_actor treats a bad access token, not as a generic 422 validation failure.
+    # A refresh token is a credential, not form data, so an invalid or expired one reads
+    # as 401 (like a bad access token in `get_actor`), not as a 422.
     try:
         payload = decode_token(token, settings, expected_type="refresh")
     except DomainError as exc:
+        log_unauthorized(request, "refresh")
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Refresh token non valido") from exc
     if payload.jti is None:
+        log_unauthorized(request, "refresh")
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Refresh token non valido")
 
-    refresh_tokens = RefreshTokenService(session)
-    # Rotated before anything else: this is what makes rotation real. Once this call
-    # returns, the token just presented can never be used again -- if it had already
-    # been consumed by an earlier request, this either hands back that request's own
-    # successor (the two-tabs case, inside refresh_service.REFRESH_GRACE_SECONDS)
-    # or raises and, as a side effect, revokes every other still-valid refresh token
-    # this user holds: that earlier request was the legitimate rotation, so this one
-    # presenting the same token again long afterwards is a replay. See
-    # `RefreshTokenService.rotate` for where that line is drawn -- this router does
-    # not know, and must not know, which of the two branches answered it.
+    # Rotated before anything else: this is what makes rotation real. Once this returns,
+    # the token just presented can never be used again. If it had already been consumed,
+    # this either hands back that request's own successor (two tabs, inside
+    # `refresh_service.REFRESH_GRACE_SECONDS`) or raises and revokes every other live
+    # refresh token this user holds: a replay. This router does not know, and must not
+    # know, which of the two branches answered it (`RefreshTokenService.rotate`).
     try:
-        rotation = refresh_tokens.rotate(payload.jti, payload.sub, settings)
+        rotation = RefreshTokenService(session).rotate(payload.jti, payload.sub, settings)
     except DomainError as exc:
+        log_unauthorized(request, "refresh")
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Refresh token non valido") from exc
 
     try:
@@ -600,34 +424,10 @@ def refresh(
     except DomainError as exc:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Utente non attivo") from exc
 
-    _clear_other_jars(response, request, settings)
-    # One cookie-setting path for both branches, deliberately: a grace-window answer
-    # that differed from an ordinary rotation in any observable way -- a header, a
-    # max-age, an order -- would tell a caller how long ago some other tab refreshed,
-    # and would be a second code path on the endpoint that must never fail.
-    #
-    # `issued_at` is the rotation's own instant, not "now": signing the access token
-    # from it is what makes the second tab's pair identical to the first's rather than
-    # merely equivalent (see `issue_access_token`). For an ordinary rotation the two
-    # are the same instant anyway, microseconds apart at worst.
-    _set_cookie(
-        response,
-        ACCESS_COOKIE,
-        issue_access_token(user.id, user.ruolo, settings, issued_at=rotation.issued_at),
-        settings.access_token_minutes * 60,
-        secure=settings.cookie_secure,
-        path=cookie_path(request),
-    )
-    # A fresh token with its own row -- not a re-signing of the same claims -- because
-    # the one just rotated above can never be honoured again.
-    _set_cookie(
-        response,
-        REFRESH_COOKIE,
-        rotation.refresh_token,
-        settings.refresh_token_days * 86400,
-        secure=settings.cookie_secure,
-        path=cookie_path(request),
-    )
+    # One cookie-setting path for both branches, deliberately: a grace-window answer that
+    # differed from an ordinary rotation in any observable way would tell a caller how
+    # long ago some other tab refreshed. No identity cookie: a refresh proves nothing new.
+    open_session(response, request, settings, session, user, identity=False, rotation=rotation)
     return UserRead.model_validate(user)
 
 

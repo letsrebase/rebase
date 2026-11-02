@@ -103,6 +103,22 @@ class TenantService:
             or 0
         )
 
+    def slugs_for_owner(self, email: str) -> list[str]:
+        """The slugs of the spaces that address opened, newest first. A filtered query, so
+        a lookup by address never loads the whole registry. `owner_email` is stored
+        lowercased by `provision`."""
+        return list(
+            self.session.scalars(
+                select(Tenant.slug)
+                .where(Tenant.owner_email == email.strip().lower())
+                .order_by(Tenant.created_at.desc(), Tenant.id.desc())
+            )
+        )
+
+    def count(self) -> int:
+        """How many spaces the registry holds, for the signup's global ceiling."""
+        return self.session.scalar(select(func.count()).select_from(Tenant)) or 0
+
     def list(self) -> list[TenantRead]:
         """Every space, newest first: what the registry knows, which is who opened it and
         when, never what is inside it (ORB-142)."""

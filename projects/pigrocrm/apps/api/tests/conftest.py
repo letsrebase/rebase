@@ -1,3 +1,4 @@
+import os
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -19,10 +20,13 @@ from pigrocrm_api.ratelimit import reset_rate_limit
 
 ADMIN_EMAIL = "admin@pigro.it"
 ADMIN_PASSWORD = "supersegreta1"
-# Obviously a placeholder, but >= 32 characters: Settings.jwt_secret now rejects
-# anything shorter (see pigrocrm.core.config), so a short literal here would fail at
-# fixture setup rather than merely warn.
+# Obviously a placeholder, but >= 32 characters: Settings.jwt_secret rejects anything
+# shorter (see pigrocrm.core.config), so a short literal here would fail at fixture setup.
 TEST_JWT_SECRET = "test-secret-for-the-api-test-suite-only"
+# The app refuses to boot on the public default secret (`require_production_secrets`, run
+# by the lifespan every `with TestClient(app)` triggers), so the process environment the
+# suite's `get_settings()` reads carries a real one. Set before any `Settings()` is built.
+os.environ.setdefault("PIGROCRM_JWT_SECRET", TEST_JWT_SECRET)
 
 
 def _ensure_committed_default(engine: Engine) -> None:

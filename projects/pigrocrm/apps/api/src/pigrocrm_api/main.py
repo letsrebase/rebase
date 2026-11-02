@@ -1,9 +1,12 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import DBAPIError
 
+from pigrocrm.core.config import get_settings, require_production_secrets
 from pigrocrm.core.errors import DomainError
 from pigrocrm_api.errors import (
     domain_error_handler,
@@ -59,10 +62,20 @@ from pigrocrm_api.routers import (
 from pigrocrm_api.tenancy import TenantPrefixMiddleware
 
 
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    """Refuses to serve with the public placeholder `jwt_secret` while cookies are
+    `Secure` (anyone could sign a session). `cookie_secure=false` is the documented
+    plain-HTTP development switch and the only exemption."""
+    require_production_secrets(get_settings())
+    yield
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title="PigroCRM API",
         version="0.1.0",
+        lifespan=lifespan,
         description=(
             "API pubblica di PigroCRM. La UI e il server MCP usano esclusivamente questi servizi. "
             "Il campo `custom_fields` di ogni entità è deliberatamente un oggetto libero in "
@@ -72,13 +85,18 @@ def create_app() -> FastAPI:
             "campi custom esistono per una data entità, con il loro tipo e le eventuali opzioni."
         ),
     )
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["http://localhost:5173"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    # The SPA is same-origin behind nginx, and the dev server proxies `/api` (vite.config),
+    # so there is no CORS by default; an installation that serves the SPA elsewhere lists
+    # its origins in `PIGROCRM_CORS_ORIGINS`.
+    cors_origins = get_settings().cors_origin_list
+    if cors_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=cors_origins,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
     app.add_exception_handler(DomainError, domain_error_handler)
     app.add_exception_handler(DBAPIError, insufficient_privilege_handler)
 
@@ -108,9 +126,7 @@ def create_app() -> FastAPI:
         slack,
         email_drafts,
         payment_reminders,
-        # Slice 6. The tuple is grouped by slice rather than sorted -- the import list
-        # above is what stays alphabetical -- so a reader can see which surface each
-        # release added.
+        # Slice 6. Grouped by release rather than sorted, unlike the import list.
         dashboard,
         automations,
         # Spaces (2026-09-08). Public signup, on the registry database: routers/tenants.py.
@@ -158,14 +174,8 @@ def create_app() -> FastAPI:
     # beside the engagements router above, never inside it.
     app.include_router(engagements.leads_router)
 
-    # PROBLEM_RESPONSES (attached to every router above) declares a 422 that
-    # `$ref`s HTTPValidationError alongside ProblemDetail -- see
-    # ensure_validation_error_schemas_are_declared's docstring for why that
-    # reference would otherwise point at nothing: declaring 422 at all, on every
-    # router, suppresses the automatic registration FastAPI would otherwise do.
-    # `generate_openapi` (the bound method, captured before it is replaced below)
-    # already handles the title/version/description/routes wiring and the
-    # `self.openapi_schema` caching; this only post-processes its result.
+    # Every router declares a 422 that `$ref`s HTTPValidationError, which FastAPI then no
+    # longer registers by itself: this adds the two schemas to the generated document.
     generate_openapi = app.openapi
 
     def openapi_with_validation_error_schemas() -> dict[str, Any]:
@@ -177,9 +187,8 @@ def create_app() -> FastAPI:
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
-    # Outermost, so `/<slug>/api/...` is `/api/...` by the time CORS, the routers and
-    # every dependency see it (tenancy.py). Added after the routes so FastAPI's own
-    # middleware stack is complete; `add_middleware` wraps what is already there.
+    # Outermost, so `/<slug>/api/...` is `/api/...` by the time CORS, the routers and every
+    # dependency see it (tenancy.py). Added last so FastAPI's own stack is complete.
     app.add_middleware(TenantPrefixMiddleware)
 
     return app

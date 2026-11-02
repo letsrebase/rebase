@@ -4,7 +4,7 @@ from functools import lru_cache
 from typing import Literal
 from zoneinfo import available_timezones
 
-from pydantic import Field, field_validator
+from pydantic import Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from pigrocrm.core.errors import Conflict
@@ -13,6 +13,19 @@ from pigrocrm.core.errors import Conflict
 # algorithm's own output size. PyJWT already warns about this; validating here turns
 # a silent warning (easy to miss in production logs) into a startup failure instead.
 MIN_JWT_SECRET_LENGTH = 32
+
+# The bearers other services present to the registry and engagements doors are shared
+# secrets between two deployments: as long as the signing key, for the same reason.
+MIN_SERVICE_TOKEN_LENGTH = 32
+
+# What `jwt_secret` is when nothing configures it. Public, so a signing key that still
+# holds it is forgeable: `require_production_secrets` refuses it at API boot, and the
+# default itself stays so that a bare `Settings()` (a CLI command, a test) builds.
+DEFAULT_JWT_SECRET = "change-me-in-production-please-set-a-real-secret"
+# The placeholders a copied `.env.example` or a default carries: none of them is a secret.
+KNOWN_PLACEHOLDER_JWT_SECRETS = frozenset(
+    {DEFAULT_JWT_SECRET, "cambia-questo-con-un-segreto-vero-di-almeno-32-caratteri"}
+)
 
 # AES-256-GCM, which is what encrypts `google_accounts.refresh_token_ciphertext`.
 GOOGLE_TOKEN_KEY_BYTES = 32
@@ -55,6 +68,9 @@ class Settings(BaseSettings):
     # same cookies -- so the titolare's CRM has an address shaped like everyone else's.
     # Empty means the root answers only without a prefix. Reserved for signups when set.
     root_slug: str = ""
+    # The most spaces the registry may hold: the public signup (`POST /api/tenants/`) refuses
+    # once it does, because each space is a database and a migration run on the same server.
+    max_spaces: int = Field(default=1000, ge=1)
     # Lets another service read the registry of spaces: `GET /api/tenants/` answers a
     # caller presenting it as a bearer token with every row (slug, owner, date), which is
     # how the rebase hub shows which spaces exist and whose they are (ORB-142). Empty,
@@ -81,7 +97,7 @@ class Settings(BaseSettings):
     # token, unreachable hub, anything but a 200: the answer is «not a member» and the
     # signup goes on. The community is the fast lane, never a gate.
     hub_url: str = "https://letsrebase.com"
-    jwt_secret: str = "change-me-in-production-please-set-a-real-secret"
+    jwt_secret: str = Field(default=DEFAULT_JWT_SECRET, repr=False)
     access_token_minutes: int = 15
     # Six months, sliding: `/api/auth/refresh` consumes the old jti and issues a new row
     # whose expiry is measured from now, so anyone who uses the CRM never sees the login
@@ -106,6 +122,10 @@ class Settings(BaseSettings):
     # Set PIGROCRM_COOKIE_SECURE=false for that one case. Anyone tempted to flip this
     # in production because "it's just a flag" should re-read this paragraph first.
     cookie_secure: bool = True
+    # Browser origins, comma-separated, allowed to call the API across origins (the CORS
+    # middleware of `pigrocrm_api`). Empty, the default: none, the API answers only the
+    # origin that serves the app. Read through `cors_origin_list`.
+    cors_origins: str = ""
     # How many `POST /api/auth/login` attempts one client address gets per minute: a
     # token bucket of its own (`pigrocrm_api.ratelimit.spend_one`), never a share of
     # the signup routes' five, because a failed login is a full argon2id verify at the
@@ -125,7 +145,7 @@ class Settings(BaseSettings):
     login_requests_per_minute: int = Field(default=10, ge=1)
 
     # Whether a personal access token may perform the operations listed in
-    # `actor.AGENT_FORBIDDEN_ACTIONS` -- issuing and annulling invoices, rates, cost
+    # `agent_actions.FULL_ACCESS_ACTIONS` -- issuing and annulling invoices, rates, cost
     # categories, period locks, the hours-to-invoice bridge and the annual estimate --
     # plus sending mail and preparing a payment reminder. (Not the fiscal profile nor
     # the emitter: an admin's token writes those on every installation, ORB-188.)
@@ -372,6 +392,19 @@ class Settings(BaseSettings):
             )
         return value
 
+    @field_validator("registry_token", "engagements_token")
+    @classmethod
+    def _service_token_must_be_long_enough(cls, value: str, info: ValidationInfo) -> str:
+        # Empty is legal and means the door does not exist; a token that is set is a shared
+        # secret between two deployments, so a short one fails the boot instead of guarding
+        # the door with something a script can guess.
+        if value and len(value) < MIN_SERVICE_TOKEN_LENGTH:
+            raise ValueError(
+                f"{info.field_name} must be at least {MIN_SERVICE_TOKEN_LENGTH} characters "
+                "long when it is set, or empty to switch the route off"
+            )
+        return value
+
     @field_validator("timezone")
     @classmethod
     def _timezone_must_be_a_real_zone(cls, value: str) -> str:
@@ -391,10 +424,30 @@ class Settings(BaseSettings):
         """`admin_database_url`, or `database_url` when none was configured."""
         return self.admin_database_url or self.database_url
 
+    @property
+    def cors_origin_list(self) -> list[str]:
+        """`cors_origins` as a list: split on commas, stripped, empties dropped."""
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
 
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+def require_production_secrets(settings: Settings) -> None:
+    """Raises `ValueError` when the signing key is still a published placeholder on an
+    installation that serves over TLS.
+
+    The API calls it at boot, and only the API: the key signs sessions, and nothing else
+    that builds a `Settings` (the CLI, the tests) needs a real one. `cookie_secure=False`
+    is the documented switch for plain-HTTP development, so that is what lets a
+    placeholder through. Names the variable and never quotes the value."""
+    if settings.cookie_secure and settings.jwt_secret in KNOWN_PLACEHOLDER_JWT_SECRETS:
+        raise ValueError(
+            "PIGROCRM_JWT_SECRET is still a placeholder, which anyone can use to forge a "
+            "session: set a real secret (for example `openssl rand -hex 32`)"
+        )
 
 
 def gmail_configured(settings: Settings) -> bool:
