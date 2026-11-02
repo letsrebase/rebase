@@ -7,14 +7,32 @@ further.
 
 from datetime import datetime
 from decimal import Decimal
+from typing import Annotated
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from rebase_core.models import RATE_DIGITS, RATE_PLACES, REFERRAL_CODE_LENGTH
+from rebase_core.models import (
+    RATE_DIGITS,
+    RATE_PLACES,
+    REFERRAL_CODE_LENGTH,
+    REFERRAL_STATES,
+    REWARD_STATES,
+)
 from rebase_core.schema_common import ResponseModel
+from rebase_core.vocabulary import ReferralKind, ReferralState, ReferredStatus, RewardState, enum_of
 
 RATE_MAX = Decimal("1")
+
+# What a match's referred side shows: the referral still unproved, what it would earn
+# (`previsto`), what an earlier match already earned (`gia_maturato`), or the reward's own
+# state. Written only by `ReferralService.for_matches`.
+PREVISTO = "previsto"
+GIA_MATURATO = "gia_maturato"
+MatchReferralState = Annotated[
+    str,
+    Field(json_schema_extra=enum_of((REFERRAL_STATES[0], PREVISTO, GIA_MATURATO, *REWARD_STATES))),
+]
 
 
 class MemberReferralItem(ResponseModel):
@@ -24,10 +42,10 @@ class MemberReferralItem(ResponseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    kind: str
+    kind: ReferralKind
     nome: str
     created_at: datetime
-    stato: str | None
+    stato: ReferredStatus | None
 
 
 class MemberReferral(ResponseModel):
@@ -70,12 +88,12 @@ class MatchReferral(ResponseModel):
     whole name, and `referrer_freelancer_id` his own card, when he has one, so a page
     can link to it."""
 
-    kind: str
+    kind: ReferralKind
     referrer_nome: str
     referrer_freelancer_id: UUID | None
     rate: Decimal | None
     amount: Decimal | None
-    stato: str
+    stato: MatchReferralState
     reward_id: UUID | None
 
 
@@ -130,7 +148,7 @@ class ReferralLedgerItem(ResponseModel):
 
     referral_id: UUID
     reward_id: UUID | None
-    kind: str
+    kind: ReferralKind
     referred_id: UUID
     referrer_nome: str
     referrer_email: str
@@ -148,8 +166,8 @@ class ReferralLedgerItem(ResponseModel):
     rate: Decimal | None
     base_amount: Decimal | None
     reward_amount: Decimal | None
-    stato: str | None
-    referral_stato: str
+    stato: RewardState | None
+    referral_stato: ReferralState
     verified_at: datetime | None
     verified_via: str | None
     note: str | None

@@ -43,6 +43,16 @@ whole, so `note`, `links` or `next_cursor` are always present, and the generated
 types them as nullable, never as possibly missing. A new response model that derives from
 plain `BaseModel` fails `test_openapi_contract.py`. Request bodies stay plain `BaseModel`.
 
+**A closed set of values is an `enum` in the response schema, taken from the models' tuple.**
+A response field whose values are a fixed set (`stato`, `remoto`, `kind`, `origine`, ...) is typed
+with an alias from `rebase_core.vocabulary` (`FreelancerStatus`, `RemoteOption`, ...), built from the
+constant in `rebase_core.models` (`FREELANCER_STATES`, `REMOTE_OPTIONS`, ...), so the generated web
+client types it as a union of those values. The alias is a `str` for Python and for validation, on
+purpose: a value outside the set (a row from before a `CHECK`, a kind another change adds) must
+reach the page, not turn into a 500 on the response. `test_openapi_contract.py` holds each
+alias to its constant. Left as plain `str` because no constant says what is allowed:
+`FreelancerRead.provenienza`, a document's `tipo`, the CRM invoice's `tipo`/`stato`.
+
 **The UI comes from `@rebase/ui`, and this application writes no primitive at all.**
 The seven hand-written ones it used to carry were deleted when the package took over
 (REB-300), so `apps/web/src/components/` holds only what is genuinely the hub's

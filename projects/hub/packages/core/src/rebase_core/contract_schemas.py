@@ -47,6 +47,7 @@ from rebase_core.schema_common import (
     clean_multiline,
 )
 from rebase_core.validation import SafeStr
+from rebase_core.vocabulary import ContractKind, ContractState, MatchState, PigroState
 
 # A person's codice fiscale is sixteen letters and digits; a ditta's is its eleven digits.
 _CODICE_FISCALE = re.compile(r"[A-Z0-9]{16}|[0-9]{11}")
@@ -398,7 +399,7 @@ class ContractDocumentRead(ResponseModel):
     `situazione`, `prossima_azione` and `altre_azioni` are `match_words`' (REB-477)."""
 
     id: UUID
-    kind: str
+    kind: ContractKind
     # Which family it belongs to and its type as the pages name it (REB-687):
     # «Contratto quadro per prestazioni occasionali», «Lettera di incarico occasionale».
     regime: Regime
@@ -408,7 +409,7 @@ class ContractDocumentRead(ResponseModel):
     numero: str | None
     text_version: str
     testo_bozza: bool
-    stato: str
+    stato: ContractState
     created_at: datetime
     created_by: UUID
     sent_at: datetime | None
@@ -442,7 +443,7 @@ class MatchRead(ResponseModel):
     cliente_ragione_sociale: str
     cliente_piva: str
     cliente_sede: str
-    stato: str
+    stato: MatchState
     created_at: datetime
     created_by: UUID
     cancelled_at: datetime | None
@@ -455,7 +456,7 @@ class MatchRead(ResponseModel):
     lettera_data_inizio: date | None
     lettera_data_fine: date | None
     lettera_compenso: Decimal | None
-    pigro_stato: str | None
+    pigro_stato: PigroState | None
     pigro_slug: str | None
     pigro_deal_id: UUID | None
     pigro_url: str | None
@@ -541,9 +542,9 @@ class MatchListItem(ResponseModel):
     freelancer_email: str
     nome_azienda: str
     figura_richiesta: str
-    stato: str
+    stato: MatchState
     lettera_numero: str | None
-    lettera_stato: str | None
+    lettera_stato: ContractState | None
     lettera_data_inizio: str | None
     lettera_data_fine: str | None
     lettera_compenso: Decimal | None
@@ -553,7 +554,7 @@ class MatchListItem(ResponseModel):
     created_by_email: str
     situazione: str
     giorni_previsti: int | None
-    pigro_stato: str | None
+    pigro_stato: PigroState | None
     pigro_url: str | None
     referrals: list[MatchReferral]
 
@@ -625,7 +626,7 @@ class MatchReport(ResponseModel):
 
     match_id: UUID
     pigro_url: str | None
-    pigro_stato: str | None
+    pigro_stato: PigroState | None
     giorni_previsti: int | None
     ore_previste: Decimal | None
     totale_ore: Decimal
@@ -645,7 +646,7 @@ class SendReport(ResponseModel):
     framework agreement already out for signature), and whether its mail left too."""
 
     match: MatchRead
-    inviato: str | None
+    inviato: ContractKind | None
     mail_inviata: bool | None
 
 
@@ -658,12 +659,12 @@ class MemberContract(ResponseModel):
     Pigro» has somewhere to point (spec § 3.6)."""
 
     id: UUID
-    kind: str
+    kind: ContractKind
     # Which family it belongs to and its type as the page names it (REB-687).
     regime: Regime
     tipo: str
     numero: str | None
-    stato: str
+    stato: ContractState
     cliente: str | None
     inizio: str | None
     fine: str | None

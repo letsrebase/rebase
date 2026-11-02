@@ -33,6 +33,7 @@ from rebase_core.schema_common import (
 )
 from rebase_core.signup_schemas import SignupUtm
 from rebase_core.validation import SafeStr
+from rebase_core.vocabulary import CompanyStatus, PigroState, RemoteOption
 
 CompanyStato = Literal["nuovo", "contattato", "in_corso", "chiuso"]
 
@@ -156,14 +157,14 @@ class CompanyRead(ResponseModel):
     periodo_da: date
     durata: str
     budget_giornaliero: Decimal
-    remoto: str
+    remoto: RemoteOption
     giorni_presenza: int | None
     numero_risorse: int
-    stato: str
+    stato: CompanyStatus
     # The request's place in rebase's CRM (REB-868): the state (`PIGRO_STATES`; `None` for a
     # request from before the link), the cause of the last failure, the page's sentence for
     # it, the deal's address and the time of the last attempt.
-    crm_stato: str | None = None
+    crm_stato: PigroState | None = None
     crm_errore: str | None = None
     crm_situazione: str | None = None
     crm_deal_url: str | None = None

@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field
 
 from rebase_core.schema_common import ResponseModel, is_complete
 from rebase_core.signup_schemas import SignupUtm
+from rebase_core.vocabulary import RemoteOption
 
 
 class MemberProfile(BaseModel):
@@ -30,7 +31,7 @@ class MemberProfile(BaseModel):
     cv_size: int | None
     tariffa_giornaliera: Decimal | None
     posizione: str | None
-    remoto: str | None
+    remoto: RemoteOption | None
     links: list[str]
     created_at: datetime
     updated_at: datetime
@@ -56,7 +57,7 @@ class MemberRequest(ResponseModel):
     periodo_da: date
     durata: str
     budget_giornaliero: Decimal
-    remoto: str
+    remoto: RemoteOption
     giorni_presenza: int | None
     numero_risorse: int
     created_at: datetime
@@ -94,7 +95,7 @@ class MeRead(ResponseModel):
     cv_size: int | None = None
     tariffa_giornaliera: Decimal | None = None
     posizione: str | None = None
-    remoto: str | None = None
+    remoto: RemoteOption | None = None
     links: list[str] = Field(default_factory=list)
     richieste: list[MemberRequest] = Field(default_factory=list)
     # REB-518: whether any talent cloud grant of this person is live, which puts «Talent

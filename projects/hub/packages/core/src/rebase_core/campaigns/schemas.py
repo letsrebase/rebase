@@ -27,6 +27,7 @@ from rebase_core.models import (
 )
 from rebase_core.schema_common import ResponseModel
 from rebase_core.search import SEARCH_MAX_LENGTH
+from rebase_core.vocabulary import CampaignState, RecipientState
 
 # A filter's amount is kept like every other amount the hub stores: euro with cents at
 # most and never below zero, with no ceiling the editor's own field lacks. The editor
@@ -215,7 +216,7 @@ class CampaignRead(ResponseModel):
     bottone_meta: str
     bottone_url: str | None = None
     azione: str
-    stato: str
+    stato: CampaignState
     contenuto_at: datetime
     programmata_per: datetime | None
     prova_inviata_at: datetime | None
@@ -248,7 +249,7 @@ class RecipientRead(ResponseModel):
     email: str
     nome: str | None
     tipo: str
-    stato: str
+    stato: RecipientState
     motivo: str | None
     inviata_at: datetime | None
     consegnata_at: datetime | None

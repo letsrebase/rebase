@@ -42,6 +42,7 @@ from rebase_core.schema_common import (
     clean_text,
 )
 from rebase_core.validation import SafeStr
+from rebase_core.vocabulary import RemoteOption, TeamRequestState
 
 __all__ = [
     "CARD_SENIORITIES",
@@ -137,7 +138,7 @@ class FreelancerCardRead(ResponseModel):
 
     freelancer_id: UUID
     card: CardRead | None
-    modalita: str | None
+    modalita: RemoteOption | None
     fascia: Band | None
     cv_sha256: str | None
     model: str | None
@@ -299,7 +300,7 @@ class TeamMemberRead(ResponseModel):
     motivazione: str
     giorni_settimana: int | None
     scheda: CardRead
-    modalita: str | None
+    modalita: RemoteOption | None
     fascia: Band | None
 
 
@@ -446,7 +447,7 @@ class TeamRequestRead(ResponseModel):
     telefono: str | None
     user_id: UUID | None
     company_id: UUID | None
-    stato: str
+    stato: TeamRequestState
     note: str | None
     talenti: list[TeamRequestTalentRead]
     contacted_at: datetime | None
@@ -461,7 +462,7 @@ class TeamRequestListItem(ResponseModel):
     id: UUID
     azienda: str
     origine: str
-    stato: str
+    stato: TeamRequestState
     created_at: datetime
     contacted_at: datetime | None
     talenti_totale: int
@@ -570,7 +571,7 @@ class CloudTalentRead(ResponseModel):
     links: list[str]
     vetted: bool
     card: CardRead
-    modalita: str | None
+    modalita: RemoteOption | None
     fascia: Band | None
     ha_cv: bool
 

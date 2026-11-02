@@ -58,7 +58,13 @@ from rebase_core.models import (
     TeamRequest,
     User,
 )
-from rebase_core.referral_schemas import MatchReferral, MemberReferral, MemberReferralItem
+from rebase_core.referral_schemas import (
+    GIA_MATURATO,
+    PREVISTO,
+    MatchReferral,
+    MemberReferral,
+    MemberReferralItem,
+)
 from rebase_core.referral_settings import ReferralSettingsService
 
 ENTITY = "referral"
@@ -100,8 +106,6 @@ def reward_base(
 # still land and mature a reward. `attivo` and `concluso` already had one (a reward is
 # written in the transaction that turns the letter `firmato`), `annullato` never will.
 EARNING_MATCH_STATES = ("bozza", "in_firma")
-PREVISTO = "previsto"
-GIA_MATURATO = "gia_maturato"
 DA_VERIFICARE, VERIFICATO = REFERRAL_STATES
 
 

@@ -9,6 +9,7 @@ from pydantic import ConfigDict, Field
 
 from rebase_core.bands import Band
 from rebase_core.schema_common import ResponseModel
+from rebase_core.vocabulary import FreelancerStatus, RemoteOption
 
 TalentoOrigine = Literal["form", "wizard", "admin"]
 
@@ -43,12 +44,12 @@ class TalentoRead(ResponseModel):
     cognome: str | None = None
     email: str
     linkedin_url: str | None = None
-    stato: str
+    stato: FreelancerStatus
     origine: TalentoOrigine
     utm_source: str | None = None
     created_at: datetime
     tariffa_giornaliera: Decimal | None = None
-    remoto: str | None = None
+    remoto: RemoteOption | None = None
     # REB-518: the «Verificato» pill, and whether Claude has an anonymous card of this
     # talent the team builder can propose (a live one: a retired card is none). A bare
     # sign-up has neither.

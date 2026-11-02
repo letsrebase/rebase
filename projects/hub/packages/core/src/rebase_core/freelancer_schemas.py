@@ -27,6 +27,7 @@ from rebase_core.schema_common import (
 )
 from rebase_core.signup_schemas import SignupListItem, SignupUtm
 from rebase_core.validation import SafeStr
+from rebase_core.vocabulary import FreelancerStatus, RemoteOption
 
 FreelancerStato = Literal["nuovo", "contattato", "attivo", "scartato"]
 
@@ -159,9 +160,9 @@ class FreelancerRead(ResponseModel):
     cv_size: int | None
     tariffa_giornaliera: Decimal | None
     posizione: str | None
-    remoto: str | None
+    remoto: RemoteOption | None
     links: list[str]
-    stato: str
+    stato: FreelancerStatus
     # Who wrote the seven answers last: `persona` or `admin` (`COMPILATA_DA`).
     compilata_da: str
     # How many times the person entered through a magic link, and the last time (ORB-158).
