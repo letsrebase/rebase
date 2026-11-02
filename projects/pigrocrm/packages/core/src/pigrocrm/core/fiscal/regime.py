@@ -27,7 +27,8 @@ from pigrocrm.core.fiscal.schemas import (
     RIFERIMENTO_NORMATIVO_UE,
     FiscalSnapshot,
 )
-from pigrocrm.core.invoices.totals import RiepilogoGroup, round_money
+from pigrocrm.core.invoices.totals import RiepilogoGroup
+from pigrocrm.core.money import round_money
 
 ENTITY = "fiscal_profile"
 ZERO = Decimal("0.00")
