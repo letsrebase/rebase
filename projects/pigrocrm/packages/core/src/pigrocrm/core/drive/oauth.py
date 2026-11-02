@@ -31,7 +31,7 @@ from pigrocrm.core.gmail.repository import GmailRepository
 from pigrocrm.core.gmail.tokens import GoogleTokenClient, TokenGrant
 from pigrocrm.core.google.oauth_flow import GoogleConsentFlow, GoogleCredential
 
-_DISCONNECT_ACTION = "scollegare Google Drive"
+_DISCONNECT_ACTION = "disconnect_drive"
 
 
 class GoogleDriveOAuthService(GoogleConsentFlow[GoogleDriveAccount]):
@@ -39,7 +39,7 @@ class GoogleDriveOAuthService(GoogleConsentFlow[GoogleDriveAccount]):
     entity = "google_drive_account"
     scopes = DRIVE_REQUESTED_SCOPES
     callback_path = "/api/drive/oauth/callback"
-    connect_action = "collegare Google Drive"
+    connect_action = "connect_drive"
     settings_tab = "Impostazioni → Drive"
     identity_noun = "dell'account"
     needs_user_message = "solo un utente può collegare Google Drive"

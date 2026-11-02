@@ -25,7 +25,7 @@ from sqlalchemy import Engine, create_engine, text
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "packages" / "core" / "tests"))
 from fakes.fake_gmail import FakeGmail  # noqa: E402
 
-import pigrocrm_api.routers.gmail as gmail_router  # noqa: E402
+import pigrocrm_api.google_tokens as google_tokens  # noqa: E402
 from pigrocrm.core.auth.magic_link import MagicLinkService  # noqa: E402
 from pigrocrm.core.auth.tokens import issue_access_token, issue_refresh_token  # noqa: E402
 from pigrocrm.core.config import Settings, decode_google_token_key, get_settings  # noqa: E402
@@ -106,7 +106,7 @@ def google(monkeypatch: pytest.MonkeyPatch) -> FakeGmail:
         client_secret=CLIENT_SECRET,
         transport=GmailTransport(http=fake, sleep=lambda _: None),
     )
-    monkeypatch.setitem(gmail_router._token_clients, (f"{SLUG}.", CLIENT_ID), client)
+    monkeypatch.setitem(google_tokens._token_clients, (f"{SLUG}.", CLIENT_ID), client)
     return fake
 
 
@@ -433,13 +433,13 @@ def test_each_space_gets_its_own_token_client(
     """The access tokens a client caches are keyed by the account's id alone, so two
     spaces borrowing one client id must not share a cache: a row copied into the wrong
     database would pick up the other space's live token without unsealing anything."""
-    monkeypatch.setattr(gmail_router, "_token_clients", {})
+    monkeypatch.setattr(google_tokens, "_token_clients", {})
     root = _settings(api_engine, shared=True)
-    studio = gmail_router.token_client(space_base_settings(root, SLUG))
-    other = gmail_router.token_client(space_base_settings(root, OTHER))
-    own = gmail_router.token_client(root)
+    studio = google_tokens.token_client(space_base_settings(root, SLUG))
+    other = google_tokens.token_client(space_base_settings(root, OTHER))
+    own = google_tokens.token_client(root)
     assert len({id(studio), id(other), id(own)}) == 3
-    assert gmail_router.token_client(space_base_settings(root, SLUG)) is studio
+    assert google_tokens.token_client(space_base_settings(root, SLUG)) is studio
 
 
 def test_under_the_roots_own_name_the_callback_still_relays_and_never_to_itself(

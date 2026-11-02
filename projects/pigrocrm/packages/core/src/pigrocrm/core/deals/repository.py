@@ -37,6 +37,16 @@ class DealRepository:
             return None
         return deal
 
+    def get_many(self, deal_ids: Collection[UUID]) -> list[Deal]:
+        """The live deals among `deal_ids`, in one query. An id with no live deal is absent."""
+        if not deal_ids:
+            return []
+        return list(
+            self.session.execute(
+                select(Deal).where(Deal.id.in_(deal_ids), Deal.deleted_at.is_(None))
+            ).scalars()
+        )
+
     def customer_names(self, customer_ids: Collection[UUID]) -> dict[UUID, str]:
         """The `ragione_sociale` of each given customer, in one query.
 

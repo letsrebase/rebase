@@ -23,6 +23,14 @@ class TokenPayload(BaseModel):
     exp: datetime
     # Only refresh tokens carry one -- see issue_refresh_token. None for access tokens.
     jti: UUID | None = None
+    # The space an access token is good for (`ROOT_AUDIENCE` for the root); None for the
+    # other kinds.
+    aud: str | None = None
+
+
+# The audience of an access token minted for the root installation. Not a valid slug
+# (`SLUG_PATTERN` is lowercase letters, digits and hyphens), so no space can wear it.
+ROOT_AUDIENCE = "@root"
 
 
 def _issue(
@@ -34,6 +42,7 @@ def _issue(
     *,
     jti: UUID | None = None,
     issued_at: datetime | None = None,
+    audience: str | None = None,
 ) -> str:
     now = issued_at if issued_at is not None else datetime.now(UTC)
     claims: dict[str, Any] = {
@@ -45,11 +54,18 @@ def _issue(
     }
     if jti is not None:
         claims["jti"] = str(jti)
+    if audience is not None:
+        claims["aud"] = audience
     return jwt.encode(claims, settings.jwt_secret, algorithm=ALGORITHM)
 
 
 def issue_access_token(
-    user_id: UUID, role: str, settings: Settings, *, issued_at: datetime | None = None
+    user_id: UUID,
+    role: str,
+    settings: Settings,
+    *,
+    space: str | None = None,
+    issued_at: datetime | None = None,
 ) -> str:
     """`issued_at` is what lets the same access token be signed twice and come out
     identical. HS256 over identical claims with the same key is deterministic, so the
@@ -58,7 +74,12 @@ def issue_access_token(
     window needs to pin down: two tabs presenting the same refresh cookie within ten
     seconds get the *same* pair back, not two pairs (see
     `RefreshTokenService.rotate`). Left None -- every other caller -- this reads the
-    clock as before."""
+    clock as before.
+
+    `space` is the slug of the space the token is for, `None` for the root: it travels as
+    the `aud` claim and `get_actor` refuses a token minted for another space, so the one
+    HS256 secret shared by the root and every space no longer makes a token portable
+    between them."""
     return _issue(
         user_id,
         role,
@@ -66,6 +87,7 @@ def issue_access_token(
         timedelta(minutes=settings.access_token_minutes),
         settings,
         issued_at=issued_at,
+        audience=space if space is not None else ROOT_AUDIENCE,
     )
 
 
@@ -121,15 +143,25 @@ def issue_identity_token(
     )
 
 
-def decode_token(token: str, settings: Settings, *, expected_type: TokenType) -> TokenPayload:
+def decode_token(
+    token: str, settings: Settings, *, expected_type: TokenType, audience: str | None = None
+) -> TokenPayload:
+    """`audience`, when given, is the one space (or `ROOT_AUDIENCE`) the caller serves: a
+    token that names another, or none, is refused. Checked by hand because PyJWT's own
+    `audience` check would also refuse every token that carries an `aud` when the caller
+    passes none, which refresh and identity tokens, and the callers that do not care
+    which space, rely on."""
     try:
-        claims = jwt.decode(token, settings.jwt_secret, algorithms=[ALGORITHM])
+        claims = jwt.decode(
+            token, settings.jwt_secret, algorithms=[ALGORITHM], options={"verify_aud": False}
+        )
     except jwt.PyJWTError as exc:
         raise ValidationFailed("session", "token", "token non valido o scaduto") from exc
 
     if claims.get("type") != expected_type:
         raise ValidationFailed("session", "token", "tipo di token errato", expected=expected_type)
-
+    if audience is not None and claims.get("aud") != audience:
+        raise ValidationFailed("session", "token", "token di un altro spazio")
     # A signature can be valid while the payload is still missing or malformed --
     # e.g. no "sub", no "exp", or a "sub" that is not a UUID. Building TokenPayload
     # from claims must never let a raw KeyError/ValueError escape: this function's
@@ -143,6 +175,7 @@ def decode_token(token: str, settings: Settings, *, expected_type: TokenType) ->
             type=claims["type"],
             exp=datetime.fromtimestamp(claims["exp"], tz=UTC),
             jti=UUID(raw_jti) if raw_jti is not None else None,
+            aud=claims.get("aud"),
         )
     except (KeyError, ValueError) as exc:
         raise ValidationFailed("session", "token", "token malformato") from exc

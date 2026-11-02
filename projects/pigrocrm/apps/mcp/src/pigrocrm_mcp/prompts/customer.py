@@ -17,9 +17,7 @@ what the text block is: the unpaid invoices, and the posture.
 from typing import Any
 from uuid import UUID
 
-from pigrocrm.core.customers.repository import CustomerRepository
-from pigrocrm.core.errors import NotFound
-from pigrocrm.core.invoices.repository import InvoiceRepository
+from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm_mcp.context import McpContext
 from pigrocrm_mcp.resources import entities
 
@@ -31,22 +29,19 @@ UNPAID_INVOICES_SHOWN = 15
 def stato_cliente(context: McpContext, customer_id: str) -> list[dict[str, Any]]:
     """The briefing before a phone call.
 
-    The customer is looked up before anything else so an unknown id is a `NotFound` the
-    guard renders as a sentence, rather than an empty briefing about nobody -- which would
-    read as "this customer has nothing open" and is the more dangerous of the two answers.
+    The card is rendered before anything else so an unknown id is a `NotFound` the guard
+    renders as a sentence, rather than an empty briefing about nobody -- which would read as
+    "this customer has nothing open" and is the more dangerous of the two answers.
     """
     identifier = UUID(customer_id)
-    if CustomerRepository(context.session).get(identifier) is None:
-        raise NotFound("customer", identifier)
+    card = entities.render_customer(context, identifier)
 
     # One row past the cap, and then discarded: it is asked for only so the prompt can say
     # that it truncated. A briefing that omits its tail silently cannot be told apart from a
     # short register, which is the reading that gets somebody told a customer owes less than
-    # they do -- and there is no count to print here because `sum_da_incassare` has no
-    # per-customer form and adding one to have a nicer sentence would be a second aggregate
-    # over the same rows.
-    fetched = InvoiceRepository(context.session).unpaid_for_customer(
-        identifier, limit=UNPAID_INVOICES_SHOWN + 1
+    # they do.
+    fetched = InvoiceService(context.session, context.storage).unpaid_for_customer(
+        identifier, context.actor, limit=UNPAID_INVOICES_SHOWN + 1
     )
     unpaid = fetched[:UNPAID_INVOICES_SHOWN]
     troncato = len(fetched) > UNPAID_INVOICES_SHOWN
@@ -93,7 +88,7 @@ def stato_cliente(context: McpContext, customer_id: str) -> list[dict[str, Any]]
                     # *is* the context rather than a pointer to it: a client that cannot
                     # follow the URI still has the card, so "the context arrives inside the
                     # prompt" holds without the model having to go and fetch anything.
-                    "text": entities.render_customer(context, identifier),
+                    "text": card,
                     "mimeType": "text/markdown",
                 },
             },

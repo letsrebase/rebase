@@ -26,9 +26,7 @@ type Availability =
 /** What the hub and the registry said about the address typed at step 1. */
 interface Member {
   membro: boolean
-  nome: string | null
-  cognome: string | null
-  spazi: number
+  has_spaces: boolean
 }
 
 const TERMINI = 'https://letsrebase.com/terms'
@@ -186,9 +184,6 @@ export function SignupPage({ go = (url) => window.location.assign(url) }: { go?:
       .then(({ data }) => {
         if (!data || fastPathCancelled.current) return
         setMember(data)
-        if (nomeTouched.current) return
-        const proposed = [data.nome, data.cognome].filter(Boolean).join(' ')
-        if (proposed) onNomeChange(proposed)
       })
       .catch(() => {})
       .finally(() => setMemberSettled(true))
@@ -204,11 +199,7 @@ export function SignupPage({ go = (url) => window.location.assign(url) }: { go?:
       const answer = await unwrap(api.POST('/api/tenants/member', { body: { email: address } }))
       setEmail(address)
       setMember(answer)
-      // The member's name proposes the space's name, whichever screen comes next: whoever
-      // owns a space and still wants another finds it written too.
-      const proposed = [answer.nome, answer.cognome].filter(Boolean).join(' ')
-      if (proposed && nome === '') onNomeChange(proposed)
-      setScreen(answer.spazi > 0 ? 'owner' : 'name')
+      setScreen(answer.has_spaces ? 'owner' : 'name')
     } catch (caught) {
       setError(toProblem(caught).detail)
     } finally {
@@ -294,10 +285,10 @@ export function SignupPage({ go = (url) => window.location.assign(url) }: { go?:
                 ? '1 di 2. Un PigroCRM tutto tuo, con i tuoi dati in un database separato.'
                 : fastPathActive
                   ? member?.membro
-                    ? `Sei dei nostri${member.nome ? `: ciao ${member.nome}` : ''}.`
+                    ? 'Sei dei nostri.'
                     : 'Come si chiama il nuovo spazio?'
                   : member?.membro
-                    ? `2 di 2. Sei dei nostri${member.nome ? `: ciao ${member.nome}` : ''}.`
+                    ? '2 di 2. Sei dei nostri.'
                     : '2 di 2. Come si chiama il tuo spazio?'}
           </CardDescription>
         </CardHeader>

@@ -24,6 +24,9 @@ from pigrocrm.core.errors import Conflict, ValidationFailed
 # claim by the uploader; these are what the bytes say. Plain text, Markdown and XML have
 # no signature and are not sniffed. `.docx` and `.xlsx` are ZIP containers. A PDF may
 # carry junk before its header, which the format tolerates within the first KiB.
+# The action `add_version` refuses a non-writer under; the upload route checks it before
+# reading the body, so it names it from here.
+ADD_VERSION_ACTION = "add_document_version"
 _PDF_HEADER_WINDOW = 1024
 _SIGNATURES: dict[str, bytes] = {
     "application/pdf": b"%PDF-",
@@ -108,7 +111,7 @@ class DocumentUploads:
         that were never written. Rolling back trades that for the harmless outcome:
         nothing committed, the number is not burned, the session stays usable.
         """
-        actor.require_write("add_document_version")
+        actor.require_write(ADD_VERSION_ACTION)
         document = self.ctx.require(document_id)
         version = self.add_version_row(
             document,

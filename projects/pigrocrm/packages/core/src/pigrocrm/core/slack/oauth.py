@@ -50,8 +50,8 @@ from pigrocrm.core.slack.schemas import SLACK_BOT_SCOPES, SlackWorkspaceRead
 
 PURPOSE = "slack"
 
-_CONNECT_ACTION = "collegare Slack"
-_DISCONNECT_ACTION = "scollegare Slack"
+_CONNECT_ACTION = "connect_slack"
+_DISCONNECT_ACTION = "disconnect_slack"
 
 
 class SlackOAuthService:

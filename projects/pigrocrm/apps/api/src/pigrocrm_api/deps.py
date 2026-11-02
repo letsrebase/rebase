@@ -11,27 +11,32 @@ from pigrocrm.core.auth.pat_service import PAT_PREFIX, PatService
 from pigrocrm.core.auth.refresh_service import RefreshTokenService
 from pigrocrm.core.auth.repository import UserRepository
 from pigrocrm.core.auth.scope import actor_for
-from pigrocrm.core.auth.tokens import decode_token
+from pigrocrm.core.auth.tokens import ROOT_AUDIENCE, decode_token
 from pigrocrm.core.config import Settings, get_settings
 from pigrocrm.core.db.scope import bind_scope
 from pigrocrm.core.errors import DomainError
 from pigrocrm.core.storage import DocumentStorage, LocalFileStorage, storage_from_settings
 from pigrocrm.core.tenants import SpaceRegistry, space_base_settings
+from pigrocrm_api.ratelimit import (
+    FREE_BEARER_FAILURES,
+    bearer_key,
+    log_unauthorized,
+    record_failure,
+    refuse_if_locked,
+)
 from pigrocrm_api.tenancy import first_cookie, tenant_slug
 
 ACCESS_COOKIE = "pigrocrm_access"
 REFRESH_COOKIE = "pigrocrm_refresh"
-# Root-scoped, at path=/, unconditionally (design 2026-09-23 §2, REB-376) -- the one
-# cookie in this codebase that deliberately breaks `tenancy.cookie_path`'s
-# "cookies live under a space's prefix" rule, because the entire point of this
-# cookie is to survive moving between slugs.
+# Root-scoped, at path=/, unconditionally (REB-376): the one cookie that deliberately
+# breaks `tenancy.cookie_path`'s "cookies live under a space's prefix" rule, because it
+# exists to survive moving between slugs.
 IDENTITY_COOKIE = "pigrocrm_identity"
 
-# One registry per process (spec 2026-09-08, lifted to core in ORB-170): the root's
-# engine, every space's engine and the tenants registry, all built on first use from the
-# first caller's settings. Callers with a request pass the settings dependency through,
-# so a test's override of `get_settings` decides the server; callers without one
-# (`_fresh_session`) get the process settings, which in production are the same object.
+# One registry per process (ORB-170): the root's engine, every space's engine and the
+# tenants registry, built on first use from the first caller's settings. Callers with a
+# request pass the settings dependency through, so a test's override of `get_settings`
+# decides the server; callers without one get the process settings.
 _registry: SpaceRegistry | None = None
 _registry_lock = threading.Lock()
 
@@ -53,10 +58,6 @@ def _space_registry(settings: Settings | None = None) -> SpaceRegistry:
     return _registry
 
 
-def _get_session_factory(settings: Settings | None = None) -> sessionmaker[Session]:
-    return _space_registry(settings).session_factory(None)
-
-
 def reset_session_factories() -> None:
     """Forgets the root's engine along with every space's and the registry, for a test
     that points the whole process at another server through `get_settings`."""
@@ -71,7 +72,7 @@ def get_tenants_registry_session(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> Iterator[Session]:
     """A session on the registry database -- the list of spaces, never a space."""
-    session = _space_registry(settings).registry_factory()()
+    session = registry_session_factory(settings)()
     try:
         yield session
     finally:
@@ -81,13 +82,24 @@ def get_tenants_registry_session(
 TenantsRegistryDep = Annotated[Session, Depends(get_tenants_registry_session)]
 
 
-def _tenant_session_factory(slug: str, settings: Settings) -> sessionmaker[Session]:
+def space_session_factory(
+    slug: str | None, settings: Settings | None = None
+) -> sessionmaker[Session]:
+    """The pooled session factory of the space `slug`, or of the root installation for
+    `None`. For code that opens a space other than the request's own (the chooser, a
+    signup, a link mail): never build an engine per call. A slug nobody registered raises
+    `NotFound`."""
     return _space_registry(settings).session_factory(slug)
 
 
+def registry_session_factory(settings: Settings | None = None) -> sessionmaker[Session]:
+    """The pooled session factory of the registry database, for code that has no request
+    dependency to ask for it."""
+    return _space_registry(settings).registry_factory()
+
+
 def _factory_for(request: Request, settings: Settings) -> sessionmaker[Session]:
-    slug = tenant_slug(request)
-    return _tenant_session_factory(slug, settings) if slug else _get_session_factory(settings)
+    return space_session_factory(tenant_slug(request), settings)
 
 
 def get_session(
@@ -106,19 +118,11 @@ SessionDep = Annotated[Session, Depends(get_session)]
 def request_base_settings(
     request: Request, settings: Annotated[Settings, Depends(get_settings)]
 ) -> Settings:
-    """The environment's settings as *this request* may see them, before the database
-    has its say.
-
-    A space inherits the root's Google only while the root lends its client
-    (`PIGROCRM_GOOGLE_SHARED_CLIENT`, REB-394): then it gets the root's client, a token
-    key derived for it alone and the root's callback. Otherwise the client, its secret
-    and the token key are blanked, so a space either configures its own (Impostazioni →
-    Spazio) or has no Gmail and no Drive -- `gmail_configured` false, sections hidden,
-    endpoints 409. Its public URL is the root's plus the slug, and documents default to
-    disk under the space's own folder. `space_base_settings` says the rest. The root sees the
-    environment untouched. Chained on `get_settings` so a test's override of that one
-    dependency still reaches every route.
-    """
+    """The environment's settings as *this request* may see it, before the database has
+    its say: `space_base_settings` decides what a space inherits from the root (Google
+    only while the root lends its client, REB-394; its public URL; its storage folder).
+    The root sees the environment untouched. Chained on `get_settings` so a test's
+    override of that one dependency still reaches every route."""
     return space_base_settings(settings, tenant_slug(request))
 
 
@@ -160,20 +164,12 @@ SettingsDep = Annotated[Settings, Depends(get_request_settings)]
 
 
 def _fresh_session() -> Session:
-    """A session the caller owns and closes -- deliberately *not* the request's.
-
-    This is what `get_storage` hands to `storage_from_settings`, and it is a callable
-    rather than a `Session` for two reasons. The storage it belongs to outlives every
-    request (one per process), so it cannot hold a session that must not; and it opens
-    one only when it actually resolves an account, which is why a process with
-    `PIGROCRM_STORAGE_BACKEND=gdrive` and nobody's Drive connected yet still starts.
-
-    The request's own `SessionDep` would be wrong even where the lifetimes happened to
-    line up: `LazyUserDriveStorage` closes what it opens, and it records a revoked grant
-    by committing on its own behalf -- both of which would reach into the transaction
-    the route is in the middle of.
-    """
-    return _get_session_factory()()
+    """A session the caller owns and closes, deliberately not the request's: the storage
+    that receives this callable outlives every request, opens a session only when it
+    resolves an account (so a process with `gdrive` and no Drive connected still
+    starts), and `LazyUserDriveStorage` commits and closes what it opens, which must not
+    reach into a route's transaction."""
+    return space_session_factory(None)()
 
 
 _tenant_storages: dict[str, DocumentStorage] = {}
@@ -182,32 +178,17 @@ _tenant_storages: dict[str, DocumentStorage] = {}
 def get_storage(request: Request, settings: SettingsDep) -> DocumentStorage:
     """One backend per process, chosen from settings and built once behind a lock.
 
-    Once, and cached: the two Drive backends hold a token cache that only earns its keep
-    across requests (`GoogleTokenClient` is documented as one per process), so building
-    per request would turn every document read into an OAuth round-trip. `settings` is
-    `get_settings`'s own `lru_cache`d singleton, so there is only ever one answer to
-    cache -- and it therefore reads the settings of the *first* request to ask, which is
-    also true of `_get_session_factory`'s engine and is what makes a settings change a
-    restart rather than a surprise mid-process.
+    Cached because the Drive backends hold a token cache that only pays across requests
+    (`GoogleTokenClient` is one per process): building per request would turn every
+    document read into an OAuth round-trip. It reads the settings of the first request to
+    ask, so a settings change is a restart. Still a FastAPI dependency so the tests can
+    replace it with a `LocalFileStorage` under `tmp_path`; they clear the cache through
+    `reset_storage_cache()`.
 
-    Still a FastAPI dependency, and that is what makes it overridable: the tests replace
-    it with a `LocalFileStorage` under `tmp_path` (`conftest.py`) rather than letting
-    uploads write into the repository's own working tree. The cache is cleared through
-    `reset_storage_cache()` below, which is what the tests that change the backend call.
-
-    **What the lock is held across, on one configuration.** With a service account
-    configured, `storage_from_settings` verifies the root folder before it returns
-    (`GDriveStorage.verify_root_accessible`), which is a Drive round-trip with a retry
-    budget -- so the first request to ask for a document backend holds `_storage_lock`
-    across a network call, and any other request that arrives in that window waits for
-    it. Kept deliberately: it happens once per process, every waiter needs that same
-    answer before it can do anything with a document, and the alternative -- build
-    outside the lock and swap the result in -- would pay a second verification round-trip
-    and hand one of the two builds' token cache straight to the garbage collector, which
-    is the exact waste this cache exists to prevent. The other two backends make no call
-    here at all: `local` touches a `Path`, and the titolare's-own-Drive route reads
-    nothing until its first operation (`LazyUserDriveStorage`).
-    """
+    The first build holds `_storage_lock` across `verify_root_accessible`, a Drive
+    round-trip, when a service account is configured. Kept: it happens once per process
+    and every waiter needs the same answer, while building outside the lock would pay a
+    second verification and discard one build's token cache."""
     slug = tenant_slug(request)
     if slug is not None:
         # A space's documents live on disk beside the root's, in their own folder,
@@ -225,7 +206,7 @@ def get_storage(request: Request, settings: SettingsDep) -> DocumentStorage:
                         # engine since, and a captured factory would keep the old one.
                         storage = storage_from_settings(
                             settings,
-                            session_factory=lambda: _tenant_session_factory(slug, settings)(),
+                            session_factory=lambda: space_session_factory(slug, settings)(),
                         )
                     else:
                         root = Path(settings.storage_local_root) / "tenants" / slug
@@ -245,21 +226,9 @@ StorageDep = Annotated[DocumentStorage, Depends(get_storage)]
 
 
 def reset_storage_cache() -> None:
-    """Forgets the process's storage, so the next `get_storage` builds a new one.
-
-    Exists for the tests, and named so that they no longer have to assign this module's
-    private `_storage` to say what they mean. Two of them do say it -- the one that
-    drives a whole Drive installation over HTTP, and the one that asserts the cache
-    itself -- and a test that pokes a private global is a test that silently stops
-    working the day the global is renamed or a second one joins it. This function is
-    that knowledge, kept next to the cache it clears.
-
-    Under `_storage_lock`, for the same reason `get_storage` builds under it: clearing
-    the cache while another thread is between the check and the assignment would let
-    that thread's build survive the reset. Nothing is rebuilt here -- the backend is
-    resolved lazily by the next caller, which is also what makes this safe to call
-    before a test has settled which settings the process should read.
-    """
+    """Forgets the process's storage, so the next `get_storage` builds a new one. For the
+    tests that change the backend; under `_storage_lock`, like the build itself, so a
+    build in flight cannot survive the reset."""
     global _storage
     with _storage_lock:
         _storage = None
@@ -276,30 +245,32 @@ def _bearer_pat(request: Request) -> str | None:
 
 
 def get_actor(request: Request, session: SessionDep, settings: SettingsDep) -> Actor:
-    """Two credentials, one actor: the browser presents a JWT cookie, an agent presents
-    a PAT. Everything downstream is identical.
+    """Two credentials, one actor: the browser presents a JWT cookie, an agent a PAT.
 
-    Precedence, in order -- deterministic, not a race between the two credentials:
+    A header `Authorization: Bearer pgc_...` always wins over any cookie; if
+    `PatService.resolve` fails the answer is 401 and the cookie is never consulted. Any
+    other `Authorization` header is ignored and the `ACCESS_COOKIE` is read. The access
+    token must have been minted for this request's space (`aud`): the root and every
+    space share one signing secret, and the audience is what keeps a token from being
+    carried from one to another. A token without an `aud`, minted before the claim
+    existed, is refused like an expired one: it lives fifteen minutes and the SPA renews
+    it from the refresh cookie on the 401 it just got, so nobody is signed out.
 
-    1. `Authorization: Bearer pgc_...` -- a header that looks like a PAT always wins
-       over any cookie, even a valid one. If `PatService.resolve` fails (unknown,
-       revoked, or the owning user deactivated), this raises 401 immediately; the
-       cookie is never consulted, even when one is present and would otherwise work.
-    2. Any other `Authorization` header -- absent, not `Bearer `, or a `Bearer` value
-       that does not start with `pgc_` -- is ignored outright, and resolution falls
-       back to the `ACCESS_COOKIE` cookie.
-    """
+    Failed bearers are throttled per client address (`ratelimit.refuse_if_locked`)."""
     pat = _bearer_pat(request)
     if pat is not None:
+        key = bearer_key(request)
+        refuse_if_locked(request, key)
         try:
-            # `settings`, so a space's own `mcp_full_access` (Impostazioni → Spazio) is
-            # what stamps `Actor.full_access`, not the process environment's.
+            # `settings`, so a space's own `mcp_full_access` is what stamps
+            # `Actor.full_access`, not the process environment's.
             actor = PatService(session, settings=settings).resolve(pat)
         except DomainError as exc:
+            record_failure(key, free=FREE_BEARER_FAILURES)
+            log_unauthorized(request, "bearer")
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token non valido") from exc
         # The scope the token's owner has, on the session every read of this request
-        # runs on (REB-634, spec 2026-10-03 §4): from here the database answers the
-        # rows this person may see and no other.
+        # runs on (REB-634): the database answers the rows this person may see.
         bind_scope(session, actor)
         return actor
 
@@ -307,7 +278,12 @@ def get_actor(request: Request, session: SessionDep, settings: SettingsDep) -> A
     if not token:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Autenticazione richiesta")
     try:
-        payload = decode_token(token, settings, expected_type="access")
+        payload = decode_token(
+            token,
+            settings,
+            expected_type="access",
+            audience=tenant_slug(request) or ROOT_AUDIENCE,
+        )
     except DomainError as exc:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Sessione scaduta") from exc
 
@@ -325,35 +301,17 @@ def callback_actor(request: Request, session: Session, settings: Settings) -> Ac
     """The actor a browser brings back from Google's consent screens, or None when it
     holds no live session here (REB-446).
 
-    The Gmail and Drive callbacks are top-level navigations, so the SPA never gets to
-    renew the session before them, and a person who spends a minute on Google's account
-    chooser and consent comes back after the fifteen-minute access cookie has run out
-    whenever they started near the end of it: the browser then sends no access cookie at
-    all, and `get_actor` alone answered «Autenticazione richiesta» as a JSON document.
-
-    So `get_actor` first, unchanged, and when it refuses the cookie, the refresh cookie
-    this browser holds for the same prefix: the most specific one, signed, of the
-    refresh type, with a row in *this* database that belongs to its user, and a user
-    still active. The row answers as `POST /api/auth/refresh` would
-    (`RefreshTokenService.is_live`): unconsumed and unexpired, or rotated away by
-    another tab inside the ten-second grace. A token consumed long ago is refused
-    without burning the family: no replay is judged here, because this is a read. It is
-    verified, not rotated, and nothing is issued: the SPA the callback lands on meets a
-    401 on its first request and renews the pair itself, as it does after any idle tab.
-    Minting an access token here without rotating would be a way to renew a session
-    that skips rotation's replay check; rotating here would have to carry the new pair
-    on every answer the callback can give, a 403 problem document included.
-
-    A session opened by a signup alone has no refresh cookie (`routers/tenants.py`,
-    until the welcome link proves the address), so it is not rescued here: it lands on
-    `sessione` like no session at all, on purpose.
-
-    What this does not change: a state is still redeemed against the id of the user this
-    returns (`GmailOAuthService.complete`), in the database of the prefix the request
-    wore, so a code and state from another person's consent, or from another space, are
-    refused exactly as before. A PAT that fails is still a 401, as in `get_actor`: a
-    header that names one is never answered from a cookie.
-    """
+    The callbacks are top-level navigations, so the SPA cannot renew the session first,
+    and a person who spends a minute on Google's consent screen may return after the
+    access cookie has run out. So: `get_actor`, and when it refuses the cookie, the
+    refresh cookie of the same prefix, verified and not rotated (signed, of the refresh
+    type, live in *this* database, user still active; `RefreshTokenService.is_live`).
+    Nothing is issued: minting here would skip rotation's replay check, and the SPA the
+    callback lands on renews the pair itself on its first 401. A session opened by a
+    signup alone has no refresh cookie and is not rescued. A state is still redeemed
+    against the id of the user returned here, in the database of the request's prefix, and
+    a PAT that fails is still a 401: a header that names one is never answered from a
+    cookie."""
     try:
         return get_actor(request, session, settings)
     except HTTPException as exc:
@@ -384,28 +342,12 @@ def get_snapshot_session(
 ) -> Iterator[Session]:
     """A second session per request, untouched by anything else in the request.
 
-    Only the dashboards use it, and they need it. A dashboard is one transaction in
-    `REPEATABLE READ` so that every figure on the page was true at one instant (spec
-    §7.1), Postgres refuses to change the isolation level once a transaction has begun,
-    and `DashboardService._open_snapshot` raises rather than silently degrading to
-    `READ COMMITTED` -- where a card and its own drill-through can disagree and nothing
-    about re-reading the code would say so.
-
-    `get_actor` resolves the cookie by reading `users` **on `SessionDep`**, and that read
-    autobegins a transaction. So a dashboard route taking `SessionDep` would raise on
-    every single request: not a race, not a load-dependent bug, every request. Two
-    sessions is the fix, and it is the same one the MCP adapter has used since Task 4A-1 --
-    `__main__.py` resolves the PAT in its own short-lived session so the tool's session is
-    untouched when the tool body runs.
-
-    A distinct callable, therefore a distinct key in FastAPI's per-request dependency
-    cache: a route asking for both gets two sessions, deliberately. The cost is one extra
-    pooled connection for the life of the request, paid only by the routes that ask.
-
-    The actor's scope is bound here as on the request's own session (REB-634): on a
-    session nothing has touched, `bind_scope` only registers the listener, so the first
-    statement of the snapshot stays the service's own and runs inside the scope.
-    """
+    Only the dashboards use it: a dashboard is one `REPEATABLE READ` transaction, Postgres
+    refuses to change the isolation level once a transaction has begun, and `get_actor`
+    reads `users` on `SessionDep`, which autobegins one. A distinct callable is a distinct
+    key in FastAPI's dependency cache, so a route asking for both gets two sessions, at
+    the cost of one extra pooled connection for the routes that ask. The actor's scope is
+    bound here as on the request's own session (REB-634)."""
     session = _factory_for(request, settings)()
     bind_scope(session, actor)
     try:
@@ -418,6 +360,3 @@ SnapshotSessionDep = Annotated[Session, Depends(get_snapshot_session)]
 
 
 ActorDep = Annotated[Actor, Depends(get_actor)]
-# Same dependency, named for what it does at the call site: a router that depends on
-# it is declaring "this endpoint requires an authenticated actor."
-require_actor = get_actor

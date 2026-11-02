@@ -17,6 +17,7 @@ from pigrocrm.core.auth.schemas import InvitationCreate, UserCreate, UserUpdate
 from pigrocrm.core.auth.service import UserService
 from pigrocrm.core.auth.tokens import (
     ALGORITHM,
+    ROOT_AUDIENCE,
     decode_token,
     issue_access_token,
     issue_refresh_token,
@@ -120,6 +121,29 @@ def test_token_signed_with_another_secret_is_rejected(db_session: Session) -> No
     )
     with pytest.raises(ValidationFailed):
         decode_token(token, SETTINGS, expected_type="access")
+
+
+def test_an_access_token_names_the_space_it_was_minted_for() -> None:
+    """The root and every space share one signing secret: the `aud` claim is what says
+    which of them a token is for, and `decode_token(audience=...)` refuses any other."""
+    user_id = uuid4()
+    for space, audience in ((None, ROOT_AUDIENCE), ("studio", "studio")):
+        token = issue_access_token(user_id, "admin", SETTINGS, space=space)
+        payload = decode_token(token, SETTINGS, expected_type="access", audience=audience)
+        assert payload.aud == audience
+        other = "altro" if audience != "altro" else ROOT_AUDIENCE
+        with pytest.raises(ValidationFailed):
+            decode_token(token, SETTINGS, expected_type="access", audience=other)
+    # A caller that does not care which space still decodes it.
+    token = issue_access_token(user_id, "admin", SETTINGS, space="studio")
+    assert decode_token(token, SETTINGS, expected_type="access").sub == user_id
+
+
+def test_a_token_without_an_audience_is_refused_where_one_is_required() -> None:
+    legacy = _forge({"sub": str(uuid4()), "role": "admin", "type": "access", "exp": _future_exp()})
+    assert decode_token(legacy, SETTINGS, expected_type="access").aud is None
+    with pytest.raises(ValidationFailed):
+        decode_token(legacy, SETTINGS, expected_type="access", audience=ROOT_AUDIENCE)
 
 
 def test_access_token_expiry_matches_settings(db_session: Session) -> None:

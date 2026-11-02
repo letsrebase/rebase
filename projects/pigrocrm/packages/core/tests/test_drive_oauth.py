@@ -1106,7 +1106,7 @@ def test_set_roots_refuses_a_write_folder_from_a_collaboratore_and_writes_nothin
             _as(collab),
         )
 
-    assert caught.value.details["action"] == "scegliere la cartella di scrittura Drive"
+    assert caught.value.details["action"] == "set_drive_storage_folder"
     assert caught.value.details["required_roles"] == ["admin"]
     db_session.refresh(account)
     assert account.root_folder_ids == ["1RadiceOriginale0001"]

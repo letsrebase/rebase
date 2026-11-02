@@ -7,6 +7,7 @@ the MCP suite's container; Task 5 adds spaces provisioned on the same server.
 
 import asyncio
 import json
+import logging
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -182,6 +183,22 @@ async def test_without_a_valid_pat_the_answer_is_one_uniform_401(
     assert response.status_code == 401
     assert response.json() == {"detail": "Token non valido"}
     assert response.headers["www-authenticate"] == "Bearer"
+
+
+@pytest.mark.asyncio
+async def test_a_refused_bearer_is_logged_once_and_never_with_the_token(
+    served: tuple[McpHttpApp, httpx2.AsyncClient], caplog: pytest.LogCaptureFixture
+) -> None:
+    """PMCP-08: a guessing run against the endpoint leaves a trace the operator can count,
+    and the trace carries neither the credential nor anything the caller typed."""
+    _, client = served
+    secret = "pgc_a-secret-nobody-should-read-in-a-log"
+    with caplog.at_level(logging.WARNING, logger="pigrocrm_mcp.http"):
+        response = await client.post("/mcp", json=INITIALIZE, headers={**ACCEPT, **_bearer(secret)})
+    assert response.status_code == 401
+    refused = [r for r in caplog.records if r.name == "pigrocrm_mcp.http"]
+    assert len(refused) == 1 and refused[0].levelno == logging.WARNING
+    assert secret not in caplog.text
 
 
 @pytest.mark.asyncio

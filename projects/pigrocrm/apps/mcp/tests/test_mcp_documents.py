@@ -32,7 +32,6 @@ from sqlalchemy.orm import Session  # noqa: E402
 from test_text import minimal_pdf  # noqa: E402
 
 from pigrocrm.core.actor import Actor  # noqa: E402
-from pigrocrm.core.analytics import service as analytics_service  # noqa: E402
 from pigrocrm.core.auth.models import User  # noqa: E402
 from pigrocrm.core.crypto import seal  # noqa: E402
 from pigrocrm.core.drive.models import GoogleDriveAccount  # noqa: E402
@@ -42,6 +41,7 @@ from pigrocrm.core.fiscal.service import FiscalProfileService  # noqa: E402
 from pigrocrm.core.gmail.tokens import GoogleTokenClient  # noqa: E402
 from pigrocrm.core.gmail.transport import GmailTransport  # noqa: E402
 from pigrocrm.core.storage import lazy_drive  # noqa: E402
+from pigrocrm.core.timetracking import billing as billing_service  # noqa: E402
 from pigrocrm.core.timetracking.schemas import TimeEntryCreate  # noqa: E402
 from pigrocrm.core.timetracking.service import TimeEntryService  # noqa: E402
 from pigrocrm_mcp.server import build_server  # noqa: E402
@@ -77,8 +77,8 @@ async def test_the_seven_spec_tools_are_registered(server) -> None:
 
 
 async def test_no_tool_returns_document_bytes(server) -> None:
-    # "Il download dei byte non passa da MCP: un tool che restituisce un PDF in
-    # base64 dentro un contesto e' uno spreco e un rischio" (spec 7).
+    # Downloading bytes does not go through MCP: a tool that returned a base64 PDF into a
+    # context would be a waste and a risk (spec 7).
     async with Client(server) as client:
         tools = (await client.list_tools()).tools
 
@@ -502,7 +502,7 @@ async def test_binding_hours_to_a_draft_writes_through_the_servers_own_storage(
     indistinguishable from the pattern it exists to forbid.
     """
     settings = gmail_settings(storage_backend="gdrive", mcp_full_access=True)
-    monkeypatch.setattr(analytics_service, "get_settings", lambda: settings)
+    monkeypatch.setattr(billing_service, "get_settings", lambda: settings)
     FiscalProfileService(mcp_session).upsert(
         FiscalProfileUpsert(codice_regime="RF19"), Actor(id=None, type="system", role="admin")
     )

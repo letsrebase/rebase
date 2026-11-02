@@ -81,6 +81,9 @@ Method = tuple[str, str]
 #    comparison test below compares the qualified bans as pairs and the rest as names.
 _VIETATE: dict[Method, str] = {
     ("InvoiceService", "issue"): "atto fiscale irreversibile (slice 3 §11)",
+    ("InvoiceService", "issue_and_render"): (
+        "`issue` followed by its artefacts: the one door a privileged tool and the REST route call"
+    ),
     ("InvoiceService", "annul"): "atto fiscale irreversibile (slice 3 §11)",
     ("InvoiceService", "mark_transmitted_externally"): "atto fiscale (slice 3 §11)",
     ("InvoiceService", "export_xml"): "esiste solo per una fattura emessa (slice 3 §11)",
@@ -118,7 +121,6 @@ _VIETATE: dict[Method, str] = {
     ),
     ("PeriodLockService", "close_period"): "chiusura di periodo (slice 4 §11)",
     ("PeriodLockService", "reopen_period"): "riapertura di periodo (slice 4 §11)",
-    ("AnalyticsService", "bind_time_to_invoice"): "precede l'emissione (slice 4 §11)",
     ("AnalyticsService", "get_fiscal_estimate"): "posizione fiscale del titolare (slice 4 §11)",
     ("GmailSyncService", "discover"): (
         "interroga Gmail sul dominio del cliente a carico della quota e del consenso "
@@ -167,6 +169,7 @@ _VIETATE: dict[Method, str] = {
 #     internally, and reaching it would require the very `DriveReader` that
 #     `test_no_unconditional_module_can_even_obtain_a_drive_reader` denies.
 _FUORI_DAL_SETACCIO: dict[Method, str] = {
+    ("TimeBilling", "bind_to_invoice"): "precede l'emissione (slice 4 §11); not a `*Service` class",
     ("DriveReader", "list_children"): (
         "elenca una cartella del Drive personale del titolare (slice 9 §4.2)"
     ),
@@ -190,6 +193,61 @@ _FUORI_DAL_SETACCIO: dict[Method, str] = {
 #    no-actor rule and is listed for the same reason: it is the intermediate step of
 #    `render_pdf`, not an operation of its own.
 _INTERNE: dict[Method, str] = {
+    (
+        "GmailOAuthService",
+        "account_for_user",
+    ): "hook of `GoogleConsentFlow`, called by the flow itself with no actor: not an operation",
+    (
+        "GmailOAuthService",
+        "sibling_account",
+    ): "hook of `GoogleConsentFlow`, called by the flow itself with no actor: not an operation",
+    (
+        "GmailOAuthService",
+        "new_account",
+    ): "hook of `GoogleConsentFlow`, called by the flow itself with no actor: not an operation",
+    (
+        "GmailOAuthService",
+        "already_connected",
+    ): "hook of `GoogleConsentFlow`, called by the flow itself with no actor: not an operation",
+    (
+        "GmailOAuthService",
+        "sibling_mismatch",
+    ): "hook of `GoogleConsentFlow`, called by the flow itself with no actor: not an operation",
+    (
+        "GmailOAuthService",
+        "on_identity_changed",
+    ): "hook of `GoogleConsentFlow`, called by the flow itself with no actor: not an operation",
+    (
+        "GoogleDriveOAuthService",
+        "account_for_user",
+    ): "hook of `GoogleConsentFlow`, called by the flow itself with no actor: not an operation",
+    (
+        "GoogleDriveOAuthService",
+        "sibling_account",
+    ): "hook of `GoogleConsentFlow`, called by the flow itself with no actor: not an operation",
+    (
+        "GoogleDriveOAuthService",
+        "new_account",
+    ): "hook of `GoogleConsentFlow`, called by the flow itself with no actor: not an operation",
+    (
+        "GoogleDriveOAuthService",
+        "already_connected",
+    ): "hook of `GoogleConsentFlow`, called by the flow itself with no actor: not an operation",
+    (
+        "GoogleDriveOAuthService",
+        "sibling_mismatch",
+    ): "hook of `GoogleConsentFlow`, called by the flow itself with no actor: not an operation",
+    (
+        "GoogleDriveOAuthService",
+        "on_identity_changed",
+    ): "hook of `GoogleConsentFlow`, called by the flow itself with no actor: not an operation",
+    (
+        "GoogleDriveOAuthService",
+        "exchange_code",
+    ): (
+        "the Drive flow's own token exchange, called by "
+        "`GoogleConsentFlow.complete` after the person's redirect: not an operation"
+    ),
     ("ActivityService", "record"): "scrive la timeline per conto di un altro servizio",
     ("CostCategoryService", "require_active"): "validazione interna di CostService",
     ("DealService", "set_stage_in_transaction"): (
@@ -205,7 +263,6 @@ _INTERNE: dict[Method, str] = {
         "di stage resta raggiungibile dall'agente sotto il suo nome vero, `move_deal`, "
         "che autorizza, registra e committa"
     ),
-    ("DocumentService", "storage_key_for"): "costruisce una chiave di storage",
     ("LegalEntityService", "as_template_values"): "alimenta il renderer dei template",
     ("LegalEntityService", "inherited"): (
         "lettura interna: l'azienda che un deal, un contratto, un documento o una fattura "
@@ -244,11 +301,6 @@ _INTERNE: dict[Method, str] = {
         "stesso campo nella sua risposta REST, un adapter che questa scansione non "
         "copre affatto"
     ),
-    ("GmailOAuthService", "redirect_uri"): "e' l'URL fisso che Google confronta "
-    "carattere per carattere, non un'operazione",
-    ("GoogleDriveOAuthService", "redirect_uri"): "stessa ragione di "
-    "`GmailOAuthService.redirect_uri`: e' l'URL fisso che Google confronta carattere "
-    "per carattere, non un'operazione (slice 9 §5.1)",
     ("PeriodLockService", "assert_writable"): "guardia invocata dagli altri servizi",
     ("PeriodLockService", "is_closed"): "guardia invocata dagli altri servizi",
     ("PipelineService", "default_stage"): "risolve lo stage iniziale di un nuovo deal",
@@ -282,30 +334,28 @@ _INTERNE: dict[Method, str] = {
 #    which inherits its owner's full role and never expires (residuo R10), so a tool that
 #    minted or revoked one would let a token extend or destroy its own access. Creating
 #    users is the same hole with a longer fuse.
-#    Tutto Gmail, tranne le tre letture, sta qui -- e la decisione e' stata presa in
-#    B1-14, che possiede la superficie MCP di 5B. La riga che la divide non e'
-#    "lettura contro scrittura" ma *di chi e' la risorsa, e di chi la decisione*:
+#    All of Gmail, except the three reads, is here -- and the decision was taken in B1-14,
+#    which owns 5B's MCP surface. The line that divides it is not "read versus write" but
+#    *whose resource this is, and whose decision*:
 #
-#      * quello che l'agente puo' fare e' leggere lo specchio gia' archiviato in
-#        `gmail_messages` e lo stato della credenziale (`list_gmail_messages`,
-#        `get_gmail_message`, `describe_gmail_account`). Nessuna delle tre chiama
-#        Google, nessuna consuma la quota Gmail di qualcuno, nessuna esercita un
-#        consenso: leggono righe che questo CRM ha gia' deciso di tenere;
-#      * quello che non puo' fare e' *andare a prendere* la posta (`sync`,
-#        `backfill`), collegare o scollegare una casella, decidere cosa il CRM
-#        conserva, e inviare. In ognuno di questi casi la risorsa o la decisione
-#        appartengono alla persona, non all'agente.
+#      * what the agent may do is read the mirror already archived in `gmail_messages` and
+#        the state of the credential (`list_gmail_messages`, `get_gmail_message`,
+#        `describe_gmail_account`). None of the three calls Google, none spends anybody's
+#        Gmail quota, none exercises a consent: they read rows this CRM already decided
+#        to keep;
+#      * what it may not do is *fetch* the mail (`sync`, `backfill`), connect or
+#        disconnect a mailbox, decide what the CRM keeps, and send. In each case the
+#        resource or the decision belongs to the person, not to the agent.
 #
-#    `start` restituisce un URL di consenso che solo un browser umano puo' percorrere
-#    -- un agente che lo ricevesse non potrebbe fare altro che passarlo a qualcuno --
-#    e `complete` richiede un `code` che esiste solo dentro quel redirect, quindi
-#    nessuno dei due e' eseguibile da un canale strumentale. `disconnect` e' il verso
-#    opposto: distrugge una credenziale verso un servizio *terzo* e, con
-#    `delete_messages`, la corrispondenza archiviata.
+#    `start` returns a consent URL that only a human browser can walk -- an agent that
+#    received it could do nothing but hand it to somebody -- and `complete` needs a `code`
+#    that exists only inside that redirect, so neither can be run from a tool channel.
+#    `disconnect` is the opposite direction: it destroys a credential towards a *third*
+#    service and, with `delete_messages`, the archived correspondence.
 #
-#    L'assenza dell'invio non e' registrata qui perche' in 5B-1 non esiste ancora un
-#    servizio che invii: il divieto strutturale sui nomi degli strumenti vive in
-#    `test_mcp_invoice_ban.py`, che possiede i divieti per costruzione.
+#    The absence of sending is not recorded here because in 5B-1 there is no service that
+#    sends yet: the structural ban on tool names lives in `test_mcp_invoice_ban.py`, which
+#    owns the bans by construction.
 _CREDENZIALI: dict[Method, str] = {
     ("UserService", "reset_password"): (
         "cambia la credenziale di una persona: e' l'operatore al terminale del server "
@@ -326,15 +376,10 @@ _CREDENZIALI: dict[Method, str] = {
     ("PushSubscriptionService", "unsubscribe"): (
         "toglie un browser: il verso opposto di `subscribe`, della persona per la stessa ragione"
     ),
-    ("GmailOAuthService", "start"): "il consenso Google si da' da un browser, non da "
-    "un tool: l'URL di autorizzazione non e' percorribile da un agente",
     ("GmailOAuthService", "complete"): "il `code` esiste solo dentro il redirect di "
     "Google verso il callback: nessun agente puo' averlo",
     ("GmailOAuthService", "disconnect"): "revocare l'accesso a una casella di terzi (e "
     "cancellarne la corrispondenza) e' una decisione della persona",
-    ("GoogleDriveOAuthService", "start"): "stessa ragione di `GmailOAuthService.start` "
-    "(spec 9 §5.1): il consenso Google si da' da un browser, non da un tool -- l'URL di "
-    "autorizzazione non e' percorribile da un agente",
     ("GoogleDriveOAuthService", "complete"): "stessa ragione di "
     "`GmailOAuthService.complete`: il `code` esiste solo dentro il redirect di Google "
     "verso il callback, nessun agente puo' averlo",
@@ -432,7 +477,7 @@ _CREDENZIALI: dict[Method, str] = {
         "significherebbe offrire all'agente il ciclo di sync per un'altra porta"
     ),
     ("PatService", "create"): "un agente non conia le proprie credenziali",
-    ("PatService", "list"): "l'elenco dei token e' materiale di sicurezza",
+    ("PatService", "list_own"): "l'elenco dei token e' materiale di sicurezza",
     ("PatService", "revoke"): "revocare token e' amministrazione dell'account",
     ("PatService", "set_full_access"): (
         "un token non apre da solo i propri strumenti privilegiati: lo decide una persona (REB-810)"
@@ -700,6 +745,14 @@ _COPERTE_O_UMANE: dict[Method, str] = {
         "the text a note had before each edit is read on the page; an agent reads the thread's "
         "current text through the `get_*` tools, and the replaced one has no use for it"
     ),
+    ("DealService", "get_many"): (
+        "read by the `ore_da_registrare` prompt to name the deals of the recent feed; a prompt "
+        "is not a tool, and an agent already reads a deal through `get_deal` and `search_deals`"
+    ),
+    ("InvoiceService", "unpaid_for_customer"): (
+        "read by the `stato_cliente` prompt for the receivables of one customer; an agent "
+        "already reads them through `list_invoices` and `get_receivables_dashboard`"
+    ),
     ("ContractEmailService", "create"): "il testo che esce a nome del titolare lo salva la "
     "persona dalla pagina del contratto; l'agente scrive bozze con draft_email",
     ("ContractEmailService", "update"): "come create: il testo di un modello e' della persona",
@@ -785,6 +838,14 @@ _COPERTE_O_UMANE: dict[Method, str] = {
         "(`POST /api/tenants/member`, ORB-173) per dire a chi torna che ha gia' aperto degli "
         "spazi, prima che esista un actor; un agente dentro uno spazio non ha motivo di leggerlo"
     ),
+    ("TenantService", "count"): (
+        "the size of the registry of spaces, read by the public signup to enforce "
+        "`Settings.max_spaces`, before there is an actor: not a space's CRM data"
+    ),
+    ("TenantService", "slugs_for_owner"): (
+        "the spaces an address owns, read by the identity chooser and the magic link "
+        "before any space is open: the registry is not a space's surface"
+    ),
     ("DocumentService", "create"): "create_document_from_template e' l'unica creazione "
     "che non richieda di caricare byte",
     ("DocumentService", "update"): "titolo e campi custom: nessun agente ha motivo di "
@@ -793,6 +854,27 @@ _COPERTE_O_UMANE: dict[Method, str] = {
     ("FiscalProfileService", "get"): "describe_fiscal_profile espone gia' il regime",
     ("ContractService", "simulate_cap"): "lo raggiunge `simulate_ceiling` quando riceve un "
     "`contract_id`: il tetto del contratto e' una parte della stessa risposta (REB-761)",
+    (
+        "ContractCapService",
+        "concentration_cap",
+    ): (
+        "reached through the `ContractService` facade, which keeps the method "
+        "name: `get_contract_concentration`"
+    ),
+    (
+        "ContractCapService",
+        "simulate_cap",
+    ): (
+        "reached through the `ContractService` facade, which keeps the method "
+        "name: `simulate_ceiling`"
+    ),
+    (
+        "ContractRenewalService",
+        "renew",
+    ): (
+        "reached through the `ContractService` facade, which keeps the method "
+        "name: `renew_contract`"
+    ),
     ("TemplateService", "get"): "describe_template espone gia' il template",
     ("GoogleDriveAccountService", "space_storage"): (
         "read only by the admin's Drive page as part of Drive health; "
@@ -862,18 +944,13 @@ _COPERTE_O_UMANE: dict[Method, str] = {
     ("WorkUnitService", "transition"): (
         "moving a day through the state graph directly is exactly what invariant 3 "
         "denies an agent; its only caller is the web app's day page, over "
-        "`POST /api/work-units/{id}/transitions`, and `AGENT_FORBIDDEN_ACTIONS` refuses "
+        "`POST /api/work-units/{id}/transitions`, and `FULL_ACCESS_ACTIONS` refuses "
         "it to any agent credential on that route too (REB-745)"
     ),
     ("WorkUnitService", "move"): (
         "the person's door to `transition`, refused to any agent credential "
         "(`transition_work_unit`); its only caller is `POST /api/work-units/{id}/transitions` "
         "(REB-746)"
-    ),
-    ("WorkUnitService", "link_approval"): (
-        "same reason as `transition`: linking an approval outside `accept_proposal`'s "
-        "own atomic write would let an agent recover a flagged day, or attach "
-        "evidence to one, with no proposal behind it"
     ),
     ("ApprovalService", "record"): (
         "records a client's approval and moves the days it names in one write: "
@@ -929,7 +1006,7 @@ _COPERTE_O_UMANE: dict[Method, str] = {
 # `accept_proposal` and `reject_proposal` (`tools/families/proposals.py`). Of
 # the seven: `WorkUnitService.get`/`transitions_for` and `ApprovalService.get` take no
 # `actor` and moved to `_INTERNE` above, next to every other no-actor read; the four
-# writes (`WorkUnitService.create`/`transition`/`link_approval`,
+# writes (`WorkUnitService.create`/`transition`,
 # `ApprovalService.create`) moved to `_COPERTE_O_UMANE` above, because REB-362's own
 # answer to "why no tool" is a permanent one, not "nobody wrote it yet" -- exposing any
 # of them would let an agent write the ledger directly, which is exactly what invariant

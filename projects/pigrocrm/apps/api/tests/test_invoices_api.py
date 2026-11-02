@@ -12,7 +12,7 @@ from sqlalchemy import text
 
 from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.invoices import pdf as invoice_pdf
-from pigrocrm.core.invoices.service import InvoiceService
+from pigrocrm.core.invoices.artifacts import InvoiceArtifacts
 
 # `today_local()`, not `date.today()`: `issue` and `mark_transmitted_externally`
 # both compare against Europe/Rome's own calendar (see `db/clock.py`), and the two can
@@ -302,10 +302,10 @@ def test_an_xml_export_that_breaks_the_transaction_leaves_the_pdf_it_already_com
     endpoint catches it: without the rollback, the read-back would answer 500 on
     `InFailedSqlTransaction` and the person would see the failure this card removes."""
 
-    def aborts_the_transaction(self: InvoiceService, *_args: object, **_kwargs: object) -> None:
-        self.session.execute(text("SELECT 1/0"))
+    def aborts_the_transaction(self: InvoiceArtifacts, *_args: object, **_kwargs: object) -> None:
+        self.ctx.session.execute(text("SELECT 1/0"))
 
-    monkeypatch.setattr(InvoiceService, "export_xml", aborts_the_transaction)
+    monkeypatch.setattr(InvoiceArtifacts, "export_xml", aborts_the_transaction)
     draft = _draft(logged_in, customer["id"])
     response = logged_in.post(f"/api/invoices/{draft['id']}/issue", json={})
     assert response.status_code == 200, response.text

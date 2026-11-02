@@ -16,34 +16,23 @@ STATUS_BY_CODE: dict[str, int] = {
     "validation_failed": 422,
     "conflict": 409,
     "permission_denied": 403,
-    # 403, the same status as `permission_denied` and for the same reason a browser or an
-    # agent client cares about: the request was understood and authenticated, and the
-    # credential may not do this. Mapped explicitly rather than left to fall through to
-    # the 400 default, which would render a policy refusal as "Errore di dominio" -- a
-    # generic bad-request an agent has every reason to retry, and a status no client can
-    # tell apart from a malformed body. The *sentence* is what distinguishes it from
-    # `permission_denied` ("richiede una persona", not "richiede un ruolo migliore"), and
-    # `code` carries the distinction machine-readably.
+    # Same status as `permission_denied`, a different `code`: the credential is an agent's
+    # and the operation is reserved to a person. Left unmapped it would fall to the 400
+    # default, a generic bad request that an agent has every reason to retry.
     "agent_forbidden": 403,
     "immutable_field": 409,
-    # The four dead states of an invitation (spec 2026-09-17 §1), mapped by REB-290.
-    # `invitation_unknown` is a 404: no row carries the hash, the same answer the
-    # admin surface gives for an id that is not this space's. The other three are
-    # 410 Gone: the credential existed and has ended, which is exactly the
-    # distinction the acceptance page renders as three different sentences --
-    # `code` in the problem document names which.
+    # The dead states of an invitation (REB-290): unknown is a 404 like any id that is not
+    # this space's; the other three are 410 Gone (the credential existed and has ended),
+    # which the acceptance page renders as three sentences told apart by `code`.
     "invitation_unknown": 404,
     "invitation_expired": 410,
     "invitation_revoked": 410,
     "invitation_used": 410,
-    # REB-292: both refusals are about the state of the space's admins, not the
-    # request, and nothing about them is 403-shaped -- the caller IS an admin. 409,
-    # like the other "the world is not in a state where this write fits" codes.
+    # REB-292: about the state of the space's admins, not the caller (who is an admin).
     "last_active_admin": 409,
     "self_account_change": 409,
-    # REB-622: a whole-row settings save built on a row that changed since it was read.
-    # 409 like the other "the world moved under this write" codes; `updated_at` in the
-    # document is the row's current version, and the SPA offers a reload.
+    # REB-622: a settings save built on a row that changed since it was read; `updated_at`
+    # in the document is the row's current version.
     "stale_row": 409,
     "domain_error": 400,
 }
@@ -55,8 +44,6 @@ TITLE_BY_CODE: dict[str, str] = {
     "permission_denied": "Permesso negato",
     "agent_forbidden": "Operazione riservata a una persona",
     "immutable_field": "Campo non modificabile",
-    # The dead invitation's `detail` is the Italian sentence the acceptance page
-    # shows; the title is only the category.
     "invitation_unknown": "Invito non trovato",
     "invitation_expired": "Invito scaduto",
     "invitation_revoked": "Invito revocato",
@@ -69,19 +56,14 @@ TITLE_BY_CODE: dict[str, str] = {
 
 
 async def domain_error_handler(request: Request, exc: Exception) -> JSONResponse:
-    """RFC 9457 problem details. The structured `details` survive to the client, which
-    is what lets the UI highlight the offending field instead of showing a toast.
+    """RFC 9457 problem details. The structured `details` survive to the client, which is
+    what lets the UI highlight the offending field instead of showing a toast.
 
-    `details` is typed `Any` at the source (`DomainError.__init__(self, message,
-    **details)`) -- nothing there stops a caller from putting a UUID, a Decimal, or a
-    datetime in it. `JSONResponse` renders through stdlib `json.dumps`, which cannot
-    serialise any of those: passing the content straight through would let a single
-    UUID in an error's details crash this handler while it builds the response, i.e.
-    turn what should be a clean 4xx into an opaque, unhandled 500. `jsonable_encoder`
-    is FastAPI's own recursive converter for exactly this gap (UUID/Decimal/datetime/
-    enum/pydantic models -> JSON-safe primitives) and is run on the whole content dict,
-    not just `details`, so it never needs to know the fixed keys from the variable
-    ones."""
+    `details` is free-form (`DomainError.__init__(self, message, **details)`), so it is
+    spread first and the fixed keys are written after it: a detail named `code`, `type`,
+    `title`, `status`, `detail` or `instance` can never overwrite the problem's own.
+    The whole document goes through `jsonable_encoder` because a UUID, a Decimal or a
+    datetime in the details would make `json.dumps` fail and turn a 4xx into a 500."""
     assert isinstance(exc, DomainError)
     status = STATUS_BY_CODE.get(exc.code, 400)
     return JSONResponse(
@@ -89,13 +71,13 @@ async def domain_error_handler(request: Request, exc: Exception) -> JSONResponse
         media_type="application/problem+json",
         content=jsonable_encoder(
             {
+                **exc.details,
                 "type": f"https://pigrocrm.dev/errors/{exc.code}",
                 "title": TITLE_BY_CODE.get(exc.code, "Errore"),
                 "status": status,
                 "detail": exc.message,
                 "code": exc.code,
                 "instance": str(request.url.path),
-                **exc.details,
             }
         ),
     )
@@ -103,10 +85,9 @@ async def domain_error_handler(request: Request, exc: Exception) -> JSONResponse
 
 async def insufficient_privilege_handler(request: Request, exc: Exception) -> JSONResponse:
     """A write the row-level policies refused is answered as the row not existing
-    (REB-634, spec 2026-10-03 §3): a scoped person reads a 404 for a row outside their
-    scope, because for them it is not there, and a write that reaches outside gets the
-    same answer rather than a 500 that says more than the status should. Any other
-    database error is not this handler's and goes on to the 500 it always was."""
+    (REB-634): a scoped person reads a 404 for a row outside their scope, and a write
+    that reaches outside gets the same answer rather than a 500 that says more. Any other
+    database error goes on to the 500 it always was."""
     assert isinstance(exc, DBAPIError)
     if not is_policy_refusal(exc):
         raise exc
@@ -114,20 +95,9 @@ async def insufficient_privilege_handler(request: Request, exc: Exception) -> JS
 
 
 class ProblemDetail(BaseModel):
-    """RFC 9457 problem document -- the exact shape `domain_error_handler` above
-    renders every `DomainError` into. Documented once here and attached, as a
-    shared `responses=` dict, to every router at construction time (see
-    `PROBLEM_RESPONSES` below and its use in each `routers/*.py`), rather than
-    enumerated per endpoint: any route that resolves an `Actor` or looks up an
-    entity can raise `NotFound`/`Conflict`/`ValidationFailed`/`PermissionDenied`,
-    so restating that per route, 37 times over, would document nothing a reader
-    couldn't already infer.
-
-    Extra fields are allowed on purpose: `domain_error_handler` spreads
-    `exc.details` at the top level -- e.g. `active_deals` on a delete conflict,
-    `expected` on a validation failure -- and those vary by error, not by route,
-    so they are not modeled as individual named fields here.
-    """
+    """RFC 9457 problem document, the shape `domain_error_handler` renders every
+    `DomainError` into. Extra fields are allowed: the details (`active_deals`,
+    `expected`, ...) vary by error, not by route."""
 
     model_config = ConfigDict(extra="allow")
 
@@ -140,23 +110,14 @@ class ProblemDetail(BaseModel):
 
 
 _PROBLEM_DETAIL_SCHEMA: dict[str, Any] = ProblemDetail.model_json_schema()
-# Pydantic copies the class docstring above into the schema's own "description" --
-# useful reading the source, pure noise repeated in the rendered OpenAPI document:
-# this same dict is deep-copied into every one of the ~150 response entries below
-# (37 routes x 4 codes), and each entry already carries its own short, specific
-# `description` (see `_problem_response`) at the response-object level, one level
-# up from this schema. Dropping the duplicate here is the difference between a
-# `/openapi.json` a client generator can skim and one padded with the same essay
-# repeated 150 times.
+# The class docstring would be repeated in every response entry of the document.
 _PROBLEM_DETAIL_SCHEMA.pop("description", None)
 
 
 def _problem_response(description: str) -> dict[str, Any]:
-    """A hand-built `content` mapping, not FastAPI's `"model": ProblemDetail`
-    shortcut: that shortcut always files the schema under the route's own success
-    media type (`application/json` here), which would misdocument every one of
-    these as the wrong content type -- `domain_error_handler` above always
-    responds `application/problem+json`, never plain `application/json`."""
+    """Built by hand, not with FastAPI's `"model": ProblemDetail`: that files the schema
+    under the route's success media type (`application/json`), while
+    `domain_error_handler` always answers `application/problem+json`."""
     return {
         "description": description,
         "content": {"application/problem+json": {"schema": _PROBLEM_DETAIL_SCHEMA}},
@@ -164,37 +125,12 @@ def _problem_response(description: str) -> dict[str, Any]:
 
 
 def _domain_and_request_validation_response(description: str) -> dict[str, Any]:
-    """422 is genuinely two different runtime shapes sharing one status code, not
-    one shape documented sloppily. Almost every 422 these routers raise themselves
-    (an invalid custom-field value, a bad VAT number, ...) is a `ValidationFailed`
-    rendered by `domain_error_handler` as `application/problem+json`. But FastAPI's
-    own request parsing can *also* reject a request before an endpoint ever runs --
-    e.g. a non-UUID path segment, or a malformed JSON body -- entirely outside
-    `domain_error_handler`, and that path always answers `application/json` with
-    FastAPI's own `HTTPValidationError` shape (`{"detail": [{"loc": [...], "msg":
-    ..., "type": ...}]}`).
-
-    An earlier version of this fix declared only the domain shape for 422, on the
-    (correct, but incomplete) reasoning that a shared `responses=` dict doesn't
-    need to enumerate which codes each route can *actually* raise. What that
-    version missed: declaring 422 at all -- regardless of which schema -- makes
-    FastAPI skip its own automatic `HTTPValidationError` documentation for that
-    status (see `get_openapi_path` in `fastapi/openapi/utils.py`: it only adds the
-    generic entry when no 422/4XX/default key is already present), so the generic
-    shape silently disappeared from the generated document even though the server
-    still returns it. Verified with `openapi-typescript`: the generated TS type for
-    422 only carried `ProblemDetail`, with no trace of the array-of-errors shape.
-    That is a real, load-bearing gap for slice 1B's planned `fieldErrorFrom`
-    (highlights the offending form field from `HTTPValidationError.detail[].loc`)
-    -- it would simply never fire for a FastAPI-level validation error, with
-    nothing visibly broken, and no obvious link back to this cause.
-
-    Two distinct media types on the same response, not an `anyOf` inside one --
-    `application/problem+json` and `application/json` really are two different
-    `Content-Type` headers the server can send for this one status code, so the
-    document should say that plainly rather than collapsing them into a single
-    content type with two possible bodies.
-    """
+    """422 has two runtime shapes: a `ValidationFailed` rendered as
+    `application/problem+json`, and FastAPI's own request parsing failure (a non-UUID
+    path segment, a malformed body), which answers `application/json` with
+    `HTTPValidationError` and never reaches `domain_error_handler`. Declaring a 422 at
+    all makes FastAPI skip documenting the second shape, and the web client's
+    `fieldErrorFrom` reads it, so both are declared, as two media types."""
     return {
         "description": description,
         "content": {
@@ -204,13 +140,10 @@ def _domain_and_request_validation_response(description: str) -> dict[str, Any]:
     }
 
 
-# Attached to every router in main.py's registration loop: the domain-error
-# outcomes any endpoint that resolves an Actor or touches an entity can produce,
-# described once instead of per-route -- see ProblemDetail's docstring for why
-# enumerating which codes each individual endpoint can raise would not be worth
-# it. Passing this blanket means an endpoint that cannot actually raise, say, 409
-# still lists it -- an accepted over-approximation, not an attempt to model each
-# route's exact exception set.
+# Attached to every router: the outcomes any endpoint that resolves an Actor or touches
+# an entity can produce, described once instead of per route. An over-approximation on
+# purpose (a route that cannot raise a 409 still lists it), public routers included:
+# narrowing it per route would change the generated client's types for no gain.
 PROBLEM_RESPONSES: dict[int | str, dict[str, Any]] = {
     403: _problem_response("Permesso negato: l'actor non ha il ruolo richiesto."),
     404: _problem_response("La risorsa richiesta non esiste o è stata rimossa."),
@@ -223,10 +156,9 @@ PROBLEM_RESPONSES: dict[int | str, dict[str, Any]] = {
 }
 
 
-# The two problem shapes only the public invitation routes can answer (the peek and
-# the accept in `routers/auth.py`), attached per route rather than through
-# `PROBLEM_RESPONSES`: the blanket dict rides on every router in `main.py`, and a 410
-# there would claim that any endpoint in the API can report a dead invitation.
+# Only the public invitation routes (`routers/auth.py`) can answer these two, so they are
+# attached per route: a 410 in `PROBLEM_RESPONSES` would claim any endpoint can report a
+# dead invitation.
 INVITE_GONE_RESPONSE = _problem_response(
     "L'invito esiste ma è finito: scaduto, revocato o già usato. `code` distingue i "
     "tre casi (`invitation_expired`, `invitation_revoked`, `invitation_used`)."
@@ -235,23 +167,11 @@ INVITE_NOT_FOUND_RESPONSE = _problem_response("Nessun invito porta questo link."
 
 
 def ensure_validation_error_schemas_are_declared(schema: dict[str, Any]) -> dict[str, Any]:
-    """`PROBLEM_RESPONSES`'s 422 entry `$ref`s `HTTPValidationError` (see
-    `_domain_and_request_validation_response` above) -- the same schema FastAPI
-    would normally register in `components.schemas` on its own, except it only
-    does that for a route whose 422 is left to its own default handling, and
-    every router here deliberately declares its own 422. Left alone, that `$ref`
-    would point at nothing and the document would not validate.
-
-    Reuses FastAPI's own two definitions (`ValidationError`/`HTTPValidationError`)
-    rather than hand-copying their shape -- the two must stay byte-for-byte the
-    schema FastAPI itself would have generated, since that shape is exactly what
-    a non-UUID path segment or a malformed body actually produces at runtime; a
-    hand-maintained copy could silently drift from it.
-
-    Called from `main.py`'s `app.openapi` override, on the dict `app.openapi()`
-    already builds and caches -- `setdefault` makes this idempotent, so calling
-    it again on an already-patched, cached schema is a no-op.
-    """
+    """`PROBLEM_RESPONSES`'s 422 `$ref`s `HTTPValidationError`, which FastAPI registers in
+    `components.schemas` only for a route whose 422 it documents itself; every router here
+    declares its own, so the reference would point at nothing. FastAPI's own two
+    definitions are reused so the schema stays what a malformed body really produces.
+    Called from `main.py`'s `app.openapi` override; `setdefault` makes it idempotent."""
     schemas = schema.setdefault("components", {}).setdefault("schemas", {})
     schemas.setdefault("ValidationError", validation_error_definition)
     schemas.setdefault("HTTPValidationError", validation_error_response_definition)

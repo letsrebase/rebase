@@ -80,8 +80,9 @@ from pigrocrm.core.timetracking.schemas import (
 from pigrocrm.core.timetracking.service import TimeEntryService
 from pigrocrm_mcp.annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
 from pigrocrm_mcp.context import McpContext
+from pigrocrm_mcp.provenance import marked_items
 from pigrocrm_mcp.tools.changes import refuse_nothing_given
-from pigrocrm_mcp.tools.invoices import parse_legal_entity_id
+from pigrocrm_mcp.tools.params import parse_legal_entity_id
 
 
 def _day(value: str | None) -> date | None:
@@ -500,7 +501,7 @@ def register(
 
         @mcp.tool(annotations=READ_ONLY)
         @guard
-        def suggest_customers_from_gmail(mesi: int = 12) -> list[dict[str, Any]]:
+        def suggest_customers_from_gmail(mesi: int = 12) -> dict[str, Any]:
             """Le aziende con cui la casella ha corrisposto negli ultimi `mesi` mesi (da 1 a 24),
             proposte come clienti: per dominio conversazioni, ultimo messaggio e persone viste.
             Il nome d'azienda è ricavato dal dominio: correggilo prima di crearlo.
@@ -520,10 +521,12 @@ def register(
                     transport=transport,
                 ),
             )
-            return [
-                proposal.model_dump(mode="json")
-                for proposal in service.suggest_customers(actor=context.actor, mesi=mesi)
-            ]
+            return marked_items(
+                [
+                    proposal.model_dump(mode="json")
+                    for proposal in service.suggest_customers(actor=context.actor, mesi=mesi)
+                ]
+            )
 
         @mcp.tool(annotations=READ_ONLY)
         @guard

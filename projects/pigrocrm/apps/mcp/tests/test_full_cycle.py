@@ -61,6 +61,7 @@ from pigrocrm.core.invoices.schemas import InvoiceIssue
 from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm.core.pipeline.service import PipelineService
 from pigrocrm.core.storage import LocalFileStorage
+from pigrocrm.core.timetracking.billing import TimeBilling
 from pigrocrm.core.timetracking.schemas import TimeEntryUpdate
 from pigrocrm.core.timetracking.service import TimeEntryService
 
@@ -94,7 +95,7 @@ def cycle(mcp_session: Session, tmp_path: Path) -> dict[str, Any]:
     # The install's own configuration, as `Actor.system()` and not as the agent: this
     # test is about issuing, and the scene is the installation's, not the agent's. (Until
     # ORB-188 there was a second reason -- `update_fiscal_profile` was one of the
-    # operations `AGENT_FORBIDDEN_ACTIONS` refused to any agent credential -- which no
+    # operations `FULL_ACCESS_ACTIONS` refused to any agent credential -- which no
     # longer holds: an admin's agent may set the profile, see
     # `test_fiscal_identity_tools.py`.)
     FiscalProfileService(mcp_session).upsert(
@@ -112,7 +113,7 @@ def cycle(mcp_session: Session, tmp_path: Path) -> dict[str, Any]:
         ),
         AGENTE,
     )
-    stages = PipelineService(mcp_session).seed_defaults(AGENTE)
+    stages = PipelineService(mcp_session).seed_defaults(Actor(id=None, type="system", role="admin"))
     customer = CustomerService(mcp_session).create(
         CustomerCreate(
             ragione_sociale="Acme S.r.l.",
@@ -242,7 +243,7 @@ async def test_the_full_cycle_ends_on_the_tool_an_agent_cannot_find(
     #    invoice-state reading of "already invoiced" that every figure in this slice
     #    inherits. The link-based reading would leave the work in neither figure: priced,
     #    done, and invisible until somebody pressed "issue".
-    draft = AnalyticsService(mcp_session, storage).bind_time_to_invoice(
+    draft = TimeBilling(mcp_session, storage).bind_to_invoice(
         deal_id, BindTimeRequest(entry_ids=[entry_id], raggruppa_per_mese=True), umano
     )
     assert draft.stato == "bozza"

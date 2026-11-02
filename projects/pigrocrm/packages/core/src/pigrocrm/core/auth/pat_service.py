@@ -286,7 +286,7 @@ class PatService:
         # unregistered. Two things must be open (REB-810): the token's own flag, chosen by
         # its owner and closed unless asked for, and the space's `mcp_full_access`, which
         # is the ceiling: an installation that never opened it has no privileged surface
-        # at all, whatever a token says. See `AGENT_FORBIDDEN_ACTIONS` for what that
+        # at all, whatever a token says. See `FULL_ACCESS_ACTIONS` for what that
         # opens and why it is a decision about a machine rather than about a role.
         resolved = Actor(
             id=user.id,

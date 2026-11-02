@@ -38,7 +38,7 @@ from pigrocrm.core.work_units.service import (
 WRITER = Actor(id=uuid4(), type="user", role="collaboratore")
 AGENT = Actor(id=uuid4(), type="mcp", role="collaboratore")
 # The same credential on an installation that opened `mcp_full_access`: the day ledger's
-# writes are closed to an agent otherwise (`AGENT_FORBIDDEN_ACTIONS`, REB-745).
+# writes are closed to an agent otherwise (`FULL_ACCESS_ACTIONS`, REB-745).
 TRUSTED_AGENT = Actor(id=uuid4(), type="mcp", role="collaboratore", full_access=True)
 READER = Actor(id=None, type="user", role="readonly")
 

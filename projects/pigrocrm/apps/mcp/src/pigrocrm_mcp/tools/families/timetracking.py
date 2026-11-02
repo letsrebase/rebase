@@ -15,7 +15,6 @@ from pigrocrm_mcp.context import McpContext
 from pigrocrm_mcp.tools import (
     timetracking,
 )
-from pigrocrm_mcp.tools.invoices import parse_legal_entity_id
 from pigrocrm_mcp.tools.params import (
     BoundedLimit,
     CostChanges,
@@ -25,6 +24,8 @@ from pigrocrm_mcp.tools.params import (
     OptionalAnno,
     OptionalFactor,
     TimeEntryChanges,
+    iso_date,
+    parse_legal_entity_id,
 )
 
 
@@ -131,8 +132,8 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
                 deal_id=UUID(deal_id) if deal_id else None,
                 azienda_id=parse_legal_entity_id(azienda_id),
                 user_id=UUID(user_id) if user_id else None,
-                da=da,  # type: ignore[arg-type]
-                a=a,  # type: ignore[arg-type]
+                da=iso_date(da, "da"),
+                a=iso_date(a, "a"),
                 fatturabile=fatturabile,
                 fatturato=fatturato,
                 limit=cast(int, limit),
@@ -303,8 +304,8 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
                 azienda_id=parse_legal_entity_id(azienda_id),
                 solo_generali=solo_generali,
                 category_id=UUID(category_id) if category_id else None,
-                da=da,  # type: ignore[arg-type]
-                a=a,  # type: ignore[arg-type]
+                da=iso_date(da, "da"),
+                a=iso_date(a, "a"),
                 limit=cast(int, limit),
                 cursor=UUID(cursor) if cursor else None,
             ),

@@ -21,7 +21,7 @@ from pigrocrm.core.gmail.schemas import REQUESTED_SCOPES, GoogleAccountRead
 from pigrocrm.core.gmail.tokens import GoogleTokenClient, TokenGrant
 from pigrocrm.core.google.oauth_flow import GoogleConsentFlow, GoogleCredential
 
-_DISCONNECT_ACTION = "scollegare un account Google"
+_DISCONNECT_ACTION = "disconnect_gmail"
 
 
 class GmailOAuthService(GoogleConsentFlow[GoogleAccount]):
@@ -29,7 +29,7 @@ class GmailOAuthService(GoogleConsentFlow[GoogleAccount]):
     entity = "google_account"
     scopes = REQUESTED_SCOPES
     callback_path = "/api/gmail/oauth/callback"
-    connect_action = "collegare un account Google"
+    connect_action = "connect_gmail"
     settings_tab = "Impostazioni → Gmail"
     identity_noun = "della casella"
     needs_user_message = "solo un utente può collegare una casella Google"

@@ -4,7 +4,7 @@ The web reports pageviews and the activation events (ORB-184); the MCP is the su
 the onboarding spec sells first, and until this module nothing recorded whether an
 agent used it. PostHog's own adapter wraps the `MCPServer` and emits `$mcp_tool_call`,
 `$mcp_tools_list` and `$mcp_initialize` with the tool name, the parameters, the
-response, the duration and the error flag; this module decides four things around it.
+response, the duration and the error flag; this module decides five things around it.
 
 - **Off by default.** An empty `PIGROCRM_POSTHOG_KEY` builds no client and changes
   nothing: a self-hosted CRM measures nothing unless its operator says so, and the test
@@ -21,7 +21,7 @@ response, the duration and the error flag; this module decides four things aroun
   already learned. Off. It would also file every exception a tool raises as an
   `$exception` for Error Tracking; `_guard` raises on purpose to hand an agent «cliente
   non trovato», and that is guidance, not a defect. Off too: `$mcp_tool_call` keeps
-  `$mcp_is_error` and the message regardless. The same goes for the two the SDK turned
+  `$mcp_is_error` and the error type regardless. The same goes for the two the SDK turned
   on by default in 7.56.0, model capture (a required `llm_model` argument on every
   tool) and conversation correlation (a `conversation_id` argument whose description
   asks the agent to echo it, an `_mcp_instructions` property on eligible output
@@ -30,6 +30,10 @@ response, the duration and the error flag; this module decides four things aroun
   listing, `report_missing` and `collect_feedback`: all off, named explicitly, decided
   on REB-642. `test_analytics_instrumentation.py` holds `tools/list` equal with and
   without a key, so an SDK default cannot reshape the surface again unnoticed.
+- **No CRM content leaves the process.** The parameters, the response and the error
+  sentence of a call are customer names, tax ids, notes and mail bodies of every space;
+  `without_crm_content` (the adapter's `before_send`) drops them, and the event keeps
+  the tool name, the duration, the error flag, the actor and the space.
 - **One client per process, flushed at exit.** The HTTP transport builds one server per
   space; each shares the one client built here, and `shutdown()` at the end of the
   process (the stdio `main`, the HTTP lifespan) is what gets the last call's event out
@@ -50,7 +54,7 @@ from pigrocrm_mcp.context import ActorProvider
 if TYPE_CHECKING:
     from mcp.server import MCPServer
     from posthog import Posthog
-    from posthog.mcp.types import UserIdentity
+    from posthog.mcp.types import PostHogCaptureEvent, UserIdentity
 
 GROUP_TYPE = "spazio"
 ROOT_GROUP = "root"
@@ -58,6 +62,29 @@ ROOT_GROUP = "root"
 _client: Posthog | None = None
 _client_key: tuple[str, str] | None = None
 _lock = threading.Lock()
+
+# What a tool call carries about the CRM's own data: its arguments (customer names, tax
+# ids, notes), its result (invoices, mail bodies) and the failure sentence `_guard`
+# writes for the agent, which names the entity it was about. The adapter puts all of
+# them on `$mcp_tool_call` (and the same on resource reads and prompt gets); none may
+# leave the process. What stays: the tool name, duration, error flag and type, the
+# actor and the `spazio` group.
+_CRM_CONTENT_PROPERTIES = frozenset(
+    {
+        "$mcp_parameters",
+        "$mcp_response",
+        "$mcp_error_message",
+        "$exception_list",
+        "$exception_level",
+    }
+)
+
+
+def without_crm_content(event: PostHogCaptureEvent) -> PostHogCaptureEvent:
+    """`before_send` for the adapter: the event minus every property that carries CRM data."""
+    properties = event.get("properties") or {}
+    event["properties"] = {k: v for k, v in properties.items() if k not in _CRM_CONTENT_PROPERTIES}
+    return event
 
 
 def space_group(settings: Settings) -> str:
@@ -158,6 +185,7 @@ def install(
             capture_model=False,
             report_missing=False,
             collect_feedback=False,
+            before_send=without_crm_content,
             identify=identity_for(actor_provider, space or space_group(settings)),
         ),
     )

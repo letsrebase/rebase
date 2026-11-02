@@ -174,7 +174,7 @@ def test_create_rejects_a_duplicate_code_race_past_the_precheck(
 
     with pytest.raises(Conflict) as exc:
         service.create(PipelineStageCreate(nome="Due", posizione=1, code="dup"), ADMIN)
-    assert exc.value.details["code"] == "dup"
+    assert exc.value.details["stage_code"] == "dup"
 
     # The session must still be usable right after -- a leftover PendingRollbackError
     # would blow up on the very next statement issued on it.

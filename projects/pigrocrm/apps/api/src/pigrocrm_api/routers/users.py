@@ -1,10 +1,9 @@
-from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy.orm import Session
 
-from pigrocrm.core.activities.schemas import ActivityRead
-from pigrocrm.core.activities.service import ActivityService
+from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.invitations import INVITATION_TTL_DAYS, InvitationService
 from pigrocrm.core.auth.repository import UserRepository
 from pigrocrm.core.auth.schemas import (
@@ -20,12 +19,18 @@ from pigrocrm.core.config import Settings
 from pigrocrm.core.mail import Mail, invitation_mail
 from pigrocrm.core.timetracking.schemas import UserRatesUpdate
 from pigrocrm.core.timetracking.service import TimeEntryService
-from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep
+from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, get_actor
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 from pigrocrm_api.sessions import SenderDep, mail_origin
 from pigrocrm_api.tenancy import tenant_slug
+from pigrocrm_api.timeline import timeline_router
 
-router = APIRouter(prefix="/api/users", tags=["users"], responses=PROBLEM_RESPONSES)
+router = APIRouter(
+    prefix="/api/users",
+    tags=["users"],
+    responses=PROBLEM_RESPONSES,
+    dependencies=[Depends(get_actor)],
+)
 
 
 @router.post("", response_model=UserRead, status_code=status.HTTP_201_CREATED)
@@ -39,7 +44,7 @@ def list_users(session: SessionDep, actor: ActorDep) -> list[UserRead]:
 
 
 @router.get("/directory", response_model=list[MemberRead])
-def directory(session: SessionDep, actor: ActorDep) -> list[MemberRead]:
+def directory(session: SessionDep) -> list[MemberRead]:
     """The active members' names, for the owner and assignee pickers (REB-780)."""
     return UserService(session).members()
 
@@ -191,25 +196,28 @@ def set_user_rates(
     TimeEntryService(session).update_user_rates(user_id, data, actor)
 
 
-@router.get("/{user_id}/timeline", response_model=list[ActivityRead])
-def timeline(
-    user_id: UUID,
-    session: SessionDep,
-    actor: ActorDep,
-    limit: Annotated[int, Query(ge=1, le=200)] = 50,
-) -> list[ActivityRead]:
-    """The account's whole story: created, renamed, promoted, deactivated -- and every
-    personal access token issued, first used, revoked, or still being presented after
-    revocation, which `PatService` records against the owning user rather than against
-    a per-token entity nobody would think to open.
-
-    Readable by the owner as well as by an administrator, unlike every other endpoint
-    on this router. An administrator is the only one who can *change* an account, but
-    the owner is the one who needs to see that a token they thought was dead is still
-    being tried -- refusing them that would make the alarm useless to the only person
-    who can act on it. Anyone else needs to be an administrator: who holds which
-    tokens on which account is not a collaborator's business.
-    """
+def _owner_or_admin_reads_timeline(_session: Session, user_id: UUID, actor: Actor) -> None:
     if actor.id != user_id:
         actor.require_admin("read_user_timeline")
-    return ActivityService(session).timeline("user", user_id, limit)
+
+
+router.include_router(
+    timeline_router(
+        "user",
+        id_param="user_id",
+        guard=_owner_or_admin_reads_timeline,
+        description=(
+            "The account's whole story: created, renamed, promoted, deactivated -- and every "
+            "personal access token issued, first used, revoked, or still being presented "
+            "after revocation, which `PatService` records against the owning user rather "
+            "than against a per-token entity nobody would think to open.\n\n"
+            "Readable by the owner as well as by an administrator, unlike every other "
+            "endpoint on this router. An administrator is the only one who can *change* an "
+            "account, but the owner is the one who needs to see that a token they thought "
+            "was dead is still being tried -- refusing them that would make the alarm "
+            "useless to the only person who can act on it. Anyone else needs to be an "
+            "administrator: who holds which tokens on which account is not a "
+            "collaborator's business."
+        ),
+    )
+)

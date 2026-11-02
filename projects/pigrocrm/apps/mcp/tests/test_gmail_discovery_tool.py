@@ -39,6 +39,7 @@ from pigrocrm.core.gmail.models import GmailMessage, GoogleAccount
 from pigrocrm.core.gmail.schemas import REQUESTED_SCOPES
 from pigrocrm.core.gmail.transport import GmailTransport
 from pigrocrm.core.storage import LocalFileStorage
+from pigrocrm_mcp.provenance import PROVENIENZA_TESTO_LIBERO
 from pigrocrm_mcp.server import build_server
 from pigrocrm_mcp.tools import privileged
 
@@ -415,7 +416,8 @@ async def test_the_proposals_answer_the_domains_the_owner_wrote_to_and_store_not
         result = await client.call_tool(SUGGEST, {})
 
     payload = _payload(result)
-    proposals = payload["result"] if isinstance(payload, dict) else payload
+    assert payload["provenienza"] == PROVENIENZA_TESTO_LIBERO
+    proposals = payload["items"]
     assert [proposal["dominio"] for proposal in proposals] == ["acme.it"]
     assert proposals[0]["persone"][0]["nome"] == "Marco Bianchi"
     assert mcp_session.scalar(select(func.count()).select_from(GmailMessage)) == messages_before

@@ -159,10 +159,11 @@ class Settings(BaseSettings):
     login_requests_per_minute: int = Field(default=10, ge=1, le=10_000)
 
     # Whether a personal access token may perform the operations listed in
-    # `actor.AGENT_FORBIDDEN_ACTIONS` -- issuing and annulling invoices, rates, cost
-    # categories, period locks, the hours-to-invoice bridge and the annual estimate --
-    # plus sending mail and preparing a payment reminder. (Not the fiscal profile nor
-    # the emitter: an admin's token writes those on every installation, ORB-188.)
+    # `agent_actions.FULL_ACCESS_ACTIONS` -- issuing and annulling invoices, rates, cost
+    # categories, period locks, the hours-to-invoice bridge, the annual estimate and the
+    # Drive and Gmail reads. (Not the fiscal profile nor the emitter: an admin's token
+    # writes those on every installation, ORB-188. Sending mail is a person's, never a
+    # token's, whatever this says.)
     #
     # `False` by default, and the default is the one nobody has to think about. Those
     # operations are not merely privileged, they are **irreversible in ways the rest of

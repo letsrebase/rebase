@@ -74,11 +74,11 @@ CONSENT_WARNING_HOURS = 48
 # answers both of its own callers with one sentence.
 _NOT_CONNECTED = "Google Drive non è collegato: collegalo da Impostazioni → Drive"
 _NOT_A_USER = "solo un utente può usare Google Drive"
-_ROOTS_ACTION = "impostare le cartelle Drive"
+_ROOTS_ACTION = "set_drive_roots"
 # Admin-only, and only this field (REB-457): `DriveRepository.storage_account` sends every
 # document the space generates to the folder an admin's row names, so choosing it is a
 # decision about the whole space, not about one person's credential.
-_STORAGE_FOLDER_ACTION = "scegliere la cartella di scrittura Drive"
+_STORAGE_FOLDER_ACTION = "set_drive_storage_folder"
 
 _REVOKED_TEXT = (
     "Il consenso Google Drive per {email} è stato revocato: la lettura e la scrittura "

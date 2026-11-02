@@ -2,18 +2,23 @@
 
 The registry and every space this file creates live in the same container `api_engine`
 starts. `get_settings` is overridden with that container's URL so `TenantService` and
-`deps._tenant_session_factory` both derive their databases from it, and the per-process
+`deps.space_session_factory` both derive their databases from it, and the per-process
 caches in `deps` are reset around each test so a space provisioned here never outlives
 the settings it was built under.
 """
 
+import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
+import jwt
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, text
 
+from pigrocrm.core.auth.tokens import issue_access_token
 from pigrocrm.core.config import Settings, get_settings
 from pigrocrm.core.db.sidecar import drop_database
 from pigrocrm.core.tenants import MemberLookup, ensure_tenants_database
@@ -22,9 +27,12 @@ from pigrocrm_api.deps import get_session, reset_session_factories
 from pigrocrm_api.main import create_app
 from pigrocrm_api.ratelimit import (
     DISPONIBILE_REQUESTS_PER_MINUTE,
+    MAIL_BURST_PER_RECIPIENT,
     REQUESTS_PER_MINUTE,
     reset_rate_limit,
+    spend_for_recipient,
 )
+from pigrocrm_api.routers.tenants import SIGNUP_CLOSED
 from pigrocrm_api.tenancy import split_tenant_prefix
 
 SLUG = "studio-prova"
@@ -308,7 +316,7 @@ def test_a_link_asked_at_the_root_reaches_the_space_that_address_owns(
     """Spec 2026-09-12 §6.2: the bare login page asks for a link, the registry says which
     space the address owns, and the link enters that space with cookies scoped to it."""
     from pigrocrm.core.mail import RecordingSender
-    from pigrocrm_api.routers.auth import get_sender
+    from pigrocrm_api.sessions import get_sender
 
     recording = RecordingSender()
     spaces_client.app.dependency_overrides[get_sender] = lambda: recording  # type: ignore[attr-defined]
@@ -335,7 +343,7 @@ def test_a_link_asked_at_the_root_reaches_the_space_that_address_owns(
 def test_a_link_asked_under_a_space_reaches_that_space_only(spaces_client: TestClient) -> None:
     """Under `/<slug>/api`, the space's own user and the space's own entry page."""
     from pigrocrm.core.mail import RecordingSender
-    from pigrocrm_api.routers.auth import get_sender
+    from pigrocrm_api.sessions import get_sender
 
     recording = RecordingSender()
     spaces_client.app.dependency_overrides[get_sender] = lambda: recording  # type: ignore[attr-defined]
@@ -355,13 +363,13 @@ def test_a_link_asked_under_a_space_reaches_that_space_only(spaces_client: TestC
     assert len(recording.sent) == 1
 
 
-def test_the_signup_learns_whether_an_address_is_a_member_and_how_many_spaces_it_owns(
+def test_the_signup_learns_whether_an_address_is_a_member_and_owns_a_space_and_nothing_more(
     spaces_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """ORB-173: the hub's answer and the registry's, in one body. The hub is stubbed at
-    the client the router calls; `spazi` is what only the registry knows and is read for
-    real, from the space this test provisions. A count and never the slugs: the address
-    is not proven yet."""
+    the client the router calls; `has_spaces` is what only the registry knows and is read
+    for real, from the space this test provisions. The address is not proven yet, so the
+    hub's names and the count and slugs of the spaces never leave: two booleans."""
     asked: list[str] = []
 
     def fake_lookup(settings: Settings, email: str) -> MemberLookup:
@@ -372,19 +380,17 @@ def test_the_signup_learns_whether_an_address_is_a_member_and_how_many_spaces_it
 
     before = spaces_client.post("/api/tenants/member", json={"email": "Ada@Studio.it"})
     assert before.status_code == 200, before.text
-    assert before.json() == {"membro": True, "nome": "Ada", "cognome": "Lovelace", "spazi": 0}
+    assert before.json() == {"membro": True, "has_spaces": False}
     assert asked == ["ada@studio.it"]
 
     created = spaces_client.post("/api/tenants/", json=SIGNUP)
     assert created.status_code == 201, created.text
     after = spaces_client.post("/api/tenants/member", json={"email": SIGNUP["email"]})
-    assert after.json()["spazi"] == 1
+    assert after.json() == {"membro": True, "has_spaces": True}
     assert SLUG not in after.text
     # Somebody else's address owns nothing here, whatever the hub says about them.
-    assert (
-        spaces_client.post("/api/tenants/member", json={"email": "bob@studio.it"}).json()["spazi"]
-        == 0
-    )
+    other = spaces_client.post("/api/tenants/member", json={"email": "bob@studio.it"})
+    assert other.json()["has_spaces"] is False
 
 
 def test_an_unreachable_hub_still_answers_and_says_not_a_member(
@@ -397,7 +403,7 @@ def test_an_unreachable_hub_still_answers_and_says_not_a_member(
     with _serving(with_hub) as client:
         answer = client.post("/api/tenants/member", json={"email": "ada@studio.it"})
         assert answer.status_code == 200, answer.text
-        assert answer.json() == {"membro": False, "nome": None, "cognome": None, "spazi": 0}
+        assert answer.json() == {"membro": False, "has_spaces": False}
 
 
 def test_a_malformed_or_missing_address_is_a_422_and_the_query_string_is_not_read(
@@ -501,6 +507,143 @@ def test_signing_up_without_a_sender_still_creates_the_space(spaces_client: Test
     created = spaces_client.post("/api/tenants/", json={**WIZARD_SIGNUP, "membro": True})
     assert created.status_code == 201, created.text
     assert spaces_client.get(f"/{SLUG}/api/auth/me").status_code == 200
+
+
+def test_the_signup_refuses_past_the_ceiling_on_spaces(container_settings: Settings) -> None:
+    """`Settings.max_spaces` bounds what an anonymous caller can make this server hold:
+    each space is a database. Past it the answer is a 503 with a sentence, and nothing is
+    provisioned."""
+    capped = container_settings.model_copy(update={"max_spaces": 1})
+    with _serving(capped) as client:
+        assert client.post("/api/tenants/", json=SIGNUP).status_code == 201
+        full = client.post(
+            "/api/tenants/", json={**SIGNUP, "slug": "studio-due", "email": "b@studio.it"}
+        )
+        assert full.status_code == 503, full.text
+        assert full.json()["detail"] == SIGNUP_CLOSED
+        assert client.get("/api/tenants/studio-due/disponibile").json()["disponibile"] is True
+
+
+def test_signups_in_flight_are_bounded_and_the_slot_comes_back(
+    spaces_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A signup is a `CREATE DATABASE` and a migration on one of the API's pool threads, so
+    only a couple may run at once: past that the answer is a 503 with a `Retry-After`, and
+    nothing is provisioned. The slot is released, so the same signup then goes through."""
+    slots = threading.BoundedSemaphore(1)
+    slots.acquire()
+    monkeypatch.setattr("pigrocrm_api.routers.tenants._provisioning", slots)
+
+    busy = spaces_client.post("/api/tenants/", json=SIGNUP)
+    assert busy.status_code == 503, busy.text
+    assert busy.headers["Retry-After"] == "60"
+    assert spaces_client.get(f"/api/tenants/{SLUG}/disponibile").json()["disponibile"] is True
+
+    slots.release()
+    assert spaces_client.post("/api/tenants/", json=SIGNUP).status_code == 201
+    # Taken and given back: another signup could take it again.
+    assert slots.acquire(blocking=False)
+
+
+def test_the_signup_has_a_global_rate_under_the_per_client_one(
+    spaces_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A script that rotates its source address escapes every per-client bucket, so the
+    signup also spends from one bucket for the whole process."""
+    monkeypatch.setattr("pigrocrm_api.routers.tenants.GLOBAL_SIGNUPS_PER_MINUTE", 1)
+    assert spaces_client.post("/api/tenants/", json=SIGNUP).status_code == 201
+    refused = spaces_client.post(
+        "/api/tenants/",
+        json={**SIGNUP, "slug": "studio-due", "email": "b@studio.it"},
+        headers={"X-Real-IP": "10.0.0.7"},
+    )
+    assert refused.status_code == 429, refused.text
+    assert refused.headers["Retry-After"] == "60"
+
+
+def test_a_recipient_past_its_mail_budget_gets_no_welcome_but_still_a_space(
+    spaces_client: TestClient,
+) -> None:
+    from pigrocrm.core.mail import RecordingSender
+    from pigrocrm_api.sessions import get_sender
+
+    recording = RecordingSender()
+    spaces_client.app.dependency_overrides[get_sender] = lambda: recording  # type: ignore[attr-defined]
+    for _ in range(MAIL_BURST_PER_RECIPIENT):
+        assert spend_for_recipient(SIGNUP["email"])
+
+    created = spaces_client.post("/api/tenants/", json=WIZARD_SIGNUP)
+    assert created.status_code == 201, created.text
+    assert recording.sent == []
+    assert spaces_client.get(f"/{SLUG}/api/auth/me").status_code == 200
+
+
+def test_link_mails_to_one_address_are_throttled_whoever_asks(spaces_client: TestClient) -> None:
+    """The per-client bucket does not stop a script that rotates its source address from
+    filling one inbox: the address has a budget of its own, spent before the lookup so the
+    answer is the same for an address that is known and for one that is not. Another
+    address is unaffected."""
+    from pigrocrm.core.mail import RecordingSender
+    from pigrocrm_api.sessions import get_sender
+
+    recording = RecordingSender()
+    spaces_client.app.dependency_overrides[get_sender] = lambda: recording  # type: ignore[attr-defined]
+    address = {"email": "vittima@studio.it"}
+    for attempt in range(MAIL_BURST_PER_RECIPIENT):
+        response = spaces_client.post(
+            "/api/auth/link", json=address, headers={"X-Real-IP": f"10.1.0.{attempt}"}
+        )
+        assert response.status_code == 202, response.text
+    refused = spaces_client.post("/api/auth/link", json=address, headers={"X-Real-IP": "10.1.1.1"})
+    assert refused.status_code == 429, refused.text
+    assert int(refused.headers["Retry-After"]) > 0
+    # The normalised address is the key: case and spaces do not make a new budget.
+    shouted = {"email": " VITTIMA@studio.it "}
+    assert (
+        spaces_client.post(
+            "/api/auth/link", json=shouted, headers={"X-Real-IP": "10.1.1.2"}
+        ).status_code
+        == 429
+    )
+    other = spaces_client.post(
+        "/api/auth/link", json={"email": "altro@studio.it"}, headers={"X-Real-IP": "10.1.1.3"}
+    )
+    assert other.status_code == 202, other.text
+
+
+def test_an_access_token_is_good_for_the_space_it_was_minted_for(
+    spaces_client: TestClient, container_settings: Settings
+) -> None:
+    """The root and every space share one signing secret, so the `aud` claim is what keeps
+    a token from one the credential of another. A token minted for the root, or for no
+    space at all (one from before the claim existed), is refused at the space, and the
+    one minted for the space is accepted."""
+    created = spaces_client.post("/api/tenants/", json=SIGNUP)
+    assert created.status_code == 201, created.text
+    user_id = UUID(spaces_client.get(f"/{SLUG}/api/auth/me").json()["id"])
+    spaces_client.cookies.clear()
+
+    def me_with(token: str) -> int:
+        headers = {"Cookie": f"pigrocrm_access={token}"}
+        return spaces_client.get(f"/{SLUG}/api/auth/me", headers=headers).status_code
+
+    own = issue_access_token(user_id, "admin", container_settings, space=SLUG)
+    assert me_with(own) == 200
+    assert me_with(issue_access_token(user_id, "admin", container_settings)) == 401
+    assert me_with(issue_access_token(user_id, "admin", container_settings, space="altro")) == 401
+    now = datetime.now(UTC)
+    legacy = jwt.encode(
+        {
+            "sub": str(user_id),
+            "role": "admin",
+            "type": "access",
+            "iat": int(now.timestamp()),
+            "exp": int((now + timedelta(minutes=5)).timestamp()),
+        },
+        container_settings.jwt_secret,
+        algorithm="HS256",
+    )
+    assert me_with(legacy) == 401
 
 
 def test_the_signup_refuses_a_password(spaces_client: TestClient) -> None:

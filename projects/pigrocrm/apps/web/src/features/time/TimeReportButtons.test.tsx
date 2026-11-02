@@ -8,7 +8,7 @@ import { TimeReportButtons } from './TimeReportButtons'
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>()
-  return { ...actual, api: { GET: vi.fn() } }
+  return { ...actual, api: { GET: vi.fn(), POST: vi.fn() } }
 })
 vi.mock('@rebase/ui/sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 vi.mock('@/features/documents/queries', () => ({ downloadDocument: vi.fn() }))
@@ -33,7 +33,7 @@ function renderButtons() {
 }
 
 beforeEach(() => {
-  vi.mocked(api.GET).mockReset()
+  vi.mocked(api.POST).mockReset()
   vi.mocked(downloadDocument).mockReset()
   vi.mocked(downloadDocument).mockResolvedValue(undefined)
 })
@@ -51,36 +51,30 @@ describe('TimeReportButtons', () => {
       'href',
       expect.stringContaining('/api/deals/d-1/time-report?mese='),
     )
-    expect(link.getAttribute('href')).toContain('formato=xlsx')
   })
 
   /**
-   * The defect this file was written for. The PDF branch of that endpoint archives a
-   * document and answers `201 application/json`; when this was an anchor too, clicking
-   * «PDF» navigated the browser to a page of JSON. It has to be a request whose answer
-   * is read, followed by a download of the archived document -- which is the only path
-   * that carries authorisation on either storage backend.
+   * The PDF archives a document and answers `201 application/json`, so it is a `POST`
+   * whose answer is read, followed by a download of the archived document -- the only
+   * path that carries authorisation on either storage backend. As an anchor, clicking
+   * «PDF» navigated the browser to a page of JSON.
    */
   it('renders the PDF and then downloads the archived document, never linking to JSON', async () => {
-    vi.mocked(api.GET).mockImplementation(() => ok(DOCUMENT, 201))
+    vi.mocked(api.POST).mockImplementation(() => ok(DOCUMENT, 201))
     renderButtons()
 
     expect(screen.queryByRole('link', { name: /^PDF$/ })).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /PDF/ }))
 
-    await waitFor(() => expect(api.GET).toHaveBeenCalled())
-    const [path, options] = vi.mocked(api.GET).mock.calls[0] as unknown as [
-      string,
-      { params: { query: Record<string, string> } },
-    ]
-    expect(path).toBe('/api/deals/{deal_id}/time-report')
-    expect(options.params.query.formato).toBe('pdf')
+    await waitFor(() => expect(api.POST).toHaveBeenCalled())
+    const [path] = vi.mocked(api.POST).mock.calls[0] as unknown as [string]
+    expect(path).toBe('/api/deals/{deal_id}/time-report/pdf')
     await waitFor(() => expect(downloadDocument).toHaveBeenCalledWith('doc-9'))
   })
 
   /** The month the user picked is the month that gets rendered -- not today's. */
   it('sends the chosen month', async () => {
-    vi.mocked(api.GET).mockImplementation(() => ok(DOCUMENT, 201))
+    vi.mocked(api.POST).mockImplementation(() => ok(DOCUMENT, 201))
     renderButtons()
 
     const month = screen.getByLabelText('Rapporto ore del mese')
@@ -88,8 +82,8 @@ describe('TimeReportButtons', () => {
     await userEvent.type(month, '2026-03')
     await userEvent.click(screen.getByRole('button', { name: /PDF/ }))
 
-    await waitFor(() => expect(api.GET).toHaveBeenCalled())
-    const [, options] = vi.mocked(api.GET).mock.calls[0] as unknown as [
+    await waitFor(() => expect(api.POST).toHaveBeenCalled())
+    const [, options] = vi.mocked(api.POST).mock.calls[0] as unknown as [
       string,
       { params: { query: Record<string, string> } },
     ]
@@ -102,7 +96,7 @@ describe('TimeReportButtons', () => {
    * the screen the user was on; as a mutation it has somewhere to say so.
    */
   it('shows a refused render in place, and does not download anything', async () => {
-    vi.mocked(api.GET).mockImplementation(() =>
+    vi.mocked(api.POST).mockImplementation(() =>
       failed({ detail: 'nessuna ora registrata nel periodo' }, 422),
     )
     renderButtons()

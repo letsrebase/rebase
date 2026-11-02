@@ -23,7 +23,7 @@ from pigrocrm.core.space_settings import (
 from pigrocrm.core.space_settings.sealing import SEALED_PREFIX, unseal_value
 from pigrocrm.core.tenants import space_base_settings
 
-ADMIN = Actor(id=None, type="mcp", role="admin")
+ADMIN = Actor(id=None, type="user", role="admin")
 BASE = Settings(
     _env_file=None,  # type: ignore[call-arg]
     public_url="https://pigro.example/studio",
@@ -102,11 +102,11 @@ def test_an_empty_string_clears_an_override(db_session: Session) -> None:
 def test_only_an_admin_reads_or_writes(db_session: Session) -> None:
     service = SpaceSettingsService(db_session, BASE)
     with pytest.raises(PermissionDenied):
-        service.read(Actor(id=None, type="mcp", role="collaboratore"), spazio=None)
+        service.read(Actor(id=None, type="user", role="collaboratore"), spazio=None)
     with pytest.raises(PermissionDenied):
         service.update(
             SpaceSettingsUpdate(mcp_full_access=True),
-            Actor(id=None, type="mcp", role="collaboratore"),
+            Actor(id=None, type="user", role="collaboratore"),
             spazio=None,
         )
 

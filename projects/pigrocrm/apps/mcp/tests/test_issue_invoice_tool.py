@@ -18,6 +18,7 @@ from test_invoice_import_tools import _payload, _seed_fiscal_and_emitter_profile
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.customers.models import Customer
+from pigrocrm.core.invoices.artifacts import InvoiceArtifacts
 from pigrocrm.core.invoices.schemas import InvoiceCreate, InvoiceLineIn
 from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm.core.storage import LocalFileStorage
@@ -54,10 +55,10 @@ async def test_a_render_that_fails_after_the_commit_still_answers_the_issued_row
     committed: the transaction is aborted, so the answer also proves the tool rolled it
     back before reading the row again."""
 
-    def aborts_the_transaction(self: InvoiceService, *_args: object, **_kwargs: object) -> None:
-        self.session.execute(text("SELECT 1/0"))
+    def aborts_the_transaction(self: InvoiceArtifacts, *_args: object, **_kwargs: object) -> None:
+        self.ctx.session.execute(text("SELECT 1/0"))
 
-    monkeypatch.setattr(InvoiceService, "export_xml", aborts_the_transaction)
+    monkeypatch.setattr(InvoiceArtifacts, "export_xml", aborts_the_transaction)
     invoice_id = _draft(mcp_session, tmp_path)
     async with Client(_server(mcp_session, tmp_path, full_access=True)) as client:
         result = await client.call_tool("issue_invoice", {"invoice_id": invoice_id})

@@ -184,8 +184,10 @@ In `build_server`, when `PIGROCRM_POSTHOG_KEY` is set: `posthog.mcp.instrument(m
 client, ...)` with a callback that reads the actor of the current call and answers the
 user's id as `distinct_id` and the space slug as the `spazio` group. The wrapper emits
 `$mcp_tool_call`, `$mcp_tools_list` and `$mcp_initialize` with the tool name, the
-parameters, the response, the duration and the error flag. An empty key means no client
-is built and nothing changes. The key is forwarded by `docker-compose.yml` with an
+duration and the error flag. The adapter's own `$mcp_parameters`, `$mcp_response` and
+`$mcp_error_message` carry customer data, notes and mail bodies, so a `before_send`
+(`analytics.without_crm_content`) drops them before anything leaves the process. An
+empty key means no client is built and nothing changes. The key is forwarded by `docker-compose.yml` with an
 empty default and documented in `.env.example`; it is the same public project key, read
 from the environment rather than imported, because the MCP runs in the API image and a
 self-hosted CRM must be able to leave it empty.
