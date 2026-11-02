@@ -198,3 +198,76 @@ async def test_a_bad_oggi_limit_is_guidance_and_not_a_database_error(server) -> 
     for result in (zero, molti):
         assert result.is_error
         assert "errors.pydantic.dev" not in result.content[0].text
+
+
+async def _owner_server(mcp_session, tmp_path):
+    from pigrocrm.core.actor import Actor
+    from pigrocrm.core.auth.models import User
+    from pigrocrm.core.config import Settings
+    from pigrocrm.core.storage import LocalFileStorage
+    from pigrocrm_mcp.server import build_server
+
+    def member(key: str) -> User:
+        user = User(email=f"{key}@example.test", password_hash="x", nome=key, ruolo="admin")
+        mcp_session.add(user)
+        mcp_session.flush()
+        return user
+
+    owner, colleague = member("rossi"), member("bianchi")
+    actor = Actor(id=owner.id, type="mcp", role="admin")
+    server = build_server(
+        lambda: mcp_session,
+        lambda: actor,
+        LocalFileStorage(tmp_path),
+        Settings(_env_file=None),  # type: ignore[call-arg]
+    )
+    return server, owner, colleague
+
+
+async def test_create_attivita_defaults_to_the_token_owner(mcp_session, tmp_path) -> None:
+    server, owner, _ = await _owner_server(mcp_session, tmp_path)
+    async with Client(server) as client:
+        result = await client.call_tool("create_attivita", {"titolo": "Da fare"})
+
+    assert not result.is_error, result.content[0].text
+    assert _payload(result)["assegnata_a"] == str(owner.id)
+
+
+async def test_create_attivita_explicit_colleague_wins(mcp_session, tmp_path) -> None:
+    server, _, colleague = await _owner_server(mcp_session, tmp_path)
+    async with Client(server) as client:
+        result = await client.call_tool(
+            "create_attivita", {"titolo": "Da fare", "assegnata_a": str(colleague.id)}
+        )
+
+    assert _payload(result)["assegnata_a"] == str(colleague.id)
+
+
+async def test_create_attivita_nessuno_leaves_it_unassigned(mcp_session, tmp_path) -> None:
+    server, _, _ = await _owner_server(mcp_session, tmp_path)
+    async with Client(server) as client:
+        result = await client.call_tool(
+            "create_attivita", {"titolo": "Da fare", "assegnata_a": "nessuno"}
+        )
+
+    assert not result.is_error, result.content[0].text
+    assert _payload(result)["assegnata_a"] is None
+
+
+async def test_create_attivita_refuses_a_garbage_assignee(mcp_session, tmp_path) -> None:
+    server, _, _ = await _owner_server(mcp_session, tmp_path)
+    async with Client(server) as client:
+        result = await client.call_tool(
+            "create_attivita", {"titolo": "Da fare", "assegnata_a": "chiunque"}
+        )
+
+    assert result.is_error
+
+
+async def test_create_attivita_without_a_person_behind_the_token_stays_unassigned(
+    server,
+) -> None:
+    async with Client(server) as client:
+        result = await client.call_tool("create_attivita", {"titolo": "Da fare"})
+
+    assert _payload(result)["assegnata_a"] is None
