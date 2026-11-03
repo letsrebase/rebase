@@ -117,12 +117,21 @@ def get(deal_id: UUID, session: SessionDep, actor: ActorDep) -> DealDetailRead:
 
 @router.get("/{deal_id}/contract-proposal", response_model=ContractFromDealProposal)
 def contract_proposal(
-    deal_id: UUID, session: SessionDep, actor: ActorDep
+    deal_id: UUID,
+    session: SessionDep,
+    actor: ActorDep,
+    start: Annotated[
+        date | None,
+        Query(
+            description="The start the contract would be confirmed with. The lines with no "
+            "start of their own follow it, and so do the end and the cards in the answer."
+        ),
+    ] = None,
 ) -> ContractFromDealProposal:
     """What converting this deal into a contract would start from: the suggested title, start
     and end, and the rate cards its lines become. Refused (409) like the conversion: the deal
     must be won, have value lines and no contract yet. Writes nothing."""
-    return ContractService(session).proposal_from_deal(deal_id, actor)
+    return ContractService(session).proposal_from_deal(deal_id, actor, start)
 
 
 @router.post(

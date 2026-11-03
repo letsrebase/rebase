@@ -93,3 +93,40 @@ def test_a_deal_not_won_is_a_409_and_a_body_missing_the_end_is_a_422(
     without_end = {key: value for key, value in CONFIRMED.items() if key != "end"}
     missing = collaborator_client.post(f"/api/deals/{won}/contract", json=without_end)
     assert missing.status_code == 422, missing.text
+
+
+def test_the_proposal_follows_a_start_the_person_moved_to(
+    collaborator_client: TestClient,
+) -> None:
+    open_ended_year = {
+        "unit": "day",
+        "delivery_period": "monthly",
+        "unit_price": "600.00",
+        "quantity": "4.00",
+        "duration_months": 12,
+    }
+    customer = collaborator_client.post("/api/customers", json={"legal_name": "ACME"}).json()["id"]
+    deal = collaborator_client.post(
+        "/api/deals",
+        json={
+            "name": "Anno",
+            "customer_id": customer,
+            "expected_close_date": "2026-03-01",
+            "value_lines": [open_ended_year],
+        },
+    ).json()
+    won = next(
+        stage["id"]
+        for stage in collaborator_client.get("/api/pipeline-stages").json()
+        if stage["type"] == "won"
+    )
+    collaborator_client.patch(f"/api/deals/{deal['id']}/stage", json={"stage_id": won})
+
+    moved = collaborator_client.get(
+        f"/api/deals/{deal['id']}/contract-proposal", params={"start": "2026-09-15"}
+    )
+
+    assert moved.status_code == 200, moved.text
+    body = moved.json()
+    assert (body["start"], body["end"]) == ("2026-09-15", "2027-09-14")
+    assert body["cards"][0]["valid_from"] == "2026-09-15"
