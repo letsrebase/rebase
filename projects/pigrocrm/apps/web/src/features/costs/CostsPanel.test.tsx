@@ -176,7 +176,7 @@ describe('the «Azienda» picker of a general expense (REB-626)', () => {
     legal_entities: [HUMANCRAFT, REBASE],
     selected: null,
     select: vi.fn(),
-    several: true, scoped: false, pinned: false,
+    several: true, scoped: false, pinned: false, loaded: true,
     byId: (id) => [HUMANCRAFT, REBASE].find((a) => a.id === id),
   }
 
@@ -226,7 +226,7 @@ describe('a custom cost field that happens to be named azienda_id (CodeRabbit, P
     legal_entities: [HUMANCRAFT, REBASE],
     selected: null,
     select: vi.fn(),
-    several: true, scoped: false, pinned: false,
+    several: true, scoped: false, pinned: false, loaded: true,
     byId: (id) => [HUMANCRAFT, REBASE].find((a) => a.id === id),
   }
 

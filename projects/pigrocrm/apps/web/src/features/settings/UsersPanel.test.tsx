@@ -90,6 +90,7 @@ function twoLegalEntities(): LegalEntityValue {
     several: true,
     scoped: false,
     pinned: false,
+    loaded: true,
     byId: (id) => legal_entities.find((a) => a.id === id),
   }
 }

@@ -36,6 +36,7 @@ describe('a contract’s days on its own page', () => {
       several: true,
       scoped: false,
       pinned: false,
+      loaded: true,
       byId: () => undefined,
     } as unknown as LegalEntityValue
     renderWithQuery(

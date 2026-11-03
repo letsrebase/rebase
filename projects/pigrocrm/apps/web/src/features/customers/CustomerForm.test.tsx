@@ -287,7 +287,7 @@ describe('the «Azienda» picker (REB-626)', () => {
     legal_entities: [HUMANCRAFT, REBASE],
     selected: null,
     select: vi.fn(),
-    several: true, scoped: false, pinned: false,
+    several: true, scoped: false, pinned: false, loaded: true,
     byId: (id) => [HUMANCRAFT, REBASE].find((a) => a.id === id),
   }
 
@@ -398,7 +398,7 @@ describe('a customer stranded on a deactivated azienda (REB-626, Greptile on PR 
     legal_entities: [HUMANCRAFT],
     selected: null,
     select: vi.fn(),
-    several: false, scoped: false, pinned: false,
+    several: false, scoped: false, pinned: false, loaded: true,
     byId: (id) => (id === 'a-1' ? HUMANCRAFT : undefined),
   }
 
@@ -456,7 +456,7 @@ describe('the picker beside a custom field that happens to be named azienda_id (
     legal_entities: [HUMANCRAFT, REBASE],
     selected: null,
     select: vi.fn(),
-    several: true, scoped: false, pinned: false,
+    several: true, scoped: false, pinned: false, loaded: true,
     byId: (id) => [HUMANCRAFT, REBASE].find((a) => a.id === id),
   }
   const HOMONYM: FieldDefinition = {
