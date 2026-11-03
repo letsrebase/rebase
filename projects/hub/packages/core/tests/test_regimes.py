@@ -55,11 +55,11 @@ def test_a_documents_file_name_carries_its_own_texts_name() -> None:
     """REB-687: the two families never share a file name."""
     assert document_stem("framework", "vat_registered", None, "1.0") == "contratto-quadro-v1.0"
     assert document_stem("framework", "occasional", None, "1.0") == (
-        "contratto-quadro-occasional-v1.0"
+        "contratto-quadro-occasionale-v1.0"
     )
     assert document_stem("letter", "vat_registered", "2026-001", "1.1") == (
         "lettera-di-incarico-2026-001"
     )
     assert document_stem("letter", "occasional", "2026-002", "1.0") == (
-        "lettera-di-incarico-occasional-2026-002"
+        "lettera-di-incarico-occasionale-2026-002"
     )
