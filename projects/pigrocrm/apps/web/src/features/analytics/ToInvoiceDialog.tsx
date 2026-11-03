@@ -82,7 +82,7 @@ export function ToInvoiceDialog({ dealId, open, onOpenChange }: ToInvoiceDialogP
   function generate() {
     setProblem(null)
     draft.mutate(
-      { entry_ids: entryIds, group_by_by_month: grouped },
+      { entry_ids: entryIds, group_by_month: grouped },
       {
         onSuccess: () => {
           onOpenChange(false)

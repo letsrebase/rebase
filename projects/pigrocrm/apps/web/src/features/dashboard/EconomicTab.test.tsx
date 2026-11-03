@@ -405,7 +405,7 @@ describe('EconomicTab', () => {
   /** REB-755: the room left under the ceilings sits with the figures it bounds. */
   it('shows the room left under the forfettario ceilings, between the figures and the concentration', async () => {
     const threshold = {
-      id: 'soglia_ricavi',
+      id: 'revenue_ceiling',
       label: 'Soglia di ricavi e compensi del regime forfettario',
       threshold: '85000.00',
       consequence: 'leaves_next_year',
