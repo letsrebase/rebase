@@ -21,7 +21,7 @@ dependencies = [
   # The contracts are typeset at request time (REB-387): Typst reads neither woff2 nor
   # a variable axis, so fontTools instances the brand's Outfit. `[woff]` brings brotli.
   # The same pin as the root dev group, which the guide's build already uses.
-  "fonttools[woff]==4.66.1",
+  "fonttools[woff]==4.67.0",
   # The model seam (REB-831, `llm.py`): Pydantic AI, each provider called directly with
   # its own SDK (never a gateway), for the card writer and the team-proposal engine.
   # Pinned exactly; the provider SDKs come in through its extras.
