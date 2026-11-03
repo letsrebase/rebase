@@ -61,6 +61,8 @@ This file is the single mapping from the Italian word to the English identifier.
 | ricavi | revenue |  |
 | preventivato | budgeted | Estimated in the offer (`ore_preventivate` is `budgeted_hours`) |
 | previsto | expected | Forecast (`valore_previsto` is `expected_value`) |
+| voce di valore | value_line | One priced term of a deal's value (`deal_value_lines`): unit, delivery period, price, quantity |
+| canone | recurring_fee | A fee paid every period: a `fixed_recurring` rate card, or a `flat` value line with a monthly or annual `delivery_period` |
 | consuntivo | actuals | What really happened |
 | scadenza | due_date | A deadline; invoice `data_scadenza` is also `due_date` |
 | promemoria | reminder | A reminder raised by the CRM (also the UI "Avvisi") |
@@ -167,6 +169,7 @@ Persisted values get English values. The most common ones:
 | ricorrente_fisso / giornaliero / orario / una_tantum | fixed_recurring / daily / hourly / one_off | rate card type |
 | ora / giorno / mese / anno / forfait | hour / day / month / year / flat | rate card unit |
 | mensile / trimestrale / annuale | monthly / quarterly / annual | billing cadence |
+| una_tantum / mensile / trimestrale / annuale | one_off / monthly / quarterly / annual | delivery period of a rate card and of a deal value line (no quarterly on a line) |
 | admin / collaboratore / readonly | admin / collaborator / readonly | user role |
 | web / mcp / sistema / rebase | web / mcp / system / rebase | note source |
 | in_attesa / accettata / rifiutata | pending / accepted / rejected | proposal status |
