@@ -385,6 +385,50 @@ def test_a_line_that_does_not_fit_the_crm_is_not_sent(
     assert _body(http)["deal"]["value_lines"] is None
 
 
+def test_the_total_guard_rounds_once_over_every_occurrence_as_the_crm_does(
+    clean: Session,
+) -> None:
+    # 22 people x 1.1 days a week x 52 / 12 is 104.87 days a month. At 7,946,346.27 a day
+    # the CRM's total, rounded once over its 12 occurrences, is 10,000,000,000.02 and it
+    # refuses the line; rounding the month first and multiplying by 12 would have let it
+    # through. One cent less a day fits.
+    refused, fits = _create(clean), _create(clean)
+    for company, budget in ((refused, "7946346.27"), (fits, "7946346.26")):
+        company.daily_budget = Decimal(budget)
+        company.headcount = 22
+    clean.commit()
+    http = RecordedPigro([OK, OK])
+    draft = {**DRAFT, "week_days": 1.1, "duration_weeks": None}
+
+    _service(clean, http, RecordingCall([_draft_response(**draft)])).link(refused.id)
+    _service(clean, http, RecordingCall([_draft_response(**draft)])).link(fits.id)
+
+    assert _body(http, 0)["deal"]["value_lines"] is None
+    [line] = _body(http, 1)["deal"]["value_lines"]
+    assert (line["quantity"], line["unit_price"]) == ("104.87", "7946346.26")
+
+
+@pytest.mark.parametrize(
+    ("start", "duration", "sent"),
+    [
+        (date(9999, 9, 1), "3 mesi", True),  # runs to 9999-11-30
+        (date(9999, 10, 1), "3 mesi", False),  # the CRM's date would be in year 10000
+        (date(9999, 1, 1), None, False),  # open-ended: counted at 12 months, 10000-01-01
+        (date(9998, 12, 31), None, True),
+    ],
+)
+def test_a_line_that_would_run_past_year_9999_is_not_sent(
+    clean: Session, start: date, duration: str | None, sent: bool
+) -> None:
+    company = _create(clean, period_from=start)
+    http = RecordedPigro([OK])
+    draft = DRAFT if duration else {**DRAFT, "duration_weeks": None}
+
+    _service(clean, http, RecordingCall([_draft_response(**draft)])).link(company.id)
+
+    assert (_body(http)["deal"]["value_lines"] is not None) is sent
+
+
 def test_the_closing_date_is_the_start_only_when_it_is_in_the_future(clean: Session) -> None:
     future, past = _create(clean), _create(clean, period_from=TODAY)
     http = RecordedPigro([OK])

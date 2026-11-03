@@ -218,7 +218,8 @@ class CrmLeadService:
         is `monthly` and open-ended, at the days a month the same week makes, so the CRM
         counts it at 12 months instead of leaving the deal with no value. No line without a
         daily budget or the days a week, nor when the price, the quantity or the line's total
-        would not fit the CRM's columns, so a large value never becomes a permanent 422."""
+        would not fit the CRM's columns, or when its months would run past year 9999, so a large
+        value or a far date never becomes a permanent 422."""
         if draft is None or draft.week_days is None or sent.daily_budget <= 0:
             return None
         price = sent.daily_budget.quantize(CENT, rounding=ROUND_HALF_UP)
@@ -236,7 +237,13 @@ class CrmLeadService:
         quantity = quantity.quantize(CENT, rounding=ROUND_HALF_UP)
         if not 0 < quantity < QUANTITY_LIMIT or not 0 <= price < VALUE_LIMIT:
             return None
-        if (price * quantity).quantize(CENT, rounding=ROUND_HALF_UP) * occurrences >= VALUE_LIMIT:
+        # Rounded once over every occurrence, as the CRM's `term_total` does.
+        if (price * quantity * occurrences).quantize(CENT, rounding=ROUND_HALF_UP) >= VALUE_LIMIT:
+            return None
+        # The CRM steps the line's dates by calendar months, and a date past year 9999 is an
+        # error there: a request starting that late is sent with no line.
+        reach = sent.period_from.year * MONTHS_PER_YEAR + sent.period_from.month - 1
+        if (reach + (duration_months or MONTHS_PER_YEAR)) // MONTHS_PER_YEAR > date.max.year:
             return None
         return [
             {
