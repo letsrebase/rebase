@@ -294,7 +294,7 @@ function contractGroups(fields: Record<string, unknown>): { title: string; group
 
 function dayGroups(fields: Record<string, unknown>): { title: string; groups: FieldGroup[]; contractId: string | null } {
   const approval = isRecord(fields.approval) ? fields.approval : {}
-  const date = isoDate(fields.data)
+  const date = isoDate(fields.date)
   const quantity = formatQuantity(fields.quantity)
   return {
     title: [date === null ? 'Giornata' : `Giornata del ${date}`, quantity === null ? null : `${quantity} gg`]

@@ -58,7 +58,7 @@ function expensePolicy(contract: Contract): string {
   if (policy.kind === 'reimbursable_with_cap' && policy.amount_cap !== undefined) {
     parts.push(`tetto ${formatAmount(policy.amount_cap, contract.currency)}`)
   }
-  if (policy.richiede_preautorizzazione === true) parts.push('autorizzazione preventiva')
+  if (policy.requires_pre_authorization === true) parts.push('autorizzazione preventiva')
   return parts.join(', ')
 }
 

@@ -80,7 +80,7 @@ export function contractToFormValues(contract: Contract): ContractFormValues {
     customer_share_cap: contract.customer_share_cap ?? '',
     expenses_kind: policy?.kind ?? 'not_reimbursable',
     expenses_cap: policy?.amount_cap ?? '',
-    expenses_preauthorization: policy?.richiede_preautorizzazione ?? false,
+    expenses_preauthorization: policy?.requires_pre_authorization ?? false,
     note: contract.note ?? '',
     custom: { ...contract.custom_fields },
   }
@@ -109,7 +109,7 @@ export function toContractBody(
   const policy = expensePolicyBody({
     kind: values.expenses_kind,
     amount_cap: values.expenses_cap.trim().replace(',', '.'),
-    richiede_preautorizzazione: values.expenses_preauthorization,
+    requires_pre_authorization: values.expenses_preauthorization,
   })
   const full: ContractUpdateBody = {
     title: values.title.trim(),

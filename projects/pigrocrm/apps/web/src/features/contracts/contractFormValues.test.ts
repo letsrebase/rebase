@@ -124,7 +124,7 @@ describe('toContractBody', () => {
       nothingRendered,
     )
     expect(body).toEqual({
-      expense_policy: { kind: 'reimbursable', richiede_preautorizzazione: true },
+      expense_policy: { kind: 'reimbursable', requires_pre_authorization: true },
     })
   })
 
@@ -154,7 +154,7 @@ describe('toContractBody review fixes', () => {
     const initial = contractToFormValues(CONTRACT)
     const body = toContractBody({ ...initial, expenses_cap: '600,50' }, initial, () => false)
     expect(body).toEqual({
-      expense_policy: { kind: 'reimbursable_with_cap', richiede_preautorizzazione: false, amount_cap: '600.50' },
+      expense_policy: { kind: 'reimbursable_with_cap', requires_pre_authorization: false, amount_cap: '600.50' },
     })
   })
 

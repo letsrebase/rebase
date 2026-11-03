@@ -70,7 +70,7 @@ export function cadenceLabel(value: string): string {
 
 /** The three shapes of `expense_policy`, tagged by `kind`
  *  (`contract_expenses/models.py`). `amount_cap` rides only on the capped one;
- *  `richiede_preautorizzazione` on the two that reimburse. */
+ *  `requires_pre_authorization` on the two that reimburse. */
 export const EXPENSE_POLICY_KINDS = [
   'not_reimbursable',
   'reimbursable',
@@ -87,7 +87,7 @@ export const EXPENSE_POLICY_LABELS: Record<ExpensePolicyKind, string> = {
 export interface ExpensePolicy {
   kind: ExpensePolicyKind
   amount_cap?: string
-  richiede_preautorizzazione?: boolean
+  requires_pre_authorization?: boolean
 }
 
 /** Reads the open JSONB back as one of the three shapes, or `null` for a document the
@@ -101,8 +101,8 @@ export function readExpensePolicy(raw: Record<string, unknown>): ExpensePolicy |
       typeof raw.amount_cap === 'string' || typeof raw.amount_cap === 'number'
         ? String(raw.amount_cap)
         : undefined,
-    richiede_preautorizzazione:
-      typeof raw.richiede_preautorizzazione === 'boolean' ? raw.richiede_preautorizzazione : undefined,
+    requires_pre_authorization:
+      typeof raw.requires_pre_authorization === 'boolean' ? raw.requires_pre_authorization : undefined,
   }
 }
 
@@ -110,7 +110,7 @@ export function expensePolicyBody(policy: ExpensePolicy): Record<string, unknown
   if (policy.kind === 'not_reimbursable') return { kind: policy.kind }
   const body: Record<string, unknown> = {
     kind: policy.kind,
-    richiede_preautorizzazione: policy.richiede_preautorizzazione === true,
+    requires_pre_authorization: policy.requires_pre_authorization === true,
   }
   if (policy.kind === 'reimbursable_with_cap') body.amount_cap = policy.amount_cap
   return body
