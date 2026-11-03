@@ -14,7 +14,7 @@
 #
 # The image is pinned by tag and digest. Phase 1 probed v2.18.0
 # (docs/superpowers/specs/2026-09-23-documenso-probe.md § 1); v2.20.0 replaced it after
-# its release notes (REB-712). Documenso's uploaded and sealed PDFs
+# its release notes (REB-712), and v2.21.1 replaced that (REB-907). Documenso's uploaded and sealed PDFs
 # live in its own Postgres (`NEXT_PUBLIC_UPLOAD_TRANSPORT=database`), so the data to back
 # up is REBASE_DOCUMENSO_DATA_DIR and nothing else: `documenso-backup` below does it every
 # night (REB-715). About 630 MiB of memory once warm, 80 MiB for its Postgres, 20 MiB
@@ -82,7 +82,7 @@ x-db-backup-environment: &db-backup-environment
 
 services:
   documenso-db:
-    image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+    image: postgres:17-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
     restart: unless-stopped
     # Postgres's own entrypoint starts as root to take the data directory over and then drops
     # to `postgres`: the capabilities it needs for that, and no others. A ceiling on memory,
@@ -119,7 +119,7 @@ services:
       retries: 10
 
   documenso:
-    image: documenso/documenso:v2.20.0@sha256:05d2ede9fb87bfd8eedc11d81b8bdee43c3e775ea46c4fb64973153ca5ef8eb8
+    image: documenso/documenso:v2.21.1@sha256:41a69062febc915d1508b87be8c5bbe72ecd3c49232ddcd983490f5f7832f053
     restart: unless-stopped
     depends_on:
       documenso-db:

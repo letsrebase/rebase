@@ -18,10 +18,11 @@ EXAMPLE = HUB / ".env.example"
 BACKUP_DOCKERFILE = HUB / "db-backup" / "Dockerfile"
 DEPLOY = HUB.parents[1] / ".github" / "workflows" / "deploy-hub.yml"
 # Phase 1 probed v2.18.0; v2.20.0 replaced it after its release notes, which list no
-# breaking change, migration or new variable for v2.19 or v2.20 (REB-712).
+# breaking change, migration or new variable for v2.19 or v2.20 (REB-712), and v2.21.1
+# replaced that on the same reading of v2.21.0 and v2.21.1 (REB-907).
 PINNED = (
-    "documenso/documenso:v2.20.0"
-    "@sha256:05d2ede9fb87bfd8eedc11d81b8bdee43c3e775ea46c4fb64973153ca5ef8eb8"
+    "documenso/documenso:v2.21.1"
+    "@sha256:41a69062febc915d1508b87be8c5bbe72ecd3c49232ddcd983490f5f7832f053"
 )
 
 
