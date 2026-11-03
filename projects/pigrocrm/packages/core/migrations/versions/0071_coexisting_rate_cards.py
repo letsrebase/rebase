@@ -1,7 +1,7 @@
 """Fee and day or hour rate cards coexist on a contract; day and hour cards carry a forecast
 
 Revision ID: 0071
-Revises: 0069
+Revises: 0070
 
 REB-932. A contract converted from a deal holds an upfront fee, a monthly fee and a day
 rate together, which `ck_rate_cards_no_overlap` refused. It now applies only to the
@@ -14,9 +14,7 @@ card forecasts per delivery period. `ck_rate_cards_period_only_fixed_recurring` 
 with `expected_quantity`; two new CHECKs state that the quantity belongs to day and hour
 cards only and that the two come as a pair.
 
-`down_revision` is "0069" because this branch was cut before revision 0070
-(`deal_value_lines`) landed; the integration owner re-points it to "0070" when the branches
-meet. `downgrade` fails if two fee cards overlap, as the old constraint would.
+`downgrade` fails if two fee cards overlap, as the old constraint would.
 """
 
 from collections.abc import Sequence
@@ -25,7 +23,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0071"
-down_revision: str | Sequence[str] | None = "0069"
+down_revision: str | Sequence[str] | None = "0070"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
