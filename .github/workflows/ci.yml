@@ -130,6 +130,7 @@ jobs:
       hub_db_backup: ${{ steps.tag.outputs.hub_db_backup || steps.filter.outputs.hub_db_backup }}
       hub_api_types: ${{ steps.tag.outputs.hub_api_types || steps.filter.outputs.hub_api_types }}
       infra: ${{ steps.tag.outputs.infra || steps.filter.outputs.infra }}
+      english_lint: ${{ steps.tag.outputs.english_lint || steps.filter.outputs.english_lint }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         if: github.event_name != 'pull_request'
@@ -205,7 +206,7 @@ jobs:
             vaultwarden) on='vaultwarden' ;;
             *) echo "::error::no job list for project '${PROJECT}'"; exit 1 ;;
           esac
-          for key in pigrocrm_py pigrocrm_web pigrocrm_image website website_image hub_py hub_web shared_analytics shared_ui hub_image pigrocrm_deploy website_deploy hub_deploy tooling vaultwarden hub_db_backup infra hub_api_types; do
+          for key in pigrocrm_py pigrocrm_web pigrocrm_image website website_image hub_py hub_web shared_analytics shared_ui hub_image pigrocrm_deploy website_deploy hub_deploy tooling vaultwarden hub_db_backup infra hub_api_types english_lint; do
             case " $on " in *" $key "*) value=true ;; *) value=false ;; esac
             echo "${key}=${value}" >> "$GITHUB_OUTPUT"
           done
@@ -430,6 +431,19 @@ jobs:
               - 'projects/*/deploy/**'
               - 'scripts/**'
               - '.github/workflows/ci.yml'
+            # The English lint (REB-904) reads the name of every tracked file and the
+            # identifiers and comments of every source file, so any project's code
+            # reaches it; the docs and the lockfiles do not. Release tags do not run it,
+            # like `infra`: a release proves a project, the lint proves the tree.
+            english_lint:
+              - 'projects/**'
+              - 'shared/**'
+              - 'tooling/**'
+              - 'scripts/**'
+              - 'infra/**'
+              - 'conftest.py'
+              - 'pnpm-lock.yaml'
+              - '.github/**'
 
       # The deploy workflows used to answer "did this push touch my project?" for
       # themselves, each with its own copy of the paths above, and each by waiting on
@@ -1178,6 +1192,31 @@ jobs:
       - name: Every nginx file is valid
         run: bash scripts/check-nginx.sh
 
+  # REB-904: no Italian in an identifier, a file name or a comment. Python is read with
+  # tokenize and ast, TypeScript with the `typescript` package the workspace already
+  # locks, so the install is that one package and the whole job is seconds. The unit
+  # tests plant an Italian name and expect the lint to fail on it. The allowlist and the
+  # rules are `tooling/english-lint`; the vocabulary is `docs/glossary.md`'s.
+  english-lint:
+    name: english · identifiers and comments
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.outputs.all == 'true' || needs.changes.outputs.english_lint == 'true') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version-file: .nvmrc
+      - run: pnpm install --frozen-lockfile --filter @rebase/english-lint
+      - name: The lint catches a planted Italian name
+        run: python3 -m unittest discover -s tooling/english-lint
+      - name: The tree is English
+        run: python3 tooling/english-lint/english_lint.py
+
   # A committed secret is in a public repository's history for good, so this runs on
   # every event, with the whole history on a push and a PR (INFRA-A-19). The rules and
   # the few allowed fixtures are `.github/gitleaks.toml`.
@@ -1204,7 +1243,7 @@ jobs:
     # arrives. This is the only status check the repository should ever be asked to
     # require: every job name above can change forever without touching a ruleset.
     if: always()
-    needs: [changes, pigrocrm-py, pigrocrm-py-lint, pigrocrm-web, pigrocrm-web-lint, pigrocrm-api-types, website, website-e2e, hub-py, hub-web, hub-web-lint, hub-api-types, shared-analytics, shared-ui, pigrocrm-images, website-image, hub-images, tooling-starter, kit, vaultwarden, hub-db-backup, infra, secrets-scan, nightly-pigrocrm-e2e, nightly-ui-e2e, nightly-checks]
+    needs: [changes, pigrocrm-py, pigrocrm-py-lint, pigrocrm-web, pigrocrm-web-lint, pigrocrm-api-types, website, website-e2e, hub-py, hub-web, hub-web-lint, hub-api-types, shared-analytics, shared-ui, pigrocrm-images, website-image, hub-images, tooling-starter, kit, vaultwarden, hub-db-backup, infra, english-lint, secrets-scan, nightly-pigrocrm-e2e, nightly-ui-e2e, nightly-checks]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
