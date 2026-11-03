@@ -42,7 +42,7 @@ from pigrocrm.core.customers.schemas import CustomerCreate
 from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.db import session_factory, today_local
 from pigrocrm.core.deals.repository import DealRepository
-from pigrocrm.core.deals.schemas import DealCreate, DealValueLineIn
+from pigrocrm.core.deals.schemas import DealCreate
 from pigrocrm.core.deals.service import DealService
 from pigrocrm.core.engagements.schemas import LeadRead, LeadUpsert
 from pigrocrm.core.engagements.service import (
@@ -277,18 +277,7 @@ class LeadService:
             DealCreate(
                 name=data.deal.name,
                 customer_id=customer_id,
-                # LeadDeal still carries a single figure: it is filed as one lump sum.
-                value_lines=(
-                    None
-                    if data.deal.expected_value is None
-                    else [
-                        DealValueLineIn(
-                            unit="flat",
-                            delivery_period="one_off",
-                            unit_price=data.deal.expected_value,
-                        )
-                    ]
-                ),
+                value_lines=data.deal.value_lines,
                 expected_close_date=data.deal.expected_close_date,
                 note="\n".join(notes),
             ),

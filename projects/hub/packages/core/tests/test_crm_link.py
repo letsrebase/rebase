@@ -184,10 +184,19 @@ def test_a_linked_request_keeps_the_deal_and_sends_the_body_of_the_spec(clean: S
         "linkedin_url": None,
     }
     deal = body["deal"]
-    assert set(deal) == {"name", "expected_value", "expected_close_date", "notes"}
+    assert set(deal) == {"name", "value_lines", "expected_close_date", "notes"}
     assert deal["name"] == "Acme S.r.l.: Sviluppatore backend"
-    # 400 a day, 3 days a week, 12 weeks, 2 people.
-    assert deal["expected_value"] == "28800.00"
+    # 400 a day, 3 days a week, 12 weeks, 2 people: 72 days in 3 months, 28.800 in the CRM.
+    assert deal["value_lines"] == [
+        {
+            "unit": "day",
+            "delivery_period": "one_off",
+            "unit_price": "400.00",
+            "quantity": "72.00",
+            "start": "2026-12-01",
+            "duration_months": 3,
+        }
+    ]
     assert deal["expected_close_date"] == "2026-12-01"
     note = deal["notes"]
     assert "Progetto, come l'ha scritto l'azienda:" in note
@@ -283,7 +292,7 @@ def test_without_a_draft_the_filing_goes_ahead(clean: Session, llm: LlmCall | No
 
     deal = _body(http)["deal"]
     assert deal["name"] == "Acme S.r.l.: Backend developer"
-    assert deal["expected_value"] is None
+    assert deal["value_lines"] is None
     assert "Nessuna bozza AI" in deal["notes"]
     assert _row(clean, company.id).crm_draft is None  # asked again at the next attempt
 
@@ -300,37 +309,124 @@ def test_a_cap_reached_files_without_a_draft(clean: Session) -> None:
     assert "Nessuna bozza AI" in _body(http)["deal"]["notes"]
 
 
+def _line(period: str, quantity: str, months: int | None, price: str = "400.00") -> dict[str, Any]:
+    return {
+        "unit": "day",
+        "delivery_period": period,
+        "unit_price": price,
+        "quantity": quantity,
+        "start": "2026-12-01",
+        "duration_months": months,
+    }
+
+
 @pytest.mark.parametrize(
     ("draft", "expected"),
     [
-        (DRAFT, "28800.00"),
+        (DRAFT, _line("one_off", "72.00", 3)),
         ({**DRAFT, "week_days": None}, None),
         ({**DRAFT, "week_days": 9}, None),  # out of bounds, dropped by the draft
-        ({**DRAFT, "duration_weeks": None}, None),
-        ({**DRAFT, "week_days": 2.5}, "24000.00"),
+        ({**DRAFT, "week_days": 2.5}, _line("one_off", "60.00", 3)),
+        # No duration: a monthly open-ended line, 3 days x 2 people x 52 / 12 a month.
+        ({**DRAFT, "duration_weeks": None}, _line("monthly", "26.00", None)),
+        ({**DRAFT, "duration_weeks": None, "week_days": 2.5}, _line("monthly", "21.67", None)),
+        # The months are the weeks' months rounded up: 12 weeks 3, 14 weeks 4, one week 1.
+        ({**DRAFT, "duration_weeks": 14}, _line("one_off", "84.00", 4)),
+        ({**DRAFT, "duration_weeks": 1}, _line("one_off", "6.00", 1)),
+        ({**DRAFT, "duration_weeks": 52}, _line("one_off", "312.00", 12)),
     ],
 )
-def test_the_value_needs_every_input(
-    clean: Session, draft: dict[str, Any], expected: str | None
+def test_the_value_is_one_day_line(
+    clean: Session, draft: dict[str, Any], expected: dict[str, Any] | None
 ) -> None:
     company = _create(clean)
     http = RecordedPigro([OK])
 
     _service(clean, http, RecordingCall([_draft_response(**draft)])).link(company.id)
 
-    assert _body(http)["deal"]["expected_value"] == expected
+    deal = _body(http)["deal"]
+    assert "expected_value" not in deal
+    assert deal["value_lines"] == (None if expected is None else [expected])
 
 
-def test_a_value_that_does_not_fit_the_column_is_dropped(clean: Session) -> None:
-    company = _create(clean)
-    company.daily_budget = Decimal("99999999.99")
-    company.headcount = 1000
-    clean.commit()
+def test_a_line_starts_on_the_requested_date_even_when_it_is_past(clean: Session) -> None:
+    company = _create(clean, period_from=TODAY - timedelta(days=30))
     http = RecordedPigro([OK])
 
     _service(clean, http, RecordingCall([_draft_response(**DRAFT)])).link(company.id)
 
-    assert _body(http)["deal"]["expected_value"] is None
+    deal = _body(http)["deal"]
+    assert deal["expected_close_date"] is None
+    assert deal["value_lines"][0]["start"] == (TODAY - timedelta(days=30)).isoformat()
+
+
+@pytest.mark.parametrize(
+    ("budget", "headcount", "draft"),
+    [
+        # The line's total does not fit Numeric(12, 2).
+        (Decimal("99999999.99"), 1000, DRAFT),
+        (Decimal("99999999.99"), 1000, {**DRAFT, "duration_weeks": None}),
+        # The quantity does not fit Numeric(8, 2).
+        (Decimal("1"), 2000, {**DRAFT, "week_days": 7, "duration_weeks": 104}),
+    ],
+    ids=["total", "monthly total", "quantity"],
+)
+def test_a_line_that_does_not_fit_the_crm_is_not_sent(
+    clean: Session, budget: Decimal, headcount: int, draft: dict[str, Any]
+) -> None:
+    company = _create(clean)
+    company.daily_budget = budget
+    company.headcount = headcount
+    clean.commit()
+    http = RecordedPigro([OK])
+
+    _service(clean, http, RecordingCall([_draft_response(**draft)])).link(company.id)
+
+    assert _body(http)["deal"]["value_lines"] is None
+
+
+def test_the_total_guard_rounds_once_over_every_occurrence_as_the_crm_does(
+    clean: Session,
+) -> None:
+    # 22 people x 1.1 days a week x 52 / 12 is 104.87 days a month. At 7,946,346.27 a day
+    # the CRM's total, rounded once over its 12 occurrences, is 10,000,000,000.02 and it
+    # refuses the line; rounding the month first and multiplying by 12 would have let it
+    # through. One cent less a day fits.
+    refused, fits = _create(clean), _create(clean)
+    for company, budget in ((refused, "7946346.27"), (fits, "7946346.26")):
+        company.daily_budget = Decimal(budget)
+        company.headcount = 22
+    clean.commit()
+    http = RecordedPigro([OK, OK])
+    draft = {**DRAFT, "week_days": 1.1, "duration_weeks": None}
+
+    _service(clean, http, RecordingCall([_draft_response(**draft)])).link(refused.id)
+    _service(clean, http, RecordingCall([_draft_response(**draft)])).link(fits.id)
+
+    assert _body(http, 0)["deal"]["value_lines"] is None
+    [line] = _body(http, 1)["deal"]["value_lines"]
+    assert (line["quantity"], line["unit_price"]) == ("104.87", "7946346.26")
+
+
+@pytest.mark.parametrize(
+    ("start", "duration", "sent"),
+    [
+        (date(9999, 9, 1), "3 mesi", True),  # runs to 9999-11-30
+        (date(9999, 10, 1), "3 mesi", False),  # the CRM's date would be in year 10000
+        (date(9999, 1, 1), None, False),  # open-ended: counted at 12 months, 10000-01-01
+        (date(9998, 12, 31), None, True),
+    ],
+)
+def test_a_line_that_would_run_past_year_9999_is_not_sent(
+    clean: Session, start: date, duration: str | None, sent: bool
+) -> None:
+    company = _create(clean, period_from=start)
+    http = RecordedPigro([OK])
+    draft = DRAFT if duration else {**DRAFT, "duration_weeks": None}
+
+    _service(clean, http, RecordingCall([_draft_response(**draft)])).link(company.id)
+
+    assert (_body(http)["deal"]["value_lines"] is not None) is sent
 
 
 def test_the_closing_date_is_the_start_only_when_it_is_in_the_future(clean: Session) -> None:

@@ -13,6 +13,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
+from pigrocrm.core.deals.schemas import MAX_VALUE_LINES, DealValueLineIn
 from pigrocrm.core.notes.schemas import NOTE_MAX_LENGTH
 from pigrocrm.core.validation import SafeStr
 
@@ -145,7 +146,7 @@ class EngagementReport(BaseModel):
 
 
 # The bounds below are the CRM's own: `customers.legal_name` 255, `people` 120/40/255,
-# `deals.name` 255 and `deals.expected_value` Numeric(12, 2). The hub cuts or drops what
+# `deals.name` 255 and the value lines' own bounds. The hub cuts or drops what
 # does not fit before sending (spec 2026-10-30 § 3), so a value past them is a 422 naming
 # the field, never a request that half exists.
 LEAD_COMPANY_MAX_LENGTH = 255
@@ -168,14 +169,16 @@ class LeadContactPerson(BaseModel):
 
 
 class LeadDeal(BaseModel):
-    """The deal as the hub built it, AI draft included. `hourly_rate` and
-    `budgeted_hours` are deliberately not here: in the CRM they value the hours logged
-    on a deal, and a prospect's typed budget is not that."""
+    """The deal as the hub built it, AI draft included. Its value is the list of lines, the
+    deals' own (`DealValueLineIn`, so the same limits): the deal's total is derived from
+    them and never sent. `hourly_rate` and `budgeted_hours` are deliberately not here: in
+    the CRM they value the hours logged on a deal, and a prospect's typed budget is not
+    that."""
 
     model_config = ConfigDict(extra="forbid")
 
     name: SafeStr = Field(min_length=1, max_length=LEAD_DEAL_NAME_MAX_LENGTH)
-    expected_value: Decimal | None = Field(default=None, ge=0, max_digits=12, decimal_places=2)
+    value_lines: list[DealValueLineIn] | None = Field(default=None, max_length=MAX_VALUE_LINES)
     expected_close_date: dt.date | None = None
     # The hub's longest note is about 6,000 characters (its fields are bounded); a sentence
     # is added to it, so the room under the note's own bound is kept.

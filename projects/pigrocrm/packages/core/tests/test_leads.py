@@ -30,7 +30,7 @@ from pigrocrm.core.customers.schemas import CustomerCreate
 from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.db.sidecar import drop_database
-from pigrocrm.core.deals.models import Deal
+from pigrocrm.core.deals.models import Deal, DealValueLine
 from pigrocrm.core.deals.schemas import DealCreate
 from pigrocrm.core.deals.service import DealService
 from pigrocrm.core.engagements.leads import (
@@ -73,7 +73,9 @@ def _body(**parts: Any) -> LeadUpsert:
         },
         "deal": {
             "name": "Acme S.r.l.: Backend developer",
-            "expected_value": "24000.00",
+            "value_lines": [
+                {"unit": "flat", "delivery_period": "one_off", "unit_price": "24000.00"}
+            ],
             "expected_close_date": "2099-01-15",
             "notes": "Richiesta dell'azienda: cerca uno sviluppatore backend.",
         },
@@ -196,6 +198,72 @@ def test_first_call_files_customer_person_and_deal(door: Door) -> None:
         assert "cerca uno sviluppatore backend" in deal_note
         assert lead_marker(request_id) not in deal_note
         assert deal.rebase_refs == [lead_marker(request_id)]
+
+
+def test_a_monthly_open_ended_day_line_is_worth_twelve_months(door: Door) -> None:
+    line = {
+        "unit": "day",
+        "delivery_period": "monthly",
+        "unit_price": "400.00",
+        "quantity": "6.00",
+        "start": "2099-01-15",
+    }
+    answer = door.service().file(uuid4(), _body(deal={"value_lines": [line]}))
+
+    with _space(door) as space:
+        deal = space.get(Deal, answer.deal_id)
+        assert deal is not None
+        assert deal.expected_value == Decimal("28800.00")
+
+
+def test_a_day_line_that_starts_in_the_past_files_the_deal(door: Door) -> None:
+    # A request wanting to start before it was filed: the hub sends the date as it is.
+    line = {
+        "unit": "day",
+        "delivery_period": "one_off",
+        "unit_price": "400.00",
+        "quantity": "72.00",
+        "start": "2020-03-02",
+        "duration_months": 3,
+    }
+    answer = door.service().file(uuid4(), _body(deal={"value_lines": [line]}))
+
+    assert answer.created is True
+    with _space(door) as space:
+        deal = space.get(Deal, answer.deal_id)
+        assert deal is not None
+        assert deal.expected_value == Decimal("28800.00")
+        [stored] = space.scalars(select(DealValueLine).where(DealValueLine.deal_id == deal.id))
+        assert (stored.start, stored.quantity, stored.duration_months) == (
+            date(2020, 3, 2),
+            Decimal("72.00"),
+            3,
+        )
+
+
+def test_a_retry_with_other_lines_returns_the_deal_and_leaves_its_lines_alone(
+    door: Door,
+) -> None:
+    request_id = uuid4()
+    first = door.service().file(request_id, _body())
+    other = {"unit": "flat", "delivery_period": "one_off", "unit_price": "1.00"}
+    second = door.service().file(request_id, _body(deal={"value_lines": [other]}))
+
+    assert second.created is False and second.deal_id == first.deal_id
+    with _space(door) as space:
+        deal = space.get(Deal, first.deal_id)
+        assert deal is not None and deal.expected_value == Decimal("24000.00")
+        [stored] = space.scalars(select(DealValueLine).where(DealValueLine.deal_id == deal.id))
+        assert stored.unit_price == Decimal("24000.00")
+
+
+def test_a_lead_with_no_lines_files_a_deal_with_no_value(door: Door) -> None:
+    answer = door.service().file(uuid4(), _body(deal={"value_lines": None}))
+
+    with _space(door) as space:
+        deal = space.get(Deal, answer.deal_id)
+        assert deal is not None
+        assert deal.expected_value is None
 
 
 def test_every_write_is_recorded_as_rebase(door: Door) -> None:

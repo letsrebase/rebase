@@ -72,9 +72,13 @@ PERSON_NAME_MAX = 120
 PHONE_MAX = 40
 LINKEDIN_MAX = 255
 DEAL_NAME_MAX = 255
-# `deals.expected_value` is Numeric(12, 2): ten integer digits at most.
+# A line's price is Numeric(12, 2) and its quantity Numeric(8, 2) in the CRM, and a line's total
+# (and so the deal's) must fit Numeric(12, 2): ten integer digits at most.
 VALUE_LIMIT = Decimal(10) ** 10
+QUANTITY_LIMIT = Decimal(10) ** 6
 CENT = Decimal("0.01")
+WEEKS_PER_YEAR = 52
+MONTHS_PER_YEAR = 12
 
 NOT_CONFIGURED = (
     "Il CRM non è configurato su questo ambiente: manca REBASE_PIGRO_ENGAGEMENTS_TOKEN."
@@ -185,7 +189,7 @@ class CrmLeadService:
         role = draft.role if draft is not None else ""
         deal: dict[str, Any] = {
             "name": (f"{sent.company_name}: {role or sent.requested_role}")[:DEAL_NAME_MAX],
-            "expected_value": self._value(sent, draft),
+            "value_lines": self._value_lines(sent, draft),
             "expected_close_date": (
                 sent.period_from.isoformat() if sent.period_from > self.today() else None
             ),
@@ -205,20 +209,52 @@ class CrmLeadService:
         }
 
     @staticmethod
-    def _value(sent: _Sent, draft: LeadDraft | None) -> str | None:
-        """The budget a day times the days a week, the weeks and the people: only when
-        every input is there, and dropped when it does not fit the CRM's column."""
-        if draft is None or draft.week_days is None or draft.duration_weeks is None:
+    def _value_lines(sent: _Sent, draft: LeadDraft | None) -> list[dict[str, Any]] | None:
+        """A request is always a day rate (spec 2026-11-03 § 9): one `day` line priced at the
+        daily budget and starting on `period_from`, even when that date is past.
+
+        With a duration in the draft the line is `one_off`: the days are the days a week times
+        the weeks and the people, and they fall in the months the weeks cover. With none it
+        is `monthly` and open-ended, at the days a month the same week makes, so the CRM
+        counts it at 12 months instead of leaving the deal with no value. No line without a
+        daily budget or the days a week, nor when the price, the quantity or the line's total
+        would not fit the CRM's columns, or when its months would run past year 9999, so a large
+        value or a far date never becomes a permanent 422."""
+        if draft is None or draft.week_days is None or sent.daily_budget <= 0:
             return None
-        value = (
-            sent.daily_budget
-            * Decimal(str(draft.week_days))
-            * draft.duration_weeks
-            * sent.headcount
-        ).quantize(CENT, rounding=ROUND_HALF_UP)
-        if value < 0 or value >= VALUE_LIMIT:
+        price = sent.daily_budget.quantize(CENT, rounding=ROUND_HALF_UP)
+        days_a_week = Decimal(str(draft.week_days)) * sent.headcount
+        duration_months: int | None
+        if draft.duration_weeks is not None:
+            period, occurrences = "one_off", 1
+            quantity = days_a_week * draft.duration_weeks
+            duration_months = -(-draft.duration_weeks * MONTHS_PER_YEAR // WEEKS_PER_YEAR)
+        else:
+            # The CRM counts an open-ended line at 12 occurrences.
+            period, occurrences = "monthly", MONTHS_PER_YEAR
+            quantity = days_a_week * WEEKS_PER_YEAR / MONTHS_PER_YEAR
+            duration_months = None
+        quantity = quantity.quantize(CENT, rounding=ROUND_HALF_UP)
+        if not 0 < quantity < QUANTITY_LIMIT or not 0 <= price < VALUE_LIMIT:
             return None
-        return format(value, "f")
+        # Rounded once over every occurrence, as the CRM's `term_total` does.
+        if (price * quantity * occurrences).quantize(CENT, rounding=ROUND_HALF_UP) >= VALUE_LIMIT:
+            return None
+        # The CRM steps the line's dates by calendar months, and a date past year 9999 is an
+        # error there: a request starting that late is sent with no line.
+        reach = sent.period_from.year * MONTHS_PER_YEAR + sent.period_from.month - 1
+        if (reach + (duration_months or MONTHS_PER_YEAR)) // MONTHS_PER_YEAR > date.max.year:
+            return None
+        return [
+            {
+                "unit": "day",
+                "delivery_period": period,
+                "unit_price": format(price, "f"),
+                "quantity": format(quantity, "f"),
+                "start": sent.period_from.isoformat(),
+                "duration_months": duration_months,
+            }
+        ]
 
     def _note(self, sent: _Sent, draft: LeadDraft | None) -> str:
         """Two blocks, in Italian: what the company wrote, `project` verbatim, and the
