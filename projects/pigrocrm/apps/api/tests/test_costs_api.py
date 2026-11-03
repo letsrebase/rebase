@@ -43,7 +43,7 @@ def test_post_creates_and_returns_a_decimal_as_a_string(logged_in: TestClient) -
     assert response.status_code == 201, response.text
     body = response.json()
     assert body["amount"] == "120.00"
-    assert '"importo":"120.00"' in response.text.replace(" ", "")
+    assert '"amount":"120.00"' in response.text.replace(" ", "")
 
 
 def test_a_negative_amount_is_accepted_and_zero_is_a_422(logged_in: TestClient) -> None:

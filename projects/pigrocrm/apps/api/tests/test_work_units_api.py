@@ -155,15 +155,15 @@ def test_a_day_is_moved_and_the_page_shows_both_moves_with_their_dates(
 
     body = contested.json()
     assert body["status"] == "disputed"
-    moves = [(t["previous_status"], t["new_status"], t["reason"]) for t in body["transizioni"]]
+    moves = [(t["previous_status"], t["new_status"], t["reason"]) for t in body["transitions"]]
     assert moves == [
         (None, "proposed", "creazione"),
         ("proposed", "approved", "Approvazione registrata"),
         ("approved", "worked", "Fatta"),
         ("worked", "disputed", "Il cliente contesta le ore"),
     ]
-    assert all(t["created_at"] for t in body["transizioni"])
-    assert body["transizioni"][-1]["actor"]["kind"] == "human"
+    assert all(t["created_at"] for t in body["transitions"])
+    assert body["transitions"][-1]["actor"]["kind"] == "human"
     assert body["actions"] == ["worked", "revoked", "non_billable"]
 
 

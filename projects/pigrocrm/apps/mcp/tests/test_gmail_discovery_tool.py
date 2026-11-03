@@ -202,7 +202,7 @@ async def test_discovery_answers_the_addresses_at_the_customer_domain(
 
     report = _payload(result)
     assert report["domain"] == "example.com"
-    rows = {row["address"]: row for row in report["corrispondenti"]}
+    rows = {row["address"]: row for row in report["matching"]}
     assert set(rows) == {"marco@example.com", "sarah@example.com"}
     assert rows["marco@example.com"]["name"] == "Marco Bianchi"
     assert rows["marco@example.com"]["messages"] == 2
@@ -237,7 +237,7 @@ async def test_a_customer_without_a_domain_gets_guidance_not_a_stack_trace(
 
     assert result.is_error
     text = result.content[0].text
-    assert "domain" in text and "sito web" in text
+    assert "dominio" in text and "sito web" in text
     assert "Traceback" not in text
     # Refused before Google was asked anything.
     assert fake_gmail.requests == []

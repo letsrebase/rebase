@@ -179,7 +179,7 @@ def _revenue_from_sql(session: Session, deal_id: UUID) -> Decimal:
     return Decimal(
         session.execute(
             text(
-                "SELECT COALESCE(SUM(imponibile), 0) FROM invoices "
+                "SELECT COALESCE(SUM(taxable_amount), 0) FROM invoices "
                 "WHERE deal_id = :id AND tipo = 'fattura' AND stato = 'emessa' "
                 "  AND deleted_at IS NULL"
             ),

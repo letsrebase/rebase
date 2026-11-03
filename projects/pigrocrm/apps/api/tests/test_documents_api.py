@@ -214,10 +214,10 @@ def test_templates_crud_and_describe(logged_in: TestClient) -> None:
         "/api/templates",
         json={
             "name": "Consulenza CTO",
-            "tipo": "offerta",
-            "corpo_markdown": "Spett.le {{cliente.ragione_sociale}} — {{oggetto}}",
-            "variabili_dichiarate": [
-                {"name": "oggetto", "etichetta": "Oggetto", "tipo": "text", "obbligatoria": True}
+            "type": "offer",
+            "body_markdown": "Spett.le {{cliente.ragione_sociale}} — {{oggetto}}",
+            "declared_variables": [
+                {"name": "oggetto", "label": "Oggetto", "type": "text", "required": True}
             ],
         },
     )
@@ -226,11 +226,11 @@ def test_templates_crud_and_describe(logged_in: TestClient) -> None:
 
     described = logged_in.get(f"/api/templates/{template_id}/describe")
     assert described.status_code == 200
-    assert [v["name"] for v in described.json()["variabili"]] == ["oggetto"]
+    assert [v["name"] for v in described.json()["variables"]] == ["oggetto"]
 
     preview = logged_in.post(
         f"/api/templates/{template_id}/preview",
-        json={"variabili": {"cliente": {"ragione_sociale": "ACME"}, "oggetto": "Advisory"}},
+        json={"variables": {"cliente": {"ragione_sociale": "ACME"}, "oggetto": "Advisory"}},
     )
     assert preview.status_code == 200
     assert preview.json()["markdown"] == "Spett.le ACME — Advisory"
@@ -238,7 +238,7 @@ def test_templates_crud_and_describe(logged_in: TestClient) -> None:
 
 def test_a_template_body_that_does_not_parse_is_a_422(logged_in: TestClient) -> None:
     response = logged_in.post(
-        "/api/templates", json={"name": "Rotto", "tipo": "offerta", "corpo_markdown": "{{#if x}}"}
+        "/api/templates", json={"name": "Rotto", "type": "offer", "body_markdown": "{{#if x}}"}
     )
     assert response.status_code == 422
     assert "riga 1" in response.json()["reason"]

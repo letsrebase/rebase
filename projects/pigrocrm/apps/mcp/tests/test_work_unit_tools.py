@@ -97,7 +97,7 @@ async def test_an_agent_reads_a_contracts_days_and_one_days_history(
         (str(day_id), "worked_without_approval", "Consulenza MCP")
     ]
     assert one["requires_prior_approval"] is True
-    assert [t["new_status"] for t in one["transizioni"]] == ["worked_without_approval"]
+    assert [t["new_status"] for t in one["transitions"]] == ["worked_without_approval"]
 
 
 async def test_a_list_with_no_contract_and_no_date_is_refused_in_words(server) -> None:

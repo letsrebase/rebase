@@ -368,7 +368,7 @@ async def test_list_drive_files_without_an_argument_lists_the_configured_roots(
     answer = _payload(result)
     assert [item["name"] for item in answer["items"]] == ["Clienti"]
     assert answer["items"][0]["id"] == ROOT_FOLDER
-    assert answer["items"][0]["cartella"] is True
+    assert answer["items"][0]["folder"] is True
     assert answer["next_cursor"] is None
     # No `files.list` at all: naming the roots is metadata, and a listing of whatever
     # sits above them would be a listing of the titolare's whole Drive.
@@ -385,7 +385,7 @@ async def test_list_drive_files_lists_the_children_of_a_folder_in_the_roots(
     assert [item["name"] for item in answer["items"]] == ["Appunti.txt"]
     assert answer["items"][0]["mime"] == "text/plain"
     assert answer["items"][0]["size"] == len(TXT_TEXT.encode())
-    assert answer["items"][0]["cartella"] is False
+    assert answer["items"][0]["folder"] is False
     # And every question put to Drive was "the children of this folder", never a search.
     assert _listings(fake_drive)
     assert all(f"'{SUB_FOLDER}' in parents" in (r.q or "") for r in _listings(fake_drive))

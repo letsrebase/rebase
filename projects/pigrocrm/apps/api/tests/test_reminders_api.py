@@ -4,7 +4,7 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
-KEY = f"attivita_overdue:{uuid4()}"
+KEY = f"task_overdue:{uuid4()}"
 
 
 def test_the_catalogue_lists_the_types_with_their_default_ladders(logged_in: TestClient) -> None:
@@ -24,11 +24,11 @@ def test_an_admin_sets_a_default_and_a_member_overrides_it_for_themselves(
     logged_in: TestClient,
 ) -> None:
     default = logged_in.patch(
-        "/api/reminders/preferences/space/attivita_overdue", json={"channels": ["email"]}
+        "/api/reminders/preferences/space/task_overdue", json={"channels": ["email"]}
     )
     assert default.status_code == 200, default.text
     mine = logged_in.patch(
-        "/api/reminders/preferences/me/attivita_overdue", json={"enabled": False}
+        "/api/reminders/preferences/me/task_overdue", json={"enabled": False}
     )
     assert mine.status_code == 200, mine.text
 
@@ -39,7 +39,7 @@ def test_an_admin_sets_a_default_and_a_member_overrides_it_for_themselves(
     assert [row["scope"] for row in read["space"]] == ["space"]
     assert [row["scope"] for row in read["mine"]] == ["me"]
 
-    back = logged_in.delete("/api/reminders/preferences/me/attivita_overdue")
+    back = logged_in.delete("/api/reminders/preferences/me/task_overdue")
     assert back.status_code == 204
     again = logged_in.get("/api/reminders/preferences").json()
     assert again["mine"] == []
@@ -47,7 +47,7 @@ def test_an_admin_sets_a_default_and_a_member_overrides_it_for_themselves(
 
 def test_a_threshold_save_that_breaks_the_order_is_a_422_in_italian(logged_in: TestClient) -> None:
     response = logged_in.patch(
-        "/api/reminders/preferences/me/attivita_overdue",
+        "/api/reminders/preferences/me/task_overdue",
         json={"ladder": {"warning": 9, "serious": 3}},
     )
 
@@ -57,7 +57,7 @@ def test_a_threshold_save_that_breaks_the_order_is_a_422_in_italian(logged_in: T
 
 def test_a_member_cannot_set_the_spaces_defaults(collaborator_client: TestClient) -> None:
     response = collaborator_client.patch(
-        "/api/reminders/preferences/space/attivita_overdue", json={"enabled": False}
+        "/api/reminders/preferences/space/task_overdue", json={"enabled": False}
     )
 
     assert response.status_code == 403
@@ -136,7 +136,7 @@ def test_the_reminders_of_a_person_are_listed_and_closing_one_changes_its_status
     assert reminder["title"] == "Attività in scadenza: Mandare il preventivo"
     assert reminder["detail"] == "Scade oggi"
     assert reminder["status"] == "open"
-    assert reminder["entity"] == "attivita" and reminder["entity_id"] == created.json()["id"]
+    assert reminder["entity"] == "task" and reminder["entity_id"] == created.json()["id"]
 
     logged_in.post(
         "/api/reminders/acknowledge", json={"key": reminder["key"], "severity": "warning"}

@@ -58,9 +58,9 @@ def _upsert(**parts: dict[str, Any]) -> dict[str, Any]:
         "letter": {
             "number": "3/2026",
             "role": "Backend developer",
-            "legal_entity": "Acme S.r.l.",
+            "company_name": "Acme S.r.l.",
             "start_date": "2026-10-01",
-            "data_fine": "2026-12-31",
+            "end_date": "2026-12-31",
             "fee": "400.00",
             "expected_days": 40,
         },

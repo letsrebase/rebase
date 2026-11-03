@@ -157,7 +157,7 @@ def seeded_template_id(mcp_session: Session) -> str:
     template = TemplateService(mcp_session).create(
         TemplateCreate(
             name="Consulenza CTO",
-            type="offerta",
+            type="offer",
             body_markdown="Spett.le {{cliente.ragione_sociale}} — {{oggetto}}",
             declared_variables=[
                 TemplateVariable(name="oggetto", label="Oggetto", type="text", required=True)

@@ -305,7 +305,7 @@ async def test_list_gmail_messages_reads_the_stored_mirror(
     # Mail written by somebody else: each item carries the marker, the list stays a list.
     assert all(row["provenance"] == PROVENANCE_TEXT_FREE for row in rows)
     assert [row["id"] for row in rows] == [str(message_id)]
-    assert rows[0]["da"] == CLIENT
+    assert rows[0]["from"] == CLIENT
     assert rows[0]["subject"] == "Preventivo per il rifacimento del sito"
     # The listing is a listing: the body belongs to `get_gmail_message`, so an agent
     # that only needs to know a conversation exists does not pull a customer's whole

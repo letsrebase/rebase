@@ -317,7 +317,7 @@ def test_an_inverted_period_is_a_422_naming_the_field(
         "/api/dashboard/sales", params={"from": "2026-03-31", "to": "2026-03-01"}
     )
     assert response.status_code == 422
-    assert response.json()["field"] == "da"
+    assert response.json()["field"] == "from"
 
 
 @pytest.mark.parametrize(("da", "a"), [("2026-03-01", None), (None, "2026-03-31")])
@@ -326,10 +326,10 @@ def test_half_a_period_is_a_422_naming_the_missing_bound(
 ) -> None:
     """Both spellings, because a rule written as `if da is None` alone accepts the other
     one -- and `field` is what `fieldErrorFrom` in the web client reads."""
-    params = {key: value for key, value in (("da", da), ("a", a)) if value is not None}
+    params = {key: value for key, value in (("from", da), ("to", a)) if value is not None}
     response = logged_in.get("/api/dashboard/sales", params=params)
     assert response.status_code == 422
-    assert response.json()["field"] == ("da" if da is None else "a")
+    assert response.json()["field"] == ("from" if da is None else "to")
 
 
 def test_money_is_serialised_as_a_string(logged_in: TestClient, dashboard_corpus: Engine) -> None:
@@ -420,7 +420,7 @@ def test_the_economic_dashboard_carries_no_fiscal_field(
     this file ever being edited -- fails here too.
     """
     body = logged_in.get("/api/dashboard/economic").text
-    for forbidden in ("imponibile_fiscale", "substitute_tax", "contributi", "netto_stimato"):
+    for forbidden in ("taxable_amount", "substitute_tax", "contributions", "estimated_net_income"):
         assert forbidden not in body, forbidden
 
 
@@ -433,7 +433,7 @@ def test_an_inverted_period_on_the_economic_endpoint_is_a_422_naming_the_field(
         "/api/dashboard/economic", params={"from": "2026-03-31", "to": "2026-03-01"}
     )
     assert response.status_code == 422
-    assert response.json()["field"] == "da"
+    assert response.json()["field"] == "from"
 
 
 # -- the operational dashboard ---------------------------------------------------
@@ -609,7 +609,7 @@ def test_the_concentration_signals_link_leads_to_the_same_rows_it_counted(
     try:
         body = logged_in.get("/api/dashboard/operational").json()
         signal = next(s for s in body["signals"] if s["code"] == "concentration_above_threshold")
-        assert signal["link"] == "/app/?tab=economica"
+        assert signal["link"] == "/app?tab=economic"
 
         threshold = logged_in.get("/api/settings/space").json()["preferred_concentration_threshold"]
         overview = logged_in.get("/api/analytics/overview", params={"year": year}).json()
@@ -813,7 +813,7 @@ def test_the_runs_endpoint_returns_the_recent_activities(logged_in: TestClient) 
     response = logged_in.get("/api/automation-runs", params={"limit": 5})
     assert response.status_code == 200
     runs = response.json()
-    assert "automazione.configurazione_modificata" in [run["kind"] for run in runs]
+    assert "automation.config_changed" in [run["kind"] for run in runs]
     # A configuration change is not about a deal, and a bare `entity_id` here would render
     # as a link to a deal that does not exist.
     assert all(run["deal_id"] is None for run in runs)

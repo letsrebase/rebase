@@ -72,7 +72,7 @@ def test_post_creates_and_returns_decimals_as_strings(logged_in: TestClient) -> 
     assert body["hours"] == "3.50"
     assert body["applied_rate"] == "80.000000"
     assert body["line_value"] == "280.00"
-    assert '"ore":"3.50"' in response.text.replace(" ", "")
+    assert '"hours":"3.50"' in response.text.replace(" ", "")
 
 
 def test_a_get_of_the_time_report_never_archives_a_document(logged_in: TestClient) -> None:

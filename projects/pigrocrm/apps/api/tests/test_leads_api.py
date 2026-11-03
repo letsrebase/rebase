@@ -37,12 +37,12 @@ MARIA = "maria.rossi@acme.it"
 
 def _body(**overrides: Any) -> dict[str, Any]:
     body: dict[str, Any] = {
-        "legal_entity": "Acme S.r.l.",
-        "contact_person": {"first_name": "Maria", "last_name": "Rossi", "email": MARIA},
+        "company": "Acme S.r.l.",
+        "contact": {"first_name": "Maria", "last_name": "Rossi", "email": MARIA},
         "deal": {
             "name": "Acme S.r.l.: Backend developer",
             "expected_value": "24000.00",
-            "note": "Richiesta dell'azienda.",
+            "notes": "Richiesta dell'azienda.",
         },
     }
     body.update(overrides)
@@ -207,8 +207,8 @@ def test_an_explicit_deal_is_linked_and_a_missing_one_is_422(
 @pytest.mark.parametrize(
     "bad",
     [
-        {"contact_person": {"name": "Maria", "email": "non-un-indirizzo"}},
-        {"legal_entity": ""},
+        {"contact": {"first_name": "Maria", "email": "non-un-indirizzo"}},
+        {"company": ""},
         {"extra": "sorpresa"},
         {"deal": {"name": "x" * 256}},
         {"deal": {"name": "ok", "expected_value": "1000000000000.00"}},

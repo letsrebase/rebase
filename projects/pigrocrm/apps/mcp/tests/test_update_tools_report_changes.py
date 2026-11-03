@@ -322,13 +322,13 @@ async def test_clearing_a_cost_and_a_time_entry_field_is_reported(
                 "date": "2026-03-10",
                 "hours": "2.00",
                 "description": "Sviluppo",
-                "note_interne": "da rivedere",
+                "internal_notes": "da rivedere",
             },
         )
         cleared_entry = await _create(
             client,
             "update_time_entry",
-            {"entry_id": entry["id"], "changes": {"note_interne": None}},
+            {"entry_id": entry["id"], "changes": {"internal_notes": None}},
         )
         cost = await _create(
             client,
@@ -345,8 +345,8 @@ async def test_clearing_a_cost_and_a_time_entry_field_is_reported(
             client, "update_cost", {"cost_id": cost["id"], "changes": {"supplier": None}}
         )
 
-    assert cleared_entry["changed"] == ["note_interne"]
-    assert cleared_entry["cleared"] == {"note_interne": "da rivedere"}
+    assert cleared_entry["changed"] == ["internal_notes"]
+    assert cleared_entry["cleared"] == {"internal_notes": "da rivedere"}
     assert cleared_cost["changed"] == ["supplier"]
     assert cleared_cost["cleared"] == {"supplier": "Acme"}
 

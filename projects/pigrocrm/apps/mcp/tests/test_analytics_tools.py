@@ -189,7 +189,7 @@ async def test_simulate_ceiling_adds_the_typed_value(server, mcp_session: Sessio
     body = result.structured_content
     assert body["brief_addition"] == "20000.00"
     revenue_threshold = next(s for s in body["thresholds"] if s["id"] == "soglia_ricavi")
-    assert revenue_threshold["rientra"] is True
+    assert revenue_threshold["falls_within"] is True
 
 
 async def test_simulate_ceiling_derives_the_addition_from_hours_and_rate(
@@ -223,7 +223,7 @@ async def test_get_year_overview_reads_the_register_of_the_year(
     body = result.structured_content
     assert body["year"] == TODAY.year
     assert body["register"] == []
-    assert body["totali"]["taxable_amount"] == "0.00"
+    assert body["total"]["taxable_amount"] == "0.00"
 
 
 async def test_get_days_analysis_defaults_to_the_current_month(server) -> None:

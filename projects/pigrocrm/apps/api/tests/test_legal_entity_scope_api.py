@@ -368,7 +368,7 @@ def test_a_write_the_policy_refuses_is_a_404_and_never_a_500(
     assert shared.status_code == 404, shared.text
     problem = shared.json()
     assert problem["code"] == "not_found"
-    assert "legal_entities" in problem["detail"]
+    assert "aziende" in problem["detail"]
     # A later request on the same client is served, by a fresh session: the refusal
     # poisoned nothing.
     assert _ids(client, "/api/customers") == {str(world.ltd_rows.customer)}

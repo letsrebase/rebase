@@ -555,7 +555,7 @@ def test_a_deactivated_person_with_a_live_refresh_cookie_has_no_session_here(
     state = _start(logged_in)
     _lose_access_cookie(logged_in)
     api_session.execute(
-        text("update users set attivo = false where email = :e"), {"e": "admin@pigro.it"}
+        text("update users set active = false where email = :e"), {"e": "admin@pigro.it"}
     )
     api_session.flush()
 
@@ -707,7 +707,7 @@ def test_a_revoked_credential_is_reported_with_its_own_sentence_and_no_token(
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["banner"] == "revoked"
-    assert "revoked" in payload["banner_text"]
+    assert "revocato" in payload["banner_text"]
     assert payload["account"]["email_address"] == "io@example.it"
     assert "refresh_token" not in response.text
     assert "ciphertext" not in response.text

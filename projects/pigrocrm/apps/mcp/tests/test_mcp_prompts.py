@@ -777,10 +777,10 @@ async def test_a_crash_inside_a_prompt_keeps_its_text_on_the_server(
 # reader reconstruct it.
 FORBIDDEN_FISCAL_FIELDS = frozenset(
     {
-        "imponibile_fiscale",
+        "taxable_amount",
         "substitute_tax",
-        "contributi",
-        "netto_stimato",
+        "contributions",
+        "estimated_net_income",
         "profitability_coefficient",
         "substitute_tax_rate",
         "social_security_rate",

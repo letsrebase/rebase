@@ -249,7 +249,7 @@ def test_an_expired_invitation_answers_410(
     peek = logged_in.get("/api/auth/invite", params={"t": raw})
     assert peek.status_code == 410
     assert peek.json()["code"] == "invitation_expired"
-    assert "expired" in peek.json()["detail"]
+    assert "scaduto" in peek.json()["detail"]
     accept = logged_in.post("/api/auth/invite", json={"t": raw})
     assert accept.status_code == 410 and accept.json()["code"] == "invitation_expired"
 

@@ -26,9 +26,9 @@ BODY = "Gentile {{cliente}}, fattura {{numero_fattura}} di {{importo}}, registro
 def _template(logged_in: TestClient, contract: dict[str, Any], **overrides: Any) -> dict[str, Any]:
     payload = {
         "name": "Fattura mensile",
-        "oggetto": "Fattura {{numero_fattura}}",
-        "corpo": BODY,
-        "allegati": ["fattura_pdf", "registro_pdf"],
+        "subject": "Fattura {{numero_fattura}}",
+        "body": BODY,
+        "attachments": ["invoice_pdf", "register_pdf"],
         **overrides,
     }
     response = logged_in.post(f"/api/contracts/{contract['id']}/email-templates", json=payload)
@@ -58,18 +58,18 @@ def test_a_template_is_saved_and_an_unknown_variable_is_a_422(
     logged_in: TestClient, contract: dict[str, Any]
 ) -> None:
     template = _template(logged_in, contract)
-    assert template["allegati"] == ["fattura_pdf", "registro_pdf"]
+    assert template["attachments"] == ["invoice_pdf", "register_pdf"]
     listed = logged_in.get(f"/api/contracts/{contract['id']}/email-templates").json()
     assert [t["name"] for t in listed] == ["Fattura mensile"]
 
     refused = logged_in.post(
         f"/api/contracts/{contract['id']}/email-templates",
-        json={"name": "Rotto", "oggetto": "x", "corpo": "{{inventata}}"},
+        json={"name": "Rotto", "subject": "x", "body": "{{inventata}}"},
     )
     assert refused.status_code == 422, refused.text
     duplicate = logged_in.post(
         f"/api/contracts/{contract['id']}/email-templates",
-        json={"name": "fattura mensile", "oggetto": "x", "corpo": "y"},
+        json={"name": "fattura mensile", "subject": "x", "body": "y"},
     )
     assert duplicate.status_code == 409, duplicate.text
 
@@ -81,7 +81,7 @@ def test_the_variables_a_template_may_name_are_listed(
         v["name"]
         for v in logged_in.get(f"/api/contracts/{contract['id']}/email-template-variables").json()
     ]
-    assert "invoice_number" in names and "emittente.ragione_sociale" in names
+    assert "numero_fattura" in names and "emittente.ragione_sociale" in names
 
 
 def test_preview_then_draft_with_both_files_attached(

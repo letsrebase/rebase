@@ -50,7 +50,7 @@ def test_twenty_concurrent_writes_all_succeed(
     assert len(set(ids)) == CONCURRENCY
     with session_factory(mcp_engine)() as check:
         stored = check.execute(
-            text("SELECT count(*) FROM customers WHERE ragione_sociale = ANY(:names)"),
+            text("SELECT count(*) FROM customers WHERE legal_name = ANY(:names)"),
             {"names": names},
         ).scalar_one()
     assert stored == CONCURRENCY

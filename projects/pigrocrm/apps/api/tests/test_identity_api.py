@@ -672,7 +672,7 @@ def root_admin(api_engine: Engine) -> Iterator[UserRead]:
             Actor.system(),
         )
         root.execute(
-            text("UPDATE users SET email_verificata_il = now() WHERE id = :id"), {"id": user.id}
+            text("UPDATE users SET email_verified_at = now() WHERE id = :id"), {"id": user.id}
         )
         root.commit()
     try:
@@ -846,7 +846,7 @@ def test_a_deactivated_root_row_is_neither_listed_nor_entered(
     root = _identity_only(rooted_client)
     with api_engine.begin() as connection:
         connection.execute(
-            text("UPDATE users SET attivo = false WHERE id = :id"), {"id": root_admin.id}
+            text("UPDATE users SET active = false WHERE id = :id"), {"id": root_admin.id}
         )
 
     assert root.get("/api/identity/spaces").json() == []
@@ -914,7 +914,9 @@ def _expire_invitations(settings: Settings, slug: str) -> None:
         engine.dispose()
 
 
-def _graces_invitation_to_ada(grace: TestClient, first_name: str | None = "Ada") -> tuple[str, str]:
+def _graces_invitation_to_ada(
+    grace: TestClient, name: str | None = "Ada"
+) -> tuple[str, str]:
     """Grace opens SLUG2 and invites Ada, who has no account there. The mail never
     reaches the test (nothing reads it), as for the person this fix is for. Returns the
     token the mail carried and the name its inviter goes by."""

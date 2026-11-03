@@ -135,9 +135,9 @@ def economic_overview(
         CashBase,
         Query(
             description=(
-                "In quale mese cade il denaro di ogni documento: 'competenza' (il periodo "
+                "In quale mese cade il denaro di ogni documento: 'accrual' (il periodo "
                 "di competenza dichiarato sulla fattura o sulla proforma, con la data del "
-                "documento per chi non lo dichiara; predefinito) oppure 'incasso' (la data "
+                "documento per chi non lo dichiara; predefinito) oppure 'collection' (la data "
                 "di incasso per le fatture pagate, la scadenza per quelle da incassare, la "
                 "data del documento, o di creazione, per bozze e proforma). La stima "
                 "fiscale resta sempre "
