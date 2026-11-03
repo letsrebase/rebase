@@ -89,10 +89,19 @@ def _refuse_meeting_rates(terms: Sequence[ValueTerm]) -> None:
 
 def _refuse_end_before_a_card(terms: Sequence[ValueTerm], end: date | None) -> None:
     """A contract that ends before one of its cards begins prices nothing for that card: the
-    end moves with the start in the dialog, and a caller who sends the old one is told."""
+    end moves with the start in the dialog, and a caller who sends the old one is told. A flat
+    one-off card is left out: it counts once whatever the end (`contracts/value.py`), so a
+    final balance dated after the delivery date does not stop the delivery date being the end."""
     if end is None:
         return
-    latest = max((term.start for term in terms), default=None)
+    latest = max(
+        (
+            term.start
+            for term in terms
+            if not (term.unit == "flat" and term.delivery_period == "one_off")
+        ),
+        default=None,
+    )
     if latest is not None and end < latest:
         raise ValidationFailed(
             ENTITY,

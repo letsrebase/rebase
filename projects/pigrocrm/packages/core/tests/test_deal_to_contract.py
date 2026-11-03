@@ -168,32 +168,37 @@ def test_moving_the_start_moves_the_end_and_the_cards_and_the_figures_still_matc
         assert summary.monthly_recurring == deal.monthly_recurring_value
 
 
-def test_a_flat_one_off_line_after_the_other_ends_keeps_the_proposed_end_after_it(
+def test_a_final_balance_dated_after_the_delivery_can_still_have_the_delivery_as_the_end(
+    db_session: Session, customer_id: UUID
+) -> None:
+    # A project: the work to the end of March, the final balance billed in June.
+    deal = _deal(
+        db_session,
+        customer_id,
+        line(price="20000", start=date(2026, 1, 1)),
+        line(period="monthly", price="500", start=date(2026, 1, 1), months=3),
+        line(price="10000", description="Saldo", start=date(2026, 6, 1)),
+    )
+    service = ContractService(db_session)
+    proposal = service.proposal_from_deal(deal.id, ADMIN)
+
+    assert proposal.end == date(2026, 3, 31)
+    contract = service.create_from_deal(
+        deal.id, _confirm(start=proposal.start, end=date(2026, 3, 31)), ADMIN
+    )
+    summary = value_summary(_cards(db_session, contract.id), contract.end)
+    assert summary.total == deal.expected_value
+    assert summary.one_off == deal.one_off_value
+
+
+def test_an_end_before_the_start_of_a_recurring_or_rated_card_is_refused_naming_the_end(
     db_session: Session, customer_id: UUID
 ) -> None:
     deal = _deal(
         db_session,
         customer_id,
-        line(period="monthly", price="500", start=date(2026, 1, 1), months=3),
-        line(price="3000", start=date(2026, 6, 1)),
-    )
-
-    proposal = ContractService(db_session).proposal_from_deal(deal.id, ADMIN)
-
-    assert proposal.end == date(2026, 6, 1)
-    ContractService(db_session).create_from_deal(
-        deal.id, _confirm(start=proposal.start, end=proposal.end), ADMIN
-    )
-
-
-def test_an_end_before_the_start_of_a_card_is_refused_naming_the_end(
-    db_session: Session, customer_id: UUID
-) -> None:
-    deal = _deal(
-        db_session,
-        customer_id,
-        line(period="monthly", price="500", start=date(2026, 1, 1), months=3),
-        line(price="3000", start=date(2026, 6, 1)),
+        line(price="3000", start=date(2026, 1, 1)),
+        line(period="monthly", price="500", start=date(2026, 6, 1), months=3),
     )
 
     with pytest.raises(ValidationFailed, match="precede l'inizio") as refused:
