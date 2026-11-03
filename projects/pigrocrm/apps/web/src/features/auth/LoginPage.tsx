@@ -182,8 +182,8 @@ export function LoginPage({
                     {space.slug}
                     {space.invitation && (
                       <span className="text-muted-foreground block text-xs font-normal">
-                        {space.invited_from
-                          ? `Invito da ${space.invited_from}, da accettare`
+                        {space.invited_by
+                          ? `Invito da ${space.invited_by}, da accettare`
                           : 'Invito da accettare'}
                       </span>
                     )}

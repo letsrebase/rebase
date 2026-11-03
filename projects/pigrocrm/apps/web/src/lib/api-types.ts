@@ -8470,7 +8470,7 @@ export interface components {
          *     `invitation` is on the rows of a different kind (REB-678), and on no other: a space where
          *     this address holds an open invitation and no account yet, so a mail that never
          *     arrived does not leave the invitation unfindable. `role` is then the role it
-         *     carries, `invited_from` who sent it and `name` the name it holds (absent when the
+         *     carries, `invited_by` who sent it and `name` the name it holds (absent when the
          *     acceptance page will ask). The route leaves out whatever is still its default.
          */
         IdentitySpace: {
@@ -8480,8 +8480,8 @@ export interface components {
             role: string;
             /** Invitation */
             invitation?: true | null;
-            /** Invited From */
-            invited_from?: string | null;
+            /** Invited By */
+            invited_by?: string | null;
             /** Name */
             name?: string | null;
         };
@@ -8531,8 +8531,8 @@ export interface components {
         InvitationPeek: {
             /** Space */
             space: string;
-            /** Invited From */
-            invited_from: string;
+            /** Invited By */
+            invited_by: string;
             /** Name */
             name: string | null;
         };
