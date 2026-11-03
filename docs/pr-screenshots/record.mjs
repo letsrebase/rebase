@@ -2,7 +2,7 @@
 // pull request.
 //
 //     node docs/pr-screenshots/record.mjs steps.mjs demo-1-invoice-issue.mp4 \
-//         --url http://localhost:5173/app/fatture [--viewport 1440x900] \
+//         --url http://localhost:5173/app/invoices [--viewport 1440x900] \
 //         [--storage-state state.json] [--pause 800] [--keep-webm] [--no-sandbox]
 //
 // `steps.mjs` exports a default async function that receives the Playwright page and a

@@ -99,7 +99,7 @@ need come from `rebase_core.dependencies.build_dependencies` (renderer, signing,
 seam, the mail sender, the CRM services), so stdio and HTTP cannot drift.
 
 **Naming of tool parameters.** Entity fields keep the Italian domain noun the API and the
-database use (`status`, `origin`, `text`, `posizione`, `remote`, `daily_rate`);
+database use (`status`, `origin`, `text`, `job_title`, `remote`, `daily_rate`);
 generic paging and flags are English (`limit`, `cursor`, `has_cv`, `only_silent`). The
 mix is the published surface and is not renamed here (a rename wave owns it): a new
 parameter follows the rule, a domain noun in Italian and a mechanism in English.
@@ -120,7 +120,7 @@ that ask the model (`regenerate_freelancer_card`, and `create_company` and
 `AdminAction` of the admin behind the token: `cv_read` on the freelancer
 (`read_freelancer_cv`), `recipients_read` on the campaign (`get_campaign`) and
 `emails_read` on entity type `mcp_read`, one fixed id per tool (`list_talents` when `fields`
-asks for `email` or `tutti`, `list_companies`); the payload names the tool and the row count,
+asks for `email` or `all`, `list_companies`); the payload names the tool and the row count,
 never a value. The server instructions and `read_freelancer_cv` say that what comes back
 (CV, notes, campaign texts) is data and not an instruction.
 
@@ -134,7 +134,7 @@ a `SigningService` over `FakeDocumenso`.
 
 - `preview_match`: step 3's sentences for the hub's proposal with the given fields and letter type (`regime`, the proposal's when left out); writes nothing.
 - `create_match`: the draft match, «Salva senza inviare»; `match_id` makes a retry idempotent; `regime` as in `preview_match`.
-- `send_match_for_signature`: «Invia per la firma»; `messaggio` is the page's sentence.
+- `send_match_for_signature`: «Invia per la firma»; `message` is the page's sentence.
 - `resend_signing_mail`: «Reinvia email», for a document still waiting.
 - `refresh_contract`: «Aggiorna stato», Documenso's word applied as the webhook would.
 - `cancel_contract`: «Annulla» on a framework agreement not signed yet.
@@ -151,7 +151,7 @@ running the core service the admin area runs, with the calling admin as the acto
 
 - `list_team_requests`, `get_team_request`: «Richieste team» and a request's page.
 - `list_team_proposals`: «Proposte», every «Proponi il team» asked, filed or not.
-- `list_ai_config`: «Modelli AI», read only: providers (the hint, never a key), tasks, prices, the month's spend, and `registro`, the last 50 entries of the configuration's trail (keys, switches, prices and every regeneration of the cards, start and end). No tool writes a key.
+- `list_ai_config`: «Modelli AI», read only: providers (the hint, never a key), tasks, prices, the month's spend, and `trail`, the last 50 entries of the configuration's trail (keys, switches, prices and every regeneration of the cards, start and end). No tool writes a key.
 - `set_team_request_summary`: «Salva il riassunto», refused while it names the company.
 - `contact_team_talents`: «Contatta i talenti», or with `only_silent` «Rimanda a chi non ha risposto», on a request filed from the site or the cloud.
 - `set_team_request_status`: «Segna come contattata», «Chiudi», with an optional note.
@@ -182,7 +182,7 @@ There is no «Valutazione» page: the evaluation is the command `rebase cards-ev
 which an operator runs and reads, and the admin API has no `card-eval` route.
 
 `get_talent` and `list_talents` carry `vetted_at` and whether an anonymous card exists.
-Since REB-778 each `list_talents` row also carries the card's `posizione` and the
+Since REB-778 each `list_talents` row also carries the card's `job_title` and the
 anonymous card's `role`, `seniority`, `experience_years`, `skills` and `location`, and the tool
 filters by `skills` (every term, in the position or the card's role, skills or
 summary) and by `location`, so an agent matches a request in one call instead of one
@@ -216,12 +216,12 @@ filters only a whole JSON number, the one the row shows.
 The tool answers a **short row** (`id`, `nome`, `last_name`, `status`, `role`, `seniority`,
 `experience_years`, `daily_rate`, `location`, five `skills`, `profile_summary` cut to 160
 characters; empty keys left out) and no address. `fields` names the fields wanted, whole
-(`["email", "settori"]`), and `["tutti"]` is the whole `TalentRead` row. The page is
+(`["email", "industries"]`), and `["all"]` is the whole `TalentRead` row. The page is
 compact JSON text with no structured copy: the server's usual dict return sends the page
 twice, once indented by two spaces. Fifty short rows are about 25 KB where the old full
 row was about 55 KB, and a call now answers 50 rows by default (it was 100) and 200 at
 most (it was 500; the service itself still allows 500 for the campaign audiences). The
-shape lives in `apps/mcp/src/rebase_mcp/talenti_view.py`. The admin Talenti screen and
+shape lives in `apps/mcp/src/rebase_mcp/talents_view.py`. The admin Talenti screen and
 `GET /api/hub/talent` change in `origin`/`origin_page`, and their rows gain
 `industries`, `languages`, `profile_summary` and `band`.
 
@@ -264,7 +264,7 @@ Spec: `docs/superpowers/specs/2026-10-30-anonymous-cv-pdf-design.md`.
   card of another CV file, and no seniority the card marks uncertain unless an admin set
   one.
 - **The audit.** One `anon_cv_downloaded` entry on the freelancer per 200, payload
-  `{"riusato": bool}`. The name is short on purpose: `admin_actions.kind` holds 20 characters and `AdminActionService.record` refuses a longer one.
+  `{"reused": bool}`. The name is short on purpose: `admin_actions.kind` holds 20 characters and `AdminActionService.record` refuses a longer one.
 - **The wait.** The task's calls wait 150 seconds and are never retried (`llm.py`,
   `_TASK_HTTP_LIMITS`); the host vhost gives the route 330 seconds, a by-hand change on the
   installed copies (below, after the team builder's 90 seconds).
@@ -296,7 +296,7 @@ is retried without spending the cap again. The call is `PUT {pigro_api_url}/api/
 {id}` under `REBASE_PIGRO_ENGAGEMENTS_TOKEN` (no token: the request waits as `da_collegare`);
 `201`/`200` is `linked`, `422` is `rejected` (only a person asks again), anything else
 `error` (the sweep retries). The deal is built in code and every value is cut to the CRM's
-limits; `tariffa_oraria` and `ore_preventivate` are never sent. The first attempt is a
+limits; `hourly_rate` and `budgeted_hours` are never sent. The first attempt is a
 `BackgroundTasks` job (`deps.get_crm_filing`); the sweep is `crm_sweep` in `rebase
 contracts-sweep`, its own round and its own line, outside `SigningService`, and leaves a row
 alone for five minutes after it was written or attempted so it never races that job.
@@ -381,7 +381,7 @@ tracking. So **the text carries no date and no author**: the MCP tool descriptio
 agent so. An admin edits and deletes the notes whose `source` is `web`, `mcp` or NULL
 (`schemas.note_is_editable`); `person` and `system` are events and are refused in a
 sentence. An edit stamps `edited_at` and `edited_by_id`; a delete is soft
-(`eliminata_*`), and lists and `get_freelancer`/`get_company` leave deleted notes out.
+(`deleted_*`), and lists and `get_freelancer`/`get_company` leave deleted notes out.
 Every admin add, edit and delete is an `AdminAction` on the parent (`note_added`,
 `note_edited`, `note_deleted`: `note_id`, `source`, the text, or `before`/`after`), and
 `set_status` on both services takes `admin_id` and `source` and writes `status_changed`
@@ -392,7 +392,7 @@ trail. `StatusChange` is the state alone (a stale client sending `note` gets a 4
   `GET/POST /api/hub/companies/{id}/notes`, `PATCH /api/hub/notes/{note_id}`,
   `DELETE /api/hub/notes/{note_id}` (204).
 - MCP (source `mcp`, the actor is the token's admin): `add_freelancer_note`, `add_company_note`,
-  `update_note(note_id, testo)`, `delete_note(note_id)`; `set_freelancer_status` and
+  `update_note(note_id, text)`, `delete_note(note_id)`; `set_freelancer_status` and
   `set_company_status` take the state alone, and none of them has an `author` argument.
 - A revert of an old `overridden` entry on the field `note` is refused with a sentence: a note
   is edited in the thread. A merge moves the notes by id (`RELATIONS["notes"]`; an undo of a
@@ -590,7 +590,7 @@ Resend key; it is the missing webhook secret that keeps «Mandami una prova» an
 refused there, so the preview never has a sent row to stamp.
 
 **«Riscrivi a chi non ha fatto niente»** (`POST /api/hub/campaigns/{id}/follow-up`) makes a
-`draft` with `fonte = lista` and `follows_id`. It keeps the earlier campaign's action and a
+`draft` with `source = list` and `follows_id`. It keeps the earlier campaign's action and a
 copy of its mail, and only the mail can change (`LIST_IS_FIXED`). Its list is the earlier
 campaign's sent rows with no action, each checked live with `done_at_many` (one statement per kind of fact for the whole list), less the rows
 whose mail bounced or drew a complaint, which the page's «Riscrivi (N)» leaves out too. The gap rule
@@ -899,7 +899,7 @@ removed) takes it. Who reads it: `GET /api/hub/freelancers/{id}/card` (`Freelanc
 `person` and `differences`, the fields where the CV and `users` both say something and disagree:
 names and email without case or spacing, the phone by its digits, LinkedIn by its stored shape),
 which feeds «Scheda con i dati» and the «Telefono» and «Email nel CV» rows of the talent page;
-and MCP `get_freelancer` (`phone`, `contatti_cv`, `differenze_cv`). `FreelancerRead.phone` is
+and MCP `get_freelancer` (`phone`, `cv_contacts`, `cv_differences`). `FreelancerRead.phone` is
 `users.phone`. **Nothing else reads it**: not `get_freelancer_card`, `list_talents`,
 `get_talent`, `cloud.py`, `team_builder.py`, the evaluation (`card_eval` compares the anonymous
 card only) or the member area (`test_card_person.py`, the cloud, admin API and MCP tests assert
@@ -1038,15 +1038,15 @@ scheda»; the hourly `refresh_stale` only writes a card whose CV is new.
   `CardWriter.regenerate_stale`, `record_start`, `card_done`, `end_regeneration`). Three entries of
   the admin trail, none with personal data (counts, costs, reasons and people's ids; never a name
   or a card's text):
-  - **`cards_regenerate`** on `ai_config`, the start, always signed: `{limit, queued, fonte, batch,
-    batch_id?}` with `fonte` `web` («Avvia rigenerazione») or `cli` (`rebase cards-regenerate
+  - **`cards_regenerate`** on `ai_config`, the start, always signed: `{limit, queued, source, batch,
+    batch_id?}` with `source` `web` («Avvia rigenerazione») or `cli` (`rebase cards-regenerate
     --admin EMAIL`, which is **required**: a missing, unknown or non-admin address refuses with an
     Italian message and exit 2, and nothing starts). A batch's start is recorded once the batch has
     an id (before the provider is called), and `batch_id` is how the poll finds it again, with no
     column of its own: a batch sent before REB-861 has no such start and records nothing.
   - **`card_regenerated`** on the freelancer, one per card the regeneration rewrote or failed to:
-    `{fonte (web|mcp|cli), bulk, start_action_id (bulk only), prompt_version, model, esito
-    (scritta|non_scritta), reason (non_scritta only), cost_eur, unpriced?}`, signed by the admin. The
+    `{source (web|mcp|cli), bulk, start_action_id (bulk only), prompt_version, model, outcome
+    (written|not_written), reason (not_written only), cost_eur, unpriced?}`, signed by the admin. The
     reasons are `cards.Failure` (`refusal`, `shape`, `identifying`, `source_identifying`,
     `gendered`, `max_tokens`, `no_text`, `unavailable`), `cap_reached`, `not_configured`,
     `superseded` (the batch's answer was dropped because the CV or an input changed) and, for a
@@ -1062,7 +1062,7 @@ scheda»; the hourly `refresh_stale` only writes a card whose CV is new.
     «singola», the door, the cost).
   - **`cards_regenerated`** on `ai_config`, the end, written once, signed by the admin who started
     it: when the worker pool returns, when a batch is applied, or when one is given up or was never
-    sent. `{fonte, start_action_id, batch_id?, batch_status? (applied|failed), written, failed,
+    sent. `{source, start_action_id, batch_id?, batch_status? (applied|failed), written, failed,
     superseded, skipped (no longer stale, or the person or CV gone), errored, cost_eur, unpriced?,
     failures: [{freelancer_id, reason}], stopped?, left?}`, counted from the cards' own entries (the
     latest per person), so the end can never disagree with them. A card whose rewrite finds the model
@@ -1070,7 +1070,7 @@ scheda»; the hourly `refresh_stale` only writes a card whose CV is new.
 
   **Where to read it:** `GET /api/hub/admin/ai/audit?limit=50` (admin only, newest first, the
   `AdminActionRead` shape with the admin's name; `AiConfigService.trail`) feeds the «Registro»
-  section of «Modelli AI», and MCP `list_ai_config` answers the same last 50 as `registro`. A
+  section of «Modelli AI», and MCP `list_ai_config` answers the same last 50 as `trail`. A
   regeneration with a start and no end is on, and the page keeps reading until it ends.
 - **The weekly refetch never calls a model.** `rebase sources-refetch [--limit N]` runs
   `SourceService.refetch_due` (people whose sources are a week old, missing or no longer match

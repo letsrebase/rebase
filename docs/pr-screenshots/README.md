@@ -148,7 +148,7 @@ export default async function (page, { pause }) {
 
 ```bash
 node docs/pr-screenshots/record.mjs steps.mjs demo-1-issue-proforma.mp4 \
-  --url http://localhost:5173/app/fatture --viewport 1440x900
+  --url http://localhost:5173/app/invoices --viewport 1440x900
 ```
 
 `--url` is the page the flow starts from and the script waits for it to be idle before
