@@ -19,14 +19,17 @@
 # filesystem. A schema change is the `migrate` service's, once, before `api` starts.
 
 # What the `mcp` service reads, and nothing else: it authenticates personal access tokens
-# and works through `pigrocrm_app`, so it holds no JWT secret, no registry or engagements
-# bearer, no mail key and no push key. Every line here is the same line as in the api's
+# and works through `pigrocrm_app`, so it holds no registry or engagements bearer, no mail
+# key and no push key. It does hold the JWT secret: a space's own Google client is sealed
+# with a key derived from it (migration 0065), and the boot refuses a placeholder. Every
+# line here is the same line as in the api's
 # block below (`test_compose_environment.py` fails when one drifts or names a variable the
 # api block does not). PIGROCRM_ADMIN_DATABASE_URL stays until the registry stops creating
 # databases in the request path: `SpaceRegistry.registry_factory` still opens the owner
 # role there, and an mcp without it cannot reach a space opened since its last start.
 x-mcp-environment: &mcp-environment
   PIGROCRM_DATABASE_URL: postgresql+psycopg://pigrocrm_app:${PIGROCRM_APP_PASSWORD:?set it in .env, the password of the application role the boot creates}@db:5432/${POSTGRES_DB:-pigrocrm}
+  PIGROCRM_JWT_SECRET: ${PIGROCRM_JWT_SECRET:?set it in .env, openssl rand -hex 32}
   PIGROCRM_ADMIN_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-pigrocrm}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-pigrocrm}
   PIGROCRM_TIMEZONE: ${PIGROCRM_TIMEZONE:-Europe/Rome}
   PIGROCRM_MCP_FULL_ACCESS: ${PIGROCRM_MCP_FULL_ACCESS:-false}

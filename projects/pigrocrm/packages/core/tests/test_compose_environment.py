@@ -225,7 +225,7 @@ def test_refresh_token_days_is_forwarded_with_its_documented_default() -> None:
 def _mcp_environment() -> dict[str, str]:
     """The `PIGROCRM_*` lines of the `x-mcp-environment` block, which is what the `mcp`
     service reads: a subset of the api's, so the container that parses agent-supplied
-    input holds no JWT secret, registry or engagements bearer, mail key or push key."""
+    input holds no registry or engagements bearer, mail key or push key."""
     text = COMPOSE.read_text()
     block = text[text.index("\nx-mcp-environment:") + 1 :]
     after_header = block.index("\n") + 1
@@ -257,10 +257,16 @@ def test_the_mcp_environment_holds_none_of_the_apis_own_secrets() -> None:
     assert not set(_mcp_environment()) & {
         f"{PREFIX}{name}"
         for name in (
-            "JWT_SECRET",
             "REGISTRY_TOKEN",
             "ENGAGEMENTS_TOKEN",
             "RESEND_API_KEY",
             "VAPID_PRIVATE_KEY",
         )
     }
+
+
+def test_the_mcp_environment_requires_the_jwt_secret() -> None:
+    """The MCP server unseals a space's own Google client with a key derived from the
+    JWT secret, and its boot refuses the published placeholder: without the line the
+    container restarts forever (the first preview deploy of REB-894 did exactly that)."""
+    assert "?" in str(_mcp_environment().get(f"{PREFIX}JWT_SECRET", ""))
