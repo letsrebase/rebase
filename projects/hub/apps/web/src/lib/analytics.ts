@@ -37,7 +37,7 @@ export function useWizardAnalytics(kind: WizardKind, search: string) {
 
   // `wizard_started` rides on the first step rather than on an effect of its own: a
   // child's effects commit before its parent's, so a separate effect would land
-  // `wizard_passo { passo: 0 }` first and a funnel could tie on the timestamps.
+  // `wizard_step { step: 0 }` first and a funnel could tie on the timestamps.
   const onStep = useCallback(
     (step: number, steps: number, screen: string) => {
       if (!started.current) {

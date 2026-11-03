@@ -287,7 +287,7 @@ describe('FreelancerWizard', () => {
 })
 
 describe('what the wizard reports to PostHog (ORB-185)', () => {
-  it('reports wizard_iniziato once, with the kind and the perk the URL carries', async () => {
+  it('reports wizard_started once, with the kind and the perk the URL carries', async () => {
     const user = userEvent.setup()
     // Under StrictMode the engine's step effect runs, is cleaned up and runs again on
     // mount: the guard against a second `wizard_started` is what this exercises.
@@ -328,7 +328,7 @@ describe('what the wizard reports to PostHog (ORB-185)', () => {
     })
   })
 
-  it('reports wizard_completato once the API accepted the candidacy, with the review as the last step', async () => {
+  it('reports wizard_completed once the API accepted the candidacy, with the review as the last step', async () => {
     const user = userEvent.setup({ applyAccept: false })
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({ ok: true }), { status: 201 }),

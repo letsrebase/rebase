@@ -579,7 +579,7 @@ def test_proposal_row_keeps_the_tokens_and_origin(clean_hub: Session) -> None:
     assert properties == {
         "origin": "cloud",
         "people": 2,
-        "persone_richieste": None,
+        "people_requested": None,
         "input_tokens": 5200,
         "output_tokens": 640,
         "$process_person_profile": False,
@@ -658,7 +658,7 @@ def test_the_number_of_people_reaches_the_prompt_only_when_asked(clean_hub: Sess
     assert "a null mode is unknown, never remote" in rules
     # The event tells the asked number from the proposed one, and the row keeps the
     # asked one (0028), `NULL` when nobody asked.
-    assert [(p["people"], p["persone_richieste"]) for _, _, p in capture.calls] == [
+    assert [(p["people"], p["people_requested"]) for _, _, p in capture.calls] == [
         (1, None),
         (1, 1),
         (1, 3),

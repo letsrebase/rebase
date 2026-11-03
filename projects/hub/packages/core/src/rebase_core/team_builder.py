@@ -446,7 +446,7 @@ class TeamBuilder:
                 {
                     "origin": origin,
                     "people": len(team),
-                    "persone_richieste": data.people,
+                    "people_requested": data.people,
                     "input_tokens": input_tokens,
                     "output_tokens": output_tokens,
                 },

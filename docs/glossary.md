@@ -632,7 +632,7 @@ Entries are per project: `pigrocrm`, `hub`, `website`, `shared`.
 | `spazio` | `space` | PostHog GROUP TYPE for a CRM space (identifyGroup). Renaming the group type creates a new group set. PostHog property/group key; renaming splits history for queries that ... |
 | `spazio_creato` | `space_created` | PostHog event name. Funnels, cohorts and dashboards in the PostHog project are keyed on it; a rename splits history unless PostHog gets an alias/merge or both names are s... |
 
-**hub** (13)
+**hub** (14)
 
 | Italian | English | Note |
 |---|---|---|
@@ -640,6 +640,7 @@ Entries are per project: `pigrocrm`, `hub`, `website`, `shared`.
 | `iscrizione_completata` | `signup_completed` | PostHog event name. Funnels, cohorts and dashboards in the PostHog project are keyed on it; a rename splits history unless PostHog gets an alias/merge or both names are s... |
 | `passi` | `steps` | Event property. PostHog property/group key; renaming splits history for queries that filter on it. |
 | `passo` | `step` | Event property of wizard_step. PostHog property/group key; renaming splits history for queries that filter on it. |
+| `persone_richieste` | `people_requested` | Event property of team_proposal_generated (the head count the ask carried). PostHog property names are not migrated: breakdowns on the old name split history. |
 | `ruolo` | `role` | Person property on identify (admin\|member). PostHog property/group key; renaming splits history for queries that filter on it. |
 | `schermata` | `screen` | Event property. PostHog property/group key; renaming splits history for queries that filter on it. |
 | `team_proposta_generata` | `team_proposal_generated` | PostHog event name. Funnels, cohorts and dashboards in the PostHog project are keyed on it; a rename splits history unless PostHog gets an alias/merge or both names are s... |

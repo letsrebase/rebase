@@ -845,7 +845,7 @@ def test_a_call_that_stops_after_opening_the_space_leaves_the_welcome_to_its_ret
 ) -> None:
     """Greptile on #427: the welcome went out with the provisioning, so a call that
     opened the space and then failed left a retry that found the space and its admin,
-    sent nothing, and answered `spazio_creato: false`. The row now records that this
+    sent nothing, and answered `space_created: false`. The row now records that this
     match opened the space, and the call that completes the engagement sends the
     welcome and says so: once."""
     match_id = uuid4()
