@@ -38,7 +38,7 @@ from pigrocrm.core.db import Base, session_factory
 from pigrocrm.core.db.base import uuid7
 from pigrocrm.core.db.role import ensure_application_role
 from pigrocrm.core.db.scope import bind_scope, is_policy_refusal
-from pigrocrm.core.deals.models import Deal
+from pigrocrm.core.deals.models import Deal, DealValueLine
 from pigrocrm.core.deals.repository import DealRepository
 from pigrocrm.core.deals.schemas import DealListQuery
 from pigrocrm.core.documents.models import Document
@@ -76,6 +76,7 @@ POLICIED = {
     "invoice_register_gaps",
     "customers",
     "deals",
+    "deal_value_lines",
     "contracts",
     "documents",
     "invoices",
@@ -179,6 +180,16 @@ def world(db_engine: Engine) -> Iterator[World]:
             )
             session.add(deal)
             session.flush()
+            session.add(
+                DealValueLine(
+                    deal_id=deal.id,
+                    position=0,
+                    unit="flat",
+                    delivery_period="one_off",
+                    unit_price=Decimal("100.00"),
+                    quantity=Decimal(1),
+                )
+            )
             session.flush()
             # One note on each of the three records a thread hangs on, written by hand.
             for kind, record in (("customer", customer), ("person", person), ("deal", deal)):
@@ -339,6 +350,7 @@ def world(db_engine: Engine) -> Iterator[World]:
                 "customers": 1,
                 "people": 1,
                 "deals": 1,
+                "deal_value_lines": 1,
                 "contracts": 1,
                 "documents": 1,
                 "notes": 3,
@@ -385,6 +397,11 @@ def world(db_engine: Engine) -> Iterator[World]:
             session.execute(delete(Invoice).where(Invoice.customer_id.in_(customers)))
             session.execute(delete(Document).where(Document.title.like(f"{_PREFIX} %")))
             session.execute(delete(Contract).where(Contract.title.like(f"{_PREFIX} %")))
+            session.execute(
+                delete(DealValueLine).where(
+                    DealValueLine.deal_id.in_(select(Deal.id).where(Deal.name.like(f"{_PREFIX} %")))
+                )
+            )
             session.execute(delete(Deal).where(Deal.name.like(f"{_PREFIX} %")))
             session.execute(delete(Person).where(Person.first_name.like(f"{_PREFIX} %")))
             session.execute(delete(Customer).where(Customer.legal_name.like(f"{_PREFIX} %")))
@@ -424,6 +441,15 @@ def test_every_repository_list_answers_the_scope_s_rows_alone(world: World) -> N
         assert [c.legal_name for c in customers] == [f"{_PREFIX} estero"]
         deals = DealRepository(session).list(DealListQuery(limit=50))
         assert [d.name for d in deals] == [f"{_PREFIX} estero deal"]
+        # The lines of a deal out of sight are not readable by asking for its id.
+        everyone = set(session.scalars(select(Deal.id).where(Deal.name.like(f"{_PREFIX} %"))))
+        assert everyone == {deals[0].id}
+        hidden = session.scalars(
+            select(DealValueLine.deal_id).where(
+                DealValueLine.deal_id.in_(select(Deal.id).where(Deal.name.like("% studio deal")))
+            )
+        ).all()
+        assert hidden == []
         invoices = InvoiceRepository(session).list(InvoiceListQuery(limit=50))
         assert len(invoices) == 1 and invoices[0].legal_entity_id == world.foreign
         documents = DocumentRepository(session).list(DocumentListQuery(limit=50))
@@ -445,6 +471,7 @@ def test_a_raw_select_on_every_policied_table_agrees_with_the_lists(world: World
     # Both legal entities in scope: everything but what belongs to neither.
     with _scoped(world, world.studio, world.foreign) as session:
         assert _count(session, "customers") == 2
+        assert _count(session, "deal_value_lines") == 2
         assert _count(session, "notes") == 6
         assert _count(session, "invoices") == 3
         assert _count(session, "costs") == 2  # the shared one is still «all»'s alone
@@ -1135,6 +1162,7 @@ def test_every_table_that_reaches_an_legal_entity_carries_the_policy(db_engine: 
 # unscoped session answers «all» on the policy's first arm and calls no function.
 FAST_PATH = {
     "people",
+    "deal_value_lines",
     "time_entries",
     "time_timers",
     "invoice_lines",

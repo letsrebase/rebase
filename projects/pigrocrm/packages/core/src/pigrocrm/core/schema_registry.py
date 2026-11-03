@@ -64,7 +64,9 @@ CREATE_MODELS: dict[str, type[BaseModel]] = {
 EXTRA_NATIVE_FIELDS: dict[str, tuple[str, ...]] = {
     "customer": (),
     "person": (),
-    "deal": (),
+    # Derived by the service from `value_lines`: `DealCreate` no longer takes it, but the name
+    # is still a column no custom field may take.
+    "deal": ("expected_value",),
     "document": (),
     "invoice": (
         "year",

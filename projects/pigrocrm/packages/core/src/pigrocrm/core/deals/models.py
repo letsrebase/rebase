@@ -3,7 +3,18 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Date, ForeignKey, Index, Integer, Numeric, String, Text, text
+from sqlalchemy import (
+    CheckConstraint,
+    Date,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -119,3 +130,55 @@ class Deal(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     # period dashboards exclude `chiuso_il IS NULL` and say how many rows they excluded,
     # rather than counting them as zero or attributing them to the wrong month.
     closed_at: Mapped[date | None] = mapped_column(Date, default=None)
+
+
+VALUE_LINE_UNITS: tuple[str, ...] = ("flat", "day", "hour")
+VALUE_LINE_PERIODS: tuple[str, ...] = ("one_off", "monthly", "annual")
+
+
+class DealValueLine(Base, PrimaryKeyMixin):
+    """One priced line of a deal: a lump sum, a fee or a day or hour rate, paid once or
+    every month or year. A deal's value is what its lines add up to
+    (`pigrocrm.core.deals.value`), and `DealService` writes that total into
+    `deals.expected_value` in the same transaction, so no caller sets it.
+
+    No `SoftDeleteMixin`: an owned child row of its deal, the shape of `RateCard` under
+    `Contract`, replaced as a whole list on every write.
+
+    `start` null follows the deal's `expected_close_date`. `duration_months` null on a
+    recurring line is open-ended (counted at 12 months); on a one-off day or hour line it is
+    an open window; on a flat one-off line it is always null.
+    """
+
+    __tablename__ = "deal_value_lines"
+    __table_args__ = (
+        UniqueConstraint("deal_id", "position", name="uq_deal_value_lines_deal_id_position"),
+        CheckConstraint(f"unit IN {VALUE_LINE_UNITS!r}", name="ck_deal_value_lines_unit"),
+        CheckConstraint(
+            f"delivery_period IN {VALUE_LINE_PERIODS!r}",
+            name="ck_deal_value_lines_delivery_period",
+        ),
+        CheckConstraint(
+            "unit <> 'flat' OR quantity = 1", name="ck_deal_value_lines_flat_quantity_one"
+        ),
+        CheckConstraint(
+            "NOT (unit = 'flat' AND delivery_period = 'one_off') OR duration_months IS NULL",
+            name="ck_deal_value_lines_flat_one_off_no_duration",
+        ),
+        CheckConstraint(
+            "duration_months IS NULL OR duration_months >= 1",
+            name="ck_deal_value_lines_duration_positive",
+        ),
+        CheckConstraint("unit_price >= 0", name="ck_deal_value_lines_price_not_negative"),
+        CheckConstraint("quantity > 0", name="ck_deal_value_lines_quantity_positive"),
+    )
+
+    deal_id: Mapped[UUID] = mapped_column(ForeignKey("deals.id"), nullable=False, index=True)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    description: Mapped[str | None] = mapped_column(String(255), default=None)
+    unit: Mapped[str] = mapped_column(String(10), nullable=False)
+    delivery_period: Mapped[str] = mapped_column(String(10), nullable=False)
+    unit_price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(8, 2), nullable=False)
+    start: Mapped[date | None] = mapped_column(Date, default=None)
+    duration_months: Mapped[int | None] = mapped_column(Integer, default=None)

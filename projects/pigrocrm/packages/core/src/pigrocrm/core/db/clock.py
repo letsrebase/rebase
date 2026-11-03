@@ -62,6 +62,13 @@ def local_date(instant: datetime) -> date:
     return instant.astimezone(ITALY_TZ).date()
 
 
+def add_months(day: date, months: int) -> date:
+    """`day` moved by whole calendar months, clamped to the target month's last day."""
+    total = day.year * 12 + (day.month - 1) + months
+    year, month = divmod(total, 12)
+    return date(year, month + 1, min(day.day, month_bounds(year, month + 1)[1].day))
+
+
 def month_bounds(year: int, month: int) -> tuple[date, date]:
     """The first and last day of a month, both inclusive.
 

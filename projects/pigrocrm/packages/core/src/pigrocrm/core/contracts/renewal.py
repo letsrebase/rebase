@@ -20,7 +20,7 @@ from collections.abc import Sequence
 from datetime import date, timedelta
 from typing import Literal, Protocol
 
-from pigrocrm.core.db.clock import month_bounds
+from pigrocrm.core.db.clock import add_months, month_bounds
 
 RenewalUnit = Literal["days", "weeks", "months", "years"]
 
@@ -33,13 +33,6 @@ class RenewalRefused(ValueError):
         super().__init__(message)
         self.field = field
         self.expected = expected
-
-
-def add_months(day: date, months: int) -> date:
-    """`day` moved by whole calendar months, clamped to the target month's last day."""
-    total = day.year * 12 + (day.month - 1) + months
-    year, month = divmod(total, 12)
-    return date(year, month + 1, min(day.day, month_bounds(year, month + 1)[1].day))
 
 
 def _span(start: date, count: int, unit: RenewalUnit) -> date:

@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.customers.schemas import CustomerCreate
 from pigrocrm.core.customers.service import CustomerService
-from pigrocrm.core.deals.schemas import DealCreate
+from pigrocrm.core.deals.schemas import DealCreate, DealValueLineIn
 from pigrocrm.core.deals.service import DealService
 from pigrocrm.core.pipeline.service import PipelineService
 
@@ -28,7 +28,9 @@ async def test_a_zero_valued_deal_shows_zero_not_a_dash(server, mcp_session: Ses
         DealCreate(
             name="Consulenza gratuita",
             customer_id=customer.id,
-            expected_value=Decimal("0.00"),
+            value_lines=[
+                DealValueLineIn(unit="flat", delivery_period="one_off", unit_price=Decimal("0.00"))
+            ],
             budgeted_hours=Decimal("0.00"),
             budgeted_value=Decimal("0.00"),
         ),

@@ -93,6 +93,17 @@ def _parameters_of(schema: Mapping[str, Any]) -> str:
     return "parameters " + "; ".join(parts) if parts else "no parameters"
 
 
+# Arguments a tool used to take and no longer does, with what to send instead: a misspelling
+# guess cannot find `value_lines` from `expected_value`.
+REMOVED_ARGUMENTS: dict[tuple[str, str], str] = {
+    ("create_deal", "expected_value"): (
+        "the deal's value is the total of its `value_lines`: send `value_lines` (a list of "
+        "lines with `unit`, `delivery_period`, `unit_price`; `preview_deal_value` shows the "
+        "total they give), never `expected_value`"
+    ),
+}
+
+
 def unknown_argument_error(
     tool: str, names: Sequence[str], schema: Mapping[str, Any]
 ) -> DomainError:
@@ -100,6 +111,13 @@ def unknown_argument_error(
     misspelt `limit` on a search answered with every row, and a misspelt `stage_id` read
     as a missing one. Names the first, offers the closest real name, and lists them all."""
     name = names[0]
+    if (tool, name) in REMOVED_ARGUMENTS:
+        return ValidationFailed(
+            "input",
+            name,
+            f"parameter removed from `{tool}`",
+            expected=REMOVED_ARGUMENTS[(tool, name)],
+        )
     close = get_close_matches(name, list(schema.get("properties", {})), n=1)
     suggestion = f" (maybe `{close[0]}`)" if close else ""
     return ValidationFailed(

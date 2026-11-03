@@ -1,6 +1,6 @@
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -49,6 +49,12 @@ DECIMAL_PLACES = 2
 FACTOR_MAX_DIGITS = 12
 FACTOR_DECIMAL_PLACES = 6
 
+DESCRIPTION_MAX_LENGTH = 255
+# Bounds a caller can hit before the database does: a line list is replaced whole, and a
+# duration beyond this is not a plan. 600 months is fifty years.
+MAX_VALUE_LINES = 50
+MAX_DURATION_MONTHS = 600
+
 # No Pydantic `ge`/`le` bound on `probability` below, unlike `position`/`position`
 # elsewhere in this sweep -- see the final-review item on bounding every Integer
 # column. The reason is the same one documented on `CustomerCreate.vat_number`
@@ -64,13 +70,43 @@ FACTOR_DECIMAL_PLACES = 6
 # exception type, a regression a value like 150 must not trigger.
 
 
+class DealValueLineIn(BaseModel):
+    """One line of a deal's value, as written. A deal's total is never supplied: it is what
+    the lines add up to (`pigrocrm.core.deals.value`)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    description: SafeStr | None = Field(default=None, max_length=DESCRIPTION_MAX_LENGTH)
+    # `flat` is a lump sum (a project, a fee) and always has quantity 1; `day` and `hour` are
+    # a rate times the quantity of days or hours per occurrence.
+    unit: Literal["flat", "day", "hour"]
+    delivery_period: Literal["one_off", "monthly", "annual"]
+    unit_price: Decimal = Field(max_digits=VALUE_MAX_DIGITS, decimal_places=DECIMAL_PLACES, ge=0)
+    quantity: Decimal = Field(
+        default=Decimal(1), max_digits=HOURS_MAX_DIGITS, decimal_places=DECIMAL_PLACES, gt=0
+    )
+    # Null follows the deal's `expected_close_date`.
+    start: date | None = None
+    # A recurring line: how long it runs, null is open-ended (counted at 12 months). A one-off
+    # day or hour line: the window its days fall in. Always null on a flat one-off line.
+    duration_months: int | None = Field(default=None, ge=1, le=MAX_DURATION_MONTHS)
+
+
+class DealValueLineRead(DealValueLineIn):
+    model_config = ConfigDict(extra="ignore", from_attributes=True)
+
+    id: UUID
+    position: int
+
+
 class DealCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: SafeStr = Field(max_length=NAME_MAX_LENGTH)
     customer_id: UUID
     pipeline_stage_id: UUID | None = None
-    expected_value: Decimal | None = Field(
-        default=None, max_digits=VALUE_MAX_DIGITS, decimal_places=DECIMAL_PLACES
-    )
+    # The whole list; the deal's `expected_value` is derived from it.
+    value_lines: list[DealValueLineIn] | None = Field(default=None, max_length=MAX_VALUE_LINES)
     probability: int | None = None
     expected_close_date: date | None = None
     # Validated against `users` by `DealService` (`create`/`update` both call
@@ -100,9 +136,8 @@ class DealUpdate(BaseModel):
     # `create`/`move_stage` exist to enforce. `move_stage` is the only supported way
     # to change a deal's stage.
     name: SafeStr | None = Field(default=None, max_length=NAME_MAX_LENGTH)
-    expected_value: Decimal | None = Field(
-        default=None, max_digits=VALUE_MAX_DIGITS, decimal_places=DECIMAL_PLACES
-    )
+    # The whole list, replacing the stored one; `[]` or null clears the value.
+    value_lines: list[DealValueLineIn] | None = Field(default=None, max_length=MAX_VALUE_LINES)
     probability: int | None = None
     expected_close_date: date | None = None
     owner_id: UUID | None = None
@@ -128,6 +163,11 @@ class DealRead(BaseModel):
     customer_id: UUID
     pipeline_stage_id: UUID
     expected_value: Decimal | None
+    # The two figures derived from the lines, `None` when the deal has none. Computed per page
+    # by `DealService`, never stored: `one_off_value` is what is paid once and
+    # `monthly_recurring_value` what arrives every month (annual lines divided by 12).
+    one_off_value: Decimal | None = None
+    monthly_recurring_value: Decimal | None = None
     probability: int
     expected_close_date: date | None
     owner_id: UUID | None
@@ -159,6 +199,28 @@ class DealRead(BaseModel):
     custom_fields: dict[str, Any]
     created_at: datetime
     updated_at: datetime
+
+
+class DealDetailRead(DealRead):
+    """The single-deal read: the list shape and the lines behind its figures."""
+
+    value_lines: list[DealValueLineRead] = []
+
+
+class ValuePreviewIn(BaseModel):
+    """What a form asks `POST /api/deals/value-preview` with: the lines as typed and the
+    deal's expected close date, which the lines with no start follow."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    value_lines: list[DealValueLineIn] = Field(max_length=MAX_VALUE_LINES)
+    expected_close_date: date | None = None
+
+
+class ValuePreviewRead(BaseModel):
+    expected_value: Decimal | None
+    one_off_value: Decimal | None
+    monthly_recurring_value: Decimal | None
 
 
 # Residuo R9. Mirrors CUSTOMER_SORTS (customers/schemas.py) -- see there for why three

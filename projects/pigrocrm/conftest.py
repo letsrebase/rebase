@@ -114,7 +114,7 @@ _TEMPLATE = "pigrocrm_template"
 
 
 def _legal_entity_scope_statements() -> list[str]:
-    """`statements()` of revision 0068 (REB-898), loaded from the file: a revision is a
+    """`statements()` of revisions 0068 (REB-898) and 0070, loaded from the files: a revision is a
     script in `versions/`, not a module on the path. It carries the final functions, the
     policies, `ENABLE`/`FORCE` and the hardening of the definer functions, so the template
     and production cannot disagree on a predicate; the earlier revisions' own versions of
@@ -123,13 +123,19 @@ def _legal_entity_scope_statements() -> list[str]:
     from pathlib import Path
 
     versions = Path(__file__).resolve().parent / "packages/core/migrations/versions"
-    spec = importlib.util.spec_from_file_location(
-        "pigrocrm_migration_0068", versions / "0068_english_names.py"
-    )
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return list(module.statements())
+    out: list[str] = []
+    # 0068 carries the final functions and policies; later revisions that add a table add
+    # their own policy statements after it.
+    for name, file in (
+        ("pigrocrm_migration_0068", "0068_english_names.py"),
+        ("pigrocrm_migration_0070", "0070_deal_value_lines.py"),
+    ):
+        spec = importlib.util.spec_from_file_location(name, versions / file)
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        out.extend(module.statements())
+    return out
 
 
 @pytest.fixture(scope="session")

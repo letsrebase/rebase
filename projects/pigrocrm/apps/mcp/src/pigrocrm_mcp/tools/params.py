@@ -27,12 +27,51 @@ from pydantic import WithJsonSchema
 from pigrocrm.core.contract_expenses.schemas import ContractExpenseUpdate
 from pigrocrm.core.contracts.schemas import ClauseNoteUpdate, ContractUpdate, RateCardUpdate
 from pigrocrm.core.customers.schemas import CustomerUpdate
-from pigrocrm.core.deals.schemas import DealUpdate
+from pigrocrm.core.deals.schemas import DealUpdate, DealValueLineIn
 from pigrocrm.core.errors import ValidationFailed
 from pigrocrm.core.people.schemas import PersonUpdate
 from pigrocrm.core.search.schemas import PER_CLASS_LIMIT
 from pigrocrm.core.tasks.schemas import TaskUpdate
 from pigrocrm.core.timetracking.schemas import YEAR_MAX, YEAR_MIN, CostUpdate, TimeEntryUpdate
+
+
+def self_contained(schema: dict[str, Any]) -> dict[str, Any]:
+    """`schema` with every `$ref` into its own `$defs` replaced by the definition: a schema
+    embedded in a tool's listing sits under that tool's own root, where a `#/$defs/...`
+    pointer no longer resolves. Titles and prose descriptions are left out."""
+    definitions = schema.get("$defs", {})
+
+    def resolve(node: Any) -> Any:
+        if isinstance(node, dict):
+            reference = node.get("$ref")
+            if isinstance(reference, str) and reference.startswith("#/$defs/"):
+                return resolve(definitions[reference.removeprefix("#/$defs/")])
+            # The listing is paid for in bytes (`test_mcp_tool_annotations`): a model's titles
+            # and its class docstring say nothing a field name does not.
+            return {
+                key: resolve(value)
+                for key, value in node.items()
+                if key not in ("$defs", "title")
+                and not (key == "description" and isinstance(value, str))
+            }
+        if isinstance(node, list):
+            return [resolve(item) for item in node]
+        return node
+
+    resolved: dict[str, Any] = resolve(schema)
+    return resolved
+
+
+def _deal_changes_schema() -> dict[str, Any]:
+    """`DealUpdate`'s schema with the lines left as plain objects: `create_deal` spells out a
+    line once, and the listing is paid for in bytes."""
+    schema = self_contained(DealUpdate.model_json_schema())
+    lines = schema["properties"]["value_lines"]
+    for option in lines["anyOf"]:
+        if option.get("type") == "array":
+            option["items"] = {"type": "object"}
+    return schema
+
 
 # `changes` of an `update_*`: an unvalidated dict at runtime, the real model's schema in the
 # listing, so an agent sees the field names (`update_task` included, with the two
@@ -40,7 +79,7 @@ from pigrocrm.core.timetracking.schemas import YEAR_MAX, YEAR_MIN, CostUpdate, T
 # `tools/<family>.py`.
 CustomerChanges = Annotated[dict[str, Any], WithJsonSchema(CustomerUpdate.model_json_schema())]
 PersonChanges = Annotated[dict[str, Any], WithJsonSchema(PersonUpdate.model_json_schema())]
-DealChanges = Annotated[dict[str, Any], WithJsonSchema(DealUpdate.model_json_schema())]
+DealChanges = Annotated[dict[str, Any], WithJsonSchema(_deal_changes_schema())]
 ContractChanges = Annotated[dict[str, Any], WithJsonSchema(ContractUpdate.model_json_schema())]
 RateCardChanges = Annotated[dict[str, Any], WithJsonSchema(RateCardUpdate.model_json_schema())]
 ClauseNoteChanges = Annotated[dict[str, Any], WithJsonSchema(ClauseNoteUpdate.model_json_schema())]
@@ -163,6 +202,37 @@ OptionalProbability = Annotated[
 ]
 Probability = Annotated[
     int | str, WithJsonSchema({"type": "integer", "minimum": 0, "maximum": 100})
+]
+# One line of a deal's value, as the listing shows it: short, because the whole list of tools
+# is paid for in bytes. The service validates each line with `DealValueLineIn`.
+_VALUE_LINE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "required": ["unit", "delivery_period", "unit_price"],
+    "properties": {
+        "description": {"type": "string"},
+        "unit": {"enum": list(get_args(DealValueLineIn.model_fields["unit"].annotation))},
+        "delivery_period": {
+            "enum": list(get_args(DealValueLineIn.model_fields["delivery_period"].annotation))
+        },
+        "unit_price": {"type": "number"},
+        "quantity": {"type": "number", "default": 1},
+        "start": {"type": "string", "format": "date"},
+        "duration_months": {"type": "integer", "minimum": 1},
+    },
+}
+# The lines of a deal's value, whole: a list of objects, each described in the listing from the
+# schema the service validates it with (`unit`, `delivery_period`, `unit_price`, ...).
+OptionalValueLines = Annotated[
+    list[dict[str, Any]] | None,
+    WithJsonSchema(
+        {
+            "anyOf": [
+                {"type": "array", "items": _VALUE_LINE_SCHEMA},
+                {"type": "null"},
+            ],
+            "default": None,
+        }
+    ),
 ]
 OptionalMoney = Annotated[
     float | str | None,

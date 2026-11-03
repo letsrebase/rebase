@@ -4,7 +4,7 @@ from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.analytics.service import AnalyticsService
 from pigrocrm.core.customers.schemas import CustomerRead
 from pigrocrm.core.customers.service import CustomerService
-from pigrocrm.core.deals.schemas import DealListQuery
+from pigrocrm.core.deals.schemas import DealListQuery, DealRead, DealValueLineRead
 from pigrocrm.core.deals.service import DealService
 from pigrocrm.core.labels import ACTIVITY_KIND, NOTE_SOURCE, label
 from pigrocrm.core.notes.service import NoteService
@@ -57,6 +57,31 @@ def _note_lines(context: McpContext, entity_type: str, entity_id: UUID) -> list[
                 header += f" by {note.edited_by}"
         lines += ["", header, "", note.text]
     return lines
+
+
+def _figures(deal: DealRead) -> str:
+    """The two figures of a deal's lines, beside its total: what is paid once and what
+    arrives every month. Empty for a deal with no lines."""
+    if deal.one_off_value is None or deal.monthly_recurring_value is None:
+        return ""
+    return (
+        f" (one-off {deal.one_off_value}, monthly recurring {deal.monthly_recurring_value};"
+        " an open-ended fee counts 12 months)"
+    )
+
+
+def _value_line(line: DealValueLineRead) -> str:
+    quantity = "" if line.unit == "flat" else f" × {line.quantity}"
+    start = f" from {line.start}" if line.start else ""
+    if line.duration_months:
+        duration = f" for {line.duration_months} months"
+    else:
+        duration = " open-ended" if line.delivery_period != "one_off" else ""
+    label = f"{line.description}: " if line.description else ""
+    return (
+        f"- {label}{line.unit_price}{quantity} per {line.unit}, {line.delivery_period}"
+        f"{start}{duration}"
+    )
 
 
 def _or_dash(value: object) -> str:
@@ -129,7 +154,8 @@ def render_customer(context: McpContext, customer_id: UUID) -> str:
     ] or ["_No contacts._"]
     lines += ["", "## Deal", ""]
     lines += [
-        f"- {d.name} — expected value {_or_dash(d.expected_value)} — probability {d.probability}%"
+        f"- {d.name} — expected value {_or_dash(d.expected_value)}{_figures(d)}"
+        f" — probability {d.probability}%"
         for d in deals.items
     ] or ["_No deals._"]
     lines += _custom_lines(customer.custom_fields)
@@ -180,6 +206,14 @@ def render_deal(context: McpContext, deal_id: UUID) -> str:
         f"- Budgeted hours: {_or_dash(deal.budgeted_hours)}",
         f"- Budgeted value: {_or_dash(deal.budgeted_value)}",
     ]
+    if deal.value_lines:
+        lines += ["", "## Value lines", ""]
+        lines += [_value_line(line) for line in deal.value_lines]
+        lines += [
+            f"- One-off value: {_or_dash(deal.one_off_value)}",
+            f"- Monthly recurring value: {_or_dash(deal.monthly_recurring_value)}",
+            "- The expected value counts an open-ended fee at 12 months.",
+        ]
     lines += _custom_lines(deal.custom_fields)
 
     # Reading before acting (slice 1 §8.4), applied to the one thing an agent wants to

@@ -3,13 +3,13 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, Numeric, and_, case, func, literal, select, true
+from sqlalchemy import ColumnElement, Numeric, and_, case, delete, func, literal, select, true
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.dashboard.schemas import ClosedInPeriod, PipelineStageSummary
 from pigrocrm.core.db import decode_cursor, escape_like, keyset_predicate, order_by
-from pigrocrm.core.deals.models import Deal
+from pigrocrm.core.deals.models import Deal, DealValueLine
 from pigrocrm.core.deals.schemas import DEAL_SORTS, DealListQuery
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.invoices.receivables import invoiced_not_won_predicate
@@ -73,6 +73,29 @@ class DealRepository:
             select(Customer.id, Customer.legal_name).where(Customer.id.in_(customer_ids))
         ).all()
         return {row[0]: row[1] for row in rows}
+
+    def value_lines(self, deal_ids: Collection[UUID]) -> dict[UUID, list[DealValueLine]]:
+        """The value lines of each given deal, in order, in one query: what a page of deals
+        needs to carry its figures. A deal with no lines is absent from the answer."""
+        if not deal_ids:
+            return {}
+        rows = self.session.execute(
+            select(DealValueLine)
+            .where(DealValueLine.deal_id.in_(deal_ids))
+            .order_by(DealValueLine.deal_id, DealValueLine.position)
+        ).scalars()
+        lines: dict[UUID, list[DealValueLine]] = {}
+        for row in rows:
+            lines.setdefault(row.deal_id, []).append(row)
+        return lines
+
+    def replace_value_lines(self, deal_id: UUID, lines: list[DealValueLine]) -> None:
+        """Replaces the whole list. The old rows are deleted and flushed before the new ones
+        go in, so `(deal_id, position)` stays unique."""
+        self.session.execute(delete(DealValueLine).where(DealValueLine.deal_id == deal_id))
+        self.session.flush()
+        self.session.add_all(lines)
+        self.session.flush()
 
     def names(self, deal_ids: Collection[UUID]) -> dict[UUID, str]:
         """The `name` of each given deal, in one query.
